@@ -19,7 +19,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-vsock-guest` | Local-VM guest services, built into the VM image: VSOCK-to-Docker byte splice and orderly shutdown endpoint. |
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
-| `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, and on-demand start (`autostart.go`). |
+| `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, on-demand start (`autostart.go`), and the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
@@ -27,9 +27,9 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | Serves the `git-origins` route through the shared [`gitbackend`](../gitbackend) CGI bridge, run as the repository's owner. A live origin is served fetch-only with a ref allow-list; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`; it also records each local source's live origin for the `git-origins` route (`origin.go`). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), and records each local source's live origin for the `git-origins` route (`origin.go`); it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), the origins host the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
@@ -102,8 +102,8 @@ control plane cleared after a failed reconcile.
 ## Child Processes
 
 The agent is PID 1 in its container, so it is both an init — orphans re-parent
-to it — and an ordinary process running `git`, `chown` and `git http-backend`
-through `os/exec`. Those are one kernel resource, and `childproc` owns it
+to it — and an ordinary process running `git` (in its own origin repositories,
+never a sandbox's checkout), `chown` and `git http-backend` through `os/exec`. Those are one kernel resource, and `childproc` owns it
 (ADR 0087).
 
 - **Every subprocess starts through `childproc`** (`Run`, `CombinedOutput`, or
@@ -117,11 +117,10 @@ through `os/exec`. Those are one kernel resource, and `childproc` owns it
   intact, `waitid: no child processes` returned — which is a silent corruption
   of every subprocess result in the process.
 - **A caller must never read a fact about the world out of a command's
-  failure.** `ensureOriginRemote` is the shape to copy: it asks
-  `git config --get-all` for the value, whose exit 1 is the answer "there is
-  none", and writes with `--replace-all`, which creates and corrects in one
-  step. Check-then-act (`git remote get-url`, else `git remote add`) wedges a
-  sandbox for good the first time a status goes missing.
+  failure.** Ask for the value (`git config --get-all`, whose exit 1 is the
+  answer "there is none") and write with `--replace-all`, which creates and
+  corrects in one step. Check-then-act (`git remote get-url`, else `git remote
+  add`) wedges a sandbox for good the first time a status goes missing.
 - The systemd namespace child is deliberately *not* registered: it is stopped
   with a signal and never waited for, so the reaper collecting it is the point.
   `systemd.ManagedChildProcesses` names it so the log says which it is.
@@ -279,7 +278,7 @@ flowchart LR
     create["CreateSandbox"] -->|"before the container exists"| bootstrap["sandbox.json<br/>(config volume)"]
     create --> record["runtime-config.json<br/>(pool's record, sandbox tree root)"]
     update["UpdateSandbox: secrets"] --> record
-    settle["settleDeliveredSources"] --> record
+    settle["settleSources / settleConverged"] --> record
     record --> boot["finishBoot: every start"]
     record --> poll["status poll: runtimeConfigRevision behind"]
     boot -->|"PUT …/runtime-config, pool-signed"| intake["sandbox agent intake"]
@@ -296,17 +295,18 @@ flowchart LR
 - **The record** (`runtimeconfig.go`): the document the pool has decided, in the
   sandbox's tree root beside — never inside — the volumes, so it survives an
   archive and leaves with a delete. `decideRuntimeConfig` applies a change
-  (secrets from create or update, sources' delivery) and refreshes what the pool
-  owns outright (the idle timeout, the proxy material); only a different
-  document is a new revision. The record never holds the client key; delivery
-  adds it from the proxy material. `project-layer.json` beside it is the project
-  layer the bootstrap was built from, which a pushed source's settle compares
-  against — never `_provenance` read back from a file the sandbox can write.
+  (secrets from create or update, sources and their delivery) and refreshes what
+  the pool owns outright (the idle timeout, the proxy material, its sources'
+  origin tokens); only a different document is a new revision. The record never
+  holds the client key; delivery adds it from the proxy material.
+  `project-layer.json` beside it is the project layer the pool decided for the
+  bootstrap and the slug it is read from — never `_provenance` read back from a
+  file the sandbox can write.
 - **Delivery**: a `PUT` through the sandbox's `Dialer`, with a token the pool
   signs with its identity key — audience `sandbox-agent`, exactly the
   `runtime-config` scope, this sandbox and pool — which the sandbox verifies
   against the key in its bootstrap. It happens at the end of every boot, when a
-  running sandbox's secrets change, and when a pushed source settles.
+  running sandbox's secrets change, and when a sandbox's sources settle.
 - **Convergence**: the status poll reads `runtimeConfigRevision` and calls
   `Runtime.ConvergeRuntimeConfig`, which decides again and delivers whenever
   the sandbox's revision is not the record's — behind, or ahead of a record that
@@ -314,7 +314,9 @@ flowchart LR
   anything holds the sandbox's power lock (a create, start, archive or delete
   ends in its own delivery or in no sandbox at all). The pool converges on what
   the sandbox says it applied, never on having sent it, so a transient failure
-  is logged and repaired at the next poll rather than failing anything.
+  is logged and repaired at the next poll rather than failing anything. While
+  the record names a source not yet delivered, the same call settles it
+  (`settleConverged`; see [Sources](#sources)).
 - **Certificate renewal** is a decision like any other: deciding refreshes the
   proxy material, and `EnsureSandboxMaterial` reissues a client certificate
   within 30 days of its expiry, so the next poll's convergence delivers it as a
@@ -336,10 +338,6 @@ flowchart LR
   pool staging files around it, and the container is stopped, so the next
   request meets the refusal again instead of a running sandbox that looks
   healthy.
-- A pushed source's settle is finished by the next create whenever it is
-  outstanding on either side: not yet on disk, or on disk while the record has
-  not marked it delivered (a settle cut short between materializing and
-  recording).
 - A container built before its bootstrap named the pool's key carries no
   `discobox.runtime_config` label and takes no deliveries: while it runs, it
   runs on what was staged for it then, and a change decided for it is recorded
@@ -350,6 +348,81 @@ flowchart LR
   spec it holds, on the bootstrap that can. An on-demand start waits for that
   rebuild like any other; an explicit one answers that the sandbox is being
   rebuilt. Any create that reaches such a container also counts it drifted.
+
+## Sources
+
+A sandbox materializes its own sources
+([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
+§4): the pool says where each origin is, and the sandbox agent clones it as the
+checkout's owner, in its own namespace. The pool runs no git in a sandbox's
+checkout, chowns nothing in it, and binds no origin into it. What it keeps is
+settling ([ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md)):
+a source is marked delivered — which opens the sandbox's readiness gate — only
+once the primary source's project layer has been read and the spec is final.
+
+```mermaid
+sequenceDiagram
+    participant C as CreateSandbox
+    participant A as sandbox agent
+    C->>C: bootstrap from project-layer.json, label its digest
+    C->>A: PUT runtime-config (sources: origin, pin, target, token)
+    A->>A: clone each source as its owner
+    loop until materialized
+        C->>A: GET .../sources
+    end
+    C->>A: GET .../sources/{primary}/project-layer
+    alt layer is not the container's label
+        C->>C: record it, rebuild the container, settle again
+    else
+        C->>A: PUT runtime-config (delivered)
+    end
+```
+
+- **The document's sources** (`sources.go`, `runtimeSources`): each source's
+  in-sandbox target, its pin, and its origin — this pool's git-origins route at
+  the origins host for a source on the client's machine, live or pushed
+  ([Git origins](#git-origins)), and the remote itself for a remote-URL source.
+  A pool-served origin carries a token (`sandboxtoken`, `origin:fetch`), issued
+  for a day and renewed by deciding the document once it has less than half
+  left. Delivery carries over by slug: a source is delivered once.
+- **Each source's directory** is created empty under `sources/<slug>` at create
+  and never touched again; boot binds it onto the target and gives it to the
+  sandbox user, who clones into it.
+- **Settling a create** (`settleSources`): a create that started its container
+  waits for the sandbox to report every source materialized
+  (`GET .../sources`, pool-signed, `runtime-config` scope), reads the primary
+  source's project layer from it (`GET .../sources/{slug}/project-layer`), and
+  compares it with the digest of the layer the container was built from
+  (`discobox.project_layer` label). The same layer marks every source delivered;
+  a different one is recorded in `project-layer.json` and the container is
+  rebuilt against a bootstrap carrying it, once per create. A source the
+  sandbox fails to clone `sourceFailureLimit` times, or has not begun after
+  `sourceWaitingTimeout`, fails the create with what the sandbox said; the
+  agent keeps retrying regardless. An agent that cannot report its sources at
+  all (404 or 503: an image from before the route) fails the create at once
+  with `ErrSourceStatesUnsupported`.
+- **A pushed source parks.** Until the client's push lands in its bare origin
+  there is nothing to clone and nothing settles. A source that names its
+  branch has its origin's HEAD there from `initGitOrigin` on; one that names
+  none has HEAD pointed at what arrived (`headOriginAtWhatArrived`, git in the
+  pool's own repository) by whichever settles it first. The sandbox's agent may
+  clone the moment the push lands; the resume create delivers the document
+  again — a delivery wakes an agent backing off — and settles as above, and the
+  agent fills in an `origin/HEAD` its early clone could not resolve.
+- **Settling a start** (`settleConverged`): a sandbox started rather than
+  created — unarchived or imported, whose create did not start it — has nobody
+  waiting on it, so the status poll's convergence settles it once the sandbox
+  reports every source materialized. With no create request in hand it cannot
+  rebuild, so a layer that needs one removes the container
+  (`removeForRebuild`) for the control plane to recreate from the recorded
+  layer. It takes the primary's slug from `project-layer.json`, and settles
+  nothing for a record from before that named one: only a create can say.
+- **Upgrade.** A checkout a pool cloned before this keeps the empty marker it
+  wrote, which the agent reads as materialized; one from before the marker —
+  a commit checked out and an `origin` that is a filesystem path — is adopted
+  by the agent at what it has checked out. A container built before
+  carries no project-layer label, which reads as built with none — what such a
+  container was built with whenever a source was still to be settled.
 
 ## Sandbox State Channel
 
@@ -371,9 +444,9 @@ delta and is unaffected by `complete`, which describes `states` only — a progr
 report is not a sync claiming this pool hosts one sandbox.
 
 Every report carries a **phase**, and `CreateSandbox` publishes one at each
-boundary it already has: pulling the image, preparing volumes, materializing a
-pushed source, creating the container, starting it, waiting for the sandbox
-agent. A phase is never a state — nothing branches on one, and the phase a
+boundary it already has: pulling the image, preparing volumes, creating the
+container, starting it, waiting for the sandbox agent, and waiting for the
+sandbox to materialize its sources. A phase is never a state — nothing branches on one, and the phase a
 sandbox finished in means nothing once it is up — which is why these ride the
 progress array rather than the state one (ADR 0060). A report with no phase is
 dropped rather than sent.
@@ -798,6 +871,19 @@ flowchart TD
   bare -->|no| nf["404"]
 ```
 
+- **How a sandbox reaches it**
+  ([ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md)).
+  The origin URL a sandbox is given names `git.discobox.internal`
+  (`proxyagent.OriginsHost`), beside the gate host. Its git sends it through
+  its egress proxy like anything else, over the bridge that presents its client
+  certificate; the pool proxy intercepts the host whatever its allowlist says
+  and forwards the path and query to the agent's loopback origin listener
+  (`proxyagent.OriginsListenAddress`), naming the certificate's sandbox in
+  `proxy.OriginClientHeader`. That listener (`NewOriginRouter`) serves this
+  route alone, to the pool's sandbox token alone, and only when the token's
+  sandbox, the path's and the proxy's are one. The control plane reaches the
+  same route on the agent's own listener with its own tokens.
+
 - **The record.** Every create that builds volumes rewrites
   `sandboxes/{sandbox}/live-origins.json`: each clone-delivered local source's
   Git directory, as the request named it, and the refs it declares. It is
@@ -973,24 +1059,18 @@ flowchart LR
   it is this sandbox's alone and is kept, deleted, and exported exactly as the
   rest of that tree is. A sandbox created before the name was reserved may have
   a reference holding it; `sourceDataPlan` leaves that layout as it was.
-- Every source with a `LocalDirectory` has its origin served over Git HTTP
-  ([Git origins](#git-origins)) and also gets it bound, read-only, directly
-  onto `/.discobox/origins/<slug>` — the same `<slug>` as the corresponding
-  `/.discobox/sources/<slug>`. `ensureOriginRemote` points the repository's
-  `origin` remote at that in-sandbox path, so `git fetch origin` and `git rebase
-  origin/<branch>` are ordinary git inside the sandbox whichever way the source
-  was delivered. What differs is only what sits behind the bind:
+- Every source whose origin is on the client's machine has it served over Git
+  HTTP ([Git origins](#git-origins)) and bound into nothing: the sandbox's
+  `origin` remote is the route's URL, which its agent asserts on every pass, so
+  `git fetch origin` and `git rebase origin/<branch>` are ordinary git inside
+  the sandbox whichever way the source was delivered. What differs is only what
+  answers the route:
   - **Clone-delivered**: the developer's own repository's `.git` directory,
-    live — never the working tree, whose ignored files (`.env` and the like)
-    must not reach a sandbox. What is bound is the whole Git directory, so it is
-    still more than the sandbox's clone holds (objects no ref reaches, `index`,
-    `refs/stash`, reflogs, `config`); what it is not is the developer's files.
-    The clone reads the same `.git`. `checkLocalGitDirectory` refuses a `.git`
-    that is not a real directory (a linked worktree's file, a symlink) before
-    either happens; a current client has such a source pushed instead. Not a
-    pool-owned volume — an independent bind of an external directory the pool
-    host neither owns nor provisions, so there is nothing to rebind or reap.
-    See ADR 0026 and ADR 0093.
+    live, through a per-request snapshot of its allowed refs — never the working
+    tree, whose ignored files (`.env` and the like) must not reach a sandbox.
+    `checkLocalGitDirectory` refuses a `.git` that is not a real directory (a
+    linked worktree's file, a symlink); a current client has such a source
+    pushed instead. See ADR 0093 and ADR 0126 §4.
   - **Push-delivered**: a bare repository at
     `.../sandboxes/{sandbox}/origins/{slug}.git`, created by `initGitOrigin` at
     provisioning time and owned by the sandbox user, which the client pushes into
@@ -998,70 +1078,15 @@ flowchart LR
     newer commits. It is under the sandbox's own tree, so archive, purge and the
     volume reaper cover it already; it is deliberately not under `sources/`,
     which the sandbox can write. See ADR 0058.
-  A source with no local directory is a remote URL, whose origin is that remote,
-  and gets no bind.
-- The `origin` remote is asserted on every create, not once at delivery, and
-  deliberately outside `materializeGitSource`: it belongs to the sandbox rather
-  than to the delivery that filled it, and materializing is once-only for
-  reasons that have nothing to do with the remote. `ensureOriginRemote` adds it
-  when it is missing, corrects it when it points elsewhere, restores the fetch
-  refspec a remote is useless without, and otherwise leaves it alone, so `repair` (ADR 0035) puts a sandbox back the way provisioning
-  would have built it — including a sandbox created before this host bound
-  origins at all, whose worktree was pushed into directly and so has no remote
-  of any kind, and one whose remote was retargeted by hand from inside. It runs
-  as the sandbox user, which owns the checkout at both call sites, and is a
-  no-op on a push-delivered source that has not been delivered yet: there is no
-  repository to configure until the clone runs. Two call sites, because a
-  create either builds volumes (`prepareSandboxVolumes`) or resumes a pushed
-  source against an existing container (`materializePushedSources`), and each
-  finishes with the source in place.
-- A local source whose client branch tracks a network remote carries that
-  remote's URL (`upstreamUrl`), and `configureUpstreamRemote` adds it as a
-  remote named `upstream` — always that name, because the client's is nearly
-  always `origin`, which here is the client's repository. Only the remote is
-  added: the branch keeps tracking `origin`. Unlike `origin` it is written once,
-  inside `materializeGitSource`: the sandbox depends on nothing it holds, so it
-  belongs to whoever works in the sandbox, and repair leaves it as they left it.
+  A source with no local directory is a remote URL, whose origin is that remote;
+  the sandbox clones it through its proxy like any other fetch.
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
-- A push-delivered source's arrival is where the sandbox settles. The resume
-  create materializes it, then re-reads its `.discobox/project.json` — the first
-  moment that file exists on this host, since the repository was empty when the
-  container was built — and, when the project declares anything the baked
-  bootstrap does not already record (`project-layer.json`, the pool's own
-  record), removes the container and rebuilds it against a bootstrap that
-  includes it. Nothing is lost: the sandbox holds its harness launch until its
-  runtime-config document marks every source delivered, which the pool does
-  only once the bootstrap is final, so it has not run anything yet. A sandbox with
-  nothing outstanding does no work here, which is what stops a repeated create
-  from rebuilding forever. See
-  [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
-- A source is materialized exactly once, whatever its delivery mode, and always
-  by cloning: a clone-delivered source clones the client's directory, a
-  push-delivered one clones its own origin repository once the client's push has
-  landed there, which is also where its dirty-workspace snapshot ref is fetched
-  from. Before that push there is nothing to clone, so materializing is a no-op
-  and the sandbox stays parked. Delivery never `git init`s the worktree: the
-  working tree comes from a checkout either way. The first create that completes
-  records a marker in the repository's `.git`; every later create returns without
-  touching the workspace. Create is re-driven for reasons
-  unrelated to sources — resume, re-pin, reconcile after a failure — and by then
-  the sandbox owns the workspace, so re-materializing would discard uncommitted
-  work and move the branch off commits made inside the sandbox. The origin
-  remote is not covered by that rule; see `ensureOriginRemote` above.
-- A parked source's target is not guaranteed to be empty when its push finally
-  lands, so `cloneGitSource` does not assume git's "clone into an empty
-  directory". The directory exists and is bound onto the source's in-sandbox
-  target from the moment the container boots — it has to be, since the resume
-  does not rebuild the container — so whatever the sandbox writes there while it
-  waits is in the way of the clone. A source whose target is the sandbox's home,
-  `discobox new` in a directory that is in no repository, collects the harness
-  credential files sandbox-agent restores at startup. A non-empty target is
-  therefore cloned beside and adopts the repository: the files already there
-  stay, as the untracked content they are, and the checkout is written over them
-  where the delivered source names the same path. Failing instead is permanent —
-  nothing is marked materialized, so every later start retries the same clone.
+- How each source is cloned, checked out, restored and given its `upstream`
+  remote, and why it is materialized exactly once, is the sandbox agent's
+  ([sandbox-agent/DESIGN.md](../sandbox-agent/DESIGN.md)); how the pool settles
+  on it is [Sources](#sources).
 - Forward the sandbox user; never complete it. The pool host cannot resolve a
   sandbox's account or group — both live in the image, and `boot` may still have
   to create them — so it publishes exactly what `config.user` gave and leaves the

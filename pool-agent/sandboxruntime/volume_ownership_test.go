@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestPrepareSandboxVolumesLeavesSandboxHomeAlone(t *testing.T) {
 	}
 
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
-	if _, _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{}); err != nil {
+	if _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{}); err != nil {
 		t.Fatalf("prepareSandboxVolumes: %v", err)
 	}
 
@@ -88,7 +89,7 @@ func TestPrepareSandboxVolumesOwnsWhatItWrites(t *testing.T) {
 	}
 
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
-	if _, _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{}); err != nil {
+	if _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{}); err != nil {
 		t.Fatalf("prepareSandboxVolumes: %v", err)
 	}
 
@@ -113,7 +114,7 @@ func TestPrepareSandboxVolumesGivesASourcelessSandboxPrivateSourceData(t *testin
 	userUID, userGID := int64(uid), int64(gid)
 
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
-	mounts, _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{UID: &userUID, GID: &userGID})
+	mounts, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{UID: &userUID, GID: &userGID})
 	if err != nil {
 		t.Fatalf("prepareSandboxVolumes: %v", err)
 	}
@@ -147,4 +148,50 @@ func ownerOf(t *testing.T, path string) (uid, gid int) {
 		t.Fatalf("no stat information for %s", path)
 	}
 	return int(st.Uid), int(st.Gid)
+}
+
+// A source's checkout is the sandbox's: a create gives each source an empty
+// directory the first time and never touches what the sandbox has cloned into
+// it since — no chown, no git — and binds no origin beside it, since the
+// sandbox fetches its origin over the pool's git-origins route (ADR 0126 §4).
+func TestPrepareSandboxVolumesLeavesSourceCheckoutsToTheSandbox(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("giving a file away requires root")
+	}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a", paths: linuxPaths}
+	const sandboxID = "sandbox-1"
+	const uid, gid = 1000, 1000
+	userUID, userGID := int64(uid), int64(gid)
+	req := deliveryTestRequest()
+	req.SandboxId = sandboxID
+
+	checkout := runtime.sandboxSourcePath(sandboxID, "primary")
+	cloned := filepath.Join(checkout, ".git", "HEAD")
+	if err := os.MkdirAll(filepath.Dir(cloned), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cloned, []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Dir(cloned), cloned} {
+		if err := os.Lchown(path, uid, gid); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mounts, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{UID: &userUID, GID: &userGID})
+	if err != nil {
+		t.Fatalf("prepareSandboxVolumes: %v", err)
+	}
+	for _, path := range []string{filepath.Dir(cloned), cloned} {
+		if owner, group := ownerOf(t, path); owner != uid || group != gid {
+			t.Errorf("%s owned by %d:%d after a create, want it left at %d:%d", path, owner, group, uid, gid)
+		}
+	}
+	for _, m := range mounts {
+		if strings.HasPrefix(m.Target, "/.discobox/origins") {
+			t.Errorf("an origin is bound into the sandbox: %#v", m)
+		}
+	}
 }

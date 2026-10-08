@@ -110,7 +110,8 @@ redirects to `discobox-ai/discobox`) and `origin` is a Depot mirror. Releases,
 tags, CI, and the `gh` CLI all mean **upstream**. Push there.
 
 **Inside a discobox `origin` is not GitHub** — it is
-`/.discobox/origins/primary`, the sandbox's own mirror — and `gh` is not logged
+the pool's `https://git.discobox.internal/...` route to the host's repository —
+and `gh` is not logged
 in. There may be an `upstream`: the remote the host's branch tracks, which is
 the Depot mirror as readily as GitHub. Point it at GitHub whether or not it
 exists. `discobox-ai/discobox` is public, so `git fetch` and

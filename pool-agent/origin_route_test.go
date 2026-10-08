@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 // originRoute is a pool agent with two sandboxes: sandbox-1's primary is a
@@ -28,6 +29,7 @@ type originRoute struct {
 	developer        string
 	bare             string
 	poolKey          ed25519.PrivateKey
+	controlPlaneKey  string
 	signControlPlane func(projectID, poolID, sandboxID string, scopes ...string) string
 }
 
@@ -68,7 +70,7 @@ func newOriginRoute(t *testing.T) *originRoute {
 	}
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	return &originRoute{runtime: runtime, server: server, developer: developer, bare: bare, poolKey: poolKey, signControlPlane: signControlPlane}
+	return &originRoute{runtime: runtime, server: server, developer: developer, bare: bare, poolKey: poolKey, controlPlaneKey: controlPlaneKey, signControlPlane: signControlPlane}
 }
 
 func (o *originRoute) url(sandboxID, route, slug string) string {
@@ -210,5 +212,63 @@ func TestASandboxTokenCannotReachAnotherSandboxThroughAnEscapedPath(t *testing.T
 	}
 	if sandbox.Status != sandboxruntime.StatusStopped {
 		t.Fatalf("sandbox-1 is %s after another sandbox's request, want it left stopped", sandbox.Status)
+	}
+}
+
+// The origin listener the pool proxy forwards to serves a sandbox's fetch only
+// with that sandbox's own token and only when the proxy names the same
+// sandbox: a token copied out of one sandbox reads nothing from another, and
+// the control plane's tokens, which reach the same route on the agent's own
+// listener, are not taken here.
+func TestTheOriginListenerServesTheSandboxTheProxyNames(t *testing.T) {
+	o := newOriginRoute(t)
+	router, err := poolagentserver.NewOriginRouter(poolagentserver.Config{
+		Identity:              poolagentserver.Identity{ProjectID: "project-1", PoolID: "pool-1"},
+		Runtime:               o.runtime,
+		ControlPlanePublicKey: o.controlPlaneKey,
+		SandboxTokenKey:       o.poolKey.Public().(ed25519.PublicKey),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := httptest.NewServer(router)
+	t.Cleanup(listener.Close)
+	refs := listener.URL + "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/git-origins/primary.git/info/refs?service=git-upload-pack"
+	status := func(token, client string) int {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, refs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if client != "" {
+			req.Header.Set(proxy.OriginClientHeader, client)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	own := o.sandboxToken(t, "sandbox-1")
+	if got := status(own, "sandbox-1"); got != http.StatusOK {
+		t.Fatalf("sandbox-1's token, as sandbox-1 = %d, want 200", got)
+	}
+	for name, call := range map[string]struct {
+		token, client string
+		want          int
+	}{
+		"no proxy assertion":            {own, "", http.StatusForbidden},
+		"another sandbox's certificate": {own, "sandbox-2", http.StatusForbidden},
+		"another sandbox's token":       {o.sandboxToken(t, "sandbox-2"), "sandbox-2", http.StatusForbidden},
+		"no token":                      {"", "sandbox-1", http.StatusUnauthorized},
+		"a control-plane token":         {o.signControlPlane("project-1", "pool-1", "sandbox-1", poolagentserver.ScopeSandboxRead), "sandbox-1", http.StatusUnauthorized},
+	} {
+		if got := status(call.token, call.client); got != call.want {
+			t.Errorf("%s = %d, want %d", name, got, call.want)
+		}
 	}
 }

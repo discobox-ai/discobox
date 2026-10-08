@@ -1,6 +1,8 @@
 # 0058 — A push-delivered source has a pool-side origin the client re-pushes into
 
 - **Status**: Accepted
+- **§2's bind superseded by**: [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
+  §4 — the sandbox fetches the origin over Git HTTP, and nothing is bound.
 - **§8 superseded by**: [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md)
   — an attached client pushes on its own, so the launcher has no push key.
   §§1–7 stand.

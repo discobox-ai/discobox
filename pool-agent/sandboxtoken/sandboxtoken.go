@@ -55,6 +55,10 @@ type Claims struct {
 	PoolID    string
 	SandboxID string
 	Scopes    []string
+	// Expires is when a verified token stops being accepted, which is what
+	// tells its issuer when to renew it. Issue ignores it: the lifetime it is
+	// given decides.
+	Expires time.Time
 }
 
 // Issue signs claims for ttl. Every claim is required: a sandbox token always
@@ -129,6 +133,9 @@ func (v *Verifier) Verify(tokenText string) (Claims, error) {
 	}
 	if err := token.Get("scopes", &claims.Scopes); err != nil {
 		return Claims{}, fmt.Errorf("read scopes claim: %w", err)
+	}
+	if claims.Expires, err = token.GetExpiration(); err != nil {
+		return Claims{}, fmt.Errorf("read expiration claim: %w", err)
 	}
 	if err := validScopes(claims.Scopes); err != nil {
 		return Claims{}, err

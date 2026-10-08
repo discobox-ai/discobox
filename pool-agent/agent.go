@@ -400,6 +400,18 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		// An ed25519.PrivateKey's public half is always an ed25519.PublicKey.
 		sandboxTokenKey, _ = registration.PrivateKey.Public().(ed25519.PublicKey)
 	}
+	// The sandboxes' own fetches of their origins arrive through the pool
+	// proxy, on loopback (ADR 26-10-08-561). Without the pool's key there is
+	// no token to accept, so nothing listens.
+	var originListener net.Listener
+	if sandboxTokenKey != nil {
+		var listenConfig net.ListenConfig
+		originListener, err = listenConfig.Listen(ctx, "tcp", proxyagent.OriginsListenAddress)
+		if err != nil {
+			return fmt.Errorf("listen for sandbox origins on %s: %w", proxyagent.OriginsListenAddress, err)
+		}
+		defer func() { _ = originListener.Close() }()
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -411,6 +423,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		SandboxTokenKey:       sandboxTokenKey,
 		Listener:              listener,
+		OriginListener:        originListener,
 	})
 }
 

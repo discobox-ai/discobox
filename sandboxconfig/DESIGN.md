@@ -26,8 +26,8 @@ control plane's resolved harness config.
   checks it out when it clones it (ADR 0126 §4): `RefName`/`RefType`,
   `UpstreamURL`, and a dirty `Workspace` snapshot. `SourceMaterializedMarker`
   is the file inside a checkout's `.git` that says it has been materialized
-  once; whoever materializes a source — the pool today, the sandbox agent once
-  it is handed an origin — reads it first and writes it last. `Git` is authorship,
+  once; the sandbox agent, which materializes every source, reads it first and
+  writes it last (a pool wrote an empty one, before the sandbox cloned its own). `Git` is authorship,
   never run identity — a separate field precisely because `User` is shared with
   `exec create`, where a committer has no meaning
   ([ADR 0042](../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md));
