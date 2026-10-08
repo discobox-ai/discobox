@@ -193,11 +193,13 @@ func (r *Recorder) EnforceBudget(ctx context.Context) (BudgetResult, error) {
 				}
 				return nil
 			}
-			bytes += info.Size()
 			if r.spoolIsOpen(path) {
-				deferred += max(0, info.Size()-head)
+				size := openSpoolSize(root, path, info.Size())
+				bytes += size
+				deferred += max(0, size-head)
 				return nil
 			}
+			bytes += info.Size()
 			entries = append(entries, spoolEntry{
 				root:   root,
 				stream: tree.stream,
@@ -358,6 +360,23 @@ func (r *Recorder) truncateSpool(entry spoolEntry, head int64, marked bool) (int
 		return cut, markerSize, fmt.Errorf("restore truncated spool file time: %w", err)
 	}
 	return cut, markerSize, nil
+}
+
+// openSpoolSize is the size of a spool still being written, read through a
+// handle of its own. A directory listing's size can lag the writes: Windows
+// updates it only when the writer's handle closes, so a listing there sees an
+// open spool as empty. listed is the fallback if the spool cannot be opened.
+func openSpoolSize(root *os.Root, path string, listed int64) int64 {
+	file, err := root.Open(path)
+	if err != nil {
+		return listed
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return listed
+	}
+	return info.Size()
 }
 
 // streamCut is where a stream spool can be cut and stay parseable: the end of
