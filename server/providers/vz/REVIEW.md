@@ -22,9 +22,11 @@
 - **The `/Users` share is read-only, at the same path, from one list.** The host
   enforces read-only; a sandbox writing to a developer's files is not a feature
   behind a flag. The guest must mount it at `/Users` and nowhere else — the
-  origin bind the pool agent gives Docker is the raw host path, with no
-  host-mount prefix applied — and the driver's virtiofs shares, the engine's
-  host mounts, and the published `LocalSourceRoots` all come from `hostShares`.
+  pool agent reads a source's live origin through the engine's host mount of
+  the guest's `/Users`, at the host path under the host-mount prefix, and
+  serves it over its git-origins route; nothing is bound into a sandbox (ADR
+  0126 §4) — and the driver's virtiofs shares, the engine's host mounts, and
+  the published `LocalSourceRoots` all come from `hostShares`.
   Setting any of them separately is how a pool ends up claiming it can clone a
   path its guest cannot see.
 - **Adding the host mount needs the guest that has the mount point.** Docker

@@ -112,11 +112,12 @@ one of two ways (`server/internal/resources/sandboxes`, `sourceNeedsPush`): the
 client pushes the repository in, or the sandbox clones it from a path the pool
 can already reach. The provider publishes `/Users` as a `LocalSourceRoots`
 entry, so a checkout under it takes the clone path, and every spelling of that
-checkout downstream is the same string — the host path the client reported, the
-`/host/Users/...` bind the engine gives the pool-agent container, and the
-`/Users/...` bind the pool agent asks the guest's Docker daemon for when it
-mounts the origin into a sandbox. Mounting the share anywhere else would break
-the last of those, which never passes through the host-mount prefix.
+checkout downstream is the same string under one prefix — the host path the
+client reported, and the `/host/Users/...` path the pool agent opens it at
+through the engine's host mount of the guest's `/Users`, to serve it as the
+source's live origin over its git-origins route (ADR 0126 §4). Mounting the
+share anywhere else in the guest would break that: the prefix is the only
+translation applied.
 
 Read-only is the whole of the write policy. A sandbox clones from the
 developer's checkout and works in its own copy on the pool's data disk; nothing
@@ -125,9 +126,10 @@ in a sandbox may write to files on the Mac. The host enforces it — the guest's
 counts.
 
 The share stops at the pool. The guest and the pool-agent container see all of
-`/Users`; a sandbox sees only the one directory the pool agent binds into it as
-that source's origin. Widening the share therefore widens what the pool agent
-can read, not what a sandbox can, and the reason to keep it to `/Users` rather
+`/Users`; a sandbox sees none of it — nothing is bound into a sandbox, and it
+fetches only what the git-origins route serves of that source's `.git`: the
+allowed refs, fetch-only. Widening the share therefore widens what the pool
+agent can read, not what a sandbox can, and the reason to keep it to `/Users` rather
 than `/` is exactly that: a developer's files are the point, the rest of the
 Mac is not.
 
