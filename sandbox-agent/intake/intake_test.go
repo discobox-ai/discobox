@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"maps"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -743,31 +744,65 @@ func TestUnitActionsFollowTheFilesEachUnitReads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	names := func(actions []unitAction) map[string]bool {
-		out := map[string]bool{}
-		for _, action := range actions {
-			out[action.unit.name] = action.stop
+	verbs := func(changed ...string) map[string]unitVerb {
+		paths := make([]string, 0, len(changed))
+		for _, name := range changed {
+			paths = append(paths, filepath.Join(dir, name))
+		}
+		out := map[string]unitVerb{}
+		for _, action := range unitActions(dir, paths) {
+			out[action.unit.name] = action.verb
 		}
 		return out
 	}
-	// The trust store reads only the MITM CA.
-	if got := names(unitActions(dir, []string{filepath.Join(dir, mitmCAFile)})); len(got) != 1 || got["discobox-trust-ca.service"] {
-		t.Fatalf("MITM CA change: %v", got)
-	}
-	// A new keypair is every bridge's: present configs restart, absent ones stop.
-	got := names(unitActions(dir, []string{filepath.Join(dir, clientKeyFile)}))
-	want := map[string]bool{
-		"discobox-proxy-bridge.service":        false,
-		"discobox-buildkit-bridge.service":     true,
-		"discobox-proxy-bridge-docker.service": true,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("keypair change: %v, want %v", got, want)
-	}
-	for name, stop := range want {
-		if got[name] != stop {
-			t.Fatalf("keypair change: %v, want %v", got, want)
-		}
+	for _, tc := range []struct {
+		name    string
+		changed []string
+		want    map[string]unitVerb
+	}{
+		{
+			// The trust store reads only the MITM CA, once, when it runs.
+			name:    "MITM CA",
+			changed: []string{mitmCAFile},
+			want:    map[string]unitVerb{"discobox-trust-ca.service": verbRestart},
+		},
+		{
+			// A renewal: a running bridge takes the keypair itself, so a
+			// present config is only started — a no-op when it is up — and an
+			// absent one stops (#62).
+			name:    "renewed keypair",
+			changed: []string{clientCertFile, clientKeyFile},
+			want: map[string]unitVerb{
+				"discobox-proxy-bridge.service":        verbStart,
+				"discobox-buildkit-bridge.service":     verbStop,
+				"discobox-proxy-bridge-docker.service": verbStop,
+			},
+		},
+		{
+			name:    "new mTLS CA",
+			changed: []string{mtlsCAFile},
+			want: map[string]unitVerb{
+				"discobox-proxy-bridge.service":        verbStart,
+				"discobox-buildkit-bridge.service":     verbStop,
+				"discobox-proxy-bridge-docker.service": verbStop,
+			},
+		},
+		{
+			// A bridge reads its config only when it starts.
+			name:    "bridge config and keypair",
+			changed: []string{egressBridgeFile, clientKeyFile},
+			want: map[string]unitVerb{
+				"discobox-proxy-bridge.service":        verbRestart,
+				"discobox-buildkit-bridge.service":     verbStop,
+				"discobox-proxy-bridge-docker.service": verbStop,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := verbs(tc.changed...); !maps.Equal(got, tc.want) {
+				t.Fatalf("changed %v: %v, want %v", tc.changed, got, tc.want)
+			}
+		})
 	}
 	if got := unitActions(dir, []string{filepath.Join(t.TempDir(), mitmCAFile)}); len(got) != 0 {
 		t.Fatalf("a file outside the proxy directory touched units %+v", got)

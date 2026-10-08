@@ -60,7 +60,10 @@ type bridgeConfig struct {
 // the pool's runtime-config document, and again whenever the pool renews or
 // replaces it (ADR 26-10-08-127 §5) — so a relay built once at start would go
 // on presenting a certificate the pool has moved past. Each call checks the
-// files it was built from and rebuilds when any has changed.
+// files it was built from and rebuilds when any has changed. The Dialer reads
+// the material afresh on every handshake, but the HTTP client keeps
+// connections open between calls, each carrying the certificate it was opened
+// with; a new client is what makes the next call handshake again.
 type Relay struct {
 	path string
 
@@ -142,8 +145,9 @@ func load(path string) (*agentcreds.Client, materialStamp, error) {
 }
 
 // current is the client for the material as it is now. A rebuild that fails
-// — a delivery caught half way is not one, since the intake replaces whole
-// files — keeps the client that worked, and is tried again on the next call.
+// keeps the client that worked, and is tried again on the next call. One
+// failure is expected: the intake replaces the certificate and the key one
+// after the other, so a call between the two finds a pair that does not match.
 func (r *Relay) current() *agentcreds.Client {
 	r.mu.Lock()
 	defer r.mu.Unlock()
