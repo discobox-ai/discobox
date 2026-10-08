@@ -335,6 +335,8 @@ func (h *httpProxy) setupHandlers() {
 			return req, resp
 		}
 
+		dropHopByHopHeaders(req.Header)
+
 		if tunnel != nil {
 			// A request with no Host (HTTP/1.0) is for the tunnel's host; say
 			// so, or policy would judge it by an empty name.
@@ -1510,6 +1512,58 @@ func getUpgradeProtocol(req *http.Request, resp *http.Response) (string, bool) {
 		return "", false
 	}
 	return strings.ToLower(upgrade), true
+}
+
+// hopByHopHeaders are the request headers that describe the sandbox's
+// connection to this proxy rather than the request (RFC 9110 §7.6.1): the
+// list net/http/httputil.ReverseProxy drops.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// dropHopByHopHeaders removes the hop-by-hop headers from a request before
+// anything judges or forwards it, along with every header its Connection
+// names. Forwarded, they are wrong on any upstream, and over HTTP/2 a strict
+// one ends the connection: there TE may only be "trailers" (RFC 9113 §8.2.2),
+// and libwww-perl sends "TE: deflate,gzip;q=0.3" on every request.
+//
+// Two survive: "TE: trailers" when the client asked for trailers, which gRPC
+// needs, and a WebSocket handshake's "Connection: Upgrade" with its Upgrade,
+// which the upgraded-stream path needs. That is the one upgrade goproxy
+// forwards — it deletes Connection from any other — so another upgrade loses
+// both, rather than going out with a bare Upgrade that an HTTP/2 upstream
+// refuses as TE is refused.
+func dropHopByHopHeaders(header http.Header) {
+	upgrade := ""
+	if headerContainsToken(header, "Connection", "Upgrade") && headerContainsToken(header, "Upgrade", "websocket") {
+		upgrade = header.Get("Upgrade")
+	}
+	trailers := headerContainsToken(header, "Te", "trailers")
+	for _, value := range header.Values("Connection") {
+		for _, name := range strings.Split(value, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				header.Del(name)
+			}
+		}
+	}
+	for _, name := range hopByHopHeaders {
+		header.Del(name)
+	}
+	if trailers {
+		header.Set("Te", "trailers")
+	}
+	if upgrade != "" {
+		header.Set("Connection", "Upgrade")
+		header.Set("Upgrade", upgrade)
+	}
 }
 
 func headerContainsToken(header http.Header, key, token string) bool {
