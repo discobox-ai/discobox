@@ -307,8 +307,11 @@ func (h *httpProxy) trustTable() *trustTable {
 func (h *httpProxy) roundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
 	meta, _ := ctx.UserData.(*requestMeta)
 	transport := ctx.Proxy.Tr
-	if meta != nil && meta.trust != nil {
+	switch {
+	case meta != nil && meta.trust != nil:
 		transport = meta.trust.transport
+	case cleartextHTTP2(req):
+		transport = h.h2c
 	}
 	resp, err := transport.RoundTrip(req)
 	switch {

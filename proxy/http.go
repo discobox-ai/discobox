@@ -43,6 +43,9 @@ type httpProxy struct {
 	ids     map[string]clientIdentity
 	// trusts is the pins in force (ADR 0149), replaced whole by ApplyConfig.
 	trusts *trustTable
+	// h2c is the transport for requests the sandbox sent as cleartext HTTP/2;
+	// see cleartextHTTP2Transport.
+	h2c *http.Transport
 }
 
 type requestMeta struct {
@@ -99,6 +102,10 @@ type requestMeta struct {
 	// retryBody holds the request body when the request is eligible for an
 	// unauthorized retry, which is the only reason it is in memory at all.
 	retryBody []byte
+	// retryCopy is what a body of undeclared length leaves behind as it is
+	// sent, for a retry to resend once it has all been sent; see
+	// bufferRetryBody.
+	retryCopy *retainedBody
 	retryable bool
 	retried   bool
 	// trust is the client's pin for this request's endpoint, when it holds
@@ -197,6 +204,7 @@ type requestBodyStream struct {
 func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.Rewriter, swapper *secrets.Swapper, c *cache.Cache, recorder *audit.Recorder) *httpProxy {
 	p := goproxy.NewProxyHttpServer()
 	p.Verbose = false
+	enableHTTP2(p)
 	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
 	// Through the current swapper rather than the one held at construction:
 	// ApplyConfig replaces it, and a report belongs to whichever resolver is
@@ -314,6 +322,18 @@ func (h *httpProxy) setupHandlers() {
 		// Every request leaves through roundTrip, which picks the transport a
 		// pin calls for and answers a refused upstream certificate itself.
 		ctx.RoundTripper = goproxy.RoundTripperFunc(h.roundTrip)
+
+		// goproxy's reader hands on a request line it could make no URL of —
+		// "PRI *", an HTTP/2 preface it did not take for one — and everything
+		// below reads the URL. Such a line names nowhere to send anything.
+		if req.URL == nil {
+			meta.answered = true
+			span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusBadRequest))
+			span.End()
+			resp := goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusBadRequest, "bad request: the request line names no URL\n")
+			resp.Close = true
+			return req, resp
+		}
 
 		if tunnel != nil {
 			// A request with no Host (HTTP/1.0) is for the tunnel's host; say
@@ -826,11 +846,23 @@ func (h *httpProxy) recordRefusal(req *http.Request, meta *requestMeta, client c
 // rare recoverable failure for a common memory one.
 const unauthorizedRetryMaxBody = 8 << 20
 
-// bufferRetryBody reads a swapped request's body into memory so the request can
-// be sent a second time if the upstream rejects the credential. A body that
-// does not fit is left streaming and the request stops being retryable.
+// bufferRetryBody keeps a swapped request's body so the request can be sent a
+// second time if the upstream rejects the credential.
+//
+// A body of declared length is read into memory before the request goes out,
+// and one that does not fit is left streaming and stops the request being
+// retryable. A body of undeclared length — a chunked upload, or any HTTP/2
+// stream, gRPC's included — is copied as it is sent instead: it may be a
+// stream whose sender waits on the response before it sends more, and reading
+// it ahead would wait for an end that never comes. Such a request is
+// retryable only if all of it was sent, and fit, by the time the 401 came back.
 func (h *httpProxy) bufferRetryBody(req *http.Request, meta *requestMeta) {
 	if !meta.retryable || req.Body == nil || req.Body == http.NoBody {
+		return
+	}
+	if req.ContentLength < 0 {
+		meta.retryCopy = &retainedBody{source: req.Body}
+		req.Body = meta.retryCopy
 		return
 	}
 	buffered, err := io.ReadAll(io.LimitReader(req.Body, unauthorizedRetryMaxBody+1))
@@ -844,6 +876,44 @@ func (h *httpProxy) bufferRetryBody(req *http.Request, meta *requestMeta) {
 	_ = req.Body.Close()
 	meta.retryBody = buffered
 	req.Body = io.NopCloser(bytes.NewReader(buffered))
+}
+
+// retainedBody passes a body through while keeping a copy of what passed, up
+// to unauthorizedRetryMaxBody. The transport may still be sending it when the
+// response arrives, so what it holds is read under its lock.
+type retainedBody struct {
+	source io.ReadCloser
+	mu     sync.Mutex
+	kept   []byte
+	over   bool
+	whole  bool
+}
+
+func (b *retainedBody) Read(p []byte) (int, error) {
+	n, err := b.source.Read(p)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n > 0 && !b.over {
+		if len(b.kept)+n > unauthorizedRetryMaxBody {
+			b.over, b.kept = true, nil
+		} else {
+			b.kept = append(b.kept, p[:n]...)
+		}
+	}
+	if errors.Is(err, io.EOF) && !b.over {
+		b.whole = true
+	}
+	return n, err
+}
+
+func (b *retainedBody) Close() error { return b.source.Close() }
+
+// sent returns the whole body once all of it has passed and fit, and false
+// while any of it is still to come or it did not fit.
+func (b *retainedBody) sent() ([]byte, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.kept, b.whole
 }
 
 // joinedBody re-fronts an already partly-read body without taking ownership of
@@ -898,9 +968,16 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	if swapper == nil {
 		return nil
 	}
-	// A request that cannot be retried — a body too large to hold, a swap into
-	// the URL — is still a refused credential, and the one thing that can be
-	// said about it is that it was refused.
+	if meta.retryCopy != nil {
+		if body, whole := meta.retryCopy.sent(); whole {
+			meta.retryBody = body
+		} else {
+			meta.retryable = false
+		}
+	}
+	// A request that cannot be retried — a body too large to hold or not yet
+	// all sent, a swap into the URL — is still a refused credential, and the
+	// one thing that can be said about it is that it was refused.
 	if !meta.retryable || meta.preSwapHeader == nil {
 		h.reports.rejected(meta.client.ID, ctx.Req.Host, meta.swappedSentinels, secrets.OutcomeRejected)
 		return nil

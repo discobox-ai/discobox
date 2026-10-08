@@ -107,6 +107,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		return nil, err
 	}
 	s.http.setTrusts(trusts)
+	s.http.h2c = cleartextHTTP2Transport(s.http.proxy.Tr)
 	s.socks = newSOCKSProxy(s.filter, recorder)
 	return s, nil
 }

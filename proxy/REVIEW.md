@@ -75,6 +75,10 @@
   that differs from the one just rejected. Never retry the same value, never
   retry more than once, and never retry a request whose body was too large to
   hold — a retry must not become a way to duplicate or amplify upstream load.
+- Never read a request body of undeclared length ahead of sending it. Over
+  HTTP/2 every body is a stream, and a bidirectional gRPC call waits on the
+  response before it sends more; anything that needs the body whole copies it
+  as it passes, as the retry does.
 - A rejection is reported off the request path, never on it, and never more
   than once per `(client, sentinel, host)` per cooldown. Reporting state belongs
   to the proxy, not the `Swapper`: `ApplyConfig` builds a new `Swapper` every

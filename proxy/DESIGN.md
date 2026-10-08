@@ -196,6 +196,29 @@ can be recorded as two chunks when part of it came from the parser's buffer and
 the rest from the wire. Anything asserting on a spool reassembles the direction
 first.
 
+## HTTP/2 and gRPC
+
+HTTP/2 is end to end and still MITM'd. The sandbox's leg offers `h2` over ALPN
+with the MITM certificate, and takes cleartext h2c by its preface inside a
+plaintext tunnel; `goproxy` serves either with an embedded `http2.Server`
+whose streams each run through the same request and response handlers as an
+HTTP/1.1 request — policy, the secret swap, audit, and spooling see no
+difference. The origin's leg is the proxy's transport with
+`ForceAttemptHTTP2`, which negotiates `h2` over TLS (pinned-trust transports
+are clones of it). An h2c request for an `http://` origin goes out on a
+prior-knowledge h2c transport, since an h2c-only origin, insecure gRPC's, has
+no HTTP/1.1 to fall back to; it cannot go through an upstream proxy, which
+would receive the h2c itself, and is answered `502` saying so.
+
+gRPC needs three things from that path, each pinned by `TestGRPCThroughMITM`:
+response trailers forwarded after the body (`grpc-status`), `te: trailers`
+kept on the request, and full-duplex bodies — nothing on the request path may
+read a streamed body ahead of sending it (see the retry under
+[Sentinel Secret Swapping](#sentinel-secret-swapping)).
+
+Upgraded streams stay HTTP/1.1: WebSocket clients offer only `http/1.1` over
+ALPN, and RFC 8441 extended CONNECT is not served.
+
 ## Sentinel Secret Swapping
 
 Sandboxes are provisioned with **sentinels** — convincing fake credentials
@@ -343,6 +366,11 @@ Key properties:
   neither differs from what was rejected there is nothing new to send, and the
   401 is passed through. Only header swaps with a body small enough to hold
   (8 MiB) are retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
+  A body of declared length is held before the request goes out. One of
+  undeclared length (chunked, or any HTTP/2 stream) is copied as it is sent
+  instead, never read ahead: a bidirectional gRPC stream sends more only after
+  it hears back, so reading it to the end first would deadlock. It is
+  retryable only if all of it had been sent when the 401 arrived.
   The retry is a credential the first attempt did not carry, so it is
   authorized before it is sent, over `Match` of the request about to go — not
   over what the first attempt managed to resolve, since a sentinel that failed

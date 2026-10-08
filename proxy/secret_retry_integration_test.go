@@ -210,6 +210,56 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 	}
 }
 
+// A body of undeclared length is not read ahead of the request — it may be a
+// stream that waits on the response — but kept as it is sent, so a request the
+// upstream read whole before refusing is retried with that body intact.
+func TestHTTPProxyRetriesAStreamedBodyItSentWhole(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const stale = "sk-ant-oat01-STALEVALUE0000000000000000000000"
+	const rotated = "sk-ant-oat01-ROTATEDVALUE00000000000000000000"
+	const body = `{"model":"claude","messages":[]}`
+
+	var mu sync.Mutex
+	var sawBodies []string
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
+		received, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		sawBodies = append(sawBodies, string(received))
+		mu.Unlock()
+		if r.Header.Get("Authorization") != "Bearer "+rotated {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, "ok")
+	})
+	defer origin.Close()
+
+	client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{stale, rotated}})
+	// A reader of unknown size makes the client send the body chunked.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL, io.MultiReader(strings.NewReader(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	got, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (%s), want the retry's 200", resp.StatusCode, got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sawBodies) != 2 || sawBodies[0] != body || sawBodies[1] != body {
+		t.Fatalf("upstream saw bodies %q, want the original and a retry, each %q", sawBodies, body)
+	}
+}
+
 // Nothing new to send is not worth an upstream request: when re-resolving
 // returns the same credential that was just rejected, the 401 is the answer.
 func TestHTTPProxyDoesNotRetryWhenTheCredentialIsUnchanged(t *testing.T) {

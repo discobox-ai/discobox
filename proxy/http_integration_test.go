@@ -1440,7 +1440,7 @@ func newOrigin(handler http.HandlerFunc) *httptest.Server {
 }
 
 // newTLSOrigin is the same for an upstream the proxy has to MITM. HTTP/2 is off
-// because the proxy's MITM leg speaks HTTP/1.1.
+// so these tests exercise the HTTP/1.1 leg; grpc_integration_test.go covers h2.
 func newTLSOrigin(handler http.HandlerFunc) *httptest.Server {
 	origin := httptest.NewUnstartedServer(ignoringPortProbe(handler))
 	origin.EnableHTTP2 = false
@@ -2331,6 +2331,39 @@ func TestTunnelKeepsPlaintextHTTPToOtherPorts(t *testing.T) {
 	}
 	if seen := origin.requests(); len(seen) != 1 || seen[0].tls {
 		t.Fatalf("origin saw %+v, want one plaintext request", seen)
+	}
+}
+
+// A request line that names no URL — "PRI *", an HTTP/2 preface the proxy did
+// not take for one — is refused, and the proxy goes on serving: it once
+// dereferenced the missing URL in a goroutine with no recover, which took the
+// whole pool proxy down with it.
+func TestTunnelRefusesARequestWithNoURL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var origin tunnelOrigin
+	server := newOrigin(origin.handler)
+	defer server.Close()
+	originURL, _ := url.Parse(server.URL)
+	addr, material := startTunnelProxy(ctx, t, originURL, stubResolver{}, "")
+
+	conn := openTunnel(ctx, t, addr, material, "plain.example.test:8080")
+	x := tunnelExchange{conn: conn, reader: bufio.NewReader(conn)}
+	if status, _ := x.do(t, "PRI", "PRI * HTTP/2.0\r\n\r\nnot the rest of a preface\r\n\r\n"); status != http.StatusBadRequest {
+		t.Fatalf("PRI * in a plaintext tunnel = %d, want 400", status)
+	}
+
+	conn = openTunnel(ctx, t, addr, material, "plain.example.test:8080")
+	x = tunnelExchange{conn: conn, reader: bufio.NewReader(conn)}
+	if status, _ := x.do(t, http.MethodGet, "GET /x HTTP/1.1\r\nHost: plain.example.test:8080\r\n\r\n"); status != http.StatusOK {
+		t.Fatalf("GET after the refused request = %d, want 200", status)
+	}
+	if seen := origin.requests(); len(seen) != 1 || seen[0].path != "/x" {
+		t.Fatalf("origin saw %+v, want only GET /x", seen)
 	}
 }
 
