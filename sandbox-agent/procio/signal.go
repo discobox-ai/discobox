@@ -49,9 +49,15 @@ var posixDeliveries = map[string]Delivery{
 }
 
 // windowsDeliveries is how Windows carries each signal the protocol names. A
-// Windows process has no signals, so every one is mapped, each to the nearest
-// thing the platform has: ending the process, or suspending and resuming its
-// threads. None reaches the processes it started, which a process group would.
+// Windows process has no signals, so every one is mapped: the terminating ones
+// end the process, and a suspend or resume suspends or resumes its threads.
+// None reaches the processes it started, which a process group would.
+//
+// A console control event (CTRL_BREAK to a child in its own process group) is
+// nearer for INT, since a process can handle it -- but it needs a console the
+// child shares with the agent, and an exec here has none until the Windows
+// sandbox runtime gives it one. Until then the terminating signals end the
+// process, and the reason recorded says that something nearer exists.
 var windowsDeliveries = map[string]Delivery{
 	"INT":  {Delivered: "TerminateProcess", Reason: windowsEnds("SIGINT")},
 	"TERM": {Delivered: "TerminateProcess", Reason: windowsEnds("SIGTERM")},
@@ -63,7 +69,7 @@ var windowsDeliveries = map[string]Delivery{
 }
 
 func windowsEnds(signal string) string {
-	return "a Windows process has no " + signal + "; the process is ended instead, with no chance to handle it, and the processes it started are not"
+	return "a Windows process has no " + signal + ", and this exec has no console to send a control event to; the process is ended instead, with no chance to handle it, and the processes it started are not"
 }
 
 // deliveryFor is how table carries the signal name, given as a client sent it.
