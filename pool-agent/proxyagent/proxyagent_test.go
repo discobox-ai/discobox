@@ -91,9 +91,9 @@ func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
 // beside it because it is what a vsock or unix URL could not carry, and it is
 // the name the pool's one server certificate is issued for.
 func TestEnsureSandboxMaterialStagesPoolEndpoints(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestEnsureSandboxMaterialStagesPoolEndpoints(t *testing.T) {
 		"bridge-docker.json":   {"https://discobox-pool-proxy:17080", ""},
 		"bridge-buildkit.json": {"https://discobox-pool-proxy:17081", ""},
 	} {
-		data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, file)))
+		data, err := os.ReadFile(filepath.Join(material.MountSource, file))
 		if err != nil {
 			t.Fatal(err)
 		}

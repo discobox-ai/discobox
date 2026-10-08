@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/layout"
 	"github.com/moby/moby/client"
 )
 
 // emptyDaemon is a Docker daemon holding no sandbox containers at all.
-func emptyDaemon(t *testing.T) *DockerSandboxRuntime {
+func emptyDaemon(t *testing.T, root layout.Root) *DockerSandboxRuntime {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -33,7 +34,7 @@ func emptyDaemon(t *testing.T) *DockerSandboxRuntime {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, projectID: "proj_a", poolID: "pool_a"}
+	return &DockerSandboxRuntime{client: cli, root: root, projectID: "proj_a", poolID: "pool_a"}
 }
 
 // An explicit power instruction for a sandbox with no container answers why
@@ -42,8 +43,7 @@ func emptyDaemon(t *testing.T) *DockerSandboxRuntime {
 // archived. Only an id whose tree is not here is not found. Each answers at
 // once — the rebuild wait is the attach route's, not an instruction's.
 func TestPowerInstructionsTellWhyASandboxHasNoContainer(t *testing.T) {
-	withTestRoot(t)
-	runtime := emptyDaemon(t)
+	runtime := emptyDaemon(t, withTestRoot(t))
 	if err := os.MkdirAll(runtime.sandboxRoot("sbx_lost"), 0o755); err != nil {
 		t.Fatalf("create sandbox tree: %v", err)
 	}
