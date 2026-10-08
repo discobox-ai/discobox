@@ -33,6 +33,7 @@
     { "path": "/home/linuxbrew/.linuxbrew", "volume": "data", "excludeFromExport": true }
   ],
   "additionalGroups": ["brew", "docker", "kvm", "systemd-journal"],
+  "features": { "desktop": true, "docker": true },
   "harness": {
     "files": [
       {

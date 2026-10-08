@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // ImageAPIVersion is the contract version for the payload carried by
@@ -18,12 +20,26 @@ const ImageAPIVersion = "discobox.dev/image/v1"
 
 // ImageMetadata is the full non-secret payload a harness image declares: env
 // defaults, declarative volumes, supplementary OS groups the sandbox user
-// needs, and the harness contract. It is the sole carrier of image-owned
-// data, projected into ImageLabel; there is no separate baked-in file for it.
+// needs, what the sandbox's platform has, and the harness contract. An image
+// carries it in its labels (ImageLabel and the layers beside it); a non-Linux
+// template carries the same layers in its overlay's manifest file
+// (ReadManifestFile), and both resolve through ResolveImageLabels (ADR 0145 §3).
 type ImageMetadata struct {
-	APIVersion string            `json:"apiVersion"`
-	Env        map[string]string `json:"env,omitempty"`
-	Volumes    []Volume          `json:"volumes,omitempty"`
+	APIVersion string `json:"apiVersion"`
+	// Platform is the platform a manifest file's template runs. Only a manifest
+	// file declares it: an image's platform is what its registry publishes it
+	// for, which a label cannot know, so an image label naming one is refused
+	// at registration rather than read beside the registry's answer.
+	Platform platform.Platform `json:"platform,omitzero"`
+	// Account is the one account a sandbox without POSIX ids runs as, by its
+	// name alone (ADR 0145 §5). Shell is the login shell a terminal types its
+	// commands into (ADR 0027) on such a sandbox. On Linux both come from the
+	// account the sandbox resolves from its own passwd database (ADR 0025), so
+	// a Linux manifest declares neither.
+	Account string            `json:"account,omitempty"`
+	Shell   string            `json:"shell,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Volumes []Volume          `json:"volumes,omitempty"`
 	// AdditionalGroups names OS groups (already present in the image, e.g.
 	// "docker" from the docker-ce package) the sandbox user is added to at
 	// boot, alongside its own primary group. An image needs this when a
@@ -38,7 +54,72 @@ type ImageMetadata struct {
 	// GID diverges is membership in a group that owns nothing, which fails as
 	// a permission error rather than as anything louder.
 	AdditionalGroups []string `json:"additionalGroups,omitempty"`
+	Features         Features `json:"features,omitzero"`
 	Harness          *Image   `json:"harness,omitempty"`
+}
+
+// Features is what a sandbox's filesystem provides beyond running commands,
+// declared by the layer that ships it. A feature the manifest does not declare
+// is one the sandbox does not have: absence lives in the document rather than
+// in a probe at runtime (ADR 0145 §3), so what a platform lacks is read, never
+// discovered. Like every other field a later layer may add a feature and may
+// not take one away.
+type Features struct {
+	// Desktop is the socket-activated X display a sandbox's windows open on.
+	Desktop bool `json:"desktop,omitempty"`
+	// Docker is the nested Docker daemon, with the runc wrapper that injects
+	// the pool's trust into its containers (ADR 0020).
+	Docker bool `json:"docker,omitempty"`
+}
+
+// ValidateFor reports whether a resolved manifest describes something a
+// sandbox whose platform's OS is goos can be, as GOOS spells it. It judges the
+// merged result, never a layer: a layer is a fragment (ResolveImageLabels).
+//
+// A Linux sandbox is a container whose account comes from its own passwd
+// database, so it names neither an account nor a shell. Every other platform
+// is a VM template (ADR 0145): it names its one account and its shell, and
+// declares none of the Linux container mechanisms — volumes, supplementary
+// groups, the desktop, nested Docker — because a VM has nothing to bind them
+// to and no group to put an account in. Each is refused rather than ignored,
+// so a manifest never claims something its sandbox will not have.
+func (m ImageMetadata) ValidateFor(goos string) error {
+	account, shell := strings.TrimSpace(m.Account), strings.TrimSpace(m.Shell)
+	if sandboxuser.HasPOSIXIDs(goos) {
+		if account != "" {
+			return fmt.Errorf("a %s manifest names no account: the sandbox resolves its own from its passwd database", goos)
+		}
+		if shell != "" {
+			return fmt.Errorf("a %s manifest names no shell: it is the login shell of the account the sandbox resolves", goos)
+		}
+		return nil
+	}
+	if account == "" {
+		return fmt.Errorf("a %s manifest must name the one account its sandbox runs as", goos)
+	}
+	if strings.ContainsAny(account, " \t\r\n/\\") {
+		return fmt.Errorf("account %q is not an account name: a manifest names the account alone", m.Account)
+	}
+	if shell == "" {
+		return fmt.Errorf("a %s manifest must name the shell its terminals run", goos)
+	}
+	paths := sandboxpath.For(platform.Platform{OS: goos})
+	if !paths.IsAbs(shell) {
+		return fmt.Errorf("shell %q must be an absolute %s path", m.Shell, goos)
+	}
+	if len(m.Volumes) > 0 && !paths.Volumes() {
+		return fmt.Errorf("a %s manifest declares no volumes: they are a Linux container mechanism, and its sandbox has nothing to bind them to", goos)
+	}
+	if len(m.AdditionalGroups) > 0 {
+		return fmt.Errorf("a %s manifest declares no additionalGroups: its sandbox has one account and no POSIX groups", goos)
+	}
+	if m.Features.Desktop {
+		return fmt.Errorf("a %s manifest declares no desktop: the X desktop is the Linux base image's", goos)
+	}
+	if m.Features.Docker {
+		return fmt.Errorf("a %s manifest declares no nested Docker: it is a Linux container mechanism", goos)
+	}
+	return nil
 }
 
 // VolumeKind selects which primary volume backs a declared path.
