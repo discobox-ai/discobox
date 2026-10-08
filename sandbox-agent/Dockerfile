@@ -19,6 +19,7 @@ COPY api ./api
 COPY auditid ./auditid
 COPY declared ./declared
 COPY execstream ./execstream
+COPY gitbackend ./gitbackend
 COPY harness ./harness
 COPY judge ./judge
 COPY platform ./platform
@@ -716,6 +717,10 @@ LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
 # The agent above has the export mode, which the pool agent checks for before
 # it runs one (harness.TreeExportLabel, ADR 0129 §3).
 LABEL io.discobox.tree-export.v1=tar
+# It serves the sandbox's own repository, which the pool agent checks for
+# before it forwards the worktree route here (harness.WorktreeGitLabel,
+# ADR 0126 §4).
+LABEL io.discobox.worktree-git.v1=smart-http
 
 WORKDIR /workspace
 # No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent

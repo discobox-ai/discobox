@@ -41,10 +41,10 @@ func TestAutoStartPreservesStartupFailure(t *testing.T) {
 		{"archived sandbox", needsSandbox, sandboxruntime.ErrArchived, http.StatusConflict, false},
 		{"missing container", needsSandbox, sandboxruntime.ErrNoContainer, http.StatusConflict, false},
 		{"running sandbox", needsSandbox, nil, http.StatusNoContent, true},
-		// The pool serves git from the sandbox's files, so its commits can be
-		// fetched out of a sandbox that cannot start.
-		{"git from a sandbox that cannot start", servedByPool, bindMount, http.StatusNoContent, true},
-		{"git from an archived sandbox", servedByPool, sandboxruntime.ErrArchived, http.StatusConflict, false},
+		// The pool serves origins from its own files, so a source's origin can
+		// be fetched while its sandbox cannot start.
+		{"an origin of a sandbox that cannot start", servedByPool, bindMount, http.StatusNoContent, true},
+		{"an origin of an archived sandbox", servedByPool, sandboxruntime.ErrArchived, http.StatusConflict, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service := &sandboxService{runtime: &ensureRecorder{err: tc.err}}

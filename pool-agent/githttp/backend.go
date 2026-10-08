@@ -1,12 +1,11 @@
-// Package githttp serves git's smart HTTP protocol for a sandbox's
-// repositories: it parses the "<id>.git/..." route suffix and runs
-// git http-backend as a CGI, as the repository's owner, in an environment it
-// builds from scratch. A live origin — the developer's own repository — is
-// served fetch-only, with only an allow-list of refs advertised.
+// Package githttp serves a source's origin over git's smart HTTP protocol, as
+// the repository's owner, through gitbackend. A live origin — the developer's
+// own repository — is served fetch-only, with only an allow-list of refs
+// advertised. The sandbox's own worktree is not served here: sandbox-agent
+// serves it, and the pool forwards to it (ADR 0126 §4).
 package githttp
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -17,42 +16,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/gitbackend"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 )
-
-func ParseRepositoryPath(path string) (repositoryID, suffix string, ok bool) {
-	repositoryID, suffix, ok = strings.Cut(path, ".git")
-	if !ok || !ValidRepositoryID(repositoryID) {
-		return "", "", false
-	}
-	if suffix != "" && !strings.HasPrefix(suffix, "/") {
-		return "", "", false
-	}
-	if suffix == "" {
-		suffix = "/"
-	}
-	return repositoryID, suffix, true
-}
-
-func ValidRepositoryID(value string) bool {
-	if value == "" || len(value) > 63 {
-		return false
-	}
-	for i, r := range value {
-		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
-		if !valid {
-			return false
-		}
-		if (i == 0 || i == len(value)-1) && r == '-' {
-			return false
-		}
-	}
-	return true
-}
 
 // Repository is what one request is served from: a directory git
 // http-backend can open, the identity it runs as, and whether it is a live
@@ -98,9 +67,16 @@ type Repository struct {
 //     into the developer's own repository, and work leaves a sandbox through
 //     apply and the worktree route instead.
 func ServeBackend(w http.ResponseWriter, r *http.Request, repo Repository, suffix string) {
-	args := []string{
-		"-c", "http.receivepack=true",
-		"-c", "receive.denyCurrentBranch=updateInstead",
+	backend := gitbackend.Backend{
+		Root: repo.Path,
+		// A bare origin takes the client's pushes (ADR 0058 §3).
+		Config:      []string{"-c", "http.receivepack=true"},
+		RemoteUser:  "pool-agent",
+		SysProcAttr: execidentity.SysProcAttr(repo.UID, repo.GID),
+		// Through childproc, so the pool agent's reaper leaves this backend's
+		// exit status to gitbackend's Wait rather than collecting it first
+		// (ADR 0087).
+		Start: func(cmd *exec.Cmd) (gitbackend.Process, error) { return childproc.Start(cmd) },
 	}
 	if repo.Live {
 		if !uploadPackRequest(r, suffix) {
@@ -113,53 +89,11 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repo Repository, suffi
 			return
 		}
 		defer func() { _ = os.RemoveAll(snapshot) }()
-		repo.Path = snapshot
-		args = liveOriginArgs()
+		backend.Root = snapshot
+		backend.Config = liveOriginArgs()
+		backend.FixedProtocol = true
 	}
-	//nolint:gosec // The executable is fixed and every argument is either fixed or a validated ref name; request data is passed through CGI env/stdin.
-	cmd := exec.CommandContext(r.Context(), "git", append(args, "http-backend")...)
-	cmd.Env = backendEnv(r, repo, suffix)
-	cmd.Stdin = r.Body
-	cmd.SysProcAttr = execidentity.SysProcAttr(repo.UID, repo.GID)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Through childproc, so the pool agent's reaper leaves this backend's exit
-	// status to the Wait below rather than collecting it first (ADR 0087).
-	child, err := childproc.Start(cmd)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	status, err := writeCGIResponse(w, stdout)
-	if err != nil {
-		_ = child.Wait()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := child.Wait(); err != nil && !errors.Is(r.Context().Err(), context.Canceled) {
-		data, _ := io.ReadAll(io.LimitReader(stderr, 4096))
-		if status == 0 {
-			http.Error(w, strings.TrimSpace(string(data)), http.StatusInternalServerError)
-		}
-	}
-}
-
-// IsReceivePack reports whether r is a push: the advertisement a push starts
-// with, or the pack it sends. Every service parameter counts, not the first:
-// http-backend reads the last one, so a request naming both must not pass
-// for a fetch here.
-func IsReceivePack(r *http.Request) bool {
-	return slices.Contains(r.URL.Query()["service"], "git-receive-pack") ||
-		(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack"))
+	gitbackend.Serve(w, r, backend, suffix)
 }
 
 // uploadPackRequest reports whether r is one of the two requests a smart fetch
@@ -432,7 +366,7 @@ func headBranch(ctx context.Context, repo Repository) (string, error) {
 func repositoryGit(ctx context.Context, repo Repository, args ...string) (string, error) {
 	//nolint:gosec // The executable is fixed and the arguments are fixed or validated ref names.
 	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = append(baseEnv(), "GIT_DIR="+repo.Path)
+	cmd.Env = append(gitbackend.BaseEnv(), "GIT_DIR="+repo.Path)
 	cmd.SysProcAttr = execidentity.SysProcAttr(repo.UID, repo.GID)
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -455,115 +389,3 @@ type repositoryGitError struct {
 
 func (e *repositoryGitError) Error() string { return fmt.Sprintf("%v: %s", e.err, e.stderr) }
 func (e *repositoryGitError) Unwrap() error { return e.err }
-
-// backendEnv is the environment git http-backend runs in. It is built from
-// nothing rather than inherited from the pool agent, because of what sits on
-// either side of this process: the agent runs as root, while the backend runs
-// as the repository's owner (see ServeBackend) over a worktree the sandbox
-// itself can write.
-//
-// The caller's identity comes first. Every path git resolves from it —
-// $HOME/.gitconfig, the XDG attributes file — names a user this process is no
-// longer, so git reads root's configuration where the sandbox user is allowed
-// to and warns where it is not, muxing that warning into the client's sideband:
-//
-//	remote: warning: unable to access '/root/.config/git/attributes': Permission denied
-//
-// The repository comes second. Its own .git/config names programs git runs on
-// the pool host — core.hooksPath, uploadpack.packObjectsHook — and repo-local
-// configuration is read whatever the switches below say, so the sandbox picks
-// what this environment is handed to. Nothing the agent was started with — the
-// pool bootstrap token among it — belongs there. PATH is kept, because git
-// resolves what it execs through it, and nothing else is.
-//
-// So the only GIT_* variables the backend sees are the ones set here. An
-// inherited one is never harmless: GIT_NAMESPACE empties the ref
-// advertisement, GIT_CONFIG_COUNT with its GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_*
-// pairs injects the very configuration GIT_CONFIG_NOSYSTEM and
-// GIT_CONFIG_GLOBAL are switching off, and GIT_ALTERNATE_OBJECT_DIRECTORIES
-// lends the repository objects it does not have.
-func backendEnv(r *http.Request, repo Repository, suffix string) []string {
-	env := append(baseEnv(),
-		"GIT_PROJECT_ROOT="+repo.Path,
-		"GIT_HTTP_EXPORT_ALL=1",
-		"PATH_INFO="+suffix,
-		"REQUEST_METHOD="+r.Method,
-		"QUERY_STRING="+r.URL.RawQuery,
-		"REMOTE_USER=pool-agent",
-	)
-	// Which protocol version the client speaks is a request header, and mapping
-	// it onto GIT_PROTOCOL is the HTTP server's job — http-backend answers v0 to
-	// anyone who does not, advertising every ref on every request and negotiating
-	// over more rounds than v2 needs. It belongs to the client and not to this
-	// host — one more thing this environment must not pick up from the agent.
-	// A live repository is the exception, answered in v0 whatever the client
-	// asked (see ServeBackend).
-	if protocol := r.Header.Get("Git-Protocol"); protocol != "" && !repo.Live {
-		env = append(env, "GIT_PROTOCOL="+protocol)
-	}
-	if contentType := r.Header.Get("Content-Type"); contentType != "" {
-		env = append(env, "CONTENT_TYPE="+contentType)
-	}
-	// git compresses an upload-pack request once negotiation grows past a round
-	// or two, and http-backend only inflates the body when CGI tells it the
-	// request is encoded. Without this the backend reads gzip bytes as pkt-line,
-	// answers nothing, and the client reports "the remote end hung up
-	// unexpectedly" — a fetch that fails only once the negotiation is large
-	// enough, which is why small ones have always worked.
-	if encoding := r.Header.Get("Content-Encoding"); encoding != "" {
-		env = append(env, "HTTP_CONTENT_ENCODING="+encoding)
-	}
-	if r.ContentLength >= 0 {
-		env = append(env, "CONTENT_LENGTH="+strconv.FormatInt(r.ContentLength, 10))
-	}
-	return env
-}
-
-// baseEnv is the part of backendEnv every git this package runs gets: PATH,
-// and the switches that keep the system's and the agent's own configuration
-// out of it.
-func baseEnv() []string {
-	env := make([]string, 0, 16)
-	if path, ok := os.LookupEnv("PATH"); ok {
-		env = append(env, "PATH="+path)
-	}
-	return append(env,
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_ATTR_NOSYSTEM=1",
-	)
-}
-
-func writeCGIResponse(w http.ResponseWriter, stdout io.Reader) (int, error) {
-	reader := bufio.NewReader(stdout)
-	status := http.StatusOK
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return 0, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		name, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return 0, fmt.Errorf("invalid git http-backend header %q", line)
-		}
-		name = strings.TrimSpace(name)
-		value = strings.TrimSpace(value)
-		if strings.EqualFold(name, "Status") {
-			fields := strings.Fields(value)
-			if len(fields) > 0 {
-				if parsed, err := strconv.Atoi(fields[0]); err == nil {
-					status = parsed
-				}
-			}
-			continue
-		}
-		w.Header().Add(name, value)
-	}
-	w.WriteHeader(status)
-	_, err := io.Copy(w, reader)
-	return status, err
-}

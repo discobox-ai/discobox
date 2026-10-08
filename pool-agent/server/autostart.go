@@ -42,9 +42,11 @@ import (
 // containerless sandboxes refuse every route. Otherwise a route that does
 // answers a failed start with that failure: proxying anyway would hide it
 // behind a missing IP or connection error, losing what the caller can act on,
-// such as a missing bind mount. The git routes do not — the pool host serves
-// them from the sandbox's files — so a sandbox that cannot start still hands
-// over its commits, which is how its work is recovered.
+// such as a missing bind mount, and with what to do about it. The worktree's
+// git route is one of them: the repository is the sandbox's own, served by its
+// agent (ADR 0126 §4), so a sandbox that cannot start cannot hand over its
+// commits until it is repaired. The origin route does not — the pool serves
+// it from its own origins.
 func (s *sandboxService) autoStart(wait containerWait, need sandboxNeed, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sandboxID := chi.URLParam(r, "sandboxId")
@@ -57,11 +59,14 @@ func (s *sandboxService) autoStart(wait containerWait, need sandboxNeed, next ht
 					return
 				}
 				if need == needsSandbox {
-					status := http.StatusInternalServerError
 					if errors.Is(err, sandboxruntime.ErrNotFound) {
-						status = http.StatusNotFound
+						http.Error(w, fmt.Sprintf("start sandbox %q: %v", sandboxID, err), http.StatusNotFound)
+						return
 					}
-					http.Error(w, fmt.Sprintf("start sandbox %q: %v", sandboxID, err), status)
+					// git prints a refused request's plain-text body to the
+					// person fetching, so this is also what `discobox apply`
+					// says when the sandbox holding the work will not start.
+					http.Error(w, fmt.Sprintf("start sandbox %q: %v; nothing in it can be reached until it starts, so if this persists run `discobox admin box repair %s`", sandboxID, err, sandboxID), http.StatusInternalServerError)
 					return
 				}
 			}

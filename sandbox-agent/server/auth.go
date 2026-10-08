@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"aidanwoods.dev/go-paseto"
+
+	"github.com/discobox-ai/discobox/gitbackend"
 )
 
 const (
@@ -38,6 +40,11 @@ const (
 	// is told to be is not something its users may tell it, so no wildcard
 	// grants it and a token has to name it.
 	ScopeRuntimeConfig = "runtime-config"
+	// ScopeSandboxRead and ScopeSandboxWrite gate the sandbox's own Git
+	// repositories, as the pool's worktree route always has: a fetch reads,
+	// a push writes (ADR 0126 §4).
+	ScopeSandboxRead  = "sandbox:read"
+	ScopeSandboxWrite = "sandbox:write"
 )
 
 // poolOnlyScopes are the scopes a "*" token does not carry.
@@ -59,6 +66,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			return true
 		case "*":
 			if !poolOnlyScopes[scope] {
+				return true
+			}
+		case "sandbox:*":
+			if strings.HasPrefix(scope, "sandbox:") {
 				return true
 			}
 		case "terminal:*":
@@ -176,7 +187,12 @@ func (a *SignedTokenAuthenticator) authorizeRequest(r *http.Request, claims Sign
 	if claims.PoolID != "" && claims.PoolID != a.identity.PoolID {
 		return errors.New("sandbox-agent token worker does not match this sandbox")
 	}
-	projectID, sandboxID, ok := routeIdentity(r.URL.Path)
+	// Read from the escaped path, which is what the router matches and the
+	// handlers read their ids from. The decoded path is a different string once
+	// a segment carries an escaped slash: ".../sandboxes/s%2Fx/git-repositories/..."
+	// decodes to a path whose sandbox is "s" and whose next segment is not the
+	// route the router serves.
+	projectID, sandboxID, ok := routeIdentity(r.URL.EscapedPath())
 	if !ok {
 		return errors.New("sandbox-agent route identity not found")
 	}
@@ -198,6 +214,17 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
+	// The Git route is told by its route segment, before any suffix test: a
+	// repository is named by its source's slug, and a slug like "execs" or
+	// "status" would otherwise be gated as something it is not. The segment is
+	// read from the escaped path the router matched, so no escaped slash can
+	// make this miss a request the router hands the Git route.
+	if gitRepositoryRoute(r.URL.EscapedPath()) {
+		if gitbackend.IsReceivePack(r) {
+			return ScopeSandboxWrite
+		}
+		return ScopeSandboxRead
+	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.
 	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status") {
@@ -271,6 +298,13 @@ func requiredRequestScope(r *http.Request) string {
 		return ""
 	}
 	return ""
+}
+
+// gitRepositoryRoute reports whether path is under
+// /api/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/.
+func gitRepositoryRoute(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) > 6 && segments[5] == "git-repositories"
 }
 
 func bearerToken(header string) (string, bool) {

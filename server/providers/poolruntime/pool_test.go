@@ -426,6 +426,15 @@ func TestPoolProviderAcquireHTTPClientReconcilesPoolAndRetries(t *testing.T) {
 	if claims := manager.agentTokenClaims[0]; claims.ProjectID != "project-1" || claims.PoolID != "pool-1" || claims.SandboxID != "sandbox-1" || !reflect.DeepEqual(claims.Scopes, []string{poolagentauth.ScopeSandboxRead}) {
 		t.Fatalf("agent token claims = %#v", claims)
 	}
+	// The worktree's Git route is served by the sandbox agent (ADR 0126 §4),
+	// so a sandbox:read lease carries a sandbox-agent token of the same scope
+	// for the pool to forward.
+	if token, err := lease.ForwardAuthorizationToken(context.Background()); err != nil || token != "sandbox-agent-token" {
+		t.Fatalf("lease forwarded token = %q, %v; want the sandbox-agent token", token, err)
+	}
+	if claims := manager.sandboxAgentTokenClaims; len(claims) != 1 || !reflect.DeepEqual(claims[0].Scopes, []string{poolagentauth.ScopeSandboxRead}) {
+		t.Fatalf("sandbox-agent token claims = %#v, want one for sandbox:read", claims)
+	}
 }
 
 // A pool still reads ready while its container is being replaced, so a create

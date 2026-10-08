@@ -71,7 +71,9 @@ Current proxy routes:
   is exposed as `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*`
   and forwards to the pool-agent git route
   `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`.
-  It serves the sandbox's own worktree repository.
+  It serves the sandbox's own worktree repository, which the sandbox agent
+  serves and the pool forwards to (ADR 0126 §4), so the lease for it also
+  carries a sandbox-agent token of the same scope for the pool to forward.
 - `/projects/{projectId}/sandboxes/{sandboxId}/git-origins/{slug}.git...` forwards
   the same way to the pool-agent `git-origins` route, and serves a
   push-delivered source's origin repository instead — a different repository, on
