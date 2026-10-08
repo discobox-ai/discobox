@@ -1,6 +1,6 @@
 # 26-10-02-411 — `wire` joins the root module, because a sandbox dials VSOCK
 
-- **Status**: Proposed (would supersede [0052](0052-iroh-is-an-optional-endpoint-scheme.md)
+- **Status**: Accepted (supersedes [0052](0052-iroh-is-an-optional-endpoint-scheme.md)
   §2's placement of `wire` and `vsock` in the pool-agent module)
 - **Date**: 2026-10-02
 - **Relates to**: [ADR 0144](0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md)
