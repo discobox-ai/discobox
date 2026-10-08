@@ -15,6 +15,14 @@ func terminateProcessGroup(cmd *exec.Cmd) {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 }
 
+// processHandle is nothing on a POSIX platform: a signal goes to the process
+// group by its id, and the caller's own Wait is what reaps it.
+type processHandle struct{}
+
+func holdProcess(*os.Process) (processHandle, error) { return processHandle{}, nil }
+
+func (processHandle) release() {}
+
 // posixSignals are the signals posixDeliveries delivers, by name.
 var posixSignals = map[string]syscall.Signal{
 	"SIGINT":  syscall.SIGINT,
@@ -30,7 +38,7 @@ var posixSignals = map[string]syscall.Signal{
 // posixDeliveries maps it. The group is the process's own: every process here
 // starts in a new session, so signaling the group reaches the command and
 // anything it spawned.
-func signalProcessGroup(cmd *exec.Cmd, name string) (Delivery, error) {
+func signalProcessGroup(cmd *exec.Cmd, _ processHandle, name string) (Delivery, error) {
 	delivery := deliveryFor(posixDeliveries, name)
 	sig, ok := posixSignals[delivery.Delivered]
 	if !ok || cmd == nil || cmd.Process == nil {

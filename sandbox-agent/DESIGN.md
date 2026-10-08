@@ -785,10 +785,14 @@ development images without a registry.
   the shim records an `exec.signal.mapped` event in the exec's audit trail
   saying what was delivered and why (`exec.signal.undelivered` for a name
   nothing carries), through its own `ShimConfig.Events` connection to the
-  database (ADR 0145 §4). Windows has no signals: the terminating ones end the
-  process (`TerminateProcess`), and `TSTP`/`CONT` suspend and resume its
-  threads (`NtSuspendProcess`/`NtResumeProcess`), none of it reaching the
-  processes it started. On Linux and darwin signals act on the exec's process
+  database (ADR 0145 §4). A delivery is recorded as made only once the platform
+  call succeeded; one that failed is `exec.signal.failed`, with the error.
+  Windows has no signals: the terminating ones end the process
+  (`TerminateProcess`), and `TSTP`/`CONT` suspend and resume its threads
+  (`NtSuspendProcess`/`NtResumeProcess`), none of it reaching the processes it
+  started. Those calls go through a handle `procio.Start` opens before anyone
+  can `Wait` and holds until `Close`, never a PID reopened later, which Windows
+  may by then have given to another process. On Linux and darwin signals act on the exec's process
   group (`kill(-pgid)`), which is its own session because every exec starts
   with `Setsid`. That also means the group is
   permanently *orphaned* — no member has a parent in the same session — and the

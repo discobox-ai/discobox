@@ -513,8 +513,8 @@ func (r *shimRuntime) handleAttachFrame(next frame.Frame) error {
 			return fmt.Errorf("exec has not started")
 		}
 		delivery, err := proc.Signal(string(next.Payload))
-		if delivery.Mapped() {
-			r.recordSignal(delivery)
+		if delivery.Mapped() || err != nil {
+			r.recordSignal(delivery, err)
 		}
 		return err
 	case frame.CloseInput:
@@ -531,19 +531,33 @@ func (r *shimRuntime) handleAttachFrame(next frame.Frame) error {
 const signalEventTimeout = 5 * time.Second
 
 // recordSignal says in the exec's audit trail that a signal a client sent was
-// carried by something other than itself, or by nothing, and why. Without it
-// an interrupt that ended a Windows process outright, or a request the platform
-// could not carry at all, would look like the exec simply doing that on its own
-// (ADR 0145 §4). Failing to record is logged, not returned: whatever the
-// platform could do has been done, and an attach must not fail over its audit
-// row.
-func (r *shimRuntime) recordSignal(delivery procio.Delivery) {
+// carried by something other than itself, or by nothing, or that the platform
+// call carrying it failed -- and why. Without it an interrupt that ended a
+// Windows process outright, or a request the platform could not carry at all,
+// would look like the exec simply doing that on its own (ADR 0145 §4).
+//
+// A delivery is only recorded as made once the platform call succeeded: the
+// Delivery names the mechanism chosen before it ran, so a failed kill or
+// NtSuspendProcess is recorded as exec.signal.failed with its error, never as
+// delivered. Failing to record is logged, not returned: whatever the platform
+// could do has been done, and an attach must not fail over its audit row.
+func (r *shimRuntime) recordSignal(delivery procio.Delivery, deliveryErr error) {
 	if r.cfg.Events == nil {
 		return
 	}
+	details := map[string]any{
+		"signal":    delivery.Requested,
+		"delivered": delivery.Delivered,
+		"reason":    delivery.Reason,
+	}
 	message := "signal " + delivery.Requested + " delivered as " + delivery.Delivered
 	typ := "exec.signal.mapped"
-	if delivery.Delivered == "" {
+	switch {
+	case deliveryErr != nil:
+		message = "signal " + delivery.Requested + " failed as " + delivery.Delivered + " (" + deliveryErr.Error() + ")"
+		typ = "exec.signal.failed"
+		details["error"] = deliveryErr.Error()
+	case delivery.Delivered == "":
 		message = "signal " + delivery.Requested + " not delivered"
 		typ = "exec.signal.undelivered"
 	}
@@ -555,11 +569,7 @@ func (r *shimRuntime) recordSignal(delivery procio.Delivery) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), signalEventTimeout)
 	defer cancel()
-	if err := r.cfg.Events.RecordExecEvent(ctx, r.cfg.ExecID, typ, message, map[string]any{
-		"signal":    delivery.Requested,
-		"delivered": delivery.Delivered,
-		"reason":    delivery.Reason,
-	}); err != nil {
+	if err := r.cfg.Events.RecordExecEvent(ctx, r.cfg.ExecID, typ, message, details); err != nil {
 		slog.Error("record exec signal", "execID", r.cfg.ExecID, "signal", delivery.Requested, "error", err)
 	}
 }
