@@ -2,15 +2,24 @@ package sandboxruntime
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +29,7 @@ import (
 
 	"github.com/discobox-ai/discobox/layout"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
@@ -126,6 +136,85 @@ func TestDecideRuntimeConfigRevisesOnlyOnChange(t *testing.T) {
 	}
 	if strings.Contains(string(record), "PRIVATE KEY") {
 		t.Fatal("the pool's record carries the sandbox's private key")
+	}
+}
+
+// A running sandbox's certificate is renewed before it expires (ADR 0126 §7):
+// every status poll decides the document again, and a certificate inside its
+// renewal window is reissued there, which makes a new revision the poll then
+// delivers. Once renewed, deciding again is free.
+func TestDecideRuntimeConfigRenewsACertificateDueForRenewal(t *testing.T) {
+	r := runtimeConfigTestRuntime(t)
+	first, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := r.decideRuntimeConfig("sbx_1", nil); err != nil || again.Proxy.ClientCert != first.Proxy.ClientCert {
+		t.Fatalf("a certificate far from expiry was reissued (err %v)", err)
+	}
+
+	// Stand the sandbox's certificate ten days from expiry, inside the window.
+	bundle, err := proxyagent.PrepareBundle(r.root, r.projectID, r.poolID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(bundle.MTLSCA.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: "sbx_1"},
+		NotBefore:    time.Now().Add(-355 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(10 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}, ca, &key.PublicKey, bundle.MTLSCA.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientDir := filepath.Join(bundle.Dir, "clients", "sbx_1")
+	if err := os.WriteFile(filepath.Join(clientDir, "client.crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clientDir, "client.key"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	renewed, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.Revision != first.Revision+1 {
+		t.Fatalf("renewal decided revision %d, want %d", renewed.Revision, first.Revision+1)
+	}
+	block, _ := pem.Decode([]byte(renewed.Proxy.ClientCert))
+	if block == nil {
+		t.Fatal("the renewed document carries no certificate")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !leaf.NotAfter.After(time.Now().Add(300 * 24 * time.Hour)) {
+		t.Fatalf("renewed certificate runs to %s, want about a year out", leaf.NotAfter)
+	}
+	if _, err := tls.X509KeyPair([]byte(renewed.Proxy.ClientCert), []byte(renewed.Proxy.ClientKey)); err != nil {
+		t.Fatalf("the renewed document's keypair does not match: %v", err)
+	}
+	if err := renewed.Validate(linuxPaths); err != nil {
+		t.Fatalf("the renewed document is not one the sandbox would apply: %v", err)
+	}
+	if again, err := r.decideRuntimeConfig("sbx_1", nil); err != nil || again.Revision != renewed.Revision {
+		t.Fatalf("deciding after the renewal = rev %d, err %v; want %d", again.Revision, err, renewed.Revision)
 	}
 }
 

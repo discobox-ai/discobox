@@ -315,6 +315,12 @@ flowchart LR
   ends in its own delivery or in no sandbox at all). The pool converges on what
   the sandbox says it applied, never on having sent it, so a transient failure
   is logged and repaired at the next poll rather than failing anything.
+- **Certificate renewal** is a decision like any other: deciding refreshes the
+  proxy material, and `EnsureSandboxMaterial` reissues a client certificate
+  within 30 days of its expiry, so the next poll's convergence delivers it as a
+  new revision to a sandbox that is already running. The sandbox's bridges take
+  it from their next connection without restarting
+  ([proxy: Renewal while a sandbox runs](../proxy/DESIGN.md#renewal-while-a-sandbox-runs)).
 - Deciding issues material and writes the record, so it is refused for a
   sandbox whose tree is gone or archived: a late poll or secret update cannot
   put back what a delete took away. A secret update holds the power lock, and
@@ -1263,6 +1269,14 @@ the identity — its common name is the sandbox ID — so a sandbox holds no
 control-plane credential and names no sandbox but itself. See
 [ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
 and [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-protocol.md).
+
+That certificate is renewed while the sandbox runs, through the runtime-config
+document ([Sandbox Runtime Config](#sandbox-runtime-config)). The relay
+rebuilds its client when the material changes, so its next call opens a new
+connection presenting the renewed certificate. The broker needs nothing for
+it: any certificate the mTLS CA signed, with the sandbox's ID as its common
+name, is that sandbox. An expired one is refused in the sandbox before it is
+sent ([proxy: Renewal while a sandbox runs](../proxy/DESIGN.md#renewal-while-a-sandbox-runs)).
 
 ```mermaid
 flowchart LR
