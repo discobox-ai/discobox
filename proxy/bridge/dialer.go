@@ -3,10 +3,8 @@ package bridge
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"net"
-	"os"
 
 	"github.com/discobox-ai/discobox/wire"
 )
@@ -32,13 +30,15 @@ type DialConfig struct {
 // Dialer reaches a pool service over mTLS, through whatever transport its URL
 // names. The client certificate's common name is the sandbox's identity at the
 // pool, so the service on the other end is the same whatever carried the bytes
-// (ADR 0144 §4).
+// (ADR 0144 §4). Each handshake reads the material as it is then (Material), so
+// a certificate the pool renews is presented without the Dialer being rebuilt.
 type Dialer struct {
-	url       string
-	serverURL string
-	address   string
-	dial      func(context.Context, string, string) (net.Conn, error)
-	tlsConfig *tls.Config
+	url        string
+	serverURL  string
+	serverName string
+	address    string
+	dial       func(context.Context, string, string) (net.Conn, error)
+	material   *Material
 }
 
 // NewDialer loads the sandbox's mTLS material and resolves the transport cfg.URL
@@ -81,39 +81,32 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 	if err != nil {
 		return nil, err
 	}
-	caPEM, err := os.ReadFile(cfg.MTLSCAPath)
+	material, err := LoadMaterial(cfg.MTLSCAPath, cfg.ClientCertPath, cfg.ClientKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("read mTLS CA: %w", err)
-	}
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("parse mTLS CA")
-	}
-	clientCert, err := tls.LoadX509KeyPair(cfg.ClientCertPath, cfg.ClientKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load client certificate: %w", err)
+		return nil, err
 	}
 	return &Dialer{
-		url:       cfg.URL,
-		serverURL: serverURL,
-		address:   address,
-		dial:      dial,
-		tlsConfig: &tls.Config{
-			RootCAs:      caPool,
-			Certificates: []tls.Certificate{clientCert},
-			ServerName:   serverName,
-			MinVersion:   tls.VersionTLS12,
-		},
+		url:        cfg.URL,
+		serverURL:  serverURL,
+		serverName: serverName,
+		address:    address,
+		dial:       dial,
+		material:   material,
 	}, nil
 }
 
-// Dial opens the transport and completes the mTLS handshake over it.
+// Dial opens the transport and completes the mTLS handshake over it. It fails
+// without dialing when the client certificate is out of date.
 func (d *Dialer) Dial(ctx context.Context) (*tls.Conn, error) {
+	tlsConfig, err := d.material.TLSConfig(d.serverName)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := d.dial(ctx, "tcp", d.address)
 	if err != nil {
 		return nil, err
 	}
-	conn := tls.Client(raw, d.tlsConfig)
+	conn := tls.Client(raw, tlsConfig)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		_ = raw.Close()
 		return nil, err

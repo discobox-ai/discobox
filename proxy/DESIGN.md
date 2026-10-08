@@ -89,7 +89,7 @@ Certificate preparation is independent of running the proxy:
   certificates.
 - Pool server certificate: presented by the pool host proxy listener.
 - Client certificates: issued per sandbox/client identity (CN = client ID) and
-  staged into the sandbox by pool-agent.
+  delivered in the sandbox's runtime-config document by pool-agent.
 
 `PrepareCertificates` creates or reuses this material — reissuing anything within
 `RenewBefore` of expiry, and the server certificate when it no longer covers
@@ -97,6 +97,50 @@ Certificate preparation is independent of running the proxy:
 `ClientMaterial` (filesystem paths and proxy/CA environment values). Callers may
 run it before the proxy process starts so certificates can be distributed during
 sandbox setup.
+
+### Renewal while a sandbox runs
+
+A client certificate is renewed before it expires without restarting the
+sandbox ([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
+§7):
+
+- **The pool reissues** a client certificate within `RenewBefore` (30 days) of
+  its expiry (365 days). Every status poll decides the sandbox's runtime-config
+  document again, which calls `EnsureClientCertificate`, so a due certificate
+  becomes a new revision the poll delivers
+  ([pool-agent: Sandbox Runtime Config](../pool-agent/DESIGN.md#sandbox-runtime-config)).
+- **The sandbox takes it without restarting.** `bridge.Material` reads the mTLS
+  CA and keypair from their files on every handshake and re-parses them when
+  their bytes change, so every holder of the key — the forwarders (egress,
+  BuildKit, nested Docker), the credentials relay's `Dialer`, and the DNS stub —
+  presents the renewed certificate from its next connection. A connection
+  already open keeps the certificate it was opened with; it was valid when the
+  pool verified it. The intake does not restart a bridge for material alone.
+- **A half-delivered set keeps the last good one.** The intake replaces the
+  certificate and key one at a time; a pair that does not load is ignored and
+  tried again on the next handshake.
+- **An expired certificate is never presented.** `Material.TLSConfig` refuses a
+  certificate outside its validity before anything is dialed, so a sandbox the
+  pool could not reach in time fails locally, saying it waits for the renewal,
+  and recovers when it lands. A bridge may start on an expired certificate for
+  the same reason: it serves once the renewal arrives.
+- **The pool is still authenticated.** The CA that verifies the pool's server
+  certificate is reloaded with the keypair, and verification is unchanged.
+- **Only client certificates are renewed.** The pool's CAs and server
+  certificate are issued for ten years, and CA rollover is not supported:
+  `PrepareCertificates` would reissue an mTLS CA inside its last 30 days, but
+  nothing re-signs the server or client certificates under it, and a running
+  proxy keeps the CA it started with. Sandboxes would be delivered the new CA
+  and refuse the running proxy's server certificate, and a restarted proxy would
+  refuse every client certificate the old CA signed. A rollover needs the old
+  and new CA trusted side by side while every leaf is re-signed; it is built
+  before the first CA nears that window, not here.
+
+The output registry needs no client authentication while it stays on the
+Docker pool's private network: its unguessable repository names (ADR 0047)
+are what protect it there. 0126 §7 requires authenticated pulls and deletions
+only once a registry is reachable off that network; that is built with the
+first backend that puts it there, not before.
 
 ## Persistence
 
