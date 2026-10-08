@@ -348,11 +348,12 @@ type HarnessConfig struct {
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
 	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
 	AdditionalGroups []string              `gorm:"column:additional_groups;type:text;serializer:json" json:"additionalGroups,omitempty" doc:"Supplementary OS groups snapshotted from the image label."`
-	// Platform is what the harness's template runs on, and so what every
-	// sandbox on it runs on (ADR 0145 §1). A Linux image is inspected for the
-	// platform a pool on this machine hosts, and ImageDigest is that
-	// platform's digest.
-	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this platform and is placed only on a pool that hosts it."`
+	// Platforms is what the harness's image is published for (ADR 0145 §1),
+	// read when it is inspected: every platform a registry image's index lists,
+	// or the one a locally built image was built for. A sandbox runs on its
+	// pool's platform, which this must name. Empty on a config not inspected
+	// since before platforms were recorded, which rules no pool out.
+	Platforms platform.Set `gorm:"column:platforms;type:text;serializer:json" json:"platforms,omitempty" doc:"Platforms the harness's image is published for, as os/arch. A discobox on this harness is placed only on a pool that hosts one of them. Absent on a harness not inspected since platforms were recorded."`
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
@@ -752,11 +753,13 @@ type Sandbox struct {
 	// caller created; nothing else reads it for authority.
 	CreatedBySandboxID *string `gorm:"column:created_by_sandbox_id;type:text;index" json:"createdBySandboxId,omitempty" doc:"Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create."`
 	PoolID             string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	// Platform is what the sandbox runs on, recorded at create from its
-	// harness config (ADR 0145 §1). It is outside SandboxManifest because it is
-	// not a spec that can change: a sandbox's tree belongs to its platform, so
-	// it is placed only on a pool of the same one, and is never moved off it.
-	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable after."`
+	// Platform is what the sandbox runs on (ADR 0145 §1): its pool's, which
+	// its harness's image must be published for. A sandbox created before its
+	// pool's agent declared a platform, or before platforms were recorded, has
+	// none until it is next placed, which gives it the pool's. It is outside SandboxManifest because it is not a spec that
+	// can change: a sandbox's tree belongs to its platform, so it is placed only
+	// on a pool of the same one, and is never moved off it.
+	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"Platform the sandbox runs on, as os/arch: its pool's. Absent until its pool has declared one; immutable after."`
 	Name     string            `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
 	// Description is a copy of the sandbox's description, which lives with its
 	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox

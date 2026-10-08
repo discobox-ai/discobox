@@ -70,7 +70,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, platforms poolPl
 		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
 		Image:          cfg.Image.Or(""),
 		Digest:         cfg.ImageDigest.Or(""),
-		Platform:       cfg.Platform.Or(""),
+		Platforms:      strings.Join(cfg.Platforms, ", "),
 		Unhosted:       !platforms.run(cfg),
 		Run:            cfg.RunCommand,
 		Relaunch:       cfg.RelaunchCommand.Or(nil),

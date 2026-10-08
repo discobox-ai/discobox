@@ -875,11 +875,31 @@ func TestHarnessChoicesLeaveOutWhatNoPoolHosts(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	m.opts.setHarnesses([]Harness{
 		{Slug: "codex", Default: true},
-		{Slug: "xcode", Platform: "darwin/arm64", Unhosted: true},
+		{Slug: "xcode", Platforms: "darwin/arm64", Unhosted: true},
 		{Slug: "shell"},
 	})
 	want := []string{"codex", "shell"}
 	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", got, want)
+	}
+}
+
+// A project default no pool can run is not offered either — leaving the row
+// unset would run it — and the hint names it as the default and says why,
+// rather than claiming the project has none.
+func TestAnUnhostedDefaultIsNamedRatherThanDenied(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	m.opts.setHarnesses([]Harness{
+		{Slug: "xcode", Default: true, Platforms: "darwin/arm64", Unhosted: true},
+		{Slug: "codex"},
+	})
+	harness := m.opts.opts[optHarness]
+	want := []string{unsetHarness, "codex"}
+	if strings.Join(harness.choices, ",") != strings.Join(want, ",") {
+		t.Fatalf("choices = %v, want %v", harness.choices, want)
+	}
+	if !strings.Contains(harness.hint, "xcode") || strings.Contains(harness.hint, "no project default") {
+		t.Fatalf("hint = %q, want the unhosted default named", harness.hint)
 	}
 }

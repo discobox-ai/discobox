@@ -1859,7 +1859,8 @@ func (s *HarnessConfig) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Platform.Get(); ok {
+		var failures []validate.FieldError
+		for i, elem := range s.Platforms {
 			if err := func() error {
 				if err := (validate.String{
 					MinLength:     0,
@@ -1873,18 +1874,24 @@ func (s *HarnessConfig) Validate() error {
 					MinNumericSet: false,
 					MaxNumeric:    0,
 					MaxNumericSet: false,
-				}).Validate(string(value)); err != nil {
+				}).Validate(string(elem)); err != nil {
 					return errors.Wrap(err, "string")
 				}
 				return nil
 			}(); err != nil {
-				return err
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
 			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "platform",
+			Name:  "platforms",
 			Error: err,
 		})
 	}
@@ -4444,20 +4451,27 @@ func (s *RegisterPoolBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     0,
-			MaxLengthSet:  false,
-			Email:         false,
-			Hostname:      false,
-			Regex:         regexMap["^[a-z0-9]+/[a-z0-9]+$"],
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Platform)); err != nil {
-			return errors.Wrap(err, "string")
+		if value, ok := s.Platform.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[a-z0-9]+/[a-z0-9]+$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
 		}
 		return nil
 	}(); err != nil {
@@ -7411,20 +7425,27 @@ func (s *UpdatePoolStatusBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     0,
-			MaxLengthSet:  false,
-			Email:         false,
-			Hostname:      false,
-			Regex:         regexMap["^[a-z0-9]+/[a-z0-9]+$"],
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Platform)); err != nil {
-			return errors.Wrap(err, "string")
+		if value, ok := s.Platform.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[a-z0-9]+/[a-z0-9]+$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
 		}
 		return nil
 	}(); err != nil {

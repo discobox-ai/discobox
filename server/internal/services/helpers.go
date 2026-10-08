@@ -323,6 +323,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.PoolID != "" {
 		fields["poolId"] = sandbox.PoolID
 	}
+	if !sandbox.Platform.IsZero() {
+		fields["platform"] = sandbox.Platform.String()
+	}
 	if sandbox.CreatedBy != nil {
 		fields["createdBy"] = sandbox.CreatedBy
 	}
@@ -394,11 +397,14 @@ type SandboxImageTarget struct {
 // for it is adopting the config, and its digest matching already is not the
 // same as it being converged (ADR 0032 §4).
 //
-// A config of another platform than the sandbox's is nothing to move to: its
-// image is another platform's, and a sandbox never leaves its own
-// (ADR 0145 §1).
+// A config whose image is not published for the sandbox's platform is nothing
+// to move to: a sandbox never leaves its own (ADR 0145 §1). A sandbox whose
+// pool has not yet declared one is not held back by it.
 func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (SandboxImageTarget, bool) {
-	if sandbox.HarnessMode == "config" || config == nil || config.Platform != sandbox.Platform {
+	if sandbox.HarnessMode == "config" || config == nil {
+		return SandboxImageTarget{}, false
+	}
+	if !sandbox.Platform.IsZero() && config.Platforms.Publishes(sandbox.Platform) != nil {
 		return SandboxImageTarget{}, false
 	}
 	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)

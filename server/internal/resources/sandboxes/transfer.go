@@ -143,6 +143,12 @@ func (s *Service) exportManifest(ctx context.Context, sb *model.Sandbox) (*sandb
 	}
 	if pool, err := s.store.GetPool(ctx, sb.ProjectID, sb.PoolID); err == nil && pool != nil {
 		from.PoolName = pool.Name
+		// A sandbox not placed since platforms were recorded has none of its
+		// own, and runs on its pool's: that is the platform its tree belongs
+		// to (ADR 0145 §8).
+		if spec.Platform.IsZero() {
+			spec.Platform = pool.Platform
+		}
 	}
 	return &sandboxexport.Manifest{ExportedAt: time.Now().UTC(), From: from, Sandbox: spec}, nil
 }
@@ -246,15 +252,19 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		return nil, err
 	}
 	// A discobox moves between machines, not between platforms (ADR 0145 §8):
-	// its tree belongs to the platform it ran on, so neither a harness nor a
-	// pool of another one may take it.
-	if harnessConfig.Platform != spec.Platform {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("the archive holds a %s discobox, and harness %q runs %s; a discobox is not moved between platforms",
-				spec.Platform, harnessConfig.Slug, harnessConfig.Platform))
-	}
-	if err := refuseOtherPlatform(spec.Platform, pool); err != nil {
-		return nil, err
+	// its tree belongs to the platform it ran on, so neither a harness whose
+	// image is not published for it nor a pool of another one may take it. An
+	// archive from before platforms names none, so there is nothing to refuse
+	// it by; it takes its pool's platform when it is placed.
+	if !spec.Platform.IsZero() {
+		if err := harnessConfig.Platforms.Publishes(spec.Platform); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("the archive holds a %s discobox, and harness %q cannot run it: %v; a discobox is not moved between platforms",
+					spec.Platform, harnessConfig.Slug, err))
+		}
+		if err := refuseOtherPlatform(spec.Platform, pool); err != nil {
+			return nil, err
+		}
 	}
 
 	if s.sandboxProviders == nil {

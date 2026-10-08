@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 
@@ -70,10 +70,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if s.inspector == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "image inspection is unavailable")
 	}
-	// A registered image is a Linux container template, so it runs on the
-	// platform a pool on this machine hosts, and is inspected for that one.
-	harnessPlatform := platform.Pool()
-	inspected, err := s.inspector.Inspect(ctx, image, harnessPlatform)
+	inspected, err := s.inspector.Inspect(ctx, image)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -129,9 +126,8 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		Name:        name,
 		Image:       image,
 		ImageDigest: imageDigest,
-		Platform:    harnessPlatform,
 	}
-	snapshotImageMetadata(config, inspected.ImageMetadata)
+	snapshotImageMetadata(config, inspected)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -203,13 +199,13 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if image == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to refresh")
 	}
-	metadata, err := s.inspector.Inspect(ctx, image, config.Platform)
+	metadata, err := s.inspector.Inspect(ctx, image)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
-	snapshotImageMetadata(config, metadata.ImageMetadata)
+	snapshotImageMetadata(config, metadata)
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -398,7 +394,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing != nil && !existing.BuiltIn {
 			return fmt.Errorf("built-in harness %s conflicts with a user-created harness config", seed.Slug)
 		}
-		metadata, inspectErr := s.inspector.Inspect(ctx, image, seed.Platform)
+		metadata, inspectErr := s.inspector.Inspect(ctx, image)
 		if inspectErr != nil {
 			if s.requireBuiltInImages {
 				return fmt.Errorf("inspect release harness %s (%s): %w", seed.Slug, image, inspectErr)
@@ -407,15 +403,18 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"slug", seed.Slug, "image", image, "error", inspectErr)
 			continue
 		}
-		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest && existing.Platform == seed.Platform {
+		// The platforms are compared too, so a built-in recorded before
+		// platforms were — or with a single-platform development image's — is
+		// rewritten with what its image now publishes.
+		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest && slices.Equal(existing.Platforms, metadata.Platforms) {
 			continue
 		}
 		if existing == nil {
 			config := &model.HarnessConfig{
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
-				BuiltIn: true, Image: image, ImageDigest: metadata.Digest, Platform: seed.Platform,
+				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
 			}
-			snapshotImageMetadata(config, metadata.ImageMetadata)
+			snapshotImageMetadata(config, metadata)
 			// Born configured when there is nothing to collect. `shell` is the
 			// harness that lands here, but by declaring no secrets rather than
 			// by being itself: a fresh project has to be usable before anyone
@@ -432,8 +431,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.Platform = seed.Platform
-		snapshotImageMetadata(existing, metadata.ImageMetadata)
+		snapshotImageMetadata(existing, metadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
@@ -483,7 +481,7 @@ func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) 
 		case s.inspector == nil:
 			reasons = append(reasons, fmt.Sprintf("%s (%s): image inspection is unavailable", seed.Slug, image))
 		default:
-			if _, inspectErr := s.inspector.Inspect(ctx, image, seed.Platform); inspectErr != nil {
+			if _, inspectErr := s.inspector.Inspect(ctx, image); inspectErr != nil {
 				reasons = append(reasons, fmt.Sprintf("%s (%s): %v", seed.Slug, image, inspectErr))
 				continue
 			}
@@ -573,8 +571,10 @@ func conventionCommands(slug string, image harness.Image) (runCommand, relaunchC
 // wants exactly this set on exactly one config, and a snapshot that grows a
 // field should not have to grow a return value at three call sites to reach
 // them. Identity — id, slug, image, digest, Configured — is the caller's; this
-// is only what the label says.
-func snapshotImageMetadata(config *model.HarnessConfig, metadata harness.ImageMetadata) {
+// is only what the label says, and the platforms the image is published for.
+func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata) {
+	config.Platforms = inspected.Platforms
+	metadata := inspected.ImageMetadata
 	image := metadata.Harness
 	if image == nil {
 		image = &harness.Image{}

@@ -192,15 +192,32 @@ every pool as the drift and lost-mark backstop.
 ## A pool hosts one platform
 
 A pool hosts exactly one platform (`os/arch`, the root `platform` package; ADR
-0145 §1), and its agent declares it: registration and every status heartbeat
-must name one, or are refused with 400 (`declaredPlatform`). Declaring it on
-every heartbeat is what lets a pool from before platforms — backfilled with this
-machine's Linux (`database` migrations) — correct itself, because an agent whose
-key survives a restart does not register again. It is empty only on a pool
-whose agent has not reported yet.
+0145 §1), and its agent declares it on registration and on every status
+heartbeat — every one, because an agent whose key survives a restart does not
+register again. A declaration that is not an os/arch pair is refused with 400
+(`declaredPlatform`). None at all is an agent from before platforms, which must
+still report — a provider may fall back to the previous release's agent image,
+and a pool's agent is replaced only after the server upgrades — so its pool
+keeps whatever was recorded for it, which may be nothing
+(`store.recordPoolPlatform`). Nothing is guessed: a pool may be any
+architecture, and a guess written onto a sandbox placed there is never
+corrected.
 
-`SchedulablePoolForSandbox` refuses a sandbox of any other platform with a
-`*platform.MismatchError` rather than `ErrNotFound`: a pool of the wrong
+The migration does not guess a pool's platform: a pool from before platforms
+has none until its agent's first report after the upgrade, which is the report
+that makes it schedulable again. Nor does a report touch the pool's sandboxes;
+a sandbox takes its platform when it is placed.
+
+`SchedulablePoolForSandbox` is where a sandbox's platform is settled, on a pool
+that has declared one; a pool that has not places as every pool did before
+platforms, settling and checking nothing. A
+sandbox with none yet — created while its pool's agent had declared nothing,
+or before platforms were recorded — takes the pool's, written to its row, but
+only if its harness's image is published for it. It refuses a harness whose
+image is not, with a `*platform.UnpublishedError` that names what the image is
+published for (what a single-platform development build meets on a pool of
+another architecture), and a sandbox of another platform than its pool's with a
+`*platform.MismatchError`. Neither is `ErrNotFound`: a pool of the wrong
 platform is not one on its way up, and a caller that waited on it would wait
 for good. The check runs after the readiness gate, since only a reporting agent
 has declared what it hosts.

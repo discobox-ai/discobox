@@ -4359,9 +4359,10 @@ type HarnessConfig struct {
 	ImageDigest OptString `json:"imageDigest"`
 	// Harness config name.
 	Name string `json:"name"`
-	// Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this
-	// platform and is placed only on a pool that hosts it.
-	Platform OptString `json:"platform"`
+	// Platforms the harness's image is published for, as os/arch. A discobox on this harness runs on its
+	// pool's platform, and is placed only on a pool that hosts one of these. Absent on a harness not
+	// inspected since platforms were recorded, which rules no pool out.
+	Platforms []string `json:"platforms"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Argv declared by the registered image to resume a previous harness session.
@@ -4471,9 +4472,9 @@ func (s *HarnessConfig) GetName() string {
 	return s.Name
 }
 
-// GetPlatform returns the value of Platform.
-func (s *HarnessConfig) GetPlatform() OptString {
-	return s.Platform
+// GetPlatforms returns the value of Platforms.
+func (s *HarnessConfig) GetPlatforms() []string {
+	return s.Platforms
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -4601,9 +4602,9 @@ func (s *HarnessConfig) SetName(val string) {
 	s.Name = val
 }
 
-// SetPlatform sets the value of Platform.
-func (s *HarnessConfig) SetPlatform(val OptString) {
-	s.Platform = val
+// SetPlatforms sets the value of Platforms.
+func (s *HarnessConfig) SetPlatforms(val []string) {
+	s.Platforms = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -16386,11 +16387,12 @@ type RegisterPoolBody struct {
 	Schema         OptURI    `json:"$schema"`
 	BootstrapToken string    `json:"bootstrapToken"`
 	KeyType        OptString `json:"keyType"`
-	// The one platform the pool hosts, as os/arch.
-	Platform  string `json:"platform"`
-	PoolId    string `json:"poolId"`
-	ProjectId string `json:"projectId"`
-	PublicKey string `json:"publicKey"`
+	// The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its
+	// pool keeps the platform recorded for it.
+	Platform  OptString `json:"platform"`
+	PoolId    string    `json:"poolId"`
+	ProjectId string    `json:"projectId"`
+	PublicKey string    `json:"publicKey"`
 }
 
 // GetSchema returns the value of Schema.
@@ -16409,7 +16411,7 @@ func (s *RegisterPoolBody) GetKeyType() OptString {
 }
 
 // GetPlatform returns the value of Platform.
-func (s *RegisterPoolBody) GetPlatform() string {
+func (s *RegisterPoolBody) GetPlatform() OptString {
 	return s.Platform
 }
 
@@ -16444,7 +16446,7 @@ func (s *RegisterPoolBody) SetKeyType(val OptString) {
 }
 
 // SetPlatform sets the value of Platform.
-func (s *RegisterPoolBody) SetPlatform(val string) {
+func (s *RegisterPoolBody) SetPlatform(val OptString) {
 	s.Platform = val
 }
 
@@ -17265,8 +17267,8 @@ type Sandbox struct {
 	// and the primary source's root, or the host alone for a sandbox with no source. Absent for a
 	// sandbox created without an origin.
 	OriginKey OptString `json:"originKey"`
-	// Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable
-	// after.
+	// Platform the sandbox runs on, as os/arch — its pool's, which its harness's image is published
+	// for. Absent until its pool has declared one; immutable after.
 	Platform OptString `json:"platform"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
@@ -25719,11 +25721,12 @@ type UpdatePoolStatusBody struct {
 	AvailableStorageBytes int64   `json:"availableStorageBytes"`
 	Conditions            jx.Raw  `json:"conditions"`
 	Degraded              bool    `json:"degraded"`
-	// The one platform the pool hosts, as os/arch. Declared on every report, so a pool that registered
-	// before platforms were recorded corrects what was assumed for it.
-	Platform    string `json:"platform"`
-	Ready       bool   `json:"ready"`
-	Schedulable bool   `json:"schedulable"`
+	// The one platform the pool hosts, as os/arch. Declared on every report, because an agent whose key
+	// survives a restart does not register again. An agent from before platforms sends none, and its
+	// pool keeps the platform recorded for it.
+	Platform    OptString `json:"platform"`
+	Ready       bool      `json:"ready"`
+	Schedulable bool      `json:"schedulable"`
 }
 
 // GetSchema returns the value of Schema.
@@ -25757,7 +25760,7 @@ func (s *UpdatePoolStatusBody) GetDegraded() bool {
 }
 
 // GetPlatform returns the value of Platform.
-func (s *UpdatePoolStatusBody) GetPlatform() string {
+func (s *UpdatePoolStatusBody) GetPlatform() OptString {
 	return s.Platform
 }
 
@@ -25802,7 +25805,7 @@ func (s *UpdatePoolStatusBody) SetDegraded(val bool) {
 }
 
 // SetPlatform sets the value of Platform.
-func (s *UpdatePoolStatusBody) SetPlatform(val string) {
+func (s *UpdatePoolStatusBody) SetPlatform(val OptString) {
 	s.Platform = val
 }
 

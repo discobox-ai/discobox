@@ -116,7 +116,7 @@ func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: slug, Name: name, Configured: true,
 		Image: "ghcr.io/example/" + slug + ":v1", ImageDigest: "sha256:aaa",
-		RunCommand: []string{slug}, Platform: platform.Pool(),
+		RunCommand: []string{slug}, Platforms: platform.NewSet(platform.Pool()),
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -726,5 +726,57 @@ func TestExportRecordsThePlatform(t *testing.T) {
 	defer tree.Close()
 	if manifest.Sandbox.Platform != platform.Pool() {
 		t.Errorf("platform = %q, want %q", manifest.Sandbox.Platform, platform.Pool())
+	}
+}
+
+// A sandbox not placed since platforms were recorded has no platform of its
+// own, and is exported with its pool's, which is where its tree runs.
+func TestExportTakesThePoolsPlatformForASandboxWithNone(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	config := configuredHarness(t, st, "codex", "Codex")
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	sb := &model.Sandbox{
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned", HarnessMode: "run"},
+	}
+	if err := st.CreateSandbox(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	provider.exportTree = emptyTar(t)
+	stream, err := svc.ExportSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer stream.Close()
+	manifest, tree, err := sandboxexport.Read(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.Close()
+	if manifest.Sandbox.Platform != riscv {
+		t.Errorf("platform = %q, want the pool's %q", manifest.Sandbox.Platform, riscv)
+	}
+}
+
+// An archive from before platforms names none and is not guessed at: it is
+// imported onto a pool of any platform — here one this machine's architecture
+// is not — and the sandbox it becomes has no platform until it is placed.
+func TestImportOfAnArchiveFromBeforePlatformsGuessesNone(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	archive := exportArchive(t, nil, map[string]string{"data/x": "x"})
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if !result.Sandbox.Platform.IsZero() {
+		t.Fatalf("platform = %q, want none guessed", result.Sandbox.Platform)
 	}
 }

@@ -7836,9 +7836,13 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		e.Str(s.Name)
 	}
 	{
-		if s.Platform.Set {
-			e.FieldStart("platform")
-			s.Platform.Encode(e)
+		if s.Platforms != nil {
+			e.FieldStart("platforms")
+			e.ArrStart()
+			for _, elem := range s.Platforms {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 	{
@@ -7902,7 +7906,7 @@ var jsonFieldsNameOfHarnessConfig = [26]string{
 	15: "image",
 	16: "imageDigest",
 	17: "name",
-	18: "platform",
+	18: "platforms",
 	19: "projectId",
 	20: "relaunchCommand",
 	21: "runCommand",
@@ -8111,15 +8115,24 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
-		case "platform":
+		case "platforms":
 			if err := func() error {
-				s.Platform.Reset()
-				if err := s.Platform.Decode(d); err != nil {
+				s.Platforms = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Platforms = append(s.Platforms, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"platform\"")
+				return errors.Wrap(err, "decode field \"platforms\"")
 			}
 		case "projectId":
 			requiredBitSet[2] |= 1 << 3
@@ -25245,8 +25258,10 @@ func (s *RegisterPoolBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("platform")
-		e.Str(s.Platform)
+		if s.Platform.Set {
+			e.FieldStart("platform")
+			s.Platform.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("poolId")
@@ -25314,11 +25329,9 @@ func (s *RegisterPoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"keyType\"")
 			}
 		case "platform":
-			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := d.Str()
-				s.Platform = string(v)
-				if err != nil {
+				s.Platform.Reset()
+				if err := s.Platform.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -25371,7 +25384,7 @@ func (s *RegisterPoolBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b01111010,
+		0b01110010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -43889,8 +43902,10 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Degraded)
 	}
 	{
-		e.FieldStart("platform")
-		e.Str(s.Platform)
+		if s.Platform.Set {
+			e.FieldStart("platform")
+			s.Platform.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("ready")
@@ -43993,11 +44008,9 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
 		case "platform":
-			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
-				v, err := d.Str()
-				s.Platform = string(v)
-				if err != nil {
+				s.Platform.Reset()
+				if err := s.Platform.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -44038,7 +44051,7 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11101110,
+		0b10101110,
 		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

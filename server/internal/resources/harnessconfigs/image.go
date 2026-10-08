@@ -18,21 +18,22 @@ import (
 
 type imageMetadata struct {
 	Digest string
+	// Platforms is what the image is published for (ADR 0145 §1): every
+	// platform in a registry image's index, or the one platform a locally built
+	// image was built for. Empty when nothing says, which rules nothing out.
+	Platforms platform.Set
 	harness.ImageMetadata
 }
 
-// imageInspector reads a harness image's manifest and the digest to pin it to,
-// for the one platform asked for. A multi-arch image has no single config
-// digest — it has one per architecture — so inspecting it without saying which
-// asks the wrong question, and the platform asked for is the one the harness
-// config records (ADR 0145 §1).
+// imageInspector reads a harness image's manifest, the digest to pin it to, and
+// the platforms it is published for.
 type imageInspector interface {
-	Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error)
+	Inspect(ctx context.Context, imageRef string) (imageMetadata, error)
 }
 
 type defaultImageInspector struct{}
 
-func (defaultImageInspector) Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error) {
+func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
 	// Prefer a locally present image. Once the daemon has inspected it, its
 	// metadata is authoritative — surface any label error instead of masking it
 	// with a doomed registry pull of the same (often :local) reference.
@@ -46,14 +47,15 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string, targe
 	remoteOptions := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(registryauth.Keychain()),
-		// Always named: go-containerregistry answers linux/amd64 when nothing
-		// says otherwise, which is how an Apple Silicon Mac came to pin the
-		// amd64 digest of a harness image its arm64 pool would never hold.
-		remote.WithPlatform(v1.Platform{OS: target.OS, Architecture: target.Arch}),
+		// The platform whose labels are read when the image publishes it. Always
+		// named: go-containerregistry answers linux/amd64 when nothing says
+		// otherwise, and an image published only for arm64 then reads as one
+		// that does not exist.
+		remote.WithPlatform(v1.Platform{OS: platform.Pool().OS, Architecture: platform.Pool().Arch}),
 	}
-	// One GET, because it answers both questions: the descriptor carries the
-	// digest the registry serves this tag under, and resolves to the image for
-	// the platform asked for.
+	// One GET, because it answers every question: the descriptor carries the
+	// digest the registry serves this tag under and, for a multi-platform
+	// image, the index that lists what it is published for.
 	//
 	// Not remote.Head, which asks for exactly the digest and nothing else:
 	// ghcr.io answers HEAD without a Content-Length header, which
@@ -63,7 +65,7 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string, targe
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, registryauth.Explain(ref, err))
 	}
-	image, err := descriptor.Image()
+	image, platforms, err := publishedImage(descriptor)
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("resolve harness image %q: %w", imageRef, err)
 	}
@@ -84,8 +86,46 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string, targe
 	// the index digest of one unchanged image.
 	//
 	// Both store types put this value in RepoDigests, which is what the pool
-	// compares against, so one recorded digest works on either.
-	return parseImageMetadata(descriptor.Digest.String(), config.Config.Labels)
+	// compares against, so one recorded digest works on either. An index digest
+	// is also what lets one pin serve a pool of each platform the index lists.
+	metadata, err := parseImageMetadata(descriptor.Digest.String(), config.Config.Labels)
+	if err != nil {
+		return imageMetadata{}, err
+	}
+	if platforms == nil {
+		// A single-platform image says what it is in its config.
+		platforms = platform.NewSet(platform.Platform{OS: config.OS, Arch: config.Architecture})
+	}
+	metadata.Platforms = platforms
+	return metadata, nil
+}
+
+// publishedImage resolves the image whose labels a harness is read from, and,
+// for a multi-platform image, every platform its index publishes. The labels
+// are read from the platform a pool on this machine hosts when the index lists
+// it, and from the first platform it lists otherwise: an image published only
+// for another architecture still declares the same harness.
+//
+// platforms is nil for a single-platform image, whose config says what it is.
+func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, error) {
+	if !descriptor.MediaType.IsIndex() {
+		image, err := descriptor.Image()
+		return image, nil, err
+	}
+	index, err := descriptor.ImageIndex()
+	if err != nil {
+		return nil, nil, err
+	}
+	platforms, digests, err := indexPlatforms(index)
+	if err != nil {
+		return nil, nil, err
+	}
+	if platforms.Contains(platform.Pool()) {
+		image, err := descriptor.Image()
+		return image, platforms, err
+	}
+	image, err := index.Image(digests[platforms[0]])
+	return image, platforms, err
 }
 
 // localImageDigest is the digest to pin a locally-inspected image to.
@@ -101,6 +141,69 @@ func localImageDigest(inspected dockerclient.ImageInspectResult) string {
 		}
 	}
 	return inspected.ID
+}
+
+// indexPlatforms is every platform an index publishes, attestation entries
+// aside, and the digest of the first manifest it lists for each.
+func indexPlatforms(index v1.ImageIndex) (platform.Set, map[platform.Platform]v1.Hash, error) {
+	manifest, err := index.IndexManifest()
+	if err != nil {
+		return nil, nil, err
+	}
+	listed := make([]platform.Platform, 0, len(manifest.Manifests))
+	digests := map[platform.Platform]v1.Hash{}
+	for _, entry := range manifest.Manifests {
+		if entry.Platform == nil {
+			continue
+		}
+		p := platform.Platform{OS: entry.Platform.OS, Arch: entry.Platform.Architecture}
+		listed = append(listed, p)
+		if _, ok := digests[p]; !ok {
+			digests[p] = entry.Digest
+		}
+	}
+	platforms := platform.NewSet(listed...)
+	if len(platforms) == 0 {
+		return nil, nil, fmt.Errorf("its index lists no platform")
+	}
+	return platforms, digests, nil
+}
+
+// registryPlatforms is what a pulled image is published for, asked of the
+// registry it was pulled from by the digest the daemon recorded. A daemon
+// reports a pulled image as its own platform even when the registry publishes
+// several, and recording that would refuse a pool of another architecture an
+// image that runs there. A registry that cannot be asked answers nil — no
+// platforms read, which rules nothing out — rather than the daemon's one.
+func registryPlatforms(ctx context.Context, repoDigest string) platform.Set {
+	ref, err := name.ParseReference(repoDigest)
+	if err != nil {
+		return nil
+	}
+	descriptor, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(registryauth.Keychain()))
+	if err != nil {
+		return nil
+	}
+	if descriptor.MediaType.IsIndex() {
+		index, err := descriptor.ImageIndex()
+		if err != nil {
+			return nil
+		}
+		platforms, _, err := indexPlatforms(index)
+		if err != nil {
+			return nil
+		}
+		return platforms
+	}
+	image, err := descriptor.Image()
+	if err != nil {
+		return nil
+	}
+	config, err := image.ConfigFile()
+	if err != nil {
+		return nil
+	}
+	return platform.NewSet(platform.Platform{OS: config.OS, Arch: config.Architecture})
 }
 
 // inspectLocalImage inspects imageRef via the local Docker daemon. found is true
@@ -122,7 +225,18 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 		labels = inspected.Config.Labels
 	}
 	metadata, err := parseImageMetadata(localImageDigest(inspected), labels)
-	return metadata, true, err
+	if err != nil {
+		return metadata, true, err
+	}
+	if len(inspected.RepoDigests) > 0 {
+		// Pulled from a registry, which says what it is published for.
+		metadata.Platforms = registryPlatforms(ctx, inspected.RepoDigests[0])
+	} else {
+		// Built here, which is what a development build does: it is the one
+		// platform it was built for, and runs only on a pool of that platform.
+		metadata.Platforms = platform.NewSet(platform.Platform{OS: inspected.Os, Arch: inspected.Architecture})
+	}
+	return metadata, true, nil
 }
 
 // parseImageMetadata resolves an image's label set into the one manifest it
@@ -278,12 +392,14 @@ func newDevImageInspector(images []devimage.Image, fallback imageInspector) imag
 // the base whose layer it inherits. Keep in sync with the harness Dockerfiles.
 const sandboxAgentImageBuildArg = "SANDBOX_AGENT_IMAGE"
 
-func (d devImageInspector) Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error) {
+func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
 	labels, ok := d.labelsByReference[strings.TrimSpace(imageRef)]
 	if !ok {
-		return d.fallback.Inspect(ctx, imageRef, target)
+		return d.fallback.Inspect(ctx, imageRef)
 	}
 	// A build-mode reference is content-addressed over that image's inputs, so
-	// it is its own freshness key; there is no digest until it is built.
+	// it is its own freshness key; there is no digest until it is built. Nor
+	// is there a platform: the pool that runs it builds it for its own, so the
+	// set is left empty and rules no pool out.
 	return parseImageMetadata(imageRef, labels)
 }

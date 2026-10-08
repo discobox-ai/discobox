@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -227,7 +229,7 @@ func (s *Store) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolB
 // from RegisteredAt on the reconcile the registration marks dirty. It does not
 // write the health flags either: the agent reports those over its own
 // heartbeat, synchronously, immediately after this call returns. The platform
-// the agent declares it hosts is recorded with its key (ADR 0145 §1).
+// the agent declares it hosts is recorded with its key (recordPoolPlatform).
 func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.Platform, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -250,7 +252,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.
 		if err := tx.Save(&token).Error; err != nil {
 			return err
 		}
-		pool.Platform = hosts
+		recordPoolPlatform(&pool, hosts)
 		pool.PublicKey = publicKey
 		pool.KeyType = keyType
 		pool.RegisteredAt = &now
@@ -295,7 +297,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, "id = ?", poolID).Error; err != nil {
 			return mapNotFound(err)
 		}
-		pool.Platform = hosts
+		recordPoolPlatform(&pool, hosts)
 		pool.Ready = ready
 		pool.Schedulable = schedulable
 		pool.Degraded = degraded
@@ -363,6 +365,25 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 	return nil
 }
 
+// recordPoolPlatform records the platform a pool's agent declared, inside the
+// registration or heartbeat that carried it (ADR 0145 §1).
+//
+// An agent from before platforms declares none (hosts is zero), and is still a
+// pool that schedules sandboxes — a provider may fall back to the previous
+// release's agent image, and a pool's agent is replaced only after the server
+// upgrades. Such a pool keeps whatever was recorded for it, which may be
+// nothing: no guess is written, because a pool may be any architecture, and a
+// guess written onto a sandbox placed there is never corrected.
+//
+// The pool's sandboxes are not touched: a sandbox takes its platform when it
+// is placed (SchedulablePoolForSandbox), which is the one place its harness's
+// image is checked against it.
+func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
+	if !hosts.IsZero() {
+		pool.Platform = hosts
+	}
+}
+
 // SchedulablePoolForSandbox gates placement on current heartbeat health and
 // the agent's schedulable flag, independently of a blocked runtime reconcile.
 // Pending/registering runtimes remain gated during upstream image preload.
@@ -370,11 +391,21 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 // with no per-sandbox reservation (docs/adr/0029).
 // There is no candidate search; the sandbox's assigned pool is its host.
 //
-// A pool that hosts another platform than the sandbox's is refused with a
-// *platform.MismatchError rather than ErrNotFound (ADR 0145 §1): it is not a
-// pool on its way up that waiting would fix, and the platforms are the reason.
-// It is checked once the pool is schedulable, because only a reporting agent
-// has declared what it hosts.
+// The sandbox's platform is settled here too (ADR 0145 §1), once the pool is
+// schedulable, because only a reporting agent has declared what it hosts. A
+// sandbox with none yet — created while its pool's agent had not declared one
+// — takes the pool's, written to its row. Its harness's image must be
+// published for it, which is refused with a *platform.UnpublishedError naming
+// what it is published for; a sandbox of another platform than its pool's is
+// refused with a *platform.MismatchError. Neither is ErrNotFound: a pool of the
+// wrong platform is not one on its way up, and a caller that waited on it
+// would wait for good.
+//
+// sandbox may stand in for a row not written yet — an import restores the tree
+// first — and then carries the platform its tree belongs to, which is all
+// there is to check; one from an archive written before platforms carries
+// none, and lands on its pool, whose platform the row then takes when it is
+// placed.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {
 		return nil, ErrNotFound
@@ -389,10 +420,72 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		!pool.IsReady() || !pool.Schedulable {
 		return nil, ErrNotFound
 	}
-	if err := platform.Place(sandbox.Platform, pool.Platform); err != nil {
+	// A pool whose agent has declared nothing — one from before platforms —
+	// places as every pool did before them: there is nothing to settle a
+	// sandbox's platform from, or to check it against.
+	if pool.Platform.IsZero() {
+		return pool, nil
+	}
+	sandboxPlatform, err := s.settleSandboxPlatform(ctx, sandbox, pool)
+	if err != nil {
+		return nil, err
+	}
+	if err := platform.Place(sandboxPlatform, pool.Platform); err != nil {
 		return nil, err
 	}
 	return pool, nil
+}
+
+// settleSandboxPlatform is the platform the sandbox runs on: its row's, or,
+// for a row with none yet, its pool's, recorded on the row. The harness the
+// row names must be published for it. A stand-in with no row answers the
+// platform it carries, or its pool's when it carries none.
+func (s *Store) settleSandboxPlatform(ctx context.Context, sandbox *model.Sandbox, pool *model.Pool) (platform.Platform, error) {
+	standIn := sandbox.Platform
+	if standIn.IsZero() {
+		standIn = pool.Platform
+	}
+	if sandbox.ID == "" {
+		return standIn, nil
+	}
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return platform.Platform{}, err
+	}
+	var row model.Sandbox
+	err = write.WithContext(ctx).Select("id", "platform", "harness_config_id").
+		First(&row, "id = ? AND project_id = ?", sandbox.ID, sandbox.ProjectID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return standIn, nil
+	}
+	if err != nil {
+		return platform.Platform{}, err
+	}
+	settled := row.Platform
+	if settled.IsZero() {
+		settled = pool.Platform
+	}
+	if row.HarnessConfigID != nil && *row.HarnessConfigID != "" {
+		var harness model.HarnessConfig
+		err := write.WithContext(ctx).Select("id", "slug", "platforms").
+			First(&harness, "id = ?", *row.HarnessConfigID).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return platform.Platform{}, err
+		}
+		if err == nil {
+			if err := harness.Platforms.Publishes(settled); err != nil {
+				return platform.Platform{}, fmt.Errorf("harness %q: %w", harness.Slug, err)
+			}
+		}
+	}
+	if row.Platform.IsZero() && !settled.IsZero() {
+		if err := write.WithContext(ctx).Model(&model.Sandbox{}).
+			Where("id = ? AND platform = ''", row.ID).
+			UpdateColumn("platform", settled).Error; err != nil {
+			return platform.Platform{}, err
+		}
+	}
+	return settled, nil
 }
 
 // PurgeSpentPoolBootstrapTokens deletes bootstrap tokens that can no longer be

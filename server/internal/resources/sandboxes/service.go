@@ -265,9 +265,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	// The harness is the sandbox's template, so its platform is the sandbox's,
-	// in config mode as much as in run mode (ADR 0145 §1).
-	if err := refuseOtherPlatform(harnessConfig.Platform, pool); err != nil {
+	// The sandbox runs on its pool's platform, which its harness's image must
+	// be published for, in config mode as much as in run mode (ADR 0145 §1).
+	sandboxPlatform, err := platformOnPool(harnessConfig, pool)
+	if err != nil {
 		return nil, err
 	}
 	if harnessMode != sandboxconfig.HarnessModeConfig {
@@ -300,7 +301,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedByUserID:    userID,
 		CreatedBySandboxID: createdBySandboxID,
 		PoolID:             pool.ID,
-		Platform:           harnessConfig.Platform,
+		Platform:           sandboxPlatform,
 		Name:               config.Name,
 		Description:        services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
@@ -380,21 +381,33 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	return s.createSandboxIntent(ctx, sandbox, append(assignments, grants.Bindings...), grants)
 }
 
-// resolveHarnessConfigID is which harness a sandbox runs: what the request
-// names, else the project default, else nothing — which is an error (ADR 0048).
+// platformOnPool is the platform a sandbox on harness runs on when placed on
+// pool: the pool's, which the harness's image must be published for (ADR 0145
+// §1). A multi-platform release image runs on a pool of any platform it
+// publishes; a single-platform development build is refused elsewhere, with a
+// 409 that says what it was published for.
 //
-// The chain does not end at the built-in `shell`. Ending there would answer a
-// project with a harness configured and no default set with a shell, which is
-// indistinguishable from a working setup until you are inside the sandbox
-// wondering where the harness went.
+// A pool whose agent has not yet declared what it hosts is an ordinary target
+// for a create — one still coming up — and answers no platform: the sandbox
+// takes its pool's when it is placed (store.SchedulablePoolForSandbox), which
+// makes the same check then.
+func platformOnPool(harness *model.HarnessConfig, pool *model.Pool) (platform.Platform, error) {
+	if pool.Platform.IsZero() {
+		return platform.Platform{}, nil
+	}
+	if err := harness.Platforms.Publishes(pool.Platform); err != nil {
+		return platform.Platform{}, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q cannot run on pool %q: %v", harness.Slug, pool.Name, err))
+	}
+	return pool.Platform, nil
+}
+
 // refuseOtherPlatform refuses a sandbox of sandboxPlatform on a pool that
 // hosts another, with the platforms as the reason (ADR 0145 §1). It is the
-// placement check as create and import make it, before anything is written.
-//
-// A pool whose agent has not yet declared what it hosts is not refused here:
-// a pool still coming up is an ordinary target for a create, and the provider
-// makes the same check against the declared platform once the pool is
-// schedulable (store.SchedulablePoolForSandbox).
+// placement check as import makes it, for a sandbox whose platform its tree
+// already fixed, before anything is written. A pool that has not yet
+// declared what it hosts is not refused here; the provider makes the same
+// check once it is schedulable (store.SchedulablePoolForSandbox).
 func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) error {
 	if pool.Platform.IsZero() {
 		return nil
@@ -405,6 +418,13 @@ func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) er
 	return nil
 }
 
+// resolveHarnessConfigID is which harness a sandbox runs: what the request
+// names, else the project default, else nothing — which is an error (ADR 0048).
+//
+// The chain does not end at the built-in `shell`. Ending there would answer a
+// project with a harness configured and no default set with a shell, which is
+// indistinguishable from a working setup until you are inside the sandbox
+// wondering where the harness went.
 func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (string, error) {
 	if project == nil {
 		return "", fmt.Errorf("project is required")

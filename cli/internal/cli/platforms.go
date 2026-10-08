@@ -9,7 +9,8 @@ import (
 
 // poolPlatforms is what the project's pools host, for offering only the
 // harnesses one of them can run (ADR 0145 §1). A pool hosts exactly one
-// platform, and a discobox is placed only on a pool of its own.
+// platform, and a discobox runs on its pool's, which its harness's image must
+// be published for.
 type poolPlatforms struct {
 	hosted map[string]bool
 	// undeclared is a pool whose agent has not said what it hosts yet — one
@@ -42,9 +43,18 @@ func platformsOf(pools []apimodel.Pool) poolPlatforms {
 	return out
 }
 
-// run reports whether a pool can run the harness. A harness with no platform
-// comes from a server that records none, where every harness runs everywhere.
+// run reports whether a pool can run the harness: one hosts a platform its
+// image is published for. A harness with no platforms has not been inspected
+// since they were recorded, or comes from a server that records none, and
+// rules nothing out.
 func (p poolPlatforms) run(harness apimodel.HarnessConfig) bool {
-	platform := harness.Platform.Or("")
-	return platform == "" || p.undeclared || p.hosted[platform]
+	if len(harness.Platforms) == 0 || p.undeclared {
+		return true
+	}
+	for _, platform := range harness.Platforms {
+		if p.hosted[platform] {
+			return true
+		}
+	}
+	return false
 }
