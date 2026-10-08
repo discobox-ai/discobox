@@ -94,9 +94,9 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
 - **Never signal a session without asking whether it is still the
   command's** (`signalSession`, `endSession`). Every exec command leads a
   session, so "leads a session" does not identify one: a live leader must
-  have the start the shim recorded, which is stamped when the process
-  starts — never after the startup command is typed, which can be seconds
-  later.
+  have the kernel identity the shim recorded (`Exec.ProcessIdentity`), and
+  compared exactly. A wall-clock start within a tolerance is not an identity:
+  a process that reused the number within it passes.
 - **A lock that cannot be waited on is not a shim that ended.** Reading an
   error as "gone" demotes the exec to lost, and the terminal layer relaunches
   a lost terminal over the shim still running.

@@ -4,6 +4,7 @@ package execs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -244,18 +245,28 @@ func TestOrphanedCommandIsEndedOnlyWhileItIsStillThatCommand(t *testing.T) {
 		})
 		return cmd
 	}
-	orphan := func(t *testing.T, pid int, started time.Time) unitState {
+	identity := func(t *testing.T, pid int) string {
 		t.Helper()
+		id, err := processIdentity(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	orphan := func(t *testing.T, pid int, identity string) unitState {
+		t.Helper()
+		started := time.Now().UTC()
 		runtimePath := filepath.Join(dir, fmt.Sprintf("%d.json", pid))
-		if err := writeRuntime(runtimePath, Exec{ID: "ex", Status: StatusRunning, PID: int64(pid), StartedAt: &started}); err != nil {
+		if err := writeRuntime(runtimePath, Exec{ID: "ex", Status: StatusRunning, PID: int64(pid), ProcessIdentity: identity, StartedAt: &started}); err != nil {
 			t.Fatal(err)
 		}
 		return unitState{RuntimePath: runtimePath}
 	}
 
 	other := start(t)
-	// Recorded an hour before this process started: the number was reused.
-	endOrphanedCommand(orphan(t, other.Process.Pid, time.Now().Add(-time.Hour)))
+	// Recorded for some earlier process: the number was reused. Not a near
+	// miss — an identity is exact, so any other value is another process.
+	endOrphanedCommand(orphan(t, other.Process.Pid, identity(t, other.Process.Pid)+"0"))
 	time.Sleep(100 * time.Millisecond)
 	if sessionGone(other.Process.Pid) {
 		t.Fatal("a process that reused an orphan's pid was killed")
@@ -264,23 +275,33 @@ func TestOrphanedCommandIsEndedOnlyWhileItIsStillThatCommand(t *testing.T) {
 	// A session whose leader is gone, with a member still running: what
 	// another exec looks like after its command started a server and exited.
 	// The orphan's record cannot say whose session that is any more.
-	leaderless := osexec.CommandContext(t.Context(), "sh", "-c", "sleep 600 & exit 0") //nolint:gosec // a fixed command.
+	// Its identity is the real one, taken while it ran, so the record would
+	// match if the leader were still there.
+	leaderless := osexec.CommandContext(t.Context(), "sh", "-c", "sleep 600 & read _; exit 0") //nolint:gosec // a fixed command.
 	leaderless.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	leaderlessStart := time.Now()
-	if err := leaderless.Run(); err != nil {
+	release, err := leaderless.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leaderless.Start(); err != nil {
 		t.Fatal(err)
 	}
 	sid := leaderless.Process.Pid
 	t.Cleanup(func() { _ = killSession(sid) })
+	leaderIdentity := identity(t, sid)
+	release.Close()
+	if err := leaderless.Wait(); err != nil {
+		t.Fatal(err)
+	}
 	waitUntil(t, "the leaderless session's member", func() bool { return !sessionGone(sid) })
-	endOrphanedCommand(orphan(t, sid, leaderlessStart))
+	endOrphanedCommand(orphan(t, sid, leaderIdentity))
 	time.Sleep(100 * time.Millisecond)
 	if sessionGone(sid) {
 		t.Fatal("a session whose leader was gone was killed on the strength of an old record")
 	}
 
 	command := start(t)
-	endOrphanedCommand(orphan(t, command.Process.Pid, time.Now()))
+	endOrphanedCommand(orphan(t, command.Process.Pid, identity(t, command.Process.Pid)))
 	waitUntil(t, "the orphaned command to be killed", func() bool {
 		return sessionGone(command.Process.Pid)
 	})
@@ -490,11 +511,138 @@ func TestShimRecordsTheStartBeforeTypingTheStartupCommand(t *testing.T) {
 	if late := started.StartedAt.Sub(asked); late > time.Second {
 		t.Fatalf("start recorded %s after the shim was asked to start; it must be the process's start", late)
 	}
-	if !isCommand(int(started.PID), *started.StartedAt) {
-		t.Fatal("the recorded start does not identify the running command")
+	if started.ProcessIdentity == "" || !isCommand(int(started.PID), started.ProcessIdentity) {
+		t.Fatalf("the recorded identity %q does not identify the running command", started.ProcessIdentity)
 	}
 	cancel()
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("run shim: %v", err)
+	}
+}
+
+// A shim records its own pid and identity in the unit it locks. The agent
+// puts the unit in place before the shim starts and writes the pid once it
+// has, but it can die in between, and a held unit naming no shim is one
+// nothing could stop.
+func TestAShimRecordsItselfInItsUnit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unit.lock")
+	written := unitState{StartedAt: time.Now().UTC().Truncate(time.Second), RuntimePath: "/run/discobox/execs/ex.json"}
+	data, err := json.Marshal(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := holdLifetime(file.Fd()); err != nil {
+		t.Fatalf("hold lifetime: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got unitState
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unit after the shim wrote it: %v (%q)", err, raw)
+	}
+	want, _ := processIdentity(os.Getpid())
+	if got.PID != os.Getpid() || got.Identity != want {
+		t.Fatalf("unit names pid %d identity %q, want this process: %d %q", got.PID, got.Identity, os.Getpid(), want)
+	}
+	if got.RuntimePath != written.RuntimePath || !got.StartedAt.Equal(written.StartedAt) {
+		t.Fatalf("the shim lost what the agent wrote: %+v", got)
+	}
+}
+
+// Stop signals a unit's pid only while it is still the shim the unit
+// recorded. A held lock and a pid in a file say nothing about what the number
+// is now.
+func TestStopSignalsOnlyTheShimTheUnitRecorded(t *testing.T) {
+	sv := NewSupervisor(filepath.Join(t.TempDir(), supervisorDirName))
+	if err := os.MkdirAll(sv.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stranger := osexec.CommandContext(t.Context(), "sleep", "600") //nolint:gosec // a fixed command.
+	if err := stranger.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = stranger.Process.Kill()
+		_ = stranger.Wait()
+	})
+	identity, err := processIdentity(stranger.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unit = "discobox-exec-ex_reused"
+	data, err := json.Marshal(unitState{PID: stranger.Process.Pid, Identity: identity + "0", StartedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sv.lockPath(unit), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The lock is held, as a live shim would hold it — by this test.
+	holder, err := os.Open(sv.lockPath(unit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if ok, err := lockFile(holder, true, false); err != nil || !ok {
+		t.Fatalf("take the lock: %v %v", ok, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_ = sv.Stop(ctx, unit)
+	// Still running, not merely unreaped: a zombie answers signal 0 too.
+	time.Sleep(100 * time.Millisecond)
+	if _, err := processIdentity(stranger.Process.Pid); err != nil {
+		t.Fatalf("Stop signaled a process the unit did not record: %v", err)
+	}
+	if pid, err := sv.shim(context.Background(), unit); err != nil || pid != 0 {
+		t.Fatalf("shim = %d, %v; want none for a pid whose identity moved on", pid, err)
+	}
+}
+
+// The agent and the shim both write a unit's record, and their records need
+// not be the same length — one may have read the shim's identity and the other
+// not. Whatever order the writes land in, the file holds one whole record.
+func TestAUnitRecordIsNeverTorn(t *testing.T) {
+	file, err := os.OpenFile(filepath.Join(t.TempDir(), "unit.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	long := unitState{PID: 4242, Identity: "a7b30f68-cade-46d7-b516-911b9b767af8:434698162", RuntimePath: "/run/discobox/execs/ex_1.json"}
+	short := unitState{PID: 4242, RuntimePath: "/run/discobox/execs/ex_1.json"}
+	for _, order := range [][]unitState{{long, short}, {short, long}} {
+		for _, state := range order {
+			if err := writeUnitState(int(file.Fd()), state); err != nil {
+				t.Fatal(err)
+			}
+		}
+		raw, err := os.ReadFile(file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Every record the same size is what makes a torn one impossible: no
+		// write is followed by a truncate, so no writer can cut another's
+		// record short or leave a longer one's tail behind it.
+		if len(raw) != unitRecordSize {
+			t.Fatalf("record is %d bytes, want every record exactly %d", len(raw), unitRecordSize)
+		}
+		var got unitState
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("record after writing %d then %d bytes is not whole: %v", len(order[0].Identity), len(order[1].Identity), err)
+		}
+		if got != order[1] {
+			t.Fatalf("record = %+v, want the last written, %+v", got, order[1])
+		}
 	}
 }

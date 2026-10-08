@@ -7,12 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 )
-
-// userHZ is the unit /proc reports a process's start time in: clock ticks,
-// which the kernel fixes at 100 per second for everything it shows userspace.
-const userHZ = 100
 
 // processes lists every process the kernel knows of.
 func processes() ([]int, error) {
@@ -29,8 +25,20 @@ func processes() ([]int, error) {
 	return out, nil
 }
 
-// inspectProcess reads when a process started and whether it has already
-// exited and waits only to be reaped.
+// bootID names this boot of the machine. A process's start ticks count from
+// boot, so they identify it only within one: the boot id is what keeps a pid
+// and tick pair from an earlier boot from matching one in this.
+var bootID = sync.OnceValues(func() (string, error) {
+	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+})
+
+// inspectProcess reads a process's identity — the boot and the clock tick it
+// started on, which no later process holding the same pid in the same boot
+// can share — and whether it has already exited and waits only to be reaped.
 func inspectProcess(pid int) (processInfo, error) {
 	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
@@ -48,35 +56,12 @@ func inspectProcess(pid int) (processInfo, error) {
 	if len(fields) < 20 {
 		return processInfo{}, errors.New("malformed /proc stat")
 	}
-	ticks, err := strconv.ParseInt(fields[19], 10, 64)
-	if err != nil {
-		return processInfo{}, err
-	}
-	boot, err := bootTime()
+	boot, err := bootID()
 	if err != nil {
 		return processInfo{}, err
 	}
 	return processInfo{
-		started: boot.Add(time.Duration(ticks) * time.Second / userHZ),
-		exited:  fields[0] == "Z" || fields[0] == "X",
+		identity: boot + ":" + fields[19],
+		exited:   fields[0] == "Z" || fields[0] == "X",
 	}, nil
-}
-
-// bootTime is when the machine booted, from /proc/stat's btime: whole seconds,
-// which is why a start time read from /proc is good to about a second.
-func bootTime() (time.Time, error) {
-	stat, err := os.ReadFile("/proc/stat")
-	if err != nil {
-		return time.Time{}, err
-	}
-	for line := range strings.SplitSeq(string(stat), "\n") {
-		if value, ok := strings.CutPrefix(line, "btime "); ok {
-			seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-			if err != nil {
-				return time.Time{}, err
-			}
-			return time.Unix(seconds, 0), nil
-		}
-	}
-	return time.Time{}, errors.New("no btime in /proc/stat")
 }
