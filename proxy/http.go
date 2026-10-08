@@ -46,6 +46,9 @@ type httpProxy struct {
 	// h2c is the transport for requests the sandbox sent as cleartext HTTP/2;
 	// see cleartextHTTP2Transport.
 	h2c *http.Transport
+	// origins answers the host the pool serves its sandboxes' Git origins at;
+	// nil answers none. Set once, before the proxy serves.
+	origins *originForwarder
 }
 
 type requestMeta struct {
@@ -284,9 +287,10 @@ func (h *httpProxy) setupHandlers() {
 		if proxyCtx != nil {
 			proxyCtx.UserData = &connectTunnel{authority: host}
 		}
-		// The gate host is intercepted whatever the allowlist says: it never
-		// reaches the internet, and what may reach it is the gate's to decide.
-		if h.secretSwapper().IsGate(host) {
+		// The gate host and the origins host are intercepted whatever the
+		// allowlist says: neither reaches the internet, and what may reach
+		// them is the gate's, or the pool's origin listener's, to decide.
+		if h.secretSwapper().IsGate(host) || h.origins.answers(host) {
 			return h.mitmConnect, host
 		}
 		if !flt.AllowHostForClient(host, client.ID) {
@@ -378,6 +382,11 @@ func (h *httpProxy) setupHandlers() {
 
 		if swapper := h.secretSwapper(); swapper.IsGate(req.Host) {
 			return req, h.serveGate(req, meta, client, swapper)
+		}
+		// The pool's own origins: never the internet's, and never the
+		// allowlist's to refuse, like the gate host above.
+		if h.origins.answers(req.Host) {
+			return req, h.serveOrigin(req, meta, client)
 		}
 
 		flt, rewriter := h.policy()
