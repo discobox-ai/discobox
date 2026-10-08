@@ -883,13 +883,23 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 // repeat create — a retry, a later reconcile — from rebuilding forever: once a
 // rebuilt container's bootstrap records the project layer, there is no longer a
 // pending delivery to re-read it from.
+//
+// "Outstanding" is either half of the settle: a source not yet on disk, or one
+// on disk whose delivery the runtime-config record does not say yet — a settle
+// that materialized a source and then stopped (the pool restarting, a record
+// that failed to write) before deciding the spec and recording it. The
+// project-layer check and the record are both idempotent, so finishing that
+// settle is the same work as doing it.
 func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
 	sandboxID := existing.SandboxID
-	if len(r.pendingSourceDeliveries(sandboxID, req)) == 0 {
+	pending := r.pendingSourceDeliveries(sandboxID, req)
+	if len(pending) == 0 && !r.recordAwaitsSources(sandboxID) {
 		return false, nil
 	}
-	if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
-		return false, err
+	if len(pending) > 0 {
+		if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+			return false, err
+		}
 	}
 	changed, err := r.projectLayerChanged(sandboxID, req)
 	if err != nil {
@@ -909,6 +919,13 @@ func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, exist
 		return false, r.recordRuntimeConfig(sandboxID, setSources)
 	}
 	return false, logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, setSources))
+}
+
+// recordAwaitsSources reports whether the sandbox's runtime-config record names
+// a source it has not marked delivered.
+func (r *DockerSandboxRuntime) recordAwaitsSources(sandboxID string) bool {
+	recorded, ok, err := r.readRuntimeConfig(sandboxID)
+	return err == nil && ok && !recorded.SourcesDelivered()
 }
 
 // pendingSourceDeliveries are the sandbox's sources whose content is not in

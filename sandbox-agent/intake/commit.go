@@ -33,32 +33,30 @@ type op struct {
 // cannot be made, a full or read-only filesystem — and it touches no target. A
 // rename in the same directory is what is left, and it is the step undone.
 //
-// When gated, the last op is the readiness marker, and activate is called with
-// every other op once they are in place and before the marker is: whatever
-// reads the new files is started before anything waiting on the marker runs.
-// A marker that then fails to go in rolls the rest back like any other
-// replacement, and activate is called again so what it started reads what is
-// there once more.
-func run(ops []op, gated bool, activate func(done []op)) error {
+// The last tail ops say the change took — the kept state file, the readiness
+// marker — and activate is called with every op before them once those are in
+// place and before the tail is: whatever reads the new files is started before
+// the change is recorded or anything waiting on the marker runs. An activation
+// that fails leaves the body in place and the tail out — the files are the
+// document's, and what reads them is not up — and returns its error. A tail op
+// that then fails to go in rolls everything back like any other replacement,
+// and activate is called again so what it started reads what is there once
+// more.
+func run(ops []op, tail int, activate func(done []op) error) error {
 	defer discardStaged(ops)
 	if err := stageAll(ops); err != nil {
 		return err
 	}
-	body := ops
-	if gated {
-		body = ops[:len(ops)-1]
-	}
+	body := ops[:len(ops)-tail]
 	if err := replaceAll(body); err != nil {
 		return err
 	}
-	activate(body)
-	if !gated {
-		return nil
+	if err := activate(body); err != nil {
+		return err
 	}
-	if err := ops[len(ops)-1].replace(); err != nil {
+	if err := replaceAll(ops[len(body):]); err != nil {
 		restoreErr := restoreAll(body)
-		activate(body)
-		return errors.Join(err, restoreErr)
+		return errors.Join(err, restoreErr, activate(body))
 	}
 	return nil
 }
