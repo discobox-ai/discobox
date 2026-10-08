@@ -452,6 +452,17 @@ Key properties:
   so `discobox admin audit http --use-id` finds a discobox's API calls by the
   use it made them under. Every other host is sent the
   placeholder when a credential does not resolve; this one fails closed.
+- **The origins host never reaches the internet either** (`Config.Origins`,
+  `origins.go`;
+  [ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md)).
+  A CONNECT to it is intercepted whatever the allowlist says, like the gate
+  host's, and a request for it is forwarded — its path and query, and nothing
+  else of where it was sent — to `Origins.Upstream`, with `OriginClientHeader`
+  set to the client the certificate names, replacing whatever the sandbox sent
+  under that name. Its own `Authorization` goes with it: that is the token the
+  upstream decides on. No swap, no cache, no header rule; the response is
+  audited on the ordinary response path, and an unreachable upstream is a 502.
+  The pool points it at its agent's loopback origin listener.
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.
