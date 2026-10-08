@@ -89,15 +89,15 @@ func judgingPoolFunc(t *testing.T, answer func(judgeAsk) response) (*secretResol
 	}
 	plane := &controlPlaneCredentials{contextPath: contextPath, client: server.Client()}
 	return &secretResolver{
-			contextPath: contextPath,
-			client:      server.Client(),
-			activations: live,
-			judge:       &judgeClient{plane: plane},
-		}, func() []judgeAsk {
-			mu.Lock()
-			defer mu.Unlock()
-			return append([]judgeAsk(nil), asked...)
-		}
+		contextPath: contextPath,
+		client:      server.Client(),
+		activations: live,
+		judge:       &judgeClient{plane: plane},
+	}, func() []judgeAsk {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]judgeAsk(nil), asked...)
+	}
 }
 
 func authorizeRequest() proxy.SecretAuthorizeRequest {
