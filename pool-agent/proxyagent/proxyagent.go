@@ -295,6 +295,10 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	// The discobox API's host, which this proxy never sends to the internet:
 	// the resolver's gate answers it from the control plane (ADR 0140 §2).
 	cfg.Secrets.GateHost = GateHost()
+	// The sandboxes' Git origins, which this proxy never sends to the
+	// internet either: it forwards them to the agent's loopback origin
+	// listener as the sandbox the client certificate names (ADR 26-10-08-561).
+	cfg.Origins = proxy.OriginsConfig{Host: OriginsHost, Upstream: "http://" + OriginsListenAddress}
 
 	// Agent-credential activations live in this process, alongside the sentinel
 	// registry and the resolver they act on (ADR 0031 §3). The resolver

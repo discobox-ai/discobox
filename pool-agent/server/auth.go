@@ -15,6 +15,7 @@ import (
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 const (
@@ -190,6 +191,45 @@ func (a *SignedTokenAuthenticator) OriginMiddleware(sandboxTokens *sandboxtoken.
 			// escaped slash: a project id of "p%2Fpool%2Fx%2Fsandboxes%2Fmine"
 			// decodes to a path whose first sandbox is the token's own while
 			// the router serves, and autoStart starts, the one named after it.
+			if err := a.authorizeRequestPath(r.URL.EscapedPath(), claims); err != nil {
+				a.reject(r, w, http.StatusForbidden, reasonForbidden, err)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
+		})
+	}
+}
+
+// SandboxOriginMiddleware authenticates the origin listener, which a sandbox
+// reaches through the pool proxy alone (ADR 26-10-08-561). It takes a token
+// this pool issued to a sandbox and nothing else, for that sandbox's path, and
+// only when the proxy says the request came from that same sandbox: the
+// header is the proxy's word on the client certificate, so a token copied out
+// of one sandbox fetches nothing from another.
+func (a *SignedTokenAuthenticator) SandboxOriginMiddleware(sandboxTokens *sandboxtoken.Verifier) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenText, ok := bearerToken(r.Header.Get("Authorization"))
+			if !ok {
+				a.reject(r, w, http.StatusUnauthorized, reasonMissingToken, errors.New("no sandbox token"))
+				return
+			}
+			sandbox, err := sandboxTokens.Verify(tokenText)
+			if err != nil {
+				a.reject(r, w, http.StatusUnauthorized, reasonInvalidToken, err)
+				return
+			}
+			claims := SignedTokenClaims{
+				ProjectID: sandbox.ProjectID,
+				PoolID:    sandbox.PoolID,
+				SandboxID: sandbox.SandboxID,
+				Scopes:    sandbox.Scopes,
+			}
+			if client := r.Header.Get(proxy.OriginClientHeader); client != claims.SandboxID {
+				a.reject(r, w, http.StatusForbidden, reasonForbidden, fmt.Errorf("the proxy names sandbox %q, the token %q", client, claims.SandboxID))
+				return
+			}
+			// The escaped path, for the reason OriginMiddleware gives.
 			if err := a.authorizeRequestPath(r.URL.EscapedPath(), claims); err != nil {
 				a.reject(r, w, http.StatusForbidden, reasonForbidden, err)
 				return

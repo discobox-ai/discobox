@@ -1,6 +1,6 @@
 # 0026 — A local source's origin is bind-mounted live into the sandbox
 
-- **Status**: Accepted (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md))
+- **Status**: Accepted (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md); §§1-2 superseded by [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §4, which serves the origin over Git HTTP)
 - **Date**: 2026-08-01
 
 ## Context

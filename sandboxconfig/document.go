@@ -155,8 +155,9 @@ type AgentRuntime struct {
 	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
 }
 
-// Source is a pool-agent-materialized source the sandbox-agent bind-mounts from
-// /.discobox/sources/<slug> onto its in-sandbox target.
+// Source is a source the sandbox-agent bind-mounts from /.discobox/sources/<slug>
+// onto its in-sandbox target, and clones from the origin its runtime-config
+// document names (ADR 0126 §4).
 type Source struct {
 	Slug   string `json:"slug"`
 	Target string `json:"target"`
@@ -178,11 +179,10 @@ type Source struct {
 	// without running git from outside. Absent when the source has no recorded
 	// checkout commit; the diff stat is then simply not reported.
 	BaseCommit string `json:"baseCommit,omitempty"`
-	// AwaitsDelivery marks a source whose content is not in place when the
-	// sandbox's container is created: the client pushes it in afterwards, and
-	// pool-agent materializes it on the resume that follows (ADR 0001). Absent
-	// means the source was fully materialized before the container existed,
-	// which is every clone-delivered source.
+	// AwaitsDelivery marks a source the client pushes in after the sandbox's
+	// container is created, which the sandbox clones on the resume that
+	// follows (ADR 0001). Absent means the sandbox can clone it from its
+	// origin as soon as it boots, which is every clone-delivered source.
 	//
 	// The sandbox holds its harness launch when any source carries this, until
 	// pool-agent reports the sandbox settled (SourcesReadyFileName), so nothing
@@ -226,7 +226,8 @@ type SourceWorkspace struct {
 // it last and reads it first, because materializing again over a workspace
 // the sandbox has been using since would discard its work. It lives under
 // .git so it is never an untracked file in the working tree. The sandbox agent
-// writes the commit it materialized into it; a pool's is empty.
+// writes the commit it materialized into it; one a pool wrote, before the
+// sandbox cloned its own sources (ADR 0126 §4), is empty.
 const SourceMaterializedMarker = "discobox-materialized"
 
 // User is the sandbox user identity as the manifest publishes it. It is an

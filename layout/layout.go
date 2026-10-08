@@ -229,9 +229,9 @@ func (r Root) SandboxSources(projectID, poolID, sandboxID string) string {
 }
 
 // SandboxOrigins holds one bare repository per push-delivered source, which the
-// client pushes into and the sandbox sees as its `origin` (ADR 0058). Unlike
-// the subtrees above it is not itself mounted: each repository under it is
-// bound individually, read-only, at /.discobox/origins/<slug>.
+// client pushes into and the sandbox fetches as its `origin` (ADR 0058). Unlike
+// the subtrees above it is never mounted: the pool serves each repository over
+// its git-origins route (ADR 0126 §4).
 func (r Root) SandboxOrigins(projectID, poolID, sandboxID string) string {
 	return r.join(r.Sandbox(projectID, poolID, sandboxID), "origins")
 }

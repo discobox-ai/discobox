@@ -348,8 +348,19 @@ func (r *DockerSandboxRuntime) retireContainerWithoutRuntimeConfig(ctx context.C
 		return err
 	}
 	slog.InfoContext(ctx, "retiring a sandbox container built before its pool delivered runtime config; the control plane rebuilds it", "sandboxId", sb.SandboxID)
+	if err := r.removeForRebuild(ctx, sb); err != nil {
+		return err
+	}
+	return errContainerRetired
+}
+
+// removeForRebuild removes a sandbox's container so the control plane
+// recreates it from the spec it holds: the durable tree is in the pool-host
+// binds, so removing the container loses nothing. The caller holds the
+// sandbox's power lock.
+func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox) error {
 	if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("retire sandbox container: %w", err)
+		return fmt.Errorf("remove sandbox container for a rebuild: %w", err)
 	}
 	// The control plane learns a container is gone from a complete sync's
 	// omission, so one goes now rather than at the next interval: the rebuild
@@ -357,7 +368,7 @@ func (r *DockerSandboxRuntime) retireContainerWithoutRuntimeConfig(ctx context.C
 	if publish, _ := r.statePublisher.Load().(func(context.Context, SandboxStateBatch) error); publish != nil {
 		r.publishCompleteSync(ctx, slog.Default(), publish)
 	}
-	return errContainerRetired
+	return nil
 }
 
 // finishBoot waits for the sandbox agent of a container that has just started,

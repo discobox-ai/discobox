@@ -130,7 +130,8 @@ func (r *DockerSandboxRuntime) writeRuntimeConfig(sandboxID string, doc sandboxc
 
 // decideRuntimeConfig settles the sandbox's document: the record as it stands
 // with change applied to it, and the parts the pool owns outright — the idle
-// timeout and the proxy material — as they are now. A document that differs
+// timeout, the proxy material and its sources' origin tokens — as they are
+// now. A document that differs
 // from the record is a new revision; one that does not keeps the record's, so
 // deciding again is free and delivering it again is a retry. The returned
 // document carries the client key; the record does not. The caller holds
@@ -169,6 +170,9 @@ func (r *DockerSandboxRuntime) decideRuntimeConfig(sandboxID string, change func
 	}
 	proxy := material.Proxy
 	next.Proxy = &proxy
+	if err := r.refreshOriginTokens(sandboxID, &next); err != nil {
+		return sandboxconfig.RuntimeConfig{}, err
+	}
 	next.Revision = recorded.Revision
 	if !ok || !withoutClientKey(next).SameDocument(withoutClientKey(recorded)) {
 		next.Revision = recorded.Revision + 1
@@ -210,6 +214,10 @@ func (r *DockerSandboxRuntime) deliverRuntimeConfig(ctx context.Context, sandbox
 // already running. It is how a delivery that did not land is repaired: the
 // pool converges on what the sandbox says it applied, never on having sent it.
 //
+// It also settles the sources of a running sandbox no create is waiting on
+// (settleConverged), which is how a sandbox that was started rather than
+// created — unarchived, imported — comes to have its sources delivered.
+//
 // It steps aside for anything holding the sandbox's power lock — a create, a
 // start, an archive, a delete — rather than waiting on it or racing it: the
 // boot that work ends in delivers for itself, and the next poll looks again.
@@ -223,25 +231,45 @@ func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandbo
 	if err != nil || !takes {
 		return err
 	}
+	doc, err := r.convergeDocument(ctx, sandboxID, applied)
+	if err != nil {
+		return err
+	}
+	// A sandbox that was started rather than created has nobody waiting to
+	// settle its sources, so the poll does (settleConverged).
+	if doc.SourcesDelivered() {
+		return nil
+	}
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil || sb.Status != StatusRunning {
+		return err
+	}
+	return r.settleConverged(ctx, sb)
+}
+
+// convergeDocument decides the sandbox's document again and delivers it when
+// the revision the sandbox reports applying is not the one decided, and
+// returns the document decided.
+func (r *DockerSandboxRuntime) convergeDocument(ctx context.Context, sandboxID string, applied int64) (sandboxconfig.RuntimeConfig, error) {
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
 	doc, err := r.decideRuntimeConfig(sandboxID, nil)
 	if err != nil {
-		return err
+		return sandboxconfig.RuntimeConfig{}, err
 	}
 	// Only an equal revision is converged. A sandbox ahead of the record —
 	// the record lost, or the sandbox moved here with its kept document — is
 	// delivered to as well, so putRuntimeConfig can learn its revision, move
 	// the record past it, and deliver what the pool decides now.
 	if applied == doc.Revision {
-		return nil
+		return doc, nil
 	}
 	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
 	if err != nil {
-		return err
+		return sandboxconfig.RuntimeConfig{}, err
 	}
-	return r.putRuntimeConfig(ctx, dial, sandboxID, doc)
+	return doc, r.putRuntimeConfig(ctx, dial, sandboxID, doc)
 }
 
 // sendToTakingSandbox delivers doc to a sandbox whose container takes runtime
@@ -398,26 +426,15 @@ func (r *DockerSandboxRuntime) poolPublicKey() string {
 	return encodePublicKey(public)
 }
 
-// runtimeSources is the sandbox's sources as its document names them, each
-// delivered when delivered says so.
-func runtimeSources(sources []sandboxSource, delivered func(sandboxSource) bool) []sandboxconfig.RuntimeSource {
-	out := make([]sandboxconfig.RuntimeSource, 0, len(sources))
-	for _, source := range sources {
-		out = append(out, sandboxconfig.RuntimeSource{
-			Slug:      source.slug,
-			Commit:    sourceBaseCommit(source.git),
-			Delivered: delivered(source),
-		})
-	}
-	return out
-}
-
 // logRuntimeConfigFailure records a delivery that did not land. The status
 // poll converges on the revision the sandbox reports, so a delivery that fails
 // here is retried there; an agent with no intake, or one that refuses the
 // pool's delivery outright, is an error a caller has to see, since no retry
 // makes that sandbox usable.
 func logRuntimeConfigFailure(ctx context.Context, sandboxID string, err error) error {
+	if err == nil {
+		return nil
+	}
 	if errors.Is(err, ErrRuntimeConfigUnsupported) || errors.Is(err, ErrRuntimeConfigRefused) {
 		return err
 	}

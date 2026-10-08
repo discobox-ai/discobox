@@ -43,6 +43,11 @@ type Config struct {
 	// wire.Listen: the URL's scheme picks the transport, VSOCK on libkrun and
 	// vz pools (so the agent opens no IP port) and TCP on the rest.
 	Listener net.Listener
+	// OriginListener, when set, serves the sandboxes' own fetches of their
+	// origins, which reach it through the pool proxy (ADR 26-10-08-561). It
+	// is loopback, and serves the git-origins route alone, to the sandbox
+	// token alone, for the sandbox the proxy says is asking.
+	OriginListener net.Listener
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -96,6 +101,30 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	return router, nil
 }
 
+// NewOriginRouter serves the git-origins route to sandboxes, as the pool proxy
+// forwards their fetches: only for a request whose token is one this pool
+// issued, and whose path names the sandbox the proxy authenticated by its
+// client certificate (proxy.OriginClientHeader). The control plane's tokens
+// are not taken here; it reaches the same route on the agent's own listener.
+func NewOriginRouter(cfg Config) (*chi.Mux, error) {
+	if cfg.SandboxTokenKey == nil {
+		return nil, errors.New("the origin listener needs the pool's sandbox token key")
+	}
+	sandboxTokens, err := sandboxtoken.NewVerifier(cfg.SandboxTokenKey)
+	if err != nil {
+		return nil, err
+	}
+	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey)
+	if err != nil {
+		return nil, err
+	}
+	handler := newSandboxService(cfg.Identity, cfg.Runtime, cfg.Audit)
+	router := chi.NewRouter()
+	router.Use(authenticator.SandboxOriginMiddleware(sandboxTokens))
+	registerSandboxOriginRoutes(router, handler)
+	return router, nil
+}
+
 func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -120,7 +149,21 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		// websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
 	}
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
+	var originServer *http.Server
+	if cfg.OriginListener != nil {
+		originRouter, err := NewOriginRouter(cfg)
+		if err != nil {
+			return err
+		}
+		// Long-lived like the agent's own: a clone of a large repository is
+		// one response.
+		originServer = &http.Server{Handler: originRouter, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+		go func() {
+			logger.Info("pool agent serving sandbox origins", "addr", cfg.OriginListener.Addr())
+			errCh <- originServer.Serve(cfg.OriginListener)
+		}()
+	}
 	go func() {
 		if cfg.Listener != nil {
 			logger.Info("pool agent serving", "addr", cfg.Listener.Addr())
@@ -136,6 +179,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
+		if originServer != nil {
+			_ = originServer.Shutdown(shutdownCtx)
+		}
 		return ctx.Err()
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

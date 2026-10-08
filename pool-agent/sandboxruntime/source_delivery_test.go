@@ -2,7 +2,6 @@ package sandboxruntime
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,123 +37,22 @@ func deliveryTestRequest() *workerapimodel.PoolSandboxCreateRequest {
 	}
 }
 
-// markMaterialized writes the marker materializeGitSource leaves behind when a
-// source has been checked out.
+// markMaterialized writes the marker a source's checkout carries once it has
+// been materialized, by the sandbox or, before it did, by a pool.
 func markMaterialized(t *testing.T, r *DockerSandboxRuntime, slug string) {
 	t.Helper()
 	target := r.sandboxSourcePath(deliveryTestSandboxID, slug)
 	if err := os.MkdirAll(filepath.Join(target, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(gitMaterializedMarkerPath(target), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(target, ".git", sandboxconfig.SourceMaterializedMarker), nil, 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// A source is delivered in the runtime-config document once it is in place,
-// and not before: a sandbox still owed a push keeps waiting (ADR 0055).
-func TestSourcesAreDeliveredOnceTheyAreOnDisk(t *testing.T) {
-	runtime := deliveryTestRuntime(t)
-	req := deliveryTestRequest()
-	delivered := func() bool {
-		return sandboxconfig.RuntimeConfig{Sources: runtimeSources(sandboxSources(linuxPaths, req), runtime.sourceMaterialized(deliveryTestSandboxID))}.SourcesDelivered()
-	}
-	if delivered() {
-		t.Fatal("a source still owed a push is delivered")
-	}
-	markMaterialized(t, runtime, "primary")
-	if !delivered() {
-		t.Fatal("a source in place is not delivered")
-	}
-}
-
-// The project layer inside a delivered source cannot be read when the container
-// is created, so its arrival is what the resume has to notice.
-func TestProjectLayerChangedSeesADeliveredProjectLayer(t *testing.T) {
-	runtime := deliveryTestRuntime(t)
-	req := deliveryTestRequest()
-
-	// Nothing delivered and nothing recorded: the ordinary case, and no reason
-	// to rebuild anything.
-	changed, err := runtime.projectLayerChanged(deliveryTestSandboxID, req)
-	if err != nil {
-		t.Fatalf("projectLayerChanged: %v", err)
-	}
-	if changed {
-		t.Fatal("a source that declares nothing was reported as changed")
-	}
-
-	writeTestProjectLayer(t, runtime.sandboxSourcePath(deliveryTestSandboxID, "primary"), `{"runCommand":["./run.sh"]}`)
-	changed, err = runtime.projectLayerChanged(deliveryTestSandboxID, req)
-	if err != nil {
-		t.Fatalf("projectLayerChanged: %v", err)
-	}
-	if !changed {
-		t.Fatal("a delivered project layer was not noticed")
-	}
-
-	// Once the pool records it — which is what the rebuild's bootstrap writes —
-	// the same source must stop asking to be rebuilt, or every later create
-	// would replace the container again.
-	writeTestProjectLayerRecord(t, runtime, &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
-	changed, err = runtime.projectLayerChanged(deliveryTestSandboxID, req)
-	if err != nil {
-		t.Fatalf("projectLayerChanged: %v", err)
-	}
-	if changed {
-		t.Fatal("a project layer already baked into the document asked for another rebuild")
-	}
-}
-
-// settleDeliveredSources is the resume's whole decision: it must do nothing for
-// a sandbox that owes nothing, so a retried or repeated create cannot rebuild
-// the container in a loop.
-func TestSettleDeliveredSourcesIsANoOpOnceEverythingIsInPlace(t *testing.T) {
-	runtime := deliveryTestRuntime(t)
-	req := deliveryTestRequest()
-	markMaterialized(t, runtime, "primary")
-	writeTestProjectLayer(t, runtime.sandboxSourcePath(deliveryTestSandboxID, "primary"), `{"runCommand":["./run.sh"]}`)
-	writeTestProjectLayerRecord(t, runtime, &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
-
-	rebuild, err := runtime.settleDeliveredSources(context.Background(), &Sandbox{SandboxID: deliveryTestSandboxID, Status: StatusStopped}, req)
-	if err != nil {
-		t.Fatalf("settle: %v", err)
-	}
-	if rebuild {
-		t.Fatal("a settled sandbox asked for a rebuild")
-	}
-}
-
-// A settle that materialized a source and stopped before recording it — the
-// pool restarting between the two — is finished by the next create, rather
-// than leaving a checkout on disk that the sandbox is never told it has.
-func TestSettleFinishesASourceMaterializedButNotRecorded(t *testing.T) {
-	runtime := deliveryTestRuntime(t)
-	req := deliveryTestRequest()
-	if err := os.MkdirAll(runtime.sandboxRoot(deliveryTestSandboxID), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtime.recordRuntimeConfig(deliveryTestSandboxID, func(doc *sandboxconfig.RuntimeConfig) {
-		doc.Sources = runtimeSources(sandboxSources(linuxPaths, req), runtime.sourceMaterialized(deliveryTestSandboxID))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	markMaterialized(t, runtime, "primary")
-	if !runtime.recordAwaitsSources(deliveryTestSandboxID) {
-		t.Fatal("the record does not say the source is still awaited")
-	}
-	rebuild, err := runtime.settleDeliveredSources(context.Background(), &Sandbox{SandboxID: deliveryTestSandboxID, Status: StatusStopped}, req)
-	if err != nil || rebuild {
-		t.Fatalf("settle = %v, %v; want it finished without a rebuild", rebuild, err)
-	}
-	if runtime.recordAwaitsSources(deliveryTestSandboxID) {
-		t.Fatal("the settle did not record the source delivered")
 	}
 }
 
 // The sandbox reads a stated intent rather than inferring one: a source the
-// client still owes is marked on the document it boots from, and a source that
-// was materialized before the container existed is not.
+// client still owes is marked on the document it boots from, and a source the
+// sandbox clones from its origin as soon as it boots is not.
 func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 	req := deliveryTestRequest()
 	req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(workerclient.SandboxConfigSourceCodeReferences{
@@ -178,48 +76,6 @@ func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 	}
 	if !sandboxconfig.SourcesAwaitDelivery(doc.Runtime.Sources) {
 		t.Fatal("the sandbox does not report that it is waiting on its client")
-	}
-}
-
-func writeTestProjectLayer(t *testing.T, sourceDir, body string) {
-	t.Helper()
-	dir := filepath.Join(sourceDir, ".discobox")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "project.json"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func writeTestProjectLayerRecord(t *testing.T, runtime *DockerSandboxRuntime, project *sandboxconfig.ProjectLayer) {
-	t.Helper()
-	if err := runtime.writeProjectLayerRecord(deliveryTestSandboxID, project); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// The pool decides whether a delivered project layer changed from its own
-// record, never from sandbox.json, which the sandbox can write once it boots
-// (ADR 26-10-08-127).
-func TestProjectLayerChangedIgnoresWhatSandboxJSONSays(t *testing.T) {
-	runtime := deliveryTestRuntime(t)
-	req := deliveryTestRequest()
-	writeTestProjectLayer(t, runtime.sandboxSourcePath(deliveryTestSandboxID, "primary"), `{"runCommand":["./run.sh"]}`)
-	configDir := runtime.sandboxConfigRoot(deliveryTestSandboxID)
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(&sandboxDocumentFile{Provenance: sandboxconfig.Provenance{Project: &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, sandboxDocumentName), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	changed, err := runtime.projectLayerChanged(deliveryTestSandboxID, req)
-	if err != nil || !changed {
-		t.Fatalf("projectLayerChanged = %v, %v; want the pool's own record to decide", changed, err)
 	}
 }
 
@@ -253,8 +109,8 @@ func TestSourcesMaterializedUnderTheirKeyAreAdoptedByTheirSlug(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(adopted, "committed.txt")); err != nil {
 		t.Fatalf("the adopted source lost its contents: %v", err)
 	}
-	if !gitSourceMaterialized(adopted) {
-		t.Fatal("the adopted source is not materialized, so it would be cloned over")
+	if _, err := os.Stat(filepath.Join(adopted, ".git", sandboxconfig.SourceMaterializedMarker)); err != nil {
+		t.Fatalf("the adopted source is not materialized, so it would be cloned over: %v", err)
 	}
 	if _, err := os.Stat(runtime.sandboxSourcePath(deliveryTestSandboxID, "home-user-src-hooks")); !os.IsNotExist(err) {
 		t.Fatalf("the old directory is still there: %v", err)

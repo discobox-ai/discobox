@@ -138,7 +138,7 @@ duplicated number.
 | [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Accepted |
 | [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Accepted |
 | [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md) | SSH reaches the server only through the transport the API answers on | Accepted (supersedes [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) §1's TCP listener) |
-| [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted |
+| [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted (§2's read-only bind superseded by [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §4: the sandbox fetches the origin over Git HTTP) |
 | [0059](0059-a-rejected-swapped-credential-is-retried-once.md) | A rejected swapped credential is retried once, and the delivered file is restored | Accepted |
 | [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md) | Provisioning progress is a recorded phase, polled by the waiting client | Accepted |
 | [0061](0061-the-client-facing-project-event-stream-is-removed.md) | The client-facing project event stream is removed | Accepted |

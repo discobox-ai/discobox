@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -218,19 +219,6 @@ func TestDecideRuntimeConfigRenewsACertificateDueForRenewal(t *testing.T) {
 	}
 }
 
-// A source is delivered in the document only once it is in place, which is
-// what holds a sandbox waiting on a push (ADR 0055).
-func TestRuntimeSourcesAreDeliveredOnlyOnceInPlace(t *testing.T) {
-	sources := []sandboxSource{{slug: "primary"}, {slug: "docs"}}
-	got := runtimeSources(sources, func(source sandboxSource) bool { return source.slug == "primary" })
-	if len(got) != 2 || !got[0].Delivered || got[1].Delivered {
-		t.Fatalf("sources = %+v", got)
-	}
-	if (sandboxconfig.RuntimeConfig{Sources: got}).SourcesDelivered() {
-		t.Fatal("a document with a source on its way grants readiness")
-	}
-}
-
 // fakeIntake is a sandbox agent's runtime-config route: it verifies the
 // pool-signed token the way the sandbox agent does and holds the newest
 // revision it was sent, answering an older one with what it holds.
@@ -370,5 +358,16 @@ func TestPutRuntimeConfigToAnAgentWithoutTheIntake(t *testing.T) {
 	failed := r.putRuntimeConfig(context.Background(), intakeDialer(t, &fakeIntake{t: t, status: http.StatusServiceUnavailable}), "sbx_1", doc)
 	if failed == nil || logRuntimeConfigFailure(context.Background(), "sbx_1", failed) != nil {
 		t.Fatalf("a transient failure: %v, want it logged for the status poll", failed)
+	}
+}
+
+// A delivery that landed is not logged as one that did not.
+func TestLogRuntimeConfigFailureIsQuietOnSuccess(t *testing.T) {
+	var logged strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	if err := logRuntimeConfigFailure(context.Background(), "sbx_1", nil); err != nil || logged.Len() != 0 {
+		t.Fatalf("a nil delivery error = %v, logged %q", err, logged.String())
 	}
 }

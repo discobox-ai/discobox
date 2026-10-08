@@ -9,15 +9,19 @@ two helpers are not interchangeable, and the question that picks between them is
 - **`prepareOwnedTree` is for roots this agent materializes end to end** — the
   per-sandbox config and secrets trees (end to end at create only: once the
   container exists, their contents are the sandbox agent's, written through the
-  runtime-config intake), each source checkout it clones (and the
-  scratch directory it clones into), and each pool-side origin repository. It
-  wrote every byte and one sandbox bounds the size, so asserting ownership over
-  the tree — root for config and secrets, the sandbox user for checkouts and
-  origins — is both cheap and meaningful.
+  runtime-config intake), and each pool-side origin repository. It wrote every
+  byte and one sandbox bounds the size, so asserting ownership over the tree —
+  root for config and secrets, the sandbox user for origins — is both cheap and
+  meaningful.
 - **`prepareOwnedMountpoint` is for everything else** — the sandbox's data root,
   the sources root, the pool cache, and each source's data-key directory. A
   bind-mount source needs only its own ownership to be right; what lives inside
   belongs to whoever wrote it.
+- **A source's checkout is neither.** The sandbox clones it, as the user boot
+  gives the directory to (ADR 0126 §4); the pool creates the empty directory
+  once and never chowns, reads, or runs git in what is under it. Anything the
+  pool needs to know about a checkout — whether it is materialized, its project
+  layer — it asks the sandbox.
 
 Getting this wrong on the pool cache is a latency bug: it grows without limit
 (tens of GB and ~10^6 inodes in normal use), so a recursive chown there costs
