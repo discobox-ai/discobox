@@ -241,3 +241,16 @@ func TestOnlyAChosenTemplateIsBounded(t *testing.T) {
 		t.Fatalf("sentinel is %d characters (%v), want the value's %d", len(sentinel), err, len(long))
 	}
 }
+
+// A JWT's later segments are random bytes, and a signature that opens on a
+// letters-only word and an underscore is not a scheme marker: kept as one, it
+// wrote nine real signature bytes into every sentinel minted for the token.
+func TestAJWTsLaterSegmentsAreNeverLiterals(t *testing.T) {
+	jwt := "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3OTE0OTEwMDB9.hRNERQTz_" + strings.Repeat("A", 34)
+	if got, want := Describe(jwt), "{alnum:20}.{alnum:24}.{base64url:43}"; got != want {
+		t.Fatalf("Describe(jwt) = %q, want %q", got, want)
+	}
+	if got := Describe("a..b"); got != "{hex:1}..{hex:1}" {
+		t.Fatalf("Describe with an empty segment = %q", got)
+	}
+}

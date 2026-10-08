@@ -78,7 +78,15 @@ func Infer(value string) *Template {
 	var parts []part
 	for i, seg := range strings.Split(value, structuralSplit) {
 		if i > 0 {
+			// Only the value's first segment may lead with a scheme marker. A
+			// later one is a JWT's payload or signature, whose random bytes
+			// can open on a letters-only word and an underscore as easily as
+			// a key can.
 			parts = append(parts, part{literal: structuralSplit})
+			if seg != "" {
+				parts = append(parts, randomPart(seg))
+			}
+			continue
 		}
 		parts = append(parts, inferSegment(seg)...)
 	}
