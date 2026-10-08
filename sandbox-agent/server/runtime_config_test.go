@@ -198,6 +198,22 @@ func TestRuntimeConfigTakesThePoolsOwnToken(t *testing.T) {
 	if status.Code != http.StatusForbidden {
 		t.Fatalf("status with a pool-signed token = %d, want 403", status.Code)
 	}
+	// What the pool may reach is every route whose required scope is
+	// runtime-config: a source's project layer, which it reads to settle the
+	// spec, is one (this router has no converger, so it answers 503 once
+	// authorized), and an exec route is not.
+	for path, refused := range map[string]bool{
+		"/api/projects/project-1/sandboxes/sandbox-1/sources/primary/project-layer": false,
+		"/api/projects/project-1/sandboxes/sandbox-1/execs":                         true,
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+poolToken("worker-1", ScopeRuntimeConfig))
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if gotRefused := resp.Code == http.StatusForbidden || resp.Code == http.StatusUnauthorized; gotRefused != refused {
+			t.Errorf("GET %s with a pool-signed token = %d, want refused=%v", path, resp.Code, refused)
+		}
+	}
 }
 
 // A sandbox whose bootstrap names no pool key trusts no pool-signed token.
