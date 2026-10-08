@@ -201,7 +201,9 @@ func (c *Converger) pass(ctx context.Context) bool {
 			return false
 		}
 		state := c.converge(ctx, doc.Revision, source)
-		if state.State == StateFailed || (state.State == StateWaiting && source.OriginURL != "") {
+		// A source still cloning after its pass was superseded mid-attempt;
+		// failed and waiting ones are retried until they converge.
+		if state.State == StateFailed || state.State == StateCloning || (state.State == StateWaiting && source.OriginURL != "") {
 			again = true
 		}
 	}
@@ -247,7 +249,7 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 	}
 	state.State = StateCloning
 	c.setState(state)
-	cloned, err := repo.materialize(ctx, source, c.manifest[source.Slug], helper)
+	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper)
 	if err != nil {
 		return c.failed(state, err)
 	}
@@ -255,12 +257,43 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 		state.State = StateWaiting
 		return c.setState(state)
 	}
-	state.State, state.Commit = StateMaterialized, ""
-	if commit, ok := materializedAt(source.Target); ok {
-		state.Commit = commit
+	// Marking it materialized is once-only, so it is done only for the source
+	// the current document still describes. A document that moved its pin,
+	// origin or target while this attempt ran has woken the loop already; the
+	// next pass goes on from this checkout to the new pin (the resume path
+	// fetches and checks out again), and this one finishes nothing. The check
+	// and the marker are one step under the lock that Converge takes.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.stillDesired(source) {
+		return state
 	}
-	c.cfg.Logger.Info("materialized source", "slug", source.Slug, "target", source.Target, "commit", state.Commit)
-	return c.setState(state)
+	commit, err := repo.finish(ctx)
+	state.UpdatedAt = time.Now().UTC()
+	if err != nil {
+		state.State, state.Error = StateFailed, err.Error()
+		c.states[state.Slug] = state
+		return state
+	}
+	state.State, state.Commit = StateMaterialized, commit
+	c.states[state.Slug] = state
+	c.cfg.Logger.Info("materialized source", "slug", source.Slug, "target", source.Target, "commit", commit)
+	return state
+}
+
+// stillDesired reports whether the current document describes source as it
+// was when an attempt began: the same target, origin and pin. A new token
+// alone does not matter to what was cloned. The caller holds c.mu.
+func (c *Converger) stillDesired(source sandboxconfig.RuntimeSource) bool {
+	if c.desired == nil {
+		return false
+	}
+	for _, current := range c.desired.Sources {
+		if current.Slug == source.Slug {
+			return current.Target == source.Target && current.OriginURL == source.OriginURL && current.Commit == source.Commit
+		}
+	}
+	return false
 }
 
 func (c *Converger) failed(state SourceState, err error) SourceState {
