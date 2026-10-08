@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	imagetypes "github.com/moby/moby/api/types/image"
 	dockerclient "github.com/moby/moby/client"
 )
 
@@ -216,7 +217,13 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 		return imageMetadata{}, false, err
 	}
 	defer client.Close()
-	inspected, err := client.ImageInspect(ctx, imageRef)
+	// The manifest list, which a daemon on the containerd image store reports
+	// from API 1.48 on, is what says which platforms the image is published
+	// for. A daemon that cannot report it is asked again without it.
+	inspected, err := client.ImageInspect(ctx, imageRef, dockerclient.ImageInspectWithManifests(true))
+	if err != nil {
+		inspected, err = client.ImageInspect(ctx, imageRef)
+	}
 	if err != nil {
 		return imageMetadata{}, false, err
 	}
@@ -228,15 +235,49 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	if err != nil {
 		return metadata, true, err
 	}
-	if len(inspected.RepoDigests) > 0 {
-		// Pulled from a registry, which says what it is published for.
-		metadata.Platforms = registryPlatforms(ctx, inspected.RepoDigests[0])
-	} else {
-		// Built here, which is what a development build does: it is the one
-		// platform it was built for, and runs only on a pool of that platform.
-		metadata.Platforms = platform.NewSet(platform.Platform{OS: inspected.Os, Arch: inspected.Architecture})
+	metadata.Platforms = localPlatforms(inspected.InspectResponse)
+	if metadata.Platforms == nil {
+		metadata.Platforms = localPlatformsWithoutManifests(ctx, inspected.InspectResponse)
 	}
 	return metadata, true, nil
+}
+
+// localPlatforms is what a local image is published for, from the manifest
+// list its daemon reports: every image manifest in its index, whether or not
+// this daemon holds that platform's content. A pulled multi-platform image
+// lists them all; an image built here lists the one platform it was built for,
+// which is what a development build makes, and which runs only on a pool of
+// that platform. Attestation manifests are not platforms. nil when the daemon
+// reported no manifest list.
+func localPlatforms(inspected imagetypes.InspectResponse) platform.Set {
+	listed := make([]platform.Platform, 0, len(inspected.Manifests))
+	for _, manifest := range inspected.Manifests {
+		if manifest.Kind != imagetypes.ManifestKindImage || manifest.ImageData == nil {
+			continue
+		}
+		listed = append(listed, platform.Platform{OS: manifest.ImageData.Platform.OS, Arch: manifest.ImageData.Platform.Architecture})
+	}
+	if len(listed) == 0 {
+		return nil
+	}
+	return platform.NewSet(listed...)
+}
+
+// localPlatformsWithoutManifests answers for a daemon that reports no manifest
+// list — the classic image store, or one older than API 1.48. On the classic
+// store an image with a registry digest was pulled, and the registry says what
+// it is published for; one without was built here, and is the one platform it
+// was built for. The daemon's own platform is never taken for an image with a
+// registry digest: it reports a pulled multi-platform image as the one
+// platform it holds. A containerd-store daemon older than API 1.48 gives a
+// local build a registry digest too; its registry has never heard of it, and
+// the set is left unread — which rules nothing out, so such a build on a pool
+// of another platform fails on that pool rather than at placement.
+func localPlatformsWithoutManifests(ctx context.Context, inspected imagetypes.InspectResponse) platform.Set {
+	if len(inspected.RepoDigests) > 0 {
+		return registryPlatforms(ctx, inspected.RepoDigests[0])
+	}
+	return platform.NewSet(platform.Platform{OS: inspected.Os, Arch: inspected.Architecture})
 }
 
 // parseImageMetadata resolves an image's label set into the one manifest it

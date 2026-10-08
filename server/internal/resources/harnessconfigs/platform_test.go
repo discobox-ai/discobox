@@ -15,6 +15,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	imagetypes "github.com/moby/moby/api/types/image"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
@@ -195,5 +197,45 @@ func TestRegistryPlatformsOfAPulledImage(t *testing.T) {
 	}
 	if got := registryPlatforms(context.Background(), "127.0.0.1:1/gone@"+descriptor.Digest.String()); got != nil {
 		t.Fatalf("platforms = %q from an unreachable registry, want none", got)
+	}
+}
+
+// manifestOf is one entry of the manifest list a daemon reports for an image.
+func manifestOf(kind imagetypes.ManifestKind, os, arch string, available bool) imagetypes.ManifestSummary {
+	manifest := imagetypes.ManifestSummary{Kind: kind, Available: available}
+	if kind == imagetypes.ManifestKindImage {
+		manifest.ImageData = &imagetypes.ImageProperties{Platform: ocispec.Platform{OS: os, Architecture: arch}}
+	}
+	return manifest
+}
+
+// The daemon's manifest list says what a local image is published for. A
+// pulled multi-platform image lists every platform its index has, held here or
+// not; an image built here lists the one it was built for — what a development
+// build makes — and attestations are not platforms. A daemon that reports no
+// list answers nil, for the fallback to decide.
+func TestLocalPlatformsReadTheDaemonsManifestList(t *testing.T) {
+	pulled := imagetypes.InspectResponse{Manifests: []imagetypes.ManifestSummary{
+		manifestOf(imagetypes.ManifestKindImage, "linux", "amd64", true),
+		manifestOf(imagetypes.ManifestKindImage, "linux", "arm64", false),
+		manifestOf(imagetypes.ManifestKindAttestation, "", "", true),
+	}}
+	if got := localPlatforms(pulled); got.String() != "linux/amd64, linux/arm64" {
+		t.Fatalf("pulled image platforms = %q, want both its index lists", got)
+	}
+	built := imagetypes.InspectResponse{Manifests: []imagetypes.ManifestSummary{
+		manifestOf(imagetypes.ManifestKindImage, "linux", "amd64", true),
+		manifestOf(imagetypes.ManifestKindAttestation, "", "", true),
+	}}
+	if got := localPlatforms(built); got.String() != "linux/amd64" {
+		t.Fatalf("built image platforms = %q, want the one it was built for", got)
+	}
+	if got := localPlatforms(imagetypes.InspectResponse{Os: "linux", Architecture: "amd64"}); got != nil {
+		t.Fatalf("platforms = %q with no manifest list, want nil for the fallback", got)
+	}
+	// Without a manifest list, an image built here — no registry digest — is
+	// the one platform the daemon reports.
+	if got := localPlatformsWithoutManifests(context.Background(), imagetypes.InspectResponse{Os: "linux", Architecture: "arm64"}); got.String() != "linux/arm64" {
+		t.Fatalf("platforms = %q, want the built image's own", got)
 	}
 }

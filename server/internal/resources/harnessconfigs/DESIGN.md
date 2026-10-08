@@ -52,12 +52,19 @@ true of it, and true *by rule* rather than by slug:
 - A config records the **platforms** its image is published for (`os/arch`,
   ADR 0145 §1), read with the labels by every inspection — create, refresh and
   seed (`snapshotImageMetadata`): every platform a registry image's index lists,
-  attestation entries aside. A local image the daemon pulled is reported there
-  as the daemon's one platform, so its platforms are asked of its registry by
-  the digest the daemon recorded (`registryPlatforms`), and are left unread when
-  the registry cannot answer. Only an image built locally, which has no registry
-  digest — a development build — is recorded as the one platform it was built
-  for.
+  attestation entries aside. A local image's come from the manifest list its
+  daemon reports (`localPlatforms`): a pulled multi-platform image lists every
+  platform its index has, held here or not, and an image built here — a
+  development build — lists the one it was built for. The daemon's own
+  platform is never taken for the set: it reports a pulled multi-platform image
+  as the one platform it holds. Only a daemon that reports no manifest list
+  (the classic image store, or one older than API 1.48) falls back to asking
+  the registry by the digest it recorded (`registryPlatforms`), leaving the set
+  unread when the registry cannot answer, or, for an image with no registry
+  digest, to the one platform the daemon reports. A containerd-store daemon
+  older than API 1.48 gives a local build a registry digest its registry has
+  never heard of, so there a development build reads as unread, and fails on a
+  pool of another platform rather than at placement.
   The labels are read from the platform a pool on this machine hosts when the
   index lists it, and from the first it lists otherwise (`publishedImage`). A
   build-mode development reference records none, since the pool that runs it
