@@ -67,12 +67,14 @@ func TestRunPlacesTheSourceByThePoolPlatform(t *testing.T) {
 		name     string
 		args     []string
 		wantPool any
-		wantDir  string
+		// wantDir is the exact destination, or "" for any POSIX absolute
+		// path: where a Linux sandbox places the test repository depends on
+		// the host — /workspace/source for a POSIX temporary directory, which
+		// no sandbox may hold, and its /mnt/<drive> name for a Windows one.
+		wantDir string
 	}{
 		{name: "named windows pool", args: []string{"--pool", "win"}, wantPool: "pool_win", wantDir: `C:\workspace\source`},
-		// The test repository is under the temporary directory, which no
-		// sandbox may hold, so a Linux one places it by name too.
-		{name: "default linux pool", wantPool: nil, wantDir: "/workspace/source"},
+		{name: "default linux pool", wantPool: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setHome(t, t.TempDir())
@@ -95,7 +97,14 @@ func TestRunPlacesTheSourceByThePoolPlatform(t *testing.T) {
 				t.Fatalf("poolId = %#v, want %#v", posted["poolId"], tc.wantPool)
 			}
 			destination := postedPrimaryDestination(t, posted)
-			if destination["directory"] != tc.wantDir || destination["workingDirectory"] != tc.wantDir {
+			directory, _ := destination["directory"].(string)
+			if tc.wantDir == "" {
+				if !strings.HasPrefix(directory, "/") || destination["workingDirectory"] != directory {
+					t.Fatalf("destination = %#v, want one POSIX absolute path", destination)
+				}
+				return
+			}
+			if directory != tc.wantDir || destination["workingDirectory"] != tc.wantDir {
 				t.Fatalf("destination = %#v, want %s", destination, tc.wantDir)
 			}
 		})
