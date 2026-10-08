@@ -278,8 +278,11 @@ func TestSandboxReadsNeverStartAStoppedSandbox(t *testing.T) {
 		route := tc.route
 		t.Run(route, func(t *testing.T) {
 			var reached int
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				reached++
+				// Read the body first: on Windows a connection closed with
+				// unread bytes is reset, and the proxy answers that 502.
+				_, _ = io.Copy(io.Discard, r.Body)
 				_, _ = w.Write([]byte(`{}`))
 			}))
 			t.Cleanup(upstream.Close)
