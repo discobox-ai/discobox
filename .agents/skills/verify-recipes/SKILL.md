@@ -165,3 +165,9 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 - The server's config file is found by XDG (`~/.config/discobox`), not
   `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env.
 - With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
+- Its pool runs the released `ghcr.io/discobox-ai/discobox-pool-agent:latest`,
+  not your checkout's, so anything the pool agent gained since the last
+  release is absent — e.g. it declares no platform, and placement then lets
+  any harness through as a pre-platform pool. Add
+  `DISCOBOX_DOCKER_POOL_IMAGE=<the dev loop's image>` (`docker ps` shows the
+  `discobox-pool-agent:dev-*` its pool runs) to the env above.
