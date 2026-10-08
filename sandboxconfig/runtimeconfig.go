@@ -18,10 +18,10 @@ import (
 
 // RuntimeConfig is the pool's whole view of a running sandbox: one document
 // with a revision, which the sandbox agent takes at its runtime-config route
-// and converges on (ADR 0126 §3). It replaces the files the pool used to stage
-// into the sandbox's volumes after create — sandbox.json's idle timeout,
-// secrets.json, the readiness marker, and the proxy material — with one
-// delivery whose order is the document's own.
+// and converges on (ADR 0126 §3). It is the dynamic half of what a sandbox is:
+// everything that can change while it exists. The static half is the bootstrap,
+// sandbox.json, which holds no private key and is never rewritten
+// (ADR 26-10-08-127 §1).
 //
 // It is whole rather than incremental: every field says what the sandbox is
 // now, and a field that is absent is something the sandbox no longer has. A
@@ -50,20 +50,39 @@ type RuntimeConfig struct {
 	Sources []RuntimeSource `json:"sources,omitempty"`
 }
 
-// RuntimeAgent is the sandbox-agent configuration the pool may change after
-// create. It is applied into sandbox.json's agentRuntime, so it takes effect
-// where that file is read: the idle timeout on the agent's next start, as it
-// always has (ADR 0108 §3).
+// RuntimeConfigScope is the sandbox-agent token scope that reads and delivers
+// a RuntimeConfig. It is the pool's alone: no wildcard grants it, and the pool
+// signs it with its own key, which the sandbox's bootstrap names
+// (PoolPublicKeyName; ADR 26-10-08-127 §3).
+const RuntimeConfigScope = "runtime-config"
+
+// RuntimeAgent is the sandbox-agent configuration the pool may change while
+// the sandbox exists. It is applied to the running agent when delivered, not
+// written into sandbox.json, which is the static bootstrap and is never
+// rewritten (ADR 26-10-08-127 §§1, 5).
 type RuntimeAgent struct {
-	// IdleTimeout is the pool's idle timeout as a Go duration; empty leaves
-	// the sandbox agent on its default.
+	// IdleTimeout is the pool's idle timeout as a Go duration (ADR 0108);
+	// empty leaves the sandbox agent on its default.
 	IdleTimeout string `json:"idleTimeout,omitempty"`
 }
 
-// RuntimeProxy is the proxy client material and trust a sandbox needs to reach
-// its pool. The sandbox writes each piece where its readers already look
-// (/etc/discobox/proxy), and renders the bridge configs with its own paths for
-// them, since only the sandbox knows where it keeps them.
+// IdleTimeoutDuration is IdleTimeout parsed, zero when it is empty or does not
+// parse — a document that names none leaves the sandbox on its default, and one
+// that Validate would refuse is never applied.
+func (a RuntimeAgent) IdleTimeoutDuration() time.Duration {
+	parsed, err := time.ParseDuration(a.IdleTimeout)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
+}
+
+// RuntimeProxy is the credential and trust a sandbox needs on its hop to its
+// pool. Where the pool is (Provider.Pool) is static and in the bootstrap, and
+// where the sandbox listens is the sandbox's own; this is only what can change
+// while the sandbox exists (ADR 26-10-08-127 §4). The sandbox writes each piece
+// where its readers look (/etc/discobox/proxy) and renders its bridge configs
+// from the three.
 type RuntimeProxy struct {
 	// MTLSCA is the PEM CA the pool's mTLS endpoints present certificates from.
 	MTLSCA string `json:"mtlsCa"`
@@ -75,25 +94,8 @@ type RuntimeProxy struct {
 	// back: a document the sandbox keeps or answers with leaves it out.
 	ClientCert string `json:"clientCert"`
 	ClientKey  string `json:"clientKey,omitempty"`
-	// Egress is the sandbox's loopback forwarder to the pool proxy, which also
-	// carries the credentials endpoint and the DNS stub.
-	Egress *RuntimeBridge `json:"egress,omitempty"`
-	// NestedDocker is the forwarder for containers the sandbox's own dockerd
-	// creates. It names no listen address: the sandbox discovers its bridge.
-	NestedDocker *RuntimeBridge `json:"nestedDocker,omitempty"`
-	// BuildKit is the forwarder to the pool's BuildKit mediator (ADR 0044).
-	BuildKit *RuntimeBridge `json:"buildkit,omitempty"`
 	// RegistryNamespace is the sandbox's namespace in the pool build registry.
 	RegistryNamespace string `json:"registryNamespace,omitempty"`
-}
-
-// RuntimeBridge is one sandbox-side forwarder to the pool.
-type RuntimeBridge struct {
-	ListenAddress    string `json:"listenAddress,omitempty"`
-	UpstreamURL      string `json:"upstreamUrl"`
-	CredentialsURL   string `json:"credentialsUrl,omitempty"`
-	DNSServer        string `json:"dnsServer,omitempty"`
-	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
 }
 
 // RuntimeSource is one of the sandbox's sources as the pool sees it: where its
@@ -224,17 +226,6 @@ func (p RuntimeProxy) validate() error {
 	// out.
 	if _, err := tls.X509KeyPair([]byte(p.ClientCert), []byte(p.ClientKey)); err != nil {
 		errs = append(errs, fmt.Errorf("proxy client keypair: %w", err))
-	}
-	for _, bridge := range []struct {
-		name   string
-		bridge *RuntimeBridge
-	}{{"egress", p.Egress}, {"nestedDocker", p.NestedDocker}, {"buildkit", p.BuildKit}} {
-		if bridge.bridge == nil {
-			continue
-		}
-		if parsed, err := url.Parse(bridge.bridge.UpstreamURL); err != nil || parsed.Host == "" {
-			errs = append(errs, fmt.Errorf("proxy.%s.upstreamUrl %q is not an absolute URL", bridge.name, bridge.bridge.UpstreamURL))
-		}
 	}
 	if p.RegistryNamespace != "" && !registryNamespacePattern.MatchString(p.RegistryNamespace) {
 		errs = append(errs, fmt.Errorf("proxy.registryNamespace %q is not a repository path component", p.RegistryNamespace))

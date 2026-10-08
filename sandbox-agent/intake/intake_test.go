@@ -1,6 +1,7 @@
 package intake
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -21,6 +22,25 @@ import (
 )
 
 var testOwner = Owner{ProjectID: "prj_1", SandboxID: "sbx_1", PoolID: "pool_1"}
+
+// testPool is where the bootstrap says the pool serves the sandbox.
+//
+//nolint:gosec // G101: service URLs, not credentials.
+var testPool = &sandboxconfig.PoolEndpoints{
+	Proxy:       "https://pool:17443",
+	Credentials: "https://pool:17444",
+	DNS:         "pool:853",
+	BuildKit:    "https://pool:17445",
+	ServerName:  "pool",
+}
+
+func testConfig(layout Layout, owner Owner) Config {
+	return Config{Layout: layout, Owner: owner, Pool: testPool}
+}
+
+func openIntake(layout Layout, owner Owner) (*Intake, error) {
+	return Open(context.Background(), testConfig(layout, owner))
+}
 
 func testLayout(t *testing.T) Layout {
 	t.Helper()
@@ -90,20 +110,10 @@ func testDocument(t *testing.T, revision int64) sandboxconfig.RuntimeConfig {
 		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "45m0s"},
 		SecretEnv: map[string]string{"GH_TOKEN": "discobox-sentinel-1"},
 		Proxy: &sandboxconfig.RuntimeProxy{
-			MTLSCA:     pki.ca,
-			MITMCA:     pki.ca,
-			ClientCert: pki.cert,
-			ClientKey:  pki.key,
-			//nolint:gosec // G101: addresses, not credentials.
-			Egress: &sandboxconfig.RuntimeBridge{
-				ListenAddress:    "127.0.0.1:17008",
-				UpstreamURL:      "https://pool:17443",
-				CredentialsURL:   "https://pool:17444",
-				DNSServer:        "pool:853",
-				DNSListenAddress: "169.254.0.53:53",
-			},
-			NestedDocker:      &sandboxconfig.RuntimeBridge{UpstreamURL: "https://pool:17443"},
-			BuildKit:          &sandboxconfig.RuntimeBridge{ListenAddress: "127.0.0.1:17082", UpstreamURL: "https://pool:17445"},
+			MTLSCA:            pki.ca,
+			MITMCA:            pki.ca,
+			ClientCert:        pki.cert,
+			ClientKey:         pki.key,
 			RegistryNamespace: "ns-0123abcd",
 		},
 		Sources: []sandboxconfig.RuntimeSource{{
@@ -116,57 +126,18 @@ func testDocument(t *testing.T, revision int64) sandboxconfig.RuntimeConfig {
 	}
 }
 
-// writeManifest places the create-time sandbox.json the document's agent
-// settings are applied into.
-func writeManifest(t *testing.T, layout Layout, idleTimeout string) {
+// writeManifest places a create-time sandbox.json, which the intake must never
+// touch: it is the static bootstrap (ADR 26-10-08-127 §1).
+func writeManifest(t *testing.T, layout Layout) string {
 	t.Helper()
-	manifest := map[string]any{
-		"apiVersion":   sandboxconfig.APIVersion,
-		"sandboxId":    "sbx_1",
-		"user":         map[string]any{"uid": 4294967294},
-		"agentRuntime": map[string]any{"listenAddress": ":3003", "idleTimeout": idleTimeout},
-		"_provenance": map[string]any{
-			"runtime": map[string]any{"agentRuntime": map[string]any{"idleTimeout": idleTimeout}},
-		},
-	}
-	data, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := `{"apiVersion":"` + sandboxconfig.APIVersion + `","sandboxId":"sbx_1","agentRuntime":{"listenAddress":":3003"}}`
 	if err := os.MkdirAll(layout.ConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(layout.ConfigDir, manifestName), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(layout.ConfigDir, "sandbox.json"), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func readManifestIdleTimeouts(t *testing.T, layout Layout) (effective, provenance string) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(layout.ConfigDir, manifestName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest struct {
-		User         struct{ UID json.Number } `json:"user"`
-		AgentRuntime struct {
-			IdleTimeout string `json:"idleTimeout"`
-		} `json:"agentRuntime"`
-		Provenance struct {
-			Runtime struct {
-				AgentRuntime struct {
-					IdleTimeout string `json:"idleTimeout"`
-				} `json:"agentRuntime"`
-			} `json:"runtime"`
-		} `json:"_provenance"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	if manifest.User.UID != "4294967294" {
-		t.Fatalf("manifest user uid = %q, want the create-time value carried through", manifest.User.UID)
-	}
-	return manifest.AgentRuntime.IdleTimeout, manifest.Provenance.Runtime.AgentRuntime.IdleTimeout
+	return data
 }
 
 // assertMode checks a file's POSIX permission bits. Windows has none — every
@@ -225,13 +196,13 @@ func snapshot(t *testing.T, layout Layout) map[string]string {
 
 func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	layout := testLayout(t)
-	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout, testOwner)
+	manifest := writeManifest(t, layout)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	doc := testDocument(t, 1)
-	applied, err := in.Apply(doc)
+	applied, err := in.Apply(context.Background(), doc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +220,8 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	assertMode(t, layout.SecretsPath, 0o600)
 	assertMode(t, filepath.Dir(layout.SecretsPath), 0o700)
 
-	if effective, provenance := readManifestIdleTimeouts(t, layout); effective != "45m0s" || provenance != "45m0s" {
-		t.Fatalf("manifest idle timeout = %q / %q, want 45m0s in both", effective, provenance)
+	if got := readFile(t, filepath.Join(layout.ConfigDir, "sandbox.json")); got != manifest {
+		t.Fatalf("sandbox.json was rewritten: %s", got)
 	}
 
 	if got := readFile(t, filepath.Join(layout.ProxyDir, clientKeyFile)); got != doc.Proxy.ClientKey {
@@ -264,10 +235,28 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, egressBridgeFile))), &egress); err != nil {
 		t.Fatal(err)
 	}
-	if egress.UpstreamURL != "https://pool:17443" || egress.DNSListenAddress != "169.254.0.53:53" ||
+	// The pool's half from the bootstrap, the sandbox's own listeners, and the
+	// delivered credential where this sandbox keeps it (ADR 26-10-08-127 §4).
+	if egress.UpstreamURL != testPool.Proxy || egress.CredentialsURL != testPool.Credentials || egress.DNSServer != testPool.DNS ||
+		egress.ServerName != testPool.ServerName ||
+		egress.ListenAddress != sandboxconfig.SandboxEgressListenAddress ||
+		egress.DNSListenAddress != sandboxconfig.SandboxDNSListenAddress ||
 		egress.ClientKeyPath != filepath.Join(layout.ProxyDir, clientKeyFile) ||
 		egress.MTLSCAPath != filepath.Join(layout.ProxyDir, mtlsCAFile) {
 		t.Fatalf("egress bridge = %+v", egress)
+	}
+	var buildkit, docker bridgeFile
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, buildKitBridgeFile))), &buildkit); err != nil {
+		t.Fatal(err)
+	}
+	if buildkit.UpstreamURL != testPool.BuildKit || buildkit.ListenAddress != sandboxconfig.SandboxBuildKitListenAddress {
+		t.Fatalf("buildkit bridge = %+v", buildkit)
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, nestedDockerBridgeFile))), &docker); err != nil {
+		t.Fatal(err)
+	}
+	if docker.UpstreamURL != testPool.Proxy || docker.ListenAddress != "" {
+		t.Fatalf("nested-docker bridge = %+v, want the pool proxy and no listener", docker)
 	}
 	for _, name := range []string{nestedDockerBridgeFile, buildKitBridgeFile, mtlsCAFile, mitmCAFile, clientCertFile} {
 		if !exists(filepath.Join(layout.ProxyDir, name)) {
@@ -297,19 +286,19 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 
 func TestApplyIgnoresAnOlderRevision(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout, testOwner)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	newer := testDocument(t, 5)
-	if _, err := in.Apply(newer); err != nil {
+	if _, err := in.Apply(context.Background(), newer); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshot(t, layout)
 
 	older := testDocument(t, 4)
 	older.SecretEnv = map[string]string{"OLD": "discobox-sentinel-old"}
-	held, err := in.Apply(older)
+	held, err := in.Apply(context.Background(), older)
 	if err != nil {
 		t.Fatalf("an older revision is ignored, not refused: %v", err)
 	}
@@ -323,20 +312,20 @@ func TestApplyIgnoresAnOlderRevision(t *testing.T) {
 
 func TestApplySameRevisionIsARetryOrAConflict(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout, testOwner)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	doc := testDocument(t, 2)
-	if _, err := in.Apply(doc); err != nil {
+	if _, err := in.Apply(context.Background(), doc); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.Apply(doc); err != nil {
+	if _, err := in.Apply(context.Background(), doc); err != nil {
 		t.Fatalf("re-delivering the applied document: %v", err)
 	}
 	different := doc
 	different.SecretEnv = map[string]string{"OTHER": "discobox-sentinel-2"}
-	if _, err := in.Apply(different); !errors.Is(err, ErrConflict) {
+	if _, err := in.Apply(context.Background(), different); !errors.Is(err, ErrConflict) {
 		t.Fatalf("a different document under the applied revision: err = %v, want ErrConflict", err)
 	}
 }
@@ -345,11 +334,11 @@ func TestApplySameRevisionIsARetryOrAConflict(t *testing.T) {
 // the held document under the held revision is a conflict, whatever its shape.
 func TestOrderingComesBeforeValidation(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout, testOwner)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.Apply(testDocument(t, 5)); err != nil {
+	if _, err := in.Apply(context.Background(), testDocument(t, 5)); err != nil {
 		t.Fatal(err)
 	}
 	malformed := func(revision int64) sandboxconfig.RuntimeConfig {
@@ -357,13 +346,13 @@ func TestOrderingComesBeforeValidation(t *testing.T) {
 		doc.Agent.IdleTimeout = "soon"
 		return doc
 	}
-	if held, err := in.Apply(malformed(4)); err != nil || held.Revision != 5 {
+	if held, err := in.Apply(context.Background(), malformed(4)); err != nil || held.Revision != 5 {
 		t.Fatalf("a malformed older document: held %d, err %v; want it ignored", held.Revision, err)
 	}
-	if _, err := in.Apply(malformed(5)); !errors.Is(err, ErrConflict) {
+	if _, err := in.Apply(context.Background(), malformed(5)); !errors.Is(err, ErrConflict) {
 		t.Fatalf("a malformed document under the held revision: err = %v, want ErrConflict", err)
 	}
-	if _, err := in.Apply(malformed(6)); !errors.Is(err, ErrInvalid) {
+	if _, err := in.Apply(context.Background(), malformed(6)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a malformed newer document: err = %v, want ErrInvalid", err)
 	}
 	if in.Revision() != 5 {
@@ -390,12 +379,12 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {
 			layout := testLayout(t)
-			writeManifest(t, layout, "30m0s")
-			in, err := Open(layout, testOwner)
+			writeManifest(t, layout)
+			in, err := openIntake(layout, testOwner)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := in.Apply(testDocument(t, 1)); err != nil {
+			if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
 				t.Fatal(err)
 			}
 
@@ -406,7 +395,7 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 			breakIt(t, layout, &next)
 			before := snapshot(t, layout)
 
-			if _, err := in.Apply(next); err == nil {
+			if _, err := in.Apply(context.Background(), next); err == nil {
 				t.Fatal("Apply succeeded")
 			}
 			if in.Revision() != 1 {
@@ -422,12 +411,12 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 // A replacement that fails part-way puts back every target replaced before it.
 func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 	layout := testLayout(t)
-	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout, testOwner)
+	writeManifest(t, layout)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.Apply(testDocument(t, 1)); err != nil {
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshot(t, layout)
@@ -435,7 +424,7 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 	next := testDocument(t, 2)
 	next.SecretEnv = map[string]string{"NEXT": "discobox-sentinel-next"}
 	next.Proxy.RegistryNamespace = ""
-	ops, err := in.plan(next, true)
+	ops, _, err := in.plan(next, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,13 +450,13 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 
 func TestOpenReappliesTheKeptDocument(t *testing.T) {
 	layout := testLayout(t)
-	writeManifest(t, layout, "30m0s")
-	first, err := Open(layout, testOwner)
+	writeManifest(t, layout)
+	first, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	doc := testDocument(t, 3)
-	if _, err := first.Apply(doc); err != nil {
+	if _, err := first.Apply(context.Background(), doc); err != nil {
 		t.Fatal(err)
 	}
 	// A restart empties /run: the secrets file and the proxy material are gone.
@@ -482,7 +471,7 @@ func TestOpenReappliesTheKeptDocument(t *testing.T) {
 		t.Fatal("the kept document carries the client key; client.key must be its only copy on disk")
 	}
 
-	second, err := Open(layout, testOwner)
+	second, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +489,7 @@ func TestOpenReappliesTheKeptDocument(t *testing.T) {
 		t.Fatal("restart did not put readiness back")
 	}
 	// The kept document goes on ordering deliveries.
-	if held, err := second.Apply(testDocument(t, 2)); err != nil || held.Revision != 3 {
+	if held, err := second.Apply(context.Background(), testDocument(t, 2)); err != nil || held.Revision != 3 {
 		t.Fatalf("older delivery after restart: held %d, err %v", held.Revision, err)
 	}
 }
@@ -510,19 +499,19 @@ func TestOpenReappliesTheKeptDocument(t *testing.T) {
 // sends.
 func TestOpenDoesNotRestoreAnotherOwnersDocument(t *testing.T) {
 	layout := testLayout(t)
-	first, err := Open(layout, testOwner)
+	first, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	doc := testDocument(t, 9)
 	doc.Proxy = nil
-	if _, err := first.Apply(doc); err != nil {
+	if _, err := first.Apply(context.Background(), doc); err != nil {
 		t.Fatal(err)
 	}
 
 	moved := testOwner
 	moved.PoolID = "pool_2"
-	second, err := Open(layout, moved)
+	second, err := openIntake(layout, moved)
 	if err == nil {
 		t.Fatal("restoring another pool's document reported no error")
 	}
@@ -531,14 +520,14 @@ func TestOpenDoesNotRestoreAnotherOwnersDocument(t *testing.T) {
 	}
 	fresh := testDocument(t, 1)
 	fresh.Proxy = nil
-	held, err := second.Apply(fresh)
+	held, err := second.Apply(context.Background(), fresh)
 	if err != nil || held.Revision != 1 {
 		t.Fatalf("the new pool's first document: held %d, err %v", held.Revision, err)
 	}
 }
 
 func TestOpenWithNothingKept(t *testing.T) {
-	in, err := Open(testLayout(t), testOwner)
+	in, err := openIntake(testLayout(t), testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +538,7 @@ func TestOpenWithNothingKept(t *testing.T) {
 
 func TestReadinessFollowsDelivery(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout, testOwner)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +546,7 @@ func TestReadinessFollowsDelivery(t *testing.T) {
 
 	pending := testDocument(t, 1)
 	pending.Sources = append(pending.Sources, sandboxconfig.RuntimeSource{Slug: "docs"})
-	if _, err := in.Apply(pending); err != nil {
+	if _, err := in.Apply(context.Background(), pending); err != nil {
 		t.Fatal(err)
 	}
 	if exists(ready) {
@@ -565,7 +554,7 @@ func TestReadinessFollowsDelivery(t *testing.T) {
 	}
 
 	delivered := testDocument(t, 2)
-	if _, err := in.Apply(delivered); err != nil {
+	if _, err := in.Apply(context.Background(), delivered); err != nil {
 		t.Fatal(err)
 	}
 	if !exists(ready) {
@@ -574,7 +563,7 @@ func TestReadinessFollowsDelivery(t *testing.T) {
 
 	// A later document can withhold readiness again, as the pool clears its
 	// marker when a delivery is pending.
-	if _, err := in.Apply(withRevision(pending, 3)); err != nil {
+	if _, err := in.Apply(context.Background(), withRevision(pending, 3)); err != nil {
 		t.Fatal(err)
 	}
 	if exists(ready) {
@@ -584,10 +573,10 @@ func TestReadinessFollowsDelivery(t *testing.T) {
 
 func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 	layout := testLayout(t)
-	in := &Intake{layout: layout, owner: testOwner}
+	in := &Intake{layout: layout, owner: testOwner, pool: testPool}
 	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 
-	delivered, err := in.plan(testDocument(t, 1), true)
+	delivered, gate, err := in.plan(testDocument(t, 1), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,61 +585,162 @@ func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 	if delivered[0].path != ready || !delivered[0].remove {
 		t.Fatalf("first op = %+v, want the readiness removal", delivered[0])
 	}
-	// Readiness is last, after the state file: a failed state rename rolls
-	// everything back, and must do so before any gate has opened.
-	if got := delivered[len(delivered)-1]; got.path != ready || got.remove {
-		t.Fatalf("last op = %+v, want the readiness write", got)
+	// Readiness follows everything, the state file included: a failed state
+	// rename rolls everything back, and must do so before any gate has opened.
+	if gate == nil || gate.path != ready || gate.remove {
+		t.Fatalf("gate = %+v, want the readiness write", gate)
 	}
-	if got := delivered[len(delivered)-2]; got.path != layout.StatePath {
-		t.Fatalf("second-to-last op = %+v, want the state file", got)
+	if got := delivered[len(delivered)-1]; got.path != layout.StatePath {
+		t.Fatalf("last op before the gate = %+v, want the state file", got)
 	}
 
 	pending := testDocument(t, 1)
 	pending.Sources[0].Delivered = false
-	ops, err := in.plan(pending, true)
+	ops, gate, err := in.plan(pending, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ops[0].path != ready || !ops[0].remove {
-		t.Fatalf("first op = %+v, want the readiness removal", ops[0])
+	if ops[0].path != ready || !ops[0].remove || gate != nil {
+		t.Fatalf("first op = %+v, gate %+v; want the readiness removal and no gate", ops[0], gate)
 	}
+}
+
+// What reads the proxy material is started after the files are in place and
+// before readiness is published, so a harness never launches over a hop that
+// is not up (ADR 26-10-08-127 §5). A delivery that changes none of the
+// material starts nothing.
+func TestApplyActivatesWhatChangedBeforeReadiness(t *testing.T) {
+	layout := testLayout(t)
+	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
+	var calls [][]string
+	cfg := testConfig(layout, testOwner)
+	cfg.Activate = func(_ context.Context, changed []string) {
+		if exists(ready) {
+			t.Error("activated after readiness was published")
+		}
+		if !exists(filepath.Join(layout.ProxyDir, egressBridgeFile)) {
+			t.Error("activated before the bridge config was in place")
+		}
+		calls = append(calls, changed)
+	}
+	in, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 1)
+	if _, err := in.Apply(context.Background(), doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || !containsPath(calls[0], filepath.Join(layout.ProxyDir, egressBridgeFile)) || !containsPath(calls[0], filepath.Join(layout.ProxyDir, mitmCAFile)) {
+		t.Fatalf("activations = %v, want one naming the new material", calls)
+	}
+	if !exists(ready) {
+		t.Fatal("readiness not published")
+	}
+
+	// Only the secrets change: the units reading the proxy material are left
+	// alone.
+	calls = nil
+	next := withRevision(doc, 2)
+	next.SecretEnv = map[string]string{"NEXT": "discobox-sentinel-next"}
+	if _, err := in.Apply(context.Background(), next); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range calls {
+		if actions := unitActions(layout.ProxyDir, call); len(actions) != 0 {
+			t.Fatalf("a secrets-only delivery touched units %+v", actions)
+		}
+	}
+}
+
+func TestUnitActionsFollowTheFilesEachUnitReads(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{mitmCAFile, egressBridgeFile, mtlsCAFile, clientCertFile, clientKeyFile} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := func(actions []unitAction) map[string]bool {
+		out := map[string]bool{}
+		for _, action := range actions {
+			out[action.unit.name] = action.stop
+		}
+		return out
+	}
+	// The trust store reads only the MITM CA.
+	if got := names(unitActions(dir, []string{filepath.Join(dir, mitmCAFile)})); len(got) != 1 || got["discobox-trust-ca.service"] {
+		t.Fatalf("MITM CA change: %v", got)
+	}
+	// A new keypair is every bridge's: present configs restart, absent ones stop.
+	got := names(unitActions(dir, []string{filepath.Join(dir, clientKeyFile)}))
+	want := map[string]bool{
+		"discobox-proxy-bridge.service":        false,
+		"discobox-buildkit-bridge.service":     true,
+		"discobox-proxy-bridge-docker.service": true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("keypair change: %v, want %v", got, want)
+	}
+	for name, stop := range want {
+		if got[name] != stop {
+			t.Fatalf("keypair change: %v, want %v", got, want)
+		}
+	}
+	if got := unitActions(dir, []string{filepath.Join(t.TempDir(), mitmCAFile)}); len(got) != 0 {
+		t.Fatalf("a file outside the proxy directory touched units %+v", got)
+	}
+}
+
+// A sandbox whose bootstrap names no pool has no bridges to render, whatever
+// material it is delivered.
+func TestNoBridgesWithoutAPool(t *testing.T) {
+	layout := testLayout(t)
+	cfg := testConfig(layout, testOwner)
+	cfg.Pool = nil
+	in, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{egressBridgeFile, nestedDockerBridgeFile, buildKitBridgeFile} {
+		if exists(filepath.Join(layout.ProxyDir, name)) {
+			t.Fatalf("%s rendered with no pool", name)
+		}
+	}
+	if !exists(filepath.Join(layout.ProxyDir, clientKeyFile)) {
+		t.Fatal("the delivered keypair was not written")
+	}
+}
+
+func containsPath(paths []string, want string) bool {
+	for _, path := range paths {
+		if path == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestADocumentWithoutProxyRemovesTheMaterial(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout, testOwner)
+	in, err := openIntake(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.Apply(testDocument(t, 1)); err != nil {
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
 		t.Fatal(err)
 	}
 	bare := testDocument(t, 2)
 	bare.Proxy = nil
-	if _, err := in.Apply(bare); err != nil {
+	if _, err := in.Apply(context.Background(), bare); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range proxyFileNames {
 		if exists(filepath.Join(layout.ProxyDir, name)) {
 			t.Fatalf("%s left behind by a document with no proxy", name)
 		}
-	}
-}
-
-func TestEmptyIdleTimeoutClearsTheManifestValue(t *testing.T) {
-	layout := testLayout(t)
-	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout, testOwner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc := testDocument(t, 1)
-	doc.Agent.IdleTimeout = ""
-	if _, err := in.Apply(doc); err != nil {
-		t.Fatal(err)
-	}
-	if effective, provenance := readManifestIdleTimeouts(t, layout); effective != "" || provenance != "" {
-		t.Fatalf("manifest idle timeout = %q / %q, want both cleared", effective, provenance)
 	}
 }
 

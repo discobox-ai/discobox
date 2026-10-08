@@ -29,7 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
 | `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`; it also records each local source's live origin for the `git-origins` route (`origin.go`). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
@@ -243,6 +243,7 @@ flowchart LR
     poll["status poll<br/>statuspoll.go"] --> dialer
     proxy["sandbox-agent and port proxies<br/>server/sandbox_proxy.go"] --> dialer
     health["boot health wait<br/>waitForSandboxAgent"] --> dialer
+    deliver["runtime-config delivery<br/>runtimeconfig.go"] --> dialer
     dialer["Runtime.SandboxDialer → Dialer"] --> transport["Dialer.Transport()<br/>internalhttp base, no keep-alive"]
     transport --> agent["sandbox agent / sandbox port"]
 ```
@@ -258,8 +259,84 @@ flowchart LR
   over the dialed connection.
 - The connection is never an authority. The sandbox agent validates its own
   token on every request — the status poll's `status:read` token (ADR 0030),
-  the proxy's downstream `Authorization` — and a lost connection is not a
+  the proxy's downstream `Authorization`, the pool-signed runtime-config
+  token — and a lost connection is not a
   power-state signal: power state comes from the runtime's own channel below.
+
+## Sandbox Runtime Config
+
+What the pool tells a sandbox comes in two halves
+([ADR 26-10-08-127](../docs/adr/26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md)).
+The **bootstrap**, `sandbox.json`, is static: placed in the config volume by
+the create, before the container exists, and never rewritten. The
+**runtime-config document** is everything that can change while the sandbox
+exists, delivered to the sandbox agent's intake
+([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
+§3). After create the pool writes nothing into a sandbox's volumes.
+
+```mermaid
+flowchart LR
+    create["CreateSandbox"] -->|"before the container exists"| bootstrap["sandbox.json<br/>(config volume)"]
+    create --> record["runtime-config.json<br/>(pool's record, sandbox tree root)"]
+    update["UpdateSandbox: secrets"] --> record
+    settle["settleDeliveredSources"] --> record
+    record --> boot["finishBoot: every start"]
+    record --> poll["status poll: runtimeConfigRevision behind"]
+    boot -->|"PUT …/runtime-config, pool-signed"| intake["sandbox agent intake"]
+    poll -->|"ConvergeRuntimeConfig"| intake
+```
+
+- **Bootstrap** (`writeSandboxHarnessConfig`): the create-time config, the
+  control plane's and the pool's public keys (`provider.publicKeys`), and where
+  the pool serves the sandbox (`provider.pool`, `proxyagent.PoolEndpoints`). No
+  private key, no secret, no idle timeout. It also removes a readiness marker
+  left from an earlier container, so a new one's gate waits for its own agent.
+  The config and secrets binds are writable inside the sandbox, because its
+  agent is now what writes them.
+- **The record** (`runtimeconfig.go`): the document the pool has decided, in the
+  sandbox's tree root beside — never inside — the volumes, so it survives an
+  archive and leaves with a delete. `decideRuntimeConfig` applies a change
+  (secrets from create or update, sources' delivery) and refreshes what the pool
+  owns outright (the idle timeout, the proxy material); only a different
+  document is a new revision. The record never holds the client key; delivery
+  adds it from the proxy material. `project-layer.json` beside it is the project
+  layer the bootstrap was built from, which a pushed source's settle compares
+  against — never `_provenance` read back from a file the sandbox can write.
+- **Delivery**: a `PUT` through the sandbox's `Dialer`, with a token the pool
+  signs with its identity key — audience `sandbox-agent`, exactly the
+  `runtime-config` scope, this sandbox and pool — which the sandbox verifies
+  against the key in its bootstrap. It happens at the end of every boot, when a
+  running sandbox's secrets change, and when a pushed source settles.
+- **Convergence**: the status poll reads `runtimeConfigRevision` and calls
+  `Runtime.ConvergeRuntimeConfig`, which decides again and delivers when the
+  sandbox is behind — one delivery per sandbox at a time, and none while
+  anything holds the sandbox's power lock (a create, start, archive or delete
+  ends in its own delivery or in no sandbox at all). The pool converges on what
+  the sandbox says it applied, never on having sent it, so a transient failure
+  is logged and repaired at the next poll rather than failing anything.
+- Deciding issues material and writes the record, so it is refused for a
+  sandbox whose tree is gone or archived: a late poll or secret update cannot
+  put back what a delete took away. A secret update holds the power lock, and
+  leaves a sandbox with no container to the create that gives it one, which
+  sends its whole secret set.
+- A sandbox that holds a newer revision than the record (the record lost, or the
+  sandbox moved here), or that answers a conflict, moves the record past its
+  revision and is delivered again, once.
+- An agent with no intake answers 404, and one that refuses the delivery
+  outright — the pool's token not accepted, the document refused (400, 401,
+  403, 422) — cannot be fixed by a retry: the boot fails with
+  `ErrRuntimeConfigUnsupported` or `ErrRuntimeConfigRefused` rather than the
+  pool staging files around it.
+- A container built before its bootstrap named the pool's key carries no
+  `discobox.runtime_config` label and takes no deliveries: while it runs, it
+  runs on what was staged for it then, and a change decided for it is recorded
+  and logged. Its next start retires it instead
+  (`retireContainerWithoutRuntimeConfig`): the container is removed — its
+  durable tree is in the pool-host binds — a complete state sync goes at once,
+  and the control plane's "your container is gone" ensure recreates it from the
+  spec it holds, on the bootstrap that can. An on-demand start waits for that
+  rebuild like any other; an explicit one answers that the sandbox is being
+  rebuilt. Any create that reaches such a container also counts it drifted.
 
 ## Sandbox State Channel
 
@@ -352,11 +429,11 @@ until it is repaired, and the refusal's plain-text body is what `git` — and so
 `discobox apply` — prints. The origin route still serves, from the pool's own
 files.
 
-Every start — explicit, restart, or auto-start — first writes the pool's current
-idle timeout into the sandbox's `sandbox.json` (`applySandboxIdleTimeout`,
-ADR 0108 §3). It is the one part of that document rendered again after create:
-the sandbox-agent reads it at the boot the start begins, so a provider's changed
-timeout reaches existing sandboxes at their next start rather than never.
+Every start — explicit, restart, or auto-start — ends by delivering the
+sandbox's runtime-config document once its agent answers (`finishBoot`; see
+[Sandbox Runtime Config](#sandbox-runtime-config)), so each boot is given the
+pool's idle timeout as it is now (ADR 0108 §3), and a provider's changed timeout
+reaches a running sandbox at the next status poll.
 
 The latch also waits for a container that is not there yet, which is this tier's
 half of the attach wait (ADR 0039): a rebuild — repair, or a recreate after
@@ -420,10 +497,10 @@ neither touches a container, and neither is wrapped in the `autoStart` latch the
 git routes use — everything about both assumes nothing is running.
 
 What travels is `data`, `sources`, and `origins`, and the list is the decision.
-`config` and `secrets` are written in full by the create that follows a restore
-(`writeSandboxHarnessConfig`, `refreshSourcesReady`, `writeSandboxSecrets`), and
-what they hold is this pool's: sentinels minted here, a harness document naming
-this pool's proxy.
+`config` holds the bootstrap the create that follows a restore places
+(`writeSandboxHarnessConfig`), and `secrets` what that create's start delivers
+in the runtime-config document; what they hold is this pool's: sentinels minted
+here, a bootstrap naming this pool's key and proxy.
 
 - Both directions are `tarsums` archives: the tree ends with a `SHA256SUMS`
   written only by a walk that finished, and a restore refuses a tree whose sums
@@ -777,10 +854,11 @@ flowchart LR
   nothing crosses the network in the clear. It drops anything for that address
   arriving off `lo`, which a neighbor could otherwise route there. The sandbox's `nameserver` stays
   `127.0.0.11`, so container names resolve as before.
-- `proxyagent` stages the stub's two settings in `bridge.json` beside the
-  credentials endpoint, since all three reach the pool with the same keypair:
-  `dnsListenAddress` (that address, port 53) and `dnsServer`
-  (`discobox-pool-proxy:17085`).
+- The stub's two settings are in `bridge.json` beside the credentials endpoint,
+  since all three reach the pool with the same keypair: `dnsListenAddress` (that
+  address, port 53 — the sandbox's own, `sandboxconfig.SandboxDNSListenAddress`)
+  and `dnsServer` (`discobox-pool-proxy:17085`, from the bootstrap's pool
+  endpoints). The sandbox's intake renders the file.
 - The proxy unit serves `dnsforward` on `0.0.0.0:17085` with the server
   configuration it shares with the credentials endpoint (`sandboxTLSConfig`),
   and answers from the first `nameserver` in the pool container's
@@ -828,13 +906,16 @@ flowchart LR
   `discobox-pool-proxy:host-gateway` entry so the mTLS `ServerName` check stays
   valid regardless of the runtime gateway IP.
 - `sandboxruntime.CreateSandbox` issues a per-sandbox client certificate
-  (client ID = sandbox ID, the proxy tenant boundary), mounts the public CAs and
-  that sandbox's keypair (read-only) nested inside the config volume at
-  `/.discobox/config/proxy`, and injects the `HTTP(S)_PROXY`/CA environment into
-  both the container and the sandbox manifest so `sandbox-agent`-spawned
-  terminals and execs are proxied. The sandbox-agent's PID-1 init recursively
-  rebinds the config volume onto `/etc/discobox`, so the proxy material lands at
-  its documented `/etc/discobox/proxy` path.
+  (client ID = sandbox ID, the proxy tenant boundary) and injects the
+  `HTTP(S)_PROXY`/CA environment into both the container and the sandbox
+  manifest so `sandbox-agent`-spawned terminals and execs are proxied. The
+  public CAs, that keypair and the registry namespace are not staged into the
+  sandbox: they travel in its runtime-config document, and the sandbox's intake
+  writes them under `/etc/discobox/proxy`, renders its bridge configs from them,
+  the pool endpoints in its bootstrap and its own listen addresses, and starts
+  the units that read them ([Sandbox Runtime Config](#sandbox-runtime-config)).
+  `proxyagent`'s per-sandbox directory is now only this pool's record of which
+  sandboxes it issued material for, which the orphan reaper reads.
 - The pool host provisions five host-backed primary volumes and mounts them at
   `/.discobox/{data,cache,config,sources,secrets}`; it does not decide
   in-sandbox paths (home, `/var/lib/docker`, source targets). `data`, `config`,
@@ -935,10 +1016,11 @@ flowchart LR
   create materializes it, then re-reads its `.discobox/project.json` — the first
   moment that file exists on this host, since the repository was empty when the
   container was built — and, when the project declares anything the baked
-  document does not already record, removes the container and rebuilds it
-  against a document that includes it. Nothing is lost: the sandbox holds its
-  harness launch until `/etc/discobox/ready` is published, which happens only
-  beside a final document, so it has not run anything yet. A sandbox with
+  bootstrap does not already record (`project-layer.json`, the pool's own
+  record), removes the container and rebuilds it against a bootstrap that
+  includes it. Nothing is lost: the sandbox holds its harness launch until its
+  runtime-config document marks every source delivered, which the pool does
+  only once the bootstrap is final, so it has not run anything yet. A sandbox with
   nothing outstanding does no work here, which is what stops a repeated create
   from rebuilding forever. See
   [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
@@ -1302,8 +1384,8 @@ Each boundary does one job:
   removing the directory registry:2 keeps them in; the blobs are reclaimed by
   the registry's own garbage collection, a pass over shared content that is not
   one sandbox's purge to run.
-- **The namespace lives in the durable tree, not the staged material.** The
-  material is disposable — archiving deletes it and creation stages it again —
+- **The namespace lives in the durable tree, not the issued material.** The
+  material is disposable — archiving deletes it and creation issues it again —
   but the repositories the namespace names are not. An unarchive that minted a
   fresh one would orphan everything published under the old one. The durable
   tree has the lifetime wanted: it survives archive, and purge removes it.
@@ -1311,8 +1393,10 @@ Each boundary does one job:
   no authentication, so a repository path is a capability: build output is
   protected only by `discobox-build/<random hex>` being unguessable. A sandbox's
   namespace for publishing its local base images is therefore an unguessable
-  token, minted once per sandbox and staged with the rest of its proxy material
-  as `registry-namespace` — not the sandbox ID, which a peer can derive. It is
+  token, minted once per sandbox and delivered with the rest of its proxy
+  material in its runtime-config document, which the sandbox writes as
+  `/etc/discobox/proxy/registry-namespace` — not the sandbox ID, which a peer
+  can derive. It is
   world-readable inside the sandbox, whose own user is the tenant it belongs to.
   See ADR 0047.
 - **A stop drains the builds it is carrying.** A build is one long-lived stream

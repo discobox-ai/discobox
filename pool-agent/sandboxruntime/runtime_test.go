@@ -282,7 +282,7 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 			} else if err != nil || got != tc.wantWorkDir {
 				t.Fatalf("working directory = %q, %v; want %q", got, err, tc.wantWorkDir)
 			}
-			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
 			if doc.Runtime.AgentRuntime.WorkingRoot != tc.wantRoot {
 				t.Fatalf("manifest working root = %q, want %q", doc.Runtime.AgentRuntime.WorkingRoot, tc.wantRoot)
 			}
@@ -303,7 +303,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if !ok || destination.Directory.Or("") != "/workspace" {
 		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
 	}
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
 		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
@@ -602,7 +602,7 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
@@ -642,7 +642,7 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
 	if len(doc.Image.Files) != 2 {
 		t.Fatalf("image files = %+v, want the unmodified image baseline", doc.Image.Files)
 	}
@@ -1972,7 +1972,7 @@ func TestImageMatchesPin(t *testing.T) {
 // the mutable reference it was asked for (ADR 0016).
 func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:resolved", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:resolved", req, nil, nil)
 	if doc.Runtime.Image != "sha256:resolved" {
 		t.Fatalf("runtime image = %q, want the resolved image identity", doc.Runtime.Image)
 	}

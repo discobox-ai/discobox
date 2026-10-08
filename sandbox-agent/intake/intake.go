@@ -2,27 +2,34 @@
 // (sandboxconfig.RuntimeConfig, ADR 0126 §3): the one channel through which
 // the pool tells a running sandbox what it is to be.
 //
-// Applying a document writes the same local files the agent already reads —
-// sandbox.json's idle timeout, the secrets file, the proxy material and the
-// source-readiness marker — so `config`, `secretswatch` and `sourcesready` are
-// unchanged by it. What changes is who writes them.
+// The document is the dynamic half of what the sandbox is; the static half is
+// the bootstrap, sandbox.json, which this package never writes
+// (ADR 26-10-08-127 §1). Applying a document writes the local files the
+// agent's readers already watch — the secrets file, the proxy material and the
+// bridge configs rendered from it, and the source-readiness marker — so
+// `secretswatch` and `sourcesready` are unchanged by it. What it carries for
+// the agent itself, the idle timeout, the caller applies from Applied.
 //
 // A delivery is all or nothing. Every file is rendered and staged beside its
-// target before any target changes, the targets are then replaced in an order
-// that clears the readiness gate last, and a replacement that fails puts back
-// what every earlier one replaced. The document is kept, so a restart applies
-// it again without waiting on the pool.
+// target before any target changes, the targets are then replaced in order,
+// and a replacement that fails puts back what every earlier one replaced. The
+// units that read what changed are started before readiness is published, so
+// the gate never opens over a hop that is not up. The document is kept, so a
+// restart applies it again without waiting on the pool.
 package intake
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -31,7 +38,7 @@ import (
 
 // Layout is where a document's files land.
 type Layout struct {
-	// ConfigDir holds sandbox.json and the readiness marker.
+	// ConfigDir holds the readiness marker, beside sandbox.json.
 	ConfigDir string
 	// ProxyDir holds the proxy material and the bridge configs that name it.
 	ProxyDir string
@@ -89,23 +96,47 @@ type keptDocument struct {
 	Document sandboxconfig.RuntimeConfig `json:"document"`
 }
 
-// Intake applies runtime-config documents and remembers the last one.
-type Intake struct {
-	layout Layout
-	owner  Owner
+// Activator starts what reads the files a delivery changed, named by their
+// paths. It is called after they are in place and before readiness is
+// published; it reports nothing back, because the files are already the
+// document's and a unit that will not start is the unit's to say so.
+type Activator func(ctx context.Context, changed []string)
 
-	mu      sync.Mutex
-	applied *sandboxconfig.RuntimeConfig
+// Config is what an intake applies documents for.
+type Config struct {
+	Layout Layout
+	// Owner is the sandbox the documents are for.
+	Owner Owner
+	// Pool is where the sandbox's pool serves it, from the bootstrap. The
+	// bridges are rendered from it; nil renders none.
+	Pool *sandboxconfig.PoolEndpoints
+	// Activate is called with the files a delivery changed; nil starts nothing.
+	Activate Activator
 }
 
-// Open returns the intake for owner's sandbox, and applies the document it
-// last kept, if that was owner's, so the files a restart lost (/run is a
+// Intake applies runtime-config documents and remembers the last one.
+type Intake struct {
+	layout   Layout
+	owner    Owner
+	pool     *sandboxconfig.PoolEndpoints
+	activate Activator
+
+	// mu serializes deliveries, which hold it while they write files and start
+	// units. Readers do not take it: applied is read on every status poll, which
+	// must not wait out a delivery restarting units.
+	mu      sync.Mutex
+	applied atomic.Pointer[sandboxconfig.RuntimeConfig]
+}
+
+// Open returns the intake for cfg.Owner's sandbox, and applies the document it
+// last kept, if that was the owner's, so the files a restart lost (/run is a
 // tmpfs) are back before anything reads them. The intake is usable even when
 // that fails — the error says why nothing was restored, and the pool's next
 // delivery repairs it. A document kept for another sandbox or pool is not
 // restored and orders nothing; the first delivery replaces it.
-func Open(layout Layout, owner Owner) (*Intake, error) {
-	in := &Intake{layout: layout, owner: owner}
+func Open(ctx context.Context, cfg Config) (*Intake, error) {
+	in := &Intake{layout: cfg.Layout, owner: cfg.Owner, pool: cfg.Pool, activate: cfg.Activate}
+	layout, owner := cfg.Layout, cfg.Owner
 	data, err := os.ReadFile(layout.StatePath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return in, nil
@@ -134,31 +165,29 @@ func Open(layout Layout, owner Owner) (*Intake, error) {
 		return in, fmt.Errorf("kept runtime config %s: %w", layout.StatePath, err)
 	}
 	// The state file already holds this document; only its files are put back.
-	if err := in.commit(kept, false); err != nil {
+	if err := in.commit(ctx, kept, false); err != nil {
 		return in, fmt.Errorf("restore runtime config revision %d: %w", kept.Revision, err)
 	}
-	in.applied = &kept
+	in.applied.Store(&kept)
 	return in, nil
 }
 
 // Applied returns the last document applied, and false when there is none.
 func (in *Intake) Applied() (sandboxconfig.RuntimeConfig, bool) {
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	if in.applied == nil {
+	held := in.applied.Load()
+	if held == nil {
 		return sandboxconfig.RuntimeConfig{}, false
 	}
-	return *in.applied, true
+	return *held, true
 }
 
 // Revision is the revision applied, zero when none has been.
 func (in *Intake) Revision() int64 {
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	if in.applied == nil {
+	held := in.applied.Load()
+	if held == nil {
 		return 0
 	}
-	return in.applied.Revision
+	return held.Revision
 }
 
 // Apply converges the sandbox on doc and returns the document it now holds.
@@ -168,14 +197,14 @@ func (in *Intake) Revision() int64 {
 // revision is a retry when the document matches, and ErrConflict when it does
 // not. A document that fails validation, or whose files cannot all be written,
 // changes nothing.
-func (in *Intake) Apply(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, error) {
+func (in *Intake) Apply(ctx context.Context, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	// Ordering comes first: only a document newer than the held one can
 	// change anything, so only that one is worth validating. An out-of-date
 	// delivery is ignored whatever it says, and anything but the held
 	// document under the held revision is a conflict, malformed or not.
-	if held := in.applied; held != nil {
+	if held := in.applied.Load(); held != nil {
 		switch {
 		case doc.Revision < held.Revision:
 			return *held, nil
@@ -188,137 +217,96 @@ func (in *Intake) Apply(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeC
 	if err := doc.Validate(in.layout.Paths); err != nil {
 		return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
-	if err := in.commit(doc, true); err != nil {
+	if err := in.commit(ctx, doc, true); err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
 	}
-	in.applied = &doc
+	in.applied.Store(&doc)
 	return doc, nil
 }
 
 // commit writes doc's files, and the state file when keep is set, as one
-// change.
-func (in *Intake) commit(doc sandboxconfig.RuntimeConfig, keep bool) error {
-	ops, err := in.plan(doc, keep)
+// change, then starts what reads the files that changed, then publishes
+// readiness when doc grants it.
+func (in *Intake) commit(ctx context.Context, doc sandboxconfig.RuntimeConfig, keep bool) error {
+	ops, gate, err := in.plan(doc, keep)
 	if err != nil {
 		return err
 	}
-	return run(ops)
+	if gate != nil {
+		ops = append(ops, *gate)
+	}
+	activate := func(done []op) {
+		if in.activate == nil {
+			return
+		}
+		if changed := changedPaths(done); len(changed) > 0 {
+			in.activate(ctx, changed)
+		}
+	}
+	return run(ops, gate != nil, activate)
 }
 
-// plan renders every file doc implies, in the order they are to be replaced.
+// plan renders every file doc implies, in the order they are to be replaced,
+// and the readiness marker that follows them when doc grants it.
 //
 // The readiness marker brackets the rest. It is removed before anything else
 // changes, whatever the document says — a marker left up from the previous
 // document while this one's files go in would be a gate open over files from
 // two documents. A document that grants readiness writes it again after
 // everything else is in place, the state file included, since a failed rename
-// there rolls the rest back, and a waiter that had already seen the marker
-// would be running over files that no longer exist. The
+// there rolls the rest back, and after the units reading the new files have
+// been started, so that a waiter never runs ahead of the hop it needs. The
 // state file comes after every file it describes, so a kept document is never
 // newer than they are.
-func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, error) {
+func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, *op, error) {
 	ready := filepath.Join(in.layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 	var ops []op
-	delivered := doc.SourcesDelivered()
 	ops = append(ops, op{path: ready, remove: true})
-	proxyOps, err := proxyFiles(in.layout.ProxyDir, doc.Proxy)
+	proxyOps, err := proxyFiles(in.layout.ProxyDir, in.pool, doc.Proxy)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ops = append(ops, proxyOps...)
 	secrets, err := secretsFile(in.layout.SecretsPath, doc.SecretEnv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ops = append(ops, secrets)
-	manifest, changed, err := manifestFile(filepath.Join(in.layout.ConfigDir, manifestName), doc.Agent)
-	if err != nil {
-		return nil, err
-	}
-	if changed {
-		ops = append(ops, manifest)
-	}
 	if keep {
 		// /var/lib/discobox is a data volume, which an export carries, so the
 		// kept document leaves the client key out: client.key in the proxy
 		// directory stays the one copy, and a restore reads it from there.
 		state, err := json.MarshalIndent(keptDocument{Owner: in.owner, Document: WithoutClientKey(doc)}, "", "  ")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		ops = append(ops, op{path: in.layout.StatePath, data: state, mode: 0o600})
 	}
-	if delivered {
-		//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
-		ops = append(ops, op{path: ready, data: []byte{}, mode: 0o644})
+	if !doc.SourcesDelivered() {
+		return ops, nil, nil
 	}
-	return ops, nil
+	//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
+	return ops, &op{path: ready, data: []byte{}, mode: 0o644}, nil
 }
 
-// manifestName is the sandbox manifest inside ConfigDir.
-const manifestName = "sandbox.json"
-
-// manifestFile is sandbox.json with the agent settings applied, and whether
-// that changes it. Only the keys the document owns are touched: the rest of the
-// file is the create-time placement and is carried through as it was, numbers
-// included. Like the pool's own rewrite, it sets the value both in the
-// effective config and in its runtime provenance, and a manifest that does not
-// exist is left alone — the sandbox it belongs to cannot boot anyway.
-func manifestFile(path string, agent sandboxconfig.RuntimeAgent) (op, bool, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return op{}, false, nil
-	}
-	if err != nil {
-		return op{}, false, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var manifest map[string]any
-	if err := decoder.Decode(&manifest); err != nil {
-		return op{}, false, fmt.Errorf("decode %s: %w", path, err)
-	}
-	changed := setIdleTimeout(manifest, agent.IdleTimeout)
-	if provenance, ok := manifest["_provenance"].(map[string]any); ok {
-		if runtime, ok := provenance["runtime"].(map[string]any); ok {
-			changed = setIdleTimeout(runtime, agent.IdleTimeout) || changed
+// changedPaths are the targets of done whose contents a replacement changed,
+// sorted. The readiness marker is not among them: nothing is started for it.
+func changedPaths(done []op) []string {
+	var out []string
+	for _, o := range done {
+		if filepath.Base(o.path) == sandboxconfig.SourcesReadyFileName {
+			continue
 		}
-	}
-	if !changed {
-		return op{}, false, nil
-	}
-	out, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return op{}, false, err
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return op{}, false, err
-	}
-	return op{path: path, data: out, mode: info.Mode().Perm()}, true, nil
-}
-
-// setIdleTimeout sets agentRuntime.idleTimeout in the object holding an
-// agentRuntime, removing it when want is empty, and reports whether it changed.
-func setIdleTimeout(holder map[string]any, want string) bool {
-	agentRuntime, ok := holder["agentRuntime"].(map[string]any)
-	if !ok {
-		if want == "" {
-			return false
+		switch {
+		case o.remove && o.prior != nil:
+		case !o.remove && (o.prior == nil || *o.prior != o.mode || !bytes.Equal(o.held, o.data)):
+		default:
+			continue
 		}
-		agentRuntime = map[string]any{}
-		holder["agentRuntime"] = agentRuntime
+		out = append(out, o.path)
 	}
-	current, _ := agentRuntime["idleTimeout"].(string)
-	if current == want {
-		return false
-	}
-	if want == "" {
-		delete(agentRuntime, "idleTimeout")
-	} else {
-		agentRuntime["idleTimeout"] = want
-	}
-	return true
+	sort.Strings(out)
+	return out
 }
 
 // secretsFile is the resolved-secrets file: env name to sentinel, readable by
@@ -359,6 +347,7 @@ var proxyFileNames = []string{
 type bridgeFile struct {
 	ListenAddress    string `json:"listenAddress"`
 	UpstreamURL      string `json:"workerProxyUrl"`
+	ServerName       string `json:"serverName,omitempty"`
 	CredentialsURL   string `json:"credentialsUrl,omitempty"`
 	DNSServer        string `json:"dnsServer,omitempty"`
 	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
@@ -367,9 +356,13 @@ type bridgeFile struct {
 	ClientKeyPath    string `json:"clientKeyPath"`
 }
 
-// proxyFiles renders the proxy material into dir. A bridge config names the
-// keypair and CA by where this sandbox keeps them, which only it knows.
-func proxyFiles(dir string, proxy *sandboxconfig.RuntimeProxy) ([]op, error) {
+// proxyFiles renders the proxy material into dir, and each bridge config from
+// its three parts: where the pool serves it (pool, from the bootstrap), where
+// this sandbox listens for it (sandboxconfig's constants), and the credential
+// the document delivers, named by where this sandbox keeps it. A bridge exists
+// only where all three do; the nested-Docker one names no listener, which the
+// sandbox discovers when its dockerd makes one (ADR 26-10-08-127 §4).
+func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxconfig.RuntimeProxy) ([]op, error) {
 	files := map[string]op{}
 	if proxy != nil {
 		//nolint:gosec // CA certificates and the client certificate are public.
@@ -379,28 +372,37 @@ func proxyFiles(dir string, proxy *sandboxconfig.RuntimeProxy) ([]op, error) {
 		//nolint:gosec // as above.
 		files[clientCertFile] = op{data: []byte(proxy.ClientCert), mode: 0o644}
 		files[clientKeyFile] = op{data: []byte(proxy.ClientKey), mode: 0o600}
-		for name, bridge := range map[string]*sandboxconfig.RuntimeBridge{
-			egressBridgeFile:       proxy.Egress,
-			nestedDockerBridgeFile: proxy.NestedDocker,
-			buildKitBridgeFile:     proxy.BuildKit,
-		} {
-			if bridge == nil {
-				continue
+		if pool != nil && pool.Proxy != "" {
+			egress := bridgeFile{
+				ListenAddress:  sandboxconfig.SandboxEgressListenAddress,
+				UpstreamURL:    pool.Proxy,
+				CredentialsURL: pool.Credentials,
 			}
-			data, err := json.MarshalIndent(bridgeFile{
-				ListenAddress:    bridge.ListenAddress,
-				UpstreamURL:      bridge.UpstreamURL,
-				CredentialsURL:   bridge.CredentialsURL,
-				DNSServer:        bridge.DNSServer,
-				DNSListenAddress: bridge.DNSListenAddress,
-				MTLSCAPath:       filepath.Join(dir, mtlsCAFile),
-				ClientCertPath:   filepath.Join(dir, clientCertFile),
-				ClientKeyPath:    filepath.Join(dir, clientKeyFile),
-			}, "", "  ")
-			if err != nil {
-				return nil, err
+			if pool.DNS != "" {
+				egress.DNSServer = pool.DNS
+				egress.DNSListenAddress = sandboxconfig.SandboxDNSListenAddress
 			}
-			files[name] = op{data: data, mode: 0o600}
+			bridges := map[string]bridgeFile{
+				egressBridgeFile:       egress,
+				nestedDockerBridgeFile: {UpstreamURL: pool.Proxy},
+			}
+			if pool.BuildKit != "" {
+				bridges[buildKitBridgeFile] = bridgeFile{
+					ListenAddress: sandboxconfig.SandboxBuildKitListenAddress,
+					UpstreamURL:   pool.BuildKit,
+				}
+			}
+			for name, bridge := range bridges {
+				bridge.ServerName = pool.ServerName
+				bridge.MTLSCAPath = filepath.Join(dir, mtlsCAFile)
+				bridge.ClientCertPath = filepath.Join(dir, clientCertFile)
+				bridge.ClientKeyPath = filepath.Join(dir, clientKeyFile)
+				data, err := json.MarshalIndent(bridge, "", "  ")
+				if err != nil {
+					return nil, err
+				}
+				files[name] = op{data: data, mode: 0o600}
+			}
 		}
 		if proxy.RegistryNamespace != "" {
 			//nolint:gosec // readable inside the sandbox by design, as the pool staged it.

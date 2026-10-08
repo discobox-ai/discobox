@@ -90,30 +90,30 @@ func run(args []string) int {
 		slog.Error("load config", "error", err)
 		return 1
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	// Before anything is served: the intake puts back the files its kept
 	// document implies, which a restart may have lost (/run is a tmpfs), so
 	// nothing reads a file the pool already replaced (ADR 0126 §3). It is
-	// opened after sandbox.json only because sandbox.json names whose sandbox
-	// this is, which decides whether the kept document is this sandbox's to
-	// restore. A restore can rewrite sandbox.json's agent settings, so a
-	// restored document has sandbox.json read again, and this start runs on
-	// what the kept revision says. A restore that fails is not fatal — the
+	// opened after sandbox.json because sandbox.json — the static bootstrap —
+	// names whose sandbox this is, which decides whether the kept document is
+	// this sandbox's to restore, and where its pool is, which the bridges are
+	// rendered from (ADR 26-10-08-127). A restore that fails is not fatal: the
 	// pool's next delivery repairs it.
-	runtimeConfig, err := intake.Open(intake.DefaultLayout(), intake.Owner{
-		ProjectID: cfg.Identity.ProjectID,
-		SandboxID: cfg.Identity.SandboxID,
-		PoolID:    cfg.Identity.PoolID,
+	layout := intake.DefaultLayout()
+	runtimeConfig, err := intake.Open(ctx, intake.Config{
+		Layout: layout,
+		Owner: intake.Owner{
+			ProjectID: cfg.Identity.ProjectID,
+			SandboxID: cfg.Identity.SandboxID,
+			PoolID:    cfg.Identity.PoolID,
+		},
+		Pool:     cfg.Pool,
+		Activate: intake.UnitActivator(layout.ProxyDir, slog.Default()),
 	})
 	if err != nil {
 		slog.Warn("restore runtime config", "error", err)
-	} else if _, restored := runtimeConfig.Applied(); restored {
-		if cfg, err = config.Load(configPath); err != nil {
-			slog.Error("load config after restoring runtime config", "error", err)
-			return 1
-		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	serverConfig := server.ConfigFromHarnessConfig(cfg)
 	serverConfig.RuntimeConfig = runtimeConfig
 	if err := server.Serve(ctx, slog.Default(), serverConfig); err != nil && !errors.Is(err, context.Canceled) {
@@ -161,8 +161,8 @@ func runHookPublish(args []string) int {
 	return 0
 }
 
-// bridgeConfig mirrors the on-disk config the pool agent's proxyagent writes into
-// the sandbox proxy material directory.
+// bridgeConfig mirrors the bridge config the runtime-config intake renders into
+// the sandbox's proxy material directory.
 type bridgeConfig struct {
 	ListenAddress  string `json:"listenAddress"`
 	WorkerProxyURL string `json:"workerProxyUrl"`

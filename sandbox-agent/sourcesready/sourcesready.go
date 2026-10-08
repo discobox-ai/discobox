@@ -1,6 +1,12 @@
-// Package sourcesready holds the sandbox's boot work until its sources are
-// actually in place: the first harness launch, and the start of the services
-// the repository declares.
+// Package sourcesready holds the sandbox's boot work until the sandbox is
+// ready to run it: the first harness launch, and the start of the services the
+// repository declares.
+//
+// Two things make a sandbox wait. A pool that delivers runtime config gives a
+// sandbox its secrets and its proxy credential only in the document it
+// delivers once the agent is up (ADR 26-10-08-127 §§1, 6), so the first launch
+// waits for a document that grants readiness. And a pushed source is not there
+// yet:
 //
 // A source the client delivers by push is not there when the container is
 // created: pool-agent parks an empty repository for the push to land in, and
@@ -37,17 +43,17 @@ const backstopInterval = time.Second
 // Gate returns the wait the sandbox's boot work must clear, or nil when there
 // is nothing to wait for.
 //
-// nil is the answer for every sandbox whose sources were materialized before
-// its container existed — every clone-delivered one, and every sandbox created
-// before this contract, whose config names no source that awaits delivery. The
-// boot path is then exactly what it was, with no file to stat.
+// nil is the answer only for a sandbox no pool delivers runtime config to
+// (awaitsRuntimeConfig false) whose sources were materialized before its
+// container existed. The boot path is then exactly what it was, with no file
+// to stat.
 //
 // The returned func is safe to call from more than one goroutine: each call
 // arms its own watch and its own backstop, and returns as soon as the signal is
 // there. Callers hold one gate between them rather than each building one, so
 // they cannot come to differ about what they are waiting for.
-func Gate(sources []sandboxconfig.Source, path string, logger *slog.Logger) func(context.Context) error {
-	if !sandboxconfig.SourcesAwaitDelivery(sources) {
+func Gate(sources []sandboxconfig.Source, awaitsRuntimeConfig bool, path string, logger *slog.Logger) func(context.Context) error {
+	if !awaitsRuntimeConfig && !sandboxconfig.SourcesAwaitDelivery(sources) {
 		return nil
 	}
 	if path == "" {
@@ -79,10 +85,12 @@ func Wait(ctx context.Context, path string, logger *slog.Logger) error {
 		if addErr := watcher.Add(filepath.Dir(path)); addErr != nil {
 			_ = watcher.Close()
 			watcher = nil
-			logger.Warn("watch sandbox config directory for source delivery", "error", addErr)
+			// The directory may not exist yet — the proxy directory before the
+			// pool's first document — which the backstop below covers.
+			logger.Info("cannot watch for the file a wait is on; re-checking it every second instead", "path", path, "error", addErr)
 		}
 	} else {
-		logger.Warn("watch for source delivery", "error", err)
+		logger.Warn("watch for the file a wait is on; re-checking it every second instead", "path", path, "error", err)
 	}
 	if watcher != nil {
 		defer watcher.Close()
@@ -92,9 +100,11 @@ func Wait(ctx context.Context, path string, logger *slog.Logger) error {
 	if exists(path) {
 		return nil
 	}
-	// Neutral about what is waiting: both the first harness launch and the
-	// services autostart clear this gate, and each waits on its own.
-	logger.Info("waiting for the sandbox's source to be delivered", "signal", path)
+	// Neutral about what is waiting and why: the first harness launch and the
+	// services autostart each wait here on the readiness file, and the
+	// credentials endpoint on the bridge config it serves from, so the line
+	// names the file rather than calling every wait a readiness gate.
+	logger.Info("waiting for a file to appear", "path", path)
 	ticker := time.NewTicker(backstopInterval)
 	defer ticker.Stop()
 	var events chan fsnotify.Event

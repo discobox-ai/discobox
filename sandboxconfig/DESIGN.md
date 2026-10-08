@@ -13,7 +13,9 @@ Pool-agent assembles the `Document` (`buildSandboxDocument` in
 control plane's resolved harness config.
 
 - `RuntimeLayer`: control-plane/pool-agent-owned identity (`SandboxID`,
-  `Provider`), sandbox-agent daemon settings (`AgentRuntime`), sources,
+  `Provider` — which also carries the public keys the sandbox trusts and, as
+  `Pool`, where its pool serves it), sandbox-agent daemon settings
+  (`AgentRuntime`), sources,
   model/prompt/user/git, the create-time `Description` (only a seed for the
   sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
@@ -59,6 +61,19 @@ layers legitimately contribute to the same named attribute (e.g.
 `RunCommand`, image-owned but project-overridable), both layers declare that
 field independently — there is no shared domain object embedded in more than
 one layer.
+
+## Static and dynamic
+
+`sandbox.json` is the sandbox's **static** half, its bootstrap: placed before
+the agent exists and never rewritten, it holds identity, public keys to trust
+(`ControlPlanePublicKeyName`, `PoolPublicKeyName`), where the pool is
+(`PoolEndpoints`), and the create-time config — and no private key, secret or
+idle timeout. Everything that can change while the sandbox exists is its
+**dynamic** half, the `RuntimeConfig` below. Where the sandbox listens for its
+pool (`SandboxEgressListenAddress` and its siblings) is neither: it is the
+sandbox's own, a constant here so the pool can make the two settings that must
+agree with it — the proxy env and the DNS server a runtime hands the sandbox.
+See [ADR 26-10-08-127](../docs/adr/26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md).
 
 ## `Effective`
 
@@ -114,29 +129,29 @@ the `runcca` runc wrapper).
 `Source.AwaitsDelivery` marks a source whose content is not in place when the
 container is created — a push-delivered one, still being sent by the client.
 The file `SourcesReadyFileName` (`ready`, seen in the sandbox as
-`SourcesReadyPath`, `/etc/discobox/ready`) is pool-agent's signal that every
-source is materialized *and* the document beside it is final; the sandbox holds
-its first harness launch and the start of repository-declared services on it,
-so nothing runs against an empty workspace or a configuration about to be
-replaced.
+`SourcesReadyPath`, `/etc/discobox/ready`) is the signal that every source is
+materialized *and* the bootstrap beside it is final; the sandbox agent writes
+it when an applied runtime-config document grants readiness (`SourcesDelivered`).
+The sandbox holds its first harness launch and the start of repository-declared
+services on it, so nothing runs against an empty workspace, a configuration
+about to be replaced, or before its secrets and proxy credential have arrived.
 
 The signal is deliberately not the per-source materialized marker the sandbox
 could read for itself: that marker is written when a checkout completes, which
 is before pool-agent has re-read the project layer and decided whether the
 container must be rebuilt to honor it. Only pool-agent can say the sandbox has
-settled. A config that names no source awaiting delivery
-(`Config.AwaitsSourceDelivery` false) — every clone-delivered sandbox — waits on
-nothing. Where the pool delivers a runtime-config document, the sandbox agent
-writes the same file from it (see Runtime config).
+settled. A sandbox a pool delivers to (`Provider.AwaitsRuntimeConfig`, a pool
+key named) waits for its first document whatever its sources are; one with no
+pool key and no source awaiting delivery (`Config.AwaitsSourceDelivery` false)
+waits on nothing.
 See [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
 
 ## Secrets
 
 Secret values (resolved sentinels) are excluded from `Document` entirely —
 see `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md` §3.
-They travel through a separate, independently-refreshed channel to
-`/run/discobox/secrets/secrets.json` — staged by the pool, or written by the
-sandbox agent from a runtime-config document's `SecretEnv`. Only the
+They travel in the runtime-config document's `SecretEnv` (sentinels only), which
+the sandbox agent writes to `/run/discobox/secrets/secrets.json`. Only the
 harness's secret declarations ride the image layer (`ImageLayer.Secrets`), and
 the sandbox reads them for `Delivery` alone: a file-delivered secret must not
 also be exported as an env var.
@@ -150,16 +165,17 @@ sandbox, delivered as one revisioned document to the sandbox agent's
 §3). It is what replaces staging files into a sandbox's volumes after create;
 `sandbox.json` and its layers above remain the create-time placement.
 
-- **Contents.** `Agent` — the part of `sandbox.json` the pool owns after create
-  (`idleTimeout`, applied into `agentRuntime` and its runtime provenance, read
-  on the agent's next start). `SecretEnv` — env name to sentinel, never a
-  resolved value (the Secrets rule below is unchanged). `Proxy` — the CAs, the
-  sandbox's client keypair (the key is delivered, never read back), the three bridges (egress, nested Docker, BuildKit)
-  and the registry namespace; the sandbox renders the bridge configs with its own
-  paths. `Sources` — per source, its in-sandbox `Target` (required with an
-  origin), `OriginURL`, `OriginToken` (the pool's `origin:fetch` sandbox token,
-  when the origin takes one), pinned `Commit` and `Delivered`. The agent
-  clones each from its origin
+- **Contents.** `Agent` — the sandbox-agent settings the pool may change
+  (`idleTimeout`, applied to the running agent when delivered). `SecretEnv` —
+  env name to sentinel, never a resolved value (the Secrets rule above is
+  unchanged). `Proxy` — the CAs, the sandbox's client keypair (the key is
+  delivered, never read back) and the registry namespace: the credential only.
+  Where the pool is comes from the bootstrap and where the sandbox listens is
+  its own, so the document carries no bridge; the sandbox renders its bridge
+  configs from the three. `Sources` — per source, its in-sandbox `Target`
+  (required with an origin), `OriginURL`, `OriginToken` (the pool's
+  `origin:fetch` sandbox token, when the origin takes one), pinned `Commit` and
+  `Delivered`. The agent clones each from its origin
   ([`sandbox-agent/sourceconverge`](../sandbox-agent/DESIGN.md)); how it is
   checked out stays in `sandbox.json`'s `Source` of the same slug.
 - **Whole, not incremental** (ADR 0017): absent means the sandbox no longer has
@@ -169,10 +185,12 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   with none. The pool sets `Delivered` only once it has settled the spec on that
   source, so it means what the readiness file always meant (ADR 0055).
 - **`Validate` is the whole refusal.** Everything a delivery can be wrong about —
-  revision, durations, env names, PEM CAs, a keypair that does not load, bridge
-  URLs, the namespace, a source target that is not a clean absolute path by the sandbox's own platform's rules (`sandboxpath`, which the caller passes: the agent passes its own, ADR 0145 §6), an
+  revision, durations, env names, PEM CAs, a keypair that does not load, the
+  namespace, a source target that is not a clean absolute path by the sandbox's own platform's rules (`sandboxpath`, which the caller passes: the agent passes its own, ADR 0145 §6), an
   origin with no target, a token that is not one line — is checked before
   anything is written, so a refused document changes nothing.
+- **Who may deliver one.** `RuntimeConfigScope`, signed by the pool with the key
+  the bootstrap names under `PoolPublicKeyName`; no wildcard grants it.
 - The wire schema is `SandboxRuntimeConfig` in `api/openapi/server.yaml`; the
   sandbox agent converts the generated type to this one through JSON, and its
   round-trip test fails when the two drift. The agent's apply side is

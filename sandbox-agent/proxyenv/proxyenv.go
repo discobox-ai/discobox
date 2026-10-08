@@ -50,12 +50,12 @@ import (
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
-// DefaultSandboxJSON is pool-agent's read-only sandbox manifest.
+// DefaultSandboxJSON is the sandbox's static bootstrap manifest.
 const DefaultSandboxJSON = "/etc/discobox/sandbox.json"
 
 // DefaultOutputPath is where the rendered file lands. It is under /run rather
-// than beside sandbox.json: /etc/discobox is pool-agent's read-only mount, and
-// this is boot-time runtime state derived from it, not configuration.
+// than beside sandbox.json: this is boot-time runtime state derived from it,
+// not configuration.
 const DefaultOutputPath = "/run/discobox/proxy/proxy.env"
 
 // Render reads sandboxJSONPath and returns its proxy-trust env subset (the

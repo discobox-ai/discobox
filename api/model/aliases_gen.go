@@ -168,7 +168,6 @@ type SandboxResourceConsumption = apigen.SandboxResourceConsumption
 type SandboxRuntime = apigen.SandboxRuntime
 type SandboxRuntimeConfig = apigen.SandboxRuntimeConfig
 type SandboxRuntimeConfigAgent = apigen.SandboxRuntimeConfigAgent
-type SandboxRuntimeConfigBridge = apigen.SandboxRuntimeConfigBridge
 type SandboxRuntimeConfigProxy = apigen.SandboxRuntimeConfigProxy
 type SandboxRuntimeConfigSource = apigen.SandboxRuntimeConfigSource
 type SandboxSecretInput = apigen.SandboxSecretInput

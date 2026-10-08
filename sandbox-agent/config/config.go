@@ -46,10 +46,17 @@ type Config struct {
 	Sources       []sandboxconfig.Source `json:"sources,omitempty"`
 	SandboxConfig map[string]any         `json:"-"`
 	Resources     ResourceConfig         `json:"resources"`
-	// IdleTimeout is how long the sandbox runs with nothing happening in it
-	// before it powers itself off (ADR 0108), from the pool's policy. Zero
-	// leaves autostop on its default.
-	IdleTimeout time.Duration `json:"idleTimeout,omitempty"`
+	// PoolPublicKey verifies the tokens the pool signs to deliver runtime-config
+	// documents, and nothing else (ADR 26-10-08-127 §3). Empty for a sandbox no
+	// pool delivers to.
+	PoolPublicKey string `json:"poolPublicKey,omitempty"`
+	// Pool is where the sandbox's pool serves it: the far end of each bridge
+	// the runtime-config intake renders (ADR 26-10-08-127 §4).
+	Pool *sandboxconfig.PoolEndpoints `json:"pool,omitempty"`
+	// AwaitsRuntimeConfig holds the first harness launch and the declared
+	// services until a runtime-config document grants readiness
+	// (ADR 26-10-08-127 §6).
+	AwaitsRuntimeConfig bool `json:"awaitsRuntimeConfig,omitempty"`
 }
 
 type Identity struct {
@@ -172,7 +179,10 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 			ProjectID: effective.Provider.ProjectID,
 			PoolID:    effective.Provider.PoolID,
 		},
-		ControlPlanePublicKey: publicKey(effective.Provider.PublicKeys),
+		ControlPlanePublicKey: publicKey(effective.Provider.PublicKeys, sandboxconfig.ControlPlanePublicKeyName),
+		PoolPublicKey:         publicKey(effective.Provider.PublicKeys, sandboxconfig.PoolPublicKeyName),
+		Pool:                  effective.Provider.Pool,
+		AwaitsRuntimeConfig:   effective.Provider.AwaitsRuntimeConfig(),
 		ListenAddress:         effective.AgentRuntime.ListenAddress,
 		WorkingRoot:           effective.WorkingRoot(sandboxPaths),
 		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
@@ -190,11 +200,6 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		}
 	}
 	cfg.Resources.RetentionCount = effective.AgentRuntime.ResourceRetentionCount
-	if idleTimeout := strings.TrimSpace(effective.AgentRuntime.IdleTimeout); idleTimeout != "" {
-		if parsed, err := time.ParseDuration(idleTimeout); err == nil && parsed > 0 {
-			cfg.IdleTimeout = parsed
-		}
-	}
 	cfg.ExecDefaults = execDefaultsFromEffective(effective)
 	if strings.TrimSpace(effective.Harness.ID) != "" {
 		cfg.Harness = Harness{
@@ -232,14 +237,9 @@ func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 	return out
 }
 
-func publicKey(values map[string]string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return strings.TrimSpace(values[ControlPlanePublicKeyName])
+func publicKey(values map[string]string, name string) string {
+	return strings.TrimSpace(values[name])
 }
-
-const ControlPlanePublicKeyName = "controlPlane"
 
 // fileDeliveredSecretNames lists the declared secrets the harness reads from an
 // installed file, so their sentinels can be kept out of its environment: a CLI
@@ -289,7 +289,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("sandboxId is required")
 	}
 	if strings.TrimSpace(c.ControlPlanePublicKey) == "" {
-		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
+		return fmt.Errorf("provider.publicKeys.%s is required", sandboxconfig.ControlPlanePublicKeyName)
 	}
 	switch c.HarnessMode {
 	case "", HarnessModeRun, HarnessModeConfig, HarnessModeJudge:

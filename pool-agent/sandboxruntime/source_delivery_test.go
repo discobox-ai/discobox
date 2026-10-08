@@ -51,39 +51,20 @@ func markMaterialized(t *testing.T, r *DockerSandboxRuntime, slug string) {
 	}
 }
 
-func readySignalPath(r *DockerSandboxRuntime) string {
-	return filepath.Join(r.sandboxConfigRoot(deliveryTestSandboxID), sandboxconfig.SourcesReadyFileName)
-}
-
-// The signal says "every source is in place", so it is published only once the
-// last one is — and a sandbox still owed a push must not carry a stale one from
-// an earlier create.
-func TestRefreshSourcesReadyTracksTheSourcesOnDisk(t *testing.T) {
+// A source is delivered in the runtime-config document once it is in place,
+// and not before: a sandbox still owed a push keeps waiting (ADR 0055).
+func TestSourcesAreDeliveredOnceTheyAreOnDisk(t *testing.T) {
 	runtime := deliveryTestRuntime(t)
 	req := deliveryTestRequest()
-	signal := readySignalPath(runtime)
-
-	// A stale signal from a previous create must be cleared, not left to open
-	// the gate on a workspace that is empty again.
-	if err := os.MkdirAll(filepath.Dir(signal), 0o755); err != nil {
-		t.Fatal(err)
+	delivered := func() bool {
+		return sandboxconfig.RuntimeConfig{Sources: runtimeSources(sandboxSources(linuxPaths, req), runtime.sourceMaterialized(deliveryTestSandboxID))}.SourcesDelivered()
 	}
-	if err := os.WriteFile(signal, nil, 0o644); err != nil {
-		t.Fatal(err)
+	if delivered() {
+		t.Fatal("a source still owed a push is delivered")
 	}
-	if err := runtime.refreshSourcesReady(deliveryTestSandboxID, req); err != nil {
-		t.Fatalf("refresh: %v", err)
-	}
-	if _, err := os.Stat(signal); !os.IsNotExist(err) {
-		t.Fatalf("stat %s = %v, want the signal cleared while the push is outstanding", signal, err)
-	}
-
 	markMaterialized(t, runtime, "primary")
-	if err := runtime.refreshSourcesReady(deliveryTestSandboxID, req); err != nil {
-		t.Fatalf("refresh: %v", err)
-	}
-	if _, err := os.Stat(signal); err != nil {
-		t.Fatalf("stat %s = %v, want the signal published once every source is in place", signal, err)
+	if !delivered() {
+		t.Fatal("a source in place is not delivered")
 	}
 }
 
@@ -112,10 +93,10 @@ func TestProjectLayerChangedSeesADeliveredProjectLayer(t *testing.T) {
 		t.Fatal("a delivered project layer was not noticed")
 	}
 
-	// Once the document records it — which is what the rebuild writes — the
-	// same source must stop asking to be rebuilt, or every later create would
-	// replace the container again.
-	writeTestSandboxDocument(t, runtime.sandboxConfigRoot(deliveryTestSandboxID), &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
+	// Once the pool records it — which is what the rebuild's bootstrap writes —
+	// the same source must stop asking to be rebuilt, or every later create
+	// would replace the container again.
+	writeTestProjectLayerRecord(t, runtime, &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
 	changed, err = runtime.projectLayerChanged(deliveryTestSandboxID, req)
 	if err != nil {
 		t.Fatalf("projectLayerChanged: %v", err)
@@ -133,9 +114,9 @@ func TestSettleDeliveredSourcesIsANoOpOnceEverythingIsInPlace(t *testing.T) {
 	req := deliveryTestRequest()
 	markMaterialized(t, runtime, "primary")
 	writeTestProjectLayer(t, runtime.sandboxSourcePath(deliveryTestSandboxID, "primary"), `{"runCommand":["./run.sh"]}`)
-	writeTestSandboxDocument(t, runtime.sandboxConfigRoot(deliveryTestSandboxID), &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
+	writeTestProjectLayerRecord(t, runtime, &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}})
 
-	rebuild, err := runtime.settleDeliveredSources(context.Background(), deliveryTestSandboxID, req)
+	rebuild, err := runtime.settleDeliveredSources(context.Background(), &Sandbox{SandboxID: deliveryTestSandboxID, Status: StatusStopped}, req)
 	if err != nil {
 		t.Fatalf("settle: %v", err)
 	}
@@ -157,7 +138,7 @@ func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 		},
 	})
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
 	byslug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		byslug[source.Slug] = source
@@ -184,17 +165,34 @@ func writeTestProjectLayer(t *testing.T, sourceDir, body string) {
 	}
 }
 
-func writeTestSandboxDocument(t *testing.T, configDir string, project *sandboxconfig.ProjectLayer) {
+func writeTestProjectLayerRecord(t *testing.T, runtime *DockerSandboxRuntime, project *sandboxconfig.ProjectLayer) {
 	t.Helper()
+	if err := runtime.writeProjectLayerRecord(deliveryTestSandboxID, project); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The pool decides whether a delivered project layer changed from its own
+// record, never from sandbox.json, which the sandbox can write once it boots
+// (ADR 26-10-08-127).
+func TestProjectLayerChangedIgnoresWhatSandboxJSONSays(t *testing.T) {
+	runtime := deliveryTestRuntime(t)
+	req := deliveryTestRequest()
+	writeTestProjectLayer(t, runtime.sandboxSourcePath(deliveryTestSandboxID, "primary"), `{"runCommand":["./run.sh"]}`)
+	configDir := runtime.sandboxConfigRoot(deliveryTestSandboxID)
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(&sandboxDocumentFile{Provenance: sandboxconfig.Provenance{Project: project}})
+	data, err := json.Marshal(&sandboxDocumentFile{Provenance: sandboxconfig.Provenance{Project: &sandboxconfig.ProjectLayer{RunCommand: []string{"./run.sh"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, sandboxDocumentName), data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+	changed, err := runtime.projectLayerChanged(deliveryTestSandboxID, req)
+	if err != nil || !changed {
+		t.Fatalf("projectLayerChanged = %v, %v; want the pool's own record to decide", changed, err)
 	}
 }
 

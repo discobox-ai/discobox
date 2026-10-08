@@ -32,11 +32,16 @@ ExecStart=/usr/local/bin/discobox-ca-anchor -store /etc/ssl/certs /etc/discobox/
 # pre-staged, already-updated files read-only.
 #
 # They land under /run rather than beside the CA in /etc/discobox/proxy because
-# that path is pool-agent's read-only bind mount of the sandbox's proxy config;
-# staging into it fails with EROFS. /run is the sandbox's writable runtime tree
-# (the same one discobox-sandbox-agent.service stages into) and is tmpfs, which
-# matches these files' lifetime — they are derived from the CA bundle this unit
-# just rebuilt and are meant to be regenerated every boot, never persisted.
+# that directory is the runtime-config intake's: it holds exactly the files a
+# delivered document names and removes anything else. /run is the sandbox's
+# writable runtime tree (the same one discobox-sandbox-agent.service stages
+# into) and is tmpfs, which matches these files' lifetime — they are derived
+# from the CA bundle this unit just rebuilt and are regenerated whenever it
+# runs, never persisted.
+#
+# The CA arrives in the pool's runtime-config document after boot, so on a
+# sandbox's first boot the condition below fails and the intake starts this
+# unit once the CA is in place (ADR 26-10-08-127 §5).
 ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/debian.pem
 ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/alpine.pem
 ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/rhel.pem

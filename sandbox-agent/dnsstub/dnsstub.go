@@ -5,8 +5,9 @@
 // resolver answers container names but forwards nothing else. The stub runs in
 // the sandbox's proxy bridge, which reaches the pool with the same keypair for
 // its egress. The container is
-// created with a link-local DNS server the pool staged in bridge.json; this
-// stub claims that address on the sandbox's own loopback, so Docker's resolver
+// created with a link-local DNS server (sandboxconfig.SandboxDNSAddress), which
+// the egress bridge config names as the stub's listener; this stub claims that
+// address on the sandbox's own loopback, so Docker's resolver
 // hands it every name it cannot answer, and the query never crosses the network
 // as plain DNS. The stub carries each one to the pool as DNS over TLS
 // (RFC 7858), presenting the sandbox's client certificate and verifying the
@@ -35,7 +36,7 @@ import (
 )
 
 const (
-	// DefaultBridgeConfigPath is the pool-staged proxy material that names the
+	// DefaultBridgeConfigPath is the intake-rendered bridge config that names the
 	// stub's address, the pool's DNS server, and the keypair to reach it with.
 	DefaultBridgeConfigPath = "/etc/discobox/proxy/bridge.json"
 
@@ -73,7 +74,7 @@ type Config struct {
 // ErrNoDNS reports a bridge config from a pool that serves no DNS.
 var ErrNoDNS = errors.New("the pool serves its sandboxes no DNS")
 
-// LoadConfig reads the stub's settings from a pool-staged bridge config.
+// LoadConfig reads the stub's settings from the egress bridge config.
 func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

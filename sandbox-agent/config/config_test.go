@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
@@ -117,23 +116,21 @@ func TestConfigFromEffectiveSelectsHarnessCommandForMode(t *testing.T) {
 	}
 }
 
-// The pool's idle timeout arrives as a duration string (ADR 0108 §3). Anything
-// that does not parse to a positive duration leaves autostop on its default
-// rather than failing the sandbox's boot over a stop policy.
-func TestConfigFromEffectiveReadsThePoolIdleTimeout(t *testing.T) {
-	for _, test := range []struct {
-		value string
-		want  time.Duration
-	}{
-		{value: "2m0s", want: 2 * time.Minute},
-		{value: "", want: 0},
-		{value: "soon", want: 0},
-		{value: "-1m", want: 0},
-	} {
-		cfg := configFromEffective(sandboxconfig.Config{AgentRuntime: sandboxconfig.AgentRuntime{IdleTimeout: test.value}})
-		if cfg.IdleTimeout != test.want {
-			t.Fatalf("idle timeout %q = %s, want %s", test.value, cfg.IdleTimeout, test.want)
-		}
+// sandbox.json is the static bootstrap: the pool's key in it is what a
+// runtime-config delivery is verified by, and naming one is what makes the
+// sandbox wait for its first document (ADR 26-10-08-127 §§3, 6). Where the pool
+// is comes with it.
+func TestConfigFromEffectiveReadsThePoolKeyAndEndpoints(t *testing.T) {
+	pool := &sandboxconfig.PoolEndpoints{Proxy: "https://pool:17080"}
+	cfg := configFromEffective(sandboxconfig.Config{Provider: sandboxconfig.Provider{
+		PublicKeys: map[string]string{sandboxconfig.ControlPlanePublicKeyName: "cp", sandboxconfig.PoolPublicKeyName: " pool "},
+		Pool:       pool,
+	}})
+	if cfg.ControlPlanePublicKey != "cp" || cfg.PoolPublicKey != "pool" || cfg.Pool != pool || !cfg.AwaitsRuntimeConfig {
+		t.Fatalf("config = %+v", cfg)
+	}
+	if bare := configFromEffective(sandboxconfig.Config{}); bare.PoolPublicKey != "" || bare.AwaitsRuntimeConfig {
+		t.Fatalf("a bootstrap with no pool key: %+v", bare)
 	}
 }
 

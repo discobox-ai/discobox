@@ -12,8 +12,10 @@ import (
 
 // wireConfig rebinds the config volume onto /etc/discobox so the running
 // sandbox-agent, proxy bridge, and manifest live at their documented paths.
-// The bind is recursive so the nested proxy material rides along, and the top
-// is read-only to protect the manifest.
+// The bind is writable: the runtime-config intake writes the proxy material
+// and the readiness marker there (ADR 0126 §3). sandbox.json beside them is the
+// static bootstrap, which nothing rewrites once the sandbox boots
+// (ADR 26-10-08-127 §1).
 func (b *booter) wireConfig() error {
 	if !dirExists(configMountPath) {
 		// No config volume (e.g. a bare `docker run ... bash` debug session).
@@ -22,7 +24,7 @@ func (b *booter) wireConfig() error {
 	if err := os.MkdirAll(etcDiscobox, 0o755); err != nil {
 		return err
 	}
-	return recursiveBindMount(configMountPath, etcDiscobox, true)
+	return recursiveBindMount(configMountPath, etcDiscobox)
 }
 
 // WireSecrets rebinds the secrets volume onto /run/discobox/secrets so the
@@ -35,8 +37,8 @@ func (b *booter) wireConfig() error {
 // wireConfig places one at /etc/discobox — would be silently shadowed. The
 // server process starts as a systemd-managed unit, ordered after that tmpfs
 // is already in place, so it is the first point at which this bind mount can
-// actually survive. The bind is read-only: nothing inside the container
-// writes this file, only pool-agent, from the host side.
+// actually survive. The bind is writable, because the runtime-config intake is
+// what writes the file (ADR 0126 §3); the pool never does.
 func WireSecrets() error {
 	if !dirExists(secretsMountPath) {
 		// No secrets volume (e.g. a bare `docker run ... bash` debug session).
@@ -45,7 +47,7 @@ func WireSecrets() error {
 	if err := os.MkdirAll(runSecrets, 0o755); err != nil {
 		return err
 	}
-	return recursiveBindMount(secretsMountPath, runSecrets, true)
+	return recursiveBindMount(secretsMountPath, runSecrets)
 }
 
 // wireVolumes wires every image-declared data/cache path from its backing

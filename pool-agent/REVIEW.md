@@ -7,7 +7,9 @@ two helpers are not interchangeable, and the question that picks between them is
 *who writes the contents*, not how big they are:
 
 - **`prepareOwnedTree` is for roots this agent materializes end to end** — the
-  per-sandbox config and secrets trees, each source checkout it clones (and the
+  per-sandbox config and secrets trees (end to end at create only: once the
+  container exists, their contents are the sandbox agent's, written through the
+  runtime-config intake), each source checkout it clones (and the
   scratch directory it clones into), and each pool-side origin repository. It
   wrote every byte and one sandbox bounds the size, so asserting ownership over
   the tree — root for config and secrets, the sandbox user for checkouts and
@@ -32,6 +34,16 @@ root), and a rule that holds only while two passes agree exactly is not a
 rule.
 
 Rule of thumb: on the create path, walk only what this agent wrote.
+
+## Nothing is written into a sandbox after create
+
+The pool's only write into a sandbox's config volume is the bootstrap, before
+its container exists. Everything after that — secrets, proxy material, the idle
+timeout, readiness — is a change to the runtime-config record
+(`decideRuntimeConfig`) and a delivery, never a file. And nothing the pool
+decides is read back from the sandbox's volumes, which the sandbox can write:
+keep a record of your own beside the tree (`runtime-config.json`,
+`project-layer.json`) instead (ADR 26-10-08-127).
 
 ## Sandbox user ids
 

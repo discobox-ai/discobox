@@ -18861,39 +18861,6 @@ func (s *OptSandboxPullProgress) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxRuntimeConfigBridge as json.
-func (o OptSandboxRuntimeConfigBridge) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes SandboxRuntimeConfigBridge from json.
-func (o *OptSandboxRuntimeConfigBridge) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxRuntimeConfigBridge to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxRuntimeConfigBridge) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxRuntimeConfigBridge) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes SandboxRuntimeConfigProxy as json.
 func (o OptSandboxRuntimeConfigProxy) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -37100,170 +37067,6 @@ func (s *SandboxRuntimeConfigAgent) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *SandboxRuntimeConfigBridge) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *SandboxRuntimeConfigBridge) encodeFields(e *jx.Encoder) {
-	{
-		if s.ListenAddress.Set {
-			e.FieldStart("listenAddress")
-			s.ListenAddress.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("upstreamUrl")
-		e.Str(s.UpstreamUrl)
-	}
-	{
-		if s.CredentialsUrl.Set {
-			e.FieldStart("credentialsUrl")
-			s.CredentialsUrl.Encode(e)
-		}
-	}
-	{
-		if s.DnsServer.Set {
-			e.FieldStart("dnsServer")
-			s.DnsServer.Encode(e)
-		}
-	}
-	{
-		if s.DnsListenAddress.Set {
-			e.FieldStart("dnsListenAddress")
-			s.DnsListenAddress.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfSandboxRuntimeConfigBridge = [5]string{
-	0: "listenAddress",
-	1: "upstreamUrl",
-	2: "credentialsUrl",
-	3: "dnsServer",
-	4: "dnsListenAddress",
-}
-
-// Decode decodes SandboxRuntimeConfigBridge from json.
-func (s *SandboxRuntimeConfigBridge) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxRuntimeConfigBridge to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "listenAddress":
-			if err := func() error {
-				s.ListenAddress.Reset()
-				if err := s.ListenAddress.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"listenAddress\"")
-			}
-		case "upstreamUrl":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Str()
-				s.UpstreamUrl = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"upstreamUrl\"")
-			}
-		case "credentialsUrl":
-			if err := func() error {
-				s.CredentialsUrl.Reset()
-				if err := s.CredentialsUrl.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"credentialsUrl\"")
-			}
-		case "dnsServer":
-			if err := func() error {
-				s.DnsServer.Reset()
-				if err := s.DnsServer.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"dnsServer\"")
-			}
-		case "dnsListenAddress":
-			if err := func() error {
-				s.DnsListenAddress.Reset()
-				if err := s.DnsListenAddress.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"dnsListenAddress\"")
-			}
-		default:
-			return errors.Errorf("unexpected field %q", k)
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode SandboxRuntimeConfigBridge")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00000010,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfSandboxRuntimeConfigBridge) {
-					name = jsonFieldsNameOfSandboxRuntimeConfigBridge[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *SandboxRuntimeConfigBridge) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxRuntimeConfigBridge) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
 func (s *SandboxRuntimeConfigProxy) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -37291,24 +37094,6 @@ func (s *SandboxRuntimeConfigProxy) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Egress.Set {
-			e.FieldStart("egress")
-			s.Egress.Encode(e)
-		}
-	}
-	{
-		if s.NestedDocker.Set {
-			e.FieldStart("nestedDocker")
-			s.NestedDocker.Encode(e)
-		}
-	}
-	{
-		if s.Buildkit.Set {
-			e.FieldStart("buildkit")
-			s.Buildkit.Encode(e)
-		}
-	}
-	{
 		if s.RegistryNamespace.Set {
 			e.FieldStart("registryNamespace")
 			s.RegistryNamespace.Encode(e)
@@ -37316,15 +37101,12 @@ func (s *SandboxRuntimeConfigProxy) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfigProxy = [8]string{
+var jsonFieldsNameOfSandboxRuntimeConfigProxy = [5]string{
 	0: "mtlsCa",
 	1: "mitmCa",
 	2: "clientCert",
 	3: "clientKey",
-	4: "egress",
-	5: "nestedDocker",
-	6: "buildkit",
-	7: "registryNamespace",
+	4: "registryNamespace",
 }
 
 // Decode decodes SandboxRuntimeConfigProxy from json.
@@ -37381,36 +37163,6 @@ func (s *SandboxRuntimeConfigProxy) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"clientKey\"")
-			}
-		case "egress":
-			if err := func() error {
-				s.Egress.Reset()
-				if err := s.Egress.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"egress\"")
-			}
-		case "nestedDocker":
-			if err := func() error {
-				s.NestedDocker.Reset()
-				if err := s.NestedDocker.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"nestedDocker\"")
-			}
-		case "buildkit":
-			if err := func() error {
-				s.Buildkit.Reset()
-				if err := s.Buildkit.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"buildkit\"")
 			}
 		case "registryNamespace":
 			if err := func() error {

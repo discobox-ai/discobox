@@ -12,6 +12,7 @@ import (
 	"aidanwoods.dev/go-paseto"
 
 	"github.com/discobox-ai/discobox/gitbackend"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (
@@ -38,8 +39,9 @@ const (
 	// ScopeRuntimeConfig gates the runtime-config intake, reading and
 	// delivering alike (ADR 0126 §3). It is the pool's alone: what a sandbox
 	// is told to be is not something its users may tell it, so no wildcard
-	// grants it and a token has to name it.
-	ScopeRuntimeConfig = "runtime-config"
+	// grants it and a token has to name it. The pool signs it with its own
+	// key (ADR 26-10-08-127 §3).
+	ScopeRuntimeConfig = sandboxconfig.RuntimeConfigScope
 	// ScopeSandboxRead and ScopeSandboxWrite gate the sandbox's own Git
 	// repositories, as the pool's worktree route always has: a fetch reads,
 	// a push writes (ADR 0126 §4).
@@ -102,28 +104,47 @@ func withSignedTokenClaims(ctx context.Context, claims SignedTokenClaims) contex
 	return context.WithValue(ctx, signedTokenClaimsContextKey{}, claims)
 }
 
+// SignedTokenAuthenticator verifies the tokens the sandbox agent is called
+// with. Every token is the control plane's, except one kind: the pool signs
+// the token that delivers a runtime-config document with its own key, and a
+// token verified by that key may carry the runtime-config scope and nothing
+// else (ADR 26-10-08-127 §3).
 type SignedTokenAuthenticator struct {
 	identity  Identity
 	publicKey paseto.V4AsymmetricPublicKey
+	// poolKey is the pool's key from the bootstrap, nil when none was placed.
+	poolKey *paseto.V4AsymmetricPublicKey
 }
 
-func NewSignedTokenAuthenticator(identity Identity, publicKeyText string) (*SignedTokenAuthenticator, error) {
-	publicKeyText = strings.TrimSpace(publicKeyText)
-	if publicKeyText == "" {
+func NewSignedTokenAuthenticator(identity Identity, publicKeyText, poolPublicKeyText string) (*SignedTokenAuthenticator, error) {
+	if strings.TrimSpace(publicKeyText) == "" {
 		return nil, errors.New("sandbox-agent control plane public key is required")
 	}
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyText)
+	publicKey, err := parsePublicKey(publicKeyText)
 	if err != nil {
-		return nil, fmt.Errorf("decode sandbox-agent control plane public key: %w", err)
+		return nil, fmt.Errorf("sandbox-agent control plane public key: %w", err)
 	}
-	if len(publicKeyBytes) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("sandbox-agent control plane public key length = %d, want %d", len(publicKeyBytes), ed25519.PublicKeySize)
+	a := &SignedTokenAuthenticator{identity: identity, publicKey: publicKey}
+	if strings.TrimSpace(poolPublicKeyText) != "" {
+		poolKey, err := parsePublicKey(poolPublicKeyText)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox-agent pool public key: %w", err)
+		}
+		a.poolKey = &poolKey
 	}
-	publicKey, err := paseto.NewV4AsymmetricPublicKeyFromEd25519(ed25519.PublicKey(publicKeyBytes))
+	return a, nil
+}
+
+// parsePublicKey decodes a base64 Ed25519 public key.
+func parsePublicKey(text string) (paseto.V4AsymmetricPublicKey, error) {
+	keyBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(text))
 	if err != nil {
-		return nil, fmt.Errorf("load sandbox-agent control plane public key: %w", err)
+		return paseto.V4AsymmetricPublicKey{}, fmt.Errorf("decode: %w", err)
 	}
-	return &SignedTokenAuthenticator{identity: identity, publicKey: publicKey}, nil
+	if len(keyBytes) != ed25519.PublicKeySize {
+		return paseto.V4AsymmetricPublicKey{}, fmt.Errorf("length = %d, want %d", len(keyBytes), ed25519.PublicKeySize)
+	}
+	return paseto.NewV4AsymmetricPublicKeyFromEd25519(ed25519.PublicKey(keyBytes))
 }
 
 func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
@@ -133,7 +154,7 @@ func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
-		token, err := a.parseToken(tokenText)
+		token, fromPool, err := a.parseToken(tokenText)
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
@@ -143,7 +164,13 @@ func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
-		if err := a.authorizeRequest(r, claims); err != nil {
+		if fromPool {
+			err = a.authorizePoolToken(r, claims)
+		}
+		if err == nil {
+			err = a.authorizeRequest(r, claims)
+		}
+		if err != nil {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
 		}
@@ -151,10 +178,36 @@ func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, error) {
+// parseToken verifies tokenText against the control plane's key, then the
+// pool's, and says which verified it.
+func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, bool, error) {
 	parser := paseto.NewParserForValidNow()
 	parser.AddRule(paseto.ForAudience(SandboxAgentAudience))
-	return parser.ParseV4Public(a.publicKey, tokenText, nil)
+	token, err := parser.ParseV4Public(a.publicKey, tokenText, nil)
+	if err == nil || a.poolKey == nil {
+		return token, false, err
+	}
+	if token, poolErr := parser.ParseV4Public(*a.poolKey, tokenText, nil); poolErr == nil {
+		return token, true, nil
+	}
+	return nil, false, err
+}
+
+// authorizePoolToken confines a pool-signed token to what the pool may sign
+// for: exactly the runtime-config scope, on the runtime-config route, naming
+// this sandbox's pool. Its scope list is checked whole, so a pool token can
+// never carry a wildcard or a second scope that a later check would honor.
+func (a *SignedTokenAuthenticator) authorizePoolToken(r *http.Request, claims SignedTokenClaims) error {
+	if len(claims.Scopes) != 1 || claims.Scopes[0] != ScopeRuntimeConfig {
+		return errors.New("a pool-signed token may carry only the runtime-config scope")
+	}
+	if requiredRequestScope(r) != ScopeRuntimeConfig {
+		return errors.New("a pool-signed token is accepted only on the runtime-config route")
+	}
+	if claims.PoolID == "" || claims.PoolID != a.identity.PoolID {
+		return errors.New("a pool-signed token must name this sandbox's pool")
+	}
+	return nil
 }
 
 func signedTokenClaimsFromToken(token *paseto.Token) (SignedTokenClaims, error) {

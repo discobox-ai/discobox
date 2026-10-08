@@ -177,6 +177,42 @@ func TestSandboxAgentStatusPollReachesTheAgentThroughTheRuntimeDialer(t *testing
 	}
 }
 
+// The poll is how the pool converges on the runtime config a sandbox has
+// applied: the revision the sandbox reports is handed to the runtime, which
+// delivers when it is behind (ADR 0126 §3).
+func TestSandboxAgentStatusPollConvergesOnTheAppliedRuntimeConfig(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"observedAt":"2026-01-01T00:00:00Z","runtimeConfigRevision":4}`))
+	}))
+	defer agent.Close()
+	memory := sandboxruntime.NewMemorySandboxRuntime()
+	poller := &sandboxAgentStatusPoller{
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ProjectID: "project-1", PoolID: "pool-1"},
+		runtime: &statusPollTestRuntime{
+			MemorySandboxRuntime: memory,
+			servers:              map[string]*httptest.Server{"sandbox-1": agent},
+		},
+	}
+	if _, err := poller.pollOne(t.Context(), "sandbox-1", "token-sandbox-1"); err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if applied, ok := memory.AppliedRuntimeConfig("sandbox-1"); ok {
+			if applied != 4 {
+				t.Fatalf("converged on revision %d, want the reported 4", applied)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the poll did not converge the sandbox's runtime config")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestSandboxAgentStatusPollerCachesTokensAcrossTicks confirms a cached,
 // unexpired token is reused rather than re-minted on every tick.
 func TestSandboxAgentStatusPollerCachesTokensAcrossTicks(t *testing.T) {

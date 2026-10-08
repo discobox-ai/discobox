@@ -13,8 +13,8 @@ import (
 
 var errUnsupported = fmt.Errorf("sandbox-agent init is only supported on linux")
 
-func bindMount(string, string, bool) error          { return errUnsupported }
-func recursiveBindMount(string, string, bool) error { return errUnsupported }
+func bindMount(string, string, bool) error    { return errUnsupported }
+func recursiveBindMount(string, string) error { return errUnsupported }
 func overlayMount(string, string, string, string) error {
 	return errUnsupported
 }
