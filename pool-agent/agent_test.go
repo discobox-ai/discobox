@@ -29,7 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
@@ -640,9 +640,6 @@ func (c *stateRecordingClient) ListHeldSandboxes(context.Context, poolagent.Held
 // Serve knows its runtime only as sandboxruntime.Runtime, so a runtime that is
 // not Docker drives the state channel the same way.
 func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires a POSIX host: a unix:// endpoint cannot name a path with a drive letter")
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runtime := poolagent.NewMemorySandboxRuntime()
@@ -662,7 +659,7 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	listenURL := "unix://" + filepath.Join(dir, "agent.sock")
+	listenURL := wire.UnixURL(filepath.Join(dir, "agent.sock"))
 	client := &stateRecordingClient{reports: make(chan poolagent.SandboxStateRequest, 8)}
 	served := make(chan error, 1)
 	go func() {
