@@ -1,3 +1,4 @@
+# shellcheck shell=bash # Sourced by /etc/profile, never run.
 # direnv, for every shell the sandbox starts.
 #
 # Sourced from the two places that between them cover every shell: /etc/profile

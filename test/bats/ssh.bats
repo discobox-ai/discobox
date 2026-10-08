@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2164 # bats runs tests and hooks under set -e, so a failed cd already fails.
 #
 # End-to-end coverage of ADR 0024 (SSH is a control-plane ingress onto execs)
 # and ADR 0057 (the server binds no SSH port): a stock `ssh`/`scp` client, with
@@ -15,7 +16,8 @@
 # requiring `task dev`, so it owns its database, pool, and enrolled key.
 
 setup_file() {
-  export REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  export REPO_ROOT
   cd "$REPO_ROOT"
 
   command -v docker >/dev/null 2>&1 || skip "docker is required"
@@ -35,7 +37,8 @@ setup_file() {
   mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
   : >"$DISCOBOX_BATS_KNOWN_HOSTS"
 
-  export DISCOBOX_BATS_PORT="$(free_port)"
+  DISCOBOX_BATS_PORT="$(free_port)"
+  export DISCOBOX_BATS_PORT
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
   export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
@@ -100,7 +103,8 @@ setup_file() {
 
   run cli admin box create --name ssh-e2e --harness ssh-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
-  export DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$output" | json_get id)"
+  DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$output" | json_get id)"
+  export DISCOBOX_BATS_SANDBOX_ID
   [ -n "$DISCOBOX_BATS_SANDBOX_ID" ]
 }
 
@@ -135,7 +139,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
 
   for pool_id in $pool_ids; do
-    docker rm -f $(docker ps -aq --filter "label=discobox.pool_id=$pool_id") >/dev/null 2>&1 || true
+    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f >/dev/null 2>&1 || true
     docker network rm "discobox-sbnet-$pool_id" >/dev/null 2>&1 || true
   done
 }

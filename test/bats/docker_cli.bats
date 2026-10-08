@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2164 # bats runs tests and hooks under set -e, so a failed cd already fails.
 #
 # Exercises the Docker provider through the CLI against a development stack that
 # is already running (`task dev`).
@@ -14,7 +15,8 @@
 # broadly would reap pools this suite did not create.
 
 setup_file() {
-  export REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  export REPO_ROOT
   cd "$REPO_ROOT"
 
   command -v docker >/dev/null 2>&1 || skip "docker is required"

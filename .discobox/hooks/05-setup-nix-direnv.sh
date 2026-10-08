@@ -91,7 +91,8 @@ install_existing_store_nix() {
 
   nix_pkg=$(dirname "$(dirname "$nix_bin")")
   log "linking existing Nix package from $nix_pkg"
-  export PATH="$(dirname "$nix_bin"):$PATH"
+  PATH="$(dirname "$nix_bin"):$PATH"
+  export PATH
   export NIX_REMOTE=local
   "$nix_pkg/bin/nix-env" -p "$PROFILE" -i "$nix_pkg" >/dev/null
 }

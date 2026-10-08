@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2164 # bats runs tests and hooks under set -e, so a failed cd already fails.
 #
 # End-to-end coverage of moving a discobox between servers (ADR 0123).
 #
@@ -14,7 +15,8 @@
 # without a registry.
 
 setup_file() {
-  export REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
+  export REPO_ROOT
   cd "$REPO_ROOT"
 
   command -v docker >/dev/null 2>&1 || skip "docker is required"
@@ -31,7 +33,7 @@ setup_file() {
   export DISCOBOX_BATS_CONFIGURE_LOG="${DISCOBOX_BATS_CONFIGURE_LOG:-$DISCOBOX_BATS_TMP/configure.log}"
   mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
 
-  export DISCOBOX_BATS_PORT="$(python3 - <<'PY'
+  DISCOBOX_BATS_PORT="$(python3 - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
@@ -39,6 +41,7 @@ print(s.getsockname()[1])
 s.close()
 PY
 )"
+  export DISCOBOX_BATS_PORT
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
   # Name both listen endpoints explicitly. The server opens no TCP listener
   # unless DISCOBOX_SERVER_LISTEN asks for one, and without a unix endpoint of
@@ -122,7 +125,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   # (discobox-pool-agent:local can share an image ID with a developer's own dev
   # tag, so it would reap their running pools).
   for pool_id in $pool_ids; do
-    docker rm -f $(docker ps -aq --filter "label=discobox.pool_id=$pool_id") >/dev/null 2>&1 || true
+    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f >/dev/null 2>&1 || true
     docker network rm "discobox-sbnet-$pool_id" >/dev/null 2>&1 || true
   done
 }
@@ -242,7 +245,8 @@ configure_stub() {
 # under the SAME reference. A dedicated tag keeps this file from clobbering
 # discobox-harness-stub:local, which other suites share.
 build_transfer_stub() {
-  local marker="$1" ctx="$DISCOBOX_BATS_TMP/transfer-stub-$marker"
+  local marker="$1"
+  local ctx="$DISCOBOX_BATS_TMP/transfer-stub-$marker"
   mkdir -p "$ctx"
   cp "$REPO_ROOT/test/harness-stub/Dockerfile" "$REPO_ROOT/test/harness-stub/configure.sh" "$ctx/"
   python3 - "$REPO_ROOT/test/harness-stub/image.json" "$ctx/image.json" "$marker" <<'STUBIMAGE'
@@ -375,11 +379,13 @@ sandbox_home() {
   tar tf "$archive" | grep -q "/work/nested/keepsake.txt$"
   tar tf "$archive" | grep -q "^tree/data/var/lib/discobox/"
   # A test, not a negated command: bats does not fail on `! cmd`.
+  # shellcheck disable=SC2143 # `! grep -q` is exactly what bats would ignore.
   [ -z "$(tar tf "$archive" | grep "^tree/data/var/lib/docker/")" ]
   tar xOf "$archive" manifest.json | python3 -c 'import json,sys; m=json.load(sys.stdin); assert m["formatVersion"]==1, m; assert m["sandbox"]["harness"]["slug"]=="transfer-stub", m'
 
   # No secret value is in the file, whatever else is.
-  ! tar xOf "$archive" manifest.json | grep -qi '"token"\|BEGIN .*PRIVATE KEY'
+  # shellcheck disable=SC2143 # As above: a negated grep would never fail the test.
+  [ -z "$(tar xOf "$archive" manifest.json | grep -i '"token"\|BEGIN .*PRIVATE KEY')" ]
 
   # It ends with a SHA256SUMS that stock tools check: extracted, `sha256sum -c`
   # verifies every file in it with nothing of ours installed.

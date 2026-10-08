@@ -1,3 +1,4 @@
+# shellcheck shell=sh # Sourced by /etc/profile, never run.
 export NIX_REMOTE="${NIX_REMOTE:-daemon}"
 export NIX_CONFIG="${NIX_CONFIG:-experimental-features = nix-command flakes}"
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
@@ -19,6 +20,7 @@ export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/go/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  # shellcheck disable=SC1091 # Nix's own, present only once a profile exists.
   . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 

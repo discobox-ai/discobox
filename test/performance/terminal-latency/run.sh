@@ -111,8 +111,7 @@ kept_sandbox_ids=()
 
 wait_for_sandbox_deletion() {
 	local id="$1"
-	local attempt
-	for attempt in {1..60}; do
+	for _ in {1..60}; do
 		if ! "${cli[@]}" admin box get "$id" >/dev/null 2>&1; then
 			return 0
 		fi

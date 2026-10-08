@@ -1,3 +1,4 @@
+# shellcheck shell=sh # Sourced by /etc/profile, never run.
 # The desktop scale, for every shell the sandbox starts.
 #
 # GDK_SCALE and the rest are read once, when a program starts, so a GUI program
@@ -15,5 +16,6 @@
 # the rest of the login sequence assigns.
 [ -r "$HOME/.discobox/desktop/scale.env" ] || return 0
 set -a
+# shellcheck disable=SC1091 # Written at run time, from the box's desktop settings.
 . "$HOME/.discobox/desktop/scale.env"
 set +a

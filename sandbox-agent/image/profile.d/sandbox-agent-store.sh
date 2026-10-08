@@ -1,3 +1,4 @@
+# shellcheck shell=sh # Sourced by /etc/profile, never run.
 # The agent version this sandbox runs, and the pool's store of versions to run
 # (ADR 0114).
 #

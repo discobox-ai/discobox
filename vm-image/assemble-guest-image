@@ -84,7 +84,7 @@ cp "$initrd" "$out/initrd.img"
 # The kernel and the initrd are artifacts of their own from here on; the guest
 # never reads /boot, because the hypervisor loads both from the host. Leaving
 # them in the tree ships each one twice.
-rm -rf "$rootfs"/boot/*
+rm -rf "${rootfs:?}"/boot/*
 
 # BuildKit supplies /etc/resolv.conf as a bind mount during RUN steps, so the
 # exported tree carries the builder's resolver. The guest resolves through

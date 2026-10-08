@@ -49,6 +49,7 @@ workspace=$(printf %s "$PWD" | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$' |
 			{ [ "$b" -ge 48 ] && [ "$b" -le 57 ]; } ||
 			{ [ "$b" -ge 65 ] && [ "$b" -le 90 ]; } ||
 			{ [ "$b" -ge 97 ] && [ "$b" -le 122 ]; }; then
+			# shellcheck disable=SC2059 # The format is the point: it is the octal escape for byte $b.
 			printf "\\$(printf '%03o' "$b")"
 		else printf '%%%02X' "$b"
 		fi
