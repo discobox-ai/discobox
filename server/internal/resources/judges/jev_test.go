@@ -480,7 +480,16 @@ func TestARoundTheJudgeDiscoboxAskedForIsItsToDecide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(verdicts) != 2 || verdicts[0].Round != 2 || verdicts[0].JudgeSandboxID != judgeSandbox.ID || verdicts[0].Allow {
+	// Two verdicts can share a created_at on a coarse clock (Windows), and the
+	// list breaks that tie by ID, so round 2 is found by its round.
+	if len(verdicts) != 2 {
+		t.Fatalf("verdicts = %+v, want both rounds recorded", verdicts)
+	}
+	second := verdicts[0]
+	if second.Round != 2 {
+		second = verdicts[1]
+	}
+	if second.Round != 2 || second.JudgeSandboxID != judgeSandbox.ID || second.Allow {
 		t.Fatalf("verdicts = %+v, want round 2 recorded as the discobox's refusal", verdicts)
 	}
 }
