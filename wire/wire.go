@@ -86,7 +86,12 @@ func Parse(raw string) (Endpoint, error) {
 	case "unix":
 		path := parsed.Path
 		if path == "" {
-			path = parsed.Opaque
+			// net/url leaves an opaque part as written, so the escaping
+			// UnixURL applies to one is undone here.
+			path, err = url.PathUnescape(parsed.Opaque)
+			if err != nil {
+				return Endpoint{}, fmt.Errorf("unix endpoint %q has an invalid socket path: %w", raw, err)
+			}
 		}
 		if strings.TrimSpace(path) == "" {
 			return Endpoint{}, fmt.Errorf("unix endpoint %q must include a socket path", raw)
@@ -225,15 +230,21 @@ func VSOCKListenURL(port uint32) string {
 	return fmt.Sprintf("vsock://:%d", port)
 }
 
-// UnixURL renders a dial or listen URL for a Unix socket path. A POSIX path
-// takes the authority-less form; a Windows drive path takes the opaque form,
-// since "unix://C:/..." would parse the drive letter as the host.
+// UnixURL renders a dial or listen URL for a Unix socket path, escaped so that
+// Parse gives back exactly path: a "#", "?" or "%" in it would otherwise end
+// the path early or fail to parse. A POSIX path takes the authority-less form;
+// a Windows drive path takes the opaque form, since "unix://C:/..." would parse
+// the drive letter as the host.
 func UnixURL(path string) string {
 	slashed := filepath.ToSlash(path)
 	if strings.HasPrefix(slashed, "/") {
-		return "unix://" + slashed
+		return (&url.URL{Scheme: "unix", Path: slashed}).String()
 	}
-	return "unix:" + slashed
+	segments := strings.Split(slashed, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	return "unix:" + strings.Join(segments, "/")
 }
 
 // TCPListenURL renders a listen URL for a TCP port on all interfaces.
