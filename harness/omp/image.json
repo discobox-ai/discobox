@@ -1,0 +1,30 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "PI_CONFIG_FILES": "/etc/omp/discobox.yml",
+    "OMP_SKIP_SETUP": "1"
+  },
+  "harness": {
+    "id": "omp",
+    "name": "Oh My Pi",
+    "description": "Oh My Pi (omp) coding harness, with any provider it includes.",
+    "files": [
+      {
+        "path": ".config/discobox/omp-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the omp harness. Edit with: discobox admin harnesses edit omp .config/discobox/omp-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
+      }
+    ],
+    "config": {
+      "reminder": "Sign in to providers with /login, pick a model with /model, then finish configuration with /exit.",
+      "ports": [
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so ChatGPT's browser sign-in cannot complete here. In /login choose \"ChatGPT Plus/Pro (Codex, headless/device)\" instead, or free the port and configure again."
+        }
+      ],
+      "command": [
+        "/usr/local/libexec/discobox/configure-omp"
+      ]
+    }
+  }
+}

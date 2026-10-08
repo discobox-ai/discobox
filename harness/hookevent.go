@@ -79,6 +79,54 @@ var canonicalHookEvents = map[string]map[string]string{
 		"session.compacted":   "PostCompact",
 		"file.edited":         "FileChanged",
 	},
+	// pi names its lifecycle in snake_case and shares no spelling with Claude
+	// Code, so every entry here is a real translation. Its image publishes
+	// more events than appear here: the ones left out — session_info_changed,
+	// agent_start, agent_end, turn_start, turn_end, session_compact_failed,
+	// model_select — are pi facts Claude Code has no word for, and are
+	// recorded under their own names alone.
+	//
+	// agent_settled, not agent_end, is Stop: agent_end closes one low-level
+	// run, after which pi may still retry, recover from an overflow, or
+	// deliver a queued follow-up, and agent_settled is pi saying it will not
+	// continue on its own — which is what a wait for the turn's end wants.
+	//
+	// model_select is deliberately not PreModelSwitch or PostModelSwitch: pi
+	// announces the model it selected, once, and does not say whether the
+	// switch has happened, so neither name is a match.
+	"pi": {
+		"session_start":          "SessionStart",
+		"session_shutdown":       "SessionEnd",
+		"before_agent_start":     "UserPromptSubmit",
+		"agent_settled":          "Stop",
+		"tool_call":              "PreToolUse",
+		"tool_result":            "PostToolUse",
+		"session_before_compact": "PreCompact",
+		"session_compact":        "PostCompact",
+	},
+	// omp is a fork of pi and keeps most of its vocabulary, so most entries
+	// here are the same translations; two are omp's own. session_stop is
+	// modeled on Claude Code's Stop hook — it carries stop_hook_active and
+	// the last assistant message, and its handler may ask for a continuation
+	// — and omp has no agent_settled. tool_approval_requested is omp asking
+	// for permission, which is what PermissionRequest means. The events left
+	// out — session_switch, agent_start, agent_end, turn_start, turn_end,
+	// tool_approval_resolved, credential_disabled — are recorded under their
+	// own names alone.
+	//
+	// omp's subagents run as processes of their own, which the launcher's
+	// --hook does not reach, so every event here is the root session's.
+	"omp": {
+		"session_start":           "SessionStart",
+		"session_shutdown":        "SessionEnd",
+		"before_agent_start":      "UserPromptSubmit",
+		"session_stop":            "Stop",
+		"tool_call":               "PreToolUse",
+		"tool_result":             "PostToolUse",
+		"tool_approval_requested": "PermissionRequest",
+		"session_before_compact":  "PreCompact",
+		"session_compact":         "PostCompact",
+	},
 }
 
 // CanonicalHookEvent answers the Claude Code name for one harness's hook

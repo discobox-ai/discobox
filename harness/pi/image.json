@@ -1,0 +1,34 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "PI_SKIP_VERSION_CHECK": "1",
+    "PI_TELEMETRY": "0"
+  },
+  "harness": {
+    "id": "pi",
+    "name": "Pi",
+    "description": "Pi coding harness, with any provider it includes.",
+    "files": [
+      {
+        "path": ".config/discobox/pi-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the pi harness. Edit with: discobox admin harnesses edit pi .config/discobox/pi-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
+      }
+    ],
+    "config": {
+      "reminder": "Sign in to providers with /login, pick a model with /model, then finish configuration with /quit.",
+      "ports": [
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so ChatGPT's browser sign-in cannot complete here. In /login choose the ChatGPT device-code sign-in instead, or free the port and configure again."
+        },
+        {
+          "port": 53692,
+          "unavailable": "Port 53692 is taken on your machine, so Anthropic's browser sign-in cannot call back here. Finish the sign-in by pasting the code it shows into pi instead, or free the port and configure again."
+        }
+      ],
+      "command": [
+        "/usr/local/libexec/discobox/configure-pi"
+      ]
+    }
+  }
+}

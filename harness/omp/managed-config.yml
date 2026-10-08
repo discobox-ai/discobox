@@ -1,0 +1,17 @@
+# Discobox's configuration overlay for omp, named by PI_CONFIG_FILES in the
+# image's env. Overlays are read after the user's global config and a
+# project's, so what is here is the policy baseline neither can lower — the
+# same place the codex image keeps /etc/codex/config.toml.
+#
+# Mappings deep-merge across layers and arrays replace, so this file sets
+# scalars only: an `extensions` list here would replace the user's rather than
+# add to it, which is why the hook extension is a launch flag instead.
+startup:
+  # The version a sandbox runs comes from the pool-cached store (ADR 0114),
+  # so omp's own update check stays off.
+  checkUpdate: false
+tools:
+  # The sandbox is the isolation boundary, so omp's approval prompts would
+  # only guard a machine that exists to be written to — the same baseline the
+  # claude-code and codex images set.
+  approvalMode: yolo
