@@ -225,6 +225,9 @@ func TestNewDialerURLs(t *testing.T) {
 		{name: "unix names no host", url: "unix:///run/discobox/pool.sock", wantErr: "server name is required"},
 		{name: "plaintext refused", url: "http://discobox-pool-proxy:17080", wantErr: "must be https, vsock, or unix"},
 		{name: "https needs a port", url: "https://discobox-pool-proxy", wantErr: "host and port"},
+		{name: "https with an empty port", url: "https://discobox-pool-proxy:", wantErr: "host and port"},
+		{name: "https with an empty host", url: "https://:17080", wantErr: "host and port"},
+		{name: "https with an empty host despite a server name", url: "https://:17080", serverName: poolServerName, wantErr: "host and port"},
 		{name: "no scheme", url: "discobox-pool-proxy:17080", wantErr: "unsupported endpoint scheme"},
 	}
 	for _, tt := range tests {
