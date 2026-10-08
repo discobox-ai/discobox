@@ -106,6 +106,9 @@ type AppOptions struct {
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.
 	WSLCCommand string
+	// OverlayDir is the one directory a harness's file:// manifest reference
+	// may name a file in. Empty refuses every such reference.
+	OverlayDir string
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own. Zero is left zero rather
@@ -216,6 +219,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		JudgeJevFallback:               opts.JudgeJevFallback,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
+		OverlayDir:                     opts.OverlayDir,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)

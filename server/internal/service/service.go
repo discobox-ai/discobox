@@ -81,6 +81,9 @@ type Options struct {
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.
 	WSLCCommand string
+	// OverlayDir is the one directory a harness's file:// manifest reference
+	// may name a file in. Empty refuses every such reference.
+	OverlayDir string
 	// ArchiveRetention is the server-wide default an archived sandbox is kept
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
@@ -122,7 +125,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	sandboxService.SetServerPeerID(options.ServerPeerID)
-	harnessConfigService := harnessconfigs.NewService(store, options.HarnessImages, options.ServerDefaults.Release != nil)
+	harnessConfigService := harnessconfigs.NewService(store, options.HarnessImages, options.ServerDefaults.Release != nil, options.OverlayDir)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.

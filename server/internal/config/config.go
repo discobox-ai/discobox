@@ -207,6 +207,13 @@ type Config struct {
 	// launches; a server started otherwise keeps one under its cache.
 	ImageCacheDir string `yaml:"imageCacheDir" env:"DISCOBOX_IMAGE_CACHE_DIR" doc:"OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to <cacheDir>/images." example:"/var/cache/discobox/images"`
 
+	// OverlayDir is where the overlays of templates with no image are staged
+	// (ADR 0145 §2), and the one directory a harness's file:// manifest
+	// reference may name a file in. A harness config is registered over the
+	// API, so a reference anywhere else would have this server read whatever
+	// path a caller named and answer with what it found.
+	OverlayDir string `yaml:"overlayDir" env:"DISCOBOX_OVERLAY_DIR" doc:"Directory the overlays of non-Linux sandbox templates are staged in, and the only one a harness's file:// manifest reference may name a file in. Defaults to <cacheDir>/overlays." example:"/var/cache/discobox/overlays"`
+
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for at startup, for a host that keeps it somewhere this check
 	// would not look. It accepts a full path.
@@ -357,6 +364,12 @@ func Load() (*Config, error) {
 	// pool on the machine down.
 	if !configured("imageCacheDir") || strings.TrimSpace(cfg.ImageCacheDir) == "" {
 		cfg.ImageCacheDir = filepath.Join(cfg.CacheDir, "images")
+	}
+	// Empty counts as absent for the reason the image store's does: a blank
+	// line would otherwise leave no directory at all, and every manifest file
+	// refused.
+	if !configured("overlayDir") || strings.TrimSpace(cfg.OverlayDir) == "" {
+		cfg.OverlayDir = filepath.Join(cfg.CacheDir, "overlays")
 	}
 	if !configured("databaseDsn") {
 		cfg.DatabaseDSN = defaultDatabaseDSN(cfg.DataDir)

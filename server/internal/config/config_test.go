@@ -112,6 +112,10 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.StateDir != "/tmp/discobox/state" {
 		t.Fatalf("StateDir = %q", cfg.StateDir)
 	}
+	// Overlays are staged under the cache, like the image store.
+	if want := filepath.Join("/tmp/discobox/cache", "overlays"); cfg.OverlayDir != want {
+		t.Fatalf("OverlayDir = %q, want %q", cfg.OverlayDir, want)
+	}
 	if cfg.DatabaseDSN != testDatabaseDSN {
 		t.Fatalf("DatabaseDSN = %q", cfg.DatabaseDSN)
 	}

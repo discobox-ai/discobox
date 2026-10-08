@@ -212,6 +212,13 @@
 # Environment: DISCOBOX_IMAGE_CACHE_DIR
 #imageCacheDir:
 
+# Directory the overlays of non-Linux sandbox templates are staged in,
+# and the only one a harness's file:// manifest reference may name a file
+# in. Defaults to <cacheDir>/overlays.
+# Example: overlayDir: /var/cache/discobox/overlays
+# Environment: DISCOBOX_OVERLAY_DIR
+#overlayDir:
+
 # The WSL Containers program to look for on a Windows host, as a name on
 # PATH or a full path. Empty looks for the component's own name, wslc.
 # Windows only.

@@ -2,12 +2,19 @@ package harnessconfigs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -32,9 +39,19 @@ type imageInspector interface {
 	Inspect(ctx context.Context, imageRef string) (imageMetadata, error)
 }
 
-type defaultImageInspector struct{}
+type defaultImageInspector struct {
+	// overlayDir is the one directory a file:// manifest reference may name
+	// a file in (inspectManifestFile).
+	overlayDir string
+}
 
-func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
+func (d defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
+	// A template with no image — a non-Linux one, assembled from a vendor's
+	// base and Discobox's overlay — is named by its overlay's manifest file
+	// (ADR 0145 §3), and is never a reference a daemon or a registry knows.
+	if strings.HasPrefix(strings.TrimSpace(imageRef), manifestFileScheme) {
+		return inspectManifestFile(imageRef, d.overlayDir)
+	}
 	// Prefer a locally present image. Once the daemon has inspected it, its
 	// metadata is authoritative — surface any label error instead of masking it
 	// with a doomed registry pull of the same (often :local) reference.
@@ -280,10 +297,106 @@ func localPlatformsWithoutManifests(ctx context.Context, inspected imagetypes.In
 	return platform.NewSet(platform.Platform{OS: inspected.Os, Arch: inspected.Architecture})
 }
 
+// manifestFileScheme prefixes a harness reference that names a manifest file
+// rather than an image: file:// and an absolute path on this server's host,
+// inside its overlay directory.
+const manifestFileScheme = "file://"
+
+// inspectManifestFile reads a manifest file named by a file:// reference: the
+// same layers an image carries in its labels, resolved the same way. Its
+// digest is the file's own, so a changed overlay is a moved pin exactly as a
+// rebuilt tag is (ADR 0145 §2), and its one platform is the one it declares —
+// there is no registry to say what else it is published for.
+//
+// The file must be in overlayDir, where overlays are staged, and it is read
+// through an os.Root on that directory, so neither `..` nor a symlink leaves
+// it. A reference is a harness registration's, which any project member
+// makes over the API: read from anywhere, it would have this server open a
+// path the caller chose and answer with whether it exists and what it holds.
+// A reference outside is refused before anything is opened, and the refusal
+// names only the directory.
+func inspectManifestFile(ref, overlayDir string) (imageMetadata, error) {
+	parsed, err := url.Parse(strings.TrimSpace(ref))
+	if err != nil {
+		return imageMetadata{}, fmt.Errorf("parse manifest file reference %q: %w", ref, err)
+	}
+	if parsed.Host != "" && parsed.Host != "localhost" {
+		return imageMetadata{}, fmt.Errorf("manifest file reference %q names host %q: a manifest file is read from this server's own disk", ref, parsed.Host)
+	}
+	path := filepath.FromSlash(parsed.Path)
+	if runtime.GOOS == "windows" {
+		// file:///C:/x parses to the path /C:/x.
+		path = filepath.FromSlash(strings.TrimPrefix(parsed.Path, "/"))
+	}
+	if !filepath.IsAbs(path) {
+		return imageMetadata{}, fmt.Errorf("manifest file reference %q must name an absolute path", ref)
+	}
+	overlayDir = strings.TrimSpace(overlayDir)
+	if overlayDir == "" {
+		return imageMetadata{}, fmt.Errorf("manifest file reference %q: this server has no overlay directory to read manifest files from", ref)
+	}
+	rel, err := filepath.Rel(filepath.Clean(overlayDir), filepath.Clean(path))
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return imageMetadata{}, fmt.Errorf("manifest file reference %q is not in the overlay directory %s: a manifest file is read from there and nowhere else", ref, overlayDir)
+	}
+	root, err := os.OpenRoot(overlayDir)
+	if err != nil {
+		return imageMetadata{}, fmt.Errorf("open overlay directory: %w", err)
+	}
+	defer root.Close()
+	data, err := root.ReadFile(rel)
+	if err != nil {
+		return imageMetadata{}, fmt.Errorf("read manifest file %q: %w", ref, err)
+	}
+	sum := sha256.Sum256(data)
+	return parseManifestFile("sha256:"+hex.EncodeToString(sum[:]), data)
+}
+
+// manifestFileSource is what a manifest file's errors say they are about.
+const manifestFileSource = "manifest file"
+
+// imageLabelSource is what an image's label errors say they are about.
+const imageLabelSource = harness.ImageLabel + " label"
+
+// parseManifestFile resolves a manifest file's layers and validates the result
+// for the platform it declares, which a manifest file must: nothing else says
+// what its template runs. That platform is never Linux, whose templates are
+// images: a Linux pool runs the reference it is handed as a container image,
+// and a file:// one would fail there at create rather than here.
+func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
+	labels, err := harness.ReadManifestFile(data)
+	if err != nil {
+		return imageMetadata{}, err
+	}
+	metadata, hasBase, err := harness.ResolveImageLabels(labels)
+	if err != nil {
+		return imageMetadata{}, err
+	}
+	// The base layer is the sandbox agent's for that platform, shipped in the
+	// same overlay as the agent, and proves lineage just as an image's does.
+	if !hasBase {
+		return imageMetadata{}, fmt.Errorf("manifest file carries no %s%s layer: its template is not built on the sandbox agent's overlay", harness.ImageLayerLabelPrefix, harness.SandboxBaseLayer)
+	}
+	if metadata.Platform.IsZero() {
+		return imageMetadata{}, fmt.Errorf("manifest file declares no platform: a template with no image says which one it runs")
+	}
+	if sandboxuser.HasPOSIXIDs(metadata.Platform.OS) {
+		return imageMetadata{}, fmt.Errorf("manifest file declares platform %s: a %s template is an image, and a manifest file is for a template with none", metadata.Platform, metadata.Platform.OS)
+	}
+	if err := validateImageMetadata(metadata, metadata.Platform.OS, manifestFileSource); err != nil {
+		return imageMetadata{}, err
+	}
+	return imageMetadata{Digest: digest, Platforms: platform.NewSet(metadata.Platform), ImageMetadata: metadata}, nil
+}
+
 // parseImageMetadata resolves an image's label set into the one manifest it
 // effectively declares: every inherited layer, then the image's own (ADR 0086
 // §2). Only the merged result is validated — a layer on its own is a fragment,
 // and the base layer legitimately carries no harness at all.
+//
+// An image is a Linux container's, and its platforms are what its registry
+// publishes, so a label naming a platform is refused rather than read beside
+// that answer.
 func parseImageMetadata(digest string, labels map[string]string) (imageMetadata, error) {
 	metadata, hasBase, err := harness.ResolveImageLabels(labels)
 	if err != nil {
@@ -298,13 +411,22 @@ func parseImageMetadata(digest string, labels map[string]string) (imageMetadata,
 	if !hasBase {
 		return imageMetadata{}, fmt.Errorf("image is not built FROM discobox-sandbox-agent: it carries no %s%s label", harness.ImageLayerLabelPrefix, harness.SandboxBaseLayer)
 	}
-	if err := validateImageMetadata(metadata); err != nil {
+	if !metadata.Platform.IsZero() {
+		return imageMetadata{}, fmt.Errorf("%s label declares platform %s: an image's platforms are the ones its registry publishes it for", harness.ImageLabel, metadata.Platform)
+	}
+	if err := validateImageMetadata(metadata, "linux", imageLabelSource); err != nil {
 		return imageMetadata{}, err
 	}
 	return imageMetadata{Digest: digest, ImageMetadata: metadata}, nil
 }
 
-func validateImageMetadata(metadata harness.ImageMetadata) error {
+// validateImageMetadata judges a resolved manifest for a sandbox whose
+// platform's OS is goos. source is what an error says it is about: an image's
+// label, or a manifest file.
+func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) error {
+	if err := metadata.ValidateFor(goos); err != nil {
+		return fmt.Errorf("%s: %w", source, err)
+	}
 	// A manifest is optional in full: an image that installs its agent as
 	// harness.RunCommand and needs no credentials declares nothing, and takes
 	// its identity from the registration (ADR 0086 §5). What remains here are
@@ -318,11 +440,11 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 	// types (ADR 0086 §3). A *present but blank* command is still a broken
 	// image.
 	if len(h.RunCommand) > 0 && strings.TrimSpace(h.RunCommand[0]) == "" {
-		return fmt.Errorf("%s label has a blank runCommand", harness.ImageLabel)
+		return fmt.Errorf("%s has a blank runCommand", source)
 	}
 	if h.Config != nil {
 		if len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "" {
-			return fmt.Errorf("%s label config mode requires command", harness.ImageLabel)
+			return fmt.Errorf("%s config mode requires command", source)
 		}
 		// A declared port is forwarded at its own number or not at all, so a
 		// number no listener can hold is a broken image rather than a forward
@@ -332,10 +454,10 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 		ports := map[int]struct{}{}
 		for _, port := range h.Config.Ports {
 			if port.Port < 1 || port.Port > 65535 {
-				return fmt.Errorf("%s label config port %d is out of range", harness.ImageLabel, port.Port)
+				return fmt.Errorf("%s config port %d is out of range", source, port.Port)
 			}
 			if _, ok := ports[port.Port]; ok {
-				return fmt.Errorf("%s label has duplicate config port %d", harness.ImageLabel, port.Port)
+				return fmt.Errorf("%s has duplicate config port %d", source, port.Port)
 			}
 			ports[port.Port] = struct{}{}
 		}
@@ -344,19 +466,19 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 	for _, secret := range h.Secrets {
 		name := strings.TrimSpace(secret.Name)
 		if !services.HarnessConfigEnvVarNamePattern.MatchString(name) {
-			return fmt.Errorf("%s label has invalid secret environment variable %q", harness.ImageLabel, secret.Name)
+			return fmt.Errorf("%s has invalid secret environment variable %q", source, secret.Name)
 		}
 		if _, ok := seen[name]; ok {
-			return fmt.Errorf("%s label has duplicate secret %q", harness.ImageLabel, name)
+			return fmt.Errorf("%s has duplicate secret %q", source, name)
 		}
 		seen[name] = struct{}{}
 	}
 	for idx, volume := range metadata.Volumes {
 		if strings.TrimSpace(volume.Path) == "" {
-			return fmt.Errorf("%s label volume[%d] requires path", harness.ImageLabel, idx)
+			return fmt.Errorf("%s volume[%d] requires path", source, idx)
 		}
 		if err := harness.ValidateVolume(volume); err != nil {
-			return fmt.Errorf("%s label volume %q: %w", harness.ImageLabel, volume.Path, err)
+			return fmt.Errorf("%s volume %q: %w", source, volume.Path, err)
 		}
 	}
 	return nil

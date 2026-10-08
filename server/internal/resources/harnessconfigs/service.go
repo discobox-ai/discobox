@@ -28,10 +28,12 @@ type Service struct {
 	dirtier              Dirtier
 }
 
-func NewService(store *store.Store, images map[string]string, requireBuiltInImages bool) *Service {
+// NewService builds the service. overlayDir is the one directory a file://
+// manifest reference may name a file in; empty refuses every such reference.
+func NewService(store *store.Store, images map[string]string, requireBuiltInImages bool, overlayDir string) *Service {
 	return &Service{
 		store:                store,
-		inspector:            defaultImageInspector{},
+		inspector:            defaultImageInspector{overlayDir: overlayDir},
 		harnessImages:        images,
 		requireBuiltInImages: requireBuiltInImages,
 	}

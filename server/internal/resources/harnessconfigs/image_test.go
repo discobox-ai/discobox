@@ -238,6 +238,12 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 		if len(metadata.Volumes) == 0 {
 			t.Errorf("%s declares no volumes, so its sandbox would persist nothing", name)
 		}
+		// The desktop and nested Docker are the base image's filesystem, and a
+		// feature the manifest leaves out is one the sandbox does not have
+		// (ADR 0145 §3), so the base layer is what declares them.
+		if !metadata.Features.Desktop || !metadata.Features.Docker {
+			t.Errorf("%s features = %+v, want the base layer's desktop and docker", name, metadata.Features)
+		}
 	}
 }
 
