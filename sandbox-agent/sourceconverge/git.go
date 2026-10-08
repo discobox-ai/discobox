@@ -119,7 +119,7 @@ func (r *repository) unmarkedCheckout(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	origin, err := r.configValues(ctx, "remote.origin.url")
-	if err != nil || len(origin) != 1 || !(strings.HasPrefix(origin[0], "/") || filepath.IsAbs(origin[0])) {
+	if err != nil || len(origin) != 1 || (!strings.HasPrefix(origin[0], "/") && !filepath.IsAbs(origin[0])) {
 		return "", false
 	}
 	commit := r.head(ctx)
