@@ -21566,7 +21566,9 @@ func (s *SandboxRuntimeAgentStatus) init() SandboxRuntimeAgentStatus {
 // has. The Go type is sandboxconfig.RuntimeConfig.
 // Ref: #/components/schemas/SandboxRuntimeConfig
 type SandboxRuntimeConfig struct {
-	// Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+	// Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older
+	// one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates
+	// it, not the schema, so every invalid document is answered alike.
 	Revision int64                     `json:"revision"`
 	Agent    SandboxRuntimeConfigAgent `json:"agent"`
 	// The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value

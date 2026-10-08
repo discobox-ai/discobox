@@ -340,6 +340,36 @@ func TestApplySameRevisionIsARetryOrAConflict(t *testing.T) {
 	}
 }
 
+// Only a newer document is validated: an older one is ignored and anything but
+// the held document under the held revision is a conflict, whatever its shape.
+func TestOrderingComesBeforeValidation(t *testing.T) {
+	layout := testLayout(t)
+	in, err := Open(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Apply(testDocument(t, 5)); err != nil {
+		t.Fatal(err)
+	}
+	malformed := func(revision int64) sandboxconfig.RuntimeConfig {
+		doc := testDocument(t, revision)
+		doc.Agent.IdleTimeout = "soon"
+		return doc
+	}
+	if held, err := in.Apply(malformed(4)); err != nil || held.Revision != 5 {
+		t.Fatalf("a malformed older document: held %d, err %v; want it ignored", held.Revision, err)
+	}
+	if _, err := in.Apply(malformed(5)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a malformed document under the held revision: err = %v, want ErrConflict", err)
+	}
+	if _, err := in.Apply(malformed(6)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a malformed newer document: err = %v, want ErrInvalid", err)
+	}
+	if in.Revision() != 5 {
+		t.Fatalf("revision = %d, want 5", in.Revision())
+	}
+}
+
 func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 	cases := map[string]func(t *testing.T, layout Layout, doc *sandboxconfig.RuntimeConfig){
 		"invalid document": func(t *testing.T, _ Layout, doc *sandboxconfig.RuntimeConfig) {
@@ -559,6 +589,11 @@ func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 	delivered, err := in.plan(testDocument(t, 1), true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Removed first even when this document grants readiness: a marker left
+	// up from the previous one would be open over this one's files.
+	if delivered[0].path != ready || !delivered[0].remove {
+		t.Fatalf("first op = %+v, want the readiness removal", delivered[0])
 	}
 	// Readiness is last, after the state file: a failed state rename rolls
 	// everything back, and must do so before any gate has opened.

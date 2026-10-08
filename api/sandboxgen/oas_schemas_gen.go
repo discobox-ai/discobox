@@ -4651,7 +4651,9 @@ type SandboxRuntimeConfig struct {
 	Agent SandboxRuntimeConfigAgent `json:"agent"`
 	// Material for the sandbox's hop to its pool. Absent when it has none.
 	Proxy OptSandboxRuntimeConfigProxy `json:"proxy"`
-	// Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+	// Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older
+	// one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates
+	// it, not the schema, so every invalid document is answered alike.
 	Revision int64 `json:"revision"`
 	// The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value
 	// never reaches a sandbox.

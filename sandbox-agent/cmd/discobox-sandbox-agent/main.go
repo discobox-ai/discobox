@@ -86,9 +86,10 @@ func run(args []string) int {
 	// nothing reads a file the pool already replaced (ADR 0126 §3). It is
 	// opened after sandbox.json only because sandbox.json names whose sandbox
 	// this is, which decides whether the kept document is this sandbox's to
-	// restore; what a restore writes into sandbox.json takes effect on the next
-	// start, as an idle-timeout change always has. A restore that fails is not
-	// fatal — the pool's next delivery repairs it.
+	// restore. A restore can rewrite sandbox.json's agent settings, so a
+	// restored document has sandbox.json read again, and this start runs on
+	// what the kept revision says. A restore that fails is not fatal — the
+	// pool's next delivery repairs it.
 	runtimeConfig, err := intake.Open(intake.DefaultLayout(), intake.Owner{
 		ProjectID: cfg.Identity.ProjectID,
 		SandboxID: cfg.Identity.SandboxID,
@@ -96,6 +97,11 @@ func run(args []string) int {
 	})
 	if err != nil {
 		slog.Warn("restore runtime config", "error", err)
+	} else if _, restored := runtimeConfig.Applied(); restored {
+		if cfg, err = config.Load(configPath); err != nil {
+			slog.Error("load config after restoring runtime config", "error", err)
+			return 1
+		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
