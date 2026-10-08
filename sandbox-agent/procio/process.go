@@ -209,6 +209,18 @@ func (p *Process) Signal(name string) (Delivery, error) {
 // Terminate asks the process group to stop.
 func (p *Process) Terminate() { terminateProcessGroup(p.cmd) }
 
+// Kill ends the process itself — not its group — through Go's own handle on
+// it, which can never reach another process: once Wait has reaped it, Kill
+// reports os.ErrProcessDone and signals nothing, and on Linux the signal goes
+// through a pidfd. Signal, by contrast, names the group by number, which after
+// the reap may be someone else's.
+func (p *Process) Kill() error {
+	if p.cmd == nil || p.cmd.Process == nil {
+		return os.ErrProcessDone
+	}
+	return p.cmd.Process.Kill()
+}
+
 // Resize sets the PTY size. It is a no-op for a pipe process.
 func (p *Process) Resize(rows, cols uint16) error {
 	if p.tty == nil {

@@ -125,7 +125,11 @@ Supervision is one of the three per-platform seams behind the sandbox-agent API
 ([ADR 0145 §4](../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
 `execs.UnitManager` is the seam: every implementation is required and
 complete, and which one a `Manager` gets is chosen by build
-(`units_linux.go`, `units_other.go`), never probed at runtime.
+(`units_linux.go`, `units_other.go`), never probed at runtime. The default is
+the opposite way round from observation's: what every non-Linux build lacks
+is systemd, so the `Supervisor` is what any other platform gets — Windows
+included, until its lock is written — where observation's readers default to
+Linux's.
 
 ```mermaid
 flowchart LR

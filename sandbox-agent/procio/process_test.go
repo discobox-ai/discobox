@@ -2,6 +2,7 @@ package procio
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -277,4 +278,31 @@ func waitForState(t *testing.T, p *Process, want string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("process state = %q, want %q", got, want)
+}
+
+// Kill ends the process itself while it runs, and once it has been reaped it
+// reports that and signals nothing: the number is no longer the process's, and
+// a kill by number then would reach whatever holds it now.
+func TestKillReachesOnlyTheProcessItStarted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sleep is a POSIX command")
+	}
+	proc, err := Start(Options{Command: []string{"sleep", "600"}, Env: os.Environ()})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer proc.Close()
+	if err := proc.Kill(); err != nil {
+		t.Fatalf("kill a running process: %v", err)
+	}
+	done := make(chan Status, 1)
+	go func() { done <- proc.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the killed process did not exit")
+	}
+	if err := proc.Kill(); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("kill after the reap = %v, want os.ErrProcessDone", err)
+	}
 }

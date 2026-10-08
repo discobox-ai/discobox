@@ -144,7 +144,11 @@ func (r *shimRuntime) stop() {
 		return
 	}
 	sid := int(proc.PID())
-	proc.Terminate()
+	// Never procio's Terminate, which names the group by number: the shim
+	// lingers after its command exits, and a stop that lands then would
+	// SIGTERM whichever group took the number since. askSessionToStop reaches
+	// the command's group as part of its session, and only while the session
+	// is still the command's.
 	_ = askSessionToStop(sid, identity, proc.TTY() != nil)
 	grace := time.NewTimer(shimStopGrace)
 	defer grace.Stop()
@@ -159,7 +163,14 @@ func (r *shimRuntime) stop() {
 	// uninterruptible sleep, or one that cannot be listed, a stop that never
 	// returns — and the SIGKILL is already pending on whatever is left.
 	if identity == "" {
-		_ = proc.Signal("KILL")
+		// Without the command's identity nothing can tell its session from a
+		// later one holding the same number, so only the command itself is
+		// ended, through Go's handle on it (procio.Process.Kill), which never
+		// reaches another process and does nothing once the command has
+		// already exited. What it left in its session is not reached.
+		if err := proc.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			slog.Warn("kill the stopped exec", "execID", r.cfg.ExecID, "error", err)
+		}
 	} else if err := endSession(sid, identity); err != nil {
 		slog.Warn("end the stopped exec's session", "execID", r.cfg.ExecID, "session", sid, "error", err)
 	}
