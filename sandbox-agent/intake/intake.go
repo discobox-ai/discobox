@@ -291,6 +291,9 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, *op, e
 
 // changedPaths are the targets of done whose contents a replacement changed,
 // sorted. The readiness marker is not among them: nothing is started for it.
+// Contents alone decide it — what a unit reads is the bytes — and a file's
+// mode is not comparable everywhere anyway: Windows reports 0666 or 0444
+// whatever was asked for.
 func changedPaths(done []op) []string {
 	var out []string
 	for _, o := range done {
@@ -299,7 +302,7 @@ func changedPaths(done []op) []string {
 		}
 		switch {
 		case o.remove && o.prior != nil:
-		case !o.remove && (o.prior == nil || *o.prior != o.mode || !bytes.Equal(o.held, o.data)):
+		case !o.remove && (o.prior == nil || !bytes.Equal(o.held, o.data)):
 		default:
 			continue
 		}
