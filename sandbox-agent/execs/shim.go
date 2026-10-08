@@ -124,6 +124,16 @@ const (
 // systemd's control group does to a unit, and the Supervisor has none, so the
 // shim is what keeps a stop honest there.
 //
+// A terminal's session gets SIGHUP with the SIGTERM, because a stopped
+// terminal is a terminal that went away, and SIGHUP is how a program is told
+// that. An interactive shell ignores SIGTERM and exits on SIGHUP, so without
+// it every terminal's stop — a delete, a relaunch, a revive — would sit out
+// the whole grace before the kill. It is what systemd's SendSIGHUP= sends
+// beside the SIGTERM for the same reason. SIGCONT follows both, as systemd
+// sends it: a stopped process — a Ctrl-Z'd editor, a harness's suspended
+// child — holds them pending and would meet the SIGKILL without ever having
+// seen them.
+//
 // It is the session rather than the process group because an interactive
 // shell puts each job in a group of its own: a terminal's `npm run dev &`
 // would outlive a group kill and keep its port. The command leads its session
@@ -142,6 +152,10 @@ func (r *shimRuntime) stop() {
 	sid := int(proc.PID())
 	proc.Terminate()
 	_ = signalSession(sid, started, syscall.SIGTERM)
+	if proc.TTY() != nil {
+		_ = signalSession(sid, started, syscall.SIGHUP)
+	}
+	_ = signalSession(sid, started, syscall.SIGCONT)
 	grace := time.NewTimer(shimStopGrace)
 	defer grace.Stop()
 	select {
