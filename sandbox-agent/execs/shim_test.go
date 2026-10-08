@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 	"github.com/discobox-ai/x/shorttmp"
 )
@@ -888,4 +889,30 @@ func (r *recordedEvents) snapshot() []recordedEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]recordedEvent(nil), r.events...)
+}
+
+// A Delivery names the mechanism chosen before the platform call ran, so a
+// call that failed must not be recorded as delivered: it is exec.signal.failed,
+// with the error.
+func TestRecordSignalNeverCallsAFailedDeliveryDelivered(t *testing.T) {
+	events := &recordedEvents{}
+	r := &shimRuntime{cfg: ShimConfig{ExecID: "exec_failed", Events: events}, status: Exec{Command: []string{"sleep", "30"}}}
+	suspend := procio.Delivery{Requested: "TSTP", Delivered: "NtSuspendProcess", Reason: "a Windows process has no SIGSTOP"}
+
+	r.recordSignal(suspend, errors.New("NtSuspendProcess: NTSTATUS 0xc0000008"))
+	r.recordSignal(suspend, nil)
+
+	got := events.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("events = %+v, want one failure and one delivery", got)
+	}
+	failed, delivered := got[0], got[1]
+	if failed.typ != "exec.signal.failed" || strings.Contains(failed.message, "delivered as") ||
+		!strings.Contains(failed.message, "failed as NtSuspendProcess (NtSuspendProcess: NTSTATUS 0xc0000008)") ||
+		failed.details["error"] != "NtSuspendProcess: NTSTATUS 0xc0000008" {
+		t.Fatalf("failed = %+v, want it recorded as a failure with its error", failed)
+	}
+	if delivered.typ != "exec.signal.mapped" || !strings.Contains(delivered.message, "signal TSTP delivered as NtSuspendProcess: sleep 30") {
+		t.Fatalf("delivered = %+v, want the successful mapping", delivered)
+	}
 }

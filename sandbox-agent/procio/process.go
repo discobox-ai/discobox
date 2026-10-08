@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -41,6 +42,13 @@ type Process struct {
 	stdin  io.WriteCloser
 	stdout *os.File
 	stderr *os.File
+
+	// handleMu guards handle, which Signal uses while Close may release it.
+	handleMu sync.Mutex
+	// handle is the platform's own hold on the process, taken at Start and
+	// kept until Close (holdProcess): on Windows the handle signals are sent
+	// through, so a late one cannot reach another process given the same PID.
+	handle processHandle
 }
 
 // Start launches the process.
@@ -55,10 +63,25 @@ func Start(opts Options) (*Process, error) {
 	cmd.Env = opts.Env
 	cmd.SysProcAttr = opts.SysProcAttr
 
+	start := startPipes
 	if opts.TTY {
-		return startTTY(cmd, opts.Winsize)
+		start = func(cmd *exec.Cmd) (*Process, error) { return startTTY(cmd, opts.Winsize) }
 	}
-	return startPipes(cmd)
+	proc, err := start(cmd)
+	if err != nil {
+		return nil, err
+	}
+	// Taken now, before anyone can Wait: until then os/exec holds the process
+	// open, so its PID still names this child and nothing else.
+	handle, err := holdProcess(cmd.Process)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		proc.Close()
+		return nil, err
+	}
+	proc.handle = handle
+	return proc, nil
 }
 
 func startTTY(cmd *exec.Cmd, winsize *pty.Winsize) (*Process, error) {
@@ -136,8 +159,13 @@ func (p *Process) CloseInput() {
 	_ = p.stdin.Close()
 }
 
-// Close releases every descriptor the parent holds.
+// Close releases every descriptor the parent holds, and its hold on the
+// process.
 func (p *Process) Close() {
+	p.handleMu.Lock()
+	p.handle.release()
+	p.handle = processHandle{}
+	p.handleMu.Unlock()
 	if p.tty != nil {
 		closeAll(p.tty)
 		return
@@ -172,7 +200,11 @@ func (p *Process) Wait() Status {
 // nearest mechanism when it cannot deliver the signal itself, and reports what
 // it became. A Delivery that is Mapped is something the exec's record has to
 // say, because the client asked for something else.
-func (p *Process) Signal(name string) (Delivery, error) { return signalProcessGroup(p.cmd, name) }
+func (p *Process) Signal(name string) (Delivery, error) {
+	p.handleMu.Lock()
+	defer p.handleMu.Unlock()
+	return signalProcessGroup(p.cmd, p.handle, name)
+}
 
 // Terminate asks the process group to stop.
 func (p *Process) Terminate() { terminateProcessGroup(p.cmd) }
