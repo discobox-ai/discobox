@@ -26,6 +26,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
 	"github.com/discobox-ai/discobox/sandbox-agent/server"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
@@ -51,6 +52,15 @@ func run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "desktop" {
 		return runDesktop(args[1:])
+	}
+	// git's credential helper for the sandbox's source origins, which git
+	// runs as the user fetching (ADR 0126 §4).
+	if len(args) > 0 && args[0] == "git-credential" {
+		if err := sourceconverge.RunHelper(args[1:], os.Stdin, os.Stdout); err != nil {
+			slog.Error("git credential helper", "error", err)
+			return 1
+		}
+		return 0
 	}
 	if len(args) > 0 && args[0] == "init" {
 		return boot.Init(slog.Default(), args[1:])

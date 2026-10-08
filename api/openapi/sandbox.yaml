@@ -663,6 +663,39 @@ components:
                 - attacherCount
                 - execStatus
             type: object
+        SandboxAgentSourceState:
+            additionalProperties: false
+            description: One source's convergence onto its target. A materialized source is not by itself ready - the pool still settles the sandbox's spec on it and says so with the document's delivered (ADR 0055).
+            properties:
+                commit:
+                    description: The commit the source was materialized at, as its materialized marker records it - not where the sandbox has moved it since. Absent for a source a pool materialized, whose marker records none.
+                    type: string
+                error:
+                    description: Why the last attempt failed. Present only when state is failed.
+                    type: string
+                revision:
+                    description: The runtime-config revision this state was reached under.
+                    format: int64
+                    type: integer
+                slug:
+                    type: string
+                state:
+                    description: waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being materialized now; materialized - cloned, checked out and its workspace restored, once; failed - the last attempt failed, see error, and it is retried.
+                    enum:
+                        - waiting
+                        - cloning
+                        - materialized
+                        - failed
+                    type: string
+                updatedAt:
+                    format: date-time
+                    type: string
+            required:
+                - slug
+                - state
+                - revision
+                - updatedAt
+            type: object
         SandboxAgentStatusResponse:
             additionalProperties: false
             properties:
@@ -694,6 +727,11 @@ components:
                     description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
                     items:
                         $ref: '#/components/schemas/SandboxAgentSessionStatus'
+                    type: array
+                sourceStates:
+                    description: How far the sandbox has converged each source the applied runtime-config document names (ADR 0126 §4). Absent while no document names a source.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSourceState'
                     type: array
                 sources:
                     items:
@@ -1118,7 +1156,7 @@ components:
             type: object
         SandboxRuntimeConfigSource:
             additionalProperties: false
-            description: One of the sandbox's sources as the pool sees it.
+            description: One of the sandbox's sources as the pool sees it. The sandbox clones each source that has an origin onto its target and reports how far it got on its status (sourceStates); how it is checked out is the create-time placement in sandbox.json (ADR 0126 §4).
             properties:
                 commit:
                     description: The commit the source is pinned to.
@@ -1126,10 +1164,16 @@ components:
                 delivered:
                     description: The source is in place and the pool has settled the sandbox's spec on it. The sandbox's readiness gate clears once every source is delivered.
                     type: boolean
+                originToken:
+                    description: The bearer token originUrl takes, when it takes one - the pool's sandbox token, scope origin:fetch. The sandbox's git reads it through the agent's credential helper, so it is never written into the checkout.
+                    type: string
                 originUrl:
-                    description: Where the source's origin is served, when it has one.
+                    description: Where the source's origin is served, when it has one. The sandbox clones from it and keeps it as the checkout's origin remote.
                     type: string
                 slug:
+                    type: string
+                target:
+                    description: The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
                     type: string
             required:
                 - slug
@@ -1209,6 +1253,23 @@ components:
                     type: array
             required:
                 - services
+            type: object
+        SandboxSourceProjectLayer:
+            additionalProperties: false
+            description: A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox read it.
+            properties:
+                commit:
+                    description: The commit checked out in the source when it was read.
+                    type: string
+                projectLayer:
+                    additionalProperties: true
+                    description: The file's JSON object. Absent when the source has no project layer.
+                    type: object
+                slug:
+                    type: string
+            required:
+                - slug
+                - commit
             type: object
         SandboxTool:
             additionalProperties: false
@@ -2552,6 +2613,45 @@ paths:
             summary: Stop a sandbox service.
             tags:
                 - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer:
+        get:
+            description: Reads a materialized source's project layer (.discobox/project.json in its working tree), which the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055, ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox has not materialized it, 422 when the file is not a JSON object. Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-source-project-layer
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The source's slug in the runtime-config document.
+                  in: path
+                  name: slug
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceProjectLayer'
+                    description: The source's project layer, or none.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read a materialized source's project layer.
+            tags:
+                - Sandbox Runtime Config
     /api/projects/{projectId}/sandboxes/{sandboxId}/status:
         get:
             operationId: get-sandbox-agent-status

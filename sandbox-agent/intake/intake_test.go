@@ -108,6 +108,7 @@ func testDocument(t *testing.T, revision int64) sandboxconfig.RuntimeConfig {
 		},
 		Sources: []sandboxconfig.RuntimeSource{{
 			Slug:      "primary",
+			Target:    "/workspace/primary",
 			OriginURL: "https://pool/origins/primary",
 			Commit:    "0123456789abcdef0123456789abcdef01234567",
 			Delivered: true,

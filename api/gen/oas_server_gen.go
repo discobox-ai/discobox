@@ -369,6 +369,16 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
+	// GetSandboxSourceProjectLayer implements get-sandbox-source-project-layer operation.
+	//
+	// Reads a materialized source's project layer (.discobox/project.json in its working tree), which
+	// the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055,
+	// ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox
+	// has not materialized it, 422 when the file is not a JSON object. Only a token carrying the
+	// pool-only runtime-config scope may read it.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
+	GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (GetSandboxSourceProjectLayerRes, error)
 	// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
 	//
 	// Poll an agent host trust request.

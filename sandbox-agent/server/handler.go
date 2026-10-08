@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -47,6 +48,9 @@ type handler struct {
 	// runtimeConfig is the pool's runtime-config intake (ADR 0126 §3), nil
 	// when the sandbox was started without one.
 	runtimeConfig *intake.Intake
+	// sourceConverger clones the sources the applied document names (ADR
+	// 0126 §4), nil when the handler was built without one.
+	sourceConverger *sourceconverge.Converger
 }
 
 type terminalStore interface {
@@ -564,6 +568,11 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		if revision := h.runtimeConfig.Revision(); revision > 0 {
 			response.RuntimeConfigRevision = sandboxapi.NewOptInt64(revision)
 		}
+	}
+	// Per-source convergence rides the same poll: the pool waits on a source
+	// being materialized before it reads its project layer (ADR 0126 §4).
+	if h.sourceConverger != nil {
+		response.SourceStates = sandboxAgentSourceStates(h.sourceConverger.States())
 	}
 	return &response, nil
 }

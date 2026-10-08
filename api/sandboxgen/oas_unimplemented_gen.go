@@ -116,6 +116,19 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxSourceProjectLayer implements get-sandbox-source-project-layer operation.
+//
+// Reads a materialized source's project layer (.discobox/project.json in its working tree), which
+// the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055,
+// ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox
+// has not materialized it, 422 when the file is not a JSON object. Only a token carrying the
+// pool-only runtime-config scope may read it.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
+func (UnimplementedHandler) GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (r *SandboxSourceProjectLayer, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // JudgeSandbox implements judge-sandbox operation.
 //
 // Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in

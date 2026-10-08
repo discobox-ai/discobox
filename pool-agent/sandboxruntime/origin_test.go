@@ -9,6 +9,7 @@ import (
 
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // originTestRequest is a sandbox with a clone-delivered primary at local,
@@ -188,5 +189,31 @@ func TestLiveOriginsAreRewrittenOnEveryCreate(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.sandboxRoot(deliveryTestSandboxID), liveOriginsFileName)); !os.IsNotExist(err) {
 		t.Fatalf("a sandbox with no local source kept its live origins: %v", err)
+	}
+}
+
+// sandbox.json carries how each source is checked out, which the sandbox agent
+// reads when it clones the source itself (ADR 0126 §4).
+func TestSandboxDocumentCarriesEachSourcesCheckout(t *testing.T) {
+	req := originTestRequest("/home/user/src/app")
+	primary := req.Config.Source.Value
+	primary.UpstreamUrl = workerclient.NewOptString("https://github.com/example/app.git")
+	req.Config.Source = workerclient.NewOptGitSource(primary)
+
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "image", 0, req, nil, nil)
+	bySlug := map[string]sandboxconfig.Source{}
+	for _, source := range doc.Runtime.Sources {
+		bySlug[source.Slug] = source
+	}
+	got := bySlug["primary"]
+	if got.RefName != "feature" || got.RefType != "branch" || got.UpstreamURL != "https://github.com/example/app.git" {
+		t.Fatalf("primary = %+v, want branch feature tracking its upstream", got)
+	}
+	want := sandboxconfig.SourceWorkspace{BaseCommit: "0123456789abcdef0123456789abcdef01234567", SnapshotRef: "refs/discobox/run/run-1"}
+	if got.Workspace == nil || *got.Workspace != want {
+		t.Fatalf("primary workspace = %+v, want %+v", got.Workspace, want)
+	}
+	if hooks := bySlug["hooks"]; hooks.Workspace != nil || hooks.RefName != "" {
+		t.Fatalf("a clean source with no checkout = %+v, want neither", hooks)
 	}
 }

@@ -121,6 +121,27 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   runs once. Anything else with that shape has to be either gated or repeated —
   "it will be picked up later" is only true if something looks later.
 
+## Materializing sources
+
+- **Materialize once, then only assert the origin.** A pass that resets, cleans
+  or checks out a source carrying `SourceMaterializedMarker` discards the
+  sandbox's work. Anything a later pass must repair belongs in
+  `ensureOrigin`, which touches only configuration.
+- **Never reset a `.git` this agent did not move into place.** One with neither
+  marker is the sandbox's own repository or a pool-made checkout; refusing it is
+  correct, adopting it is data loss.
+- **Nothing half-made at the target, nothing of the target's removed.** A clone
+  that can be interrupted lands in the scratch directory; only a whole `.git`
+  is renamed in, and a step that writes the target directly reintroduces #30.
+  After the rename, write the tracked tree whole (`checkout --force`,
+  `restore`) — never `clean`, which deletes what the target held before the
+  clone, nested source targets included.
+- **The token stays out of the checkout.** No `extraHeader`, no tokenized URL,
+  no `-c` carrying it on a command line; git reads it through the helper only.
+- **A path test for a route whose path carries a slug comes first** in
+  `requiredRequestScope`: the slug is caller-chosen and can spell any test
+  after it.
+
 ## Boot cost
 
 Boot runs before anything in the sandbox is usable, so work here is latency the

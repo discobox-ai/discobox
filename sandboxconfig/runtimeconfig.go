@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -94,13 +95,29 @@ type RuntimeBridge struct {
 	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
 }
 
-// RuntimeSource is one of the sandbox's sources as the pool sees it. The
-// sandbox carries and keeps these; cloning from them is not this document's
-// job but the source convergence's (ADR 0126 §4).
+// RuntimeSource is one of the sandbox's sources as the pool sees it: where its
+// origin is, what is pinned, where it belongs and whether delivery has landed.
+// The sandbox agent converges each one onto its target (ADR 0126 §4); how it
+// is checked out — the branch, the upstream remote, a dirty-workspace snapshot
+// — is the create-time placement in sandbox.json's Source of the same slug.
 type RuntimeSource struct {
 	Slug string `json:"slug"`
-	// OriginURL is where the source's origin is served, when it has one.
+	// Target is the absolute in-sandbox path the source's checkout lives at.
+	// Required with an OriginURL: a source with an origin is one the sandbox
+	// clones, and it has to know where.
+	Target string `json:"target,omitempty"`
+	// OriginURL is where the source's origin is served, when it has one. The
+	// sandbox clones from it and keeps it as the checkout's origin remote, so
+	// a later `git fetch origin` reads the same place. It is the pool's
+	// git-origins route for a local or pushed source, and the remote itself
+	// for a remote-URL source.
 	OriginURL string `json:"originUrl,omitempty"`
+	// OriginToken is the bearer token OriginURL takes, when it takes one: the
+	// pool's sandbox token, which fetches this sandbox's origins and nothing
+	// else. The sandbox hands it to git through its credential helper, so it
+	// is never written into the checkout. A newer document replaces it before
+	// it expires.
+	OriginToken string `json:"originToken,omitempty"`
 	// Commit is the commit the source is pinned to.
 	Commit string `json:"commit,omitempty"`
 	// Delivered says the source is in place and the sandbox has settled on it:
@@ -164,10 +181,21 @@ func (c RuntimeConfig) Validate() error {
 			errs = append(errs, fmt.Errorf("source %q is named twice", source.Slug))
 		}
 		seen[source.Slug] = true
+		if source.Target != "" && (!path.IsAbs(source.Target) || path.Clean(source.Target) != source.Target) {
+			errs = append(errs, fmt.Errorf("source %q target %q is not a clean absolute path", source.Slug, source.Target))
+		}
 		if source.OriginURL != "" {
 			if _, err := url.Parse(source.OriginURL); err != nil {
 				errs = append(errs, fmt.Errorf("source %q originUrl: %w", source.Slug, err))
 			}
+			if source.Target == "" {
+				errs = append(errs, fmt.Errorf("source %q has an originUrl and no target", source.Slug))
+			}
+		}
+		// The token reaches git as a header value through the credential
+		// helper's line protocol, where a line break would be a second key.
+		if strings.ContainsAny(source.OriginToken, "\r\n\x00") {
+			errs = append(errs, fmt.Errorf("source %q originToken is not a single line", source.Slug))
 		}
 	}
 	return errors.Join(errs...)
