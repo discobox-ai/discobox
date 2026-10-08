@@ -92,6 +92,37 @@ func ResolveImageLabels(labels map[string]string) (metadata ImageMetadata, hasBa
 	return MergeImageMetadata(ordered...), hasBase, nil
 }
 
+// ReadManifestFile reads a manifest file into the label set
+// ResolveImageLabels resolves. It is how a template with no image — a non-Linux
+// one, assembled from a vendor's base and Discobox's overlay — ships the same
+// manifest an image carries in its labels (ADR 0145 §3): one JSON object whose
+// keys are the very label keys an image would carry, ImageLabel and
+// ImageLayerLabelPrefix plus a layer name, each holding that layer as a JSON
+// object rather than as the string a label is. One resolver then reads both,
+// so layering, merge by identity, the reserved layer numbers and the base
+// layer's proof of lineage mean the same thing from either source.
+//
+// Any other key is refused. An image's labels carry more than its manifest, so
+// the resolver skips what is not a layer; a manifest file is nothing else, and
+// a key in it that is not a layer is a mistake to say rather than to skip.
+func ReadManifestFile(data []byte) (map[string]string, error) {
+	var layers map[string]json.RawMessage
+	if err := json.Unmarshal(data, &layers); err != nil {
+		return nil, fmt.Errorf("parse manifest file: %w", err)
+	}
+	labels := make(map[string]string, len(layers))
+	for key, raw := range layers {
+		if _, ok := layerName(key); !ok && strings.TrimSpace(key) != ImageLabel {
+			return nil, fmt.Errorf("manifest file key %q is not a layer: want %s or %s<NN>-<name>", key, ImageLabel, ImageLayerLabelPrefix)
+		}
+		if trimmed := strings.TrimSpace(string(raw)); trimmed == "" || trimmed[0] != '{' {
+			return nil, fmt.Errorf("manifest file layer %q must be a JSON object", key)
+		}
+		labels[strings.TrimSpace(key)] = string(raw)
+	}
+	return labels, nil
+}
+
 // layerName returns the layer name a contributed layer's label key carries.
 func layerName(key string) (string, bool) {
 	key = strings.TrimSpace(key)
@@ -143,9 +174,20 @@ func MergeImageMetadata(layers ...ImageMetadata) ImageMetadata {
 		if version := strings.TrimSpace(layer.APIVersion); version != "" {
 			out.APIVersion = version
 		}
+		if !layer.Platform.IsZero() {
+			out.Platform = layer.Platform
+		}
+		if account := strings.TrimSpace(layer.Account); account != "" {
+			out.Account = account
+		}
+		if shell := strings.TrimSpace(layer.Shell); shell != "" {
+			out.Shell = shell
+		}
 		out.Env = mergeEnv(out.Env, layer.Env)
 		out.Volumes = mergeVolumes(out.Volumes, layer.Volumes)
 		out.AdditionalGroups = mergeGroups(out.AdditionalGroups, layer.AdditionalGroups)
+		out.Features.Desktop = out.Features.Desktop || layer.Features.Desktop
+		out.Features.Docker = out.Features.Docker || layer.Features.Docker
 		out.Harness = mergeHarness(out.Harness, layer.Harness)
 	}
 	return out

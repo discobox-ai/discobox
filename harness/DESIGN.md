@@ -9,12 +9,40 @@ launchers, and configure scripts.
 
 - One sandbox image contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
-  volumes, supplementary groups (`additionalGroups`), and any command overrides
-  are published in OCI image labels (`harness.ImageMetadata`) for server-side
-  registration. There is no baked-in
+  volumes, supplementary groups (`additionalGroups`), features, and any command
+  overrides are published in OCI image labels (`harness.ImageMetadata`) for
+  server-side registration. There is no baked-in
   file inside the image carrying this data — `image.json` is the build-time
   authoring source a label is compacted from (see `Taskfile.yml`), not a
   runtime artifact.
+- **A template with no image ships the same manifest as a file** (ADR 0145 §3).
+  A non-Linux sandbox is a VM template assembled from a vendor's base and
+  Discobox's overlay, and the overlay carries the manifest as one JSON object
+  keyed by the very label keys an image would carry, each holding its layer as
+  an object (`ReadManifestFile`). The file becomes that label set and resolves
+  through `ResolveImageLabels`, so layering, merge by identity, the reserved
+  numbers, the base layer's proof of lineage and the `discobox-harness-run`
+  convention are one contract from either source; a key that is not a layer is
+  refused rather than skipped, since a manifest file holds nothing else. The
+  server names one by a `file://` reference
+  ([`resources/harnessconfigs`](../server/internal/resources/harnessconfigs/DESIGN.md)).
+- **What a platform has is declared, and what it lacks is the declaration's
+  absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
+  A manifest file declares its `platform` (`os/arch`); an image never does,
+  because its platforms are what its registry publishes. A non-Linux manifest
+  names its one `account` by name alone (ADR 0145 §5) and the `shell` its
+  terminals type into, as an absolute path of its platform; a Linux one names
+  neither, because both come from the account the sandbox resolves from its
+  own passwd database (ADR 0025). `features` says what the filesystem ships
+  beyond running commands — `desktop`, `docker` (nested Docker and its runc
+  wrapper) — and the Linux base layer declares both. A feature merges like a
+  group: any layer adds one, none removes one. `ImageMetadata.ValidateFor`
+  judges the merged manifest by its platform's OS: a non-Linux one with
+  volumes, `additionalGroups`, a desktop or nested Docker is refused, each a
+  Linux container mechanism its VM has nothing to do with. An image built on a
+  base layer from before `features` existed declares none though it ships
+  both; nothing reads `features` yet, and the first thing that does has to
+  read such a Linux image as the base it is.
 - **A manifest is a stack of layers** (ADR 0086 §2). An image's effective
   manifest is `harness.ResolveImageLabels`: every
   `io.discobox.image.v1.<NN>-<name>` label in ascending order of that suffix,
@@ -158,6 +186,8 @@ launchers, and configure scripts.
     the nested daemon's images, containers and volumes are rebuildable, and
     its snapshot store cannot be carried faithfully by a plain tar.
     `/var/lib/discobox` travels — it is the sandbox agent's own state.
+  - `features`: `desktop` and `docker`, because the base image's filesystem
+    ships both, and a manifest that leaves a feature out has not got it.
   - The rest of the persistent and cached paths, the `brew`, `docker`, and
     `kvm` supplementary groups, the `NIX_*`/`HOMEBREW_*`/`PATH`/
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.
