@@ -278,6 +278,19 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
   pool-agent image rebuilds, which resets every bridge connection; a long
   transfer that breaks then is the rebuild (`docker inspect -f
   '{{.State.StartedAt}}'` on the pool container), not the change.
+- **A live origin needs the server's host ID.** A source is clone-delivered,
+  and its origin served live from the developer's `.git`, only when the
+  client's host ID (`~/.config/discobox/host-id`) is the server's and the
+  repository is somewhere the dev pool sees (`/home`, through
+  `DISCOBOX_POOL_HOST_MOUNT_PREFIX=/host`; not `/tmp`). A CLI run with another
+  `HOME` gets push delivery and a bare origin that new commits never reach;
+  pass `DISCOBOX_HOST_ID` to keep it. Check with
+  `d admin box get <id> -o json | jq .config.source.delivery`.
+- Sources: the pool's own record of a box's delivery is the `delivered` flags
+  in its `runtime-config.json`; flipping them to `false` on a stopped box and
+  starting it drives the start-time settle (`settleConverged`), which reopens
+  `/etc/discobox/ready` within a poll. Run `d` as a function, not a variable:
+  zsh does not split `$D` into a command.
 
 Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
 shell's command line matches the pattern. Wait on the watcher's outputs
