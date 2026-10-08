@@ -1214,15 +1214,20 @@ func (s *upgradedResponseStream) Write(p []byte) (int, error) {
 	// window; a short write gives the difference back below, so the count is
 	// only ever transiently high and never loses a byte the origin has seen.
 	//
+	// The bytes are recorded before they are handed on for the same reason: a
+	// session finished in that window is closed, and drops a later chunk
+	// without counting it. The spool holds what the client sent, which a short
+	// write does not change.
+	//
 	// The s2c direction needs no such care: its bytes reach the client only
-	// after Read returns, which is after its own Add.
+	// after Read returns, which is after its own Add and record.
 	s.c2sBytes.Add(int64(len(p)))
+	if s.stream != nil {
+		s.stream.RecordChunk(audit.StreamClientToServer, p)
+	}
 	n, err := s.source.Write(p)
 	if n < len(p) {
 		s.c2sBytes.Add(int64(n) - int64(len(p)))
-	}
-	if n > 0 && s.stream != nil {
-		s.stream.RecordChunk(audit.StreamClientToServer, p[:n])
 	}
 	if err != nil {
 		s.finish()
