@@ -175,7 +175,14 @@ func TestURLBuildersRoundTrip(t *testing.T) {
 	}
 	// A Windows path has a drive letter where a URL's host would go, so it
 	// must round-trip as well as a POSIX one does.
-	for _, path := range []string{"/run/discobox/cp.sock", "C:/Users/me/AppData/Local/Temp/cp.sock"} {
+	// So must a path holding a character a URL gives meaning to: unescaped,
+	// "#" and "?" end the path early and "%" fails to parse.
+	for _, path := range []string{
+		"/run/discobox/cp.sock",
+		"C:/Users/me/AppData/Local/Temp/cp.sock",
+		"/run/a b#c?d%e/cp.sock",
+		"C:/Users/John Doe/a#b?c%d/cp.sock",
+	} {
 		got, err := Parse(UnixURL(path))
 		if err != nil || got.Scheme != "unix" || got.Path != filepath.ToSlash(path) {
 			t.Fatalf("UnixURL(%q) round trip = %+v, err=%v", path, got, err)
