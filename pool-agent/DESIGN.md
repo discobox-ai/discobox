@@ -243,7 +243,7 @@ flowchart LR
     proxy["sandbox-agent and port proxies<br/>server/sandbox_proxy.go"] --> dialer
     health["boot health wait<br/>waitForSandboxAgent"] --> dialer
     deliver["runtime-config delivery<br/>runtimeconfig.go"] --> dialer
-    dialer["Runtime.SandboxDialer → Dialer"] --> transport["Dialer.Transport()<br/>internalhttp base, no keep-alive"]
+    dialer["Runtime.SandboxDialer → Dialer"] --> transport["Dialer.Transport()<br/>internalhttp base, no idle connection"]
     transport --> agent["sandbox agent / sandbox port"]
 ```
 
@@ -254,7 +254,11 @@ flowchart LR
   `http://localhost:<port>/…`, which is only the `Host` the sandbox's server
   reads — and the name a dev server checking `Host` accepts.
 - The transport is built per use and keeps no idle connections, so none
-  outlives the sandbox it reached. Upgrades (exec attach, tunnels) carry on
+  outlives the sandbox it reached. It closes each one once its response is
+  read rather than disabling keep-alives: a request sent `Connection: close`
+  gets no drain of an unread body from the sandbox's net/http, so a refusal
+  answered before the body was read (the sandbox agent's auth) can arrive as a
+  reset instead of its status (#106). Upgrades (exec attach, tunnels) carry on
   over the dialed connection.
 - The connection is never an authority. The sandbox agent validates its own
   token on every request — the status poll's `status:read` token (ADR 0030),
