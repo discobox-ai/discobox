@@ -18,10 +18,15 @@ const SkillFileName = "SKILL.md"
 // in it with no natural size (ADR 26-10-09-395 §1).
 const MaxSkillsBytes = 1 << 20
 
-// MaxSkillFiles bounds how many files those skills hold in all, SKILL.md
-// files aside: what each costs the bootstrap past its bytes is its JSON, and
-// a request of countless one-byte files would be large while counting small.
+// MaxSkillFiles bounds how many files those skills hold in all, each skill's
+// SKILL.md among them: what each costs the bootstrap past its bytes is its
+// JSON, and a request of countless one-byte files would be large while
+// counting small.
 const MaxSkillFiles = 1000
+
+// MaxSkillSegmentBytes bounds one skill name or one segment of a file's path:
+// the longest file name the common filesystems hold.
+const MaxSkillSegmentBytes = 255
 
 // Skills are the skills a sandbox is created with, by name: one directory each
 // in the harness's skill directories, installed after the image's and the
@@ -112,7 +117,8 @@ func (s Skills) Validate() error {
 		if err := s[name].validate(); err != nil {
 			return fmt.Errorf("skill %q: %w", name, err)
 		}
-		files += len(s[name].Files)
+		// Its SKILL.md is a file it installs like any other.
+		files += 1 + len(s[name].Files)
 	}
 	if files > MaxSkillFiles {
 		return fmt.Errorf("skills hold %d files; a discobox takes at most %d", files, MaxSkillFiles)
@@ -196,6 +202,8 @@ var windowsReservedNames = map[string]bool{
 	"CON": true, "PRN": true, "AUX": true, "NUL": true,
 	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true,
 	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+	// Windows reads the superscript digits as device numbers too.
+	"COM¹": true, "COM²": true, "COM³": true, "LPT¹": true, "LPT²": true, "LPT³": true,
 }
 
 // portableSegment refuses one path segment that some platform a sandbox runs
@@ -204,6 +212,9 @@ var windowsReservedNames = map[string]bool{
 // skills, so a create is refused instead of a Windows sandbox's first launch.
 // The result reads after the name it is about ("skill name %q %w").
 func portableSegment(segment string) error {
+	if len(segment) > MaxSkillSegmentBytes {
+		return fmt.Errorf("is %d bytes; a file name holds at most %d", len(segment), MaxSkillSegmentBytes)
+	}
 	for _, r := range segment {
 		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"/\|?*`, r) {
 			return fmt.Errorf("holds %q, which a Windows sandbox cannot write", r)

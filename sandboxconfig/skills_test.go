@@ -44,7 +44,12 @@ func TestSkillsValidate_Refuses(t *testing.T) {
 		"over the size limit":  {"foo": {Skill: strings.Repeat("x", MaxSkillsBytes+1)}},
 		"over the limit, sums": {"a": {Skill: strings.Repeat("x", MaxSkillsBytes/2+1)}, "b": {Skill: strings.Repeat("x", MaxSkillsBytes/2)}},
 		"paths over the limit": {"foo": {Skill: "x", Files: []SkillFile{{Path: strings.Repeat("a", MaxSkillsBytes)}}}},
-		"too many files":       manyFiles(MaxSkillFiles + 1),
+		"too many files":       manyFiles(MaxSkillFiles),
+		"too many skills":      manySkills(MaxSkillFiles + 1),
+		"superscript device":   {"COM¹": {Skill: "x"}},
+		"superscript path":     file("bin/lpt².txt"),
+		"long name":            {strings.Repeat("a", MaxSkillSegmentBytes+1): {Skill: "x"}},
+		"long path segment":    file("a/" + strings.Repeat("b", MaxSkillSegmentBytes+1)),
 		"windows character":    {"a:b": {Skill: "x"}},
 		"windows path char":    file("a/b?.md"),
 		"control character":    file("a\x01b"),
@@ -129,11 +134,26 @@ func manyFiles(n int) Skills {
 	return Skills{"foo": {Skill: "x", Files: files}}
 }
 
-// Skills at exactly the file limit are taken, and names that differ in more
-// than case are separate skills.
+func manySkills(n int) Skills {
+	skills := make(Skills, n)
+	for i := range n {
+		skills[fmt.Sprintf("s%d", i)] = Skill{Skill: "x"}
+	}
+	return skills
+}
+
+// Skills at exactly the file limit are taken, each SKILL.md counted, and so is
+// a name of the longest a file name may be; names that differ in more than
+// case are separate skills.
 func TestSkillsValidate_AcceptsTheLimitsAndPortableNames(t *testing.T) {
-	if err := manyFiles(MaxSkillFiles).Validate(); err != nil {
-		t.Fatalf("%d files: %v", MaxSkillFiles, err)
+	if err := manyFiles(MaxSkillFiles - 1).Validate(); err != nil {
+		t.Fatalf("%d files and a SKILL.md: %v", MaxSkillFiles-1, err)
+	}
+	if err := manySkills(MaxSkillFiles).Validate(); err != nil {
+		t.Fatalf("%d skills: %v", MaxSkillFiles, err)
+	}
+	if err := (Skills{strings.Repeat("a", MaxSkillSegmentBytes): {Skill: "x"}}).Validate(); err != nil {
+		t.Fatalf("a %d-byte name: %v", MaxSkillSegmentBytes, err)
 	}
 	skills := Skills{"foo-bar_1.2": {Skill: "x", Files: []SkillFile{{Path: ".env"}, {Path: "con-tents.md"}}}, "Foo2": {Skill: "x"}}
 	if err := skills.Validate(); err != nil {

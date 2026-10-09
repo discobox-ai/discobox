@@ -20111,7 +20111,8 @@ type SandboxCreateConfig struct {
 	Git OptSandboxGitIdentity `json:"git"`
 	// Skills to install into the harness's skill directories on the sandbox's first launch, by name,
 	// after the image's and the repository's and winning on a name they share. Fixed at create; at most
-	// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files.
+	// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files, each
+	// skill's SKILL.md among them.
 	Skills OptSandboxCreateConfigSkills `json:"skills"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
@@ -20356,7 +20357,8 @@ func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
 
 // Skills to install into the harness's skill directories on the sandbox's first launch, by name,
 // after the image's and the repository's and winning on a name they share. Fixed at create; at most
-// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files.
+// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files, each
+// skill's SKILL.md among them.
 type SandboxCreateConfigSkills map[string]SandboxSkill
 
 func (s *SandboxCreateConfigSkills) init() SandboxCreateConfigSkills {

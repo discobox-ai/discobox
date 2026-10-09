@@ -20,7 +20,8 @@ control plane's resolved harness config.
   sandbox on its first launch; `Skills.Validate` is the one rule the server,
   the CLI and the sandbox all hold — a name is one directory, a file stays in
   its skill, every name and path writable on every sandbox platform, at most
-  `MaxSkillsBytes` of content and paths in `MaxSkillFiles` files; ADR
+  `MaxSkillsBytes` of content and paths in `MaxSkillFiles` files, each
+  `SKILL.md` counted; ADR
   26-10-09-395; `_provenance` leaves them out, so the bootstrap carries them
   once), the create-time `Description` (only a seed for the
   sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
