@@ -206,6 +206,9 @@ user's move, and why that row is at that rank. Issue and PR numbers in the
 table are plain text; under the table, list each one's GitHub URL, one per
 line, because a link inside a table cell renders with its URL in a terminal.
 Rank by what unblocks the most, then by how hard a decision is to reverse.
+A worker's `ready` or `blocked` tag (deliver-issue §7) is its own verdict;
+`status` prints it as `#ready` or `#blocked`. Read it before its screen. The
+user finds them with `discobox ls --all --tag ready` (or `--tag blocked`).
 List which PRs are ready and the order to merge them (foundational changes
 first, and a PR that shares files with a larger one before it). After each
 merge, `after-merge` waits for GitHub to recompute and has every PR that went `dirty` rebase its own branch. A PR that
