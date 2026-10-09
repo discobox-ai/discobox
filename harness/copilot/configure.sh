@@ -420,7 +420,7 @@ while [ -z "$TOKEN" ]; do
 	echo
 	printf '%s\n' "  1. ${C_BOLD}A fine-grained personal access token${C_RESET} (recommended). With only the"
 	echo "     \"Copilot Requests\" permission it reaches Copilot and nothing else."
-	printf '%s\n' "  2. ${C_BOLD}${C_CMD}/login${C_RESET} inside Copilot, by device code. Its token can also act on"
+	printf '%s\n' "  2. ${C_BOLD}${C_CMD}/login${C_RESET} inside Copilot, in your browser. Its token can also act on"
 	echo "     every repository your account can, from inside every discobox."
 	echo
 	choose_sign_in
@@ -452,9 +452,10 @@ while [ -z "$TOKEN" ]; do
 	echo "Then, in Copilot:"
 	echo
 	if [ "$METHOD" = login ]; then
-		printf '%s\n' "  1. ${C_BOLD}${C_CMD}/login${C_RESET}   Sign in. Nothing can be saved without it. This sandbox has"
-		echo "              no browser: open the link it prints on your own machine"
-		echo "              and enter the code."
+		printf '%s\n' "  1. ${C_BOLD}${C_CMD}/login${C_RESET}   Sign in. Nothing can be saved without it. Open the link it"
+		echo "              prints in your own browser: the port it calls back to is"
+		echo "              forwarded from your machine. \"Sign in with a device code\""
+		echo "              works too."
 		printf '%s\n' "  2. ${C_BOLD}${C_CMD}/exit${C_RESET}    Leave Copilot when you're done. Setup only finishes"
 		echo "              once you exit — staying in blocks it."
 	else

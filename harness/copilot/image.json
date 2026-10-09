@@ -16,6 +16,12 @@
     ],
     "config": {
       "reminder": "Sign in, optionally set the default model with /config model, then finish configuration with /exit.",
+      "ports": [
+        {
+          "ephemeral": true,
+          "unavailable": "Copilot's browser sign-in can finish only if its callback port is free on your machine; if it is not, run /login again for another port, or choose \"Sign in with a device code\"."
+        }
+      ],
       "command": [
         "/usr/local/libexec/discobox/configure-copilot"
       ]
