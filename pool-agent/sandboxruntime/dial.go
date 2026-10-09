@@ -27,15 +27,24 @@ type Dialer func(ctx context.Context) (net.Conn, error)
 // It keeps no idle connections. A transport is built per use, and an idle
 // connection kept by one nobody holds would be a socket leaked until the
 // idle timeout; it is also one that might outlive the sandbox it reaches.
-// Upgrades are unaffected: net/http leaves a protocol switch's Connection
-// header alone.
+// Upgrades are unaffected: a protocol switch hands its connection to the
+// caller, which keeps it as long as the upgrade lasts.
+//
+// It keeps none by holding no idle connection (a negative per-host limit, so
+// every one is closed once its response is read), not by disabling
+// keep-alives. A keep-alive request is what lets a sandbox's server answer
+// before reading the body — a refusal, as the sandbox agent's auth answers —
+// and still be heard: net/http drains an unread body only on a connection it
+// keeps, and closes one sent Connection: close with the bytes still unread,
+// which is a reset that can reach this side before the response does and turn
+// a refusal into a transport error (#106).
 func (d Dialer) Transport() *http.Transport {
 	t := internalhttp.Transport()
 	t.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return d(ctx)
 	}
 	t.ForceAttemptHTTP2 = false
-	t.DisableKeepAlives = true
+	t.MaxIdleConnsPerHost = -1
 	return t
 }
 
