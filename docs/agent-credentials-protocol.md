@@ -180,14 +180,16 @@ GET /v1/credentials/requests/{requestId}
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use", "uses": [{ "useId": "use_7f3c…", "description": "…" }] }
+{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use", "uses": [{ "useId": "use_7f3c…", "description": "…", "expiresAt": "2026-08-12T18:00:00Z" }] }
 ```
 
 `status` is one of `pending`, `granted`, `denied`. `uses` is present once
 granted — the approver may have edited the descriptions, so the granted uses
 are authoritative, not the requested ones. For `purpose` `use` they carry the
 ids `get` accepts; for `delegate` they say what the credential may be delegated
-for, and `get` accepts none of them.
+for, and `get` accepts none of them. Each granted use's `expiresAt` is when the
+approval lapses, as `list` reports it: the lifetime the approver chose, which
+need not be the one asked for, and absent when it does not expire on its own.
 Discobox reports an approval whose grant has since been revoked as `denied`,
 and a request id that is not the calling sandbox's own as `not_found`.
 

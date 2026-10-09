@@ -3402,6 +3402,10 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                expiresAt:
+                    description: When the grant behind the granted uses lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
+                    format: date-time
+                    type: string
                 purpose:
                     description: What the request asks the credential for. For delegate, the granted uses are what the sandbox may delegate the credential for, and none of them takes a value.
                     enum:

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/proxy"
@@ -290,5 +291,21 @@ func TestRequestPassesEveryHostOn(t *testing.T) {
 	}
 	if len(fake.requests) != 1 || strings.Join(fake.requests[0].Hosts, ",") != "api.github.com,api.githubcopilot.com" {
 		t.Fatalf("relayed = %+v, want the hosts as sent", fake.requests)
+	}
+}
+
+// A granted request's lifetime is the approver's, and the sandbox polling it
+// is told it on every granted use; a grant that never lapses carries none.
+func TestRequestStatusCarriesTheGrantedLifetime(t *testing.T) {
+	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	uses := []credentialUseDoc{{UseID: "use_1", Description: "Push the branch"}}
+
+	timed := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Uses: uses, ExpiresAt: &expires}.protocol()
+	if got := timed.Uses[0].ExpiresAt; got == nil || !got.Equal(expires) {
+		t.Fatalf("expiresAt = %v, want %v", got, expires)
+	}
+	forever := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Uses: uses}.protocol()
+	if got := forever.Uses[0].ExpiresAt; got != nil {
+		t.Fatalf("expiresAt = %v on a grant that never expires, want none", got)
 	}
 }

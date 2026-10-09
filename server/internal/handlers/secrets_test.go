@@ -452,3 +452,21 @@ func TestSecretGrantsAndRequestsCarryTheirHosts(t *testing.T) {
 		t.Fatalf("request = %+v, want hosts %q", request, want)
 	}
 }
+
+// The approver picks a grant's lifetime, so the status the asking sandbox
+// polls says what was picked: an expiry, or none for a grant that never lapses.
+func TestSandboxCredentialRequestStatusCarriesTheGrantedLifetime(t *testing.T) {
+	approved := &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusApproved}
+	uses := []model.SecretUse{{UseID: "use-1", Description: "Push the branch"}}
+
+	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	timed := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses, ExpiresAt: &expires})
+	if got, ok := timed.ExpiresAt.Get(); !ok || !got.Equal(expires) {
+		t.Fatalf("expiresAt = %v (set %v), want %v", got, ok, expires)
+	}
+
+	forever := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses})
+	if forever.ExpiresAt.IsSet() {
+		t.Fatalf("expiresAt = %v on a grant that never expires, want it absent", forever.ExpiresAt)
+	}
+}
