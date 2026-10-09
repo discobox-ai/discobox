@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -32,12 +33,38 @@ func SandboxGrantScopes(sandbox *model.Sandbox) []GrantScope {
 	return append(scopes, GrantScope{Scope: model.SecretGrantScopeProject, ScopeKey: sandbox.ProjectID})
 }
 
+// CreateSecretGrant stores a grant, refusing with ErrNotFound one scoped to a
+// sandbox or harness config the project does not hold. Deleting either takes
+// its grants with it (deleteSecretGrantsByScopeTx), so a grant written for one
+// already gone — a request approved after its discobox was purged — would be
+// the orphan that delete exists to prevent.
+//
+// The target is read FOR SHARE, and DeleteSandbox and DeleteHarnessConfig lock
+// it FOR UPDATE before deleting its grants, so the two serialize: a delete that
+// locks first leaves this nothing to find, and one that waits deletes the grant
+// this wrote. SQLite's single writer serializes them without the clause.
 func (s *Store) CreateSecretGrant(ctx context.Context, grant *model.SecretGrant) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return write.Create(grant).Error
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		var target any
+		switch grant.Scope {
+		case model.SecretGrantScopeSandbox:
+			target = &model.Sandbox{}
+		case model.SecretGrantScopeHarnessConfig:
+			target = &model.HarnessConfig{}
+		}
+		if target != nil {
+			var ids []string
+			if err := tx.Model(target).Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("project_id = ? AND id = ?", grant.ProjectID, grant.ScopeKey).
+				Pluck("id", &ids).Error; err != nil {
+				return err
+			}
+			if len(ids) == 0 {
+				return ErrNotFound
+			}
+		}
+		return tx.Create(grant).Error
+	})
 }
 
 // UpdateSecretGrant saves changes to an existing grant in place, keeping its ID
@@ -78,6 +105,14 @@ func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID string
 // secret is deleted so no standing authorization dangles.
 func (s *Store) deleteSecretGrantsBySecret(tx *gorm.DB, secretID string) error {
 	return tx.Where("secret_id = ?", secretID).Delete(&model.SecretGrant{}).Error
+}
+
+// deleteSecretGrantsByScopeTx removes every grant scoped to one sandbox or
+// harness config. Called when that sandbox or config is deleted: its ID is
+// never reused, so a grant naming it can never cover anything again, and left
+// behind it would only be listed — read as a standing authorization nobody has.
+func deleteSecretGrantsByScopeTx(tx *gorm.DB, scope, scopeKey string) error {
+	return tx.Where("scope = ? AND scope_key = ?", scope, scopeKey).Delete(&model.SecretGrant{}).Error
 }
 
 // DeleteSecretGrant revokes a grant. The lookup and the delete share a

@@ -19,6 +19,14 @@ question someone asked, and approving one mints a grant. Revoking the grant
 takes the credential away even though the request row stays approved — the
 request is history, the grant is the authority.
 
+A grant lives as long as what it is scoped to: deleting a sandbox or harness
+config deletes the grants scoped to it (`deleteSecretGrantsByScopeTx`), since
+its ID is never reused and the grant could cover nothing again, and
+`CreateSecretGrant` refuses one for a sandbox or harness config that does not
+exist — reading it `FOR SHARE` against the delete's `FOR UPDATE`, so the two
+serialize. An expired grant is kept — approving
+the same ask renews it in place — and listed; the console hides it until asked.
+
 ## Two species of request
 
 They share a table and are handled apart on purpose (ADR 0031 §5). Declared uses
