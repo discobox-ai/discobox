@@ -330,7 +330,8 @@ skill):
 
 Merge, do not replace: keep every tag that is not a triage label, and drop the
 previous issue's labels (they are all triage labels, so the filter below does
-it) and, for a new issue, the `pr` tag its delivery left:
+it), a `ready` or `blocked` tag a delivery left (deliver-issue §7), and, for a
+new issue, the `pr` tag its delivery left:
 
 ```bash
 S=<scratchpad>
@@ -339,7 +340,7 @@ jq --arg n 37 --arg desc '#37: <issue title>' \
   --argjson labels '["bug","area/server","priority/high","triaged"]' \
   --argjson triage '<every label name in §3, spaces turned into ->' '
   (.tags.issue // "") as $prev
-  | .tags = ((.tags // {}) | with_entries(select(.key as $k | $triage | index($k) | not)))
+  | .tags = ((.tags // {}) | with_entries(select(.key as $k | $triage | index($k) | not)) | del(.ready, .blocked))
           + {issue: $n} + ($labels | map(gsub(" "; "-")) | map({(.): ""}) | add)
   | if $prev != $n then del(.tags.pr) else . end
   | if (.description // "") == "" or ($prev != "" and ((.description // "") | startswith("#\($prev): ")))

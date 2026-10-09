@@ -75,11 +75,12 @@ Nobody may be watching your screen to answer.
   ```bash
   S=<scratchpad>; M=~/.discobox/meta.json
   { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <N> '(.tags.issue // "") as $prev
-    | .tags = ((.tags // {}) + {issue: $v}) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
+    | .tags = ((.tags // {}) + {issue: $v} | del(.ready, .blocked)) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
     jq -e --arg v <N> '.tags.issue == $v and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
   ```
 
-  A new issue drops the `pr` tag the last one left. The `jq -e` check proves
+  A new issue drops the `pr` tag the last one left, and a fresh start drops a
+`ready` or `blocked` tag (§7) the last run left. The `jq -e` check proves
   the merge produced the tag and at most 64 tags (more makes the whole file
   invalid); when it fails nothing is written: with more than 64 tags merged,
   tell the user the box's tags are full and drop none of theirs to make
@@ -245,6 +246,39 @@ gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.us
 
 If a grant expires mid-watch, ask for the same uses again. Status line on
 every change: `PR #<pr>: <what happened, what you did>`.
+
+### Ready or blocked
+
+Two plain tags on the box tell the user which PRs need them: `ready` and
+`blocked`, each with an empty value. The console shows them as `#ready` and
+`#blocked`, and `discobox ls --all --tag ready` lists them (without `--all`,
+`ls` skips boxes created from another source, as a lead's workers are). Set at most one of them,
+and move it each time the state changes, from §0 until the end:
+
+- **`ready`**: §6 has stopped, every check on the head commit is green, every
+  review, thread and comment has a reply, `mergeable_state` is not `dirty`, and
+  the PR is marked ready. All it needs is a human merge.
+- **`blocked`**: you cannot get there without someone else. That covers a
+  question waiting on the user, a grant refused or still waiting for an
+  answer when the next step needs it, five failed CI rounds (`open-pr` §4), or a conflict you cannot
+  resolve while keeping both changes. Say why in the status line. GitHub's
+  own `mergeable_state` `blocked` (a required review not yet given) is not
+  this tag: that PR is waiting for its human, so it can still be `ready`.
+- **neither**: you are working. When a `ready` PR goes `dirty`, gets a new
+  review or comment, or fails a check, drop `ready` before you start on it.
+  Drop `blocked` as soon as the answer comes.
+- **merged or closed**: drop both.
+
+Set `<s>` to `ready` or `blocked`, or leave it empty to drop both:
+
+```bash
+S=<scratchpad>; M=~/.discobox/meta.json
+{ cat $M 2>/dev/null || echo '{}'; } | jq --arg s '<s>' '.tags = ((.tags // {}) | del(.ready, .blocked))
+  | if $s != "" then .tags[$s] = "" else . end' > $S/meta.json &&
+  jq -e --arg s '<s>' '($s == "" or .tags[$s] == "") and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
+```
+
+If the check fails, nothing is written, and the rules for §0's tag merge apply.
 
 ## Done when
 
