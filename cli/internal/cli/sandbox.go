@@ -46,6 +46,8 @@ type sandboxCreateOptions struct {
 	homeDirectory string
 	gitUserName   string
 	gitUserEmail  string
+	skillDirs     []string
+	userSkills    bool
 	wait          bool
 	waitTimeout   time.Duration
 }
@@ -553,6 +555,8 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
 	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")
 	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
+	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Directory of skills to install in the discobox, each a subdirectory holding a SKILL.md; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills")
+	cmd.Flags().BoolVar(&opts.userSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
@@ -629,6 +633,11 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if git, ok := sandboxGitFromCreateOptions(opts); ok {
 		config.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
 	}
+	skills, err := sandboxcreate.ReadSkills(opts.skillDirs, opts.userSkills)
+	if err != nil {
+		return nil, err
+	}
+	sandboxcreate.SetCreateSandboxSkills(config, skills)
 	return body, nil
 }
 

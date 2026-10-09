@@ -1126,6 +1126,8 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
+		SkillDirs:           req.SkillDirs,
+		UserSkills:          req.UserSkills,
 	}
 	// What each declared source resolved to, in the window's own form: it has
 	// no scrollback to keep a line in, so the report is narrated as it happens

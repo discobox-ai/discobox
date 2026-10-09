@@ -49,6 +49,11 @@ type PromptOptions struct {
 	Prompt               []string
 	Env                  []string
 	Secret               []string
+	// SkillDirs and UserSkills are --skills and --user-skills: directories of
+	// skills read into the request, and whether ~/.claude/skills and
+	// ~/.agents/skills are read first (ReadSkills).
+	SkillDirs  []string
+	UserSkills bool
 	// Grants are the uses of credentials the new discobox is given, already
 	// resolved to what the server takes: a secret by its ID, or a well-known
 	// credential by its own. ParseGrants reads them from --grant.
@@ -136,6 +141,11 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		body.Config.SetSecrets(secrets)
 	}
 	body.Grants = opts.Grants
+	skills, err := ReadSkills(opts.SkillDirs, opts.UserSkills)
+	if err != nil {
+		return nil, nil, err
+	}
+	SetCreateSandboxSkills(&body.Config, skills)
 	if poolID := strings.TrimSpace(opts.PoolID); poolID != "" {
 		body.SetPoolId(apiclientgen.NewOptString(poolID))
 	}
