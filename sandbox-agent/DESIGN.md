@@ -364,12 +364,17 @@ flowchart LR
   derived from `sources`: a source-less sandbox — `discobox new` with nothing to
   clone, and every configure sandbox — would then trust nothing, and its harness
   would open on a trust prompt for the directory it is already sitting in.
-- A repository's `.discobox/skills` is copied, never reconciled. It is installed
-  once — on the primary terminal's first launch — and from then on the copies are
-  the harness's files: it prunes, renames, and rewrites them, and restoring them
-  underneath it would undo that. Nothing re-reads the directory afterwards, so a
-  skill added to the repository later reaches a new sandbox, not this one.
-  See ADR 0072.
+- Skills are copied, never reconciled, from three sources in order: the image's
+  (`BuiltinSkillsDir`), the repository's `.discobox/skills`, and the ones the
+  sandbox was created with (`sandbox.json`'s `skills`, written from content).
+  Each later one wins on a name it shares with an earlier one, file by file;
+  none deletes. They are installed once — on the primary terminal's first
+  launch — and from then on the copies are the harness's files: it prunes,
+  renames, and rewrites them, and restoring them underneath it would undo that.
+  Nothing re-reads them afterwards, so a skill added to the repository later
+  reaches a new sandbox, not this one. The created-with skills are validated
+  again before anything is written under home. See ADR 0072 and ADR
+  26-10-09-395.
 - Treat the unit manager as the source of truth for terminal unit liveness —
   systemd on Linux, the agent's own `Supervisor` elsewhere (see
   [Supervision](#supervision)). Runtime JSON

@@ -24,6 +24,7 @@ import (
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the
@@ -90,6 +91,9 @@ type ServiceConfig struct {
 	// can be relaunched on demand (it is ignored once the primary has launched
 	// once and relaunch uses the harness's relaunch command instead).
 	Prompt []string
+	// Skills are the skills the sandbox was created with, the last of the
+	// three sources installSkills copies from (ADR 26-10-09-395 §3).
+	Skills sandboxconfig.Skills
 	// AwaitSources blocks until the sandbox's sources are in place, and is
 	// cleared for every sandbox that already had them when its container was
 	// created (see sourcesready.Gate). Only the primary terminal's very first
@@ -122,6 +126,7 @@ type Service struct {
 	// (judgeQueueWait).
 	judgingWait  time.Duration
 	bootPrompt   []string
+	skills       sandboxconfig.Skills
 	awaitSources func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
@@ -179,6 +184,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		judging:       make(chan struct{}, maxJudgingRuns),
 		judgingWait:   judgeQueueWait,
 		bootPrompt:    append([]string(nil), cfg.Prompt...),
+		skills:        cfg.Skills,
 		awaitSources:  cfg.AwaitSources,
 		installing:    map[string]struct{}{},
 		launches:      map[string]*terminalLaunch{},
@@ -746,10 +752,14 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 		}
 	}
 	if !launched {
-		// The image's skills and the repository's own, installed on the
-		// sandbox's first launch and never again (see skills.go). It sits here
-		// rather than in the installer that runs before every terminal because
-		// the copies belong to the harness once they land.
+		// The image's skills, the repository's own and the ones the sandbox
+		// was created with, installed on the sandbox's first launch and never
+		// again (see skills.go). It sits here rather than in the installer
+		// that runs before every terminal because the copies belong to the
+		// harness once they land. A created-with skill the sandbox refuses
+		// fails this launch, as an unreadable skills directory does: the
+		// control plane refuses the same skills at create, so reaching it
+		// here means the two disagree, which is a bug to see, not to skip.
 		if err := s.installSkills(); err != nil {
 			return execs.Exec{}, err
 		}

@@ -2063,6 +2063,52 @@ func (o OptSandboxConfigHarnessMode) Or(d SandboxConfigHarnessMode) SandboxConfi
 	return d
 }
 
+// NewOptSandboxConfigSkills returns new OptSandboxConfigSkills with value set to v.
+func NewOptSandboxConfigSkills(v SandboxConfigSkills) OptSandboxConfigSkills {
+	return OptSandboxConfigSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigSkills is optional SandboxConfigSkills.
+type OptSandboxConfigSkills struct {
+	Value SandboxConfigSkills
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigSkills was set.
+func (o OptSandboxConfigSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigSkills) Reset() {
+	var v SandboxConfigSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigSkills) SetTo(v SandboxConfigSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigSkills) Get() (v SandboxConfigSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigSkills) Or(d SandboxConfigSkills) SandboxConfigSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigSourceCodeReferences returns new OptSandboxConfigSourceCodeReferences with value set to v.
 func NewOptSandboxConfigSourceCodeReferences(v SandboxConfigSourceCodeReferences) OptSandboxConfigSourceCodeReferences {
 	return OptSandboxConfigSourceCodeReferences{
@@ -4146,6 +4192,7 @@ type SandboxConfig struct {
 	Description         OptString                   `json:"description"`
 	Env                 OptSandboxConfigEnv         `json:"env"`
 	Git                 OptSandboxGitIdentity       `json:"git"`
+	Skills              OptSandboxConfigSkills      `json:"skills"`
 	Image               OptString                   `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
 	// built from any other, so a moved tag never silently changes a running sandbox.
@@ -4205,6 +4252,11 @@ func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 // GetGit returns the value of Git.
 func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
 	return s.Git
+}
+
+// GetSkills returns the value of Skills.
+func (s *SandboxConfig) GetSkills() OptSandboxConfigSkills {
+	return s.Skills
 }
 
 // GetImage returns the value of Image.
@@ -4290,6 +4342,11 @@ func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 // SetGit sets the value of Git.
 func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
 	s.Git = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *SandboxConfig) SetSkills(val OptSandboxConfigSkills) {
+	s.Skills = val
 }
 
 // SetImage sets the value of Image.
@@ -4398,6 +4455,17 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 	}
 }
 
+type SandboxConfigSkills map[string]SandboxSkill
+
+func (s *SandboxConfigSkills) init() SandboxConfigSkills {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkill{}
+		*s = m
+	}
+	return m
+}
+
 type SandboxConfigSourceCodeReferences map[string]GitSource
 
 func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeReferences {
@@ -4435,6 +4503,70 @@ func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
 // SetUserName sets the value of UserName.
 func (s *SandboxGitIdentity) SetUserName(val OptString) {
 	s.UserName = val
+}
+
+// One skill the sandbox was created with, by content, forwarded into its bootstrap verbatim.
+// Ref: #/components/schemas/SandboxSkill
+type SandboxSkill struct {
+	Files []SandboxSkillFile `json:"files"`
+	Skill string             `json:"skill"`
+}
+
+// GetFiles returns the value of Files.
+func (s *SandboxSkill) GetFiles() []SandboxSkillFile {
+	return s.Files
+}
+
+// GetSkill returns the value of Skill.
+func (s *SandboxSkill) GetSkill() string {
+	return s.Skill
+}
+
+// SetFiles sets the value of Files.
+func (s *SandboxSkill) SetFiles(val []SandboxSkillFile) {
+	s.Files = val
+}
+
+// SetSkill sets the value of Skill.
+func (s *SandboxSkill) SetSkill(val string) {
+	s.Skill = val
+}
+
+// Ref: #/components/schemas/SandboxSkillFile
+type SandboxSkillFile struct {
+	Content    []byte  `json:"content"`
+	Executable OptBool `json:"executable"`
+	Path       string  `json:"path"`
+}
+
+// GetContent returns the value of Content.
+func (s *SandboxSkillFile) GetContent() []byte {
+	return s.Content
+}
+
+// GetExecutable returns the value of Executable.
+func (s *SandboxSkillFile) GetExecutable() OptBool {
+	return s.Executable
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxSkillFile) GetPath() string {
+	return s.Path
+}
+
+// SetContent sets the value of Content.
+func (s *SandboxSkillFile) SetContent(val []byte) {
+	s.Content = val
+}
+
+// SetExecutable sets the value of Executable.
+func (s *SandboxSkillFile) SetExecutable(val OptBool) {
+	s.Executable = val
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxSkillFile) SetPath(val string) {
+	s.Path = val
 }
 
 // Ref: #/components/schemas/SandboxUpdateConfig

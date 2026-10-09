@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -729,6 +730,11 @@ type SandboxManifest struct {
 	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
 	GitUserName          *string              `gorm:"column:git_user_name;type:text" json:"gitUserName,omitempty" doc:"Value for git's user.name inside the sandbox"`
 	GitUserEmail         *string              `gorm:"column:git_user_email;type:text" json:"gitUserEmail,omitempty" doc:"Value for git's user.email inside the sandbox"`
+	// Skills ride the sandbox's bootstrap, so they are spec: fixed at create
+	// and part of the fingerprint. Omitted when empty, which keeps the
+	// fingerprint of every sandbox created without them what it was before
+	// they existed (ADR 26-10-09-395 §2).
+	Skills sandboxconfig.Skills `gorm:"column:skills;type:text;serializer:json" json:"skills,omitempty" doc:"Skills installed into the harness's skill directories on the sandbox's first launch"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against

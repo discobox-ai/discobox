@@ -255,6 +255,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, err
 	}
 	git := services.SandboxGitToModel(config.Git)
+	skills, err := services.SandboxSkillsToModel(config.Skills)
+	if err != nil {
+		return nil, err
+	}
 	harnessMode := sandboxconfig.HarnessModeRun
 	if mode, ok := config.HarnessMode.Get(); ok {
 		harnessMode = string(mode)
@@ -329,6 +333,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			HomeDirectory:        user.HomeDirectory,
 			GitUserName:          git.UserName,
 			GitUserEmail:         git.UserEmail,
+			Skills:               skills,
 		},
 		SourceRoot: sourceRoot,
 		Origin:     origin,

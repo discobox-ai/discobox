@@ -65,6 +65,7 @@ type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
 type OptSandboxUser = serverapi.OptSandboxUser
 type OptSandboxGitIdentity = serverapi.OptSandboxGitIdentity
+type OptSandboxCreateConfigSkills = serverapi.OptSandboxCreateConfigSkills
 type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
 type OptSandboxCreateConfigSourceCodeReferences = serverapi.OptSandboxCreateConfigSourceCodeReferences
 type HTTPClientLease = transport.HTTPClientLease

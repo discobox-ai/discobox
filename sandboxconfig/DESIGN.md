@@ -16,7 +16,13 @@ control plane's resolved harness config.
   `Provider` — which also carries the public keys the sandbox trusts and, as
   `Pool`, where its pool serves it), sandbox-agent daemon settings
   (`AgentRuntime`), sources,
-  model/prompt/user/git, the create-time `Description` (only a seed for the
+  model/prompt/user/git, the create-time `Skills` (content, installed by the
+  sandbox on its first launch; `Skills.Validate` is the one rule the server,
+  the CLI and the sandbox all hold — a name is one directory, a file stays in
+  its skill, every name and path writable on every sandbox platform, at most
+  `MaxSkillsBytes` of content and paths in `MaxSkillFiles` files; ADR
+  26-10-09-395; `_provenance` leaves them out, so the bootstrap carries them
+  once), the create-time `Description` (only a seed for the
   sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
   sandbox-agent's runc wrapper. `Files` is the harness config's configured-file

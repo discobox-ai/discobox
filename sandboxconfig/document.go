@@ -67,6 +67,11 @@ type RuntimeLayer struct {
 
 	// Files overlays onto the image's declared files, by path.
 	Files []File `json:"files,omitempty"`
+
+	// Skills are the skills the sandbox was created with (ADR 26-10-09-395).
+	// Single-writer: neither the image nor the project contributes any; theirs
+	// are installed from their own directories.
+	Skills Skills `json:"skills,omitempty"`
 }
 
 // Provider is non-secret provider context for the sandbox runtime.

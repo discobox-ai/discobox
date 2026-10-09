@@ -8,6 +8,7 @@ import (
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -304,5 +305,92 @@ func writeTreeFile(t *testing.T, root, rel, content string, mode os.FileMode) {
 	}
 	if err := os.WriteFile(path, []byte(content), mode); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// The sandbox's own skills are written last, from content, so they win over the
+// repository's on a name they share, and leave its other skills alone
+// (ADR 26-10-09-395 §3).
+func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
+	source, home := t.TempDir(), t.TempDir()
+	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "the repository's\n", 0o644)
+	writeSkill(t, source, filepath.Join("review", "old.md"), "kept\n", 0o644)
+	writeSkill(t, source, filepath.Join("other", "SKILL.md"), "untouched\n", 0o644)
+	svc := newSkillsTestService(t, source, home, nil)
+	svc.skills = sandboxconfig.Skills{"review": {Skill: "the sandbox's\n", Files: []sandboxconfig.SkillFile{
+		{Path: "bin/run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
+		{Path: "logo.png", Content: []byte{0x89, 0}},
+	}}}
+
+	if err := svc.installSkills(); err != nil {
+		t.Fatalf("install skills: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		root := filepath.Join(home, dir)
+		if got := readFile(t, filepath.Join(root, "review", "SKILL.md")); got != "the sandbox's\n" {
+			t.Fatalf("%s: review = %q, want the sandbox's", dir, got)
+		}
+		if got := readFile(t, filepath.Join(root, "review", "old.md")); got != "kept\n" {
+			t.Fatalf("%s: review/old.md = %q, want the repository's left in place", dir, got)
+		}
+		if got := readFile(t, filepath.Join(root, "other", "SKILL.md")); got != "untouched\n" {
+			t.Fatalf("%s: other = %q, want the repository's left alone", dir, got)
+		}
+		if got := readFile(t, filepath.Join(root, "review", "logo.png")); got != "\x89\x00" {
+			t.Fatalf("%s: logo.png = %q, want its bytes", dir, got)
+		}
+		if runtime.GOOS == "windows" {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(root, "review", "bin", "run.sh"))
+		if err != nil {
+			t.Fatalf("%s: stat run.sh: %v", dir, err)
+		}
+		if info.Mode().Perm() != 0o755 {
+			t.Fatalf("%s: run.sh mode = %v, want 0755", dir, info.Mode().Perm())
+		}
+		info, err = os.Stat(filepath.Join(root, "review", "logo.png"))
+		if err != nil {
+			t.Fatalf("%s: stat logo.png: %v", dir, err)
+		}
+		if info.Mode().Perm() != 0o644 {
+			t.Fatalf("%s: logo.png mode = %v, want 0644", dir, info.Mode().Perm())
+		}
+	}
+}
+
+// A sandbox whose only skills are its own still has them installed.
+func TestTheSandboxsSkillsAreInstalledWithNothingElseToCopy(t *testing.T) {
+	source, home := t.TempDir(), t.TempDir()
+	svc := newSkillsTestService(t, source, home, nil)
+	svc.skills = sandboxconfig.Skills{"mine": {Skill: "# mine\n"}}
+
+	if err := svc.installSkills(); err != nil {
+		t.Fatalf("install skills: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		if got := readFile(t, filepath.Join(home, dir, "mine", "SKILL.md")); got != "# mine\n" {
+			t.Fatalf("%s: mine = %q", dir, got)
+		}
+	}
+}
+
+// A skill that would write outside its directory is refused before anything is
+// written under home.
+func TestASkillLeavingItsDirectoryIsRefusedAndWritesNothing(t *testing.T) {
+	source, home := t.TempDir(), t.TempDir()
+	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "# review\n", 0o644)
+	svc := newSkillsTestService(t, source, home, nil)
+	svc.skills = sandboxconfig.Skills{"evil": {Skill: "x", Files: []sandboxconfig.SkillFile{{Path: "../../.bashrc", Content: []byte("x")}}}}
+
+	if err := svc.installSkills(); err == nil {
+		t.Fatal("install skills: nil, want a refusal")
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("home holds %v, want nothing written", entries)
 	}
 }

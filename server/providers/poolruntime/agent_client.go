@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -785,6 +786,25 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	git.SetUserEmail(poolOptStringPtr(opts.GitUserEmail))
 	if git.UserName.Set || git.UserEmail.Set {
 		config.Git = poolclient.NewOptSandboxGitIdentity(git)
+	}
+	if len(opts.Skills) > 0 {
+		config.Skills = poolclient.NewOptSandboxConfigSkills(poolSkills(opts.Skills))
+	}
+	return out
+}
+
+func poolSkills(skills sandboxconfig.Skills) poolclient.SandboxConfigSkills {
+	out := make(poolclient.SandboxConfigSkills, len(skills))
+	for name, skill := range skills {
+		files := make([]poolapimodel.SandboxSkillFile, 0, len(skill.Files))
+		for _, file := range skill.Files {
+			poolFile := poolapimodel.SandboxSkillFile{Path: file.Path, Content: file.Content}
+			if file.Executable {
+				poolFile.Executable = poolclient.NewOptBool(true)
+			}
+			files = append(files, poolFile)
+		}
+		out[name] = poolapimodel.SandboxSkill{Skill: skill.Skill, Files: files}
 	}
 	return out
 }

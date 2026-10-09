@@ -12547,6 +12547,52 @@ func (o OptSandboxCreateConfigHarnessMode) Or(d SandboxCreateConfigHarnessMode) 
 	return d
 }
 
+// NewOptSandboxCreateConfigSkills returns new OptSandboxCreateConfigSkills with value set to v.
+func NewOptSandboxCreateConfigSkills(v SandboxCreateConfigSkills) OptSandboxCreateConfigSkills {
+	return OptSandboxCreateConfigSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigSkills is optional SandboxCreateConfigSkills.
+type OptSandboxCreateConfigSkills struct {
+	Value SandboxCreateConfigSkills
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigSkills was set.
+func (o OptSandboxCreateConfigSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigSkills) Reset() {
+	var v SandboxCreateConfigSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigSkills) SetTo(v SandboxCreateConfigSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigSkills) Get() (v SandboxCreateConfigSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigSkills) Or(d SandboxCreateConfigSkills) SandboxCreateConfigSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxCreateConfigSourceCodeReferences returns new OptSandboxCreateConfigSourceCodeReferences with value set to v.
 func NewOptSandboxCreateConfigSourceCodeReferences(v SandboxCreateConfigSourceCodeReferences) OptSandboxCreateConfigSourceCodeReferences {
 	return OptSandboxCreateConfigSourceCodeReferences{
@@ -19798,6 +19844,8 @@ type SandboxConfig struct {
 	Env OptSandboxConfigEnv `json:"env"`
 	// Git authorship identity to seed the sandbox user's ~/.gitconfig with.
 	Git OptSandboxGitIdentity `json:"git"`
+	// Names of the skills the sandbox was created with. Their content is not read back.
+	SkillNames []string `json:"skillNames"`
 	// Sandbox base image.
 	Image string `json:"image"`
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
@@ -19848,6 +19896,11 @@ func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 // GetGit returns the value of Git.
 func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
 	return s.Git
+}
+
+// GetSkillNames returns the value of SkillNames.
+func (s *SandboxConfig) GetSkillNames() []string {
+	return s.SkillNames
 }
 
 // GetImage returns the value of Image.
@@ -19918,6 +19971,11 @@ func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 // SetGit sets the value of Git.
 func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
 	s.Git = val
+}
+
+// SetSkillNames sets the value of SkillNames.
+func (s *SandboxConfig) SetSkillNames(val []string) {
+	s.SkillNames = val
 }
 
 // SetImage sets the value of Image.
@@ -20051,6 +20109,10 @@ type SandboxCreateConfig struct {
 	Env OptSandboxCreateConfigEnv `json:"env"`
 	// Git authorship identity to seed the sandbox user's ~/.gitconfig with.
 	Git OptSandboxGitIdentity `json:"git"`
+	// Skills to install into the harness's skill directories on the sandbox's first launch, by name,
+	// after the image's and the repository's and winning on a name they share. Fixed at create; at most
+	// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files.
+	Skills OptSandboxCreateConfigSkills `json:"skills"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Sandbox name.
@@ -20106,6 +20168,11 @@ func (s *SandboxCreateConfig) GetEnv() OptSandboxCreateConfigEnv {
 // GetGit returns the value of Git.
 func (s *SandboxCreateConfig) GetGit() OptSandboxGitIdentity {
 	return s.Git
+}
+
+// GetSkills returns the value of Skills.
+func (s *SandboxCreateConfig) GetSkills() OptSandboxCreateConfigSkills {
+	return s.Skills
 }
 
 // GetImage returns the value of Image.
@@ -20181,6 +20248,11 @@ func (s *SandboxCreateConfig) SetEnv(val OptSandboxCreateConfigEnv) {
 // SetGit sets the value of Git.
 func (s *SandboxCreateConfig) SetGit(val OptSandboxGitIdentity) {
 	s.Git = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *SandboxCreateConfig) SetSkills(val OptSandboxCreateConfigSkills) {
+	s.Skills = val
 }
 
 // SetImage sets the value of Image.
@@ -20280,6 +20352,20 @@ func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Skills to install into the harness's skill directories on the sandbox's first launch, by name,
+// after the image's and the repository's and winning on a name they share. Fixed at create; at most
+// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files.
+type SandboxCreateConfigSkills map[string]SandboxSkill
+
+func (s *SandboxCreateConfigSkills) init() SandboxCreateConfigSkills {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkill{}
+		*s = m
+	}
+	return m
 }
 
 // Additional Git sources to materialize in the sandbox.
@@ -23585,6 +23671,78 @@ func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
 }
 
 func (*SandboxServicesResponse) listSandboxServicesRes() {}
+
+// One skill, by content. Its name is its key, one directory with no slash that does not start with a
+// dot.
+// Ref: #/components/schemas/SandboxSkill
+type SandboxSkill struct {
+	// The skill's files other than its SKILL.md.
+	Files []SandboxSkillFile `json:"files"`
+	// The skill's SKILL.md.
+	Skill string `json:"skill"`
+}
+
+// GetFiles returns the value of Files.
+func (s *SandboxSkill) GetFiles() []SandboxSkillFile {
+	return s.Files
+}
+
+// GetSkill returns the value of Skill.
+func (s *SandboxSkill) GetSkill() string {
+	return s.Skill
+}
+
+// SetFiles sets the value of Files.
+func (s *SandboxSkill) SetFiles(val []SandboxSkillFile) {
+	s.Files = val
+}
+
+// SetSkill sets the value of Skill.
+func (s *SandboxSkill) SetSkill(val string) {
+	s.Skill = val
+}
+
+// One file of a skill.
+// Ref: #/components/schemas/SandboxSkillFile
+type SandboxSkillFile struct {
+	// The file's bytes.
+	Content []byte `json:"content"`
+	// Whether the file is installed executable, as a skill's helper script must be.
+	Executable OptBool `json:"executable"`
+	// Path inside the skill's directory, slash-separated, clean, and relative; never SKILL.md, which is
+	// the skill's own text.
+	Path string `json:"path"`
+}
+
+// GetContent returns the value of Content.
+func (s *SandboxSkillFile) GetContent() []byte {
+	return s.Content
+}
+
+// GetExecutable returns the value of Executable.
+func (s *SandboxSkillFile) GetExecutable() OptBool {
+	return s.Executable
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxSkillFile) GetPath() string {
+	return s.Path
+}
+
+// SetContent sets the value of Content.
+func (s *SandboxSkillFile) SetContent(val []byte) {
+	s.Content = val
+}
+
+// SetExecutable sets the value of Executable.
+func (s *SandboxSkillFile) SetExecutable(val OptBool) {
+	s.Executable = val
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxSkillFile) SetPath(val string) {
+	s.Path = val
+}
 
 // A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox
 // read it.
