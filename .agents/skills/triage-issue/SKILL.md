@@ -345,11 +345,15 @@ jq --arg n 37 --arg desc '#37: <issue title>' \
   | if (.description // "") == "" or ($prev != "" and ((.description // "") | startswith("#\($prev): ")))
     then .description = $desc else . end' \
   $S/meta.in.json > $S/meta.json
-jq -e --arg n 37 '.tags.issue == $n' $S/meta.json >/dev/null && cp $S/meta.json ~/.discobox/meta.json
+jq -e --arg n 37 '.tags.issue == $n and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json ~/.discobox/meta.json
 ```
 
-The `jq -e` check is what proves the merge produced tags; `jq .` alone passes
-on an empty file. The file is invalid — and ignored — if it holds any field
+The `jq -e` check is what proves the merge produced tags, and at most 64 of
+them (more makes the whole file invalid); `jq .` alone passes on an empty
+file. When it fails nothing is written: with more than 64 tags merged, tell
+the user the box's tags are full and drop none of theirs to make room;
+otherwise (the file empty or not valid JSON) say the merge failed and leave
+the file alone. The file is invalid — and ignored — if it holds any field
 but `description` and `tags`.
 
 Status line: `labeled #<N>: <labels>, comment <url>`.
