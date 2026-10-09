@@ -44,9 +44,11 @@ flowchart LR
   they resolve the provider's `sandbox.PoolRuntime` directly, without
   requiring the pool to be ready, registered, or its provider instance
   enabled, because they are asked for when the pool is broken
-  (`server/providers/DESIGN.md`). A backend with no pool runtime, no host log
-  (`ErrPoolLogsUnsupported`), or no guest image
-  (`ErrGuestImageBuildUnsupported`) answers 501.
+  (`server/providers/DESIGN.md`). A backend with no pool runtime, no host
+  console (`ErrPoolConsoleUnsupported`), no host log
+  (`ErrPoolLogsUnsupported`), no guest image
+  (`ErrGuestImageBuildUnsupported`), or no restart onto a built one
+  (`ErrGuestImageRestartUnsupported`) answers 501.
   `ClearPoolCache` resolves the pool's runtime the same way and calls
   `PoolRuntime.ClearCache`, which reaches the pool agent and waits for it to
   stop the pool's running sandboxes and empty the pool's caches. The agent owns
