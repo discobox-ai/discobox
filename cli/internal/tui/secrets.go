@@ -52,6 +52,12 @@ type secretList struct {
 	// that brought somebody here (ADR 0132).
 	refused map[string]SecretRejection
 
+	// expiredShown is whether a secret's grants list the ones that have
+	// lapsed. They are kept by the server, since approving the same ask again
+	// renews one in place, but they authorize nothing, and listed by default
+	// they bury the grants that do.
+	expiredShown bool
+
 	width, height int
 
 	now func() time.Time
@@ -76,7 +82,6 @@ func (l *secretList) setAll(all []Secret) {
 		onID = s.ID
 	}
 	l.all = all
-	l.countGrants()
 	if onID != "" {
 		for i := range l.all {
 			if l.all[i].ID == onID {
@@ -105,28 +110,37 @@ func (l *secretList) setRefused(rejections []SecretRejection) {
 // answers every row, and a count per row would be a call per row.
 func (l *secretList) setGrants(grants []Grant) {
 	l.grants = grants
-	l.countGrants()
 }
 
-func (l *secretList) countGrants() {
-	counts := map[string]int{}
+// grantsFor is the grants on one secret: those still standing, and those that
+// have lapsed.
+func (l *secretList) grantsFor(secretID string) (live, expired []Grant) {
+	now := l.now()
 	for _, g := range l.grants {
-		counts[g.SecretID]++
-	}
-	for i := range l.all {
-		l.all[i].Grants = counts[l.all[i].ID]
-	}
-}
-
-// grantsFor is the grants standing on one secret.
-func (l *secretList) grantsFor(secretID string) []Grant {
-	var out []Grant
-	for _, g := range l.grants {
-		if g.SecretID == secretID {
-			out = append(out, g)
+		switch {
+		case g.SecretID != secretID:
+		case grantLive(g, now):
+			live = append(live, g)
+		default:
+			expired = append(expired, g)
 		}
 	}
-	return out
+	return live, expired
+}
+
+// liveGrants counts the grants still standing on a secret. It is counted when
+// drawn rather than when the listing lands: a grant lapses between reads, and
+// a count taken at the read would go on saying a credential is in use after
+// nothing may use it.
+func (l *secretList) liveGrants(secretID string) int {
+	live, _ := l.grantsFor(secretID)
+	return len(live)
+}
+
+// grantLive is whether a grant still authorizes anything: it never expires, or
+// has not yet.
+func grantLive(g Grant, now time.Time) bool {
+	return g.Expires.IsZero() || g.Expires.After(now)
 }
 
 func (l *secretList) current() *Secret {
@@ -227,8 +241,8 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 	addCol(hostStyle.Render(pad(host, 22)), 23)
 	grants := "—"
 	grantStyle := st.dimText
-	if s.Grants > 0 {
-		grants, grantStyle = plural(s.Grants, "grant", "grants"), st.statusOK
+	if n := l.liveGrants(s.ID); n > 0 {
+		grants, grantStyle = plural(n, "grant", "grants"), st.statusOK
 	}
 	if _, refused := l.refused[s.ID]; refused {
 		// What stands on a credential matters less than whether it works. A
@@ -620,11 +634,15 @@ func (m *Model) showGrants() tea.Cmd {
 	if secret == nil {
 		return nil
 	}
-	grants := m.secrets.grantsFor(secret.ID)
+	live, expired := m.secrets.grantsFor(secret.ID)
+	grants := live
+	if m.secrets.expiredShown {
+		grants = append(grants, expired...)
+	}
 	// Making one is the first row, so a secret with no grants is not a dead
 	// end: this is where somebody looking at a credential decides who may use
 	// it, and being told to go and use another command is not deciding.
-	items := make([]action, 0, len(grants)+1)
+	items := make([]action, 0, len(grants)+2)
 	items = append(items, action{
 		key:     grantCreateItem,
 		press:   grantCreateKey,
@@ -632,6 +650,21 @@ func (m *Model) showGrants() tea.Cmd {
 		detail:  "authorize it before anything asks",
 		enabled: true,
 	})
+	// Lapsed grants are left out unless asked for, and the row that asks for
+	// them says how many there are, so leaving them out hides nothing.
+	if len(expired) > 0 {
+		toggle := action{
+			key:     grantExpiredItem,
+			press:   grantExpiredKey,
+			label:   "Show " + plural(len(expired), "expired grant", "expired grants"),
+			detail:  "lapsed; they authorize nothing",
+			enabled: true,
+		}
+		if m.secrets.expiredShown {
+			toggle.label, toggle.detail = "Hide expired grants", "list only the grants that stand"
+		}
+		items = append(items, toggle)
+	}
 	for _, g := range grants {
 		items = append(items, action{
 			key:     g.ID,
@@ -645,15 +678,24 @@ func (m *Model) showGrants() tea.Cmd {
 	// the grant may do, and when the access token goes stale — and none of it
 	// is the credential.
 	answer := "nothing stands on it yet"
-	if len(grants) > 0 {
-		answer = plural(len(grants), "grant stands on it", "grants stand on it")
+	if len(expired) > 0 {
+		answer = "nothing stands on it now"
+	}
+	if len(live) > 0 {
+		answer = plural(len(live), "grant stands on it", "grants stand on it")
 	}
 	// Enter reads, x withdraws. The other way round put revoking a credential
 	// one keystroke from looking at one, on the key that means "open this"
 	// everywhere else in the window.
 	d := actionsDialog(secret.Name, "", items, func(result string) tea.Cmd {
-		if result == grantCreateItem {
+		switch result {
+		case grantCreateItem:
 			return m.askForGrantScope()
+		case grantExpiredItem:
+			m.secrets.expiredShown = !m.secrets.expiredShown
+			cmd := m.showGrants()
+			m.dialog.cursor = 1
+			return cmd
 		}
 		return m.reviewGrant(secret.Name, result)
 	})
@@ -663,7 +705,7 @@ func (m *Model) showGrants() tea.Cmd {
 	d.keys = []hint{pressing("enter reads", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes"), pressing("esc leaves them alone", "esc")}
 	d.altKey = grantRevokeKey
 	d.alt = func(grantID string) tea.Cmd {
-		if grantID == grantCreateItem {
+		if grantID == grantCreateItem || grantID == grantExpiredItem {
 			return nil
 		}
 		return m.confirmRevokeGrant(secret.Name, grantID)
@@ -774,6 +816,13 @@ func scopeLabel(scope string) string {
 // grantCreateItem is the row that starts a pre-approval from inside the grants
 // list, which is where somebody is already looking at what may use a secret.
 const grantCreateItem = "grant:new"
+
+// grantExpiredItem is the row that shows or hides a secret's lapsed grants,
+// and grantExpiredKey the key it answers.
+const (
+	grantExpiredItem = "grant:expired"
+	grantExpiredKey  = "a"
+)
 
 // grantRevokeKey withdraws the highlighted grant from the review list.
 const grantRevokeKey = "x"
@@ -934,8 +983,20 @@ func grantLifeLeft(g Grant, now time.Time) string {
 	case g.Expires.Before(now):
 		return "expired"
 	default:
-		return "in " + shortDuration(g.Expires.Sub(now).Round(time.Minute))
+		return "in " + shortDuration(grantLeft(g, now))
 	}
+}
+
+// grantLeft is the time a live grant has left, to the minute while there are
+// minutes of it. Rounded to the minute under one, half a minute rounds to zero,
+// which shortDuration says as "never": a grant about to lapse read as one that
+// never would.
+func grantLeft(g Grant, now time.Time) time.Duration {
+	left := g.Expires.Sub(now)
+	if left < time.Minute {
+		return max(left.Round(time.Second), time.Second)
+	}
+	return left.Round(time.Minute)
 }
 
 func grantExpiry(g Grant, now time.Time) string {
@@ -945,7 +1006,7 @@ func grantExpiry(g Grant, now time.Time) string {
 	case g.Expires.Before(now):
 		return "expired"
 	default:
-		return "expires in " + shortDuration(g.Expires.Sub(now).Round(time.Minute))
+		return "expires in " + shortDuration(grantLeft(g, now))
 	}
 }
 
@@ -1676,7 +1737,7 @@ func (m *Model) confirmDeleteSecret() tea.Cmd {
 	id, name := secret.ID, secret.Name
 	goes := section{label: "what goes", fields: []field{
 		{label: "secret", value: name, tone: toneAccent},
-		{label: "live grants", value: itoa(secret.Grants) + ", all withdrawn"},
+		{label: "live grants", value: itoa(m.secrets.liveGrants(id)) + ", all withdrawn"},
 	}}
 	if secret.Host != "" {
 		goes.fields = append(goes.fields, field{label: "bound to", value: secret.Host})

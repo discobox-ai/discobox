@@ -217,6 +217,10 @@ presents to `discobox-access run --use`. `x` withdraws, behind a confirm.
 Revoking on `Enter` put ending a credential one keystroke from looking at one,
 on the key that means "open this" everywhere else in the window.
 
+**A lapsed grant is hidden until asked for.** It authorizes nothing, so the
+row's count and the list leave it out; a row under "Grant this secret…" says how
+many there are and `a` shows or hides them.
+
 **A question answered "no" leaves you where it was asked.** Declining a revoke
 returns to the grants, leaving a grant you were reading returns to the grants,
 and declining a rebind returns to the credential picker. A dialog that closes

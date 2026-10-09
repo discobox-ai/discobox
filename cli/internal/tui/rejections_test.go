@@ -203,8 +203,8 @@ func TestTheSecretsScreenMarksARefusedCredential(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
 	m.secrets.setAll([]Secret{
-		{ID: "sec_gh", Name: "GitHub token", Host: "api.github.com", Grants: 2},
-		{ID: "sec_openai", Name: "OpenAI key", Host: "api.openai.com", Grants: 1},
+		{ID: "sec_gh", Name: "GitHub token", Host: "api.github.com"},
+		{ID: "sec_openai", Name: "OpenAI key", Host: "api.openai.com"},
 	})
 	m.secrets.width, m.secrets.height = 100, 4
 
