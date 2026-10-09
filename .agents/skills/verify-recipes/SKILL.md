@@ -149,6 +149,28 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
 - Baseline against the original (the built-in, or the skill at `HEAD`) on an
   identical copy of the repo before calling a behavior a regression.
 
+# Verifying `discobox-access` in a dev box (request, wait, list)
+
+Every command goes to the dev loop through `d()` from
+`.agents/skills/test-fix/driving-task-dev.md`
+(`d() { ./build/discobox --server http://127.0.0.1:8080 "$@"; }`): a bare
+`discobox` reaches the outer discobox API, where a fake secret and a forever
+grant do not belong.
+
+A `d new -d -H shell --no-source -p x` box talks to the dev pool agent and
+server, but its in-image `discobox-access` can lag the checkout: `grep -c
+'<new string>' $(command -v discobox-access)` in the box. If it does, build
+`CGO_ENABLED=0 go build ./access/cmd/discobox-access` and `d cp` it to
+`<box>:/tmp/`.
+
+- Approving needs a secret: `d secret create --name N --host H --token fake
+  --max-grant-ttl forever` (the default cap is 1h, so a longer `--grant-ttl`
+  is refused without it), then `d secret request approve <sreq> --secret-id
+  N [--grant-ttl 2w|forever]`.
+- `request`, `wait`, and `list` need no judge; only `run` does (see the lead
+  section below).
+- Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret delete N`.
+
 # Verifying a server/API change against an isolated server
 
 The `task dev` loop's server is the user's; run a second one from your own
