@@ -30,7 +30,7 @@
   special-case `EverCreated`).
 - Keep Docker out of `poolruntime` and `internal/sandbox`. Container mechanics
   belong in `dockerworker.Engine`; anything backend-specific belongs behind
-  `dockerworker.Driver`. A new backend implements only the driver: VM
+  `dockerworker.Driver`. A new Docker backend implements only the driver: VM
   lifecycle, the two connection leases, `PoolLogs`, and `GuestImageBuildSpec`
   (the last two may return `sandbox.ErrPoolLogsUnsupported` /
   `sandbox.ErrGuestImageBuildUnsupported`).
