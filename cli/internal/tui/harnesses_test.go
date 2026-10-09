@@ -197,6 +197,24 @@ func TestHarnessesEnableWarnsWhenADeclaredPortIsTaken(t *testing.T) {
 	}
 }
 
+// An ephemeral entry names no port until the setup's sandbox listens on one,
+// so there is nothing to check before the pane opens and nothing to warn of.
+func TestHarnessesEnableDoesNotProbeAnEphemeralPort(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	for i := range ds.harnesses {
+		if ds.harnesses[i].ID == "hc_codex" {
+			ds.harnesses[i].ConfigPorts = []HarnessConfigPort{{Ephemeral: true, Unavailable: "Sign in by device code instead."}}
+		}
+	}
+	ds.portsInUse = map[int]bool{0: true}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
+	if frame := plainFrame(m); strings.Contains(frame, "Sign in by device code instead.") {
+		t.Fatalf("configuration pane warns about an ephemeral port before any was found:\n%s", frame)
+	}
+}
+
 // Disabling asks first, since it deletes the secrets and files the setup wrote.
 func TestHarnessesDisableConfirms(t *testing.T) {
 	t.Parallel()

@@ -303,7 +303,7 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	if err != nil {
 		return nil, fmt.Errorf("start configure: %w", err)
 	}
-	forward, err := a.forwardConfigurePorts(ctx, projectID, sandbox.ID, config.ConfigPorts.Or(nil), stderr)
+	forward, err := a.forwardConfigurePorts(ctx, client, projectID, sandbox.ID, config.ConfigPorts.Or(nil), stderr)
 	if err != nil {
 		return nil, fmt.Errorf("forward configure ports: %w", err)
 	}

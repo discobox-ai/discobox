@@ -495,9 +495,22 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 		// number no listener can hold is a broken image rather than a forward
 		// that quietly lands elsewhere. Duplicates are rejected for the same
 		// reason: the second declaration could only ever contradict the first
-		// about what to say when the port is unavailable.
+		// about what to say when the port is unavailable. An ephemeral entry
+		// names no number — the sandbox's listening ports supply them — and
+		// there is one at most, for the same reason.
 		ports := map[int]struct{}{}
+		ephemeral := false
 		for _, port := range h.Config.Ports {
+			if port.Ephemeral {
+				if port.Port != 0 {
+					return fmt.Errorf("%s ephemeral config port also names port %d", source, port.Port)
+				}
+				if ephemeral {
+					return fmt.Errorf("%s has duplicate ephemeral config port", source)
+				}
+				ephemeral = true
+				continue
+			}
 			if port.Port < 1 || port.Port > 65535 {
 				return fmt.Errorf("%s config port %d is out of range", source, port.Port)
 			}

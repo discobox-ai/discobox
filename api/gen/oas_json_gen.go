@@ -8928,6 +8928,12 @@ func (s *HarnessConfigPort) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *HarnessConfigPort) encodeFields(e *jx.Encoder) {
 	{
+		if s.Ephemeral.Set {
+			e.FieldStart("ephemeral")
+			s.Ephemeral.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("port")
 		e.Int64(s.Port)
 	}
@@ -8939,9 +8945,10 @@ func (s *HarnessConfigPort) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfigPort = [2]string{
-	0: "port",
-	1: "unavailable",
+var jsonFieldsNameOfHarnessConfigPort = [3]string{
+	0: "ephemeral",
+	1: "port",
+	2: "unavailable",
 }
 
 // Decode decodes HarnessConfigPort from json.
@@ -8953,8 +8960,18 @@ func (s *HarnessConfigPort) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "ephemeral":
+			if err := func() error {
+				s.Ephemeral.Reset()
+				if err := s.Ephemeral.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ephemeral\"")
+			}
 		case "port":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.Port = int64(v)
@@ -8985,7 +9002,7 @@ func (s *HarnessConfigPort) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -589,9 +589,16 @@ func configurePortWarning(ctx context.Context, harness Harness, ds DataSource) s
 	if len(harness.ConfigPorts) == 0 {
 		return ""
 	}
+	// An ephemeral entry has no number until the sandbox listens on one, so
+	// only the configure command can tell whether it was free.
 	ports := make([]int, 0, len(harness.ConfigPorts))
 	for _, port := range harness.ConfigPorts {
-		ports = append(ports, port.Port)
+		if !port.Ephemeral {
+			ports = append(ports, port.Port)
+		}
+	}
+	if len(ports) == 0 {
+		return ""
 	}
 	inUse := map[int]bool{}
 	for _, port := range ds.LocalPortsInUse(ctx, ports) {
@@ -599,7 +606,7 @@ func configurePortWarning(ctx context.Context, harness Harness, ds DataSource) s
 	}
 	var messages []string
 	for _, port := range harness.ConfigPorts {
-		if inUse[port.Port] {
+		if !port.Ephemeral && inUse[port.Port] {
 			messages = append(messages, port.Unavailable)
 		}
 	}

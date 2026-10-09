@@ -80,7 +80,11 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, placements poolP
 	for _, port := range cfg.ConfigPorts.Or(nil) {
 		// The fallback is resolved here so the window never has to know
 		// there was one: the same words the configure command prints.
-		harness.ConfigPorts = append(harness.ConfigPorts, tui.HarnessConfigPort{Port: int(port.Port), Unavailable: configPortUnavailable(port)})
+		harness.ConfigPorts = append(harness.ConfigPorts, tui.HarnessConfigPort{
+			Port:        int(port.Port),
+			Ephemeral:   port.Ephemeral.Or(false),
+			Unavailable: configPortUnavailable(port),
+		})
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{
