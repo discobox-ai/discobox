@@ -296,9 +296,10 @@ launchers, and configure scripts.
   (the desktop) are not followed: no sign-in redirects to them. A taken port is
   reported when it is found, which is mid-flow, so the console's header cannot
   warn of it ahead of time; the CLI names the number and the entry's
-  `unavailable` words say what to do. A CLI that predates ephemeral entries
-  reads one as port 0 and prints those words on every configure, so they must
-  hold true without a number.
+  `unavailable` words say what to do. A port is found through the sandbox's
+  reported listing, which the pool refreshes every 15 s, so a bind can trail
+  the listener by up to about 22 s; the harness's own instructions tell the user
+  to reload a callback page the browser could not reach.
 
 ## Driver Model
 

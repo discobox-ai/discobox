@@ -170,9 +170,7 @@ type ImageMode struct {
 // at that same number, under the same rule: never moved, because the number
 // is already in the redirect URI the browser was handed.
 type ConfigPort struct {
-	// Port is the number to forward. Zero, and only zero, when Ephemeral —
-	// still serialized, because the API keeps the field required so a client
-	// that predates Ephemeral still decodes the harness listing.
+	// Port is the number to forward. Zero, and only zero, when Ephemeral.
 	Port int `json:"port"`
 	// Ephemeral forwards every TCP port the configure sandbox is found
 	// listening on, each at its own number. At most one entry is ephemeral.
@@ -183,9 +181,7 @@ type ConfigPort struct {
 	// device code, in Codex's case — so the fallback is the image's to spell
 	// out. Empty falls back to saying which port could not be bound. For an
 	// ephemeral entry it follows the CLI's own words naming the discovered
-	// port that was taken, so it says what to do rather than what happened —
-	// and a CLI that predates Ephemeral prints it alone on every configure,
-	// for a port 0 it never forwards, so it has to hold true read that way.
+	// port that was taken, so it says what to do rather than what happened.
 	Unavailable string `json:"unavailable,omitempty"`
 }
 

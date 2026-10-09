@@ -44,14 +44,13 @@ callback is an HTTP request. The image's declared services (the desktop on
 6900) are in the same listing and are not followed, because no sign-in
 redirects to them. The forward ends with the configure flow.
 
-### 3. `port` stays required on the wire
+### 3. `port` stays a required integer on the wire
 
 In the API, `HarnessConfigPort.port` stays required, and an ephemeral entry
-sends `0`. A CLI that predates this decodes the harness listing instead of
-failing on a missing field. It forwards nothing for the entry, and prints the
-entry's `unavailable` text as if port 0 were taken, on every configure. So an
-ephemeral entry's text must hold true read alone, as advice rather than a
-report. The TUI's in-use probe skips ephemeral entries.
+sends `0` beside `ephemeral: true`. A CLI older than the server is not
+supported here: its generated decoder rejects the unknown `ephemeral` field,
+as it rejects any field added to a response. The TUI's in-use probe skips
+ephemeral entries.
 
 ### 4. Copilot's image declares an ephemeral port
 
@@ -63,7 +62,7 @@ to run `/login` again for another port or pick "Sign in with a device code".
 
 - **`port: "ephemeral"`, a number-or-string field.** It reads naturally in the
   manifest, but the type of `port` would change for every client. A separate
-  boolean keeps `port` an integer, and keeps the old shape decoding.
+  boolean keeps `port` an integer.
 - **Declaring a guessed number (41039).** Copilot picks a new port on every
   run, so a guessed number is wrong almost every time.
 - **Reusing the workspace forward as it is.** Its nearest-free search would
@@ -71,16 +70,17 @@ to run `/login` again for another port or pick "Sign in with a device code".
   it as forwarded.
 - **Leaving it to device code.** That works, but browser sign-in is Copilot's
   recommended path, and the workspace already discovers ports.
-- **Making `port` optional.** That is cleaner for new clients, but an older CLI
-  would fail to decode the whole harness listing. The CLI never downgrades a
-  newer local server, so that mix of versions is reachable.
 
 ## Consequences
 
-- Latency: a callback listener is found within the watcher's scan (about 5 s)
-  plus the CLI's poll (2 s). It is unverified end to end whether that comes
-  before the user finishes signing in on github.com and the browser is
-  redirected.
+- Latency: the CLI reads the control plane's copy of the sandbox's ports, which
+  the pool refreshes every 15 s after the sandbox's own 5 s scan; with the CLI's
+  2 s poll, a callback port can be bound up to about 22 s after it starts
+  listening. A user who authorizes faster gets a browser that cannot connect,
+  so the harness's instructions say to reload that page: the redirect carries
+  the same code and state to the same port, which answers once it is bound. A
+  live port path from the sandbox would close the gap and is not built here;
+  revisit if reloading proves a real cost.
 - A bind failure for a discovered port is reported mid-flow. A full-screen CLI
   may paint over it, as it can for a fixed port's warning.
 - Every discovered TCP port the configure sandbox listens on is forwarded, not

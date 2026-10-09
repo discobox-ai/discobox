@@ -179,7 +179,7 @@ components:
                     description: Forward each TCP port the configure sandbox is discovered listening on, at its own number, for a sign-in whose callback port changes every run. Port is 0 when set.
                     type: boolean
                 port:
-                    description: The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry; kept required so a client predating ephemeral entries still decodes the list.
+                    description: The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry.
                     format: int64
                     type: integer
                 unavailable:
