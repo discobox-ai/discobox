@@ -50,7 +50,13 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
+  # Through the Taskfile rather than docker directly: both agent images are
+  # built FROM a shared base image, and these targets are what know to build it
+  # first. The sandbox agent image is what the stub harness is built FROM when
+  # no `task dev` loop has named a dev build in .env, so a clean checkout needs
+  # it built here.
+  go tool task build:pool-agent-image
+  go tool task build:sandbox-agent-image
   go tool task build:harness-stub-image
   build_keep_stub_image
 
