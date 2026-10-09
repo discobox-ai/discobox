@@ -269,6 +269,9 @@ func TestConfigureDoesNotReviveAnEndedPrimary(t *testing.T) {
 		t.Fatal("no primary after launch")
 	}
 	markExited(t, svc, first.ID)
+	if ended, _ := svc.Get(first.ID); svc.Relaunches(ended) {
+		t.Fatal("an exited configure run reports that it relaunches")
+	}
 
 	for _, resolve := range []func() (execs.Exec, error){
 		func() (execs.Exec, error) { return svc.ResolvePrimary(context.Background()) },

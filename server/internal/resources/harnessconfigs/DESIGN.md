@@ -197,8 +197,9 @@ sequenceDiagram
   read from the sandbox, so a caller cannot mark a harness configured without
   having run the flow.
 - Commit must resolve the primary **read-only** — resolving the virtual `"primary"`
-  id relaunches a stopped primary, which here would restart the configure command
-  instead of observing that it finished.
+  id relaunches a lost primary, which here would restart the configure command
+  instead of observing that it never finished. (A configure primary that exited
+  or failed is not relaunched by anything: it runs once.)
 - In config mode the sandbox-agent defers the primary until attach, so seeding
   always precedes the configure command.
 - Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
