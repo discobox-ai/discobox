@@ -90,6 +90,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	xdg.Reload()
+	// And the client's own configuration file, which a developer may point
+	// anywhere: a test about client.yaml writes and names its own.
+	if err := os.Unsetenv("DISCOBOX_CLIENT_CONFIG_FILE"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	_ = os.RemoveAll(config)
 	os.Exit(code)

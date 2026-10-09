@@ -33,7 +33,9 @@ sandbox create requests.
   at the first file that takes the whole request past its byte or file limit
   (a skill this one replaces left out of the count), before reading it, and
   the refusal names the largest skills read before it.
-  Both `discobox new` and `admin box create` take the flags.
+  Both `discobox new` and `admin box create` take the flags; the frontend
+  resolves `discobox new`'s against `client.yaml` before they reach here
+  (ADR 26-10-09-389).
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`

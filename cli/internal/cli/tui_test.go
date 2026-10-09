@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -161,6 +163,20 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		client:    client,
 		projectID: "project-1",
 	}
+	// The panel names no skills, so client.yaml's are the ones it creates
+	// with, as `discobox new` with no skill flags would.
+	skillsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(skillsDir, "configured"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "configured", "SKILL.md"), []byte("# configured"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configFile := filepath.Join(t.TempDir(), "client.yaml")
+	if err := os.WriteFile(configFile, []byte("new:\n  skills: ["+strconv.Quote(skillsDir)+"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
 	// accepted is marked among the steps, so where the server taking the
 	// create falls between them is checked with the rest of the order.
 	const accepted = "<accepted>"
@@ -214,6 +230,9 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	checkout := source["checkout"].(map[string]any)
 	if checkout["commit"] != commit || checkout["refType"] != "commit" {
 		t.Fatalf("checkout = %#v, want HEAD commit %s", checkout, commit)
+	}
+	if skills, _ := config["skills"].(map[string]any); skills["configured"] == nil {
+		t.Fatalf("skills = %#v, want client.yaml's configured skill", config["skills"])
 	}
 }
 
