@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -31,16 +32,7 @@ func udpAnswer(query string) string { return "\x00\x00\x00answer:" + query }
 // fit a datagram.
 func startUpstream(t *testing.T) string {
 	t.Helper()
-	var config net.ListenConfig
-	udp, err := config.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := udp.LocalAddr().(*net.UDPAddr).Port
-	tcp, err := config.Listen(t.Context(), "tcp", netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port)).String())
-	if err != nil {
-		t.Fatal(err)
-	}
+	udp, tcp := listenUDPAndTCP(t)
 	t.Cleanup(func() { _ = udp.Close(); _ = tcp.Close() })
 	go func() {
 		buf := make([]byte, maxMessage)
@@ -77,6 +69,32 @@ func startUpstream(t *testing.T) string {
 		}
 	}()
 	return udp.LocalAddr().String()
+}
+
+// listenUDPAndTCP binds UDP and TCP on one loopback port, the way a resolver
+// listens. The kernel picks a free UDP port, but nothing reserves the same
+// number for TCP, where another process may already hold it; a refused TCP
+// bind gives the UDP port back and tries another.
+func listenUDPAndTCP(t *testing.T) (net.PacketConn, net.Listener) {
+	t.Helper()
+	var config net.ListenConfig
+	for range 100 {
+		udp, err := config.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := udp.LocalAddr().(*net.UDPAddr).Port
+		tcp, err := config.Listen(t.Context(), "tcp", netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port)).String())
+		if err == nil {
+			return udp, tcp
+		}
+		_ = udp.Close()
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("no loopback port was free for both UDP and TCP")
+	return nil, nil
 }
 
 type certs struct {
