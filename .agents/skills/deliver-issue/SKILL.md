@@ -200,6 +200,7 @@ with it:
 
 ```bash
 gh api repos/discobox-ai/discobox/pulls/<pr> --jq '"\(.state) \(.merged_at != null) \(.mergeable_state) \(.head.sha)"'
+gh api repos/discobox-ai/discobox/pulls/<pr>/reviews --jq '.[] | "\(.id) \(.user.login) \(.state)"'
 gh api repos/discobox-ai/discobox/pulls/<pr>/comments --jq '.[] | "\(.id) \(.in_reply_to_id) \(.user.login)"'
 gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.user.login)"'
 ```
@@ -211,7 +212,10 @@ gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.us
   from §5 (`--force-with-lease=refs/heads/discobox/issue-<N>:<sha>`) to
   `discobox/issue-<N>` only. `unknown` just
   after a merge is GitHub recomputing — check again before acting.
-- **A new review comment or PR comment** from anyone — answer it as in §6.
+- **A new review, review comment or PR comment** from anyone — answer it as
+  in §6. A review's body can hold findings with no thread of their own (a
+  `CHANGES_REQUESTED` with no inline comment, Copilot's "previously missed");
+  answer those in one PR comment.
 - **A failing check on the head commit** — fix it as `open-pr` §4 says.
 - **Merged or closed** — stop the Monitor, remove the keepalive, and finish.
 
