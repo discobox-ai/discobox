@@ -157,6 +157,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := deleteOrphanedSecretGrants(write); err != nil {
 		return err
 	}
+	if err := denyOrphanedSecretRequests(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
 }
 
@@ -199,6 +202,22 @@ func unsetManifestFileImageKinds(db *gorm.DB) error {
 func backfillPoolImageKinds(db *gorm.DB) error {
 	return db.Model(&model.Pool{}).Where("image_kind = ''").
 		UpdateColumn("image_kind", platform.OCI).Error
+}
+
+// denyOrphanedSecretRequests closes as denied the open requests of sandboxes
+// that no longer exist, as deleting a sandbox now does
+// (store.denySandboxSecretRequestsTx). Before that, every deleted discobox
+// left its asks waiting in the inbox for an agent that was gone. Refresh
+// requests are left open: they are about the secret, not the sandbox. It is a
+// backfill; after the first run this matches nothing.
+func denyOrphanedSecretRequests(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.SecretRequest{}) {
+		return nil
+	}
+	return db.Model(&model.SecretRequest{}).
+		Where("status = ? AND reason <> ? AND sandbox_id <> '' AND sandbox_id NOT IN (?)",
+			model.SecretRequestStatusPending, model.SecretRequestReasonRefresh, db.Model(&model.Sandbox{}).Select("id")).
+		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "closed_at": time.Now().UTC()}).Error
 }
 
 // deleteOrphanedSecretGrants removes the grants scoped to a sandbox or harness

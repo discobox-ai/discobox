@@ -1865,3 +1865,66 @@ func TestMigrateDeletesGrantsWhoseScopeIsGone(t *testing.T) {
 		t.Fatalf("grants after migrate = %v, want %v", ids, want)
 	}
 }
+
+func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	for _, row := range []any{
+		&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
+		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: "provider-1"}},
+		&model.Sandbox{ID: "sb-live", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-live"},
+	} {
+		if err := db.Write.Create(row).Error; err != nil {
+			t.Fatalf("create %T: %v", row, err)
+		}
+	}
+	for _, r := range []model.SecretRequest{
+		{ID: "r-live", SandboxID: "sb-live"},
+		{ID: "r-gone", SandboxID: "sb-gone"},
+		{ID: "r-gone-refresh", SandboxID: "sb-gone", Reason: model.SecretRequestReasonRefresh, SecretID: "secret-1"},
+		{ID: "r-person", SandboxID: ""},
+	} {
+		r.ProjectID, r.RequestedBy, r.Type, r.Status = "project-1", "user-1", model.SecretTypeToken, model.SecretRequestStatusPending
+		if err := db.Write.Create(&r).Error; err != nil {
+			t.Fatalf("create request %s: %v", r.ID, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	var rows []model.SecretRequest
+	if err := db.Write.Order("id").Find(&rows).Error; err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.ID] = r.Status
+		if r.Status == model.SecretRequestStatusDenied && r.ClosedAt == nil {
+			t.Fatalf("request %s denied without being stamped closed", r.ID)
+		}
+	}
+	want := map[string]string{
+		"r-live": model.SecretRequestStatusPending, "r-gone": model.SecretRequestStatusDenied,
+		"r-gone-refresh": model.SecretRequestStatusPending, "r-person": model.SecretRequestStatusPending,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("requests after migrate = %v, want %v", got, want)
+	}
+}

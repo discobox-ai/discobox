@@ -722,6 +722,18 @@ func (s *Store) AnswerOpenRefreshRequests(ctx context.Context, projectID, secret
 // closedAt is when a request stopped pending, in UTC: the refresh trail bounds
 // its reads by it, and SQLite compares times as text (see
 // SecretRequest.BeforeCreate).
+// denySandboxSecretRequestsTx closes a deleted sandbox's open requests as
+// denied. The agent that asked is gone, so nothing will poll for the answer,
+// and approving one would grant a credential to nothing. A refresh request is
+// left open: it asks for a new value of a secret every other sandbox using it
+// still needs, and only names the sandbox that noticed.
+func denySandboxSecretRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	return tx.Model(&model.SecretRequest{}).
+		Where("project_id = ? AND sandbox_id = ? AND status = ? AND reason <> ?",
+			projectID, sandboxID, model.SecretRequestStatusPending, model.SecretRequestReasonRefresh).
+		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "closed_at": closedAt(time.Now())}).Error
+}
+
 func closedAt(at time.Time) *time.Time {
 	at = at.UTC()
 	return &at
