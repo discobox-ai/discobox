@@ -389,7 +389,17 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		return execs.Exec{}, fmt.Errorf("exec %s is not a terminal", id)
 	}
 	switch exec.Status {
-	case execs.StatusExited, execs.StatusFailed, execs.StatusLost:
+	case execs.StatusExited, execs.StatusFailed:
+		// A configure flow runs its command once, and how that run ended is
+		// the flow's result: the server commits on it. Re-running it would
+		// replace that result with one nobody watched, and fence the shim a
+		// late attacher is replaying the first run's output from. The client
+		// attaches to the primary and then starts it, so a command that ends
+		// before the start arrives would otherwise always run twice.
+		if s.harnessMode == config.HarnessModeConfig {
+			return exec, nil
+		}
+	case execs.StatusLost:
 	default:
 		return exec, nil
 	}
@@ -433,7 +443,8 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 // the terminal's first run only. The shell harness types nothing (the shell IS
 // the terminal, recorded as the exec's own command), and neither does a
 // configure flow, whose command is the exec's own for the same reason and is
-// what a relaunch re-runs.
+// what a relaunch re-runs — which it does only for a run that was lost, never
+// for one that ended (see revive).
 func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string, prompt []string) []string {
 	switch {
 	case harnessID == ShellHarnessID:
