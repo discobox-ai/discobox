@@ -100,6 +100,7 @@ type credentialRequestStatusDoc struct {
 	Status    string             `json:"status"`
 	Purpose   string             `json:"purpose,omitempty"`
 	Uses      []credentialUseDoc `json:"uses,omitempty"`
+	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
 }
 
 func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([]credentialDoc, error) {
@@ -274,7 +275,7 @@ func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) 
 
 // protocol is the status as the sandbox is answered with it.
 func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
-	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, nil)}
+	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, d.ExpiresAt)}
 }
 
 // Get mints one ephemeral sentinel for one approved use, once the project's

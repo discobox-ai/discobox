@@ -300,6 +300,9 @@ func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 	}
 	if grant != nil {
 		resp.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(grant.Uses)))
+		if grant.ExpiresAt != nil {
+			resp.SetExpiresAt(serverapi.NewOptDateTime(*grant.ExpiresAt))
+		}
 	}
 	return resp
 }

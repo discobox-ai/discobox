@@ -33249,6 +33249,12 @@ func (s *SandboxCredentialRequestStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ExpiresAt.Set {
+			e.FieldStart("expiresAt")
+			s.ExpiresAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		e.FieldStart("purpose")
 		s.Purpose.Encode(e)
 	}
@@ -33268,12 +33274,13 @@ func (s *SandboxCredentialRequestStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCredentialRequestStatus = [5]string{
+var jsonFieldsNameOfSandboxCredentialRequestStatus = [6]string{
 	0: "$schema",
-	1: "purpose",
-	2: "requestId",
-	3: "status",
-	4: "uses",
+	1: "expiresAt",
+	2: "purpose",
+	3: "requestId",
+	4: "status",
+	5: "uses",
 }
 
 // Decode decodes SandboxCredentialRequestStatus from json.
@@ -33295,8 +33302,18 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
+		case "expiresAt":
+			if err := func() error {
+				s.ExpiresAt.Reset()
+				if err := s.ExpiresAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresAt\"")
+			}
 		case "purpose":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				if err := s.Purpose.Decode(d); err != nil {
 					return err
@@ -33306,7 +33323,7 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"purpose\"")
 			}
 		case "requestId":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.RequestId = string(v)
@@ -33318,7 +33335,7 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"requestId\"")
 			}
 		case "status":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -33347,7 +33364,7 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001110,
+		0b00011100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

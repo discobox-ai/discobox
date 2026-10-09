@@ -20502,6 +20502,9 @@ func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
 type SandboxCredentialRequestStatus struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// When the grant behind the granted uses lapses, as the approver chose it rather than as it was
+	// asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
+	ExpiresAt OptDateTime `json:"expiresAt"`
 	// What the request asks the credential for. For delegate, the granted uses are what the sandbox may
 	// delegate the credential for, and none of them takes a value.
 	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
@@ -20516,6 +20519,11 @@ type SandboxCredentialRequestStatus struct {
 // GetSchema returns the value of Schema.
 func (s *SandboxCredentialRequestStatus) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SandboxCredentialRequestStatus) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
 }
 
 // GetPurpose returns the value of Purpose.
@@ -20541,6 +20549,11 @@ func (s *SandboxCredentialRequestStatus) GetUses() OptNilSecretUseArray {
 // SetSchema sets the value of Schema.
 func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SandboxCredentialRequestStatus) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
 }
 
 // SetPurpose sets the value of Purpose.
