@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Build the change already discussed and agreed in this session and deliver it as a pull request — restate the agreed plan, implement it, review it with discobox-review, verify it at runtime, commit, open a PR from discobox/<slug>, drive CI green, get a GitHub Copilot review and answer it, then keep the PR mergeable and answer comments until a human merges it. Use when the approach has been talked through in the session and the user asks for it to be built and delivered as a PR, or invokes `develop`; the result is a PR, never `discobox apply`. Not for a plain "go ahead" that means build it here.
+description: Build the change already discussed and agreed in this session and deliver it as a pull request — restate the agreed plan, implement it, review it with discobox-review, verify it at runtime, commit, open a PR from discobox/<slug>, drive CI green, run GitHub Copilot review passes and answer them, then keep the PR mergeable and answer comments until a human merges it. Use when the approach has been talked through in the session and the user asks for it to be built and delivered as a PR, or invokes `develop`; the result is a PR, never `discobox apply`. Not for a plain "go ahead" that means build it here.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, SendMessage, Skill, Monitor, AskUserQuestion
 metadata:
   argument-hint: "[branch slug] [--issue N]"
@@ -245,23 +245,42 @@ Status line: `PR #<pr> open, CI <state>`.
 
 ## 6. Copilot review
 
-```bash
-gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot
-```
+Copilot reviews in passes, until it has nothing left worth acting on. Each
+pass:
 
-Poll `pulls/<pr>/reviews` every few minutes (one short `discobox-access run`
-each — the injected token lives minutes) until a review from Copilot is
-there; give it up to 30 minutes. Then, for **every** Copilot comment, on its
-own thread:
+1. Request it, on the head commit. The same command asks again after a pass
+   (the bot's login in `requested_reviewers` has not worked):
 
-- right → fix it, and reply with what changed and the commit;
-- wrong, out of scope, or against what was agreed → reply with why, briefly;
-- a judgement for the user → ask with `AskUserQuestion`, then reply.
+   ```bash
+   gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot
+   ```
 
-A fix is new code: `discobox-review` round, re-run `verify` if it changes
-runtime behavior, commit on top, push (fast-forward), CI green again. No
-comment is left without a reply. Status line: `copilot: <n> comments,
-<n> fixed, <n> answered`.
+2. Poll `pulls/<pr>/reviews` every few minutes (one short `discobox-access
+   run` each — the injected token lives minutes) until a new Copilot review
+   is there whose `commit_id` is the head commit; give it up to 30 minutes.
+   None by then: request once more, and if that too brings nothing, stop
+   the loop with `no review` — never request in a loop.
+3. Read the review's **body** as well as its threads. A later pass reviews
+   the whole PR again, not only the fixes: its body lists the earlier
+   findings it now counts as resolved, and can hold findings with no thread
+   of their own ("previously missed", in code the fixes did not touch).
+4. Answer every finding — each thread on that thread, and the body-only ones
+   together in one PR comment (`gh pr comment`):
+   - right → fix it, and reply with what changed and the commit;
+   - wrong, out of scope, or against what was agreed → reply with why, briefly;
+   - a finding already answered on an earlier pass, raised again → reply
+     with a link to that answer, and do not count it as new;
+   - a judgement for the user → ask with `AskUserQuestion`, then reply.
+5. A fix is new code: `discobox-review` round, re-run `verify` if it changes
+   runtime behavior, commit on top, push (fast-forward), CI green again.
+
+Run another pass after a pass whose fixes were pushed. Stop when a pass
+brings nothing worth fixing — every finding answered as wrong, out of scope
+or already answered — or after the third pass, whichever is first; never
+loop for zero comments, which a fresh read of the whole PR may never give.
+No finding is left without a reply. Status line per pass: `copilot pass <k>:
+<n> findings, <n> fixed, <n> answered`, and at the end `copilot: stopped
+after <k> passes, <nothing new | cap | no review>`.
 
 ## 7. Keep it mergeable until merged
 
@@ -284,8 +303,9 @@ gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.us
   tests the conflict touched, then push with the lease form from §5 to
   `discobox/<slug>` only. `unknown` just after a merge is GitHub
   recomputing — check again before acting.
-- **A new review, review comment or PR comment** from anyone — answer it as
-  in §6. A review's body can hold findings with no thread of their own (a
+- **A new review, review comment or PR comment** from anyone — answer it
+  with §6's reply rules (steps 3–5). Once §6 has stopped, a new review never
+  starts another pass: request no more Copilot reviews. A review's body can hold findings with no thread of their own (a
   `CHANGES_REQUESTED` with no inline comment, Copilot's "previously missed");
   answer those in one PR comment.
 - **A failing check on the head commit** — fix it as `open-pr` §4 says.
