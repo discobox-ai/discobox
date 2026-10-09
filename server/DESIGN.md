@@ -331,8 +331,10 @@ description and `example` a sample value (YAML, `-` for deliberately none); a
 field tagged `yaml:"-"` is derived rather than configured. A setting with no
 literal default and no boolean type must carry an example, and every example
 must decode as its setting's type.
-`internal/config/genschema` emits two artifacts from the same walk the loader
-binds, so a setting cannot be loadable and undocumented: `server/config.schema.json`
+The walk over them — decode, environment overlay, reference and schema — is the
+root module's [`configfile`](../configfile), shared with the CLI's
+`client.yaml`. `internal/config/genschema` emits two artifacts from the same
+walk the loader binds, so a setting cannot be loadable and undocumented: `server/config.schema.json`
 for an editor, and `server/server.example.yaml`, the commented reference listing
 every setting at the value it has when nothing sets it. `task verify` fails when
 either is stale.

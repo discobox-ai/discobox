@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/discobox-ai/discobox/configfile"
 	"github.com/discobox-ai/discobox/endpoint"
 )
 
@@ -257,7 +258,7 @@ func TestSchemaAcceptsWhatTheReferenceWrites(t *testing.T) {
 // shows that instead. "-" is the deliberate exception, for a value no example
 // should be copied into.
 func TestSettingsWithoutADefaultHaveAnExample(t *testing.T) {
-	for _, s := range settings(reflect.TypeOf(Config{})) {
+	for _, s := range configfile.Settings(reflect.TypeOf(Config{})) {
 		if s.Default != "" || s.Field.Type.Kind() == reflect.Bool {
 			continue
 		}
@@ -270,8 +271,8 @@ func TestSettingsWithoutADefaultHaveAnExample(t *testing.T) {
 // An example is copied, so it has to be a value the server accepts: YAML of
 // the setting's own type, inside its enum, and for listen, endpoints that parse.
 func TestExamplesAreValidValues(t *testing.T) {
-	for _, s := range settings(reflect.TypeOf(Config{})) {
-		example := exampleTag(s.Field)
+	for _, s := range configfile.Settings(reflect.TypeOf(Config{})) {
+		example := configfile.ExampleTag(s.Field)
 		if example == "" {
 			continue
 		}

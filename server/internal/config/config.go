@@ -13,6 +13,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/joho/godotenv"
 
+	"github.com/discobox-ai/discobox/configfile"
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -295,7 +296,7 @@ func ConfigFilePath() string {
 // names a key nothing defines, is an error.
 func Load() (*Config, error) {
 	cfg := &Config{}
-	if err := applyDefaults(cfg); err != nil {
+	if err := configfile.ApplyDefaults(cfg); err != nil {
 		return nil, err
 	}
 
@@ -307,7 +308,7 @@ func Load() (*Config, error) {
 		data, err := os.ReadFile(path)
 		switch {
 		case err == nil:
-			if fromFile, err = decodeFile(cfg, data, path); err != nil {
+			if fromFile, err = configfile.Decode(cfg, data, path); err != nil {
 				return nil, err
 			}
 			cfg.ConfigFileRead = true
@@ -326,7 +327,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	fromEnv, err := applyEnv(cfg, os.LookupEnv)
+	fromEnv, err := configfile.ApplyEnv(cfg, os.LookupEnv)
 	if err != nil {
 		return nil, err
 	}
