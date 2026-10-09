@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -209,6 +210,20 @@ type fakeSource struct {
 	// auditBodies are the recordings AuditBody answers, by "ID/part"; a
 	// record has on its card the parts it has here.
 	auditBodies map[string]string
+
+	// issues are what Issue answers, by "repository#number", and issueErr
+	// fails every read; issueReads counts the reads. comments records every
+	// comment posted, as "repository#number: body", and commentErr fails
+	// posting one.
+	issues     map[string]Issue
+	issueErr   error
+	issueReads int
+	comments   []string
+	commentErr error
+	// states records every close and reopen, as "repository#number:
+	// state/reason", and stateErr fails one.
+	states   []string
+	stateErr error
 
 	// forward is what the workspace's port forward reports, and forwardErr
 	// fails opening one. forwards counts the ones opened and closed, so a test
@@ -865,6 +880,48 @@ func (f *fakeSource) ServiceLogs(_ context.Context, _, serviceID string) ([]byte
 		return nil, f.serviceLogsErr
 	}
 	return f.serviceLogs[serviceID], nil
+}
+
+func (f *fakeSource) Issue(_ context.Context, repository string, number int, _ bool) (Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.issueReads++
+	if f.issueErr != nil {
+		return Issue{}, f.issueErr
+	}
+	issue, ok := f.issues[fmt.Sprintf("%s#%d", repository, number)]
+	if !ok {
+		return Issue{}, errors.New("GitHub answered 404: Not Found")
+	}
+	return issue, nil
+}
+
+func (f *fakeSource) CommentOnIssue(_ context.Context, repository string, number int, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.commentErr != nil {
+		return f.commentErr
+	}
+	f.comments = append(f.comments, fmt.Sprintf("%s#%d: %s", repository, number, body))
+	return nil
+}
+
+func (f *fakeSource) SetIssueState(_ context.Context, repository string, number int, state, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stateErr != nil {
+		return f.stateErr
+	}
+	f.states = append(f.states, fmt.Sprintf("%s#%d: %s/%s", repository, number, state, reason))
+	key := fmt.Sprintf("%s#%d", repository, number)
+	if issue, ok := f.issues[key]; ok {
+		issue.State, issue.StateReason = state, reason
+		if state == "open" {
+			issue.StateReason = ""
+		}
+		f.issues[key] = issue
+	}
+	return nil
 }
 
 func (f *fakeSource) FollowAudit(ctx context.Context, sandboxID string, report func(AuditUpdate)) error {

@@ -145,9 +145,11 @@ type dialog struct {
 	// "no" as well as "yes".
 	onCancel func() tea.Cmd
 
-	// over is the overlay a question stands over and is about: the finished
-	// apply report under the successful-apply menu. The question goes when
-	// that screen does, because every answer it offers is a way of leaving it.
+	// over is the pane a question stands over and is about: the finished
+	// apply report under the successful-apply menu, the issue a close is
+	// asked about. The question goes when that pane does — the overlay
+	// closing, its tab closing, the workspace closing — because every answer
+	// it offers is about something no longer on screen.
 	over *pane
 
 	// offers are what a card to be read can do besides being read: an audit

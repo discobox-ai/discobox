@@ -259,7 +259,8 @@ func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
 }
 
 // The workspace says which issue and pull request it is working on at the top,
-// each a link to it.
+// each a link to it. A plain click on the issue opens it beside the workspace
+// instead (issue_test.go); the link is still what Ctrl-click follows.
 func TestTheWorkspaceHeaderLinksTheIssueAndPullRequest(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(githubTaggedSandboxes()...)
@@ -269,15 +270,13 @@ func TestTheWorkspaceHeaderLinksTheIssueAndPullRequest(t *testing.T) {
 	opened := make(chan string, 4)
 	m.openOS = func(url string) error { opened <- url; return nil }
 
-	x, y := at(t, m, "issue #4")
-	if y != 0 {
+	if _, y := at(t, m, "issue #4"); y != 0 {
 		t.Fatalf("issue #4 is drawn on row %d, want the header", y)
 	}
-	tap(t, m, x, y)
-	if got := <-opened; got != "https://github.com/acme/foo/issues/4" {
-		t.Errorf("clicking issue #4 opened %q, want the issue", got)
+	if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") {
+		t.Errorf("issue #4 is not a link:\n%q", frame)
 	}
-	x, y = at(t, m, "PR #9")
+	x, y := at(t, m, "PR #9")
 	slowClock(m)
 	tap(t, m, x, y)
 	if got := <-opened; got != "https://github.com/acme/foo/pull/9" {

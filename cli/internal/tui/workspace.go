@@ -803,6 +803,10 @@ func (m *Model) closeTab(p *pane) {
 		return
 	}
 	col.close(i)
+	if m.dialog != nil && m.dialog.over == p {
+		// The question was about this tab. See dialog.over.
+		m.dialog = nil
+	}
 	if p == m.toolShown {
 		// A tool that had the window gives it back to the workspace.
 		m.toolShown = nil
@@ -828,6 +832,9 @@ func (m *Model) closeTab(p *pane) {
 // on this screen can close.
 func (m *Model) endablePane(p *pane) (why string, ok bool) {
 	switch {
+	case p != nil && p.issue != nil:
+		// Not a session: ending it is closing the tab.
+		return "", true
 	case p == nil || p.execID == "":
 		return "nothing to end here", false
 	case p.primary:
@@ -853,6 +860,10 @@ func (m *Model) endPane(p *pane) tea.Cmd {
 	}
 	if p.exited {
 		return m.dismissPane(p)
+	}
+	if p.issue != nil {
+		m.closeTab(p)
+		return nil
 	}
 	name, execID, gen := p.name(), p.execID, m.wsGen
 	// The listing is a poll behind the act, so the session it still reports as
@@ -922,10 +933,12 @@ func (m *Model) closeWorkspace() {
 	}
 	if m.overlay != nil {
 		_ = m.overlay.term.Close()
-		if m.dialog != nil && m.dialog.over == m.overlay {
-			m.dialog = nil
-		}
 		m.overlay = nil
+	}
+	if m.dialog != nil && m.dialog.over != nil {
+		// Every pane goes with the workspace, and a question about one of
+		// them with it. See dialog.over.
+		m.dialog = nil
 	}
 	m.terminals.closeAll()
 	// The tools go with the shells they sit after, and like every other

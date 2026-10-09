@@ -3,6 +3,7 @@ module github.com/discobox-ai/discobox/cli
 go 1.26.1
 
 require (
+	charm.land/glamour/v2 v2.0.1
 	github.com/coder/websocket v1.8.14
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
@@ -15,7 +16,10 @@ require (
 )
 
 require (
+	github.com/alecthomas/chroma/v2 v2.24.1 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/discobox-ai/iroh-go v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.4.0 // indirect
@@ -33,10 +37,14 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/yuin/goldmark v1.7.8 // indirect
+	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect

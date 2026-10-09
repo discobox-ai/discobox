@@ -1669,6 +1669,91 @@ type SourcePush struct {
 	Err error
 }
 
+// Issue is a GitHub issue as its page shows it, for the issue tab. Every
+// string in it was written by whoever can comment on the issue, so the data
+// source hands it over made safe to draw: no control or format character
+// reaches the screen as itself.
+type Issue struct {
+	// Repository is owner/name.
+	Repository string
+	Number     int
+	Title      string
+	// State is "open" or "closed"; StateReason says how it closed —
+	// completed, not_planned, duplicate — and is empty for an open one.
+	State       string
+	StateReason string
+	// Type is the issue's type, where the organization uses them.
+	Type      string
+	Author    string
+	Body      string
+	CreatedAt time.Time
+	Labels    []IssueLabel
+	Assignees []string
+	Milestone string
+	Locked    bool
+	// Comments is how many comments the issue has, whether or not the
+	// timeline was read as far as all of them.
+	Comments  int
+	Reactions IssueReactions
+	// PullRequest is set when the number is a pull request's.
+	PullRequest bool
+	// SubIssues are the issues this one is broken into, and SubIssuesDone
+	// how many of them are closed.
+	SubIssues     []IssueRef
+	SubIssuesDone int
+	// Timeline is everything that happened after it was opened, oldest first.
+	Timeline []IssueEvent
+	// Truncated is set when the timeline was longer than was read.
+	Truncated bool
+}
+
+// IssueLabel is one label, with the color its page draws it in: six hex
+// digits, without the #.
+type IssueLabel struct {
+	Name  string
+	Color string
+}
+
+// IssueRef is another issue or pull request, as a timeline event or a
+// sub-issue list names it.
+type IssueRef struct {
+	// Repository is owner/name.
+	Repository  string
+	Number      int
+	Title       string
+	State       string
+	PullRequest bool
+	Merged      bool
+}
+
+// IssueReactions are the counts under a comment, keyed by GitHub's names:
+// +1, -1, laugh, hooray, confused, heart, rocket, eyes.
+type IssueReactions map[string]int
+
+// IssueEvent is one item of the timeline. Kind is GitHub's own event name —
+// "commented", "labeled", "closed", "cross-referenced" — so a kind the tab
+// has no words for still says what it was.
+type IssueEvent struct {
+	Kind  string
+	Actor string
+	At    time.Time
+	// Body and Reactions are a comment's.
+	Body      string
+	Reactions IssueReactions
+	// Label is what a labeled or unlabeled event moved.
+	Label *IssueLabel
+	// Subject is who an assignment was about, the milestone a milestoning
+	// moved, the reason a lock gave, or the commit a reference or a close
+	// came from.
+	Subject string
+	// From and To are a rename's titles.
+	From, To string
+	// StateReason is how a close closed it.
+	StateReason string
+	// Source is the issue or pull request a cross-reference came from.
+	Source *IssueRef
+}
+
 type DataSource interface {
 	// Session is read once at startup, and is what the header and the run
 	// options panel are drawn from.
@@ -1892,6 +1977,23 @@ type DataSource interface {
 	// the terminal. A body is unbounded, so a long one comes back cut, saying
 	// so and how to read the rest.
 	AuditBody(ctx context.Context, sandboxID, recordID, part string) (string, error)
+
+	// Issue is one GitHub issue as its page shows it — the issue, its
+	// sub-issues, and its whole timeline of comments and events — read as the
+	// person at this machine. repository is the web address Sandbox.Repository
+	// carries. Without full, the data source may answer a re-read from what it
+	// read before when GitHub says nothing has changed since; full is a read
+	// someone asked to see now.
+	Issue(ctx context.Context, repository string, number int, full bool) (Issue, error)
+
+	// CommentOnIssue posts a comment on a GitHub issue, as the person at this
+	// machine.
+	CommentOnIssue(ctx context.Context, repository string, number int, body string) error
+
+	// SetIssueState closes a GitHub issue or reopens it, as the person at this
+	// machine: state is "closed" or "open", and reason how it closed —
+	// "completed", "not_planned" — or what reopened it ("reopened").
+	SetIssueState(ctx context.Context, repository string, number int, state, reason string) error
 
 	// ServiceLogs is the transcript of a service's current or last run, as the
 	// bytes it wrote. It is read for a service that is not running, whose pane

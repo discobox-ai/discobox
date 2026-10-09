@@ -148,6 +148,11 @@ type pane struct {
 	// Service.runKey.
 	serviceRun string
 
+	// issue is the GitHub issue this pane draws in place of a terminal, nil
+	// for every pane that draws a terminal. Its term is never attached; it is
+	// there for the key map. See issue.go.
+	issue *issuePane
+
 	// tool is the tool this pane is running, and empty for every pane that is
 	// not one. A tool pane is not in the strip and wears no number: it is a
 	// window over the workspace, put away rather than moved between. See
@@ -184,7 +189,7 @@ type configurePane struct {
 func (p *pane) name() string {
 	// A configure command may set an application title identical to a normal
 	// session. Keep the pane's purpose visible throughout this special flow.
-	if p.configure != nil {
+	if p.configure != nil || p.issue != nil {
 		return p.title
 	}
 	if title := strings.TrimSpace(p.term.Title()); title != "" {
@@ -602,6 +607,8 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
 	// The audit screen, over the workspace like a tool. See audit.go.
 	opts = append(opts, termpane.WithPrefixBinding(auditKey, openAuditMsg{}))
+	// The issue, as a tab of its own. See issue.go.
+	opts = append(opts, termpane.WithPrefixBinding(issueKey, openIssueMsg{}))
 	// The services have the same alphabet one keystroke further in: S1 through
 	// S9 are their own tabs, and S0 is the menu that reaches the ones with no
 	// tab at all. See paneServicesKey.
@@ -713,6 +720,16 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 		if cmd, taken := m.copyChord(key); taken {
 			return cmd
 		}
+	}
+	// An issue is read and answered, not typed at as a terminal. See issue.go.
+	if p.issue != nil {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			return m.issueKeyPress(p, msg)
+		case tea.PasteMsg:
+			return m.pasteIssue(p, msg)
+		}
+		return nil
 	}
 	// A pane whose command has finished is a screen to read, not a terminal to
 	// type at. Its keys are the reader's — except the leader's, which are the
@@ -876,6 +893,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 
 	case openAuditMsg:
 		return m.openAudit()
+
+	case openIssueMsg:
+		return m.toggleIssue()
 
 	case openCredentialsMsg:
 		return m.openCredentialDialog(m.paneBox.ID)
@@ -1186,6 +1206,21 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		// Everything else on the chrome is the window's own: the offers on the
 		// status line are buttons for their chords, and what is left drives
 		// the selection. See mouse.go.
+		return m.windowMouse(msg)
+	}
+	if p.issue != nil {
+		// No grid of its own to select over or send presses to: a press focuses
+		// the tab and goes on into the window's selection, like any other text
+		// it draws, and the wheel scrolls the issue.
+		switch ev := msg.(type) {
+		case tea.MouseWheelMsg:
+			p.issue.scroll(-wheelLines(ev))
+			return nil
+		case tea.MouseClickMsg:
+			if ev.Button == tea.MouseLeft {
+				m.focusPane(p)
+			}
+		}
 		return m.windowMouse(msg)
 	}
 	switch ev := msg.(type) {
@@ -1782,6 +1817,9 @@ type headerSpan struct {
 	text  string
 	label string
 	url   string
+	// issue is the number a plain click opens as the workspace's issue tab,
+	// rather than the URL in a browser; zero for every other link.
+	issue int
 }
 
 // paneHeaderField is one field of the workspace banner: what it draws, whether
@@ -1868,7 +1906,11 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 			width := lipgloss.Width(span.text)
 			if span.url != "" {
 				x := start + offset + fieldW
-				m.zones.mark(urlHit(span.url), x, 0, width, 1)
+				what := urlHit(span.url)
+				if span.issue > 0 {
+					what = hit{kind: hitIssue, idx: span.issue, url: span.url}
+				}
+				m.zones.mark(what, x, 0, width, 1)
 				if m.zones.hovering(x, 0, width, 1) {
 					// The link stays a link while it is lit: the OSC 8 is what
 					// a Ctrl-click follows, and losing it under the pointer
@@ -2124,7 +2166,24 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 	pad := strings.Repeat(" ", boxPad)
 
 	rows := []string{top}
-	for _, line := range p.term.View() {
+	lines := p.term.View()
+	if p.issue != nil {
+		lines = m.issueView(p.issue, grid, m.paneRows())
+		// The links the issue draws are controls (REVIEW.md), marked from the
+		// lines as drawn, at the origin the grid is drawn at.
+		x, y := m.paneOrigin(p)
+		for row, line := range lines {
+			for _, link := range lineLinks(line) {
+				// Only the web: a stranger writes these, and a click hands
+				// one to this machine's URL handler, which will open a
+				// file:// or a custom scheme as readily as a page.
+				if webLink(link.url) {
+					m.zones.mark(urlHit(link.url), x+link.x, y+row, link.width, 1)
+				}
+			}
+		}
+	}
+	for _, line := range lines {
 		rows = append(rows, side+pad+padANSI(line, grid)+pad+side)
 	}
 	rows = append(rows, edge.Render("╰"+strings.Repeat("─", inner)+"╯"))
@@ -2198,7 +2257,8 @@ func (m *Model) columnControls(edge lipgloss.Style, p *pane, shells bool, left, 
 // it, offset by where that pane's grid was drawn.
 func (m *Model) paneCursor() *tea.Cursor {
 	p := m.focusedPane()
-	if p == nil || m.audit != nil {
+	if p == nil || m.audit != nil || p.issue != nil {
+		// An issue draws its field's cursor itself.
 		return nil
 	}
 	x, y := m.paneOrigin(p)
