@@ -258,8 +258,11 @@ flowchart LR
   read rather than disabling keep-alives: a request sent `Connection: close`
   gets no drain of an unread body from the sandbox's net/http, so a refusal
   answered before the body was read (the sandbox agent's auth) can arrive as a
-  reset instead of its status (#106). Upgrades (exec attach, tunnels) carry on
-  over the dialed connection.
+  reset instead of its status (#106). The sandbox drains only 256 KiB that way,
+  so the runtime-config delivery also sends `Expect: 100-continue`, and waits
+  for the agent's answer as long as the call may take: a refusal is answered
+  before any of the document is sent, whatever its size. Upgrades
+  (exec attach, tunnels) carry on over the dialed connection.
 - The connection is never an authority. The sandbox agent validates its own
   token on every request — the status poll's `status:read` token (ADR 0030),
   the proxy's downstream `Authorization`, the pool-signed runtime-config

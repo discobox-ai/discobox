@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -359,6 +360,53 @@ func TestPutRuntimeConfigToAnAgentWithoutTheIntake(t *testing.T) {
 	if failed == nil || logRuntimeConfigFailure(context.Background(), "sbx_1", failed) != nil {
 		t.Fatalf("a transient failure: %v, want it logged for the status poll", failed)
 	}
+}
+
+// A refusal of a document larger than the sandbox's net/http drains on its
+// own (256 KiB) is still read as one: the delivery asks to continue before it
+// sends the body, so the agent refuses with none of it sent, and closes a
+// connection holding nothing unread rather than resetting it (#106). Only the
+// request's head may leave the pool; on Linux a reset leaves the refusal
+// readable, so the race itself shows only where it does not (Windows).
+func TestPutRuntimeConfigRefusalOfALargeDocument(t *testing.T) {
+	r := runtimeConfigTestRuntime(t)
+	doc, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.SecretEnv = map[string]string{"LARGE": strings.Repeat("x", 1<<20)}
+	dial := intakeDialer(t, &fakeIntake{t: t, status: http.StatusUnauthorized})
+	var conns []*countingConn
+	counted := Dialer(func(ctx context.Context) (net.Conn, error) {
+		conn, err := dial(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c := &countingConn{Conn: conn}
+		conns = append(conns, c)
+		return c, nil
+	})
+	refused := r.putRuntimeConfig(context.Background(), counted, "sbx_1", doc)
+	if !errors.Is(refused, ErrRuntimeConfigRefused) {
+		t.Fatalf("refusing a large document: %v, want a refusal", refused)
+	}
+	for _, c := range conns {
+		if c.written.Load() > 64<<10 {
+			t.Fatalf("%d bytes were sent to an agent that refused the delivery, want only the request's head", c.written.Load())
+		}
+	}
+}
+
+// countingConn counts what is written to it.
+type countingConn struct {
+	net.Conn
+	written atomic.Int64
+}
+
+func (c *countingConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	c.written.Add(int64(n))
+	return n, err
 }
 
 // A delivery that landed is not logged as one that did not.
