@@ -70,8 +70,11 @@ func (f *fakeGitHub) serve(t *testing.T) *httptest.Server {
 				"comments": 1, "reactions": {"url": "x", "total_count": 3, "+1": 2, "heart": 1, "eyes": 0},
 				"sub_issues_summary": {"total": 1, "completed": 1}
 			}`)
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/foo/issues/4/sub_issues":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/foo/issues/4/sub_issues" && r.URL.Query().Get("page") == "":
+			w.Header().Set("Link", fmt.Sprintf(`<%s/repos/acme/foo/issues/4/sub_issues?per_page=100&page=2>; rel="next"`, srv.URL))
 			fmt.Fprint(w, `[{"number": 5, "title": "A test", "state": "closed", "html_url": "u"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/foo/issues/4/sub_issues" && r.URL.Query().Get("page") == "2":
+			fmt.Fprint(w, `[{"number": 6, "title": "Another", "state": "open", "html_url": "u"}]`)
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/foo/issues/4/timeline" && r.URL.Query().Get("page") == "":
 			w.Header().Set("Link", fmt.Sprintf(`<%s/repos/acme/foo/issues/4/timeline?per_page=100&page=2>; rel="next", <x>; rel="last"`, srv.URL))
 			fmt.Fprint(w, `[
@@ -136,7 +139,7 @@ func TestAnIssueIsReadWithItsWholeTimeline(t *testing.T) {
 	if want := (Reactions{"+1": 2, "heart": 1}); fmt.Sprint(issue.Reactions) != fmt.Sprint(want) {
 		t.Errorf("reactions = %v, want %v", issue.Reactions, want)
 	}
-	if len(issue.SubIssues) != 1 || issue.SubIssues[0].Number != 5 || issue.SubIssuesDone != 1 {
+	if len(issue.SubIssues) != 2 || issue.SubIssues[0].Number != 5 || issue.SubIssues[1].Number != 6 || issue.SubIssuesDone != 1 {
 		t.Errorf("sub-issues = %+v, %d done", issue.SubIssues, issue.SubIssuesDone)
 	}
 	var kinds []string
@@ -289,8 +292,8 @@ func TestARereadReadsTheTimelineOnlyWhenTheIssueChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(fake.requests()); n < 4 {
-		t.Fatalf("the first read made %d requests, want the issue, its sub-issues and both timeline pages", n)
+	if n := len(fake.requests()); n < 5 {
+		t.Fatalf("the first read made %d requests, want the issue, both pages of its sub-issues and both of the timeline", n)
 	}
 	again, err := c.Issue(t.Context(), "acme", "foo", 4, false)
 	if err != nil {
