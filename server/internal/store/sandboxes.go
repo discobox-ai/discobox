@@ -605,6 +605,9 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := deleteSecretGrantsByScopeTx(tx, model.SecretGrantScopeSandbox, sandbox.ID); err != nil {
 			return err
 		}
+		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
+			return err
+		}
 		return tx.Delete(sandbox).Error
 	})
 }

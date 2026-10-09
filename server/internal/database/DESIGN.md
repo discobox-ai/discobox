@@ -53,7 +53,8 @@ by what it is looking for and is idempotent:
    its `poolImages` dirty rows), the
    sandbox state split (ADR 0034), deleting the secret grants scoped to a
    sandbox or harness config that no longer exists
-   (`deleteOrphanedSecretGrants`), and re-keying every sandbox
+   (`deleteOrphanedSecretGrants`), denying the open requests of a sandbox that
+   no longer exists (`denyOrphanedSecretRequests`), and re-keying every sandbox
    origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
 
 The platform columns (ADR 0145 §1) are added by `AutoMigrate` and deliberately
