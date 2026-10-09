@@ -1,0 +1,35 @@
+# The opencode harness image (Dockerfile beside this file) as a boxd machine
+# image, for disco-vm (github.com/discobox-ai/vm), built FROM
+# sandbox-agent/boxd.yaml. The build context is this directory, as it is for
+# the Dockerfile:
+#
+#   disco-vm --driver boxd build -t discobox/opencode -f harness/opencode/boxd.yaml harness/opencode
+#
+# The Dockerfile's twin; change the two together. Its label is a file under
+# /usr/local/share/discobox/labels, as sandbox-agent/boxd.yaml explains.
+from:
+  image: discobox/sandbox-agent
+shell: ["/bin/bash", "-o", "pipefail", "-c"]
+resources:
+  cpus: 4
+  memory: 16GiB
+layers:
+  - name: harness
+    steps:
+      - run: |
+          set -eux
+          npm install -g opencode-ai
+          rm -rf /root/.npm
+          install -d -m 0755 /usr/local/libexec/discobox /etc/opencode
+      - copy: {src: ., dst: /var/tmp/discobox-harness}
+      - run: |
+          set -eux
+          s=/var/tmp/discobox-harness
+          jq -c . $s/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1
+          install -m 0644 $s/agent.conf /usr/local/libexec/discobox/agent.conf
+          install -m 0644 $s/hook-plugin.js /usr/local/libexec/discobox/opencode-hook-plugin.js
+          install -m 0644 $s/managed-config.json /etc/opencode/opencode.json
+          install -m 0755 $s/configure.sh /usr/local/libexec/discobox/configure-opencode
+          install -m 0755 $s/launch.sh /usr/local/bin/discobox-harness-run
+          install -m 0755 $s/prompt.sh /usr/local/bin/discobox-prompt
+          rm -rf $s

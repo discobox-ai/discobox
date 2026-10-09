@@ -1,0 +1,110 @@
+# The shared base (Dockerfile beside this file) as a boxd machine image, for
+# disco-vm (github.com/discobox-ai/vm). Each layer is a boxd snapshot. Built
+# FROM by sandbox-agent/boxd.yaml, the way the Dockerfile is built FROM by
+# sandbox-agent/Dockerfile:
+#
+#   disco-vm --driver boxd build -t discobox/base -f base-image/boxd.yaml base-image
+#
+# or `go tool task build:boxd-images` for the whole chain.
+#
+# It is the Dockerfile's twin, not a translation of it: what is true of a
+# container and not of a machine is left out, and each place that happens says
+# why. Change the two together.
+#
+# The guest is boxd's own Ubuntu 24.04 rather than Debian 13. boxd boots only
+# its own images, and a microVM's kernel, init, and network are boxd's to set
+# up, so the distribution is not this file's to pick.
+#
+# No args, here or in the specs built FROM it: disco-vm exports every arg to
+# every run step, and a step's environment is part of its layer's cache key,
+# so one bumped arg rebuilds every layer. A pinned version lives in the step
+# that uses it instead, which is where the Dockerfile's per-layer ARG puts it.
+from:
+  install:
+    os: linux
+    media: latest
+    disk: 100GiB
+shell: ["/bin/bash", "-o", "pipefail", "-c"]
+env:
+  DEBIAN_FRONTEND: noninteractive
+resources:
+  cpus: 4
+  memory: 16GiB
+layers:
+  # The common runtime surface. Its own layer so a Docker version bump does
+  # not invalidate it.
+  - name: runtime
+    steps:
+      - run: |
+          set -eux
+          apt-get update
+          apt-get install -y --no-install-recommends \
+              ca-certificates \
+              curl \
+              dbus \
+              git \
+              gnupg \
+              iproute2 \
+              iptables \
+              systemd \
+              systemd-sysv
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+
+  # Optional: a guest that already has a Docker keeps it, and only one without
+  # gets Docker's own, from Docker's repository as the Dockerfile does. boxd's
+  # Ubuntu ships Ubuntu's docker.io, with buildx, compose, and Ubuntu's
+  # containerd and runc, and Docker's containerd.io cannot be installed beside
+  # that containerd. The repository's URL names the distribution, so that is
+  # read from the guest rather than written down.
+  #
+  # Unlike the Dockerfile, the units are left as the packages install them:
+  # the sandbox half (sandbox-agent/boxd.yaml) re-declares the socket
+  # activation it wants, and no pool agent ever runs on this image.
+  - name: docker
+    steps:
+      - run: |
+          set -eux
+          if command -v dockerd >/dev/null; then
+              echo "using the guest's Docker: $(dockerd --version)"
+              docker buildx version || echo "warning: the guest's Docker has no buildx plugin" >&2
+              docker compose version || echo "warning: the guest's Docker has no compose plugin" >&2
+              exit 0
+          fi
+          . /etc/os-release
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+              "${ID}" "${VERSION_CODENAME}" "$(dpkg --print-architecture)" \
+              > /etc/apt/sources.list.d/docker.sources
+          apt-get update
+          apt-get install -y --no-install-recommends \
+              containerd.io \
+              docker-buildx-plugin \
+              docker-ce \
+              docker-ce-cli \
+              docker-compose-plugin
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+
+      # Only the periodic maintenance of the Dockerfile's mask list, so the
+      # guest never wakes up and mutates packages or filesystems behind the
+      # user. The rest of that list is there because a container's host owns
+      # the kernel, devices, and network; in a microVM the guest owns them,
+      # and masking udev, networkd, or logind would leave it without a
+      # network or a way in. unattended-upgrades is Ubuntu's addition to the
+      # same periodic maintenance.
+      - run: |
+          set -eux
+          systemctl mask \
+              apt-daily-upgrade.timer \
+              apt-daily.timer \
+              dpkg-db-backup.timer \
+              e2scrub_all.timer \
+              e2scrub_reap.service \
+              fstrim.timer \
+              systemd-tmpfiles-clean.timer
+          if systemctl list-unit-files unattended-upgrades.service >/dev/null 2>&1; then
+              systemctl mask unattended-upgrades.service
+          fi

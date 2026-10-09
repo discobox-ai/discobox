@@ -386,6 +386,16 @@ build or publication work stays pending and retries without requiring another
 file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
 image builds is watched without restarting the loop.
+The base, sandbox, and harness images also have boxd machine-image twins: a
+`boxd.yaml` beside each Dockerfile, a [disco-vm](https://github.com/discobox-ai/vm)
+build spec that builds the same chain with the same tools, files, and units on
+boxd's Ubuntu (`build:boxd-images`). A machine is not a container, so each spec
+leaves out what is only true of a container and says why: the container-only
+systemd masks, labels (written as files under
+`/usr/local/share/discobox/labels`), and the agent as PID 1. Docker and
+Chromium are optional there: a guest that already ships one keeps it (boxd's
+ships Docker). Nothing releases or runs these images yet.
+
 Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.

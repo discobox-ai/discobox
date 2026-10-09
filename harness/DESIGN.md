@@ -135,9 +135,10 @@ launchers, and configure scripts.
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
 - Each harness folder owns its `Dockerfile`, `image.json` (when it needs one),
-  configure script, and other image-specific assets. `harness/shell` needs
-  none: it installs nothing, declares nothing, and *is* its inherited base
-  layer.
+  configure script, and other image-specific assets, and the `boxd.yaml` that
+  builds the same image on boxd (see the root `DESIGN.md`). `harness/shell`
+  needs none: it installs nothing, declares nothing, and *is* its inherited
+  base layer.
 - **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
   argument passed labels the image with the empty string, which is a build
   mistake that produces a working image nothing can register — so

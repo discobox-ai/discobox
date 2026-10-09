@@ -1,0 +1,576 @@
+# The sandbox base (Dockerfile beside this file) as a boxd machine image, for
+# disco-vm (github.com/discobox-ai/vm), built FROM base-image/boxd.yaml. The
+# build context is the repository root, as it is for the Dockerfile:
+#
+#   disco-vm --driver boxd build -t discobox/sandbox-agent -f sandbox-agent/boxd.yaml .
+#
+# or `go tool task build:boxd-images` for the whole chain.
+#
+# It is the Dockerfile's twin: the same tools at the same pinned versions, the
+# same files at the same paths, the same units enabled. Change the two
+# together. Where a machine differs from a container, the step says so. The
+# differences in general:
+#
+#   - There are no build stages. The Go binaries are built in the guest, with
+#     the Go the image installs, from the same directories the builder stages
+#     COPY, and the source and caches are removed with them.
+#   - There are no labels. Each `io.discobox.*` label the Dockerfile sets is a
+#     file of the same name under /usr/local/share/discobox/labels, holding
+#     the label's value.
+#   - There is no ENTRYPOINT. The image's units are installed and enabled as
+#     they are in the container, but nothing makes discobox-sandbox-agent PID 1:
+#     a machine boots systemd, and the agent's unit starts only once a
+#     /etc/discobox/sandbox.json exists.
+#   - The guest is boxd's Ubuntu 24.04, not Debian 13 (base-image/boxd.yaml
+#     says why), so a few packages come from elsewhere; their steps say which.
+#   - Docker (in base-image/boxd.yaml) and Chromium are optional: a guest that
+#     already has one keeps it, and the image is configured around whichever
+#     it ends up with.
+#
+# Layers are ordered stablest first, as the Dockerfile's RUNs are, but fewer:
+# each boundary here is a guest shutdown and a snapshot, not a filesystem diff.
+# Versions are pinned inside the steps that use them, not as spec args; see
+# base-image/boxd.yaml.
+from:
+  image: discobox/base
+shell: ["/bin/bash", "-o", "pipefail", "-c"]
+env:
+  DEBIAN_FRONTEND: noninteractive
+  NIX_CONFIG: experimental-features = nix-command flakes
+  PATH: /nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+resources:
+  cpus: 4
+  memory: 16GiB
+layers:
+  # The distribution's half of the toolchain, and the largest layer.
+  - name: distribution
+    steps:
+      # The base leaves the Docker units as its packages installed them; this
+      # is the sandbox's half: socket-activated, as in the container.
+      #
+      # The runc wrapper (/opt/discobox/bin/runc) execs the real one at
+      # runcca.RealRunc, /usr/bin/runc, where Docker's containerd.io puts it.
+      # A Docker the base found instead may keep it elsewhere (Ubuntu's runc
+      # is /usr/sbin/runc), so that path is made to reach it.
+      - run: |
+          set -eux
+          systemctl disable docker.service containerd.service
+          systemctl enable docker.socket
+          if [ ! -e /usr/bin/runc ]; then
+              ln -s "$(command -v runc)" /usr/bin/runc
+          fi
+          /usr/bin/runc --version
+      # The Dockerfile's list, less chromium (next step). Ubuntu keeps half of
+      # these in universe.
+      - run: |
+          set -eux
+          if ! grep -qs universe /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; then
+              apt-get update
+              apt-get install -y --no-install-recommends software-properties-common
+              add-apt-repository -y universe
+          fi
+          apt-get update
+          apt-get install -y --no-install-recommends \
+              build-essential \
+              dbus-x11 \
+              direnv \
+              elementary-xfce-icon-theme \
+              expect \
+              extrepo \
+              file \
+              greybird-gtk-theme \
+              jq \
+              less \
+              libnss3-tools \
+              librsvg2-bin \
+              novnc \
+              openssh-client \
+              openssh-sftp-server \
+              p11-kit-modules \
+              passwd \
+              patch \
+              poppler-utils \
+              procps \
+              psmisc \
+              python-is-python3 \
+              python3 \
+              python3-pip \
+              python3-requests \
+              python3-venv \
+              python3-websockify \
+              python3-xdg \
+              ripgrep \
+              screen \
+              scrot \
+              shellcheck \
+              socat \
+              sqlite3 \
+              sudo \
+              thunar \
+              tmux \
+              unzip \
+              util-linux \
+              vim \
+              x11vnc \
+              x11-xserver-utils \
+              xdotool \
+              xfce4-appfinder \
+              xfce4-panel \
+              xfce4-session \
+              xfce4-settings \
+              xfce4-terminal \
+              xfdesktop4 \
+              xfwm4 \
+              xserver-xorg-core \
+              xserver-xorg-video-dummy \
+              xterm \
+              xvfb \
+              xz-utils \
+              zsh
+          rm -rf /var/lib/apt/lists/*
+      # Optional, like the base's Docker: a guest that already has a Chromium
+      # or Chrome keeps it. One without gets Chromium, as the Dockerfile
+      # installs it, but Ubuntu packages Chromium only as a snap, and a boxd
+      # guest runs no snapd. xtradeb's PPA builds Debian's own packaging for
+      # Ubuntu (the same /usr/bin/chromium wrapper reading /etc/chromium.d,
+      # and a separate chromium-sandbox), and is pinned so that nothing but
+      # Chromium comes from it.
+      #
+      # A browser is looked for by the names its packages install it under,
+      # and never under /snap: Ubuntu's chromium-browser is a shim for the
+      # snap, which does not run here. image-files repeats this search to
+      # make the found browser the default.
+      - name: chromium
+        run: |
+          set -eux
+          for name in chromium google-chrome-stable google-chrome; do
+              if found="$(command -v "$name")" && [ "${found#/snap/}" = "$found" ]; then
+                  echo "using the guest's browser: $found"
+                  exit 0
+              fi
+          done
+          if ! command -v add-apt-repository >/dev/null; then
+              apt-get update
+              apt-get install -y --no-install-recommends software-properties-common
+          fi
+          add-apt-repository -y ppa:xtradeb/apps
+          printf 'Package: *\nPin: release o=LP-PPA-xtradeb-apps\nPin-Priority: -1\n\nPackage: chromium chromium-common chromium-sandbox\nPin: release o=LP-PPA-xtradeb-apps\nPin-Priority: 500\n' \
+              > /etc/apt/preferences.d/discobox-chromium
+          apt-get update
+          apt-get install -y --no-install-recommends chromium chromium-sandbox
+          rm -rf /var/lib/apt/lists/*
+
+  # Upstream builds pinned to a release, with their published checksums:
+  # Neovim, Nushell, and fresh. Each version moves with its checksum, as in
+  # the Dockerfile. fresh is one of the Dockerfile's builder-stage downloads;
+  # it is pinned and changes rarely, so it lives here rather than with the
+  # binaries built from this repository.
+  - name: pinned-tools
+    steps:
+      - name: neovim
+        run: |
+          set -eux
+          NEOVIM_VERSION=v0.12.5
+          NEOVIM_AMD64_SHA256=bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875
+          NEOVIM_ARM64_SHA256=1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725
+          case "$(dpkg --print-architecture)" in
+              amd64) neovim_arch=x86_64; neovim_sha256="$NEOVIM_AMD64_SHA256" ;;
+              arm64) neovim_arch=arm64; neovim_sha256="$NEOVIM_ARM64_SHA256" ;;
+              *) echo "no Neovim build for $(dpkg --print-architecture)" >&2; exit 1 ;;
+          esac
+          archive="nvim-linux-${neovim_arch}.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" \
+              "https://github.com/neovim/neovim/releases/download/${NEOVIM_VERSION}/${archive}"
+          echo "${neovim_sha256}  /tmp/${archive}" | sha256sum -c -
+          tar -xzf "/tmp/${archive}" -C /usr/local --strip-components=1
+          rm -f "/tmp/${archive}"
+          nvim --version
+      - name: nushell
+        run: |
+          set -eux
+          NUSHELL_VERSION=0.115.1
+          NUSHELL_AMD64_SHA256=8a9722177ddd421eba927b4baae4ae341a4d1c3434504be7b1b17d998bafdd87
+          NUSHELL_ARM64_SHA256=86a869f44c2abd37f4a4c215af78c8da058812b76fa131476d28e62fc0262a91
+          case "$(dpkg --print-architecture)" in
+              amd64) nushell_target=x86_64-unknown-linux-musl; nushell_sha256="$NUSHELL_AMD64_SHA256" ;;
+              arm64) nushell_target=aarch64-unknown-linux-musl; nushell_sha256="$NUSHELL_ARM64_SHA256" ;;
+              *) echo "no Nushell build for $(dpkg --print-architecture)" >&2; exit 1 ;;
+          esac
+          dir="nu-${NUSHELL_VERSION}-${nushell_target}"
+          curl -fsSL -o "/tmp/${dir}.tar.gz" \
+              "https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/${dir}.tar.gz"
+          echo "${nushell_sha256}  /tmp/${dir}.tar.gz" | sha256sum -c -
+          tar -xzf "/tmp/${dir}.tar.gz" -C /tmp "${dir}/nu"
+          install -m 0755 "/tmp/${dir}/nu" /usr/local/bin/nu
+          rm -rf "/tmp/${dir}.tar.gz" "/tmp/${dir}"
+          echo /usr/local/bin/nu >> /etc/shells
+          nu --version
+      - name: fresh
+        run: |
+          set -eux
+          FRESH_VERSION=v0.5.1
+          case "$(dpkg --print-architecture)" in
+              amd64) fresh_target=x86_64-unknown-linux-musl ;;
+              arm64) fresh_target=aarch64-unknown-linux-musl ;;
+              *) echo "no fresh build for $(dpkg --print-architecture)" >&2; exit 1 ;;
+          esac
+          archive="fresh-editor-${fresh_target}.tar.gz"
+          curl -fsSL -o /tmp/fresh.tar.gz \
+              "https://github.com/sinelaw/fresh/releases/download/${FRESH_VERSION}/${archive}"
+          tar -xzf /tmp/fresh.tar.gz -C /tmp
+          install -m 0755 "/tmp/fresh-editor-${fresh_target}/fresh" /usr/local/bin/fresh
+          rm -rf /tmp/fresh.tar.gz "/tmp/fresh-editor-${fresh_target}"
+
+  # Nix, shipped aside as a seed with /nix left empty (ADR 0075), exactly as in
+  # the container. A machine has no pool-shared cache volume to bind over /nix,
+  # so discobox-nix-seed.service simply copies the seed back on first use; the
+  # arrangement is kept so the sandbox agent finds the image it expects. The
+  # Dockerfile's filter-syscalls override is for qemu-user builds and has no
+  # counterpart on a machine.
+  - name: nix
+    steps:
+      - run: |
+          set -eux
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+              | sh -s -- install linux --extra-conf "sandbox = false" --init none --no-confirm
+          install -D -m 0644 /nix/var/nix/profiles/default/lib/systemd/system/nix-daemon.service /etc/systemd/system/nix-daemon.service
+          install -D -m 0644 /nix/var/nix/profiles/default/lib/systemd/system/nix-daemon.socket /etc/systemd/system/nix-daemon.socket
+          sed -i 's|^Documentation=man:nix-daemon https://nixos.org/manual$|Documentation=https://nixos.org/manual|' /etc/systemd/system/nix-daemon.service
+          systemctl enable nix-daemon.socket
+          nix profile install nixpkgs#devenv nixpkgs#bashInteractive
+          devenv --version
+          install -d -m 0755 /usr/local/lib/discobox
+          {
+              echo "SEED_ID=$(LC_ALL=C ls -1 /nix/store | sha256sum | cut -d' ' -f1)"
+              echo "SEED_NIX_STORE=$(readlink -f /nix/var/nix/profiles/default)/bin/nix-store"
+          } > /usr/local/lib/discobox/nix-seed.env
+          nix-store --dump-db > /usr/local/lib/discobox/nix-db.dump
+          mv /nix /usr/local/lib/discobox/nix
+          mkdir -m 0755 /nix
+
+  # rustup, the third-party apt repositories, pnpm, and Homebrew: what tracks
+  # an upstream's cadence but is not fetched unpinned.
+  - name: upstream-repos
+    steps:
+      - name: rustup
+        run: |
+          rustup --version >/dev/null 2>&1 \
+              || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+      - name: node, gh, mise
+        run: |
+          set -eux
+          curl -fsSL https://deb.nodesource.com/setup_25.x | bash -
+          sed -i 's|http://|https://|g' /etc/apt/sources.list.d/nodesource.list 2>/dev/null || true
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+          extrepo enable mise
+          apt-get update
+          apt-get install -y --no-install-recommends gh mise nodejs
+          rm -rf /var/lib/apt/lists/*
+      # The Node just installed is the image's, as in the container. boxd's
+      # image also links node, npm, npx, and corepack in /usr/local/bin, which
+      # PATH searches first, into the boxd user's nvm; through them a global
+      # install lands in /home/boxd/.nvm, on no one's PATH. Those links go,
+      # and only those: a /usr/local/bin entry that resolves elsewhere stays.
+      - name: the image's Node, not the guest's nvm
+        run: |
+          set -eux
+          for bin in node npm npx corepack; do
+              link="/usr/local/bin/${bin}"
+              if [ -L "${link}" ] && case "$(readlink -f "${link}")" in */.nvm/*) true ;; *) false ;; esac; then
+                  rm "${link}"
+              fi
+          done
+          hash -r
+          test "$(command -v npm)" = /usr/bin/npm
+      - name: pnpm
+        run: |
+          set -eux
+          npm install -g pnpm
+          rm -rf /root/.npm
+      # At the one prefix its bottles are built for, owned by root:brew and
+      # group-writable; the Dockerfile says why at length. A machine is not a
+      # container, so Homebrew's root guard does not stand down for a root
+      # sandbox here; a sandbox runs as its own user, which is the brew group's
+      # case.
+      - name: homebrew
+        run: |
+          set -eux
+          HOMEBREW_VERSION=6.0.22
+          groupadd --system brew
+          git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
+              https://github.com/Homebrew/brew /home/linuxbrew/.linuxbrew/Homebrew
+          mkdir -p /home/linuxbrew/.linuxbrew/bin
+          ln -s ../Homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew
+          git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew
+          useradd --system --gid brew --no-create-home --home-dir /home/linuxbrew brew-build
+          chown -R root:brew /home/linuxbrew
+          chmod -R g+w /home/linuxbrew
+          setpriv --reuid brew-build --regid brew --clear-groups \
+              env HOME=/home/linuxbrew HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 \
+              /home/linuxbrew/.linuxbrew/bin/brew vendor-install ruby
+          setpriv --reuid brew-build --regid brew --clear-groups \
+              env HOME=/home/linuxbrew /home/linuxbrew/.linuxbrew/bin/brew --version
+          rm -rf /home/linuxbrew/.cache
+          userdel brew-build
+          chown -R root:brew /home/linuxbrew
+          chmod -R g+w /home/linuxbrew
+          find /home/linuxbrew -type d -exec chmod g+s {} +
+
+  # Unpinned upstream toolchains, then the trust store built from the final
+  # ca-certificates. discobox-review is here rather than with this
+  # repository's binaries because it is pinned and needs only the Go above.
+  - name: toolchains
+    steps:
+      - name: go
+        run: |
+          set -eux
+          GO_VERSION="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)"
+          curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" | tar -C /usr/local -xz
+      - name: uv, bun
+        run: |
+          set -eux
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+      # Bumping it can invalidate the discobox-review skill; see the
+      # Dockerfile's REVIEW_VERSION.
+      - name: discobox-review
+        run: |
+          set -eux
+          REVIEW_VERSION=v0.0.0-20260919051809-2b21e735f114
+          export GOPATH=/var/tmp/discobox-go GOCACHE=/var/tmp/discobox-go/cache
+          CGO_ENABLED=0 GOBIN=/usr/local/bin \
+              go install -trimpath -ldflags="-s -w" "github.com/discobox-ai/review/cmd/discobox-review@${REVIEW_VERSION}"
+          rm -rf /var/tmp/discobox-go
+      - name: trust store
+        run: |
+          set -eux
+          mkdir -p /opt/discobox/ca-certificates
+          sed -e 's|^ETCCERTSDIR=.*|ETCCERTSDIR=/opt/discobox/ca-certificates|' \
+              -e 's|^LOCALCERTSDIR=.*|LOCALCERTSDIR=/nonexistent|' \
+              /usr/sbin/update-ca-certificates > /tmp/discobox-prebuild-ca-store
+          chmod +x /tmp/discobox-prebuild-ca-store
+          /tmp/discobox-prebuild-ca-store --fresh
+          rm -f /tmp/discobox-prebuild-ca-store
+          test -s /opt/discobox/ca-certificates/ca-certificates.crt
+      # NSS serves the system trust store, so Chromium trusts the MITM CA. The
+      # link is absolute rather than the Dockerfile's relative one: where
+      # libnssckbi.so sits relative to p11-kit's modules differs by
+      # distribution.
+      - name: NSS reads the system trust store
+        run: |
+          set -eux
+          nssckbi="$(dpkg -L libnss3 | grep '/libnssckbi\.so$')"
+          trust="$(dpkg -L p11-kit-modules | grep '/p11-kit-trust\.so$')"
+          dpkg-divert --add --rename --divert "${nssckbi}.nss" "${nssckbi}"
+          ln -s "${trust}" "${nssckbi}"
+          test -e "$(readlink -f "${nssckbi}")"
+
+  # The image's own files, from this repository, at the paths the Dockerfile
+  # COPYs them to. A copy step can only land a source in a directory under
+  # its own name, so the trees go to a staging directory and one step installs
+  # each file where the Dockerfile puts it, in the Dockerfile's order.
+  - name: image-files
+    steps:
+      - copy: {src: sandbox-agent/image, dst: /var/tmp/discobox-build/image}
+      - copy: {src: assets/brand, dst: /var/tmp/discobox-build/brand}
+      - copy: {src: access/skills, dst: /var/tmp/discobox-build/access-skills}
+      - copy: {src: harness/prompt-answer.sh, dst: /var/tmp/discobox-build}
+      - run: |
+          set -eux
+          s=/var/tmp/discobox-build/image
+          # cp -a for trees, so a tree's modes are its own; install for files.
+          tree() { mkdir -p "$2" && cp -a "$1"/. "$2"/; }
+          file() { install -D -m "$1" "$2" "$3"; }
+          file 0644 $s/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
+          file 0644 $s/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
+          file 0644 $s/profile.d/sandbox-desktop-scale.sh /etc/profile.d/sandbox-desktop-scale.sh
+          file 0644 $s/profile.d/sandbox-agent-store.sh /etc/profile.d/sandbox-agent-store.sh
+          file 0644 $s/shells/zsh-newuser /usr/share/zsh/scripts/newuser
+          file 0644 $s/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
+          for unit in \
+              discobox-sandbox-agent.service \
+              discobox-proxy-bridge.service \
+              discobox-buildkit-bridge.service \
+              discobox-trust-ca.service \
+              discobox-render-proxy-env.service \
+              discobox-nix-seed.service \
+              discobox-proxy-bridge-docker.service \
+              x11-display.socket \
+              x11-display.service \
+              x11vnc.socket \
+              x11vnc@.service \
+              websockify-proxy.socket \
+              websockify-proxy.service \
+              websockify@.service \
+              xvfb.service \
+              discobox-desktop.socket \
+              discobox-desktop.service \
+              discobox-session-bus.socket \
+              discobox-session-bus.service \
+              xfce4-session@.service
+          do
+              file 0644 "$s/systemd/$unit" "/etc/systemd/system/$unit"
+          done
+          file 0644 $s/systemd/containerd.service.d/runc-ca.conf /etc/systemd/system/containerd.service.d/runc-ca.conf
+          file 0644 $s/systemd/docker.service.d/runc-ca.conf /etc/systemd/system/docker.service.d/runc-ca.conf
+          file 0644 $s/systemd/docker.service.d/proxy.conf /etc/systemd/system/docker.service.d/proxy.conf
+          file 0644 $s/systemd/docker.service.d/proxy-bridge.conf /etc/systemd/system/docker.service.d/proxy-bridge.conf
+          file 0644 $s/systemd/nix-daemon.service.d/proxy.conf /etc/systemd/system/nix-daemon.service.d/proxy.conf
+          file 0644 $s/systemd/nix-daemon.service.d/seed.conf /etc/systemd/system/nix-daemon.service.d/seed.conf
+          file 0644 $s/systemd/nix-daemon.socket.d/seed.conf /etc/systemd/system/nix-daemon.socket.d/seed.conf
+          # Merged over a daemon.json the base's Docker came with (boxd's
+          # sets its cgroup driver) rather than replacing it; the image's
+          # keys win.
+          if [ -s /etc/docker/daemon.json ]; then
+              jq -s '.[0] * .[1]' /etc/docker/daemon.json $s/daemon.json > /tmp/daemon.json
+              install -m 0644 /tmp/daemon.json /etc/docker/daemon.json
+              rm -f /tmp/daemon.json
+          else
+              file 0644 $s/daemon.json /etc/docker/daemon.json
+          fi
+          file 0644 $s/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
+          file 0644 $s/xorg-dummy.conf /etc/X11/xorg-dummy.conf
+          file 0755 $s/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
+          tree /var/tmp/discobox-build/brand /usr/local/share/discobox/brand
+          tree $s/desktop/xfconf /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+          file 0644 $s/desktop/panel.xml /etc/xdg/xfce4/panel/default.xml
+          tree $s/desktop/launchers /usr/local/share/discobox/desktop/launchers
+          tree $s/services /usr/local/share/discobox/services
+          tree $s/tools /usr/local/share/discobox/tools
+          file 0644 $s/desktop/mimeapps.list /etc/xdg/mimeapps.list
+          file 0644 $s/desktop/helpers.rc /etc/xdg/xfce4/helpers.rc
+          tree $s/desktop/chromium.d /etc/chromium.d
+          tree $s/desktop/chromium-policies /etc/chromium/policies/managed
+          file 0755 $s/desktop/brand-theme /usr/local/libexec/discobox/brand-theme
+          file 0644 $s/desktop/wallpaper.svg /usr/local/libexec/discobox/wallpaper.svg
+
+          # The browser the distribution layer installed or found.
+          for name in chromium google-chrome-stable google-chrome; do
+              if browser="$(command -v "$name")" && [ "${browser#/snap/}" = "$browser" ]; then
+                  break
+              fi
+          done
+          update-alternatives --set x-www-browser "$browser"
+          # Chrome reads its machine policy from its own directory.
+          case "$browser" in
+              */google-chrome*) tree $s/desktop/chromium-policies /etc/opt/chrome/policies/managed ;;
+          esac
+          printf '%s\n' '{"browser":{"check_default_browser":false},"distribution":{"import_bookmarks":false,"make_chrome_default":false,"suppress_first_run_bubble":true,"skip_first_run_ui":true}}' \
+              | tee /etc/chromium/master_preferences > /etc/chromium/initial_preferences
+          /usr/local/libexec/discobox/brand-theme
+          mkdir -p /usr/local/share/discobox/desktop /tmp/wallpaper
+          cp /usr/local/libexec/discobox/wallpaper.svg /usr/local/share/discobox/brand/wordmark-white.svg /tmp/wallpaper/
+          rsvg-convert -w 2560 -h 1440 -o /usr/local/share/discobox/desktop/wallpaper.png /tmp/wallpaper/wallpaper.svg
+          rsvg-convert --page-width 160 --page-height 160 --top 16 --left 18 -h 128 \
+              -o /usr/local/share/discobox/desktop/mark.png /usr/local/share/discobox/brand/logo-purple.svg
+          rm -rf /tmp/wallpaper /usr/local/libexec/discobox/wallpaper.svg
+
+          file 0755 $s/nix-seed /usr/local/libexec/discobox/nix-seed
+          file 0755 $s/nix-shim /usr/local/lib/discobox/nix-shim
+          file 0755 $s/harness-run /usr/local/bin/discobox-harness-run
+          file 0755 /var/tmp/discobox-build/prompt-answer.sh /usr/local/bin/discobox-prompt-answer
+          file 0755 $s/discobox-shell /usr/local/bin/discobox-shell
+          file 0755 $s/agent-store /usr/local/bin/discobox-agent-store
+          file 0755 $s/harness-upgrade /usr/local/bin/discobox-harness-upgrade
+          tree /var/tmp/discobox-build/access-skills /usr/local/share/discobox/skills
+          tree $s/skills /usr/local/share/discobox/skills
+
+          for c in nix nix-build nix-env nix-shell nix-store devenv; do
+              ln -sf /usr/local/lib/discobox/nix-shim "/usr/local/bin/$c"
+          done
+          printf '\n# Discobox: direnv in the interactive shells /etc/profile does not reach.\nif [ -r /etc/profile.d/sandbox-direnv.sh ]; then\n  . /etc/profile.d/sandbox-direnv.sh\nfi\n' >> /etc/bash.bashrc
+          printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc
+          mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace
+          systemctl enable \
+              discobox-sandbox-agent.service \
+              discobox-proxy-bridge.service \
+              discobox-buildkit-bridge.service \
+              discobox-trust-ca.service \
+              discobox-render-proxy-env.service \
+              x11-display.socket \
+              x11vnc.socket \
+              websockify-proxy.socket \
+              discobox-desktop.socket \
+              discobox-session-bus.socket
+
+          # The labels the Dockerfile sets that are true of this image. The
+          # control plane reads them from an OCI image config; on a machine
+          # they are files, one per label, holding its value. The manifest
+          # label is written with the binaries, from the image.json beside
+          # them.
+          labels=/usr/local/share/discobox/labels
+          mkdir -p $labels
+          printf tar > $labels/io.discobox.tree-export.v1
+          printf smart-http > $labels/io.discobox.worktree-git.v1
+          rm -rf /var/tmp/discobox-build
+
+  # This repository's binaries: the Dockerfile's two builder stages, built in
+  # the guest from the directories those stages COPY, which are the root
+  # module's packages each binary reaches. Last, because every source change
+  # rebuilds it.
+  - name: binaries
+    steps:
+      - copy: {src: go.mod, dst: /var/tmp/discobox-src}
+      - copy: {src: go.sum, dst: /var/tmp/discobox-src}
+      - copy: {src: agentcreds, dst: /var/tmp/discobox-src/agentcreds}
+      - copy: {src: access, dst: /var/tmp/discobox-src/access}
+      - copy: {src: api, dst: /var/tmp/discobox-src/api}
+      - copy: {src: auditid, dst: /var/tmp/discobox-src/auditid}
+      - copy: {src: controlplane, dst: /var/tmp/discobox-src/controlplane}
+      - copy: {src: declared, dst: /var/tmp/discobox-src/declared}
+      - copy: {src: endpoint, dst: /var/tmp/discobox-src/endpoint}
+      - copy: {src: execstream, dst: /var/tmp/discobox-src/execstream}
+      - copy: {src: fsdurable, dst: /var/tmp/discobox-src/fsdurable}
+      - copy: {src: gitbackend, dst: /var/tmp/discobox-src/gitbackend}
+      - copy: {src: harness, dst: /var/tmp/discobox-src/harness}
+      - copy: {src: health, dst: /var/tmp/discobox-src/health}
+      - copy: {src: hostscope, dst: /var/tmp/discobox-src/hostscope}
+      - copy: {src: imagecache, dst: /var/tmp/discobox-src/imagecache}
+      - copy: {src: internal, dst: /var/tmp/discobox-src/internal}
+      - copy: {src: judge, dst: /var/tmp/discobox-src/judge}
+      - copy: {src: platform, dst: /var/tmp/discobox-src/platform}
+      - copy: {src: proxy, dst: /var/tmp/discobox-src/proxy}
+      - copy: {src: randomname, dst: /var/tmp/discobox-src/randomname}
+      - copy: {src: releasemanifest, dst: /var/tmp/discobox-src/releasemanifest}
+      - copy: {src: runcca, dst: /var/tmp/discobox-src/runcca}
+      - copy: {src: sandboxconfig, dst: /var/tmp/discobox-src/sandboxconfig}
+      - copy: {src: sandboxpath, dst: /var/tmp/discobox-src/sandboxpath}
+      - copy: {src: sandboxmeta, dst: /var/tmp/discobox-src/sandboxmeta}
+      - copy: {src: sandboxservices, dst: /var/tmp/discobox-src/sandboxservices}
+      - copy: {src: sandboxshell, dst: /var/tmp/discobox-src/sandboxshell}
+      - copy: {src: sandboxtree, dst: /var/tmp/discobox-src/sandboxtree}
+      - copy: {src: sandboxuser, dst: /var/tmp/discobox-src/sandboxuser}
+      - copy: {src: secretformat, dst: /var/tmp/discobox-src/secretformat}
+      - copy: {src: serverstage, dst: /var/tmp/discobox-src/serverstage}
+      - copy: {src: tarsums, dst: /var/tmp/discobox-src/tarsums}
+      - copy: {src: tools, dst: /var/tmp/discobox-src/tools}
+      - copy: {src: version, dst: /var/tmp/discobox-src/version}
+      - copy: {src: vsock, dst: /var/tmp/discobox-src/vsock}
+      - copy: {src: wellknown, dst: /var/tmp/discobox-src/wellknown}
+      - copy: {src: wire, dst: /var/tmp/discobox-src/wire}
+      - copy: {src: termpane, dst: /var/tmp/discobox-src/termpane}
+      - copy: {src: cli, dst: /var/tmp/discobox-src/cli}
+      - copy: {src: sandbox-agent, dst: /var/tmp/discobox-src/sandbox-agent}
+      - run: |
+          set -eux
+          export GOPATH=/var/tmp/discobox-go GOCACHE=/var/tmp/discobox-go/cache GOFLAGS=-trimpath CGO_ENABLED=0
+          cd /var/tmp/discobox-src
+          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-sandbox-agent ./cmd/discobox-sandbox-agent
+          # As `runc`, on the directory prepended to containerd's and dockerd's
+          # PATH; and as `docker`, ahead of the real CLI. See the Dockerfile.
+          install -d /opt/discobox/bin
+          go -C sandbox-agent build -ldflags="-s -w" -o /opt/discobox/bin/runc ./cmd/discobox-runc
+          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-ca-anchor ./cmd/discobox-ca-anchor
+          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/docker ./cmd/discobox-docker
+          go -C access build -ldflags="-s -w" -o /usr/local/bin/discobox-access ./cmd/discobox-access
+          go -C cli build -ldflags="-s -w" -o /usr/local/bin/discobox ./cmd/discobox
+          ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish
+          # The base layer's manifest, the Dockerfile's
+          # io.discobox.image.v1.10-sandbox-base label (see image-files).
+          install -d /usr/local/share/discobox/labels
+          jq -c . sandbox-agent/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1.10-sandbox-base
+          cd /
+          rm -rf /var/tmp/discobox-src /var/tmp/discobox-go
