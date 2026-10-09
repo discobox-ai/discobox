@@ -67,6 +67,19 @@ sandbox reaches a pool service — the bridge, and the credentials relay in
   has no host, so it needs `serverName`, and the pool states it in every bridge
   config it stages.
 
+A connection whose first request is an HTTP proxy request (`CONNECT`, or an
+absolute-form `http://` request) for an IP address in one of the sandbox's own
+subnets (`nestedbridge.LocalSubnets`, read per request) is connected directly,
+as `NO_PROXY`'s subnet entries intend; the pool cannot reach those networks.
+`NO_PROXY` alone is not enough: Node's built-in `fetch` (undici), which the
+sandbox's `NODE_USE_ENV_PROXY=1` sends to the proxy, matches it only by exact
+host or name suffix, never CIDR or range. Only the first request decides, and
+a plain request is sent on with `Connection: close` so the client cannot reuse
+it; a client that carries requests for several hosts over one proxy connection
+(Go, urllib3) honors the CIDR entries and never sends a local address here.
+Names, SOCKS, and everything else are spliced to the pool unread. The pool's
+build forwarder passes no subnets and decides nothing.
+
 The bridge lives in the dependency-light `proxy/bridge` subpackage so the
 `sandbox-agent` binary (and `pool-agent/buildkitagent`'s per-build forwarder)
 can embed it without pulling in the full pool proxy stack (goproxy, gormdb,

@@ -266,6 +266,7 @@ func runProxyBridge(args []string) int {
 		MTLSCAPath:     cfg.MTLSCAPath,
 		ClientCertPath: cfg.ClientCertPath,
 		ClientKeyPath:  cfg.ClientKeyPath,
+		LocalSubnets:   nestedbridge.LocalSubnets,
 	})
 	if err != nil {
 		slog.Error("create proxy bridge", "error", err)

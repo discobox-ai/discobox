@@ -1,6 +1,7 @@
 // Package bridge implements the sandbox-local forwarding proxy that accepts
 // plaintext proxy traffic inside a sandbox and forwards it to the pool proxy
-// over mTLS. The pool agent's build forwarder uses it the same way inside a
+// over mTLS, except HTTP proxy requests for the sandbox's own networks, which
+// it connects directly. The pool agent's build forwarder uses it the same way inside a
 // build's network namespace. It is intentionally dependency-light so the
 // sandbox-agent binary can embed it without importing the full pool proxy
 // stack.
@@ -11,6 +12,7 @@
 package bridge
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"log/slog"
@@ -33,6 +35,7 @@ type Forwarder struct {
 	ctx           context.Context
 	listenAddress string
 	worker        *Dialer
+	localSubnets  func() []string
 
 	listener net.Listener
 	connMu   sync.Mutex
@@ -52,6 +55,17 @@ type Config struct {
 	MTLSCAPath     string
 	ClientCertPath string
 	ClientKeyPath  string
+
+	// LocalSubnets lists, as CIDRs, the networks this host is directly
+	// connected to. A connection whose first request is an HTTP proxy request
+	// for an IP address inside one is connected directly rather than sent to the pool proxy, which cannot
+	// reach a sandbox's own networks. NO_PROXY names the same subnets, but
+	// not every client can match a CIDR there: Node's built-in fetch matches
+	// only exact hosts and name suffixes. Nil forwards everything.
+	//
+	// It is called when such a request arrives, never cached: the nested
+	// Docker bridge and user-created networks appear after boot.
+	LocalSubnets func() []string
 }
 
 // New creates a sandbox-local forwarder.
@@ -76,6 +90,7 @@ func New(ctx context.Context, cfg Config) (*Forwarder, error) {
 		ctx:           ctx,
 		listenAddress: cfg.ListenAddress,
 		worker:        worker,
+		localSubnets:  cfg.LocalSubnets,
 		conns:         map[net.Conn]struct{}{},
 		closed:        make(chan struct{}),
 	}, nil
@@ -156,6 +171,13 @@ func (f *Forwarder) forward(local net.Conn) {
 	f.trackConn(local)
 	defer f.untrackConn(local)
 
+	client := bufio.NewReaderSize(local, maxRequestLine)
+	if target, connect, ok := f.localTarget(client); ok {
+		span.SetAttributes(attribute.String("proxy.bridge.direct", target))
+		f.direct(ctx, local, client, target, connect)
+		return
+	}
+
 	worker, err := f.worker.Dial(ctx)
 	if err != nil {
 		span.RecordError(err)
@@ -172,16 +194,25 @@ func (f *Forwarder) forward(local net.Conn) {
 	f.trackConn(worker)
 	defer f.untrackConn(worker)
 
+	splice(local, worker, func() error {
+		_, err := io.Copy(worker, client)
+		return err
+	})
+}
+
+// splice copies remote's bytes to local while toRemote sends local's the other
+// way, closing each side when its direction ends, until both have.
+func splice(local, remote net.Conn, toRemote func() error) {
 	var copyWg sync.WaitGroup
 	copyWg.Add(2)
 	go func() {
 		defer copyWg.Done()
-		_, _ = io.Copy(worker, local)
-		_ = worker.Close()
+		_ = toRemote()
+		_ = remote.Close()
 	}()
 	go func() {
 		defer copyWg.Done()
-		_, _ = io.Copy(local, worker)
+		_, _ = io.Copy(local, remote)
 		_ = local.Close()
 	}()
 	copyWg.Wait()
