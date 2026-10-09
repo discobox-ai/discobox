@@ -2,9 +2,12 @@ package discovm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,8 +17,23 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// guestImage is one disco-vm image a driver's pools boot: the build spec in a
-// discobox checkout, and the tag the engine finds the result by.
+// imagesDir is where a discobox checkout keeps the disco-vm build specs for
+// each driver, in a directory named as disco-vm names the driver. A spec is
+// <role>.yaml, and builds the image imageTag names: pool.yaml is the pool
+// machine's (poolRole).
+const imagesDir = "server/providers/discovm/images"
+
+// imageTag is the tag a driver's image of a role has in the engine's store.
+// It names the driver because every driver on a host shares one store, and one
+// tag namespace: a tag per role alone would move from one driver's image to
+// another's whenever both were built, and the first driver's next create would
+// be refused for an image built for the other.
+func imageTag(driver, role string) string {
+	return "discobox-" + driver + "-" + role
+}
+
+// guestImage is one disco-vm image to build: the build spec in a discobox
+// checkout, and the tag the engine finds the result by.
 type guestImage struct {
 	Tag string
 	// Spec is the build spec's path in the checkout, slash-separated. The
@@ -24,8 +42,27 @@ type guestImage struct {
 	Spec string
 }
 
+// driverImages lists the build specs a checkout holds for a driver. Which
+// images there are is the checkout's to say, not this package's.
+func driverImages(source, driver string) ([]guestImage, error) {
+	dir := path.Join(imagesDir, driver)
+	entries, err := os.ReadDir(filepath.Join(source, filepath.FromSlash(dir)))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var images []guestImage
+	for _, entry := range entries {
+		role, ok := strings.CutSuffix(entry.Name(), ".yaml")
+		if !ok || !entry.Type().IsRegular() {
+			continue
+		}
+		images = append(images, guestImage{Tag: imageTag(driver, role), Spec: path.Join(dir, entry.Name())})
+	}
+	return images, nil
+}
+
 // BuildGuestImage builds the driver's images into this provider's engine, from
-// the specs in a discobox checkout, one after another.
+// the specs a discobox checkout holds for it, one after another.
 //
 // The pool is only where the operation was asked from. Unlike a dockerworker
 // guest image, which a running pool builds on its own Docker daemon, a disco-vm
@@ -34,10 +71,6 @@ type guestImage struct {
 func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
 	if err := requirePool(pool); err != nil {
 		return nil, err
-	}
-	images := r.driver.images()
-	if len(images) == 0 {
-		return nil, fmt.Errorf("the %s driver defines no disco-vm image to build yet: %w", r.engine.Driver.Name(), sandbox.ErrGuestImageBuildUnsupported)
 	}
 	if opts.RestartHost {
 		// A machine is cloned from the image it was created from, so a new
@@ -49,12 +82,17 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 	if err != nil {
 		return nil, err
 	}
+	driver := r.engine.Driver.Name()
+	images, err := driverImages(source, driver)
+	if err != nil {
+		return nil, err
+	}
+	if len(images) == 0 {
+		return nil, fmt.Errorf("%s holds no disco-vm image spec for the %s driver under %s/%s: %w", source, driver, imagesDir, driver, sandbox.ErrGuestImageBuildUnsupported)
+	}
 	specs := make([]string, len(images))
 	for i, image := range images {
 		specs[i] = filepath.Join(source, filepath.FromSlash(image.Spec))
-		if info, err := os.Stat(specs[i]); err != nil || !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("%s holds no %s, so it is not a discobox checkout with this driver's images", source, image.Spec)
-		}
 	}
 
 	reader, writer := io.Pipe()
