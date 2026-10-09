@@ -210,11 +210,19 @@ func (m *ProviderManager) ListProviderStatuses() map[string]ProviderStatus {
 	return statuses
 }
 
-// ValidateProviderConfig validates config for a registered provider type.
+// ValidateProviderConfig validates config for a provider type this manager
+// can resolve: one with a factory or a registered provider. Any other type is
+// refused, because an instance of it could never resolve; a provider
+// definition alone does not make a type resolvable.
 func (m *ProviderManager) ValidateProviderConfig(providerType string, config json.RawMessage) error {
 	m.mu.RLock()
+	_, hasFactory := m.factories[providerType]
+	_, hasProvider := m.providers[providerType]
 	validator := m.validators[providerType]
 	m.mu.RUnlock()
+	if !hasFactory && !hasProvider {
+		return fmt.Errorf("unknown sandbox provider type %q", providerType)
+	}
 	if validator == nil {
 		return nil
 	}
@@ -320,6 +328,7 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		return nil, err
 	}
 	if err := provider.Initialize(ctx, instance); err != nil {
+		closeProvider(provider)
 		return nil, err
 	}
 	m.mu.Lock()

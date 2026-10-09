@@ -90,8 +90,9 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    readiness; pool identity and lifecycle survive.
 3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`.
 4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
-   every enabled provider instance; on failure it stops the engine and returns
-   the error.
+   every enabled provider instance. An instance that does not resolve is
+   logged and its pools marked for retry; only a store error stops the engine
+   and returns.
 
 `Service.Stop(ctx)` stops the engine first, waiting for in-flight reconciles,
 then shuts down the provider manager so providers release backend resources

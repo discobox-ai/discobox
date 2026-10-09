@@ -23,11 +23,21 @@ flowchart LR
   runtime ensure behavior. It reaches the provider registry through
   `SandboxCatalogService` (catalog plus `sandbox.ProviderManager`).
 - Simple provider CRUD may call store directly.
-- Create requires a type, validates config with
-  `ProviderManager.ValidateProviderConfig`, persists, then `ResolveInstance`s
-  so the new instance's provider initializes immediately. Update validates
-  config against the stored type and persists name, config, and `Disabled`;
-  type is immutable. Update does not re-resolve: the manager rebuilds a cached
+- Create requires a type and validates it and its config with
+  `ProviderManager.ValidateProviderConfig`, which refuses a type the manager
+  cannot resolve (no factory and no registered provider; a definition alone
+  does not count). Either refusal is a 400 before anything is written. It then
+  persists and `ResolveInstance`s so the new instance's provider initializes
+  immediately. A resolve that fails is the backend not coming up (the config
+  already passed validation), so it answers 502 and deletes the row again, on
+  a context the request's cancellation does not reach: a failed create leaves
+  nothing behind. The row is written first because the provider cache is keyed
+  on its ID, and resolving runs provider I/O that must not hold the write
+  transaction. Create refuses such an instance while startup keeps one (below)
+  because create is the one moment the caller can still be told; a persisted
+  instance was already accepted. Update validates config against the stored
+  type (400 on refusal) and persists name, config, and `Disabled`; type is
+  immutable. Update does not re-resolve: the manager rebuilds a cached
   provider on the next resolve because the cache is keyed by `UpdatedAt`.
 - Project copy creates the copied instances through this service
   (`CreateSandboxProviderInstance`), so they get the same validation and
@@ -39,7 +49,11 @@ flowchart LR
   `internal/service.Service.Start` once the reconcile engine is up, resolves
   every enabled instance in every project. Resolving runs the provider's
   factory and `Initialize`, and a pool-backed provider's `Initialize` schedules
-  each of its pools' reconciles. An error fails server start.
+  each of its pools' reconciles. An instance that does not resolve is logged
+  and does not fail server start — it belongs to one project, and a stopped
+  server cannot serve the API that would disable or delete it. Its pools are
+  marked dirty instead, so their reconciles retry the resolve with the
+  engine's backoff and carry the error. Only a store error fails the start.
 - `EnqueueProviderPools` marks every pool bound to one instance dirty through
   `pools.ControlPlane.SchedulePoolReconciliation`.
 - Provider status reports availability only (`sandbox.ProviderStatus`:

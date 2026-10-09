@@ -3,7 +3,9 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -119,17 +121,28 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 		return nil, apperrors.NotFound(err, "project not found")
 	}
 	if strings.TrimSpace(input.Type) == "" {
-		return nil, apperrors.NotFound(fmt.Errorf("type is required"), "")
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "type is required")
 	}
-	if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(input.Type, services.RawMessage(input.Config)); err != nil {
-		return nil, err
+	manager := s.sandboxes.SandboxProviderManager()
+	if err := manager.ValidateProviderConfig(input.Type, services.RawMessage(input.Config)); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config)}
 	if err := s.store.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
-	if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {
-		return nil, err
+	// The row is written first because resolving keys the provider cache on its
+	// ID and runs provider I/O that must not hold the write transaction. A
+	// create that fails leaves nothing behind, so the row goes again, even when
+	// the resolve failed because the request's context ended. The config has
+	// passed validation, so a resolve that fails is the backend not coming up:
+	// a 502, not the caller's input.
+	if _, err := manager.ResolveInstance(ctx, provider); err != nil {
+		resolveErr := apperrors.NewStatusError(http.StatusBadGateway, err.Error())
+		if deleteErr := s.store.DeleteSandboxProviderInstance(context.WithoutCancel(ctx), projectID, provider.ID); deleteErr != nil {
+			return nil, errors.Join(resolveErr, fmt.Errorf("remove provider instance %s that did not resolve: %w", provider.ID, deleteErr))
+		}
+		return nil, resolveErr
 	}
 	return s.store.GetSandboxProviderInstance(ctx, projectID, provider.ID)
 }
@@ -153,7 +166,7 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 	if len(input.Config) > 0 {
 		config := services.RawMessage(input.Config)
 		if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(provider.Type, config); err != nil {
-			return nil, err
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 		}
 		provider.Config = config
 	}
@@ -181,6 +194,11 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 
 // EnsureExistingSandboxProviderInstances schedules provider startup
 // reconciliation for persisted provider instances.
+//
+// An instance that does not resolve is logged and does not fail the start: it
+// belongs to one project, and a server that will not start cannot serve the
+// API that would disable or delete it. Its pools are marked instead, so their
+// reconciles retry the resolve with backoff and carry the error.
 func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) error {
 	projects, err := s.store.ListProjects(ctx)
 	if err != nil {
@@ -198,7 +216,10 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 				continue
 			}
 			if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {
-				return err
+				slog.Error("sandbox provider instance did not resolve", "project", project.ID, "provider", provider.ID, "type", provider.Type, "error", err)
+				if err := s.EnqueueProviderPools(ctx, project.ID, provider.ID); err != nil {
+					return err
+				}
 			}
 		}
 	}
