@@ -1,8 +1,15 @@
-package config
+// Package configfile is the engine behind a schema-checked YAML configuration
+// file whose struct is its source of truth (ADR 0096): struct tags declare each
+// setting, and from the one walk over them come the strict decode, the
+// environment overlay, the commented reference file and the JSON Schema. The
+// server's server.yaml and the CLI's client.yaml are both read through it.
+package configfile
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -10,11 +17,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// A setting is one configurable field of Config, described by its struct tags
-// (ADR 0096 §2, configuration file). The struct is the source of truth: the loader binds from
-// these, and genschema emits the JSON Schema from the same walk, so a field
-// cannot appear in one and not the other.
-type setting struct {
+// A Setting is one configurable field of a configuration struct, described by
+// its struct tags (ADR 0096 §2, configuration file). The struct is the source of
+// truth: the loader binds from these, and the schema and reference are emitted
+// from the same walk, so a field cannot appear in one and not the other.
+type Setting struct {
 	// Path is the dotted YAML path, "dataDir" or "iroh.relayUrls".
 	Path string
 	// Env is the environment variable that overrides it, empty for a setting
@@ -30,19 +37,31 @@ type setting struct {
 	Enum []string
 	// Field is the reflect.StructField, for its type.
 	Field reflect.StructField
-	// index is the path to the field within Config, for reflect FieldByIndex.
+	// index is the path to the field within the struct, for reflect
+	// FieldByIndex.
 	index []int
 }
 
-// settings walks a Config type and returns every bound setting, depth first.
-// A field tagged `yaml:"-"` is derived rather than configured and is skipped,
-// which is what keeps HostID and DevelopmentImages out of the file and out of
-// the schema.
-func settings(t reflect.Type) []setting {
+// Settings walks a configuration struct type and returns every bound setting,
+// depth first. A field tagged `yaml:"-"` is derived rather than configured and
+// is skipped, which is what keeps it out of the file and out of the schema.
+func Settings(t reflect.Type) []Setting {
 	return appendSettings(nil, t, "", nil)
 }
 
-func appendSettings(out []setting, t reflect.Type, prefix string, index []int) []setting {
+// SettingPaths lists every configurable path of a configuration struct type,
+// sorted. It exists for tests that assert the file, the schema and the loader
+// describe the same surface.
+func SettingPaths(t reflect.Type) []string {
+	var paths []string
+	for _, s := range Settings(t) {
+		paths = append(paths, s.Path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func appendSettings(out []Setting, t reflect.Type, prefix string, index []int) []Setting {
 	for i := range t.NumField() {
 		field := t.Field(i)
 		if !field.IsExported() {
@@ -64,7 +83,7 @@ func appendSettings(out []setting, t reflect.Type, prefix string, index []int) [
 			out = appendSettings(out, field.Type, path, at)
 			continue
 		}
-		s := setting{
+		s := Setting{
 			Path:    path,
 			Env:     field.Tag.Get("env"),
 			Doc:     field.Tag.Get("doc"),
@@ -80,11 +99,12 @@ func appendSettings(out []setting, t reflect.Type, prefix string, index []int) [
 	return out
 }
 
-// applyDefaults writes every literal default into cfg. It runs first, so the
-// file and then the environment overwrite it (ADR 0096 §4, configuration file).
-func applyDefaults(cfg *Config) error {
+// ApplyDefaults writes every literal default into cfg, a pointer to a
+// configuration struct. It runs first, so the file and then the environment
+// overwrite it (ADR 0096 §4, configuration file).
+func ApplyDefaults(cfg any) error {
 	value := reflect.ValueOf(cfg).Elem()
-	for _, s := range settings(value.Type()) {
+	for _, s := range Settings(value.Type()) {
 		if s.Default == "" {
 			continue
 		}
@@ -95,12 +115,13 @@ func applyDefaults(cfg *Config) error {
 	return nil
 }
 
-// applyEnv overlays the environment, which wins over the file. It returns the
-// paths it set, so a computed default knows whether anything claimed the field.
-func applyEnv(cfg *Config, lookup func(string) (string, bool)) (map[string]bool, error) {
+// ApplyEnv overlays the environment onto cfg, a pointer to a configuration
+// struct; the environment wins over the file. It returns the paths it set, so a
+// computed default knows whether anything claimed the field.
+func ApplyEnv(cfg any, lookup func(string) (string, bool)) (map[string]bool, error) {
 	value := reflect.ValueOf(cfg).Elem()
 	set := map[string]bool{}
-	for _, s := range settings(value.Type()) {
+	for _, s := range Settings(value.Type()) {
 		if s.Env == "" {
 			continue
 		}
@@ -123,12 +144,13 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) (map[string]bool,
 	return set, nil
 }
 
-// decodeFile overlays a YAML document onto cfg and reports which paths it set.
+// Decode overlays a YAML document read from path onto cfg, a pointer to a
+// configuration struct, and reports which paths it set.
 //
 // Presence comes from the document rather than from the resulting values,
 // because a field set to its zero value and a field left out are different
 // things and a zero cannot tell them apart (ADR 0096 §4, configuration file).
-func decodeFile(cfg *Config, data []byte, path string) (map[string]bool, error) {
+func Decode(cfg any, data []byte, path string) (map[string]bool, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -142,6 +164,13 @@ func decodeFile(cfg *Config, data []byte, path string) (map[string]bool, error) 
 	// (ADR 0096 §3, configuration file).
 	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
+		// yaml reports unknown keys one per line under a heading, and the
+		// key is the part that matters: a console shows an error on one
+		// line, and cut at the first newline it names no key at all.
+		var typeErr *yaml.TypeError
+		if errors.As(err, &typeErr) {
+			return nil, fmt.Errorf("%s: %s", path, strings.Join(typeErr.Errors, "; "))
+		}
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return presentPaths(doc.Content[0], ""), nil
@@ -163,7 +192,7 @@ func presentPaths(node *yaml.Node, prefix string) map[string]bool {
 		// A key written with nothing after it says nothing. Treating it as
 		// configured would make the generated reference unusable: uncommenting
 		// `dataDir:` would claim the operator chose the empty string, and the
-		// server would refuse to start over a line that expressed no opinion.
+		// loader would refuse a line that expressed no opinion.
 		if !isNull(value) {
 			out[path] = true
 		}

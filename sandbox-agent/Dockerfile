@@ -117,6 +117,7 @@ COPY go.mod go.sum ./
 COPY agentcreds ./agentcreds
 COPY api ./api
 COPY auditid ./auditid
+COPY configfile ./configfile
 COPY controlplane ./controlplane
 COPY declared ./declared
 COPY endpoint ./endpoint

@@ -1050,10 +1050,12 @@ type RunRequest struct {
 	// is given. Like Include, only `discobox new`'s own request carries one.
 	Grant []string
 
-	// SkillDirs and UserSkills are `--skills` and `--user-skills`. Like
-	// Include, only `discobox new`'s own request carries them.
+	// SkillDirs and UserSkills are `--skills` and `--user-skills`, nil for one
+	// not given, which the create takes from the client's configuration as
+	// `discobox new` would. Like Include, only `discobox new`'s own request
+	// gives them; the panel's leaves both to the configuration.
 	SkillDirs  []string
-	UserSkills bool
+	UserSkills *bool
 
 	// SkipDeclaredSources is `--declared-sources=false`: leave out the sources
 	// the primary source's repository declares in .discobox/sources.json. The

@@ -1,6 +1,7 @@
 # 0096 — The server reads one schema-checked configuration file, and the environment still wins
 
-- **Status**: Accepted
+- **Status**: Accepted (§6's deferral of a CLI configuration file superseded by
+  [26-10-09-389](26-10-09-389-the-cli-reads-one-schema-checked-configuration-file.md))
 - **Date**: 2026-09-07
 
 ## Context

@@ -26,9 +26,10 @@ type runJSONRequest struct {
 	Env     []string       `json:"env"`
 	Secrets []string       `json:"secrets"`
 	Include []string       `json:"include"`
-	// Skills and UserSkills are --skills and --user-skills.
-	Skills     []string `json:"skills"`
-	UserSkills bool     `json:"userSkills"`
+	// Skills and UserSkills are --skills and --user-skills. Left out, each
+	// takes what client.yaml says; "skills": [] is none.
+	Skills     *[]string `json:"skills"`
+	UserSkills *bool     `json:"userSkills"`
 	// Pool is --pool.
 	Pool string `json:"pool"`
 	// NoSource, IncludeDirty and DeclaredSources are --no-source,
@@ -93,8 +94,10 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	opts.prompt.Env = req.Env
 	opts.prompt.Secret = req.Secrets
 	opts.prompt.Include = req.Include
-	opts.prompt.SkillDirs = req.Skills
-	opts.prompt.UserSkills = req.UserSkills
+	if req.Skills != nil {
+		opts.skillDirs = append([]string{}, *req.Skills...)
+	}
+	opts.userSkills = req.UserSkills
 	opts.pool = req.Pool
 	opts.noSource = req.NoSource
 	if req.IncludeDirty != nil {

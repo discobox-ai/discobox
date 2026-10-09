@@ -120,9 +120,10 @@ installed (for example, brew uninstall discobox).
 
 What this cannot see is left: directories a server.yaml or a
 .discobox-server.env relocates, disk directories set in a provider's own
-configuration, the file DISCOBOX_CONFIG_FILE names, and the containers,
-volumes and images a Docker provider created. A directory an environment
-variable names is deleted only when its name says it is Discobox's.
+configuration, the files DISCOBOX_CONFIG_FILE and DISCOBOX_CLIENT_CONFIG_FILE
+name, and the containers, volumes and images a Docker provider created. A
+directory an environment variable names is deleted only when its name says it
+is Discobox's.
 
 Close editors and discobox windows first: anything that starts a server again
 while this runs recreates what it deletes.`,
@@ -246,7 +247,7 @@ func uninstallLocations() []uninstallLocation {
 		// server.yaml, servers.json and host-id are found here whatever
 		// DISCOBOX_CONFIG_DIR says; that variable moves the server's other
 		// configuration only.
-		{path: baseDir(xdg.ConfigHome), what: "configuration: server.yaml, registered servers, host ID"},
+		{path: baseDir(xdg.ConfigHome), what: "configuration: server.yaml, client.yaml, registered servers, host ID"},
 		{path: serverDir("DISCOBOX_CONFIG_DIR", xdg.ConfigHome), what: "server configuration", env: envNamed("DISCOBOX_CONFIG_DIR")},
 		{path: serverDir("DISCOBOX_CACHE_DIR", xdg.CacheHome), what: "server cache", env: envNamed("DISCOBOX_CACHE_DIR")},
 		{path: serverDir("DISCOBOX_STATE_DIR", xdg.StateHome), what: "server state and logs", env: envNamed("DISCOBOX_STATE_DIR")},

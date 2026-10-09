@@ -35,6 +35,13 @@ type runCommandOptions struct {
 	// pool is --pool as given: the pool the discobox is placed on, by ID,
 	// short ID, or name. Empty is the project's default pool.
 	pool string
+	// skillDirs and userSkills are --skills and --user-skills as given, from
+	// the command line or a --json request: nil for one that was not, which
+	// takes what client.yaml says (newSkills). userSkillsFlag is where the
+	// flag itself lands.
+	skillDirs      []string
+	userSkills     *bool
+	userSkillsFlag bool
 	// json reads the request from stdin instead of the command line, and
 	// prints the created discobox as JSON (runJSONRequest).
 	json bool
@@ -159,6 +166,13 @@ directory replaces the earlier one, and a discobox's skills replace the image's
 and the repository's of the same name. Links are followed and .git is left
 out; the skills are carried in the request, at most 1 MiB in all.
 
+Either can be made the default for every new discobox, in the console too, in
+client.yaml under <XDG config home>/discobox (or wherever
+DISCOBOX_CLIENT_CONFIG_FILE names): new.skills and new.userSkills. A client
+that finds no such file writes client.example.yaml beside where it belongs,
+listing every setting. --skills given replaces new.skills rather than adding
+to it, and --user-skills=false turns new.userSkills off.
+
 --grant gives the new discobox a use of a credential: a well-known one by its
 ID, ID[@HOST]=USE, or a project secret, SECRET[@HOST]:ENV_VAR=USE. Its agent
 takes it with discobox-access, one use at a time, and nothing in the discobox
@@ -225,6 +239,16 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 			return err
 		}
 		opts.grants = grants
+		if opts.flags.Changed("user-skills") {
+			opts.userSkills = &opts.userSkillsFlag
+		}
+	}
+	// What client.yaml says about skills is settled here, whether or not a
+	// window is about to open: a file that does not parse is this command's
+	// error to report, on this terminal, like a flag that does not.
+	var err error
+	if opts.prompt.SkillDirs, opts.prompt.UserSkills, err = newSkills(opts.skillDirs, opts.userSkills); err != nil {
+		return err
 	}
 	// Creating and delivering a source are this client's own work, so
 	// nothing but this process can say which of them is underway
@@ -344,8 +368,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
-	flags.StringArrayVar(&opts.prompt.SkillDirs, "skills", nil, "Directory of skills to install in the discobox, each a subdirectory holding a SKILL.md; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills")
-	flags.BoolVar(&opts.prompt.UserSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
+	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Directory of skills to install in the discobox, each a subdirectory holding a SKILL.md; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills. Given, it replaces client.yaml's new.skills")
+	flags.BoolVar(&opts.userSkillsFlag, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's new.userSkills")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
@@ -539,8 +563,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Secret:              opts.prompt.Secret,
 		Grant:               opts.grant,
 		Include:             opts.prompt.Include,
-		SkillDirs:           opts.prompt.SkillDirs,
-		UserSkills:          opts.prompt.UserSkills,
+		SkillDirs:           opts.skillDirs,
+		UserSkills:          opts.userSkills,
 		SkipDeclaredSources: !opts.declaredSources,
 		Pool:                opts.pool,
 	}

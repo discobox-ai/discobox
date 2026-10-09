@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/discobox-ai/discobox/main/cli/config.schema.json
+#
+# discobox client configuration reference.
+#
+# Every setting is listed here, commented out, showing the value it has when
+# nothing sets it. Copy this to the path the client reads —
+# <XDG config home>/discobox/client.yaml, or wherever
+# DISCOBOX_CLIENT_CONFIG_FILE names — and uncomment only what you want to
+# change: deleting the "#" from a setting's line leaves correctly indented
+# YAML, at any depth. A nested setting needs its parent uncommented too. A
+# client with no file at all behaves exactly as one always has.
+#
+# A client that looks for this file and finds none rewrites this reference
+# beside where that file belongs, so it always matches the client that wrote
+# it. Copy it rather than editing it in place.
+#
+# A flag given on the command line wins over the setting it defaults. A key
+# this client does not define is an error naming the key.
+#
+# This file is generated from the tags on clientconfig.Config by
+# `go tool task generate`. Edit the struct, not this.
+
+# What discobox new, and the console's New Discobox panel, take when the
+# command line does not say.
+#new:
+  # Directories of skills to install in every new discobox, each a
+  # subdirectory holding a SKILL.md, as --skills reads them. A relative
+  # path is relative to this file's directory, and ~ is your home
+  # directory. --skills on the command line replaces this list rather
+  # than adding to it.
+  # Example: skills: ["~/team-skills"]
+  #skills:
+
+  # Install your own skills from ~/.claude/skills and ~/.agents/skills in
+  # every new discobox, as --user-skills does. --user-skills=false on the
+  # command line turns it off for one discobox.
+  #userSkills: false

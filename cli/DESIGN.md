@@ -23,6 +23,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
+| `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -367,14 +368,38 @@ unwritable or corrupt file costs the convenience and never the command.
   A directory with no entry opens on every server, folder and tag, and saving
   that default deletes the entry.
 
+## Client Configuration (ADR 26-10-09-389)
+
+`internal/clientconfig` reads `<XDG config>/discobox/client.yaml`, or what
+`DISCOBOX_CLIENT_CONFIG_FILE` names (empty reads none), through the root
+module's `configfile` — the same tag-driven strict decode, reference and schema
+as the server's `server.yaml` (ADR 0096). `cli/generate.go` emits
+`cli/config.schema.json` and `cli/client.example.yaml`; a client that finds no
+file rewrites `client.example.yaml` beside where it belongs.
+
+- **Read on use, every use.** `loadClientConfig` runs where a setting is
+  needed — never at startup, so a command that takes no setting never fails on
+  it — and again on every create, so a console left open sees the file as it
+  is now, a fixed typo included.
+- **A setting is a flag's default.** `newSkills` resolves `--skills` and
+  `--user-skills` against `new.skills` and `new.userSkills`: a flag given (or a
+  `--json` field present) replaces its setting whole, and one not given — nil
+  — takes it. `discobox new` resolves before a window opens, so a file that
+  does not parse is reported on the terminal; `RunRequest` carries the flags
+  as given and the console's create resolves again, which is how the panel,
+  which names no skills, gets the configured ones.
+- **Paths in the file are the file's.** A relative directory is relative to the
+  file's directory and `~` is home, resolved at load.
+- `admin box create` does not read it: that command infers nothing locally.
+
 ## Uninstall (`discobox admin uninstall`)
 
 `internal/cli/uninstall.go` removes what Discobox keeps on this machine except
 the discobox command: `<discobox state>` (CLI state, staged servers, images),
 the server's data, config, cache and state directories (from their defaults and
 the `DISCOBOX_*_DIR` variables), the VM providers' `<XDG data>/discobox`,
-`<XDG config>/discobox` (where `server.yaml`, `servers.json` and `host-id` are
-whatever `DISCOBOX_CONFIG_DIR` says), the tool configuration directory, the
+`<XDG config>/discobox` (where `server.yaml`, `client.yaml`, `servers.json` and
+`host-id` are whatever `DISCOBOX_CONFIG_DIR` says), the tool configuration directory, the
 runtime directory holding the socket, the managed `Include` lines in this
 machine's `~/.ssh/config`, what `install.sh` and `install.ps1` leave beside the
 command (`installerLeftovers`: a replaced `discobox.exe.old`, an interrupted
@@ -402,7 +427,8 @@ run's staged copy), and this user's Discobox files in the temporary directory
   again afterwards, and a server that answers fails the command.
 - **Not seen, not deleted:** directories a `server.yaml` or
   `.discobox-server.env` relocates, provider-configured disk directories, the
-  file `DISCOBOX_CONFIG_FILE` names (the user's own, anywhere), and Docker's
+  files `DISCOBOX_CONFIG_FILE` and `DISCOBOX_CLIENT_CONFIG_FILE` name (the
+  user's own, anywhere), and Docker's
   containers, volumes and images. The help says so.
 - **Only this machine's ssh.** On WSL the Windows side's managed files sit
   beside a Windows install's state, so they are left alone. An Include is

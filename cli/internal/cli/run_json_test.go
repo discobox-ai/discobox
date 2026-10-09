@@ -256,3 +256,93 @@ func TestRunCarriesItsSkills(t *testing.T) {
 		})
 	}
 }
+
+// client.yaml's new section is what `new` takes when its command line says
+// nothing about skills, and a flag or a --json field given replaces it rather
+// than adding to it (ADR 26-10-09-389).
+func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
+	writeSkill := func(t *testing.T, dir, name string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name, "SKILL.md"), []byte("# "+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		json map[string]any
+		want []string
+	}{
+		{name: "nothing given", args: []string{"new", "-d", "--no-source", "-p", "go"}, want: []string{"configured", "mine"}},
+		{name: "--skills given", args: []string{"new", "-d", "--no-source", "--skills", "OTHER", "-p", "go"}, want: []string{"mine", "other"}},
+		{name: "--user-skills=false", args: []string{"new", "-d", "--no-source", "--user-skills=false", "-p", "go"}, want: []string{"configured"}},
+		{name: "json leaves both out", args: []string{"new", "--json"}, json: map[string]any{"noSource": true}, want: []string{"configured", "mine"}},
+		{name: "json says none", args: []string{"new", "--json"}, json: map[string]any{"noSource": true, "skills": []string{}, "userSkills": false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			setHome(t, home)
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			writeSkill(t, filepath.Join(home, ".claude", "skills"), "mine")
+			// A relative directory in the file is relative to the file.
+			configDir := t.TempDir()
+			writeSkill(t, filepath.Join(configDir, "team"), "configured")
+			configFile := filepath.Join(configDir, "client.yaml")
+			if err := os.WriteFile(configFile, []byte("new:\n  skills: [team]\n  userSkills: true\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
+			other := t.TempDir()
+			writeSkill(t, other, "other")
+			args := slices.Clone(tc.args)
+			if i := slices.Index(args, "OTHER"); i >= 0 {
+				args[i] = other
+			}
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+			request, _ := json.Marshal(tc.json)
+
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(bytes.NewReader(request))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+
+			skills, _ := posted["config"].(map[string]any)["skills"].(map[string]any)
+			var got []string
+			for name := range skills {
+				got = append(got, name)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("skills = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A client.yaml that names a key nothing defines stops `new` with the key
+// named, before anything is created.
+func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
+	setHome(t, t.TempDir())
+	configFile := filepath.Join(t.TempDir(), "client.yaml")
+	if err := os.WriteFile(configFile, []byte("new:\n  skils: [team]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "new", "-d", "--no-source", "-p", "go"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "skils") || !strings.Contains(err.Error(), configFile) {
+		t.Fatalf("execute error = %v, want one naming skils and %s", err, configFile)
+	}
+}

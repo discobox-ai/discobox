@@ -1,0 +1,39 @@
+{
+  "$id": "https://raw.githubusercontent.com/discobox-ai/discobox/main/cli/config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Configuration for the discobox CLI: what its commands take when the command line does not say. A flag given on the command line wins over the setting it defaults.",
+  "properties": {
+    "new": {
+      "additionalProperties": false,
+      "description": "What discobox new, and the console's New Discobox panel, take when the command line does not say.",
+      "properties": {
+        "skills": {
+          "description": "Directories of skills to install in every new discobox, each a subdirectory holding a SKILL.md, as --skills reads them. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it.",
+          "examples": [
+            [
+              "~/team-skills"
+            ]
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "userSkills": {
+          "description": "Install your own skills from ~/.claude/skills and ~/.agents/skills in every new discobox, as --user-skills does. --user-skills=false on the command line turns it off for one discobox.",
+          "type": "boolean"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "title": "Discobox client configuration",
+  "type": "object"
+}

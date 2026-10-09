@@ -519,6 +519,7 @@ layers:
       - copy: {src: access, dst: /var/tmp/discobox-src/access}
       - copy: {src: api, dst: /var/tmp/discobox-src/api}
       - copy: {src: auditid, dst: /var/tmp/discobox-src/auditid}
+      - copy: {src: configfile, dst: /var/tmp/discobox-src/configfile}
       - copy: {src: controlplane, dst: /var/tmp/discobox-src/controlplane}
       - copy: {src: declared, dst: /var/tmp/discobox-src/declared}
       - copy: {src: endpoint, dst: /var/tmp/discobox-src/endpoint}

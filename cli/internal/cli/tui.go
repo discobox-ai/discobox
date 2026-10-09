@@ -1136,8 +1136,12 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
-		SkillDirs:           req.SkillDirs,
-		UserSkills:          req.UserSkills,
+	}
+	// The panel names no skills, so what client.yaml says stands; `discobox
+	// new`'s own request replaces it with whichever flags it was given.
+	var err error
+	if opts.SkillDirs, opts.UserSkills, err = newSkills(req.SkillDirs, req.UserSkills); err != nil {
+		return tui.Sandbox{}, err
 	}
 	// What each declared source resolved to, in the window's own form: it has
 	// no scrollback to keep a line in, so the report is narrated as it happens
@@ -1163,7 +1167,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	}
 	// The prompt goes in as the positional arguments, which is where the shared
 	// parse takes it from.
-	opts, err := sandboxcreate.ParsePromptOptions(opts, req.Prompt)
+	opts, err = sandboxcreate.ParsePromptOptions(opts, req.Prompt)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
