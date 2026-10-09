@@ -31,7 +31,7 @@ func TestParseImageKindEmptyIsZero(t *testing.T) {
 }
 
 func TestParseImageKindRefusesWhatIsNotAKind(t *testing.T) {
-	for _, s := range []string{"docker", "oci/boxd", "discovm", "discovm/", "discovm/Boxd", "discovm/boxd/x", "OCI"} {
+	for _, s := range []string{"docker", "oci/", "oci/boxd", "discovm", "discovm/", "discovm/Boxd", "discovm/boxd/x", "OCI"} {
 		if _, err := ParseImageKind(s); err == nil {
 			t.Fatalf("ParseImageKind(%q) accepted it", s)
 		}
