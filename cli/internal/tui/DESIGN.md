@@ -317,8 +317,7 @@ being asked for and the leader key that answers it. Two, because the screen
 between them is a full terminal: whichever end of it you are reading, the
 question is in reach. The bands exist only while something is waiting, and so
 does the hit test, which is re-recorded by every draw. The band itself is
-`banner.go` — see **The attention band** below, which the ready-to-apply offer
-shares.
+`banner.go` — see **The attention band** below.
 
 **The leader answers on `g`, not on the list's letter** (`credentialsLeaderKey`).
 This is the one place the workspace does not carry the list's key: the leader's
@@ -415,12 +414,13 @@ window, drawn **twice** — under the header and again above the keys — so tha
 whichever end of a full screen of output you are reading, the same thing is in
 reach. `banner.go` owns it; each band supplies only its own sentence.
 
-There are four, in this order of precedence, and **only one is ever on screen**
+There are three, in this order of precedence, and **only one is ever on screen**
 (`bannerShowing`): a credential an upstream has refused (`rejections.go`), then
 a harness with no credentials bound (`uncredentialed.go`), then a credential
-request waiting on this discobox (`credentials.go`), then work on it that is
-ready to apply (`apply.go`). A screen carrying two exception bars has a
-second header rather than an exception.
+request waiting on this discobox (`credentials.go`). A screen carrying two
+exception bars has a second header rather than an exception. Work that is ready
+to apply gets no band: the header and the list already say `ready`, and the band
+is for something that needs somebody.
 
 **The refusal outranks the request** — which is the opposite of what it looks
 like it should be, since a request is a person being waited on right now. The
@@ -434,31 +434,28 @@ whichever band is drawn, and the list and the secrets screen still show pending
 requests.
 
 The band is **painted, and the text keeps its own colors over it** (`bannerRow`,
-`attentionMark`/`readyMark`/`attentionText`/`attentionHint`): a field of color,
+`attentionMark`/`attentionText`/`attentionHint`): a field of color,
 a mark, the subject in bold, the call to action in the middle, and the key in
 dim grey on the right. Reversed video puts the terminal's own background on a
 colored field — a slab at a glance, and a struggle to read at a sentence. The
-field says which band this is before it is read: `colAlertBG`, a dark red under
-an amber `⚠`, for somebody being waited on; `colReadyBG`, a dark green under the
-list's own `⇡`, for something there to take. The key is pinned to the right and
-the subject is what gives way when the window narrows: a bar that says a
-credential is waiting, or that a discobox is ready, but not what to press about
-it has said the less useful half.
+field, `colAlertBG`, is a dark red under an amber `⚠`. The key is pinned to the
+right and the subject is what gives way when the window narrows: a bar that says
+a credential is waiting but not what to press about it has said the less useful
+half.
 
-**Any band can be dismissed** — its `✕`, pinned after the key, or leader+`b`
-— and **a dismissal is of one occurrence, never of the band** (`banner.go`).
-Each band names what it is about (`bannerInstance`): the refusal by credential,
-host and when it was first seen; the signed-out harness by the harness; the
-request by the requests waiting (a set: answering one leaves the rest
-dismissed, a new one shows); the offer by the commit it would apply. A
-dismissal holds its band down only while it covers everything the band would
-say, and every read that feeds a band — the listing, the refusals, the inbox —
-forgets what it shows is over (`pruneDismissed`), so something fixed and broken
-again is shown again even when nothing distinguishes the two. A band back up
-for something new is about the new thing (`shownRejection`), not what was
-dismissed. Dismissing shows
-the band queued behind it. Dismissals are per discobox and the window's own:
-nothing reaches the server, and a new window shows whatever still applies.
+**Any band can be dismissed** — its `✕`, pinned after the key, or leader+`b` —
+and **a dismissal is of one occurrence, never of the band** (`banner.go`). Each
+band names what it is about (`bannerInstance`): the refusal by credential, host
+and when it was first seen; the signed-out harness by the harness; the request
+by the requests waiting (a set: answering one leaves the rest dismissed, a new
+one shows). A dismissal holds its band down only while it covers everything the
+band would say, and every read that feeds a band — the listing, the refusals,
+the inbox — forgets what it shows is over (`pruneDismissed`), so something fixed
+and broken again is shown again even when nothing distinguishes the two. A band
+back up for something new is about the new thing (`shownRejection`), not what
+was dismissed. Dismissing shows the band queued behind it. Dismissals are per
+discobox and the window's own: nothing reaches the server, and a new window
+shows whatever still applies.
 
 **The call is a chip, centered in the row itself** (`bannerChip`,
 `spreadCenterPin`): the one thing on the bar that is not a statement, drawn as
@@ -507,12 +504,12 @@ answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
 four beats of 400ms — a heartbeat rather than a blink, and never down to the
 band's own color, because a bar that flashes on and off is one the eye learns to
 look past. It is the only thing in the window that moves without somebody having
-done something, and the offer's chip is deliberately still: work that is ready
-will still be ready in a minute, and a screen with two things moving on it has
-nothing that stands out. The clock is armed and disarmed from `Model.Update`,
-where every way the band can come and go is seen at once, and each beat names
-the run it belongs to so a band that goes and comes back is one clock rather
-than two.
+done something. The refused and signed-out bands' chips are deliberately still:
+a credential that has been dead a while, or a harness with none, will still be
+so in a minute, and an animation spent on them is attention the waiting agent
+does not get. The clock is armed and disarmed from `Model.Update`, where every
+way the band can come and go is seen at once, and each beat names the run it
+belongs to so a band that goes and comes back is one clock rather than two.
 
 **The band is a button.** It records its span *and which band it was* as it is
 drawn, the way the tabs and the maximize controls record theirs, and a press
@@ -523,15 +520,9 @@ click must not also start a drag-select of its own text. The span and the kind
 go the moment the band does, so a stale hit test cannot act on something nobody
 is looking at.
 
-**A click asks; the key does not** (`pressBanner`). The credential band opens
-the question either way, because the question *is* the dialog. The apply band
-runs straight into the apply on `<leader> y` — a chord, typed by somebody who
-read the bar that names it, and the same key the list has always had — but a
-click on it raises a confirmation first (`confirmApply`), because a click is a
-press on a bar the width of the window sitting a row under the header, where a
-mistimed press on a tab lands, and what follows changes a git repository outside
-the discobox. The confirmation names what apply does and says which key skips
-it next time.
+**A click opens what the band is about** (`pressBanner`): the credential
+dialog, or the remedy for a refused or missing credential — the same place the
+band's leader key goes.
 
 Because the bands take their rows from the panes rather than adding them to the
 frame, the panes are re-laid out when one appears or goes — and the geometry is
@@ -549,13 +540,6 @@ A single number answering both
 shape that puts a terminal's cursor a row away from the cell it is drawn in, for
 the rest of the session — so they are separate functions, and the one that means
 position is named for the top.
-
-**The offer is read off the listing, not off a git call** (`applyReady` →
-`currentBox().ahead()`): a clean tree whose head has moved off the commit it was
-spawned from and that no apply has landed — the state the list spells `ready`,
-drawn from the same push the header's git columns come from, so the band and the
-row cannot disagree. It goes while the apply itself is on screen: a bar offering
-what the overlay under it is already doing is the window talking about itself.
 
 ## The desktop is a link, not a port
 
@@ -638,7 +622,7 @@ read-only into it, written by one client
 §§1–2). A push moves `origin/<branch>` and stops: nothing in the discobox is
 checked out, rebased or interrupted, and uncommitted work in it cannot be
 touched. Apply is the opposite — it writes the developer's own working tree —
-which is why apply is offered on a band and this is not offered at all.
+which is why apply waits for its key and this is not offered at all.
 
 **The trigger is an attach, and the workspace is one.** The rule is not about
 this window: a client with a terminal attached pushes, which is why `discobox
@@ -2628,7 +2612,7 @@ the newest one where the busy line goes.
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
-| `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
+| `apply.go` | apply: its key, and what is offered when it succeeds |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |

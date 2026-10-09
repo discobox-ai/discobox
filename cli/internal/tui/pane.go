@@ -1590,9 +1590,9 @@ func (m *Model) viewPaneWindow() string {
 	rows := []string{
 		" " + pad + header + pad + " ",
 	}
-	// A credential request waiting on this discobox — or work on it that is
-	// ready to apply — gets a band of its own under the header *and* one above
-	// the keys. Whichever it is, the one thing this screen has to do is say so
+	// A credential request waiting on this discobox — or a credential to
+	// replace or configure — gets a band of its own under the header *and* one
+	// above the keys. Whichever it is, the one thing this screen has to do is say so
 	// — on a screen that is mostly terminal, whichever end of it you are
 	// reading. Both are rows the workspace only has while there is something
 	// to say, so nothing is spent on either the rest of the time. See

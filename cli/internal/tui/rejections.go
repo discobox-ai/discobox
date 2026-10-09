@@ -33,7 +33,7 @@ import (
 
 // rejectedKey is the band's key behind the leader: k, for the key that is not
 // working. The letters this window already spends are elsewhere — g is the
-// credential request, y the apply offer — and this is neither of those. The
+// credential request, y apply — and this is neither of those. The
 // signed-out harness's band (uncredentialed.go) answers to it too: a key that
 // is not there is a key that is not working.
 const rejectedKey = "k"
@@ -165,8 +165,8 @@ func (m *Model) viewRejectedBanner(width int) string {
 	if waiting := len(m.requests[box.ID]); waiting > 0 {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
-	call := bannerChip(st, rejectionCall(rejection), colChipLight, colAlertChip)
-	return bannerRow(st, width, st.attentionMark, "⚠", subject, call, m.leader()+" "+rejectedKey, colAlertBG)
+	call := bannerChip(st, rejectionCall(rejection), colAlertChip)
+	return bannerRow(st, width, subject, call, m.leader()+" "+rejectedKey)
 }
 
 // rejectionHeadline is the bar's sentence: what was refused, and by whom.

@@ -113,7 +113,7 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	m.setSecretRejections(ds.rejections)
 
 	if got := m.bannerShowing(); got != bannerRejected {
-		t.Fatalf("banner = %v, want the refused credential over the apply offer", got)
+		t.Fatalf("banner = %v, want the refused credential", got)
 	}
 
 	// The agent's own reaction to the 401 must not displace it.
@@ -127,14 +127,14 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 		t.Fatalf("band = %q, want it to say a request is queued", row)
 	}
 
-	// Dealt with, and the queue moves on: the request is next, then the offer.
+	// Dealt with, and the queue moves on: the request is next, then nothing.
 	m.setSecretRejections(nil)
 	if got := m.bannerShowing(); got != bannerCredential {
 		t.Fatalf("banner = %v, want the request once the refusal is cleared", got)
 	}
 	m.requests = nil
-	if got := m.bannerShowing(); got != bannerApply {
-		t.Fatalf("banner = %v, want the offer once both are gone", got)
+	if got := m.bannerShowing(); got != bannerNone {
+		t.Fatalf("banner = %v, want no band once both are gone", got)
 	}
 }
 
