@@ -110,14 +110,18 @@ already there, so the user's `discobox ls --tag pr=<pr>` finds it:
 ```bash
 S=<scratchpad>; M=~/.discobox/meta.json
 { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <pr> '.tags = ((.tags // {}) + {pr: $v})' > $S/meta.json &&
-  jq -e --arg v <pr> '.tags.pr == $v' $S/meta.json >/dev/null && cp $S/meta.json $M
+  jq -e --arg v <pr> '.tags.pr == $v and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
 ```
 
 For the issue, run the same lines with `issue` and `<N>` in place of `pr` and
 `<pr>`. A PR that neither fixes nor refers to an issue drops the `issue` tag
-earlier work left: add `| del(.tags.issue)` to the merge. The `jq -e` check proves the merge
-produced the tag; a file with any field but `description` and `tags` is
-ignored.
+earlier work left: add `| del(.tags.issue)` to the merge. The `jq -e` check
+proves the merge produced the tag and at most 64 tags (more makes the whole
+file invalid); when it fails nothing is written: with more than 64 tags
+merged, tell the user the box's tags are full and drop none of theirs to make
+room; otherwise (the file empty or not valid JSON) say the merge failed and
+leave the file alone. A file with any field but `description` and `tags` is
+ignored too.
 
 Title: the commit's subject when there is one commit; otherwise a
 conventional subject covering them. Body:

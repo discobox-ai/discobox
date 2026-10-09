@@ -76,12 +76,16 @@ Nobody may be watching your screen to answer.
   S=<scratchpad>; M=~/.discobox/meta.json
   { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <N> '(.tags.issue // "") as $prev
     | .tags = ((.tags // {}) + {issue: $v}) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
-    jq -e --arg v <N> '.tags.issue == $v' $S/meta.json >/dev/null && cp $S/meta.json $M
+    jq -e --arg v <N> '.tags.issue == $v and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
   ```
 
   A new issue drops the `pr` tag the last one left. The `jq -e` check proves
-  the merge produced the tag; a file with any field but `description` and
-  `tags` is ignored.
+  the merge produced the tag and at most 64 tags (more makes the whole file
+  invalid); when it fails nothing is written: with more than 64 tags merged,
+  tell the user the box's tags are full and drop none of theirs to make
+  room; otherwise (the file empty or not valid JSON) say the merge failed
+  and leave the file alone. A file with any field but `description` and
+  `tags` is ignored too.
 - **Hold the box up.** A discobox stops after 30 minutes of a still screen,
   even while hooks or CI run in the background:
   `touch -d '+3 hours' /run/discobox/keepalive/deliver-issue`. Refresh it
