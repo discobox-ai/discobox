@@ -94,7 +94,9 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "server",
 		Description: "Runs each sandbox as a disco-vm machine: macOS guests on this Mac (vz), or Linux microVMs on boxd.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Description: "The disco-vm driver: vz (macOS only) or boxd. boxd authenticates with BOXD_API_KEY in the server's environment."},
+			// Immutable: a pool's host is the driver's machine or process, which
+			// only that driver can reach to remove.
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver: vz (macOS only) or boxd. boxd authenticates with BOXD_API_KEY in the server's environment."},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

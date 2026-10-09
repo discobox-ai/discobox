@@ -2970,6 +2970,9 @@ components:
                     type: string
                 description:
                     type: string
+                immutable:
+                    description: The field cannot change while the provider instance has pools, because the pools' hosts were made by what it names.
+                    type: boolean
                 key:
                     type: string
                 label:
