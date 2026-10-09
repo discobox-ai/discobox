@@ -83,8 +83,19 @@ func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, 
 
 // Reconcile loads the latest project + pool + provider state and converges
 // the pool's runtime. Missing pools and missing or disabled providers are
-// converged trivially (nothing to do), settling the dirty row.
+// converged trivially (nothing to do), settling the dirty row. A run whose
+// generation-guarded write lost to newer intent settles too: that intent's
+// mark re-runs the pool, and returning the error would back that run off as
+// if this one had failed.
 func (r *PoolReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
+	result, err := r.reconcile(ctx, id)
+	if errors.Is(err, reconcile.ErrSuperseded) {
+		return reconcile.Result{}, nil
+	}
+	return result, err
+}
+
+func (r *PoolReconciler) reconcile(ctx context.Context, id string) (reconcile.Result, error) {
 	projectID, poolID, err := splitPoolDirtyID(id)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -184,6 +195,11 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// runtime the reconcile never reached.
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
 			return reconcile.RequeueAfter(poolHostComingUpRequeue), nil
+		}
+		// begin's guarded write lost to newer intent mid-call: repairing now
+		// would replace the host for intent that no longer stands.
+		if errors.Is(err, reconcile.ErrSuperseded) {
+			return reconcile.Result{}, err
 		}
 		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, images, begin); repairErr != nil {
 			err = repairErr

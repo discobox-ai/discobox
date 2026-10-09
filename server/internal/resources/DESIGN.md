@@ -195,8 +195,9 @@ flowchart LR
   `harnessconfigs.Service` itself. The engine's semantics are in
   [../reconcile/DESIGN.md](../reconcile/DESIGN.md).
 - A reconciler reads the latest persisted state by resource id and owns the
-  generation-guarded writes for its resource area, returning
-  `reconcile.Superseded` when newer intent wins.
+  generation-guarded writes for its resource area. A write lost to newer
+  intent is `reconcile.Superseded`, which the reconciler's `Reconcile` maps to
+  a zero `Result` so the run settles instead of backing off.
 - Provider runtime side effects go through `internal/sandbox.ProviderManager`
   (harnessconfigs reaches sandboxes through its `SandboxRuntime` seam instead);
   resource packages never import `server/providers`.

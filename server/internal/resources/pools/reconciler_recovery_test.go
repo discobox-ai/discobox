@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -583,4 +584,135 @@ func TestStartupReconcileDoesNotRenewPreviousOfflineFailure(t *testing.T) {
 	if updated.ErrorMessage == nil || updated.ReconciledAt == nil || updated.ReconciledAt.Before(*updated.HealthCheckStartedAt) {
 		t.Fatal("current runtime failure was not timestamped")
 	}
+}
+
+// A pool reconcile that loses its generation guard to newer intent settles
+// cleanly: the newer intent's mark re-runs the pool, and returning the
+// superseded error instead makes the engine record it as a failure and back
+// the newer run off (reconcile DESIGN.md, "Completion, failure, re-marks").
+func TestSupersededPoolReconcileSettlesCleanly(t *testing.T) {
+	ctx := context.Background()
+	appStore, db := newPoolReconcilerTestStore(t)
+	runtime := &supersedingPoolProvider{db: db}
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", runtime)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
+	if !runtime.superseded {
+		t.Fatal("the runtime call never wrote newer intent; this test proves nothing")
+	}
+	if err != nil {
+		t.Fatalf("reconcile error = %v, want nil: a superseded reconcile is not a failure", err)
+	}
+	if !result.RequeueAt.IsZero() {
+		t.Fatalf("requeue at %v, want none: the newer intent's mark re-runs the pool", result.RequeueAt)
+	}
+}
+
+// supersedingPoolProvider converges, but while it does a spec change lands on
+// the pool — the newer intent a slow EnsurePool/RepairPool races with.
+type supersedingPoolProvider struct {
+	stubPoolProvider
+	db         *gorm.DB
+	superseded bool
+}
+
+func (p *supersedingPoolProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ []string, _ func(context.Context) error) error {
+	if err := p.db.WithContext(ctx).Model(&model.Pool{}).Where("id = ?", pool.ID).
+		Update("generation", gorm.Expr("generation + 1")).Error; err != nil {
+		return err
+	}
+	p.superseded = true
+	return nil
+}
+
+// Newer intent most often lands while the provider is busy in EnsurePool, and
+// surfaces through begin's guarded write. On a pool with assigned sandboxes a
+// failed ReconcilePool is repaired, and repairing for intent that no longer
+// stands would replace a live host to no purpose.
+func TestPoolSupersededInsideReconcilePoolIsNotRepaired(t *testing.T) {
+	ctx := context.Background()
+	appStore, db := newPoolReconcilerTestStore(t)
+	runtime := &supersededAtBeginProvider{db: db}
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", runtime)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	registeredAt := time.Now().UTC()
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true,
+		Schedulable:  true,
+		RegisteredAt: &registeredAt,
+		LastSeenAt:   &registeredAt,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStateReady},
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
+	if !runtime.superseded {
+		t.Fatal("begin never lost to newer intent; this test proves nothing")
+	}
+	if err != nil {
+		t.Fatalf("reconcile error = %v, want nil: a superseded reconcile is not a failure", err)
+	}
+	if !result.RequeueAt.IsZero() {
+		t.Fatalf("requeue at %v, want none: the newer intent's mark re-runs the pool", result.RequeueAt)
+	}
+	if runtime.repairs != 0 {
+		t.Fatalf("repairs = %d, want none: the intent that failed no longer stands", runtime.repairs)
+	}
+}
+
+// supersededAtBeginProvider writes newer intent while EnsurePool is busy, then
+// calls begin as a replacement would, and returns its error as providers do.
+type supersededAtBeginProvider struct {
+	stubPoolProvider
+	db         *gorm.DB
+	superseded bool
+	repairs    int
+}
+
+func (p *supersededAtBeginProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ []string, begin func(context.Context) error) error {
+	if err := p.db.WithContext(ctx).Model(&model.Pool{}).Where("id = ?", pool.ID).
+		Update("generation", gorm.Expr("generation + 1")).Error; err != nil {
+		return err
+	}
+	err := begin(ctx)
+	p.superseded = errors.Is(err, reconcile.ErrSuperseded)
+	return err
+}
+
+func (p *supersededAtBeginProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
+	p.repairs++
+	return nil
 }
