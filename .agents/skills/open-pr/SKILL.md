@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Push the committed work to a branch on GitHub, open a pull request into discobox `main`, watch its CI checks, fix whatever fails, and repeat until every check on the PR's latest commit is green — then leave it for a human to merge. Use when the user wants a PR opened, wants work proven by CI before it lands, or when triage-issue §6 hands off a finished fix.
+description: Push the committed work to a branch on GitHub, open a pull request into discobox `main`, watch its CI checks, fix whatever fails, and repeat until every check on the PR's latest commit is green — then leave it for a human to merge. Use when the user wants a PR opened, wants work proven by CI before it lands.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, SendMessage, Skill, Monitor, AskUserQuestion
 metadata:
   argument-hint: "[branch-name] [--issue N] [--qa-report path]"
@@ -28,7 +28,7 @@ remote, run the commands below directly and skip this section.
 Inside a discobox there is no `gh` login, and `origin` is the sandbox's own
 mirror. An `upstream` remote, when there is one, is whatever the host's branch
 tracks — possibly a mirror — so do not push to it by name: every GitHub call
-goes through `discobox-access`, with the URL spelled out. `triage-issue` asks for these uses up
+goes through `discobox-access`, with the URL spelled out. `deliver-issue` asks for its own uses up
 front; check `discobox-access list` and request only what is missing, in one
 request:
 

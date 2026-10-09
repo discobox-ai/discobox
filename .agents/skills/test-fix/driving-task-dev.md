@@ -1,7 +1,7 @@
 # Driving the `task dev` loop inside a discobox
 
 Shared reference for anything that exercises this checkout end to end:
-reproducing an issue (`triage-issue` §3) and QA-verifying a fix (`test-fix`
+reproducing an issue (`triage-issue` §2) and QA-verifying a fix (`test-fix`
 phase 2). Linux discobox only; Windows and macOS have no `task dev` here.
 
 ## The loop is already running — do not start it
