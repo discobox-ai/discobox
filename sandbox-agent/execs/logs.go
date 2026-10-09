@@ -91,7 +91,12 @@ func NewAsyncLogger(sink LogSink, execID string, onFlushErr func(error)) (*Async
 	// repeatedly on one instance (klauspost/compress/zstd docs) — one encoder
 	// is reused across every flush this logger does, rather than paying setup
 	// cost per flush.
-	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	//
+	// Concurrency 1 because run is the only caller. The default is GOMAXPROCS
+	// encoders, and EncodeAll takes them round-robin, so even one caller
+	// touches every one. Each holds its own tables and history, ~18 MB
+	// measured, and an exec-shim on a 64-CPU host grew to ~400 MB of them.
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault), zstd.WithEncoderConcurrency(1))
 	if err != nil {
 		return nil, err
 	}
