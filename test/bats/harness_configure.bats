@@ -332,12 +332,14 @@ configure_stub() {
   # The value is offered separately, as a sentinel under the PREV_ prefix.
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is set"* ]]
 
-  # This run returned a fresh value, so it replaces the previous generation
-  # rather than leaking an orphan alongside it.
+  # This run returned a fresh value for an env name the harness already binds,
+  # so it updates that secret in place rather than leaking an orphan beside it.
+  # The ID stays: every sandbox sentinel is keyed on it, and running sandboxes
+  # resolve the new value through it.
   run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token'"
   [ "$output" = "1" ]
   after_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token'")"
-  [ "$after_id" != "$before_id" ]
+  [ "$after_id" = "$before_id" ]
 }
 
 @test "a configure that returns usePrevious keeps the existing secret" {
