@@ -292,8 +292,10 @@ func (m *Model) postComment(p *pane) tea.Cmd {
 	if v.posting {
 		return nil
 	}
-	body := strings.TrimSpace(v.composer.Value())
-	if body == "" {
+	// Posted as written: an indented first line is a code block in markdown,
+	// and trimming it would change what the comment says.
+	body := v.composer.Value()
+	if strings.TrimSpace(body) == "" {
 		return status("nothing to post — the comment is empty")
 	}
 	v.posting = true
@@ -593,10 +595,11 @@ func (m *Model) issueView(v *issuePane, width, height int) []string {
 }
 
 // drawnLink is one OSC 8 link on a drawn line: where it starts, in cells, and
-// how wide it is.
+// how wide it is, and where its text is in the line's bytes.
 type drawnLink struct {
 	url      string
 	x, width int
+	from, to int
 }
 
 // osc8 is an OSC 8 hyperlink sequence, opening (with a URL) or closing (with
@@ -608,22 +611,41 @@ var osc8 = regexp.MustCompile("\x1b\\]8;[^;\x07\x1b]*;([^\x07\x1b]*)(?:\x07|\x1b
 // marks land where the text does.
 func lineLinks(line string) []drawnLink {
 	var links []drawnLink
-	open, start, x := "", 0, 0
-	end := func() {
+	open, start, from, x := "", 0, 0, 0
+	end := func(to int) {
 		if open != "" && x > start {
-			links = append(links, drawnLink{url: open, x: start, width: x - start})
+			links = append(links, drawnLink{url: open, x: start, width: x - start, from: from, to: to})
 		}
 	}
 	at := 0
 	for _, loc := range osc8.FindAllStringSubmatchIndex(line, -1) {
 		x += ansi.StringWidth(line[at:loc[0]])
-		end()
-		open, start = line[loc[2]:loc[3]], x
+		end(loc[0])
+		open, start, from = line[loc[2]:loc[3]], x, loc[1]
 		at = loc[1]
 	}
 	x += ansi.StringWidth(line[at:])
-	end()
+	end(len(line))
 	return links
+}
+
+// webLinksOnly takes every link out of a rendered line but the web ones,
+// leaving their text. A stranger writes these: unmarked, a file:// or a custom
+// scheme would still be an OSC 8 the terminal's own Ctrl-click follows.
+func webLinksOnly(line string) string {
+	return osc8.ReplaceAllStringFunc(line, func(seq string) string {
+		target := osc8.FindStringSubmatch(seq)[1]
+		if target == "" || webLink(target) {
+			return seq
+		}
+		return ""
+	})
+}
+
+// litLink redraws one link on a line in the hover style, from its bare text,
+// leaving the sequences round it: the pointer is on it.
+func litLink(st *styles, line string, link drawnLink) string {
+	return line[:link.from] + st.hover.Render(ansi.Strip(line[link.from:link.to])) + line[link.to:]
 }
 
 // webLink reports whether a link in an issue is an absolute http or https
@@ -779,7 +801,7 @@ func (m *Model) markdown(v *issuePane, body string, width int) []string {
 	}
 	lines := strings.Split(strings.Trim(rendered, "\n"), "\n")
 	for i, line := range lines {
-		lines[i] = ansi.Truncate(strings.TrimRight(line, " "), width, "…")
+		lines[i] = ansi.Truncate(strings.TrimRight(webLinksOnly(line), " "), width, "…")
 	}
 	return lines
 }

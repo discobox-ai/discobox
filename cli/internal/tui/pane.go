@@ -2173,12 +2173,20 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 		// lines as drawn, at the origin the grid is drawn at.
 		x, y := m.paneOrigin(p)
 		for row, line := range lines {
-			for _, link := range lineLinks(line) {
+			links := lineLinks(line)
+			// From the right, so lighting one leaves the byte offsets of
+			// those before it where they were.
+			for i := len(links) - 1; i >= 0; i-- {
+				link := links[i]
 				// Only the web: a stranger writes these, and a click hands
 				// one to this machine's URL handler, which will open a
 				// file:// or a custom scheme as readily as a page.
-				if webLink(link.url) {
-					m.zones.mark(urlHit(link.url), x+link.x, y+row, link.width, 1)
+				if !webLink(link.url) {
+					continue
+				}
+				m.zones.mark(urlHit(link.url), x+link.x, y+row, link.width, 1)
+				if m.zones.hovering(x+link.x, y+row, link.width, 1) {
+					lines[row] = litLink(m.st, lines[row], link)
 				}
 			}
 		}

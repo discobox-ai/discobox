@@ -617,9 +617,12 @@ click on the header's `issue #N`, or `leader i`.
   types (`Issue`), every string already escaped by the data source: a title or
   a comment carrying an escape sequence is shown, not obeyed. The links glamour
   draws in a comment are controls like the header's, marked from the lines as
-  drawn (`lineLinks`) — the absolute http and https ones only (`webLink`): a
-  click hands the URL to this machine's handler, which opens a `file://` or a
-  custom scheme a stranger wrote as readily as a page.
+  drawn (`lineLinks`) and lit under the pointer from the same walk
+  (`litLink`) — the absolute http and https ones only (`webLink`): a click
+  hands the URL to this machine's handler, which opens a `file://` or a custom
+  scheme a stranger wrote as readily as a page. Any other link is taken out of
+  the rendered lines (`webLinksOnly`), leaving its text, so the terminal's own
+  Ctrl-click cannot follow it either.
 - **Kept fresh, not live.** Read in full on open, on `r` and after a change,
   and every minute (`issueRefreshEvery`) as cheaply as the data source can say
   nothing changed (`DataSource.Issue`'s `full`); its messages are addressed to the pane by id,

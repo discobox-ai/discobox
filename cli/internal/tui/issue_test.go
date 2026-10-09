@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // errNotLoggedIn is what the GitHub client answers a change with no token.
@@ -432,8 +433,11 @@ func TestLabelsWrapBetweenChips(t *testing.T) {
 func TestLinksAreMeasuredInCells(t *testing.T) {
 	t.Parallel()
 	line := "\x1b[1mé\x1b[0m " + hyperlink("https://a.example/x", "\x1b[4mdocs\x1b[0m") + " and " + hyperlink("https://b.example", "b")
-	got := lineLinks(line)
-	want := []drawnLink{{url: "https://a.example/x", x: 2, width: 4}, {url: "https://b.example", x: 11, width: 1}}
+	var got []string
+	for _, link := range lineLinks(line) {
+		got = append(got, fmt.Sprintf("%s@%d+%d=%s", link.url, link.x, link.width, ansi.Strip(line[link.from:link.to])))
+	}
+	want := []string{"https://a.example/x@2+4=docs", "https://b.example@11+1=b"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("lineLinks = %v, want %v", got, want)
 	}
@@ -546,4 +550,44 @@ func TestOnlyAWebLinkInACommentOpens(t *testing.T) {
 		t.Errorf("a click opened %q", got)
 	case <-time.After(200 * time.Millisecond):
 	}
+	// Nor is either drawn as a link, which the terminal's own Ctrl-click
+	// would follow.
+	if frame := rawFrame(m); strings.Contains(frame, "\x1b]8;;file://") || strings.Contains(frame, "\x1b]8;;vscode://") {
+		t.Errorf("a non-web link is still drawn as an OSC 8:\n%q", frame)
+	}
+}
+
+// A link the pointer rests on is lit, from its bare text, inside the
+// sequences that make it a link.
+func TestALinkUnderThePointerIsLit(t *testing.T) {
+	t.Parallel()
+	st := newStyles(true)
+	line := "see " + hyperlink("https://a.example", st.info.Render("docs")) + " now"
+	links := lineLinks(line)
+	if len(links) != 1 {
+		t.Fatalf("lineLinks = %v", links)
+	}
+	lit := litLink(st, line, links[0])
+	if !strings.Contains(lit, st.hover.Render("docs")) || !strings.Contains(lit, "https://a.example") || ansi.Strip(lit) != "see docs now" {
+		t.Errorf("litLink = %q", lit)
+	}
+}
+
+// A comment is posted as written: an indented first line is a code block.
+func TestACommentIsPostedAsWritten(t *testing.T) {
+	t.Parallel()
+	ds := issueSource()
+	d, m := openIssuePane(t, ds)
+	d.key("c")
+	d.dispatch(tea.PasteMsg{Content: "    go test ./...\n\nfails here"})
+	d.key(issuePostKey)
+	d.wait("the comment", func() bool {
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		return len(ds.comments) == 1
+	})
+	if got, want := ds.comments[0], "https://github.com/acme/foo#4:     go test ./...\n\nfails here"; got != want {
+		t.Errorf("posted %q, want %q", got, want)
+	}
+	_ = m
 }

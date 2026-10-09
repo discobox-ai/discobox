@@ -297,13 +297,20 @@ func (c *Client) readIssue(ctx context.Context, base, owner, name string, raw ra
 	issue.Repository = owner + "/" + name
 
 	if raw.SubIssuesSummary.Total > 0 {
-		var subs []rawIssue
-		// The list is not the issue: a read that fails leaves the summary's
-		// count standing rather than the whole page unreadable.
-		if _, err := c.get(ctx, base+"/sub_issues?per_page=100", &subs); err == nil {
+		// The list is not the issue: a page that fails leaves what was read
+		// and the summary's count standing rather than the whole page
+		// unreadable.
+		next := base + "/sub_issues?per_page=100"
+		for page := 0; next != "" && page < timelinePages; page++ {
+			var subs []rawIssue
+			link, err := c.get(ctx, next, &subs)
+			if err != nil {
+				break
+			}
 			for _, sub := range subs {
 				issue.SubIssues = append(issue.SubIssues, sub.ref(issue.Repository))
 			}
+			next = nextPage(link)
 		}
 		issue.SubIssuesDone = raw.SubIssuesSummary.Completed
 	}
