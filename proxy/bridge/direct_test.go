@@ -49,7 +49,8 @@ func localForwarder(t *testing.T, subnets ...string) net.Conn {
 	return conn
 }
 
-// echoServer accepts one connection on loopback and echoes it line by line.
+// echoServer serves loopback, echoing each connection line by line. It keeps
+// accepting, so the agent's probe of a new port does not take the only one.
 func echoServer(t *testing.T) string {
 	t.Helper()
 	var listenConfig net.ListenConfig
@@ -59,20 +60,24 @@ func echoServer(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		reader := bufio.NewReader(conn)
 		for {
-			line, err := reader.ReadString('\n')
+			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			if _, err := io.WriteString(conn, line); err != nil {
-				return
-			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				reader := bufio.NewReader(conn)
+				for {
+					line, err := reader.ReadString('\n')
+					if err != nil {
+						return
+					}
+					if _, err := io.WriteString(conn, line); err != nil {
+						return
+					}
+				}
+			}()
 		}
 	}()
 	return listener.Addr().String()
@@ -105,8 +110,9 @@ func TestForwarderTunnelsConnectToALocalSubnetDirectly(t *testing.T) {
 	}
 }
 
-// originHead accepts one connection on loopback, sends what it reads up to
-// the end of the request head on seen, and answers with a body of its own.
+// originHead serves loopback, sends the head of the first request it reads
+// on seen, and answers with a body of its own. A HEAD request is skipped: a
+// discobox's agent probes every new port with one, and no test here sends it.
 func originHead(t *testing.T, seen chan<- string) string {
 	t.Helper()
 	var listenConfig net.ListenConfig
@@ -116,25 +122,32 @@ func originHead(t *testing.T, seen chan<- string) string {
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		reader := bufio.NewReader(conn)
-		var head strings.Builder
 		for {
-			line, err := reader.ReadString('\n')
+			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			head.WriteString(line)
-			if line == "\r\n" {
-				break
-			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				reader := bufio.NewReader(conn)
+				var head strings.Builder
+				for {
+					line, err := reader.ReadString('\n')
+					if err != nil {
+						return
+					}
+					head.WriteString(line)
+					if line == "\r\n" {
+						break
+					}
+				}
+				if strings.HasPrefix(head.String(), "HEAD ") {
+					return
+				}
+				seen <- head.String()
+				_, _ = io.WriteString(conn, "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\ndirect")
+			}()
 		}
-		seen <- head.String()
-		_, _ = io.WriteString(conn, "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\ndirect")
 	}()
 	return listener.Addr().String()
 }
@@ -162,6 +175,28 @@ func TestForwarderSendsAbsoluteFormRequestToALocalSubnetDirectly(t *testing.T) {
 	want := "GET /a|b\"{c}%2F?q=1 HTTP/1.0\r\nHost: " + host + "\r\nX-Kept: 2\r\nConnection: close\r\n\r\n"
 	if got := <-seen; got != want {
 		t.Fatalf("origin saw\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A target with no path takes "/", and a query straight after the authority
+// keeps every byte, slashes included.
+func TestForwarderGivesAnEmptyPathItsSlash(t *testing.T) {
+	for target, want := range map[string]string{
+		"":             "/",
+		"?next=/a/b":   "/?next=/a/b",
+		"/p?next=/a/b": "/p?next=/a/b",
+	} {
+		t.Run(want, func(t *testing.T) {
+			seen := make(chan string, 1)
+			host := originHead(t, seen)
+			conn := localForwarder(t, "127.0.0.0/8")
+			if _, err := io.WriteString(conn, "GET http://"+host+target+" HTTP/1.1\r\nHost: "+host+"\r\n\r\n"); err != nil {
+				t.Fatalf("write request: %v", err)
+			}
+			if got, line := <-seen, "GET "+want+" HTTP/1.1\r\n"; !strings.HasPrefix(got, line) {
+				t.Fatalf("origin saw %q, want it to start %q", got, line)
+			}
+		})
 	}
 }
 
