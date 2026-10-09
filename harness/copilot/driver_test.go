@@ -88,6 +88,21 @@ func TestImageDeclaresOneEnvDeliveredToken(t *testing.T) {
 	}
 }
 
+// TestImageForwardsTheLoginCallbackPort pins how /login's browser sign-in
+// reaches back: it listens on 127.0.0.1:0, a new port each run, so the image
+// declares an ephemeral entry rather than a number, and says what to do when
+// the port it got is taken here.
+func TestImageForwardsTheLoginCallbackPort(t *testing.T) {
+	image := readImage(t)
+	ports := image.Harness.Config.Ports
+	if len(ports) != 1 || !ports[0].Ephemeral || ports[0].Port != 0 {
+		t.Fatalf("config ports = %+v, want one ephemeral entry", ports)
+	}
+	if !strings.Contains(ports[0].Unavailable, "device code") {
+		t.Fatalf("unavailable = %q, want it to name the device-code fallback", ports[0].Unavailable)
+	}
+}
+
 // TestImagePolicy pins the two switches the baseline is (ADR 26-10-02-840 §4):
 // the env trusts the directory Copilot starts in, and the launcher's flag
 // approves its tools. Either alone leaves an interactive session waiting on a
@@ -228,6 +243,9 @@ type imageManifest struct {
 			Required bool   `json:"required"`
 			Delivery string `json:"delivery"`
 		} `json:"secrets"`
+		Config struct {
+			Ports []harness.ConfigPort `json:"ports"`
+		} `json:"config"`
 	} `json:"harness"`
 }
 
