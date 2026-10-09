@@ -160,10 +160,12 @@ func readHead(client *bufio.Reader, connect bool) (string, error) {
 	// Origin form is the target with its scheme and authority cut off, not
 	// rebuilt from a parsed URL, which would re-escape a path the client sent
 	// raw and break anything that signs or matches it.
-	authority, path, _ := strings.Cut(requestTarget[len("http://"):], "/")
-	path = "/" + path
-	if query := strings.IndexByte(authority, '?'); query >= 0 {
-		authority, path = authority[:query], "/"+authority[query:]
+	authority, path := requestTarget[len("http://"):], "/"
+	if end := strings.IndexAny(authority, "/?"); end >= 0 {
+		authority, path = authority[:end], authority[end:]
+		if path[0] == '?' {
+			path = "/" + path
+		}
 	}
 	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
 		authority = authority[at+1:]

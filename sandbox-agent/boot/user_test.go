@@ -78,7 +78,7 @@ func TestEnsureAdditionalGroupsNoGroups(t *testing.T) {
 // network directly -- which a sandbox has no route for.
 func TestSudoersKeepsProxyEnvironment(t *testing.T) {
 	content := sudoersContent("dev")
-	for _, name := range []string{"HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "no_proxy"} {
+	for _, name := range []string{"HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "no_proxy", "NODE_USE_ENV_PROXY"} {
 		if !strings.Contains(content, name) {
 			t.Fatalf("env_keep is missing %s:\n%s", name, content)
 		}
