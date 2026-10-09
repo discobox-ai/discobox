@@ -61,6 +61,8 @@ const (
 	// retrying either way; a create that waits on a source that will not come
 	// fails rather than hanging.
 	sourceFailureLimit = 3
+	// sourceFinalPhaseTimeout bounds the report the settle wait ends on.
+	sourceFinalPhaseTimeout = 5 * time.Second
 
 	// sandboxLabelProjectLayer is the digest of the project layer a
 	// container's bootstrap was built from, empty for none. Settling compares
@@ -74,18 +76,28 @@ const (
 // (sandbox-agent/sourceconverge).
 const (
 	sourceStateWaiting      = "waiting"
+	sourceStateCloning      = "cloning"
 	sourceStateMaterialized = "materialized"
 	sourceStateFailed       = "failed"
 )
 
 // sourceState is one source's convergence as the sandbox reports it.
 type sourceState struct {
-	Slug      string    `json:"slug"`
-	State     string    `json:"state"`
-	Commit    string    `json:"commit,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	Revision  int64     `json:"revision"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Slug      string               `json:"slug"`
+	State     string               `json:"state"`
+	Commit    string               `json:"commit,omitempty"`
+	Error     string               `json:"error,omitempty"`
+	Progress  *sourceCloneProgress `json:"progress,omitempty"`
+	Revision  int64                `json:"revision"`
+	UpdatedAt time.Time            `json:"updatedAt"`
+}
+
+// sourceCloneProgress is how far a cloning source has got, as git reports it.
+type sourceCloneProgress struct {
+	Stage        string `json:"stage"`
+	Objects      int64  `json:"objects,omitempty"`
+	ObjectsTotal int64  `json:"objectsTotal,omitempty"`
+	Bytes        int64  `json:"bytes,omitempty"`
 }
 
 // runtimeSources is the sandbox's sources as its document names them: where
@@ -215,7 +227,11 @@ func (r *DockerSandboxRuntime) settleSources(ctx context.Context, sb *Sandbox, r
 	if err != nil {
 		return false, err
 	}
-	if err := r.awaitSourcesMaterialized(ctx, dial, sandboxID, doc.Sources); err != nil {
+	labels := make(map[string]string, len(sources))
+	for _, source := range sources {
+		labels[source.slug] = sourceLabel(source)
+	}
+	if err := r.awaitSourcesMaterialized(ctx, dial, sandboxID, doc.Sources, labels); err != nil {
 		return false, err
 	}
 	built, err := r.containerProjectLayerDigest(ctx, sb.ID)
@@ -373,7 +389,23 @@ var ErrSourceStatesUnsupported = errors.New("the sandbox's image predates clonin
 // awaitSourcesMaterialized waits until the sandbox reports every source named
 // materialized. A source whose clone keeps failing, or that the sandbox never
 // starts on, fails the wait with what the sandbox said.
-func (r *DockerSandboxRuntime) awaitSourcesMaterialized(ctx context.Context, dial Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource) error {
+//
+// Each read is reported as the phase this wait is, naming the first source
+// not yet materialized — by its entry in labels — and how far its clone has
+// got. A clone of a large remote is minutes, and the phase published once
+// as the wait began would age out of what a client counts as current long
+// before it ends (#138).
+func (r *DockerSandboxRuntime) awaitSourcesMaterialized(ctx context.Context, dial Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource, labels map[string]string) error {
+	// The record is the last report and is never cleared, so the wait ends
+	// on the bare phase: a CLI that predates clone progress fails to decode a
+	// record carrying it (ADR 0118), and only a create still waiting should.
+	// It is sent however the create's context ended, and bounded on its own so
+	// a control plane that stalls cannot hold the create's result.
+	defer func() {
+		final, cancel := context.WithTimeout(context.WithoutCancel(ctx), sourceFinalPhaseTimeout)
+		defer cancel()
+		r.publishSandboxPhase(final, sandboxID, PhaseMaterializingSource)
+	}()
 	ctx, cancel := context.WithTimeout(ctx, sourceSettleTimeout)
 	defer cancel()
 	start := time.Now()
@@ -394,6 +426,9 @@ func (r *DockerSandboxRuntime) awaitSourcesMaterialized(ctx context.Context, dia
 			state, ok := states[source.Slug]
 			if ok && state.State == sourceStateMaterialized {
 				continue
+			}
+			if pending == 0 {
+				r.publishSandboxCloneProgress(ctx, sandboxID, cloneProgress(labels, source.Slug, state))
 			}
 			pending++
 			if !ok {
@@ -424,6 +459,45 @@ func (r *DockerSandboxRuntime) awaitSourcesMaterialized(ctx context.Context, dia
 		case <-time.After(sourceStatePollInterval):
 		}
 	}
+}
+
+// cloneProgress is what a status line says about a source the sandbox has not
+// materialized: what it is, and how far its clone has got when the sandbox
+// has said.
+func cloneProgress(labels map[string]string, slug string, state sourceState) CloneProgress {
+	clone := CloneProgress{Source: labels[slug]}
+	if clone.Source == "" {
+		clone.Source = slug
+	}
+	if progress := state.Progress; progress != nil && state.State == sourceStateCloning {
+		clone.Stage = progress.Stage
+		clone.Objects, clone.ObjectsTotal, clone.Bytes = progress.Objects, progress.ObjectsTotal, progress.Bytes
+	}
+	return clone
+}
+
+// sourceLabel names a source for a person waiting on its clone: a remote by
+// its host and path — "github.com/discobox-ai/discobox" — and a source
+// delivered from the client's machine by its checkout's directory, since the
+// pool's own origin URL for it means nothing to them.
+func sourceLabel(source sandboxSource) string {
+	if !poolServesOrigin(source.git) {
+		if remote, ok := source.git.URL.Get(); ok && remote.Host != "" {
+			// The escaped path: a decoded one would carry whatever a %1b
+			// in a URL declared by repository content spells.
+			return remote.Host + strings.TrimSuffix(strings.TrimSuffix(remote.EscapedPath(), "/"), ".git")
+		}
+	}
+	// The client's path, in its own OS's spelling: a Windows client's has
+	// backslashes, which filepath on this Linux pool does not split on.
+	directory := strings.TrimRight(strings.TrimSpace(optString(source.git.LocalDirectory)), `/\`)
+	if cut := strings.LastIndexAny(directory, `/\`); cut >= 0 {
+		directory = directory[cut+1:]
+	}
+	if directory != "" {
+		return directory
+	}
+	return source.slug
 }
 
 // readSourceStates asks the sandbox how far each source has converged.

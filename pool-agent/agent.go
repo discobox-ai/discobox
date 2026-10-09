@@ -338,6 +338,15 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 					Done:           observed.Pull.Done,
 				}
 			}
+			if observed.Clone != nil {
+				progress.Clone = &SandboxCloneProgress{
+					Source:       observed.Clone.Source,
+					Stage:        observed.Clone.Stage,
+					Objects:      observed.Clone.Objects,
+					ObjectsTotal: observed.Clone.ObjectsTotal,
+					Bytes:        observed.Clone.Bytes,
+				}
+			}
 			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
 				ControlPlaneURL: bootstrap.ControlPlaneURL,
 				ProjectID:       bootstrap.ProjectID,

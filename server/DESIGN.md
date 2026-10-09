@@ -793,7 +793,7 @@ provision is still moving (ADR 0039, ADR 0081).
 The stored blob is the client-facing shape, not the agent-facing one: the two
 are separate schemas because they are separate contracts, and the client-facing
 one forbids additional properties. Both carry the same phase vocabulary, pinned
-to each other by a test — the pull crosses as a struct conversion that stops
+to each other by a test — the pull and the clone cross as struct conversions that stop
 compiling if the shapes diverge, but ogen enums are string-typed and a phase
 would cross a widening gap in silence.
 

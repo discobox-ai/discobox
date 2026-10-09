@@ -468,6 +468,17 @@ counting both would nearly double the total. Both totals grow while the manifest
 is walked, so the pair is a ratio at a moment and never progress toward a fixed
 target.
 
+Clone progress refines materializing a source. The sandbox clones its own
+sources, so the counts are its agent's (`GET .../sources`), and the settle wait
+(`awaitSourcesMaterialized`) restates the phase on every read of them — twice a
+second, moved or not — naming the first source not yet materialized (a
+remote by host and path, a client's checkout by its directory) with git's
+stage, object counts and bytes. Restating is what keeps the phase current: a
+full clone of a large remote is minutes, and one report as the wait began
+would age out of what a client counts as current long before it ends (#138).
+The wait ends, however it ends, on the bare phase: the record is never cleared,
+and a CLI that predates clone progress cannot decode one carrying it (ADR 0118).
+
 Waiting for the sandbox agent is the last phase this agent can see. What happens
 after it is the sandbox agent's own boot, which reports on no channel this one
 owns; a client names that stage by inference instead (ADR 0060).
