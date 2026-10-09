@@ -2,9 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -197,4 +201,58 @@ func grantHostsOf(grant map[string]any) []string {
 		}
 	}
 	return out
+}
+
+// `new --skills` and --json's "skills" read each directory's skills into the
+// request as content, which is what the server installs (ADR 26-10-09-395 §4).
+func TestRunCarriesItsSkills(t *testing.T) {
+	skillsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(skillsDir, "foo", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "foo", "SKILL.md"), []byte("# foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "foo", "bin", "run.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, args := range map[string][]string{
+		"flags": {"new", "-d", "--no-source", "--skills", skillsDir, "-p", "go"},
+		"json":  {"new", "--json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setHome(t, t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+			request, _ := json.Marshal(map[string]any{"noSource": true, "skills": []string{skillsDir}})
+
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(bytes.NewReader(request))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+
+			skills, _ := posted["config"].(map[string]any)["skills"].(map[string]any)
+			foo, _ := skills["foo"].(map[string]any)
+			if foo["skill"] != "# foo" {
+				t.Fatalf("skills = %#v, want foo's SKILL.md", skills)
+			}
+			files, _ := foo["files"].([]any)
+			if len(files) != 1 {
+				t.Fatalf("files = %#v, want bin/run.sh", foo["files"])
+			}
+			file := files[0].(map[string]any)
+			if file["path"] != "bin/run.sh" || file["content"] != base64.StdEncoding.EncodeToString([]byte("#!/bin/sh\n")) {
+				t.Fatalf("file = %#v, want bin/run.sh as base64", file)
+			}
+			if runtime.GOOS != "windows" && file["executable"] != true {
+				t.Fatalf("file = %#v, want it executable", file)
+			}
+		})
+	}
 }

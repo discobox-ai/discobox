@@ -150,6 +150,15 @@ beside the source -- at the same path when the source kept its own, under
 /workspace when it did not -- so ../foo means the same thing inside the
 discobox as it does here. --declared-sources=false leaves them out.
 
+--skills DIR installs skills in the discobox: every subdirectory of DIR that
+holds a SKILL.md is one skill, named after it, and is copied into the harness's
+skill directories on its first launch. Repeat it for more than one directory.
+--user-skills does the same with your own ~/.claude/skills and
+~/.agents/skills, read before any --skills. A skill of the same name in a later
+directory replaces the earlier one, and a discobox's skills replace the image's
+and the repository's of the same name. Links are followed and .git is left
+out; the skills are carried in the request, at most 1 MiB in all.
+
 --grant gives the new discobox a use of a credential: a well-known one by its
 ID, ID[@HOST]=USE, or a project secret, SECRET[@HOST]:ENV_VAR=USE. Its agent
 takes it with discobox-access, one use at a time, and nothing in the discobox
@@ -175,6 +184,8 @@ means what its flag does, and no other run flag may be given beside it:
     "env": ["MODE=test"],
     "secrets": ["OPENAI_API_KEY=<sec_123>"],
     "include": ["../foo"],
+    "skills": ["./team-skills"],
+    "userSkills": true,
     "noSource": false,
     "includeDirty": true,
     "declaredSources": true
@@ -185,6 +196,7 @@ const runCommandExample = `  discobox new 'fix the failing tests'
   discobox new -p 'fix the failing tests'
   discobox new --include-dirty=false -p 'fix the failing tests'
   discobox new -i ../foo -i ../bar -p 'make them share one client'
+  discobox new --user-skills --skills ./team-skills -p 'fix the failing tests'
   discobox new --no-source -p 'draft a proposal for the new pricing page'
   discobox new -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
   discobox new -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
@@ -332,6 +344,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
+	flags.StringArrayVar(&opts.prompt.SkillDirs, "skills", nil, "Directory of skills to install in the discobox, each a subdirectory holding a SKILL.md; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills")
+	flags.BoolVar(&opts.prompt.UserSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
@@ -525,6 +539,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Secret:              opts.prompt.Secret,
 		Grant:               opts.grant,
 		Include:             opts.prompt.Include,
+		SkillDirs:           opts.prompt.SkillDirs,
+		UserSkills:          opts.prompt.UserSkills,
 		SkipDeclaredSources: !opts.declaredSources,
 		Pool:                opts.pool,
 	}

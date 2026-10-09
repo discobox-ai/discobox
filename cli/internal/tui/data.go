@@ -1045,6 +1045,11 @@ type RunRequest struct {
 	// is given. Like Include, only `discobox new`'s own request carries one.
 	Grant []string
 
+	// SkillDirs and UserSkills are `--skills` and `--user-skills`. Like
+	// Include, only `discobox new`'s own request carries them.
+	SkillDirs  []string
+	UserSkills bool
+
 	// SkipDeclaredSources is `--declared-sources=false`: leave out the sources
 	// the primary source's repository declares in .discobox/sources.json. The
 	// zero value brings them in, which is what both frontends do by default.

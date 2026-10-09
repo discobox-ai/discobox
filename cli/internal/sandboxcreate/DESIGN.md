@@ -22,6 +22,16 @@ sandbox create requests.
   before platforms is, and so is the default pool of a caller the server
   refuses those reads (a discobox creating another); such a caller naming
   `--pool` is refused, because the platform it chose is one it cannot learn.
+- Skills are read here, as content, because nothing past this machine can read
+  its disk (`ReadSkills`; ADR 26-10-09-395 §4). `--user-skills` reads
+  `~/.claude/skills` then `~/.agents/skills`, each skipped when absent; every
+  `--skills DIR` follows, in order, and must exist. A subdirectory holding a
+  `SKILL.md` is a skill named after it, and the last declaration of a name
+  replaces the earlier ones whole. Links are followed — a skill in
+  `~/.claude/skills` is often a link into a checkout — except a linked
+  directory inside a skill, so nothing loops; `.git` is left out. The size
+  limit is checked before the request is sent, naming the largest skills.
+  Both `discobox new` and `admin box create` take the flags.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`
