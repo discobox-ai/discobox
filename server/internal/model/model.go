@@ -354,6 +354,14 @@ type HarnessConfig struct {
 	// pool's platform, which this must name. Empty on a config not inspected
 	// since before platforms were recorded, which rules no pool out.
 	Platforms platform.Set `gorm:"column:platforms;type:text;serializer:json" json:"platforms,omitempty" doc:"Platforms the harness's image is published for, as os/arch. A discobox on this harness is placed only on a pool that hosts one of them. Absent on a harness not inspected since platforms were recorded."`
+	// ImageKind is the kind of image the harness's image is (ADR 26-10-09-106
+	// §4), read when it is inspected: OCI for an image, or the disco-vm kind a
+	// manifest file declares. A sandbox on it is placed only on a pool that
+	// runs that kind. The column defaults to OCI, which is what every image
+	// harness from before kinds were recorded is, and what adding it
+	// backfills; a manifest-file harness from before kinds is left with none
+	// (database.unsetManifestFileImageKinds), which places nowhere.
+	ImageKind platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed."`
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
@@ -599,16 +607,22 @@ type Pool struct {
 	// Platform is the one platform the pool hosts (ADR 0145 §1), declared by
 	// its agent at registration and on every status report. It is empty until
 	// the agent first declares it.
-	Platform              platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first reports."`
-	PublicKey             string            `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
-	KeyType               string            `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
-	Ready                 bool              `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
-	Schedulable           bool              `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
-	Degraded              bool              `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
-	AvailableCPUVCPUs     float64           `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
-	AvailableMemoryBytes  int64             `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
-	AvailableStorageBytes int64             `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
-	Conditions            json.RawMessage   `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first reports."`
+	// ImageKind is the kind of image the pool runs (ADR 26-10-09-106 §4):
+	// OCI for a Docker pool, a disco-vm driver's for a discovm pool. Its agent
+	// declares it beside the platform; an agent from before kinds declares
+	// none and runs OCI images, which is what is recorded for it. Empty until
+	// the agent first reports.
+	ImageKind             platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:''" json:"imageKind,omitzero" doc:"The kind of image the pool runs: oci, or discovm/<driver> for disco-vm images of that driver. Declared by its agent; empty until the agent first reports."`
+	PublicKey             string             `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
+	KeyType               string             `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
+	Ready                 bool               `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
+	Schedulable           bool               `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
+	Degraded              bool               `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
+	AvailableCPUVCPUs     float64            `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
+	AvailableMemoryBytes  int64              `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
+	AvailableStorageBytes int64              `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
+	Conditions            json.RawMessage    `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM

@@ -74,6 +74,15 @@ true of it, and true *by rule* rather than by slug:
   rules no pool out. There is no platform on a harness's catalog entry
   (`harness.Definition`): the image is the template, and its index is what
   declares where it runs — or, for a manifest file, the file. Sandboxes are placed by it (`resources/sandboxes`).
+- A config records the **image kind** its image is (`platform.ImageKind`, ADR
+  26-10-09-106 §4), read by the same inspection: `oci` for any image, which a
+  label cannot say otherwise — one declaring `imageKind` is refused — and, for
+  a manifest file, the `discovm/<driver>` it must declare. Seeding compares it
+  too. The column defaults to `oci`, which backfilled every image config from
+  before kinds; a manifest-file config from before them is left with no kind,
+  and runs on no pool until its file declares one and its image is refreshed
+  (`internal/database`). A sandbox on the config is placed only on a pool that
+  runs that kind (`resources/sandboxes`).
 - A **`file://` reference** names a manifest file instead of an image: the
   template with no image a non-Linux sandbox runs, whose overlay ships the same
   layers as a file (ADR 0145 §3). `inspectManifestFile` reads it from this
@@ -85,13 +94,14 @@ true of it, and true *by rule* rather than by slug:
   files hold. It resolves the file through the same
   `harness.ResolveImageLabels` (`harness.ReadManifestFile` turns the file into
   that label set). Its digest is the file's sha256, so a changed overlay moves
-  the pin as a rebuilt tag does, and its platforms are the one platform the
-  file declares, which it must. Both sources require the base layer and judge
+  the pin as a rebuilt tag does, its platforms are the one platform the
+  file declares, which it must, and its image kind is the disco-vm kind it
+  must declare as well: a manifest file is no OCI image. Both sources require the base layer and judge
   the merged result by its platform (`harness.ImageMetadata.ValidateFor`): an
   image is Linux's, and a label naming a platform, an account or a shell is
-  refused — its platforms are its registry's to say. A manifest file is never
-  Linux's: a Linux template is an image, and a Linux pool would run a
-  `file://` reference as one. The account, shell and features are validated
+  refused — its platforms are its registry's to say. A manifest file may be
+  Linux's — a boxd sandbox's template — because its kind, not its platform,
+  keeps it off a Docker pool of that platform. The account, shell and features are validated
   here and not snapshotted: nothing reads them from a config yet, and the
   change that does adds them to the snapshot with its migration.
 - In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:

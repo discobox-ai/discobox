@@ -2,60 +2,68 @@ package cli
 
 import (
 	"context"
+	"slices"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
-// poolPlatforms is what the project's pools host, for offering only the
-// harnesses one of them can run (ADR 0145 §1). A pool hosts exactly one
-// platform, and a discobox runs on its pool's, which its harness's image must
-// be published for.
-type poolPlatforms struct {
-	hosted map[string]bool
-	// undeclared is a pool whose agent has not said what it hosts yet — one
-	// still coming up, or one on a server from before platforms. It could be
-	// any platform, so it rules nothing out.
-	undeclared bool
+// poolPlacements is what the project's pools host and run, for offering only
+// the harnesses one of them can run. A pool hosts exactly one platform, which
+// a harness's image must be published for (ADR 0145 §1), and runs one kind of
+// image, which a harness's image must be (ADR 26-10-09-106 §4); both must hold
+// of the same pool.
+type poolPlacements struct {
+	pools []poolPlacement
 }
 
-func (a *App) listPoolPlatforms(ctx context.Context, client *apiclientgen.Client, projectID string) (poolPlatforms, error) {
+// poolPlacement is one pool's platform and image kind. Either is empty while
+// its agent has not said — a pool still coming up, or one on a server from
+// before they were recorded — and could then be anything, so it rules nothing
+// out.
+type poolPlacement struct {
+	platform  string
+	imageKind string
+}
+
+func (a *App) listPoolPlacements(ctx context.Context, client *apiclientgen.Client, projectID string) (poolPlacements, error) {
 	res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: projectID})
 	if err != nil {
-		return poolPlatforms{}, err
+		return poolPlacements{}, err
 	}
 	body, err := expectResponse[apimodel.ListPoolsBody](res)
 	if err != nil {
-		return poolPlatforms{}, err
+		return poolPlacements{}, err
 	}
-	return platformsOf(body.GetPools()), nil
+	return placementsOf(body.GetPools()), nil
 }
 
-func platformsOf(pools []apimodel.Pool) poolPlatforms {
-	out := poolPlatforms{hosted: map[string]bool{}}
+func placementsOf(pools []apimodel.Pool) poolPlacements {
+	out := poolPlacements{pools: make([]poolPlacement, 0, len(pools))}
 	for _, pool := range pools {
-		if platform := pool.Platform.Or(""); platform != "" {
-			out.hosted[platform] = true
-		} else {
-			out.undeclared = true
-		}
+		out.pools = append(out.pools, poolPlacement{platform: pool.Platform.Or(""), imageKind: pool.ImageKind.Or("")})
 	}
 	return out
 }
 
+// ociImageKind is the kind a harness has when its server sends none: one from
+// before image kinds, whose harnesses were all OCI images.
+const ociImageKind = "oci"
+
 // run reports whether a pool can run the harness: one hosts a platform its
-// image is published for. A harness with no platforms has not been inspected
-// since they were recorded, or comes from a server that records none, and
-// rules out no pool — but there has to be a pool for it to run on.
-func (p poolPlatforms) run(harness apimodel.HarnessConfig) bool {
-	if len(p.hosted) == 0 && !p.undeclared {
+// image is published for and runs the kind of image it is. A harness with no
+// platforms has not been inspected since they were recorded, or comes from a
+// server that records none, and rules out no pool's platform — but there has
+// to be a pool for it to run on. A harness whose kind is sent empty has none
+// declared — a manifest-file harness from before kinds — and runs on no pool.
+func (p poolPlacements) run(harness apimodel.HarnessConfig) bool {
+	kind := harness.ImageKind.Or(ociImageKind)
+	if kind == "" {
 		return false
 	}
-	if len(harness.Platforms) == 0 || p.undeclared {
-		return true
-	}
-	for _, platform := range harness.Platforms {
-		if p.hosted[platform] {
+	for _, pool := range p.pools {
+		platform := pool.platform == "" || len(harness.Platforms) == 0 || slices.Contains(harness.Platforms, pool.platform)
+		if platform && (pool.imageKind == "" || pool.imageKind == kind) {
 			return true
 		}
 	}

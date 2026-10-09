@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -249,6 +250,17 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	}
 	harnessConfig, err := s.importHarnessConfig(ctx, projectID, spec.Harness, opts.HarnessSlug)
 	if err != nil {
+		return nil, err
+	}
+	// An archive is a container sandbox's tree: export and import of a machine
+	// sandbox are deferred (ADR 26-10-09-106), so a harness that is not an OCI
+	// image cannot take one, and the pool must run OCI images. Placement takes
+	// the tree's stand-in for OCI for the same reason.
+	if harnessConfig.ImageKind != platform.OCI {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q is not an OCI image, and an archive holds a container discobox's tree; a machine discobox is not imported", harnessConfig.Slug))
+	}
+	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
 		return nil, err
 	}
 	// A discobox moves between machines, not between platforms (ADR 0145 §8):

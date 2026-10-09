@@ -405,10 +405,11 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"slug", seed.Slug, "image", image, "error", inspectErr)
 			continue
 		}
-		// The platforms are compared too, so a built-in recorded before
-		// platforms were — or with a single-platform development image's — is
-		// rewritten with what its image now publishes.
-		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest && slices.Equal(existing.Platforms, metadata.Platforms) {
+		// The platforms and the image kind are compared too, so a built-in
+		// recorded before they were — or with a single-platform development
+		// image's platform — is rewritten with what its image now is.
+		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest &&
+			slices.Equal(existing.Platforms, metadata.Platforms) && existing.ImageKind == metadata.ImageKind {
 			continue
 		}
 		if existing == nil {
@@ -573,9 +574,11 @@ func conventionCommands(slug string, image harness.Image) (runCommand, relaunchC
 // wants exactly this set on exactly one config, and a snapshot that grows a
 // field should not have to grow a return value at three call sites to reach
 // them. Identity — id, slug, image, digest, Configured — is the caller's; this
-// is only what the label says, and the platforms the image is published for.
+// is only what the label says, the platforms the image is published for, and
+// the kind of image it is.
 func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata) {
 	config.Platforms = inspected.Platforms
+	config.ImageKind = inspected.ImageKind
 	metadata := inspected.ImageMetadata
 	image := metadata.Harness
 	if image == nil {

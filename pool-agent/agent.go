@@ -199,6 +199,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			PoolID:               bootstrap.PoolID,
 			PrivateKey:           registration.PrivateKey,
 			Platform:             hostedPlatform(),
+			ImageKind:            hostedImageKind(),
 			Ready:                true,
 			Schedulable:          true,
 			Degraded:             false,

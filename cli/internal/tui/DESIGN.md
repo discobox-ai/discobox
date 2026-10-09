@@ -2212,11 +2212,11 @@ inside a pane, where every key is the sandbox's.
 The listing is read at startup, not when the screen is opened, because the run
 options' harness choices are built from it (`optionSet.setHarnesses`): enabling
 one makes it selectable without the window being reopened, and the default leads
-the list so an unchanged option emits no `--harness` at all. A harness whose
-image is published for no platform a pool in the project hosts
-(`Harness.Unhosted`, ADR 0145 §1) is left out of the choices — create would
-refuse it — and stays on this screen, whose card names its platforms and that
-no pool hosts one. When that harness is the project default, the hint names it
+the list so an unchanged option emits no `--harness` at all. A harness no pool
+in the project can run — none hosts a platform its image is published for and
+runs the kind of image it is (`Harness.Unhosted`, ADR 0145 §1, ADR 26-10-09-106
+§4) — is left out of the choices — create would refuse it — and stays on this
+screen, whose card names its platforms and that no pool here runs it. When that harness is the project default, the hint names it
 and says why it is not offered, rather than that there is no default. It is the one source
 of what harnesses exist — `Session` carries none — and is re-read after every
 action rather than on a clock, except while the screen itself is up.

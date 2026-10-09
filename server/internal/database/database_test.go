@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
@@ -1726,5 +1727,87 @@ func TestMigrateGuessesNoPlatform(t *testing.T) {
 	}
 	if !gotSandbox.Platform.IsZero() {
 		t.Errorf("sandbox platform = %q, want it left for its placement to give it", gotSandbox.Platform)
+	}
+}
+
+// A database from before image kinds were recorded gains the columns, and
+// every pool and image harness it already holds is OCI's — there was no other
+// kind of image to run (ADR 26-10-09-106 §4). A manifest-file harness is no OCI
+// image, and declared no driver, so it is left with no kind. A pool created afterwards has no
+// kind until its agent declares one, and a later start does not claim OCI for
+// it: a discovm pool runs no OCI image.
+func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	old := model.Pool{ID: "pool-old", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "old"}}
+	if err := db.Write.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "shell", Name: "Shell"}
+	if err := db.Write.Create(&config).Error; err != nil {
+		t.Fatal(err)
+	}
+	manifestFile := model.HarnessConfig{ID: "hc-2", ProjectID: project.ID, Slug: "xcode", Name: "Xcode", Image: "file:///overlays/darwin-arm64/manifest.json"}
+	if err := db.Write.Create(&manifestFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema those rows were written under: no image kind anywhere.
+	for _, table := range []string{"pools", "harness_configs"} {
+		if err := db.Write.Exec("ALTER TABLE " + table + " DROP COLUMN image_kind").Error; err != nil {
+			t.Fatalf("drop %s.image_kind: %v", table, err)
+		}
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fresh := model.Pool{ID: "pool-new", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "new"}}
+	if err := db.Write.Create(&fresh).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotConfig model.HarnessConfig
+	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotConfig.ImageKind != platform.OCI {
+		t.Errorf("harness config image kind = %q, want oci", gotConfig.ImageKind)
+	}
+	var gotManifestFile model.HarnessConfig
+	if err := db.Write.First(&gotManifestFile, "id = ?", manifestFile.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !gotManifestFile.ImageKind.IsZero() {
+		t.Errorf("manifest-file harness image kind = %q, want none: a manifest file is no OCI image", gotManifestFile.ImageKind)
+	}
+	var gotOld, gotFresh model.Pool
+	if err := db.Write.First(&gotOld, "id = ?", old.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotOld.ImageKind != platform.OCI {
+		t.Errorf("pool from before kinds: image kind = %q, want oci", gotOld.ImageKind)
+	}
+	if err := db.Write.First(&gotFresh, "id = ?", fresh.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !gotFresh.ImageKind.IsZero() {
+		t.Errorf("pool created since: image kind = %q, want it left for its agent to declare", gotFresh.ImageKind)
 	}
 }

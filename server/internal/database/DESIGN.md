@@ -61,6 +61,20 @@ platforms are read when its image is inspected — every built-in at the next
 seed — a pool's are declared by its agent's next report, and a sandbox takes
 its pool's when it is next placed. Until then an empty value rules nothing out.
 
+The image kind columns (ADR 26-10-09-106 §4) are backfilled where there is
+nothing to guess: every pool and every image harness from before kinds is OCI.
+A harness config's column defaults to `oci`, so `AutoMigrate`'s added column
+fills every row; a `file://` manifest-file harness is no OCI image and named no
+driver, so `unsetManifestFileImageKinds` takes that back, leaving it no kind —
+which places it on no pool until its file declares one and its image is
+refreshed. A pool's column defaults to empty — a pool created since is not
+known to run OCI images until its agent says — so `backfillPoolImageKinds`
+writes OCI into the pools that existed, only on the start that adds the
+column, which `addsImageKindColumn` reads before `AutoMigrate`. The
+manifest-file repair runs on every start instead, since nothing else would
+correct a row a dead start left OCI, and it is idempotent: a manifest file
+registered since kinds always has a disco-vm kind.
+
 `AutoMigrate` creates tables, adds and widens columns, and creates missing
 indexes, but never drops any of them, never alters an index that already exists
 under the same name, and cannot tell a rename from an addition. Retiring a column from a model needs an explicit

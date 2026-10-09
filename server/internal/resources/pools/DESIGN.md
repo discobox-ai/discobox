@@ -227,6 +227,28 @@ platform is not one on its way up, and a caller that waited on it would wait
 for good. The check runs after the readiness gate, since only a reporting agent
 has declared what it hosts.
 
+## A pool runs one kind of image
+
+Beside its platform, a pool runs one kind of image (`platform.ImageKind`, ADR
+26-10-09-106 §4): `oci` for a Docker pool, `discovm/<driver>` for a discovm
+pool on that driver. The platform alone cannot tell them apart — a boxd pool
+and an amd64 Docker pool both host linux/amd64. Its agent declares the kind on
+registration and every heartbeat, beside the platform; one that is neither is
+refused with 400 (`declaredImageKind`). Unlike the platform, an agent that
+declares none is not a guess to avoid: every agent from before kinds runs OCI
+images in containers, so OCI is recorded for it (`store.recordPoolImageKind`),
+and a registered pool always has a kind. A pool not yet registered has none.
+The migration that adds the column backfills OCI for every pool that existed
+then, and only on that start: a pool created since has no kind until its agent
+says, since it may be a discovm pool.
+
+`SchedulablePoolForSandbox` refuses a sandbox whose harness's image is another
+kind than the pool runs with a `*platform.KindMismatchError` naming both — a
+disco-vm harness on a Docker pool of its very platform, or an OCI one on a
+discovm pool — before the platform is settled, and never as `ErrNotFound`. A
+sandbox with no harness config, and an import's stand-in, are OCI: import takes
+only an OCI harness. A harness of no declared kind places nowhere.
+
 ## Who owns which status field
 
 Every pool status field has exactly one writer, and writers must not overlap:
@@ -235,7 +257,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | --- | --- | --- |
 | `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
 | `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption; also stamps `LastSeenAt`) |
-| `Platform` | pool agent | `RegisterPool` and every `UpdatePoolStatus` heartbeat |
+| `Platform`, `ImageKind` | pool agent | `RegisterPool` and every `UpdatePoolStatus` heartbeat |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |

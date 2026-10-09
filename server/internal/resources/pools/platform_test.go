@@ -29,3 +29,24 @@ func TestAPoolAgentDeclaresItsPlatform(t *testing.T) {
 		}
 	}
 }
+
+// A pool agent declares the kind of image its pool runs (ADR 26-10-09-106 §4).
+// One that is neither OCI nor a disco-vm driver's is refused; none at all is
+// an agent from before kinds, which reads as the zero kind the store records
+// as OCI (store.recordPoolImageKind).
+func TestAPoolAgentDeclaresItsImageKind(t *testing.T) {
+	got, err := declaredImageKind(serverapi.NewOptString("discovm/boxd"))
+	if err != nil || got != platform.DiscoVM("boxd") {
+		t.Fatalf("declaredImageKind = %+v, %v", got, err)
+	}
+	if got, err := declaredImageKind(serverapi.OptString{}); err != nil || !got.IsZero() {
+		t.Fatalf("an agent from before kinds: %+v, %v; want the zero kind and no error", got, err)
+	}
+	for _, declared := range []string{"docker", "discovm"} {
+		_, err := declaredImageKind(serverapi.NewOptString(declared))
+		var status interface{ StatusCode() int }
+		if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+			t.Errorf("declaredImageKind(%q) = %v, want a 400", declared, err)
+		}
+	}
+}

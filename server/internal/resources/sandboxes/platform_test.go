@@ -40,7 +40,7 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 	}
 
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	err := create("mismatched")
@@ -68,7 +68,7 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 		t.Fatalf("platform = %q, want the pool's %q", created.Platform, riscv)
 	}
 
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := create("matched"); err != nil {
@@ -80,5 +80,59 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 	}
 	if sb.Platform != platform.Pool() {
 		t.Fatalf("platform = %q, want the pool's %q", sb.Platform, platform.Pool())
+	}
+}
+
+// A pool runs one kind of image beside its one platform, and create refuses a
+// harness whose image is another kind (ADR 26-10-09-106 §4): a disco-vm harness
+// for boxd on a Docker pool of the very platform its image is published for is
+// a 409 that names both kinds, and the same harness is created on a discovm
+// pool of boxd. A pool whose agent has not said what it runs is still a target.
+func TestCreateRefusesAPoolOfAnotherImageKind(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	machine := configuredHarness(t, st, "machine", "Machine")
+	machine.ImageKind = platform.DiscoVM("boxd")
+	if err := st.UpdateHarnessConfig(ctx, machine); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreatePool(ctx, &model.Pool{
+		ID: "pool-boxd", ProjectID: "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-boxd", ProviderInstanceID: "provider-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	create := func(name, pool string) (*model.Sandbox, error) {
+		return svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("machine"),
+			PoolId:      serverapi.NewOptString(pool),
+			Config:      serverapi.SandboxCreateConfig{Name: name},
+		})
+	}
+
+	if _, err := create("undeclared", "pool-boxd"); err != nil {
+		t.Fatalf("create on a pool that has not declared what it runs: %v", err)
+	}
+
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := create("on-docker", "pool-1")
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
+		t.Fatalf("err = %v, want a 409", err)
+	}
+	if !strings.Contains(err.Error(), "a disco-vm image for the boxd driver, and the pool runs OCI images") {
+		t.Fatalf("err = %v, want it to say both kinds", err)
+	}
+
+	if _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.DiscoVM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	created, err := create("on-boxd", "pool-boxd")
+	if err != nil {
+		t.Fatalf("create on a discovm pool of its driver: %v", err)
+	}
+	if created.PoolID != "pool-boxd" || created.Platform != platform.Pool() {
+		t.Fatalf("created on %q as %q, want pool-boxd as %q", created.PoolID, created.Platform, platform.Pool())
 	}
 }

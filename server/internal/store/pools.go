@@ -229,8 +229,9 @@ func (s *Store) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolB
 // from RegisteredAt on the reconcile the registration marks dirty. It does not
 // write the health flags either: the agent reports those over its own
 // heartbeat, synchronously, immediately after this call returns. The platform
-// the agent declares it hosts is recorded with its key (recordPoolPlatform).
-func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.Platform, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
+// the agent declares it hosts, and the kind of image it runs, are recorded with
+// its key (recordPoolPlatform, recordPoolImageKind).
+func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -253,6 +254,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.
 			return err
 		}
 		recordPoolPlatform(&pool, hosts)
+		recordPoolImageKind(&pool, runs)
 		pool.PublicKey = publicKey
 		pool.KeyType = keyType
 		pool.RegisteredAt = &now
@@ -265,8 +267,8 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.
 	return &pool, nil
 }
 
-// UpdatePoolStatus records an agent heartbeat: the platform the pool hosts,
-// scheduling flags, reported capacity, and conditions.
+// UpdatePoolStatus records an agent heartbeat: the platform the pool hosts, the
+// kind of image it runs, scheduling flags, reported capacity, and conditions.
 //
 // It deliberately does not touch State or ErrorMessage. Health and State have
 // different owners: the agent knows whether it can take work right now, while
@@ -277,7 +279,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.
 // that recovers is returned to `active` by the reconcile that proves it, not by
 // the heartbeat — the service layer marks an offline pool dirty when its agent
 // reports back in, which is what makes that reconcile prompt.
-func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
+func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -298,6 +300,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 			return mapNotFound(err)
 		}
 		recordPoolPlatform(&pool, hosts)
+		recordPoolImageKind(&pool, runs)
 		pool.Ready = ready
 		pool.Schedulable = schedulable
 		pool.Degraded = degraded
@@ -384,6 +387,21 @@ func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
 	}
 }
 
+// recordPoolImageKind records the kind of image a pool's agent declared it runs,
+// inside the registration or heartbeat that carried it (ADR 26-10-09-106 §4).
+//
+// An agent from before image kinds declares none (runs is zero). Unlike its
+// platform, what it runs is known: every agent before kinds ran OCI images in
+// containers, there being no other runtime, so OCI is recorded for it. A pool
+// is never left without a kind once its agent has reported, and a discovm
+// pool's agent always declares its driver's.
+func recordPoolImageKind(pool *model.Pool, runs platform.ImageKind) {
+	if runs.IsZero() {
+		runs = platform.OCI
+	}
+	pool.ImageKind = runs
+}
+
 // SchedulablePoolForSandbox gates placement on current heartbeat health and
 // the agent's schedulable flag, independently of a blocked runtime reconcile.
 // Pending/registering runtimes remain gated during upstream image preload.
@@ -400,6 +418,11 @@ func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
 // refused with a *platform.MismatchError. Neither is ErrNotFound: a pool of the
 // wrong platform is not one on its way up, and a caller that waited on it
 // would wait for good.
+//
+// The kind of image the pool runs must be the kind its harness's image is (ADR
+// 26-10-09-106 §4), or the sandbox is refused with a *platform.KindMismatchError
+// — a disco-vm harness on a Docker pool of the same platform, say. It is not
+// ErrNotFound either, for the same reason.
 //
 // sandbox may stand in for a row not written yet — an import restores the tree
 // first — and then carries the platform its tree belongs to, which is all
@@ -419,6 +442,15 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		(pool.State != model.PoolStateActive && pool.State != model.PoolStateOffline) ||
 		!pool.IsReady() || !pool.Schedulable {
 		return nil, ErrNotFound
+	}
+	imageKind, known, err := s.sandboxImageKind(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	if known {
+		if err := platform.PlaceKind(imageKind, pool.ImageKind); err != nil {
+			return nil, err
+		}
 	}
 	// A pool whose agent has declared nothing — one from before platforms —
 	// places as every pool did before them a sandbox that has no platform
@@ -445,6 +477,44 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		return nil, err
 	}
 	return pool, nil
+}
+
+// sandboxImageKind is the kind of image the sandbox runs: its harness config's
+// (ADR 26-10-09-106 §4), named by a stand-in or by its row. A sandbox with no
+// harness config runs an OCI image — it is from before harness configs, or the
+// stand-in an import places its tree with, and import takes only an OCI
+// harness. A harness config whose kind is undeclared answers the zero kind,
+// which places nowhere. known is false only when the harness config the
+// sandbox names is gone, which leaves nothing to check.
+func (s *Store) sandboxImageKind(ctx context.Context, sandbox *model.Sandbox) (kind platform.ImageKind, known bool, err error) {
+	harnessID := ""
+	if sandbox.HarnessConfigID != nil {
+		harnessID = *sandbox.HarnessConfigID
+	}
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return platform.ImageKind{}, false, err
+	}
+	if harnessID == "" && sandbox.ID != "" {
+		var row model.Sandbox
+		err := read.WithContext(ctx).Select("id", "harness_config_id").
+			First(&row, "id = ? AND project_id = ?", sandbox.ID, sandbox.ProjectID).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return platform.ImageKind{}, false, err
+		}
+		if err == nil && row.HarnessConfigID != nil {
+			harnessID = *row.HarnessConfigID
+		}
+	}
+	if harnessID == "" {
+		return platform.OCI, true, nil
+	}
+	var harness model.HarnessConfig
+	err = read.WithContext(ctx).Select("id", "image_kind").First(&harness, "id = ?", harnessID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return platform.ImageKind{}, false, nil
+	}
+	return harness.ImageKind, err == nil, err
 }
 
 // recordedSandboxPlatform is the platform the sandbox already has: the one a

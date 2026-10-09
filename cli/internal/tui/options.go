@@ -313,8 +313,8 @@ const harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables a
 // leaving a name the run would be refused for. A harness no pool can run is
 // not offered at all, for the same reason (ADR 0145 §1) — the project default
 // included, since leaving the row unset runs the default and the create would
-// be refused for its platform. The hint says so, rather than that there is no
-// default.
+// be refused for its platform or its image kind. The hint says so, rather than
+// that there is no default.
 func (o *optionSet) setHarnesses(all []Harness) {
 	harnesses := make([]Harness, 0, len(all))
 	unhostedDefault := ""
@@ -364,7 +364,7 @@ func (o *optionSet) setHarnesses(all []Harness) {
 	}
 	harness.hint = "--harness · no project default, so pick one · " + HarnessesKeyName + " manages them"
 	if unhostedDefault != "" {
-		harness.hint = "--harness · the project default, " + unhostedDefault + ", runs on a platform no pool here hosts, so pick one · " + HarnessesKeyName + " manages them"
+		harness.hint = "--harness · the project default, " + unhostedDefault + ", runs on no pool here, so pick one · " + HarnessesKeyName + " manages them"
 	}
 	if def != "" {
 		harness.hint = "--harness · unset is the project default, which is " + def + " · " + HarnessesKeyName + " manages them"
