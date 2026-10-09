@@ -48,7 +48,7 @@ flowchart TD
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
     discovm["discovm.Runtime\nembedded disco-vm engine · no Docker"]
-    dvdriver["disco-vm drivers\nvz: host pool agent · boxd: pool machine"]
+    dvdriver["disco-vm driver (configured)\nremote: pool machine · local: host pool agent"]
 
     pool --> engine --> driver
     driver --> local & do & execd & libkrun & vz & wslc

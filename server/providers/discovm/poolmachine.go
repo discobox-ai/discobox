@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 
@@ -17,9 +18,9 @@ import (
 )
 
 const (
-	// poolImage is the tag of the image a pool machine is created from in
-	// the engine's store; BuildGuestImage tags it.
-	poolImage = "discobox-pool"
+	// poolRole is the role of the image a pool machine is created from
+	// (imageTag): pool.yaml in a driver's specs.
+	poolRole = "pool"
 	// poolStartTimeout bounds a pool machine's boot until its disco-vm agent
 	// answers.
 	poolStartTimeout = 10 * time.Minute
@@ -29,9 +30,9 @@ const (
 )
 
 // poolMachine hosts a pool in a disco-vm machine of its own, named by its pool
-// ID so a create that was lost is found rather than duplicated. It is boxd's
-// shape (ADR 26-10-09-106 §1); the fake driver takes it too, so tests run the
-// engine, its shim, and the guest protocol the way a real machine does.
+// ID so a create that was lost is found rather than duplicated. It is a remote
+// driver's shape (ADR 26-10-09-106 §1): the machine runs the Linux pool image,
+// which installs the pool agent.
 //
 // An operator reaches the host through disco-vm's own guest agent, never
 // through the pool agent: the console and the log are what is asked for when
@@ -44,7 +45,31 @@ type poolMachine struct {
 	// what it prints for the operator reading it.
 	logs      func(sandbox.PoolLogOptions) []string
 	logSource string
-	built     []guestImage
+}
+
+func newPoolMachine(e *engine.Engine) *poolMachine {
+	return &poolMachine{
+		engine:    e,
+		shell:     []string{"/bin/bash", "-l"},
+		logs:      journalCommand,
+		logSource: "pool machine journal",
+	}
+}
+
+// journalCommand reads a Linux pool machine's journal for this boot: the pool
+// agent's unit and everything under it, which is what an operator needs when
+// the agent will not register.
+func journalCommand(opts sandbox.PoolLogOptions) []string {
+	args := []string{"journalctl", "--no-pager", "--boot"}
+	if opts.Tail > 0 {
+		args = append(args, "--lines", strconv.Itoa(opts.Tail))
+	} else {
+		args = append(args, "--no-tail")
+	}
+	if opts.Follow {
+		args = append(args, "--follow")
+	}
+	return args
 }
 
 // poolRuntimeState is what a pool row records of its machine.
@@ -53,8 +78,6 @@ type poolRuntimeState struct {
 }
 
 func poolMachineName(poolID string) string { return "discobox-pool-" + poolID }
-
-func (h *poolMachine) images() []guestImage { return h.built }
 
 // errNoPoolMachine is a pool whose machine was never created, or was removed.
 var errNoPoolMachine = errors.New("the pool has no machine")
@@ -88,8 +111,9 @@ func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, begi
 		}
 	}
 	if inst == nil {
-		if inst, err = h.engine.Create(ctx, poolImage, engine.CreateOptions{Name: poolMachineName(pool.ID)}); err != nil {
-			return fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, poolImage, err)
+		image := imageTag(h.engine.Driver.Name(), poolRole)
+		if inst, err = h.engine.Create(ctx, image, engine.CreateOptions{Name: poolMachineName(pool.ID)}); err != nil {
+			return fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, image, err)
 		}
 	}
 	if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
