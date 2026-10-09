@@ -195,3 +195,20 @@ func TestConfigureForwardWithoutAnEphemeralPortDoesNotFollowTheListing(t *testin
 		t.Fatalf("status = %q, want %q", status.String(), want)
 	}
 }
+
+// An image's unavailable words are printed while the terminal is raw, so a
+// control sequence in them is shown escaped rather than obeyed.
+func TestConfigurePortWarningsEscapeTheImagesWords(t *testing.T) {
+	advice := "run /login again\x1b]0;owned\x07\x1b[2J"
+	for name, got := range map[string]string{
+		"numbered":   configPortUnavailable(apimodel.HarnessConfigPort{Port: 1455, Unavailable: apiclientgen.NewOptString(advice)}),
+		"discovered": discoveredPortUnavailable(ephemeralPort(advice), 43579),
+	} {
+		if strings.ContainsAny(got, "\x1b\x07") {
+			t.Errorf("%s warning = %q, want its control characters escaped", name, got)
+		}
+		if !strings.Contains(got, `run /login again\x1b]0;owned\a\x1b[2J`) {
+			t.Errorf("%s warning = %q, want the advice shown escaped", name, got)
+		}
+	}
+}
