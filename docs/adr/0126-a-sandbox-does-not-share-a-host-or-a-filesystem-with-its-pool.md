@@ -1,6 +1,6 @@
 # 0126 — A sandbox does not share a host or a filesystem with its pool
 
-- **Status**: Accepted
+- **Status**: Accepted (its consequence that a provider-hosted backend's credentials stay in the pool superseded by [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md): they are the server provider's configuration)
 - **Date**: 2026-09-23 (rewrite of the 2026-09-17 draft, which was never
   accepted and against which nothing was implemented)
 - **Relates to**: [0006](0006-pool-is-the-runtime-host.md),

@@ -1,6 +1,6 @@
 # 0144 — A pool of host-VM sandboxes runs its agent on the host
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's hypervisor handle in the agent and its helper that serves no API superseded by [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md), where the server's `discovm` provider runs the machines; §1's "Linux sandboxes keep the existing VM-and-container pools" and §3's reason narrowed by it for a Linux disco-vm pool)
 - **Date**: 2026-09-23
 - **Relates to**: [0006](0006-pool-is-the-runtime-host.md),
   [0013](0013-local-linux-pools-use-libkrun-microvms.md),
