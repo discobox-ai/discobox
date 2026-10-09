@@ -114,7 +114,8 @@ S=<scratchpad>; M=~/.discobox/meta.json
 ```
 
 For the issue, run the same lines with `issue` and `<N>` in place of `pr` and
-`<pr>`. The `jq -e` check proves the merge
+`<pr>`. A PR that neither fixes nor refers to an issue drops the `issue` tag
+earlier work left: add `| del(.tags.issue)` to the merge. The `jq -e` check proves the merge
 produced the tag; a file with any field but `description` and `tags` is
 ignored.
 

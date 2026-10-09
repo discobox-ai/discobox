@@ -82,7 +82,7 @@ this skill has already asked — rebase and force-push with a lease to
     "id": "com.github.api",
     "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green and a GitHub Copilot review, answer review comments, and keep it mergeable until it is merged",
     "uses": [
-      {"description": "fetch main and discobox/<slug> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/<slug> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/<slug>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
+      {"description": "fetch main and discobox/<slug> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/<slug> with git over https, the first time with git push --force-with-lease=refs/heads/discobox/<slug>: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/<slug>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
       {"description": "gh pr create --repo discobox-ai/discobox --base main --head discobox/<slug> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
       {"description": "request a GitHub Copilot review of my pull request with gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot or gh api POST repos/discobox-ai/discobox/pulls/<pr>/requested_reviewers"},
       {"description": "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed"},
@@ -176,7 +176,10 @@ Status line: `implemented: <what>, tests <pass/fail>, hooks <state>`.
 Invoke the `discobox-review` skill and drive it to full sign-off (`open 0`,
 `unapproved 0`). Its rules hold: you fix or push back with a reason, the
 reviewer resolves. A comment that would undo a decision from the discussion
-is pushed back on with that decision as the reason. Status line:
+is pushed back on with that decision as the reason. Paths the user said in §0
+to leave alone are in the review's diff but are not this change: name them in
+the reviewer's brief, every round (§3's and §6's too), so it approves them as
+out of scope rather than reviewing them. Status line:
 `reviewed: <rounds> rounds, <what it found>`.
 
 ## 3. Verify
@@ -200,8 +203,11 @@ stop to confirm the grouping — the review has already approved the content.
 Ask only when a change plainly belongs to something other than this one.
 Review and verify fixes made after a commit are new commits on top — never
 amend or squash a commit you have pushed. Leave the tree clean: a stray
-`.wnb-*.tmp` from the dev loop is deleted, not committed. `git status
---short` empty before §5.
+`.wnb-*.tmp` from the dev loop is deleted, not committed. Before §5,
+`git status --short` shows nothing but the paths the user said in §0 to
+leave alone; those stay as they are — never committed or deleted — and are
+named when `open-pr` §1 asks about uncommitted work (§2 and §7 say how
+review and rebase handle them).
 
 ## 5. Open the PR
 
@@ -209,7 +215,10 @@ Invoke the `open-pr` skill with branch `discobox/<slug>`, adding to its
 rules:
 
 - §0's branch check replaces `open-pr` §1's: the first push needs the ref
-  still empty — re-check it just before — not merely an ancestor of `HEAD`.
+  still empty, not merely an ancestor of `HEAD`, and makes GitHub enforce it
+  with an empty lease, so a branch created since the check is refused rather
+  than added to:
+  `git push --force-with-lease=refs/heads/discobox/<slug>: <url> HEAD:refs/heads/discobox/<slug>`.
 - Push with the exact-command use from §0. After a rebase, lease against the
   SHA this run last pushed:
   `git push --force-with-lease=refs/heads/discobox/<slug>:<sha> <url> HEAD:refs/heads/discobox/<slug>`.
@@ -264,16 +273,21 @@ with it:
 
 ```bash
 gh api repos/discobox-ai/discobox/pulls/<pr> --jq '"\(.state) \(.merged_at != null) \(.mergeable_state) \(.head.sha)"'
+gh api repos/discobox-ai/discobox/pulls/<pr>/reviews --jq '.[] | "\(.id) \(.user.login) \(.state)"'
 gh api repos/discobox-ai/discobox/pulls/<pr>/comments --jq '.[] | "\(.id) \(.in_reply_to_id) \(.user.login)"'
 gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.user.login)"'
 ```
 
 - **`mergeable_state` `dirty`** — `main` moved under you. Fetch `main`,
-  rebase onto it, resolve every conflict so both changes are kept, run the
+  rebase onto it (`git rebase --autostash`, which carries the paths kept from
+  §0, here and in `open-pr` §1), resolve every conflict so both changes are kept, run the
   tests the conflict touched, then push with the lease form from §5 to
   `discobox/<slug>` only. `unknown` just after a merge is GitHub
   recomputing — check again before acting.
-- **A new review comment or PR comment** from anyone — answer it as in §6.
+- **A new review, review comment or PR comment** from anyone — answer it as
+  in §6. A review's body can hold findings with no thread of their own (a
+  `CHANGES_REQUESTED` with no inline comment, Copilot's "previously missed");
+  answer those in one PR comment.
 - **A failing check on the head commit** — fix it as `open-pr` §4 says.
 - **Merged or closed** — stop the Monitor, remove the keepalive, and finish.
 
