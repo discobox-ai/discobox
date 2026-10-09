@@ -4966,8 +4966,7 @@ type HarnessConfigPort struct {
 	// Forward each TCP port the configure sandbox is discovered listening on, at its own number, for a
 	// sign-in whose callback port changes every run. Port is 0 when set.
 	Ephemeral OptBool `json:"ephemeral"`
-	// The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry; kept
-	// required so a client predating ephemeral entries still decodes the list.
+	// The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry.
 	Port int64 `json:"port"`
 	// What to tell the user when the port cannot be bound on their machine; empty falls back to naming
 	// the port. For an ephemeral entry it follows the client's own words naming the discovered port, and
