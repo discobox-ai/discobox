@@ -33,11 +33,12 @@ type Config struct {
 	// disco-vm's name for it. It is passed to disco-vm as it is: what a pool
 	// on it looks like follows from what the driver reports it can do.
 	//
-	// There is no state directory to configure. Every provider instance on a
-	// host shares one disco-vm state root (stateRoot), because the limits the
-	// engine enforces — vz's two running macOS guests — are the host's, and
-	// the engine counts them over the instances in its root (ADR 26-10-09-106
-	// §4). A root per provider instance would give each its own two.
+	// There is no state directory to configure. Every provider instance of a
+	// driver on a host shares that driver's disco-vm state root (stateRoot),
+	// because the limits the engine enforces — vz's two running macOS guests —
+	// are the host's, and the engine counts them over the instances in its
+	// root (ADR 26-10-09-106 §4). A root per provider instance would give each
+	// its own two.
 	Driver string `json:"driver,omitempty"`
 }
 
@@ -82,13 +83,18 @@ func Definition() sandbox.ProviderDefinition {
 	}
 }
 
-// stateRoot is this host's disco-vm state root: its image store and its
-// instances, for every driver and every provider instance. It is under the
-// platform's data directory, as vz's pool disks are: on macOS that is
+// stateRoot is this host's disco-vm state root for a driver: its image store
+// and its instances, shared by every provider instance on that driver. It is
+// under the platform's data directory, as vz's pool disks are: on macOS that is
 // ~/Library/Application Support.
-func stateRoot() string {
+//
+// A root per driver, because a root is one tag namespace and the twins name
+// their parents by tag (`from: image: discobox/sandbox-agent`): two drivers
+// sharing one would each move the other's tags. The limits the engine enforces
+// are a driver's, so they still count every machine that driver runs here.
+func stateRoot(driver string) string {
 	if home := strings.TrimSpace(xdg.DataHome); home != "" {
-		return filepath.Join(home, "discobox", ProviderType)
+		return filepath.Join(home, "discobox", ProviderType, driver)
 	}
-	return filepath.Join(os.TempDir(), "discobox", ProviderType)
+	return filepath.Join(os.TempDir(), "discobox", ProviderType, driver)
 }

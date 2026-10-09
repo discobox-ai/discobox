@@ -17,52 +17,56 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// imagesDir is where a discobox checkout keeps the disco-vm build specs for
-// each driver, in a directory named as disco-vm names the driver. A spec is
-// <role>.yaml, and builds the image imageTag names: pool.yaml is the pool
-// machine's (poolRole).
-const imagesDir = "server/providers/discovm/images"
-
-// imageTag is the tag a driver's image of a role has in the engine's store.
-// It names the driver because every driver on a host shares one store, and one
-// tag namespace: a tag per role alone would move from one driver's image to
-// another's whenever both were built, and the first driver's next create would
-// be refused for an image built for the other.
-func imageTag(driver, role string) string {
-	return "discobox-" + driver + "-" + role
-}
-
-// guestImage is one disco-vm image to build: the build spec in a discobox
-// checkout, and the tag the engine finds the result by.
-type guestImage struct {
+// twin is one disco-vm image in a discobox checkout: the build spec beside the
+// Dockerfile it is the twin of (<dir>/<driver>.yaml), the directory it is
+// built from, and the tag the engine finds it by. A twin built FROM another
+// names that one's tag in its own `from:`, so the tags are the specs' contract,
+// not this package's choice.
+type twin struct {
 	Tag string
-	// Spec is the build spec's path in the checkout, slash-separated. The
-	// checkout is the build's context, so a spec copies in what it names
-	// relative to the checkout's root.
-	Spec string
+	// Dir holds the Dockerfile and its twins; Context is the build's context.
+	// Both are slash-separated paths in the checkout.
+	Dir     string
+	Context string
 }
 
-// driverImages lists the build specs a checkout holds for a driver. Which
-// images there are is the checkout's to say, not this package's.
-func driverImages(source, driver string) ([]guestImage, error) {
-	dir := path.Join(imagesDir, driver)
-	entries, err := os.ReadDir(filepath.Join(source, filepath.FromSlash(dir)))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	var images []guestImage
-	for _, entry := range entries {
-		role, ok := strings.CutSuffix(entry.Name(), ".yaml")
-		if !ok || !entry.Type().IsRegular() {
+// Spec is the twin's build spec for a driver.
+func (t twin) Spec(driver string) string { return path.Join(t.Dir, driver+".yaml") }
+
+// twins is the chain BuildGuestImage builds, parents before children, as
+// `build:boxd-images` in Taskfile.yml builds it for boxd (which
+// TestTwinsMatchTheTaskfile holds it to). A driver builds the twins it has a
+// spec for, and skips the rest: the pool agent's has none yet (#123).
+var twins = []twin{
+	{Tag: "discobox/base", Dir: "base-image", Context: "base-image"},
+	{Tag: poolImage, Dir: "pool-agent", Context: "."},
+	{Tag: "discobox/sandbox-agent", Dir: "sandbox-agent", Context: "."},
+	{Tag: "discobox/claude-code", Dir: "harness/claude-code", Context: "harness/claude-code"},
+	{Tag: "discobox/codex", Dir: "harness/codex-cli", Context: "harness/codex-cli"},
+	{Tag: "discobox/opencode", Dir: "harness/opencode", Context: "harness/opencode"},
+	{Tag: "discobox/copilot", Dir: "harness/copilot", Context: "harness/copilot"},
+}
+
+// driverTwins lists the twins a checkout holds a spec for, for a driver.
+func driverTwins(source, driver string) ([]twin, error) {
+	var out []twin
+	for _, t := range twins {
+		info, err := os.Stat(filepath.Join(source, filepath.FromSlash(t.Spec(driver))))
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		images = append(images, guestImage{Tag: imageTag(driver, role), Spec: path.Join(dir, entry.Name())})
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode().IsRegular() {
+			out = append(out, t)
+		}
 	}
-	return images, nil
+	return out, nil
 }
 
-// BuildGuestImage builds the driver's images into this provider's engine, from
-// the specs a discobox checkout holds for it, one after another.
+// BuildGuestImage builds the driver's twins into this provider's engine, from
+// a discobox checkout, parents first.
 //
 // The pool is only where the operation was asked from. Unlike a dockerworker
 // guest image, which a running pool builds on its own Docker daemon, a disco-vm
@@ -83,24 +87,25 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		return nil, err
 	}
 	driver := r.engine.Driver.Name()
-	images, err := driverImages(source, driver)
+	images, err := driverTwins(source, driver)
 	if err != nil {
 		return nil, err
 	}
 	if len(images) == 0 {
-		return nil, fmt.Errorf("%s holds no disco-vm image spec for the %s driver under %s/%s: %w", source, driver, imagesDir, driver, sandbox.ErrGuestImageBuildUnsupported)
-	}
-	specs := make([]string, len(images))
-	for i, image := range images {
-		specs[i] = filepath.Join(source, filepath.FromSlash(image.Spec))
+		return nil, fmt.Errorf("%s holds no disco-vm build spec for the %s driver (a %s.yaml beside a Dockerfile): %w", source, driver, driver, sandbox.ErrGuestImageBuildUnsupported)
 	}
 
 	reader, writer := io.Pipe()
 	go func() {
 		builder := &build.Builder{Engine: r.engine, Out: writer}
-		for i, image := range images {
-			fmt.Fprintf(writer, "building %s from %s\n", image.Tag, image.Spec)
-			if _, err := builder.Build(ctx, build.Options{File: specs[i], Context: source, Tags: []string{image.Tag}}); err != nil {
+		for _, image := range images {
+			fmt.Fprintf(writer, "building %s from %s\n", image.Tag, image.Spec(driver))
+			opts := build.Options{
+				File:    filepath.Join(source, filepath.FromSlash(image.Spec(driver))),
+				Context: filepath.Join(source, filepath.FromSlash(image.Context)),
+				Tags:    []string{image.Tag},
+			}
+			if _, err := builder.Build(ctx, opts); err != nil {
 				// The reader's next Read returns the build's error rather
 				// than io.EOF, so nothing has to read the text to know.
 				_ = writer.CloseWithError(fmt.Errorf("build %s: %w", image.Tag, err))

@@ -28,12 +28,13 @@ flowchart TD
 
 ## The Engine Is the Server's
 
-- One state root per host (`stateRoot`, under the platform's data directory),
-  shared by every provider instance and every driver; it is not configurable.
-  Each provider instance opens an engine on it with the driver it names. The
-  engine's state is its files, so a cap it enforces at `Start` — vz's two
-  running macOS guests — counts every instance's machines, which is what makes
-  it the host's (ADR §4). The server is where the engine, its image store, its
+- One state root per driver per host (`stateRoot`, under the platform's data
+  directory), shared by every provider instance on that driver; it is not
+  configurable. Each provider instance opens an engine on it. The engine's state
+  is its files, so a cap it enforces at `Start` — vz's two running macOS guests
+  — counts every instance's machines, which is what makes it the host's (ADR
+  §4). The root is per driver because a root is one tag namespace, and the
+  twins (below) name their parents by tag. The server is where the engine, its image store, its
   shims, and the boxd credential live (ADR §2).
 - The module is imported by commit (a pseudo-version), never a tag.
 - A local machine's shim is this binary re-executed as `__discovm-shim`
@@ -70,7 +71,7 @@ it:
 
 - `poolMachine` reaches the host through disco-vm's own guest agent, never
   through the pool agent, for the console's reason ([../DESIGN.md](../DESIGN.md#pool-host-console)).
-- A pool machine is created from the engine's `discobox-<driver>-pool` image, started,
+- A pool machine is created from the engine's `discobox/pool-agent` image, started,
   and recorded on the pool row as registering. Repair stops and starts the same
   machine, keeping its disk; remove deletes it.
 - A remote machine whose service does not answer reads `Unknown`, which is
@@ -87,17 +88,20 @@ it:
 
 ## Images
 
-`BuildGuestImage` builds the driver's disco-vm images with disco-vm's builder
-into the engine's store, from the build specs the checkout it is given holds
-under `server/providers/discovm/images/<driver>/` — not under `vm-image/`,
-which is the Docker pool VMs' guest and names no backend. Each
-`<role>.yaml` builds the image tagged `discobox-<driver>-<role>`. The tag
-names the driver because every driver on a host shares the engine's one store
-and tag namespace. Which images a
-driver has is the checkout's to say. The checkout is the build context. The image is
-the server's, not the pool's, so the pool named only says where the operation
-was asked from. A driver the checkout has no specs for answers
-`ErrGuestImageBuildUnsupported`. `RestartHost` is refused: a machine is cloned
+A disco-vm image is a Dockerfile's twin: `<driver>.yaml` beside the
+Dockerfile, built from the same context and tagged `discobox/<name>`, with each
+twin naming its parent's tag in its `from:` (see the root
+[DESIGN.md](../../../DESIGN.md)). `BuildGuestImage` builds a driver's twins with
+disco-vm's builder into the engine's store, from the checkout it is given,
+parents first: base, the pool agent (`discobox/pool-agent`, the pool machine's
+image, once #123 adds its twin), the sandbox agent, then the harnesses. The
+chain is `twins` in `build.go`, the same one `build:boxd-images` builds for
+boxd, which `TestTwinsMatchTheTaskfile` holds it to. A driver builds the twins it
+has a spec for and skips the rest, and one with none answers
+`ErrGuestImageBuildUnsupported`.
+
+The image is the server's, not the pool's, so the pool named only says where
+the operation was asked from. `RestartHost` is refused: a machine is cloned
 from its image, so a new image reaches a pool only when its machine is
 replaced.
 

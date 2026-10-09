@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -75,8 +76,8 @@ func newFakeRuntime(t *testing.T) *Runtime {
 	if build.Destination != r.engine.Images.Root {
 		t.Fatalf("Destination = %q, want the engine's image store %q", build.Destination, r.engine.Images.Root)
 	}
-	if _, err := r.engine.Images.Resolve(imageTag("fake", poolRole)); err != nil {
-		t.Fatalf("the build tagged no %s image: %v", imageTag("fake", poolRole), err)
+	if _, err := r.engine.Images.Resolve(poolImage); err != nil {
+		t.Fatalf("the build tagged no %s image: %v", poolImage, err)
 	}
 	return r
 }
@@ -316,6 +317,84 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	exe, _ := os.Executable()
 	if want := shimCommand(exe, r.engine.Root, "fake"); strings.Join(r.engine.ShimCommand, " ") != strings.Join(want, " ") {
 		t.Fatalf("ShimCommand = %q, want %q", r.engine.ShimCommand, want)
+	}
+}
+
+// A driver builds the twins it has a spec for, parents first, each from its
+// own context, so a twin FROM another finds it by the tag the chain gives it.
+func TestBuildGuestImageBuildsTheTwinChain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake guest's build steps are POSIX shell commands")
+	}
+	isolateStateRoot(t)
+	r, err := newRuntime(Config{Driver: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(checkout, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("base-image/fake.yaml", "from:\n  install: {os: "+runtime.GOOS+", media: latest}\n")
+	write("sandbox-agent/fake.yaml", "from:\n  image: discobox/base\n")
+	// A twin another driver has is not this driver's to build.
+	write("harness/codex-cli/boxd.yaml", "from:\n  image: nothing/here\n")
+
+	build, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-8"}, sandbox.GuestImageBuildOptions{SourceDir: checkout})
+	if err != nil {
+		t.Fatalf("BuildGuestImage() error = %v", err)
+	}
+	out, err := io.ReadAll(build)
+	_ = build.Close()
+	if err != nil {
+		t.Fatalf("build failed: %v\n%s", err, out)
+	}
+	for _, tag := range []string{"discobox/base", "discobox/sandbox-agent"} {
+		if _, err := r.engine.Images.Resolve(tag); err != nil {
+			t.Errorf("the chain built no %s: %v", tag, err)
+		}
+	}
+	if _, err := r.engine.Images.Resolve("discobox/codex"); err == nil {
+		t.Error("built another driver's twin")
+	}
+}
+
+// The server's chain is the one `build:boxd-images` builds: the same specs,
+// contexts and tags, so a twin that builds by hand builds here too.
+func TestTwinsMatchTheTaskfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := regexp.MustCompile(`--driver boxd build -t (\S+) -f (\S+) (\S+)'`)
+	var fromTaskfile []string
+	for _, m := range pattern.FindAllStringSubmatch(string(data), -1) {
+		fromTaskfile = append(fromTaskfile, m[1]+" "+m[2]+" "+m[3])
+	}
+	if len(fromTaskfile) == 0 {
+		t.Fatal("found no build:boxd-images commands in Taskfile.yml")
+	}
+	repo, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	have, err := driverTwins(repo, "boxd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fromTwins []string
+	for _, tw := range have {
+		fromTwins = append(fromTwins, tw.Tag+" "+tw.Spec("boxd")+" "+tw.Context)
+	}
+	if strings.Join(fromTwins, "\n") != strings.Join(fromTaskfile, "\n") {
+		t.Fatalf("twins builds\n%s\nbut build:boxd-images builds\n%s", strings.Join(fromTwins, "\n"), strings.Join(fromTaskfile, "\n"))
 	}
 }
 

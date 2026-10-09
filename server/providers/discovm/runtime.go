@@ -55,7 +55,7 @@ type Runtime struct {
 var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
 func newRuntime(cfg Config) (*Runtime, error) {
-	e, err := openEngine(stateRoot(), cfg.Driver)
+	e, err := openEngine(stateRoot(strings.TrimSpace(cfg.Driver)), cfg.Driver)
 	if err != nil {
 		return nil, err
 	}
