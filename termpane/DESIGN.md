@@ -436,6 +436,11 @@ prefix armed, or a lead waiting for the key that says which command
 the keys off a pane, a finished one whose screen is a reader's, has to leave a
 sequence it already let start to the pane that started it.
 
+**The reserved keys work with nothing attached.** A host can draw a view of its
+own in a pane's place — not a terminal — and keep the key map of the strip it
+sits in: the prefix and its bindings answer whether or not a stream is attached,
+and what would be sent goes nowhere.
+
 **A binding can be a lead rather than a command.** `WithPrefixChord` reserves a
 key behind the prefix that emits nothing itself and waits for a second key,
 which selects from a table of its own. It is for a family of commands that

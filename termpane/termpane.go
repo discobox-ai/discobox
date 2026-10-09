@@ -659,10 +659,12 @@ func stripPasteMarkers(text string) string {
 }
 
 // handleKey applies the reserved prefix, if there is one, and sends the rest.
+//
+// The reserved keys work with nothing attached: a pane can be a host's own
+// view rather than a terminal — drawn by the host, keeping the key map the
+// strip it sits in shares — and its bindings are the pane's whether or not
+// there is a stream to send the rest to. What would be sent goes nowhere.
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
-	if m.emu == nil {
-		return nil
-	}
 	if cmd, taken := m.copyChord(msg); taken {
 		return cmd
 	}
