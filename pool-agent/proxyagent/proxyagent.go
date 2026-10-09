@@ -631,6 +631,14 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 		"SSL_CERT_FILE":       SystemCABundle,
 		"REQUESTS_CA_BUNDLE":  SystemCABundle,
 		"PIP_CERT":            SystemCABundle,
+		// Node's built-in fetch (undici), and from Node 24 its http/https
+		// modules, ignore HTTP_PROXY/HTTPS_PROXY unless this is set, so they
+		// connect directly — which a sandbox has no route for — and fail with
+		// a bare "fetch failed" (ENETUNREACH). That bites hardest in tools
+		// that bundle their own Node runtime, where nobody can install a
+		// proxy dispatcher. Versions that predate it ignore it; Node 22 prints
+		// an UNDICI-EHPA experimental warning to stderr.
+		"NODE_USE_ENV_PROXY": "1",
 		// The discobox API, at the host this pool's proxy answers for itself
 		// (ADR 0140 §2). The discobox CLI in the image reads DISCOBOX_SERVER;
 		// DISCOBOX_API_URL is the same address for anything else. Reaching it

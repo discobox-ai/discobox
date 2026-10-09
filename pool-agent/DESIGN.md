@@ -1156,7 +1156,8 @@ flowchart LR
   system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /
   `REQUESTS_CA_BUNDLE` env for Python) trusts the MITM CA alongside real roots;
   Node.js and Claude Code use `NODE_EXTRA_CA_CERTS` pointed at the mounted MITM
-  CA because they ship their own root store.
+  CA because they ship their own root store. Node's built-in `fetch` also
+  ignores `HTTPS_PROXY` unless `NODE_USE_ENV_PROXY=1`, which the same env sets.
 - The in-sandbox forwarder is the dependency-light `proxy/bridge` package, run by
   the `sandbox-agent proxy-bridge` subcommand as `discobox-proxy-bridge.service`.
   It forwards local plaintext proxy traffic to the pool host proxy over mTLS.
