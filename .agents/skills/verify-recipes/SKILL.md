@@ -305,6 +305,25 @@ Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
 shell's command line matches the pattern. Wait on the watcher's outputs
 (`.env` image tags, the harness list) instead.
 
+# Verifying a remote-URL source's clone (`new -C <url>`)
+
+- **A slow origin of your own.** Serve a bare clone of this repository with
+  `git http-backend` behind a handler that writes 16 KiB per 40 ms (~400 KiB/s);
+  disco2 then takes about a minute to clone, past `ProvisionProgressFresh`.
+  `-C http://172.17.0.1:<port>/disco2.git` makes it a remote-URL source.
+- **The CLI's `ls-remote` uses the box's proxy**, which cannot reach this
+  box's docker bridge: run the CLI with `NO_PROXY=172.17.0.1,$NO_PROXY` (and
+  `no_proxy`), or it fails `502 ... connection refused`. The sandbox's own
+  clone goes through the dev pool proxy, which dials 172.17.0.1 directly.
+- **What the pool recorded:** poll `d admin box get <id> -o json | jq -c
+  '.runtime | {state, provisionProgressAt, provisionProgress}'` every 2s.
+- **What the user sees:** `new` without `-d` in tmux. The first run in a fresh
+  `HOME` stops on the console's welcome screen until Enter, which hides the
+  whole create; dismiss it once, then run again.
+- **A clone cut short:** stop the origin by exact name (`pgrep -x`); a
+  `pkill -f` naming it matches your own tool shell. The clone's error is in
+  the box's `journalctl -u discobox-sandbox-agent` (`materialize source`).
+
 # Verifying the sandbox agent without a PID-1 flow (a VM guest's start)
 
 No disco-vm driver runs here; the sandbox image booted with systemd itself as
