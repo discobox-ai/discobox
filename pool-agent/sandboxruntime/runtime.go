@@ -1259,6 +1259,11 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 				UserEmail: optString(git.UserEmail),
 			}
 		}
+		// Skills, forwarded verbatim into the bootstrap; the sandbox installs
+		// them on its first launch (ADR 26-10-09-395 §2).
+		if skills, ok := config.Skills.Get(); ok {
+			doc.Runtime.Skills = sandboxSkills(skills)
+		}
 		// The run user is the request's config.user, trimmed and passed through
 		// sandboxuser.Merge as its only layer. The pool resolves nothing further:
 		// what the request left unset stays unset here, for the sandbox-agent to
@@ -2785,6 +2790,28 @@ func chownID(v *int64) int {
 		return -1
 	}
 	return int(*v)
+}
+
+// sandboxSkills is the request's skills in the bootstrap's shape. The pool
+// checks nothing about them: the control plane refused what it would not
+// carry, and the sandbox refuses what it will not write.
+func sandboxSkills(in workerclient.SandboxConfigSkills) sandboxconfig.Skills {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(sandboxconfig.Skills, len(in))
+	for name, skill := range in {
+		var files []sandboxconfig.SkillFile
+		for _, file := range skill.Files {
+			files = append(files, sandboxconfig.SkillFile{
+				Path:       file.Path,
+				Content:    file.Content,
+				Executable: file.Executable.Or(false),
+			})
+		}
+		out[name] = sandboxconfig.Skill{Skill: skill.Skill, Files: files}
+	}
+	return out
 }
 
 // resolveSandboxUser reads the request's user without completing it.

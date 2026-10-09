@@ -204,3 +204,32 @@ func TestValidateRejectsABlankHarnessCommand(t *testing.T) {
 		t.Fatal("expected a blank harness command to be rejected")
 	}
 }
+
+// The skills a sandbox was created with are read from sandbox.json, base64
+// content and all, for the first launch to install (ADR 26-10-09-395 §3).
+func TestLoadReadsTheSandboxsSkills(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	if err := os.WriteFile(path, []byte(`{
+		"apiVersion": "discobox.dev/sandbox/v1",
+		"sandboxId": "sandbox-file",
+		"provider": {
+			"kind": "discobox-pool",
+			"projectId": "project-file",
+			"poolId": "pool-file",
+			"publicKeys": {
+				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
+			}
+		},
+		"skills": {"foo": {"skill": "# foo", "files": [{"path": "run.sh", "content": "`+base64.StdEncoding.EncodeToString([]byte("#!/bin/sh\n"))+`", "executable": true}]}}
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	foo := cfg.Skills["foo"]
+	if foo.Skill != "# foo" || len(foo.Files) != 1 || string(foo.Files[0].Content) != "#!/bin/sh\n" || !foo.Files[0].Executable {
+		t.Fatalf("skills = %#v, want foo with its executable script", cfg.Skills)
+	}
+}

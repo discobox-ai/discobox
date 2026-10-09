@@ -3059,6 +3059,11 @@ components:
                 git:
                     $ref: '#/components/schemas/SandboxGitIdentity'
                     description: Git authorship identity to seed the sandbox user's ~/.gitconfig with
+                skillNames:
+                    description: Names of the skills the sandbox was created with. Their content is not read back.
+                    items:
+                        type: string
+                    type: array
                 image:
                     description: Sandbox base image
                     type: string
@@ -3122,6 +3127,11 @@ components:
                 git:
                     $ref: '#/components/schemas/SandboxGitIdentity'
                     description: Git authorship identity to seed the sandbox user's ~/.gitconfig with
+                skills:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+                    description: Skills to install into the harness's skill directories on the sandbox's first launch, by name, after the image's and the repository's and winning on a name they share. Fixed at create; at most 1 MiB in all, counting every file's path as well as its content, in at most 1000 files.
+                    type: object
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -4265,6 +4275,39 @@ components:
                 userName:
                     description: Value for git's user.name inside the sandbox.
                     type: string
+            type: object
+        SandboxSkill:
+            additionalProperties: false
+            description: One skill, by content. Its name is its key, one directory with no slash that does not start with a dot.
+            properties:
+                files:
+                    description: The skill's files other than its SKILL.md.
+                    items:
+                        $ref: '#/components/schemas/SandboxSkillFile'
+                    type: array
+                skill:
+                    description: The skill's SKILL.md.
+                    type: string
+            required:
+                - skill
+            type: object
+        SandboxSkillFile:
+            additionalProperties: false
+            description: One file of a skill.
+            properties:
+                content:
+                    description: The file's bytes.
+                    format: byte
+                    type: string
+                executable:
+                    description: Whether the file is installed executable, as a skill's helper script must be.
+                    type: boolean
+                path:
+                    description: Path inside the skill's directory, slash-separated, clean, and relative; never SKILL.md, which is the skill's own text.
+                    type: string
+            required:
+                - path
+                - content
             type: object
         SandboxProviderCatalogItem:
             additionalProperties: false

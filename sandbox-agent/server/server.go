@@ -70,6 +70,7 @@ type Config struct {
 	AwaitsRuntimeConfig bool
 	Harness             config.Harness
 	Sources             []sandboxconfig.Source
+	Skills              sandboxconfig.Skills
 	SandboxConfig       map[string]any
 	Installer           terminal.Installer
 	ExecUnitManager     execs.UnitManager
@@ -113,6 +114,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		AwaitsRuntimeConfig:   cfg.AwaitsRuntimeConfig,
 		Harness:               cfg.Harness,
 		Sources:               cfg.Sources,
+		Skills:                cfg.Skills,
 		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
@@ -216,6 +218,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		PrimaryState:  localStore,
 		HarnessMode:   cfg.HarnessMode,
 		Prompt:        cfg.Prompt,
+		Skills:        cfg.Skills,
 		AwaitSources:  awaitSources,
 	})
 	if err != nil {

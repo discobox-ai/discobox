@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
@@ -110,5 +111,26 @@ func TestPoolGitSourceForwardsTheUpstreamURLInEitherDelivery(t *testing.T) {
 		if got := out.UpstreamUrl.Or(""); got != upstream {
 			t.Fatalf("%s: upstream URL = %q, want %q", delivery, got, upstream)
 		}
+	}
+}
+
+// The sandbox's skills reach the pool whole, the executable bit only where it
+// is set (ADR 26-10-09-395 §2).
+func TestPoolCreateRequestCarriesSkills(t *testing.T) {
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Skills: sandboxconfig.Skills{"foo": {Skill: "# foo", Files: []sandboxconfig.SkillFile{
+			{Path: "run.sh", Content: []byte("x"), Executable: true},
+			{Path: "a.md", Content: []byte("y")},
+		}}},
+	})
+	foo, ok := request.Config.Skills.Or(nil)["foo"]
+	if !ok || foo.Skill != "# foo" || len(foo.Files) != 2 {
+		t.Fatalf("skills = %#v, want foo with its two files", request.Config.Skills)
+	}
+	if !foo.Files[0].Executable.Or(false) || foo.Files[1].Executable.Set || string(foo.Files[1].Content) != "y" {
+		t.Fatalf("files = %#v", foo.Files)
+	}
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Config.Skills.Set {
+		t.Fatal("skills set for a sandbox created without any")
 	}
 }

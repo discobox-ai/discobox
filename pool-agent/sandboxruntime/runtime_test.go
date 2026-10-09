@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -530,6 +531,30 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 	}
 	if cfg.Harness.ID != "claude" || len(cfg.Files) != 1 {
 		t.Fatalf("resolved harness = %#v, want claude with one file", cfg.Harness)
+	}
+}
+
+// The request's skills reach the bootstrap whole, binary content and the
+// executable bit included (ADR 26-10-09-395 §2).
+func TestBuildSandboxDocumentForwardsSkills(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			Skills: workerclient.NewOptSandboxConfigSkills(workerclient.SandboxConfigSkills{
+				"foo": {Skill: "# foo", Files: []workerapimodel.SandboxSkillFile{
+					{Path: "run.sh", Content: []byte("#!/bin/sh\n"), Executable: workerclient.NewOptBool(true)},
+					{Path: "logo.png", Content: []byte{0x89, 0}},
+				}},
+			}),
+		},
+	}
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
+	cfg, _ := sandboxconfig.Effective(doc)
+	want := sandboxconfig.Skills{"foo": {Skill: "# foo", Files: []sandboxconfig.SkillFile{
+		{Path: "run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
+		{Path: "logo.png", Content: []byte{0x89, 0}},
+	}}}
+	if !reflect.DeepEqual(cfg.Skills, want) {
+		t.Fatalf("effective skills = %#v, want %#v", cfg.Skills, want)
 	}
 }
 

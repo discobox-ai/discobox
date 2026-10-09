@@ -1,14 +1,17 @@
 package terminal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // ProjectSkillsDir is where a repository declares the agent skills it wants the
@@ -51,8 +54,9 @@ var skillDirectories = []string{
 	filepath.Join(".agents", "skills"),
 }
 
-// installSkills copies the image's skills and the primary source's declared
-// skills into the run user's skill directories.
+// installSkills copies the image's skills, the primary source's declared
+// skills, and the skills the sandbox was created with into the run user's
+// skill directories.
 //
 // It runs on the primary terminal's first launch only, and from there rather
 // than from the installer that runs before every terminal: the copies are the
@@ -61,9 +65,15 @@ var skillDirectories = []string{
 // run after the source-delivery wait, which is the same reason — before the
 // source is in place there is nothing to read.
 //
-// The image's go first and the repository's second, so a repository declaring a
-// skill of the same name wins: it is the more specific declaration.
+// The image's go first, the repository's second and the sandbox's own last,
+// so each wins over the one before on a name they share: each is the more
+// specific declaration (ADR 26-10-09-395 §3).
 func (s *Service) installSkills() error {
+	// The control plane refused what it would not carry; this is the line
+	// held again where it matters, before anything is written under home.
+	if err := s.skills.Validate(); err != nil {
+		return fmt.Errorf("install the discobox's skills: %w", err)
+	}
 	// The repository root, asked of the exec manager rather than derived here:
 	// it is the same answer `services` discovers its declarations under, and a
 	// second derivation of "which directory is the sandbox working on" drifts
@@ -92,7 +102,7 @@ func (s *Service) installSkills() error {
 	if err != nil {
 		return err
 	}
-	if len(builtin) == 0 && len(project) == 0 {
+	if len(builtin) == 0 && len(project) == 0 && len(s.skills) == 0 {
 		return nil
 	}
 	// HOME as the exec that will read these files resolves it, which is what
@@ -105,7 +115,33 @@ func (s *Service) installSkills() error {
 	if err := copySkills(BuiltinSkillsDir, builtin, home, s.defaultUser); err != nil {
 		return err
 	}
-	return copySkills(declared, project, home, s.defaultUser)
+	if err := copySkills(declared, project, home, s.defaultUser); err != nil {
+		return err
+	}
+	return writeSkills(s.skills, home, s.defaultUser)
+}
+
+// writeSkills writes skills, which the caller has validated, into every skill
+// directory under home: the same overlay copySkillTree makes, from content
+// rather than a tree.
+func writeSkills(skills sandboxconfig.Skills, home string, user *execs.User) error {
+	uid, gid := userIDs(user)
+	for _, dir := range skillDirectories {
+		for _, name := range skills.Names() {
+			skill := skills[name]
+			root := filepath.Join(home, dir, name)
+			if err := writeSkillFile(filepath.Join(root, sandboxconfig.SkillFileName), strings.NewReader(skill.Skill), false, uid, gid); err != nil {
+				return fmt.Errorf("install skill %s into %s: %w", name, dir, err)
+			}
+			for _, file := range skill.Files {
+				target := filepath.Join(root, filepath.FromSlash(file.Path))
+				if err := writeSkillFile(target, bytes.NewReader(file.Content), file.Executable, uid, gid); err != nil {
+					return fmt.Errorf("install skill %s into %s: %w", name, dir, err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // declaredSkills is what a repository declares under ProjectSkillsDir, and
@@ -127,10 +163,7 @@ func copySkills(from string, entries []fs.DirEntry, home string, user *execs.Use
 	if len(entries) == 0 {
 		return nil
 	}
-	var uid, gid *int64
-	if user != nil {
-		uid, gid = user.UID, user.GID
-	}
+	uid, gid := userIDs(user)
 	for _, dir := range skillDirectories {
 		if err := copySkillTree(from, filepath.Join(home, dir), uid, gid); err != nil {
 			return fmt.Errorf("install %s into %s: %w", from, dir, err)
@@ -178,23 +211,42 @@ func copySkillFile(from, to string, entry fs.DirEntry, uid, gid *int64) error {
 	if err != nil {
 		return err
 	}
-	// A skill's helper script has to stay runnable, so the executable bit
-	// carries over. Nothing else does: the destination is another user's home
-	// directory, not a copy of the checkout's permissions.
-	perm := fs.FileMode(0o644)
-	if info.Mode()&0o111 != 0 {
-		perm = 0o755
-	}
 	source, err := os.Open(from)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
+	// The walk created the directory before reaching its files.
+	return writeSkillFileIn(to, source, info.Mode()&0o111 != 0, uid, gid)
+}
+
+// writeSkillFile writes one skill file at to, creating the directories it is
+// in and giving the ones it created to the run user.
+func writeSkillFile(to string, content io.Reader, executable bool, uid, gid *int64) error {
+	created, err := mkdirAllTracked(filepath.Dir(to), 0o755)
+	if err != nil {
+		return err
+	}
+	if err := chownAll(created, uid, gid); err != nil {
+		return err
+	}
+	return writeSkillFileIn(to, content, executable, uid, gid)
+}
+
+// writeSkillFileIn writes one skill file at to, in a directory that exists.
+func writeSkillFileIn(to string, content io.Reader, executable bool, uid, gid *int64) error {
+	// A skill's helper script has to stay runnable, so the executable bit
+	// carries over. Nothing else does: the destination is another user's home
+	// directory, not a copy of the checkout's permissions.
+	perm := fs.FileMode(0o644)
+	if executable {
+		perm = 0o755
+	}
 	destination, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(destination, source); err != nil {
+	if _, err := io.Copy(destination, content); err != nil {
 		destination.Close()
 		return err
 	}
@@ -207,6 +259,14 @@ func copySkillFile(from, to string, entry fs.DirEntry, uid, gid *int64) error {
 		return err
 	}
 	return chownAll([]string{to}, uid, gid)
+}
+
+// userIDs is the run user's ids, or none when the sandbox named nobody.
+func userIDs(user *execs.User) (uid, gid *int64) {
+	if user == nil {
+		return nil, nil
+	}
+	return user.UID, user.GID
 }
 
 // chownAll gives paths to the run user, or leaves them to whoever created them

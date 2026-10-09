@@ -39,13 +39,17 @@ nothing on the client is reachable from inside it.
 ```
 
 - A name is one path segment: not empty, no `/` or `\`, not `.` or `..`, and
-  not hidden.
+  not hidden. Names and file paths must also be writable on every platform a
+  sandbox runs on: no character Windows reserves, no control character, no
+  trailing dot or space, no device name, and no two that differ only in case.
 - `skill` is required and is what lands at `<name>/SKILL.md`.
 - Each file's `path` is relative and clean, stays inside the skill, and is not
   `SKILL.md`. `content` is bytes, base64 on the wire, so a skill's images and
   binaries survive. `executable` carries the one permission a skill needs
   (ADR 0072 §1).
-- The server rejects a request whose decoded skills total more than 1 MiB.
+- The server rejects a request whose decoded skills total more than 1 MiB,
+  counting every file's path as well as its content, or that holds more than
+  1000 files.
   `sandbox.json` is a bootstrap every backend has to place before boot (§2), and
   skills are the first thing in it that has no natural size.
 

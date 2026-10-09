@@ -8,6 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
@@ -191,10 +192,13 @@ type CreateOptions struct {
 	HomeDirectory               *string
 	GitUserName                 *string
 	GitUserEmail                *string
-	ResolvedHarnessConfig       *ResolvedHarnessConfig
-	AgentServerURL              string
-	OAuthRedirectBase           string
-	PoolID                      string
+	// Skills are the skills the sandbox was created with, forwarded into its
+	// bootstrap (ADR 26-10-09-395 §2).
+	Skills                sandboxconfig.Skills
+	ResolvedHarnessConfig *ResolvedHarnessConfig
+	AgentServerURL        string
+	OAuthRedirectBase     string
+	PoolID                string
 	// Platform is the sandbox's, which a pool-backed provider places by: a
 	// pool that hosts another platform refuses the sandbox (ADR 0145 §1).
 	Platform platform.Platform

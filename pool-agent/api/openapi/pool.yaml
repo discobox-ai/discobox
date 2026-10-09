@@ -269,6 +269,10 @@ components:
                     type: object
                 git:
                     "$ref": "#/components/schemas/SandboxGitIdentity"
+                skills:
+                    additionalProperties:
+                        "$ref": "#/components/schemas/SandboxSkill"
+                    type: object
                 image:
                     type: string
                 imageDigest:
@@ -351,6 +355,33 @@ components:
                     type: string
                 userName:
                     type: string
+            type: object
+        SandboxSkill:
+            additionalProperties: false
+            description: One skill the sandbox was created with, by content, forwarded into its bootstrap verbatim.
+            properties:
+                files:
+                    items:
+                        "$ref": "#/components/schemas/SandboxSkillFile"
+                    type: array
+                skill:
+                    type: string
+            required:
+                - skill
+            type: object
+        SandboxSkillFile:
+            additionalProperties: false
+            properties:
+                content:
+                    format: byte
+                    type: string
+                executable:
+                    type: boolean
+                path:
+                    type: string
+            required:
+                - path
+                - content
             type: object
         PoolSandboxCreateRequest:
             additionalProperties: false

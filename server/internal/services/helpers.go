@@ -190,6 +190,32 @@ func SandboxGitToModel(value OptSandboxGitIdentity) SandboxGitFields {
 	}
 }
 
+// SandboxSkillsToModel is the request's skills as the sandbox keeps them, or
+// the refusal they earn: a name that is not one directory, a file that leaves
+// its skill, or more content than a bootstrap carries (ADR 26-10-09-395 §1).
+func SandboxSkillsToModel(value OptSandboxCreateConfigSkills) (sandboxconfig.Skills, error) {
+	in, ok := value.Get()
+	if !ok || len(in) == 0 {
+		return nil, nil
+	}
+	skills := make(sandboxconfig.Skills, len(in))
+	for name, skill := range in {
+		var files []sandboxconfig.SkillFile
+		for _, file := range skill.Files {
+			files = append(files, sandboxconfig.SkillFile{
+				Path:       file.Path,
+				Content:    file.Content,
+				Executable: file.Executable.Or(false),
+			})
+		}
+		skills[name] = sandboxconfig.Skill{Skill: skill.Skill, Files: files}
+	}
+	if err := skills.Validate(); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return skills, nil
+}
+
 func SandboxGitFromModel(sandbox *model.Sandbox) *serverapi.SandboxGitIdentity {
 	if sandbox == nil || sandbox.GitUserName == nil && sandbox.GitUserEmail == nil {
 		return nil
@@ -247,6 +273,11 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if git := SandboxGitFromModel(sandbox); git != nil {
 		config["git"] = git
+	}
+	// The names, never the content: a listing would otherwise carry every
+	// skill of every sandbox in it (ADR 26-10-09-395 §2).
+	if len(sandbox.Skills) > 0 {
+		config["skillNames"] = sandbox.Skills.Names()
 	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,

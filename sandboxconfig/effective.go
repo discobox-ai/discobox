@@ -37,6 +37,11 @@ type Config struct {
 	AdditionalGroups        []string         `json:"additionalGroups,omitempty"`
 	Secrets                 []harness.Secret `json:"secrets,omitempty"`
 	WorkingDirectorySubpath string           `json:"workingDirectorySubpath,omitempty"`
+
+	// Skills are installed into the harness's skill directories on the
+	// primary terminal's first launch, after the image's and the repository's
+	// (ADR 26-10-09-395 §3).
+	Skills Skills `json:"skills,omitempty"`
 }
 
 // Harness is the effective, fully-resolved harness contract: exactly one
@@ -82,6 +87,7 @@ func Effective(doc Document) (Config, Provenance) {
 		Description:         doc.Runtime.Description,
 		User:                doc.Runtime.User,
 		Git:                 doc.Runtime.Git,
+		Skills:              doc.Runtime.Skills.clone(),
 
 		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),
@@ -106,7 +112,11 @@ func Effective(doc Document) (Config, Provenance) {
 		cfg.WorkingDirectorySubpath = doc.Project.WorkingDirectorySubpath
 	}
 
-	return cfg, Provenance(doc)
+	prov := Provenance(doc)
+	// Skills are in Config whole; a second copy here would double the
+	// largest thing in the bootstrap for a diagnostic nobody reads them from.
+	prov.Runtime.Skills = nil
+	return cfg, prov
 }
 
 func overrideGrant(imageValue, projectValue []string) []string {

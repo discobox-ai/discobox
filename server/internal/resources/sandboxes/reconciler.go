@@ -584,6 +584,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.HomeDirectory = sb.HomeDirectory
 	opts.GitUserName = sb.GitUserName
 	opts.GitUserEmail = sb.GitUserEmail
+	opts.Skills = sb.Skills
 	if sb.HarnessConfigID != nil && r.store != nil {
 		// A load failure is not swallowed: the pool agent refuses a create with
 		// no resolved harness config, so quietly omitting one would turn a

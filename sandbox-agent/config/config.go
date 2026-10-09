@@ -41,11 +41,14 @@ type Config struct {
 	HarnessMode string `json:"harnessMode,omitempty"`
 	// Harness is the sandbox's one resolved harness. A zero-value Harness
 	// (empty ID) means the sandbox has no harness configured.
-	Harness       Harness                `json:"harness"`
-	Volumes       []harness.Volume       `json:"volumes,omitempty"`
-	Sources       []sandboxconfig.Source `json:"sources,omitempty"`
-	SandboxConfig map[string]any         `json:"-"`
-	Resources     ResourceConfig         `json:"resources"`
+	Harness Harness                `json:"harness"`
+	Volumes []harness.Volume       `json:"volumes,omitempty"`
+	Sources []sandboxconfig.Source `json:"sources,omitempty"`
+	// Skills are the ones the sandbox was created with, installed on the
+	// primary terminal's first launch (ADR 26-10-09-395 §3).
+	Skills        sandboxconfig.Skills `json:"skills,omitempty"`
+	SandboxConfig map[string]any       `json:"-"`
+	Resources     ResourceConfig       `json:"resources"`
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime-config
 	// documents, and nothing else (ADR 26-10-08-127 §3). Empty for a sandbox no
 	// pool delivers to.
@@ -193,6 +196,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		HarnessMode:           effective.HarnessMode,
 		Volumes:               effective.Volumes,
 		Sources:               effective.Sources,
+		Skills:                effective.Skills,
 	}
 	if sampleInterval := strings.TrimSpace(effective.AgentRuntime.ResourceSampleInterval); sampleInterval != "" {
 		if parsed, err := time.ParseDuration(sampleInterval); err == nil {
