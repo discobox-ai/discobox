@@ -22,7 +22,7 @@
 # release line (kernel/Dockerfile), and it ignores the one this build lifts out
 # of the distribution package.
 
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS guest-tools
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS guest-tools
 ARG TARGETOS=linux
 ARG TARGETARCH
 

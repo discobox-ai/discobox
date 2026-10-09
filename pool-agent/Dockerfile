@@ -7,7 +7,7 @@ ARG BASE_IMAGE=discobox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS build
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS build
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src

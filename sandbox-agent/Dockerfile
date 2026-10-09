@@ -7,7 +7,7 @@ ARG BASE_IMAGE=discobox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS sandbox-agent-builder
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS sandbox-agent-builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src
@@ -108,7 +108,7 @@ RUN set -eux \
 # the agent whenever any of that changed. The directories are the root-module
 # packages it imports (go list -deps ./cli/cmd/discobox), then its own module
 # and termpane, which its go.mod replaces with the paths beside it.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS discobox-cli-builder
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS discobox-cli-builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src
