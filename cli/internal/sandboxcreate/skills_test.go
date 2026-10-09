@@ -154,6 +154,37 @@ func TestReadSkillsNamesTheLargestWhenOverTheLimit(t *testing.T) {
 	}
 }
 
+// A SKILL.md past the limit is refused before it is read, and a skill
+// directory that cannot be read is an error, not a skill silently left out.
+func TestReadSkillsRefusesWhatItCannotOrShouldNotRead(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillsTestFile(t, filepath.Join(dir, "huge", "SKILL.md"), strings.Repeat("x", sandboxconfig.MaxSkillsBytes+1), 0o644)
+	if _, err := ReadSkills([]string{dir}, false); err == nil || !strings.Contains(err.Error(), "skill huge: its SKILL.md") {
+		t.Fatalf("ReadSkills() = %v, want huge's SKILL.md refused", err)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// An entry that cannot be stat'ed for a reason other than being absent: a
+	// link to itself fails with a loop, where a dangling one would be skipped.
+	dir = t.TempDir()
+	if err := os.Symlink("looped", filepath.Join(dir, "looped")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSkills([]string{dir}, false); err == nil {
+		t.Fatal("ReadSkills() = nil, want an entry that cannot be stat'ed to be an error")
+	}
+	if err := os.Remove(filepath.Join(dir, "looped")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("missing", filepath.Join(dir, "dangling")); err != nil {
+		t.Fatal(err)
+	}
+	if skills, err := ReadSkills([]string{dir}, false); err != nil || skills != nil {
+		t.Fatalf("ReadSkills() with a dangling link = %v, %v; want it skipped", skills, err)
+	}
+}
+
 // One skill past the limit is refused at the file that takes it there, before
 // the rest is read: a link to a whole checkout is one skill.
 func TestReadSkillsStopsAtTheFileThatPassesTheLimit(t *testing.T) {

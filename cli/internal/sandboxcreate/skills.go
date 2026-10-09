@@ -103,16 +103,27 @@ func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error
 		}
 		// Stat, not the entry's own type: a skill in ~/.claude/skills is often
 		// a link into a checkout, and it is read where it means something.
+		// Only what is not there, or is not a directory, is not a skill: a
+		// directory that cannot be read is one the caller asked for and
+		// would otherwise go without.
 		root := filepath.Join(dir, name)
-		if info, err := os.Stat(root); err != nil || !info.IsDir() {
-			continue
-		}
-		text, err := os.ReadFile(filepath.Join(root, sandboxconfig.SkillFileName))
+		info, err := os.Stat(root)
 		if errors.Is(err, fs.ErrNotExist) {
+			// A dangling link.
 			continue
 		}
 		if err != nil {
 			return err
+		}
+		if !info.IsDir() {
+			continue
+		}
+		text, err := readSkillText(filepath.Join(root, sandboxconfig.SkillFileName))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("skill %s: %w", name, err)
 		}
 		if err := sandboxconfig.ValidateSkillName(name); err != nil {
 			return err
@@ -129,6 +140,19 @@ func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error
 		skills[name] = sandboxconfig.Skill{Skill: string(text), Files: files}
 	}
 	return nil
+}
+
+// readSkillText reads a skill's SKILL.md, refusing one past what a discobox
+// takes before reading it.
+func readSkillText(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > sandboxconfig.MaxSkillsBytes {
+		return nil, fmt.Errorf("its %s is more than the %d bytes a discobox takes", sandboxconfig.SkillFileName, sandboxconfig.MaxSkillsBytes)
+	}
+	return os.ReadFile(path)
 }
 
 // readSkillFiles reads every file under a skill's root but its SKILL.md. A
@@ -173,7 +197,8 @@ func readSkillFiles(root string, size int) ([]sandboxconfig.SkillFile, error) {
 		if size += len(rel) + int(info.Size()); size > sandboxconfig.MaxSkillsBytes {
 			return fmt.Errorf("it is more than the %d bytes a discobox takes, at %s", sandboxconfig.MaxSkillsBytes, rel)
 		}
-		if len(files) == sandboxconfig.MaxSkillFiles {
+		// Its SKILL.md is one of the files a discobox counts.
+		if len(files)+1 == sandboxconfig.MaxSkillFiles {
 			return fmt.Errorf("it holds more than the %d files a discobox takes", sandboxconfig.MaxSkillFiles)
 		}
 		//nolint:gosec // following links is the point: these are the caller's own files, read as the caller
