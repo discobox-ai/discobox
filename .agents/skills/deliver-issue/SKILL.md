@@ -69,6 +69,19 @@ Nobody may be watching your screen to answer.
   ("never `main`"). If one command is refused under a use that names it, ask
   for a new use that quotes that one command word for word, not a broader
   one — §5 has the push case.
+- **Tag this box** `issue=<N>`, merged into the tags already there, so the
+  user's `discobox ls --tag issue=<N>` finds it (`open-pr` adds `pr=` in §5):
+
+  ```bash
+  S=<scratchpad>; M=~/.discobox/meta.json
+  { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <N> '(.tags.issue // "") as $prev
+    | .tags = ((.tags // {}) + {issue: $v}) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
+    jq -e --arg v <N> '.tags.issue == $v' $S/meta.json >/dev/null && cp $S/meta.json $M
+  ```
+
+  A new issue drops the `pr` tag the last one left. The `jq -e` check proves
+  the merge produced the tag; a file with any field but `description` and
+  `tags` is ignored.
 - **Hold the box up.** A discobox stops after 30 minutes of a still screen,
   even while hooks or CI run in the background:
   `touch -d '+3 hours' /run/discobox/keepalive/deliver-issue`. Refresh it

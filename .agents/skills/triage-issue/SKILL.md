@@ -330,7 +330,7 @@ skill):
 
 Merge, do not replace: keep every tag that is not a triage label, and drop the
 previous issue's labels (they are all triage labels, so the filter below does
-it):
+it) and, for a new issue, the `pr` tag its delivery left:
 
 ```bash
 S=<scratchpad>
@@ -341,6 +341,7 @@ jq --arg n 37 --arg desc '#37: <issue title>' \
   (.tags.issue // "") as $prev
   | .tags = ((.tags // {}) | with_entries(select(.key as $k | $triage | index($k) | not)))
           + {issue: $n} + ($labels | map(gsub(" "; "-")) | map({(.): ""}) | add)
+  | if $prev != $n then del(.tags.pr) else . end
   | if (.description // "") == "" or ($prev != "" and ((.description // "") | startswith("#\($prev): ")))
     then .description = $desc else . end' \
   $S/meta.in.json > $S/meta.json

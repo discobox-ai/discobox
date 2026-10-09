@@ -103,6 +103,21 @@ One PR per branch: if one is open, update its body with `gh pr edit
 --body-file` instead. Draft until green, so nobody reviews a PR CI has not
 passed.
 
+Inside a discobox, tag the box `pr=<pr>` as soon as the PR exists — and
+`issue=<N>` too when the PR fixes or refers to one — merged into the tags
+already there, so the user's `discobox ls --tag pr=<pr>` finds it:
+
+```bash
+S=<scratchpad>; M=~/.discobox/meta.json
+{ cat $M 2>/dev/null || echo '{}'; } | jq --arg v <pr> '.tags = ((.tags // {}) + {pr: $v})' > $S/meta.json &&
+  jq -e --arg v <pr> '.tags.pr == $v' $S/meta.json >/dev/null && cp $S/meta.json $M
+```
+
+For the issue, run the same lines with `issue` and `<N>` in place of `pr` and
+`<pr>`. The `jq -e` check proves the merge
+produced the tag; a file with any field but `description` and `tags` is
+ignored.
+
 Title: the commit's subject when there is one commit; otherwise a
 conventional subject covering them. Body:
 

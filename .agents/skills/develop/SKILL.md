@@ -118,6 +118,22 @@ this skill has already asked — rebase and force-push with a lease to
 - **Read the issue**, when there is one, and its comments
   (`gh api repos/discobox-ai/discobox/issues/<N>` and `/comments`;
   `gh issue view` goes through GraphQL, which the checker has refused).
+- **Tag this box** `issue=<N>` when there is an issue, merged into the tags
+  already there, so the user's `discobox ls --tag issue=<N>` finds it
+  (`open-pr` adds `pr=` in §5). With no issue, drop an `issue` or `pr` tag an
+  earlier piece of work left (the same lines with
+  `jq 'del(.tags.issue, .tags.pr)'` and `jq -e '.tags.issue == null'`) so the box is not listed under work it no longer holds:
+
+  ```bash
+  S=<scratchpad>; M=~/.discobox/meta.json
+  { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <N> '(.tags.issue // "") as $prev
+    | .tags = ((.tags // {}) + {issue: $v}) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
+    jq -e --arg v <N> '.tags.issue == $v' $S/meta.json >/dev/null && cp $S/meta.json $M
+  ```
+
+  A new issue drops the `pr` tag the last one left. The `jq -e` check proves
+  the merge produced the tag; a file with any field but `description` and
+  `tags` is ignored.
 - **Hold the box up.** A discobox stops after 30 minutes of a still screen,
   even while hooks or CI run in the background:
   `touch -d '+3 hours' /run/discobox/keepalive/develop`. Refresh it before
