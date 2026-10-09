@@ -869,6 +869,16 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		} else {
 			row.Source = strings.TrimSpace(source.LocalDirectory.Or(""))
 		}
+		// The GitHub repository the work belongs to, which is what an
+		// `issue=` or `pr=` tag is numbered in: the URL a remote source
+		// clones, or the upstream a local one's branch tracked when it was
+		// cut — its origin is the client's directory, which is no repository
+		// on GitHub.
+		if row.SourceRemote {
+			row.Repository = sandboxcreate.GitHubRepositoryURL(row.Source)
+		} else {
+			row.Repository = sandboxcreate.GitHubRepositoryURL(source.UpstreamUrl.Or(""))
+		}
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
 			row.Commit = shortCommit(strings.TrimSpace(checkout.Commit.Or("")))

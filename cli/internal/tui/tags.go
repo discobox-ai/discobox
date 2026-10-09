@@ -112,3 +112,35 @@ func tagsLabel(tags []string) string {
 	}
 	return strings.Join(labels, " ")
 }
+
+// githubTagPaths are the tag keys that number something in the discobox's
+// GitHub repository, and where on GitHub that number is: `issue=4` is issue 4
+// and `pr=12` is pull request 12.
+var githubTagPaths = map[string]string{"issue": "issues", "pr": "pull"}
+
+// tagURL is where a tag points, for one that numbers an issue or a pull
+// request in the repository the discobox was cut from, and empty for any other
+// tag — including one of those keys on a discobox with no GitHub repository to
+// number it in, since `issue=4` alone does not say whose issue 4.
+func (s Sandbox) tagURL(tag string) string {
+	key, number, ok := strings.Cut(tag, "=")
+	where, linked := githubTagPaths[key]
+	if !ok || !linked || s.Repository == "" || !githubNumber(number) {
+		return ""
+	}
+	return s.Repository + "/" + where + "/" + number
+}
+
+// githubNumber reports whether value can be an issue or pull request number:
+// a positive decimal, written without a leading zero.
+func githubNumber(value string) bool {
+	if value == "" || value[0] == '0' {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}

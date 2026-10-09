@@ -74,7 +74,8 @@ const (
 	// opens the diff tool, the same as the leader's tools, diff chord.
 	hitGit
 
-	// hitURL is a link the header draws — the desktop, a forwarded web port.
+	// hitURL is a link the window draws — the header's desktop, a forwarded
+	// web port, the issue and pull request, and those tags on a list row.
 	// The text already carries the URL as an OSC 8 link, which is what a
 	// Ctrl-click follows; pressing it opens the same URL through this
 	// machine's own URL handler, so the ordinary click does what the
@@ -252,6 +253,19 @@ func (z *zones) at(x, y int) (zone, bool) {
 	for i := len(z.marks) - 1; i >= 0; i-- {
 		m := z.marks[i]
 		if x >= m.x && x < m.x+m.width && y >= m.y && y < m.y+m.height {
+			return m, true
+		}
+	}
+	return zone{}, false
+}
+
+// beneathLinks is the control under the pointer for a gesture a link has no
+// answer to — the wheel, the right button: a link drawn on a list's row is
+// still that row to them, so it is looked through to what it was drawn over.
+func (z *zones) beneathLinks(x, y int) (zone, bool) {
+	for i := len(z.marks) - 1; i >= 0; i-- {
+		m := z.marks[i]
+		if m.what.kind != hitURL && x >= m.x && x < m.x+m.width && y >= m.y && y < m.y+m.height {
 			return m, true
 		}
 	}

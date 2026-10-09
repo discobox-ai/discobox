@@ -580,6 +580,23 @@ The link is drawn only when the forward has bound it, the same rule
 `portEntry` follows: an offer to open something unreachable is worse than no
 offer.
 
+## An issue or pull request tag is a link
+
+A discobox tagged `issue=N` or `pr=N` whose source is a GitHub repository —
+the URL a remote source clones, or the upstream a local one's branch tracked
+(`Sandbox.Repository`, from `sandboxcreate.GitHubRepositoryURL`) — links that
+tag to the issue or pull request (`Sandbox.tagURL`). Without a GitHub
+repository the tag is plain: `issue=4` alone does not say whose issue 4.
+
+- **On the list**, the tag on the row is the link. The row cannot mark it —
+  rows are marked after they are drawn — so `row` hands its links back and
+  `view` marks them over the row. The wheel and the right button look through
+  a link to the row under it (`zones.beneathLinks`): a link has no answer to
+  them.
+- **In the workspace**, the header carries them as `issue #4 · PR #9`
+  (`workField`) after the id, and gives them up last: they say what the work
+  is for.
+
 ## The audit screen
 
 `leader A` in the workspace draws one discobox's audit trails over it as a

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -69,6 +70,39 @@ func TestToTUISandboxMarksSnapshotSources(t *testing.T) {
 	}
 	if !row.Dirty {
 		t.Fatal("a snapshot source should mark the row dirty")
+	}
+}
+
+// The repository an `issue=` or `pr=` tag is numbered in is the GitHub one the
+// discobox's source came from: the URL a remote source clones, or the upstream
+// a local one's branch tracked. A local source's own directory is not one.
+func TestToTUISandboxNamesTheGitHubRepository(t *testing.T) {
+	row := func(source apimodel.GitSource) string {
+		sandbox := apimodel.Sandbox{Runtime: apimodel.SandboxRuntime{State: "running", DesiredState: "present"}}
+		sandbox.Config.SetSource(apiclientgen.NewOptGitSource(source))
+		return toTUISandbox(sandbox, "host_1").Repository
+	}
+	remote := apimodel.GitSource{Kind: "git"}
+	remoteURL, err := url.Parse("https://github.com/acme/foo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote.SetURL(apiclientgen.NewOptURI(*remoteURL))
+	if got := row(remote); got != "https://github.com/acme/foo" {
+		t.Errorf("remote source: Repository = %q, want https://github.com/acme/foo", got)
+	}
+
+	local := apimodel.GitSource{Kind: "git", LocalDirectory: apiclientgen.NewOptString("/src/foo")}
+	if got := row(local); got != "" {
+		t.Errorf("local source tracking nothing: Repository = %q, want none", got)
+	}
+	local.SetUpstreamUrl(apiclientgen.NewOptString("git@github.com:acme/foo.git"))
+	if got := row(local); got != "https://github.com/acme/foo" {
+		t.Errorf("local source tracking GitHub: Repository = %q, want https://github.com/acme/foo", got)
+	}
+	local.SetUpstreamUrl(apiclientgen.NewOptString("https://gitlab.com/acme/foo.git"))
+	if got := row(local); got != "" {
+		t.Errorf("local source tracking GitLab: Repository = %q, want none", got)
 	}
 }
 

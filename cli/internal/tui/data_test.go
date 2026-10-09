@@ -184,7 +184,8 @@ func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {
 	row := func(width int) string {
 		l := newSandboxList(Session{})
 		l.width = width
-		return ansi.Strip(l.row(newStyles(false), box, 0, false))
+		line, _ := l.row(newStyles(false), &zones{}, box, 0, 0, false)
+		return ansi.Strip(line)
 	}
 	if wide := row(160); !strings.Contains(wide, "fix the reaper #ticket=ENG-12 #wip") {
 		t.Fatalf("wide row = %q, want the name followed by both tags", wide)

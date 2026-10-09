@@ -1928,12 +1928,18 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 // viewPaneHeader has run out of edges to drop: the ports, then the diffstat,
 // which the apply report gives you anyway, then the word, whose mark is on the
 // position regardless. From the diffstat down that is the list's own drop
-// order. The id leads and never goes — it is what identifies the window.
+// order. The id leads and never goes — it is what identifies the window — and
+// the issue and pull request the discobox is tagged with follow it, given up
+// last of all: they say what the work in it is for, which is the id's question
+// asked the way a person asks it.
 func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
 
 	fields := paneHeaderFields{textField(m.st.dimText.Render(box.ID))}
+	if work := workField(m.st, box); !work.empty() {
+		fields = append(fields, work)
+	}
 	if base := box.base(); base != "" {
 		fields = append(fields, gitField(git.Render(base)))
 	}

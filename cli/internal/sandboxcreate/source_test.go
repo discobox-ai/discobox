@@ -1110,3 +1110,31 @@ func TestExpandGitHubShorthand(t *testing.T) {
 		}
 	}
 }
+
+func TestGitHubRepositoryURL(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ in, want string }{
+		{"https://github.com/foo/bar.git", "https://github.com/foo/bar"},
+		{"https://github.com/foo/bar", "https://github.com/foo/bar"},
+		{"https://github.com/foo/bar/", "https://github.com/foo/bar"},
+		{"https://GitHub.com/foo/bar", "https://github.com/foo/bar"},
+		{"https://user@github.com/foo/bar.git", "https://github.com/foo/bar"},
+		{"ssh://git@github.com/foo/bar.git", "https://github.com/foo/bar"},
+		{"ssh://git@github.com:22/foo/bar.git", "https://github.com/foo/bar"},
+		{"git@github.com:foo/bar.git", "https://github.com/foo/bar"},
+		{"github.com:my-org/my_repo.js", "https://github.com/my-org/my_repo.js"},
+		// Not GitHub, or not a repository on it.
+		{"", ""},
+		{"https://gitlab.com/foo/bar.git", ""},
+		{"git@gitlab.com:foo/bar.git", ""},
+		{"https://github.com/foo", ""},
+		{"https://github.com/foo/bar/baz", ""},
+		{"https://github.com/-foo/bar", ""},
+		{"/src/foo/bar", ""},
+		{"file:///src/foo/bar", ""},
+	} {
+		if got := GitHubRepositoryURL(tc.in); got != tc.want {
+			t.Errorf("GitHubRepositoryURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
