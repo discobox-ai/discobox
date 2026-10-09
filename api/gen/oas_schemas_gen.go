@@ -18598,11 +18598,14 @@ type ProviderConfigField struct {
 	CredentialAuthType OptString `json:"credentialAuthType"`
 	CredentialProvider OptString `json:"credentialProvider"`
 	Description        OptString `json:"description"`
-	Key                string    `json:"key"`
-	Label              string    `json:"label"`
-	Placeholder        OptString `json:"placeholder"`
-	Required           OptBool   `json:"required"`
-	Type               string    `json:"type"`
+	// The field cannot change while the provider instance has pools, because the pools' hosts were made
+	// by what it names.
+	Immutable   OptBool   `json:"immutable"`
+	Key         string    `json:"key"`
+	Label       string    `json:"label"`
+	Placeholder OptString `json:"placeholder"`
+	Required    OptBool   `json:"required"`
+	Type        string    `json:"type"`
 }
 
 // GetAdvanced returns the value of Advanced.
@@ -18623,6 +18626,11 @@ func (s *ProviderConfigField) GetCredentialProvider() OptString {
 // GetDescription returns the value of Description.
 func (s *ProviderConfigField) GetDescription() OptString {
 	return s.Description
+}
+
+// GetImmutable returns the value of Immutable.
+func (s *ProviderConfigField) GetImmutable() OptBool {
+	return s.Immutable
 }
 
 // GetKey returns the value of Key.
@@ -18668,6 +18676,11 @@ func (s *ProviderConfigField) SetCredentialProvider(val OptString) {
 // SetDescription sets the value of Description.
 func (s *ProviderConfigField) SetDescription(val OptString) {
 	s.Description = val
+}
+
+// SetImmutable sets the value of Immutable.
+func (s *ProviderConfigField) SetImmutable(val OptBool) {
+	s.Immutable = val
 }
 
 // SetKey sets the value of Key.
