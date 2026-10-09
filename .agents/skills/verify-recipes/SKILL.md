@@ -304,3 +304,24 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
 Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
 shell's command line matches the pattern. Wait on the watcher's outputs
 (`.env` image tags, the harness list) instead.
+
+# Verifying the sandbox agent without a PID-1 flow (a VM guest's start)
+
+No disco-vm driver runs here; the sandbox image booted with systemd itself as
+PID 1 and no config volume is the same start a VM guest makes.
+
+```bash
+docker run -d --name vmlike --privileged --cgroupns=private --tmpfs /run \
+  --tmpfs /run/lock --entrypoint /lib/systemd/systemd discobox-sandbox-agent:local
+# a real bootstrap: any dev box's, with another sandboxId
+d shell <box> -- sudo cat /etc/discobox/sandbox.json | jq '.sandboxId="sbx_vmlike"' > $S/s.json
+docker exec -i vmlike sh -c 'cat > /etc/discobox/.s.tmp && mv /etc/discobox/.s.tmp /etc/discobox/sandbox.json' < $S/s.json
+docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
+```
+
+- Place the file by a rename, as a backend must; a `cat >` straight to the
+  path can be read half-written.
+- Without systemd at all (launchd/SCM stand-in): `--entrypoint
+  /usr/local/bin/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
+  it logs `waiting for a file to appear` and exits 0 on SIGTERM.
+- `docker restart` is the guest's reboot; `systemctl kill -s KILL` the crash.
