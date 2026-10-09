@@ -48,7 +48,8 @@ flowchart TD
 
 A driver is in a build only where its hypervisor runs: `boxd.go` everywhere,
 `vz_darwin.go` on macOS. The configuration's `driver` is validated against the
-drivers the build has. The seam (`driver` in `runtime.go`) is what differs:
+drivers the build has, and is `Immutable`: it cannot change while the provider
+has pools, because only the driver that made a pool's host can remove it. The seam (`driver` in `runtime.go`) is what differs:
 
 | | pool host | console | log | images |
 | --- | --- | --- | --- | --- |

@@ -31470,6 +31470,12 @@ func (s *ProviderConfigField) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Immutable.Set {
+			e.FieldStart("immutable")
+			s.Immutable.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("key")
 		e.Str(s.Key)
 	}
@@ -31495,16 +31501,17 @@ func (s *ProviderConfigField) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProviderConfigField = [9]string{
+var jsonFieldsNameOfProviderConfigField = [10]string{
 	0: "advanced",
 	1: "credentialAuthType",
 	2: "credentialProvider",
 	3: "description",
-	4: "key",
-	5: "label",
-	6: "placeholder",
-	7: "required",
-	8: "type",
+	4: "immutable",
+	5: "key",
+	6: "label",
+	7: "placeholder",
+	8: "required",
+	9: "type",
 }
 
 // Decode decodes ProviderConfigField from json.
@@ -31556,8 +31563,18 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"description\"")
 			}
+		case "immutable":
+			if err := func() error {
+				s.Immutable.Reset()
+				if err := s.Immutable.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"immutable\"")
+			}
 		case "key":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Key = string(v)
@@ -31569,7 +31586,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"key\"")
 			}
 		case "label":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Label = string(v)
@@ -31601,7 +31618,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"required\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Type = string(v)
@@ -31622,8 +31639,8 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00110000,
-		0b00000001,
+		0b01100000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
