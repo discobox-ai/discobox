@@ -203,8 +203,8 @@ flowchart LR
 - Keep HTTP transport adaptation in `internal/handlers`, service contracts and
   DTOs in `internal/services`, and persistence in `internal/store`.
   `internal/handlers` never imports a resource package
-  (`handlers/boundary_test.go`); a derivation a handler needs, like
-  `services.AgentCredentialRequestStatus`, lives in `internal/services`.
+  (`handlers/boundary_test.go`); what a handler needs from one is reached
+  through `internal/services`, as `services.AgentCredentialRequestStatus` is.
 
 ## Not-Found Mapping
 
