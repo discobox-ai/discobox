@@ -5,7 +5,6 @@ package peers
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -67,10 +66,7 @@ func (s *Service) CreatePeer(ctx context.Context, input services.CreatePeerBody)
 
 func (s *Service) DeletePeer(ctx context.Context, idOrPrefix string) error {
 	if err := s.store.DeletePeer(ctx, endpoint.NormalizePeerID(idOrPrefix)); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return apperrors.NewStatusError(http.StatusNotFound, "no enrolled peer matches "+idOrPrefix)
-		}
-		return err
+		return apperrors.NotFound(err, "no enrolled peer matches "+idOrPrefix)
 	}
 	return nil
 }
