@@ -41,15 +41,24 @@ func runList(ctx context.Context, args []string) int {
 		for _, credential := range credentials {
 			fmt.Fprintf(w, "%s (%s → %s)\n", credential.Name, credential.EnvVar, strings.Join(credential.Hosts, ", "))
 			for _, use := range credential.Uses {
-				expiry := ""
-				if use.ExpiresAt != nil {
-					expiry = fmt.Sprintf(" [expires %s]", use.ExpiresAt.Format(time.RFC3339))
-				}
-				fmt.Fprintf(w, "  %s  %s%s\n", use.UseID, use.Description, expiry)
+				fmt.Fprintf(w, "  %s  %s %s\n", use.UseID, use.Description, useExpiry(use))
 			}
 		}
 	})
 	return exitOK
+}
+
+// useExpiry says how long a use list reports lasts, including that it lasts
+// forever: list has carried the expiry since before the request status did,
+// so its absence there means the grant never lapses. The approver picks the
+// lifetime, not the agent, so an agent that asked for an hour and was given
+// forever would otherwise go on believing its own ask and request the same use
+// again once the hour had passed.
+func useExpiry(use agentcreds.Use) string {
+	if use.ExpiresAt == nil {
+		return "[never expires]"
+	}
+	return fmt.Sprintf("[expires %s]", use.ExpiresAt.Format(time.RFC3339))
 }
 
 // requestInput is the JSON body `request --json` reads from stdin. It is the
@@ -203,7 +212,14 @@ func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
 	out.emit(status, func(w io.Writer) {
 		fmt.Fprintf(w, "%s %s\n", status.RequestID, status.Status)
 		for _, use := range status.Uses {
-			fmt.Fprintf(w, "  %s  %s\n", use.UseID, use.Description)
+			// Only list says a use never expires. A pool agent older than the
+			// request status's expiry reports none on any grant, so an absent
+			// one here is not an answer, and the line says where to find it.
+			expiry := "[see list for how long it lasts]"
+			if use.ExpiresAt != nil {
+				expiry = useExpiry(use)
+			}
+			fmt.Fprintf(w, "  %s  %s %s\n", use.UseID, use.Description, expiry)
 		}
 		if status.Purpose == agentcreds.PurposeDelegate && len(status.Uses) > 0 {
 			fmt.Fprintln(w, "  (delegation: these say what you may delegate the credential for; run takes none of them)")

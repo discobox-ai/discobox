@@ -44,18 +44,26 @@ the result.
 
 ## 1. Check what you already have
 
+**Run this before every request**, even for something you were granted a
+moment ago:
+
 ```bash
 discobox-access list
 ```
 
-Each credential lists the **use IDs** approved for it:
+Each credential lists the **use IDs** approved for it, and how long each lasts:
 
 ```
-github (GH_TOKEN → api.github.com)
-  use_7f3a2b  Open a pull request against the current repo
+github (GH_TOKEN → github.com)
+  use_7f3a2b  Open a pull request against the current repo [expires 2026-10-09T18:00:00Z]
+  use_9c4d1e  Push the current branch to origin [never expires]
 ```
 
-If the command you want to run is one of those uses, skip to step 3.
+If the command you want to run is one of those uses, skip to step 3. A use
+listed here has not expired, whatever lifetime you asked for: the person
+approving picks the lifetime, often a longer one than you asked, and
+`[never expires]` means exactly that. Never assume a use has lapsed because
+the time you asked for has passed — `list` is the answer.
 
 If a command *already works*, the credential is already in your environment —
 nothing here is needed. Ask only when something actually failed for want of one.
@@ -128,7 +136,10 @@ Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
 rejected, so a misspelled key fails loudly instead of being dropped.
 
-An approved request prints the use IDs you may now run with. A denial exits
+An approved request prints the use IDs you may now run with, and when it
+reports one, the expiry the person chose; `list` is what says how long a use
+lasts, forever included — read it there rather than remembering your ask. A
+denial exits
 non-zero — that is an answer, not an error. Do not re-ask for the same thing;
 tell the user it was denied and what you cannot do without it.
 
@@ -358,7 +369,8 @@ command in, archive, or delete a discobox you made.
 
 - Do not echo it, log it, or include it in a message to the user.
 - Do not write it into a file, a `.env`, a config, or a shell export.
-- Do not reuse it later — it expires in minutes. Ask again instead.
+- Do not reuse the value later — it expires in minutes. Run the use again
+  instead; the use itself lasts as long as `list` says.
 - Do not commit anything containing it.
 
 ## When it fails

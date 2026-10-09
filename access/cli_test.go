@@ -545,6 +545,59 @@ func TestWaitReportsAGrantedRequestWithItsUseIDs(t *testing.T) {
 	}
 }
 
+// The approver chooses the lifetime, not the agent, so the approval and list
+// say what was chosen. An agent that asked for an hour
+// and is told nothing goes on believing its own ask, and once the hour passes
+// it asks for the same use again.
+func TestGrantedUsesSayHowLongTheyLast(t *testing.T) {
+	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	uses := []agentcreds.Use{
+		{UseID: "use_forever", Description: "Push the branch"},
+		{UseID: "use_hour", Description: "Open a PR", ExpiresAt: &expires},
+	}
+	serve(t, &fakeService{
+		credentials: []agentcreds.Credential{{Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"github.com"}, Uses: uses}},
+		status:      agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Uses: uses},
+	})
+
+	body := `{"id":"com.github.api","uses":[{"description":"Push the branch"}],"grantTTLSeconds":1800,"wait":true,"timeoutSeconds":5}`
+	approved, _, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+	if code != exitOK {
+		t.Fatalf("request exit = %d, want 0", code)
+	}
+	var status agentcreds.RequestStatus
+	if err := json.Unmarshal([]byte(approved), &status); err != nil {
+		t.Fatalf("stdout is not JSON (%v): %s", err, approved)
+	}
+	if status.Uses[0].ExpiresAt != nil || status.Uses[1].ExpiresAt == nil || !status.Uses[1].ExpiresAt.Equal(expires) {
+		t.Fatalf("uses = %#v, want the granted lifetimes, not the asked one", status.Uses)
+	}
+
+	// Only list says never: a pool agent that predates the status's expiry
+	// reports none on every grant, so the approval cannot tell forever from
+	// unreported, and sends the agent to list instead.
+	for args, lines := range map[string][]string{
+		"wait request sreq_1": {
+			"use_forever  Push the branch [see list for how long it lasts]",
+			"use_hour  Open a PR [expires 2026-10-09T18:00:00Z]",
+		},
+		"list": {
+			"use_forever  Push the branch [never expires]",
+			"use_hour  Open a PR [expires 2026-10-09T18:00:00Z]",
+		},
+	} {
+		stdout, _, code := capture(t, "", func() int { return Run(strings.Fields(args)) })
+		if code != exitOK {
+			t.Fatalf("%s exit = %d, want 0", args, code)
+		}
+		for _, want := range lines {
+			if !strings.Contains(stdout, want) {
+				t.Errorf("%s printed:\n%s\nwant a line %q", args, stdout, want)
+			}
+		}
+	}
+}
+
 // A settled denial is a completed call that answers "no", and the exit status
 // has to say so or a shell-driven agent reads it as approval.
 func TestWaitOnADeniedRequestExitsNonZero(t *testing.T) {
