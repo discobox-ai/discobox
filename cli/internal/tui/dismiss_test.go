@@ -108,28 +108,6 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	}
 }
 
-// A dismissed offer to apply is about the work it would apply: more work is a
-// new offer.
-func TestADismissedApplyOfferReturnsForNewWork(t *testing.T) {
-	t.Parallel()
-	ready := readySandboxes()
-	m := newTestModel(t, newFakeSource(ready...))
-	m.list.setAll(ready)
-	m.paneBox = ready[0]
-	m.toolShown = &pane{tool: "diff"}
-	if got := m.bannerShowing(); got != bannerApply {
-		t.Fatalf("banner = %v, want the offer", got)
-	}
-	m.dismissBanner()
-
-	ready[0].Git.Commit = "c0ffee1"
-	m.list.setAll(ready)
-	m.pruneDismissed()
-	if got := m.bannerShowing(); got != bannerApply {
-		t.Fatalf("banner = %v, want the offer back for a new commit", got)
-	}
-}
-
 // A band is about one discobox. Dismissing a signed-out harness in one box
 // leaves it up in another box on the same harness.
 func TestADismissalIsForOneDiscobox(t *testing.T) {

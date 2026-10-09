@@ -81,8 +81,8 @@ func (m *Model) viewUncredentialedBanner(width int) string {
 	// "on this machine" is the load-bearing half, as it is on the refusal: a
 	// reader mid-session in the terminal under this bar reads "sign in" as the
 	// harness's own /login, in the box, which cannot stick.
-	call := bannerChip(st, "click to configure it on this machine", colChipLight, colAlertChip)
-	return bannerRow(st, width, st.attentionMark, "⚠", subject, call, m.leader()+" "+rejectedKey, colAlertBG)
+	call := bannerChip(st, "click to configure it on this machine", colAlertChip)
+	return bannerRow(st, width, subject, call, m.leader()+" "+rejectedKey)
 }
 
 // openCredentialRemedy answers the band's key, which both credential bands

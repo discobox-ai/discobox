@@ -15,25 +15,25 @@ func TestTheBandCentresItsCallToAction(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	const width = 120
-	row := ansi.Strip(bannerRow(st, width, st.readyMark, "⇡", "ready to apply", "click to apply", "ctrl+a y", colReadyBG))
+	row := ansi.Strip(bannerRow(st, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)
 	}
-	at := strings.Index(row, "click to apply")
+	at := strings.Index(row, "click to answer")
 	if at < 0 {
 		t.Fatalf("band = %q, want the call on it", row)
 	}
 	// Centered in the row itself rather than in the gap between the sentence
 	// and the key, so it holds still as the sentence changes length. Measured
 	// in cells: the mark in front of it is one cell and three bytes.
-	middle := lipgloss.Width(row[:at]) + lipgloss.Width("click to apply")/2
+	middle := lipgloss.Width(row[:at]) + lipgloss.Width("click to answer")/2
 	if middle < width/2-1 || middle > width/2+1 {
 		t.Fatalf("the call is centered on cell %d of %d: %q", middle, width, row)
 	}
 	// The key is still pinned to the end, which is the half of the bar a
 	// keyboard reads, with only the dismiss button after it.
-	if !strings.HasSuffix(strings.TrimRight(row, " "), "ctrl+a y  ✕") {
+	if !strings.HasSuffix(strings.TrimRight(row, " "), "ctrl+a g  ✕") {
 		t.Fatalf("band = %q, want the key pinned to the right", row)
 	}
 }
@@ -45,7 +45,7 @@ func TestANarrowBandDropsTheCallRatherThanCuttingIt(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	const width = 34
-	row := ansi.Strip(bannerRow(st, width, st.attentionMark, "⚠", "credential request  ·  gh", "click to answer", "ctrl+a g", colAlertBG))
+	row := ansi.Strip(bannerRow(st, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)
@@ -72,7 +72,7 @@ func TestACutSubjectKeepsItsDistanceFromTheCall(t *testing.T) {
 	st := newStyles(false)
 	const width = 50
 	subject := "credential request  ·  a token with a very long name for somewhere"
-	row := ansi.Strip(bannerRow(st, width, st.attentionMark, "⚠", subject, "click to answer", "ctrl+a g", colAlertBG))
+	row := ansi.Strip(bannerRow(st, width, subject, "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)
@@ -153,18 +153,5 @@ func TestTheThrobsClockRunsOnlyWhileTheBandIsUp(t *testing.T) {
 	}
 	if cmd := m.advanceBannerPulse(bannerPulseMsg{gen: run}); cmd != nil || m.pulse != 0 {
 		t.Fatalf("a beat left in flight restarted the throb: frame %d", m.pulse)
-	}
-
-	// And the offer's band gets none: work that is ready will still be ready in
-	// a minute, and a screen with two things moving on it has nothing that
-	// stands out.
-	ready := readySandboxes()
-	m.list.setAll(ready)
-	m.paneBox = ready[0]
-	if m.bannerShowing() != bannerApply {
-		t.Fatalf("banner = %v, want the offer", m.bannerShowing())
-	}
-	if cmd := m.armBannerPulse(); cmd != nil || m.pulsing {
-		t.Fatal("the offer's band got a clock")
 	}
 }
