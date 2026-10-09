@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
@@ -16,12 +17,10 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
-// driver is what differs between disco-vm's hypervisors for a discovm pool:
-// where the pool's agent runs, how an operator reaches that host when the
-// agent will not answer, and which disco-vm images the driver's pools boot.
-// The engine — images, instances, and their lifecycle — is the same for all of
-// them, and the Runtime owns it.
-type driver interface {
+// poolHost is what runs a pool's agent, and how an operator reaches it when
+// the agent will not answer. Where that is follows from what the configured
+// disco-vm driver reports it can do (newPoolHost), never from its name.
+type poolHost interface {
 	// ensurePoolHost brings up what runs the pool's agent. begin is called
 	// before anything that starts an agent is created or started.
 	ensurePoolHost(ctx context.Context, pool *model.Pool, begin func(context.Context) error) error
@@ -32,52 +31,60 @@ type driver interface {
 	removePoolHost(ctx context.Context, pool *model.Pool) error
 	openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
 	openLogs(ctx context.Context, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
-	// images are the disco-vm images the driver's pools boot, which
-	// BuildGuestImage builds.
-	images() []guestImage
 }
 
-// driverDefinition is one driver this build has: disco-vm's driver for the
-// hypervisor, and the pool hosting on top of it.
-type driverDefinition struct {
-	machine func() (machine.Driver, error)
-	pools   func(e *engine.Engine) driver
+// newPoolHost places a pool's agent where the driver's machines are (ADR
+// 26-10-09-106 §1). A remote driver's machines belong to its service and can
+// be reached from anywhere, so the pool agent runs in a Linux machine of its
+// own there. A local hypervisor's machines run on this host, so the pool agent
+// runs beside the server as a host process.
+func newPoolHost(e *engine.Engine) poolHost {
+	if e.Driver.Capabilities().Remote {
+		return newPoolMachine(e)
+	}
+	return &hostAgent{root: e.Root}
 }
 
-// drivers are the drivers in this build, by disco-vm's name for each. A file
-// per driver adds its own, so a build carries exactly the hypervisors its OS
-// can run.
-var drivers = map[string]driverDefinition{}
-
-// Runtime is the discovm poolruntime.RuntimeProvider: one disco-vm engine and
-// the driver that decides how a pool is hosted on it.
+// Runtime is the discovm poolruntime.RuntimeProvider: one disco-vm engine, on
+// the driver the provider configures, and where its pools are hosted.
 type Runtime struct {
 	engine *engine.Engine
-	driver driver
+	host   poolHost
 }
 
 var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
 func newRuntime(cfg Config) (*Runtime, error) {
-	definition, err := lookupDriver(cfg.Driver)
+	e, err := openEngine(stateRoot(), cfg.Driver)
 	if err != nil {
 		return nil, err
 	}
-	e, err := openEngine(stateRoot(), cfg.Driver, definition)
-	if err != nil {
-		return nil, err
+	return &Runtime{engine: e, host: newPoolHost(e)}, nil
+}
+
+// newDriver constructs the named disco-vm driver. The name is disco-vm's, and
+// so is the registry it is looked up in: this package knows no driver by name.
+// Construction touches no hypervisor, so validation may call it too.
+func newDriver(name string) (machine.Driver, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("%s driver is required (one of %s)", ProviderType, strings.Join(machine.Names(), ", "))
 	}
-	return &Runtime{engine: e, driver: definition.pools(e)}, nil
+	driver, err := machine.New(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s driver %q is not available in this build (have %s)", ProviderType, name, strings.Join(machine.Names(), ", "))
+	}
+	return driver, nil
 }
 
 // openEngine opens the state root for a driver, with its shims started as this
 // binary's hidden subcommand rather than as a disco-vm binary nobody ships.
-func openEngine(root, name string, definition driverDefinition) (*engine.Engine, error) {
-	hypervisor, err := definition.machine()
+func openEngine(root, name string) (*engine.Engine, error) {
+	driver, err := newDriver(name)
 	if err != nil {
-		return nil, fmt.Errorf("%s driver %s: %w", ProviderType, name, err)
+		return nil, err
 	}
-	e, err := engine.Open(root, hypervisor)
+	e, err := engine.Open(root, driver)
 	if err != nil {
 		return nil, fmt.Errorf("open %s state %s: %w", ProviderType, root, err)
 	}
@@ -85,7 +92,7 @@ func openEngine(root, name string, definition driverDefinition) (*engine.Engine,
 	if err != nil {
 		return nil, err
 	}
-	e.ShimCommand = shimCommand(exe, e.Root, name)
+	e.ShimCommand = shimCommand(exe, e.Root, driver.Name())
 	return e, nil
 }
 
@@ -96,27 +103,27 @@ func (r *Runtime) Close() error { return nil }
 // EnsurePool brings up the pool's host.
 //
 // It mints no bootstrap. A bootstrap is handed to a pool agent as it starts, and
-// no driver starts one yet: vz stages the host pool agent in #64, and boxd's
-// pool image installs it in #123.
+// nothing starts one yet: a host pool agent is staged in #64, and the pool
+// machine's image installs one in #123.
 func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ []string, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}
-	return r.driver.ensurePoolHost(ctx, pool, begin)
+	return r.host.ensurePoolHost(ctx, pool, begin)
 }
 
 func (r *Runtime) RepairPool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ string, _ []string, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}
-	return r.driver.repairPoolHost(ctx, pool, begin)
+	return r.host.repairPoolHost(ctx, pool, begin)
 }
 
 func (r *Runtime) RemovePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}
-	if err := r.driver.removePoolHost(ctx, pool); err != nil {
+	if err := r.host.removePoolHost(ctx, pool); err != nil {
 		return err
 	}
 	pool.RuntimeState = nil
@@ -127,7 +134,7 @@ func (r *Runtime) RemovePool(ctx context.Context, _ *model.Project, _ *model.San
 }
 
 // errNoPoolAgent is every driver's answer until a discovm pool runs an agent.
-var errNoPoolAgent = errors.New("a discovm pool runs no pool agent yet: the vz driver stages one in #64 and the boxd driver in #127")
+var errNoPoolAgent = errors.New("a discovm pool runs no pool agent yet: a host pool agent is staged in #64, and a pool machine's in #127")
 
 func (r *Runtime) AcquirePoolAgentClient(_ context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
 	if err := requirePool(pool); err != nil {
@@ -140,14 +147,14 @@ func (r *Runtime) OpenConsole(ctx context.Context, _ *model.SandboxProviderInsta
 	if err := requirePool(pool); err != nil {
 		return nil, err
 	}
-	return r.driver.openConsole(ctx, pool, opts)
+	return r.host.openConsole(ctx, pool, opts)
 }
 
 func (r *Runtime) OpenLogs(ctx context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
 	if err := requirePool(pool); err != nil {
 		return nil, err
 	}
-	return r.driver.openLogs(ctx, pool, opts)
+	return r.host.openLogs(ctx, pool, opts)
 }
 
 func requirePool(pool *model.Pool) error {

@@ -46,12 +46,7 @@ func runShim(ctx context.Context, args []string) error {
 	if len(args) < 4 || args[0] != "--root" || args[2] != "--driver" {
 		return errors.New("usage: --root <state dir> --driver <driver> <shim arguments>")
 	}
-	root, name := args[1], args[3]
-	definition, err := lookupDriver(name)
-	if err != nil {
-		return err
-	}
-	e, err := openEngine(root, name, definition)
+	e, err := openEngine(args[1], args[3])
 	if err != nil {
 		return err
 	}

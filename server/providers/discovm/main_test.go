@@ -8,36 +8,28 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/guest"
-	"github.com/discobox-ai/vm/pkg/machine"
-	"github.com/discobox-ai/vm/pkg/machine/fake"
+	_ "github.com/discobox-ai/vm/pkg/machine/fake" // linked by tests alone: its guest agent is the running binary
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // fakeImage is the fake driver's pool image spec in a test checkout.
-const fakeImage = "server/providers/discovm/images/fake/pool.yaml"
+const fakeImage = imagesDir + "/fake/pool.yaml"
 
-// The fake driver is disco-vm's machine with no hypervisor: a guest is a
-// disco-vm agent process on this host, confined to a directory. It hosts a pool
-// the way boxd does, in a machine of its own, so the engine, its shim, and the
-// guest protocol all run here as they do against a real machine.
-//
-// It is in the test binary only. Its guest agent is this binary (fake.New's
-// default), so a server built with it would start its guests as servers.
-func init() {
-	drivers["fake"] = driverDefinition{
-		machine: func() (machine.Driver, error) { return fake.New() },
-		pools: func(e *engine.Engine) driver {
-			return &poolMachine{
-				engine: e,
-				shell:  []string{"/bin/sh"},
-				logs: func(opts sandbox.PoolLogOptions) []string {
-					return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
-				},
-				logSource: "fake machine log",
-				built:     []guestImage{{Tag: poolImage, Spec: fakeImage}},
-			}
+// fakePoolMachine hosts a pool in a machine of disco-vm's fake driver, the way
+// a remote driver's pool is hosted, so the engine, its shim, and the guest
+// protocol run here as they do against a real machine. The fake driver is
+// local, so newPoolHost would give it a host agent; tests that drive a pool
+// machine build this one. Its guests are host processes with no journal, so
+// its log is a command that honors the tail it is asked for.
+func fakePoolMachine(e *engine.Engine) *poolMachine {
+	return &poolMachine{
+		engine: e,
+		shell:  []string{"/bin/sh"},
+		logs: func(opts sandbox.PoolLogOptions) []string {
+			return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
 		},
+		logSource: "fake machine log",
 	}
 }
 

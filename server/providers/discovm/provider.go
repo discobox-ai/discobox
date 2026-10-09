@@ -3,20 +3,17 @@
 // disco-vm engine this server embeds (ADR 26-10-09-106 §§1–2).
 //
 // It is a poolruntime.RuntimeProvider beside dockerworker.Engine, not a
-// dockerworker.Driver: a discovm pool runs no Docker at all. Like the engine it
-// has drivers, and they are disco-vm's — vz on macOS and boxd from any host —
-// because where a pool's agent runs is the driver's: beside the server on a
-// local hypervisor, in a machine of its own on a remote one.
+// dockerworker.Driver: a discovm pool runs no Docker at all. Its driver is
+// disco-vm's, named in the provider's configuration and passed to disco-vm as
+// it is. Nothing here is written per driver: where a pool's agent runs follows
+// from what the driver reports it can do.
 package discovm
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -32,7 +29,9 @@ const ProviderType = "discovm"
 type Config struct {
 	poolruntime.PoolPolicy
 
-	// Driver is the disco-vm driver the provider's pools run on.
+	// Driver is the disco-vm driver the provider's pools run on, by
+	// disco-vm's name for it. It is passed to disco-vm as it is: what a pool
+	// on it looks like follows from what the driver reports it can do.
 	//
 	// There is no state directory to configure. Every provider instance on a
 	// host shares one disco-vm state root (stateRoot), because the limits the
@@ -51,26 +50,8 @@ func Validate(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	_, err = lookupDriver(cfg.Driver)
+	_, err = newDriver(cfg.Driver)
 	return err
-}
-
-// lookupDriver finds a driver this build has. A driver is in a build only
-// where its hypervisor can run, so vz is absent from every build but macOS.
-func lookupDriver(name string) (driverDefinition, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return driverDefinition{}, fmt.Errorf("%s driver is required (one of %s)", ProviderType, strings.Join(driverNames(), ", "))
-	}
-	definition, ok := drivers[name]
-	if !ok {
-		return driverDefinition{}, fmt.Errorf("%s driver %q is not available in this build (have %s)", ProviderType, name, strings.Join(driverNames(), ", "))
-	}
-	return definition, nil
-}
-
-func driverNames() []string {
-	return slices.Sorted(maps.Keys(drivers))
 }
 
 func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
@@ -92,11 +73,11 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "disco-vm",
 		Icon:        "server",
-		Description: "Runs each sandbox as a disco-vm machine: macOS guests on this Mac (vz), or Linux microVMs on boxd.",
+		Description: "Runs each sandbox as a disco-vm machine, on whichever disco-vm driver it is configured with.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			// Immutable: a pool's host is the driver's machine or process, which
-			// only that driver can reach to remove.
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver: vz (macOS only) or boxd. boxd authenticates with BOXD_API_KEY in the server's environment."},
+			// Immutable: a pool's host was made through the driver, and only
+			// that driver can reach it to remove it.
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver to run machines on, as disco-vm names it: for example vz on macOS, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

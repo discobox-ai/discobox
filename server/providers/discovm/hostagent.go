@@ -22,7 +22,7 @@ func (h *hostAgent) poolDir(poolID string) string {
 	return filepath.Join(h.root, "pools", poolID)
 }
 
-var errHostAgentNotStaged = errors.New("the vz driver does not stage a host pool agent yet (#64)")
+var errHostAgentNotStaged = errors.New("a local driver's host pool agent is not staged yet (#64)")
 
 func (h *hostAgent) ensurePoolHost(context.Context, *model.Pool, func(context.Context) error) error {
 	return errHostAgentNotStaged
@@ -49,9 +49,5 @@ func (h *hostAgent) openLogs(ctx context.Context, pool *model.Pool, opts sandbox
 	if err != nil {
 		return nil, err
 	}
-	return &sandbox.PoolLogStream{Source: "host pool agent log (vz)", ReadCloser: reader}, nil
+	return &sandbox.PoolLogStream{Source: "host pool agent log", ReadCloser: reader}, nil
 }
-
-// images is empty until the macOS sandbox image's build spec lands (#126); a
-// vz pool boots no pool image, because its agent is not in a machine.
-func (h *hostAgent) images() []guestImage { return nil }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/discobox-ai/vm/pkg/engine"
+	"github.com/discobox-ai/vm/pkg/machine/boxd"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -39,8 +40,9 @@ func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: ProviderType, Config: config}
 }
 
-// newFakeRuntime is a runtime on the fake driver whose pool image is built,
-// from a checkout holding the fake driver's spec, through BuildGuestImage.
+// newFakeRuntime is a runtime on the fake driver that hosts its pools in
+// machines, as a remote driver's are, and whose pool image is built from a
+// checkout holding the fake driver's spec, through BuildGuestImage.
 func newFakeRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -52,6 +54,7 @@ func newFakeRuntime(t *testing.T) *Runtime {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.host = fakePoolMachine(r.engine)
 	checkout := t.TempDir()
 	spec := filepath.Join(checkout, filepath.FromSlash(fakeImage))
 	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
@@ -72,31 +75,24 @@ func newFakeRuntime(t *testing.T) *Runtime {
 	if build.Destination != r.engine.Images.Root {
 		t.Fatalf("Destination = %q, want the engine's image store %q", build.Destination, r.engine.Images.Root)
 	}
-	if _, err := r.engine.Images.Resolve(poolImage); err != nil {
-		t.Fatalf("the build tagged no %s image: %v", poolImage, err)
+	if _, err := r.engine.Images.Resolve(imageTag("fake", poolRole)); err != nil {
+		t.Fatalf("the build tagged no %s image: %v", imageTag("fake", poolRole), err)
 	}
 	return r
 }
 
-// The issue's done-when: a discovm provider instance on the fake driver creates
-// and removes a pool, opens its logs, and opens its console.
+// The issue's done-when, for a pool hosted in a machine: the runtime creates
+// and removes the pool, opens its logs, and opens its console.
 //
 // The pool is created through the runtime, because the provider's
 // ReconcilePool also hands the pool agent its known pools, and a discovm pool
-// runs no agent yet. Everything else goes through the provider the server's
-// factory builds for the instance, which shares the host's state root.
+// runs no agent yet. Logs, console and removal go through the pool provider the
+// server's factory wraps a runtime in (poolruntime.New), around this one.
 func TestFakePoolMachineLifecycle(t *testing.T) {
 	r := newFakeRuntime(t)
 	ctx := context.Background()
 	instance := fakeInstance(t)
-	built, err := FactoryWithPoolManager(nil)(ctx, instance)
-	if err != nil {
-		t.Fatalf("factory error = %v", err)
-	}
-	provider, ok := built.(sandbox.PoolRuntime)
-	if !ok {
-		t.Fatalf("factory built %T, which is no sandbox.PoolRuntime", built)
-	}
+	provider := poolruntime.New(r, Definition(), nil)
 	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 
@@ -206,6 +202,7 @@ func TestFakePoolWithoutAMachineHasNoConsoleOrLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.host = fakePoolMachine(r.engine)
 	pool := &model.Pool{ID: "pool-3"}
 	if _, err := r.OpenConsole(context.Background(), nil, pool, sandbox.ConsoleOptions{}); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("OpenConsole() error = %v, want not found", err)
@@ -253,13 +250,14 @@ func TestHostAgentRefusesAConsoleAndReadsTheAgentLog(t *testing.T) {
 	}
 }
 
+// Which images a driver has is the checkout's to say: one with no specs for it
+// has nothing to build.
 func TestBuildGuestImageWithNoImagesIsUnsupported(t *testing.T) {
 	isolateStateRoot(t)
 	r, err := newRuntime(Config{Driver: "fake"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.driver = &hostAgent{root: r.engine.Root}
 	_, err = r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-5"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()})
 	if !errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
 		t.Fatalf("BuildGuestImage() error = %v, want ErrGuestImageBuildUnsupported", err)
@@ -318,6 +316,49 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	exe, _ := os.Executable()
 	if want := shimCommand(exe, r.engine.Root, "fake"); strings.Join(r.engine.ShimCommand, " ") != strings.Join(want, " ") {
 		t.Fatalf("ShimCommand = %q, want %q", r.engine.ShimCommand, want)
+	}
+}
+
+// Where a pool's agent runs follows from what the driver reports, not from its
+// name: a remote driver's pool is a machine, a local one's is a host agent.
+func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
+	remote, err := engine.Open(t.TempDir(), boxd.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host, ok := newPoolHost(remote).(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote))
+	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
+		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
+	}
+	isolateStateRoot(t)
+	local, err := newRuntime(Config{Driver: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := local.host.(*hostAgent); !ok {
+		t.Fatalf("a local driver's pool host is %T, want a host agent", local.host)
+	}
+}
+
+// The provider the server's factory builds for a local driver refuses a
+// console, as a host pool agent has no host to open one on.
+func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
+	isolateStateRoot(t)
+	built, err := FactoryWithPoolManager(nil)(context.Background(), fakeInstance(t))
+	if err != nil {
+		t.Fatalf("factory error = %v", err)
+	}
+	provider, ok := built.(sandbox.PoolRuntime)
+	if !ok {
+		t.Fatalf("factory built %T, which is no sandbox.PoolRuntime", built)
+	}
+	instance := fakeInstance(t)
+	if _, err := provider.OpenConsole(context.Background(), instance, &model.Pool{ID: "pool-7"}, sandbox.ConsoleOptions{}); !errors.Is(err, sandbox.ErrPoolConsoleUnsupported) {
+		t.Fatalf("OpenConsole() error = %v, want ErrPoolConsoleUnsupported", err)
+	}
+	if err := provider.RemovePool(context.Background(), nil, nil, instance, &model.Pool{ID: "pool-7"}); err != nil {
+		t.Fatalf("RemovePool() of a pool with nothing staged = %v", err)
 	}
 }
 

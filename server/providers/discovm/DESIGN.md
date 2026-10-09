@@ -4,24 +4,26 @@
 disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
 beside `dockerworker.Engine` rather than under it: a discovm pool runs no
 Docker (ADR 26-10-09-106 §1). This package is the skeleton: the provider kind,
-the embedded engine and its shim, and per-driver pool hosting with its console,
-log, and image build. The machine seam a pool agent drives sandboxes through
-(#122), and the pool agents themselves (#64, #127), come next.
+the embedded engine and its shim, and pool hosting with its console, log, and
+image build. The driver is configuration it passes to disco-vm; how a pool is
+hosted follows from what that driver reports. The machine seam a pool agent
+drives sandboxes through (#122), and the pool agents themselves (#64, #127),
+come next.
 
 ```mermaid
 flowchart TD
     pool["poolruntime.Provider"]
     runtime["discovm.Runtime\nengine · BuildGuestImage"]
-    engine["disco-vm pkg/engine\nimage store · instances · shims"]
-    seam["driver seam\nwhere the pool agent runs ·\nconsole · log · images"]
-    vz["vz (macOS build)\nhostAgent: pool agent on this Mac"]
-    boxd["boxd (every build)\npoolMachine: pool agent in a boxd machine"]
-    fake["fake (test binary only)\npoolMachine over disco-vm's fake driver"]
+    engine["disco-vm pkg/engine\non machine.New(config driver)"]
+    host{"driver's Capabilities.Remote"}
+    machine["poolMachine\npool agent in a Linux machine"]
+    agent["hostAgent\npool agent on this host"]
 
     pool --> runtime
     runtime --> engine
-    runtime --> seam
-    seam --> vz & boxd & fake
+    runtime --> host
+    host -- remote --> machine
+    host -- local --> agent
 ```
 
 ## The Engine Is the Server's
@@ -46,40 +48,55 @@ flowchart TD
 
 ## Drivers
 
-A driver is in a build only where its hypervisor runs: `boxd.go` everywhere,
-`vz_darwin.go` on macOS. The configuration's `driver` is validated against the
-drivers the build has, and is `Immutable`: it cannot change while the provider
-has pools, because only the driver that made a pool's host can remove it. The seam (`driver` in `runtime.go`) is what differs:
+The driver is configuration, passed to disco-vm as it is: `newDriver` is
+`machine.New(cfg.Driver)` on disco-vm's own registry, and validation asks the
+same registry. Nothing in this package is written per driver. A build links
+the real hypervisors its OS has (`drivers.go`: boxd everywhere,
+`drivers_darwin.go`: vz, `drivers_windows.go`: hcs), as imports and nothing
+else. It never links disco-vm's `fake` driver, whose guest agent is the
+running binary serving exec on loopback; only tests do.
 
-| | pool host | console | log | images |
-| --- | --- | --- | --- | --- |
-| `vz` | `hostAgent`: a pool agent process under `<stateRoot>/pools/<pool>` (#64) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own Mac | the agent's `pool-agent.log` | the macOS sandbox image (#126) |
-| `boxd` | `poolMachine`: a boxd machine named `discobox-pool-<pool>` | `bash -l` in it, through disco-vm's guest exec | its journal for this boot, through the same exec | the pool and sandbox images (#123) |
+`driver` is `Immutable`: it cannot change while the provider has pools,
+because only the driver that made a pool's host can remove it.
+
+Where a pool's agent runs follows from what the driver reports
+(`newPoolHost`, `machine.Capabilities.Remote`), as ADR 26-10-09-106 §1 places
+it:
+
+| driver reports | pool host | console | log |
+| --- | --- | --- | --- |
+| remote (boxd) | `poolMachine`: a Linux machine named `discobox-pool-<pool>` | `bash -l` in it, through disco-vm's guest exec | its journal for this boot, through the same exec |
+| local (vz, hcs) | `hostAgent`: a pool agent process under `<stateRoot>/pools/<pool>` (#64) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
 
 - `poolMachine` reaches the host through disco-vm's own guest agent, never
   through the pool agent, for the console's reason ([../DESIGN.md](../DESIGN.md#pool-host-console)).
-- A pool machine is created from the engine's `discobox-pool` image, started,
+- A pool machine is created from the engine's `discobox-<driver>-pool` image, started,
   and recorded on the pool row as registering. Repair stops and starts the same
   machine, keeping its disk; remove deletes it.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped: ensure and repair answer
   `sandbox.ErrPoolNotReachable` rather than booting a second time, or stopping a
   healthy pool, for a network fault.
-- `fake` is disco-vm's machine with no hypervisor, hosted as `poolMachine`. It
-  is registered from the test binary alone, because its guest agent is the
-  running binary, which in a server is a server.
-- boxd reads `BOXD_API_KEY` from the server's environment, disco-vm's only way
-  today. Taking the key as provider configuration, as the ADR has it, needs
-  disco-vm to accept one, and lands with the boxd pool (#127).
+- Tests host pools in machines of the `fake` driver (a local driver, so they
+  build that `poolMachine` themselves), which runs the engine, its shim, and the
+  guest protocol as a real machine does.
+- disco-vm's boxd driver reads `BOXD_API_KEY` from the server's environment,
+  its only way today. Passing driver options (the key) through the provider's
+  configuration needs `machine.New` to take them, and lands with the boxd pool
+  (#127).
 
 ## Images
 
 `BuildGuestImage` builds the driver's disco-vm images with disco-vm's builder
-into the engine's store, from build specs under
-`server/providers/discovm/images/<driver>/` in the checkout it is given — not
-under `vm-image/`, which is the Docker pool VMs' guest and names no backend. The checkout is the build context. The image is
+into the engine's store, from the build specs the checkout it is given holds
+under `server/providers/discovm/images/<driver>/` — not under `vm-image/`,
+which is the Docker pool VMs' guest and names no backend. Each
+`<role>.yaml` builds the image tagged `discobox-<driver>-<role>`. The tag
+names the driver because every driver on a host shares the engine's one store
+and tag namespace. Which images a
+driver has is the checkout's to say. The checkout is the build context. The image is
 the server's, not the pool's, so the pool named only says where the operation
-was asked from. A driver with no images yet answers
+was asked from. A driver the checkout has no specs for answers
 `ErrGuestImageBuildUnsupported`. `RestartHost` is refused: a machine is cloned
 from its image, so a new image reaches a pool only when its machine is
 replaced.
