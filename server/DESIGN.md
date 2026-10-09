@@ -920,6 +920,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
 | `internal/sshd` | [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md) |
 | `providers` | [`providers/DESIGN.md`](providers/DESIGN.md) |
+| `providers/discovm` | [`providers/discovm/DESIGN.md`](providers/discovm/DESIGN.md) |
 | `providers/libkrun` | [`providers/libkrun/DESIGN.md`](providers/libkrun/DESIGN.md) |
 | `providers/vz` | [`providers/vz/DESIGN.md`](providers/vz/DESIGN.md) |
 

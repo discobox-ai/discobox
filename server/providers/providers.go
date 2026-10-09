@@ -6,6 +6,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers/digitalocean"
+	"github.com/discobox-ai/discobox/server/providers/discovm"
 	"github.com/discobox-ai/discobox/server/providers/docker"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/execvm"
@@ -37,6 +38,9 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterProviderDefinition(digitalocean.ProviderType, digitalocean.Definition())
 	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
+	manager.RegisterProviderDefinition(discovm.ProviderType, discovm.Definition())
+	manager.RegisterFactory(discovm.ProviderType, discovm.FactoryWithPoolManager(poolManager))
+	manager.RegisterProviderConfigValidator(discovm.ProviderType, discovm.Validate)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
 	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
