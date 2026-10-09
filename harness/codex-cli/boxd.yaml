@@ -1,0 +1,35 @@
+# The codex harness image (Dockerfile beside this file) as a boxd machine
+# image, for disco-vm (github.com/discobox-ai/vm), built FROM
+# sandbox-agent/boxd.yaml. The build context is this directory, as it is for
+# the Dockerfile:
+#
+#   disco-vm --driver boxd build -t discobox/codex -f harness/codex-cli/boxd.yaml harness/codex-cli
+#
+# The Dockerfile's twin; change the two together. Its label is a file under
+# /usr/local/share/discobox/labels, as sandbox-agent/boxd.yaml explains.
+from:
+  image: discobox/sandbox-agent
+shell: ["/bin/bash", "-o", "pipefail", "-c"]
+resources:
+  cpus: 4
+  memory: 16GiB
+layers:
+  - name: harness
+    steps:
+      - run: |
+          set -eux
+          npm install -g @openai/codex
+          rm -rf /root/.npm
+          install -d -m 0755 /usr/local/libexec/discobox /etc/codex
+      - copy: {src: ., dst: /var/tmp/discobox-harness}
+      - run: |
+          set -eux
+          s=/var/tmp/discobox-harness
+          jq -c . $s/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1
+          install -m 0644 $s/system-config.toml /etc/codex/config.toml
+          install -m 0644 $s/agent.conf /usr/local/libexec/discobox/agent.conf
+          install -m 0644 $s/hooks.json /etc/codex/hooks.json
+          install -m 0755 $s/configure.sh /usr/local/libexec/discobox/configure-codex
+          install -m 0755 $s/launch.sh /usr/local/bin/discobox-harness-run
+          install -m 0755 $s/prompt.sh /usr/local/bin/discobox-prompt
+          rm -rf $s
