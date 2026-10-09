@@ -777,3 +777,21 @@ func RawMessage(raw []byte) json.RawMessage {
 	}
 	return json.RawMessage(raw)
 }
+
+// AgentCredentialRequestStatus maps a request's approval state onto the
+// protocol's vocabulary. The protocol says "granted", the control plane says
+// "approved", and only the control plane knows that an approval whose grant has
+// since been revoked is no longer a grant.
+func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) string {
+	switch req.Status {
+	case model.SecretRequestStatusApproved:
+		if grant == nil {
+			return model.SecretRequestStatusDenied
+		}
+		return "granted"
+	case model.SecretRequestStatusDenied:
+		return model.SecretRequestStatusDenied
+	default:
+		return model.SecretRequestStatusPending
+	}
+}
