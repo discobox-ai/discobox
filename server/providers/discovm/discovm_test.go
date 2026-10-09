@@ -366,6 +366,36 @@ func TestBuildGuestImageBuildsTheTwinChain(t *testing.T) {
 	}
 }
 
+// One chain at a time per engine root: a second waits, says so, and gives up
+// when its caller does.
+func TestLockChainSerializesBuildsPerRoot(t *testing.T) {
+	root := t.TempDir()
+	release, err := lockChain(context.Background(), root, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var said strings.Builder
+	waiting, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := lockChain(waiting, root, &said); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a second chain on a busy root = %v, want it to wait until its context ends", err)
+	}
+	if !strings.Contains(said.String(), "waiting for another image build") {
+		t.Fatalf("the waiting chain said %q", said.String())
+	}
+	other, err := lockChain(context.Background(), t.TempDir(), io.Discard)
+	if err != nil {
+		t.Fatalf("another root was held by this one: %v", err)
+	}
+	other()
+	release()
+	again, err := lockChain(context.Background(), root, io.Discard)
+	if err != nil {
+		t.Fatalf("the root was not released: %v", err)
+	}
+	again()
+}
+
 // The server's chain is the one `build:boxd-images` builds: the same specs,
 // contexts and tags, so a twin that builds by hand builds here too.
 func TestTwinsMatchTheTaskfile(t *testing.T) {
