@@ -148,6 +148,16 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
   `git status`, not only its final report.
 - Baseline against the original (the built-in, or the skill at `HEAD`) on an
   identical copy of the repo before calling a behavior a regression.
+- A narrow rule (one tag step, one section) needs no full run: prompt
+  `Read .claude/skills/<name>/SKILL.md and do ONLY <step> for <state>`, with
+  the state seeded in `$H/.discobox/meta.json`, and read the file afterwards.
+- `orchestrate-issues/orchestrate.sh` runs against the dev server with a
+  stub `discobox-access` first on `PATH` (`list` prints a use whose
+  description matches the script's regex; `run … -- cmd` execs `cmd`), a
+  `discobox` link to `./build/discobox`, and `ORCH_DIR` in the scratchpad
+  holding a `workers.tsv` row for a box made with `./build/discobox new -d
+  -H shell -C <dir>` (the dev project has no default harness). `rm` only
+  archives it; `discobox admin box purge <id>` removes it.
 
 # Verifying `discobox-access` in a dev box (request, wait, list)
 
