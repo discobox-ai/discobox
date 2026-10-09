@@ -132,6 +132,14 @@ func sandboxAgentSourceStates(states []sourceconverge.SourceState) []sandboxapi.
 		if state.Error != "" {
 			wire.Error = sandboxapi.NewOptString(state.Error)
 		}
+		if progress := state.Progress; progress != nil {
+			wire.Progress = sandboxapi.NewOptSandboxAgentCloneProgress(sandboxapi.SandboxAgentCloneProgress{
+				Stage:        sandboxapi.CloneProgressStage(progress.Stage),
+				Objects:      sandboxapi.NewOptInt64(progress.Objects),
+				ObjectsTotal: sandboxapi.NewOptInt64(progress.ObjectsTotal),
+				Bytes:        sandboxapi.NewOptInt64(progress.Bytes),
+			})
+		}
 		out = append(out, wire)
 	}
 	return out

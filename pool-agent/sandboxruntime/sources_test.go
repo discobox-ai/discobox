@@ -196,21 +196,90 @@ func newFakeSourcesAgent(t *testing.T, r *DockerSandboxRuntime, layer string, st
 	return agent, intakeDialer(t, agent)
 }
 
-// A create waits until the sandbox reports every source materialized.
+// A create waits until the sandbox reports every source materialized, and
+// says on every read which source it is waiting on and how far its clone has
+// got, so the phase stays current for the whole of a long clone (#138).
 func TestAwaitSourcesMaterializedWaitsForEverySource(t *testing.T) {
 	r := runtimeConfigTestRuntime(t)
+	observed, stop := watchProgress(t, r)
+	defer stop()
 	at := time.Now()
+	receiving := &sourceCloneProgress{Stage: "receiving", Objects: 5, ObjectsTotal: 10, Bytes: 4096}
 	agent, dial := newFakeSourcesAgent(t, r, "",
 		[]sourceState{{Slug: "primary", State: "waiting", UpdatedAt: at}},
-		[]sourceState{{Slug: "primary", State: "cloning", UpdatedAt: at.Add(time.Second)}, {Slug: "lib", State: "materialized"}},
+		[]sourceState{{Slug: "primary", State: "cloning", Progress: receiving, UpdatedAt: at.Add(time.Second)}, {Slug: "lib", State: "cloning"}},
+		[]sourceState{{Slug: "primary", State: "materialized", UpdatedAt: at.Add(2 * time.Second)}, {Slug: "lib", State: "cloning"}},
 		[]sourceState{{Slug: "primary", State: "materialized", UpdatedAt: at.Add(2 * time.Second)}, {Slug: "lib", State: "materialized"}},
 	)
 	sources := []sandboxconfig.RuntimeSource{{Slug: "primary"}, {Slug: "lib"}}
-	if err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", sources); err != nil {
+	labels := map[string]string{"primary": "github.com/discobox-ai/discobox"}
+	if err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", sources, labels); err != nil {
 		t.Fatalf("await = %v", err)
 	}
-	if agent.reads != 3 {
-		t.Fatalf("the sandbox was asked %d times, want until both were materialized (3)", agent.reads)
+	if agent.reads != 4 {
+		t.Fatalf("the sandbox was asked %d times, want until both were materialized (4)", agent.reads)
+	}
+	want := []CloneProgress{
+		{Source: "github.com/discobox-ai/discobox"},
+		{Source: "github.com/discobox-ai/discobox", Stage: "receiving", Objects: 5, ObjectsTotal: 10, Bytes: 4096},
+		// A source with no label is named by its slug.
+		{Source: "lib"},
+	}
+	for i, clone := range want {
+		select {
+		case got := <-observed:
+			if got.SandboxID != "sbx_1" || got.Phase != PhaseMaterializingSource || got.Clone == nil || *got.Clone != clone {
+				t.Fatalf("report %d = %+v (clone %+v), want materializing_source with %+v", i, got, got.Clone, clone)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("report %d was never published", i)
+		}
+	}
+	// The wait ends on the bare phase, so the record it leaves carries no
+	// clone for a client that cannot decode one.
+	select {
+	case got := <-observed:
+		if got.Phase != PhaseMaterializingSource || got.Clone != nil {
+			t.Fatalf("last report = %+v (clone %+v), want the bare phase", got, got.Clone)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the wait did not end on the bare phase")
+	}
+	select {
+	case got := <-observed:
+		t.Fatalf("published %+v after the wait ended", got)
+	default:
+	}
+}
+
+// A source is named for the person waiting on it: a remote by its host and
+// path, a local checkout by its directory — on either OS's path spelling —
+// and anything else by its slug.
+func TestSourceLabelNamesWhatIsCloned(t *testing.T) {
+	remote, err := url.Parse("https://github.com/discobox-ai/discobox.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	escaped, err := url.Parse("https://example.com/a%1Bb.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := workerclient.GitSourceDeliveryPush
+	cases := []struct {
+		name   string
+		source sandboxSource
+		want   string
+	}{
+		{"remote", sandboxSource{slug: "primary", git: workerapimodel.GitSource{URL: workerclient.NewOptURI(*remote)}}, "github.com/discobox-ai/discobox"},
+		{"pushed", sandboxSource{slug: "primary", git: workerapimodel.GitSource{URL: workerclient.NewOptURI(*remote), Delivery: workerclient.NewOptGitSourceDelivery(push), LocalDirectory: workerclient.NewOptString("/home/dev/src/disco2/")}}, "disco2"},
+		{"windows", sandboxSource{slug: "primary", git: workerapimodel.GitSource{LocalDirectory: workerclient.NewOptString(`C:\Users\dev\src\hooks`)}}, "hooks"},
+		{"neither", sandboxSource{slug: "lib"}, "lib"},
+		{"escaped", sandboxSource{slug: "primary", git: workerapimodel.GitSource{URL: workerclient.NewOptURI(*escaped)}}, "example.com/a%1Bb"},
+	}
+	for _, tc := range cases {
+		if got := sourceLabel(tc.source); got != tc.want {
+			t.Errorf("%s: label = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -224,7 +293,7 @@ func TestAwaitSourcesMaterializedGivesUpOnASourceThatKeepsFailing(t *testing.T) 
 		return []sourceState{{Slug: "primary", State: "failed", Error: "fatal: repository not found", UpdatedAt: at.Add(time.Duration(n) * time.Second)}}
 	}
 	agent, dial := newFakeSourcesAgent(t, r, "", failed(0), failed(1), failed(2), failed(3))
-	err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}})
+	err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "repository not found") {
 		t.Fatalf("await = %v, want the sandbox's failure", err)
 	}
@@ -280,7 +349,7 @@ func TestAwaitSourcesMaterializedFailsAtOnceOnAnAgentWithoutTheRoute(t *testing.
 			http.Error(w, "no", status)
 		}))
 		started := time.Now()
-		err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}})
+		err := r.awaitSourcesMaterialized(context.Background(), dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}}, nil)
 		if !errors.Is(err, ErrSourceStatesUnsupported) || time.Since(started) > 5*time.Second {
 			t.Fatalf("status %d: await = %v after %s, want ErrSourceStatesUnsupported at once", status, err, time.Since(started))
 		}

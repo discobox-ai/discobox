@@ -201,8 +201,21 @@ type SandboxProgress struct {
 	SandboxID string `json:"sandboxId"`
 	// Phase is what is being done, and is always set. Pull refines the one
 	// phase that can say how far in it is (ADR 0060).
-	Phase string               `json:"phase"`
-	Pull  *SandboxPullProgress `json:"pull,omitempty"`
+	Phase string                `json:"phase"`
+	Pull  *SandboxPullProgress  `json:"pull,omitempty"`
+	Clone *SandboxCloneProgress `json:"clone,omitempty"`
+}
+
+// SandboxCloneProgress is the sandbox cloning a source, refining the
+// materializing_source phase: what the source is, and how far its clone has
+// got when the sandbox has said. Each stage counts toward a total git knows
+// before the stage starts.
+type SandboxCloneProgress struct {
+	Source       string `json:"source"`
+	Stage        string `json:"stage,omitempty"`
+	Objects      int64  `json:"objects,omitempty"`
+	ObjectsTotal int64  `json:"objectsTotal,omitempty"`
+	Bytes        int64  `json:"bytes,omitempty"`
 }
 
 // SandboxPullProgress is an image pull as a status line wants it: bytes against

@@ -69,6 +69,58 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 	s.Upgrade = val
 }
 
+// Where a git clone is. counting - the remote is enumerating, counting and compressing
+// what it will send, and nothing has arrived yet; receiving - objects are arriving;
+// resolving - every object has arrived and git is resolving deltas.
+// Ref: #/components/schemas/CloneProgressStage
+type CloneProgressStage string
+
+const (
+	CloneProgressStageCounting  CloneProgressStage = "counting"
+	CloneProgressStageReceiving CloneProgressStage = "receiving"
+	CloneProgressStageResolving CloneProgressStage = "resolving"
+)
+
+// AllValues returns all CloneProgressStage values.
+func (CloneProgressStage) AllValues() []CloneProgressStage {
+	return []CloneProgressStage{
+		CloneProgressStageCounting,
+		CloneProgressStageReceiving,
+		CloneProgressStageResolving,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CloneProgressStage) MarshalText() ([]byte, error) {
+	switch s {
+	case CloneProgressStageCounting:
+		return []byte(s), nil
+	case CloneProgressStageReceiving:
+		return []byte(s), nil
+	case CloneProgressStageResolving:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CloneProgressStage) UnmarshalText(data []byte) error {
+	switch CloneProgressStage(data) {
+	case CloneProgressStageCounting:
+		*s = CloneProgressStageCounting
+		return nil
+	case CloneProgressStageReceiving:
+		*s = CloneProgressStageReceiving
+		return nil
+	case CloneProgressStageResolving:
+		*s = CloneProgressStageResolving
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
 // harnessId (with optional args) to run a harness in terminal mode.
 // Ref: #/components/schemas/CreateSandboxExecRequest
@@ -2100,6 +2152,52 @@ func (o OptSandboxAgentAutostopStatus) Or(d SandboxAgentAutostopStatus) SandboxA
 	return d
 }
 
+// NewOptSandboxAgentCloneProgress returns new OptSandboxAgentCloneProgress with value set to v.
+func NewOptSandboxAgentCloneProgress(v SandboxAgentCloneProgress) OptSandboxAgentCloneProgress {
+	return OptSandboxAgentCloneProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentCloneProgress is optional SandboxAgentCloneProgress.
+type OptSandboxAgentCloneProgress struct {
+	Value SandboxAgentCloneProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentCloneProgress was set.
+func (o OptSandboxAgentCloneProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentCloneProgress) Reset() {
+	var v SandboxAgentCloneProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentCloneProgress) SetTo(v SandboxAgentCloneProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentCloneProgress) Get() (v SandboxAgentCloneProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentCloneProgress) Or(d SandboxAgentCloneProgress) SandboxAgentCloneProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -2753,6 +2851,61 @@ func (s *SandboxAgentCPUUsage) SetUsageUsec(val int64) {
 // SetUserUsec sets the value of UserUsec.
 func (s *SandboxAgentCPUUsage) SetUserUsec(val int64) {
 	s.UserUsec = val
+}
+
+// A source's clone as git's progress output reports it, parsed for a status line. Each
+// stage counts against its own total, which git knows before the stage starts, so
+// objects/objectsTotal is progress toward a fixed target within a stage; bytes carries
+// over from receiving into resolving.
+// Ref: #/components/schemas/SandboxAgentCloneProgress
+type SandboxAgentCloneProgress struct {
+	// Bytes received so far, as git counts them.
+	Bytes OptInt64 `json:"bytes"`
+	// Objects (deltas, when resolving) done so far in this stage.
+	Objects OptInt64 `json:"objects"`
+	// Objects (deltas, when resolving) this stage has to do, zero while the remote has not said.
+	ObjectsTotal OptInt64           `json:"objectsTotal"`
+	Stage        CloneProgressStage `json:"stage"`
+}
+
+// GetBytes returns the value of Bytes.
+func (s *SandboxAgentCloneProgress) GetBytes() OptInt64 {
+	return s.Bytes
+}
+
+// GetObjects returns the value of Objects.
+func (s *SandboxAgentCloneProgress) GetObjects() OptInt64 {
+	return s.Objects
+}
+
+// GetObjectsTotal returns the value of ObjectsTotal.
+func (s *SandboxAgentCloneProgress) GetObjectsTotal() OptInt64 {
+	return s.ObjectsTotal
+}
+
+// GetStage returns the value of Stage.
+func (s *SandboxAgentCloneProgress) GetStage() CloneProgressStage {
+	return s.Stage
+}
+
+// SetBytes sets the value of Bytes.
+func (s *SandboxAgentCloneProgress) SetBytes(val OptInt64) {
+	s.Bytes = val
+}
+
+// SetObjects sets the value of Objects.
+func (s *SandboxAgentCloneProgress) SetObjects(val OptInt64) {
+	s.Objects = val
+}
+
+// SetObjectsTotal sets the value of ObjectsTotal.
+func (s *SandboxAgentCloneProgress) SetObjectsTotal(val OptInt64) {
+	s.ObjectsTotal = val
+}
+
+// SetStage sets the value of Stage.
+func (s *SandboxAgentCloneProgress) SetStage(val CloneProgressStage) {
+	s.Stage = val
 }
 
 // Ref: #/components/schemas/SandboxAgentGitSourceStatus
@@ -3562,6 +3715,9 @@ type SandboxAgentSourceState struct {
 	Commit OptString `json:"commit"`
 	// Why the last attempt failed. Present only when state is failed.
 	Error OptString `json:"error"`
+	// How far the clone has got, as git reports it. Present only while state is cloning and git has said
+	// something; a source resuming from a clone already in place fetches with no progress to report.
+	Progress OptSandboxAgentCloneProgress `json:"progress"`
 	// The runtime-config revision this state was reached under.
 	Revision int64  `json:"revision"`
 	Slug     string `json:"slug"`
@@ -3580,6 +3736,11 @@ func (s *SandboxAgentSourceState) GetCommit() OptString {
 // GetError returns the value of Error.
 func (s *SandboxAgentSourceState) GetError() OptString {
 	return s.Error
+}
+
+// GetProgress returns the value of Progress.
+func (s *SandboxAgentSourceState) GetProgress() OptSandboxAgentCloneProgress {
+	return s.Progress
 }
 
 // GetRevision returns the value of Revision.
@@ -3610,6 +3771,11 @@ func (s *SandboxAgentSourceState) SetCommit(val OptString) {
 // SetError sets the value of Error.
 func (s *SandboxAgentSourceState) SetError(val OptString) {
 	s.Error = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *SandboxAgentSourceState) SetProgress(val OptSandboxAgentCloneProgress) {
+	s.Progress = val
 }
 
 // SetRevision sets the value of Revision.

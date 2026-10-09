@@ -1545,6 +1545,9 @@ components:
                     description: The runtime-config revision this state was reached under.
                     format: int64
                     type: integer
+                progress:
+                    $ref: '#/components/schemas/SandboxAgentCloneProgress'
+                    description: How far the clone has got, as git reports it. Present only while state is cloning and git has said something; a source resuming from a clone already in place fetches with no progress to report.
                 updatedAt:
                     format: date-time
                     type: string
@@ -1554,6 +1557,41 @@ components:
                 - revision
                 - updatedAt
             type: object
+        SandboxAgentCloneProgress:
+            additionalProperties: false
+            description: |-
+                A source's clone as git's progress output reports it, parsed for a status line. Each
+                stage counts against its own total, which git knows before the stage starts, so
+                objects/objectsTotal is progress toward a fixed target within a stage; bytes carries
+                over from receiving into resolving.
+            properties:
+                stage:
+                    $ref: '#/components/schemas/CloneProgressStage'
+                objects:
+                    description: Objects (deltas, when resolving) done so far in this stage
+                    format: int64
+                    type: integer
+                objectsTotal:
+                    description: Objects (deltas, when resolving) this stage has to do, zero while the remote has not said
+                    format: int64
+                    type: integer
+                bytes:
+                    description: Bytes received so far, as git counts them
+                    format: int64
+                    type: integer
+            required:
+                - stage
+            type: object
+        CloneProgressStage:
+            description: |-
+                Where a git clone is. counting - the remote is enumerating, counting and compressing
+                what it will send, and nothing has arrived yet; receiving - objects are arriving;
+                resolving - every object has arrived and git is resolving deltas.
+            enum:
+                - counting
+                - receiving
+                - resolving
+            type: string
         SandboxSourceStates:
             additionalProperties: false
             description: Each source's convergence onto its target, as the sandbox reports it.
@@ -5730,8 +5768,9 @@ components:
                 What a provisioning sandbox is being made to do right now, named for a client that
                 is waiting to attach and wants to know what it is waiting for. It is an
                 observation and never a state: it decides nothing, and it is history the moment the
-                phase ends. pulling_image is the phase that carries pull byte counts; the rest are
-                named work with no denominator to report.
+                phase ends. pulling_image carries pull byte counts and materializing_source the clone
+                of the source it is materializing; the rest are named work with no denominator to
+                report.
             enum:
                 - pulling_image
                 - preparing_volumes
@@ -5745,16 +5784,48 @@ components:
             description: |-
                 Work underway on a sandbox that has no state transition to announce it, reported by
                 the hosting pool-agent. A client waiting to attach reads this to say what
-                it is waiting for. The phase always says what is happening; pull refines the one
-                phase that can report how far in it is, because an image pull is the longest thing
-                an attach waits behind.
+                it is waiting for. The phase always says what is happening; pull and clone refine the
+                two phases that can report how far in they are, because an image pull and a clone of
+                a large remote are the longest things an attach waits behind. The pool restates
+                materializing_source with each read of the clone, so the phase stays fresh for the
+                whole of a long one.
             properties:
                 phase:
                     $ref: '#/components/schemas/SandboxProvisionPhase'
                 pull:
                     $ref: '#/components/schemas/SandboxPullProgress'
+                clone:
+                    $ref: '#/components/schemas/SandboxCloneProgress'
             required:
                 - phase
+            type: object
+        SandboxCloneProgress:
+            additionalProperties: false
+            description: |-
+                The source a materializing_source phase is cloning, and how far the clone has got. The
+                sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
+                while it waits on them. Only source is certain: a sandbox whose agent predates
+                reporting clone progress, or a clone git has said nothing about yet, has no stage.
+            properties:
+                source:
+                    description: What is being cloned, for a person to read - a remote's host and path, or a local checkout's directory name
+                    type: string
+                stage:
+                    $ref: '#/components/schemas/CloneProgressStage'
+                objects:
+                    description: Objects (deltas, when resolving) done so far in this stage
+                    format: int64
+                    type: integer
+                objectsTotal:
+                    description: Objects (deltas, when resolving) this stage has to do, zero while the remote has not said
+                    format: int64
+                    type: integer
+                bytes:
+                    description: Bytes received so far, as git counts them
+                    format: int64
+                    type: integer
+            required:
+                - source
             type: object
         PoolProvisionPhase:
             description: |-
@@ -5870,6 +5941,8 @@ components:
                     $ref: '#/components/schemas/PoolSandboxProvisionPhase'
                 pull:
                     $ref: '#/components/schemas/PoolSandboxPullProgress'
+                clone:
+                    $ref: '#/components/schemas/PoolSandboxCloneProgress'
                 sandboxId:
                     description: Sandbox the progress is about
                     type: string
@@ -5906,6 +5979,30 @@ components:
                     type: integer
             required:
                 - image
+            type: object
+        PoolSandboxCloneProgress:
+            additionalProperties: false
+            description: The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being cloned and how far the sandbox's clone of it has got.
+            properties:
+                source:
+                    description: What is being cloned, for a person to read - a remote's host and path, or a local checkout's directory name
+                    type: string
+                stage:
+                    $ref: '#/components/schemas/CloneProgressStage'
+                objects:
+                    description: Objects (deltas, when resolving) done so far in this stage
+                    format: int64
+                    type: integer
+                objectsTotal:
+                    description: Objects (deltas, when resolving) this stage has to do, zero while the remote has not said
+                    format: int64
+                    type: integer
+                bytes:
+                    description: Bytes received so far, as git counts them
+                    format: int64
+                    type: integer
+            required:
+                - source
             type: object
         PoolSandboxState:
             additionalProperties: false

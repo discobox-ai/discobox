@@ -94,9 +94,10 @@ func (r *DockerSandboxRuntime) publishSandboxState(ctx context.Context, sandboxI
 // the phase a sandbox was last in means nothing once it is up. That is the
 // whole reason they ride the progress array rather than the state one.
 //
-// PhasePullingImage is the only phase with a denominator to report; the rest
-// are named work. Reporting them anyway is the point — a client that can say
-// "creating the container" is not looking at a hang.
+// PhasePullingImage and PhaseMaterializingSource are the phases with something
+// to measure — the pull's bytes, the sandbox's clone; the rest are named work.
+// Reporting them anyway is the point — a client that can say "creating the
+// container" is not looking at a hang.
 const (
 	PhasePullingImage        = "pulling_image"
 	PhasePreparingVolumes    = "preparing_volumes"
@@ -121,6 +122,27 @@ type SandboxProgressObservation struct {
 	// Pull refines PhasePullingImage with how far in it is. No other phase
 	// sets it.
 	Pull *PullProgress
+	// Clone refines PhaseMaterializingSource with the source the sandbox is
+	// cloning and how far it has got. No other phase sets it.
+	Clone *CloneProgress
+}
+
+// CloneProgress is a sandbox's clone of one of its sources, as its agent
+// reports it (sandbox-agent/sourceconverge). Only Source is certain: an agent
+// that predates reporting a clone's progress, or a clone git has said nothing
+// about yet, leaves the rest zero.
+type CloneProgress struct {
+	// Source names what is being cloned for a person to read: a remote's host
+	// and path, or a local checkout's directory name.
+	Source string
+	// Stage is git's: counting, receiving or resolving, empty for none yet.
+	Stage string
+	// Objects and ObjectsTotal count within the stage, deltas when resolving;
+	// git knows the total before the stage starts.
+	Objects      int64
+	ObjectsTotal int64
+	// Bytes is what has been received.
+	Bytes int64
 }
 
 // publishSandboxProgress reports provisioning progress immediately, if a
@@ -149,9 +171,16 @@ func (r *DockerSandboxRuntime) publishSandboxPullProgress(ctx context.Context, s
 	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
 }
 
-// publishSandboxPhase reports a phase that has nothing to measure — which is
-// every phase but the pull. It is the call the create path makes at each of its
-// own boundaries.
+// publishSandboxCloneProgress reports the sandbox cloning a source. It is
+// restated on every read of the clone, not only when the counts move: a
+// remote that is still packing what it will send says nothing new for
+// seconds, and a phase a client sees go unrestated reads as over (ADR 0060).
+func (r *DockerSandboxRuntime) publishSandboxCloneProgress(ctx context.Context, sandboxID string, clone CloneProgress) {
+	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhaseMaterializingSource, Clone: &clone})
+}
+
+// publishSandboxPhase reports a phase with nothing measured. It is the call the
+// create path makes at each of its own boundaries.
 func (r *DockerSandboxRuntime) publishSandboxPhase(ctx context.Context, sandboxID, phase string) {
 	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
 }

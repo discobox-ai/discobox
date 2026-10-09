@@ -58,12 +58,13 @@ const (
 // on the first attempt or a retry.
 //
 // helper is empty for an origin that takes no token, so that a remote-URL
-// source keeps whatever credential helper its user configures.
-func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string) (bool, error) {
+// source keeps whatever credential helper its user configures. progress is
+// told how far the clone has got each time git says.
+func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string, progress func(CloneProgress)) (bool, error) {
 	gitDir := filepath.Join(r.dir, ".git")
 	switch _, err := os.Stat(gitDir); {
 	case errors.Is(err, os.ErrNotExist):
-		cloned, err := r.clone(ctx, source.OriginURL, spec, helper)
+		cloned, err := r.clone(ctx, source.OriginURL, spec, helper, progress)
 		if err != nil || !cloned {
 			return false, err
 		}
@@ -156,7 +157,12 @@ func (r *repository) finish(ctx context.Context) (string, error) {
 // follows writes the tree. It returns false, cloning nothing, when the origin
 // has no refs — asked first, because a clone of an empty origin that names a
 // branch fails rather than coming back empty.
-func (r *repository) clone(ctx context.Context, originURL string, spec sandboxconfig.Source, helper string) (bool, error) {
+//
+// The clone is the one git command here that can take minutes — a remote-URL
+// source is a full clone of the remote — so it runs with --progress and its
+// meters are parsed and handed to progress as they change, for the pool to
+// report while it waits (ADR 0060).
+func (r *repository) clone(ctx context.Context, originURL string, spec sandboxconfig.Source, helper string, progress func(CloneProgress)) (bool, error) {
 	var credentials []string
 	if helper != "" {
 		// For these two commands only; ensureOrigin then writes the same into
@@ -180,13 +186,22 @@ func (r *repository) clone(ctx context.Context, originURL string, spec sandboxco
 	}
 	defer os.RemoveAll(scratch)
 	clone := filepath.Join(scratch, "clone")
-	args := append(credentials, "clone", "--no-checkout")
+	args := append(credentials, "clone", "--no-checkout", "--progress")
 	if spec.RefName != "" {
 		args = append(args, "--branch", spec.RefName)
 	}
 	args = append(args, "--", originURL, clone)
-	if err := r.run(ctx, nil, args...); err != nil {
+	cmd, err := r.command(ctx, r.dir, args)
+	if err != nil {
 		return false, err
+	}
+	// The meters are git's English: a translated one would parse as a message
+	// and simply not be reported.
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
+	stderr := &progressWriter{report: progress}
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return false, gitError(args, err, stderr.String())
 	}
 	if err := r.writeMarker(filepath.Join(clone, ".git", materializingMarker), ""); err != nil {
 		return false, err
@@ -423,9 +438,26 @@ func (r *repository) output(ctx context.Context, dir string, stdin []byte, args 
 	return strings.TrimSpace(string(out)), err
 }
 
-// rawOutput runs git in dir as the checkout's owner, with the sandbox's
-// environment and never a prompt: there is nobody to answer one.
+// rawOutput runs git in dir and returns its stdout.
 func (r *repository) rawOutput(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
+	cmd, err := r.command(ctx, dir, args)
+	if err != nil {
+		return nil, err
+	}
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), gitError(args, err, stderr.String())
+	}
+	return stdout.Bytes(), nil
+}
+
+// command is git in dir as the checkout's owner, with the sandbox's
+// environment and never a prompt: there is nobody to answer one.
+func (r *repository) command(ctx context.Context, dir string, args []string) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // fixed subcommands; refs, URLs and paths are argv, never a shell.
 	cmd.Dir = dir
 	attr, err := execs.AgentSysProcAttr(r.owner)
@@ -439,19 +471,16 @@ func (r *repository) rawOutput(ctx context.Context, dir string, stdin []byte, ar
 	for key, value := range env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
+	return cmd, nil
+}
+
+// gitError names a failed git invocation by its subcommand, with what it said.
+func gitError(args []string, err error, stderr string) error {
+	name := gitSubcommand(args)
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return fmt.Errorf("git %s: %w: %s", name, err, msg)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		name := gitSubcommand(args)
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return stdout.Bytes(), fmt.Errorf("git %s: %w: %s", name, err, msg)
-		}
-		return stdout.Bytes(), fmt.Errorf("git %s: %w", name, err)
-	}
-	return stdout.Bytes(), nil
+	return fmt.Errorf("git %s: %w", name, err)
 }
 
 // gitSubcommand names a git invocation by its subcommand, past any -c.

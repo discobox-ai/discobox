@@ -3,8 +3,10 @@ package sandboxcreate
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -28,8 +30,9 @@ import (
 // The record is the last report and is never cleared, so a sandbox that
 // finished provisioning yesterday still carries the phase it finished in. Work
 // that is genuinely underway reports continuously — the pull reports twice a
-// second, and every other phase is published as it is entered — so a phase that
-// has not been restated in this long is describing the past.
+// second, the pool restates materializing a source on every read of the
+// sandbox's clone, and every other phase is published as it is entered — so a
+// phase that has not been restated in this long is describing the past.
 const ProvisionProgressFresh = 30 * time.Second
 
 // ProvisionStatus is one line saying what a sandbox that is not ready yet is
@@ -106,13 +109,18 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 	if pull, ok := progress.Pull.Get(); ok && progress.Phase == apiclientgen.SandboxProvisionPhasePullingImage {
 		return pullLine(pull)
 	}
+	if clone, ok := progress.Clone.Get(); ok && progress.Phase == apiclientgen.SandboxProvisionPhaseMaterializingSource {
+		return cloneLine(clone)
+	}
 	switch progress.Phase {
 	case apiclientgen.SandboxProvisionPhasePullingImage:
 		return "pulling the discobox image"
 	case apiclientgen.SandboxProvisionPhasePreparingVolumes:
 		return "preparing the discobox's storage"
 	case apiclientgen.SandboxProvisionPhaseMaterializingSource:
-		return "unpacking the source into the discobox"
+		// The sandbox clones every source itself, from the remote or from the
+		// pool's origin for one delivered from the client's machine.
+		return "cloning the source into the discobox"
 	case apiclientgen.SandboxProvisionPhaseCreatingContainer:
 		return "creating the container"
 	case apiclientgen.SandboxProvisionPhaseStartingContainer:
@@ -157,6 +165,63 @@ func pullLine(pull apimodel.SandboxPullProgress) Step {
 		line += fmt.Sprintf(", %d/%d layers", layersComplete, layers)
 	}
 	return Step(line)
+}
+
+// cloneLine renders the sandbox cloning a source: which one — the remote it
+// comes from, which is where the time goes on a slow clone — and how far in.
+//
+// Unlike the pull's, the object counts are a percentage: git knows each
+// stage's total before the stage starts, so the ratio only moves forward.
+// The bytes are what git has shown, which it starts showing only once the
+// clone is slow enough to need a throughput.
+func cloneLine(clone apimodel.SandboxCloneProgress) Step {
+	line := "cloning " + displaySafe(clone.Source)
+	objects, total, received := clone.Objects.Or(0), clone.ObjectsTotal.Or(0), clone.Bytes.Or(0)
+	percent := func() string {
+		return fmt.Sprintf("%d%%", objects*100/total)
+	}
+	switch stage, _ := clone.Stage.Get(); stage {
+	case apiclientgen.CloneProgressStageCounting:
+		line += " — waiting for the remote to pack it"
+	case apiclientgen.CloneProgressStageReceiving:
+		var parts []string
+		if received > 0 {
+			parts = append(parts, humanBytes(received))
+		}
+		if total > 0 {
+			parts = append(parts, fmt.Sprintf("%s of %d objects", percent(), total))
+		}
+		if len(parts) > 0 {
+			line += " — " + strings.Join(parts, ", ")
+		}
+	case apiclientgen.CloneProgressStageResolving:
+		line += " — "
+		if received > 0 {
+			line += humanBytes(received) + " received, "
+		}
+		line += "resolving deltas"
+		if total > 0 {
+			line += " " + percent()
+		}
+	}
+	return Step(line)
+}
+
+// displaySafe escapes every rune a terminal would act on rather than show,
+// as its Go escape. A source's name can come from a URL that repository
+// content declared (ADR 0056), and printed raw an escape sequence in it is an
+// instruction to the reader's terminal (cli/REVIEW.md).
+func displaySafe(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if unicode.IsPrint(r) {
+			b.WriteRune(r)
+			continue
+		}
+		quoted := strconv.QuoteRune(r)
+		b.WriteString(quoted[1 : len(quoted)-1])
+	}
+	return b.String()
 }
 
 // imageLabel shortens an image reference to the part that identifies it. A

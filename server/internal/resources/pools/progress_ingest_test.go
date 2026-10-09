@@ -112,3 +112,41 @@ func TestProgressIngestCarriesThePullAndItsPhase(t *testing.T) {
 		t.Fatalf("stored pull = %+v, want the reported one", stored.Pull)
 	}
 }
+
+// The clone a sandbox is materializing crosses with its phase, the source it
+// names and git's counts, in the client-facing shape.
+func TestProgressIngestCarriesTheCloneAndItsPhase(t *testing.T) {
+	reporter := &capturingReporter{}
+	service := &Service{sandboxReporter: reporter}
+
+	err := service.ReportPoolSandboxStates(poolPrincipalContext(t, "pool-1"), "pool-1", services.ReportPoolSandboxStatesBody{
+		ReportedAt: time.Now().UTC(),
+		Progress: []serverapi.PoolSandboxProgress{{
+			SandboxId: "sbx_1",
+			Phase:     serverapi.PoolSandboxProvisionPhaseMaterializingSource,
+			Clone: serverapi.NewOptPoolSandboxCloneProgress(serverapi.PoolSandboxCloneProgress{
+				Source:       "github.com/discobox-ai/discobox",
+				Stage:        serverapi.NewOptCloneProgressStage(serverapi.CloneProgressStageReceiving),
+				Objects:      serverapi.NewOptInt64(17739),
+				ObjectsTotal: serverapi.NewOptInt64(35477),
+				Bytes:        serverapi.NewOptInt64(15623782),
+			}),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("report progress: %v", err)
+	}
+	if len(reporter.progress) != 1 {
+		t.Fatalf("recorded %d progress reports, want 1", len(reporter.progress))
+	}
+	var stored serverapi.SandboxProvisionProgress
+	if err := stored.UnmarshalJSON(reporter.progress[0].Progress); err != nil {
+		t.Fatalf("stored progress does not decode as the client-facing shape (%s): %v", reporter.progress[0].Progress, err)
+	}
+	clone, ok := stored.Clone.Get()
+	if stored.Phase != serverapi.SandboxProvisionPhaseMaterializingSource || !ok ||
+		clone.Source != "github.com/discobox-ai/discobox" || clone.Stage.Or("") != serverapi.CloneProgressStageReceiving ||
+		clone.Objects.Or(0) != 17739 || clone.ObjectsTotal.Or(0) != 35477 || clone.Bytes.Or(0) != 15623782 {
+		t.Fatalf("stored = %s, want the reported clone under materializing_source", reporter.progress[0].Progress)
+	}
+}

@@ -58,6 +58,9 @@ type SourceState struct {
 	Commit string
 	// Error is why the last attempt failed.
 	Error string
+	// Progress is how far the clone has got while State is cloning, nil
+	// until git has said.
+	Progress *CloneProgress
 	// Revision is the runtime-config revision the state was reached under.
 	Revision  int64
 	UpdatedAt time.Time
@@ -266,8 +269,10 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 		return c.setState(state)
 	}
 	state.State = StateCloning
-	c.setState(state)
-	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper)
+	cloning := c.setState(state)
+	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper, func(progress CloneProgress) {
+		c.cloneProgress(cloning, progress)
+	})
 	if err != nil {
 		return c.failed(state, err)
 	}
@@ -312,6 +317,20 @@ func (c *Converger) stillDesired(source sandboxconfig.RuntimeSource) bool {
 		}
 	}
 	return false
+}
+
+// cloneProgress records how far the clone that set state has got. The state
+// it set is still the one recorded unless the attempt has ended, and an ended
+// attempt's last meter is not news.
+func (c *Converger) cloneProgress(state SourceState, progress CloneProgress) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	current, ok := c.states[state.Slug]
+	if !ok || current.State != StateCloning || !current.UpdatedAt.Equal(state.UpdatedAt) {
+		return
+	}
+	current.Progress = &progress
+	c.states[state.Slug] = current
 }
 
 func (c *Converger) failed(state SourceState, err error) SourceState {

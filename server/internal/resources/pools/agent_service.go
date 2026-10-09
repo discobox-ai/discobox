@@ -480,6 +480,11 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 				Done:           pull.Done,
 			})
 		}
+		if clone, ok := entry.Clone.Get(); ok {
+			// The two shapes are the same fields, so a conversion, which stops
+			// compiling the day they are not.
+			observed.Clone = serverapi.NewOptSandboxCloneProgress(serverapi.SandboxCloneProgress(clone))
+		}
 		// ogen's own encoder, not encoding/json. An unset ogen optional
 		// marshals to zero bytes, which encoding/json rejects out of a
 		// json.Marshaler with "unexpected end of JSON input" — so

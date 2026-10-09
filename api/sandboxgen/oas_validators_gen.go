@@ -9,6 +9,19 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+func (s CloneProgressStage) Validate() error {
+	switch s {
+	case "counting":
+		return nil
+	case "receiving":
+		return nil
+	case "resolving":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *CreateSandboxExecRequest) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -313,6 +326,29 @@ func (s *SandboxAgentCPUUsage) Validate() error {
 	return nil
 }
 
+func (s *SandboxAgentCloneProgress) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Stage.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "stage",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SandboxAgentListeningPort) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -404,6 +440,24 @@ func (s *SandboxAgentSourceState) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Progress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "progress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := s.State.Validate(); err != nil {
 			return err

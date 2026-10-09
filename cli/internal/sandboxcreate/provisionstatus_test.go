@@ -35,7 +35,7 @@ func TestProvisionStatusPrefersTheRecordedPhase(t *testing.T) {
 	}{
 		{"pull", apiclientgen.SandboxProvisionPhasePullingImage, "pulling the discobox image"},
 		{"volumes", apiclientgen.SandboxProvisionPhasePreparingVolumes, "preparing the discobox's storage"},
-		{"source", apiclientgen.SandboxProvisionPhaseMaterializingSource, "unpacking the source into the discobox"},
+		{"source", apiclientgen.SandboxProvisionPhaseMaterializingSource, "cloning the source into the discobox"},
 		{"create", apiclientgen.SandboxProvisionPhaseCreatingContainer, "creating the container"},
 		{"start", apiclientgen.SandboxProvisionPhaseStartingContainer, "starting the container"},
 		{"agent", apiclientgen.SandboxProvisionPhaseWaitingForAgent, "waiting for the discobox to come up"},
@@ -123,9 +123,58 @@ func TestProvisionStatusNamesTheSourcePush(t *testing.T) {
 	}
 }
 
-// The pull is the one phase with numbers to report, and they are reported as
-// the pair of counts they are. Both totals grow while the manifest is walked,
-// so a percentage would visibly go backwards.
+// A sandbox cloning its source says which source and how far in, for as long
+// as the pool restates it: a full clone of a large remote is often most of
+// the wait, and "waiting for the pool agent" was what it said instead (#138).
+func TestProvisionStatusNamesTheCloneAndHowFarItHasGot(t *testing.T) {
+	const source = "github.com/discobox-ai/discobox"
+	for _, tc := range []struct {
+		name  string
+		clone apimodel.SandboxCloneProgress
+		want  Step
+	}{
+		{"not started", apimodel.SandboxCloneProgress{Source: source}, "cloning " + source},
+		{"control characters", apimodel.SandboxCloneProgress{Source: "example.com/a\x1b[2Jb\u202e"}, `cloning example.com/a\x1b[2Jb\u202e`},
+		{"counting", apimodel.SandboxCloneProgress{
+			Source: source,
+			Stage:  apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageCounting),
+		}, "cloning " + source + " — waiting for the remote to pack it"},
+		{"receiving", apimodel.SandboxCloneProgress{
+			Source:       source,
+			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageReceiving),
+			Objects:      apiclientgen.NewOptInt64(17739),
+			ObjectsTotal: apiclientgen.NewOptInt64(35477),
+			Bytes:        apiclientgen.NewOptInt64(15623782),
+		}, "cloning " + source + " — 14.9 MiB, 50% of 35477 objects"},
+		{"receiving before a throughput", apimodel.SandboxCloneProgress{
+			Source:       source,
+			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageReceiving),
+			Objects:      apiclientgen.NewOptInt64(3),
+			ObjectsTotal: apiclientgen.NewOptInt64(4),
+		}, "cloning " + source + " — 75% of 4 objects"},
+		{"resolving", apimodel.SandboxCloneProgress{
+			Source:       source,
+			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageResolving),
+			Objects:      apiclientgen.NewOptInt64(2576),
+			ObjectsTotal: apiclientgen.NewOptInt64(25762),
+			Bytes:        apiclientgen.NewOptInt64(28940697),
+		}, "cloning " + source + " — 27.6 MiB received, resolving deltas 9%"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := recentProgress(apiclientgen.SandboxProvisionPhaseMaterializingSource)
+			progress := runtime.ProvisionProgress.Value
+			progress.Clone = apiclientgen.NewOptSandboxCloneProgress(tc.clone)
+			runtime.ProvisionProgress = apiclientgen.NewOptSandboxProvisionProgress(progress)
+			if got := ProvisionStatus(provisioning(runtime)); got != tc.want {
+				t.Fatalf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The pull's numbers are reported as the pair of counts they are. Both totals
+// grow while the manifest is walked, so a percentage would visibly go
+// backwards.
 func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
 	line := string(pullLine(apimodel.SandboxPullProgress{
 		Image:          "ghcr.io/discobox-ai/discobox-harness-codex:latest",

@@ -187,8 +187,9 @@ sandbox create requests.
   The words are `Step` constants here so the two frontends cannot describe one
   stage differently; where the line is drawn and when it is cleared is theirs.
 - Not every line is a step this client takes. `ProvisionStatus` renders what the
-  pool agent recorded on the discobox — a phase, and for a pull its byte and
-  layer counts — ignoring a phase older than `ProvisionProgressFresh`. `Status`
+  pool agent recorded on the discobox — a phase, for a pull its byte and
+  layer counts, and for a source's clone the source and git's counts — ignoring
+  a phase older than `ProvisionProgressFresh`. `Status`
   is the entry point every narrated wait uses: when the sandbox's answer is only
   `StepWaitingForPool`, it reads the pool (`PoolReader`) and renders what the
   pool's driver recorded instead (`PoolProvisionStatus`). `awaitSourceRequested`

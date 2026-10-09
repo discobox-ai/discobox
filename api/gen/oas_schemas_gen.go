@@ -514,6 +514,58 @@ func (s *ClearPoolCacheBody) SetStoppedSandboxIds(val []string) {
 
 func (*ClearPoolCacheBody) clearPoolCacheRes() {}
 
+// Where a git clone is. counting - the remote is enumerating, counting and compressing
+// what it will send, and nothing has arrived yet; receiving - objects are arriving;
+// resolving - every object has arrived and git is resolving deltas.
+// Ref: #/components/schemas/CloneProgressStage
+type CloneProgressStage string
+
+const (
+	CloneProgressStageCounting  CloneProgressStage = "counting"
+	CloneProgressStageReceiving CloneProgressStage = "receiving"
+	CloneProgressStageResolving CloneProgressStage = "resolving"
+)
+
+// AllValues returns all CloneProgressStage values.
+func (CloneProgressStage) AllValues() []CloneProgressStage {
+	return []CloneProgressStage{
+		CloneProgressStageCounting,
+		CloneProgressStageReceiving,
+		CloneProgressStageResolving,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CloneProgressStage) MarshalText() ([]byte, error) {
+	switch s {
+	case CloneProgressStageCounting:
+		return []byte(s), nil
+	case CloneProgressStageReceiving:
+		return []byte(s), nil
+	case CloneProgressStageResolving:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CloneProgressStage) UnmarshalText(data []byte) error {
+	switch CloneProgressStage(data) {
+	case CloneProgressStageCounting:
+		*s = CloneProgressStageCounting
+		return nil
+	case CloneProgressStageReceiving:
+		*s = CloneProgressStageReceiving
+		return nil
+	case CloneProgressStageResolving:
+		*s = CloneProgressStageResolving
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/CompleteSandboxApplyBody
 type CompleteSandboxApplyBody struct {
 	// A URL to the JSON Schema for this object.
@@ -8153,6 +8205,52 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
+// NewOptCloneProgressStage returns new OptCloneProgressStage with value set to v.
+func NewOptCloneProgressStage(v CloneProgressStage) OptCloneProgressStage {
+	return OptCloneProgressStage{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCloneProgressStage is optional CloneProgressStage.
+type OptCloneProgressStage struct {
+	Value CloneProgressStage
+	Set   bool
+}
+
+// IsSet returns true if OptCloneProgressStage was set.
+func (o OptCloneProgressStage) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCloneProgressStage) Reset() {
+	var v CloneProgressStage
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCloneProgressStage) SetTo(v CloneProgressStage) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCloneProgressStage) Get() (v CloneProgressStage, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCloneProgressStage) Or(d CloneProgressStage) CloneProgressStage {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCreateSandboxCredentialRequestBodyPurpose returns new OptCreateSandboxCredentialRequestBodyPurpose with value set to v.
 func NewOptCreateSandboxCredentialRequestBodyPurpose(v CreateSandboxCredentialRequestBodyPurpose) OptCreateSandboxCredentialRequestBodyPurpose {
 	return OptCreateSandboxCredentialRequestBodyPurpose{
@@ -11759,6 +11857,52 @@ func (o OptPoolProvisionProgress) Or(d PoolProvisionProgress) PoolProvisionProgr
 	return d
 }
 
+// NewOptPoolSandboxCloneProgress returns new OptPoolSandboxCloneProgress with value set to v.
+func NewOptPoolSandboxCloneProgress(v PoolSandboxCloneProgress) OptPoolSandboxCloneProgress {
+	return OptPoolSandboxCloneProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxCloneProgress is optional PoolSandboxCloneProgress.
+type OptPoolSandboxCloneProgress struct {
+	Value PoolSandboxCloneProgress
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxCloneProgress was set.
+func (o OptPoolSandboxCloneProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxCloneProgress) Reset() {
+	var v PoolSandboxCloneProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxCloneProgress) SetTo(v PoolSandboxCloneProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxCloneProgress) Get() (v PoolSandboxCloneProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxCloneProgress) Or(d PoolSandboxCloneProgress) PoolSandboxCloneProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolSandboxPullProgress returns new OptPoolSandboxPullProgress with value set to v.
 func NewOptPoolSandboxPullProgress(v PoolSandboxPullProgress) OptPoolSandboxPullProgress {
 	return OptPoolSandboxPullProgress{
@@ -11989,6 +12133,52 @@ func (o OptSandboxAgentAutostopStatus) Or(d SandboxAgentAutostopStatus) SandboxA
 	return d
 }
 
+// NewOptSandboxAgentCloneProgress returns new OptSandboxAgentCloneProgress with value set to v.
+func NewOptSandboxAgentCloneProgress(v SandboxAgentCloneProgress) OptSandboxAgentCloneProgress {
+	return OptSandboxAgentCloneProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentCloneProgress is optional SandboxAgentCloneProgress.
+type OptSandboxAgentCloneProgress struct {
+	Value SandboxAgentCloneProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentCloneProgress was set.
+func (o OptSandboxAgentCloneProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentCloneProgress) Reset() {
+	var v SandboxAgentCloneProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentCloneProgress) SetTo(v SandboxAgentCloneProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentCloneProgress) Get() (v SandboxAgentCloneProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentCloneProgress) Or(d SandboxAgentCloneProgress) SandboxAgentCloneProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -12075,6 +12265,52 @@ func (o OptSandboxCPUConsumption) Get() (v SandboxCPUConsumption, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCPUConsumption) Or(d SandboxCPUConsumption) SandboxCPUConsumption {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCloneProgress returns new OptSandboxCloneProgress with value set to v.
+func NewOptSandboxCloneProgress(v SandboxCloneProgress) OptSandboxCloneProgress {
+	return OptSandboxCloneProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCloneProgress is optional SandboxCloneProgress.
+type OptSandboxCloneProgress struct {
+	Value SandboxCloneProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCloneProgress was set.
+func (o OptSandboxCloneProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCloneProgress) Reset() {
+	var v SandboxCloneProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCloneProgress) SetTo(v SandboxCloneProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCloneProgress) Get() (v SandboxCloneProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCloneProgress) Or(d SandboxCloneProgress) SandboxCloneProgress {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15412,13 +15648,80 @@ func (s *PoolResources) init() PoolResources {
 	return m
 }
 
+// The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being
+// cloned and how far the sandbox's clone of it has got.
+// Ref: #/components/schemas/PoolSandboxCloneProgress
+type PoolSandboxCloneProgress struct {
+	// What is being cloned, for a person to read - a remote's host and path, or a local checkout's
+	// directory name.
+	Source string                `json:"source"`
+	Stage  OptCloneProgressStage `json:"stage"`
+	// Objects (deltas, when resolving) done so far in this stage.
+	Objects OptInt64 `json:"objects"`
+	// Objects (deltas, when resolving) this stage has to do, zero while the remote has not said.
+	ObjectsTotal OptInt64 `json:"objectsTotal"`
+	// Bytes received so far, as git counts them.
+	Bytes OptInt64 `json:"bytes"`
+}
+
+// GetSource returns the value of Source.
+func (s *PoolSandboxCloneProgress) GetSource() string {
+	return s.Source
+}
+
+// GetStage returns the value of Stage.
+func (s *PoolSandboxCloneProgress) GetStage() OptCloneProgressStage {
+	return s.Stage
+}
+
+// GetObjects returns the value of Objects.
+func (s *PoolSandboxCloneProgress) GetObjects() OptInt64 {
+	return s.Objects
+}
+
+// GetObjectsTotal returns the value of ObjectsTotal.
+func (s *PoolSandboxCloneProgress) GetObjectsTotal() OptInt64 {
+	return s.ObjectsTotal
+}
+
+// GetBytes returns the value of Bytes.
+func (s *PoolSandboxCloneProgress) GetBytes() OptInt64 {
+	return s.Bytes
+}
+
+// SetSource sets the value of Source.
+func (s *PoolSandboxCloneProgress) SetSource(val string) {
+	s.Source = val
+}
+
+// SetStage sets the value of Stage.
+func (s *PoolSandboxCloneProgress) SetStage(val OptCloneProgressStage) {
+	s.Stage = val
+}
+
+// SetObjects sets the value of Objects.
+func (s *PoolSandboxCloneProgress) SetObjects(val OptInt64) {
+	s.Objects = val
+}
+
+// SetObjectsTotal sets the value of ObjectsTotal.
+func (s *PoolSandboxCloneProgress) SetObjectsTotal(val OptInt64) {
+	s.ObjectsTotal = val
+}
+
+// SetBytes sets the value of Bytes.
+func (s *PoolSandboxCloneProgress) SetBytes(val OptInt64) {
+	s.Bytes = val
+}
+
 // Progress on one sandbox that is being provisioned. It is deliberately not a
 // PoolSandboxState: a state observation always carries an observed state, and progress
 // has none to report.
 // Ref: #/components/schemas/PoolSandboxProgress
 type PoolSandboxProgress struct {
-	Phase PoolSandboxProvisionPhase  `json:"phase"`
-	Pull  OptPoolSandboxPullProgress `json:"pull"`
+	Phase PoolSandboxProvisionPhase   `json:"phase"`
+	Pull  OptPoolSandboxPullProgress  `json:"pull"`
+	Clone OptPoolSandboxCloneProgress `json:"clone"`
 	// Sandbox the progress is about.
 	SandboxId string `json:"sandboxId"`
 }
@@ -15431,6 +15734,11 @@ func (s *PoolSandboxProgress) GetPhase() PoolSandboxProvisionPhase {
 // GetPull returns the value of Pull.
 func (s *PoolSandboxProgress) GetPull() OptPoolSandboxPullProgress {
 	return s.Pull
+}
+
+// GetClone returns the value of Clone.
+func (s *PoolSandboxProgress) GetClone() OptPoolSandboxCloneProgress {
+	return s.Clone
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -15446,6 +15754,11 @@ func (s *PoolSandboxProgress) SetPhase(val PoolSandboxProvisionPhase) {
 // SetPull sets the value of Pull.
 func (s *PoolSandboxProgress) SetPull(val OptPoolSandboxPullProgress) {
 	s.Pull = val
+}
+
+// SetClone sets the value of Clone.
+func (s *PoolSandboxProgress) SetClone(val OptPoolSandboxCloneProgress) {
+	s.Clone = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -18071,6 +18384,61 @@ func (s *SandboxAgentCPUUsage) SetLimitVcpus(val OptFloat64) {
 	s.LimitVcpus = val
 }
 
+// A source's clone as git's progress output reports it, parsed for a status line. Each
+// stage counts against its own total, which git knows before the stage starts, so
+// objects/objectsTotal is progress toward a fixed target within a stage; bytes carries
+// over from receiving into resolving.
+// Ref: #/components/schemas/SandboxAgentCloneProgress
+type SandboxAgentCloneProgress struct {
+	Stage CloneProgressStage `json:"stage"`
+	// Objects (deltas, when resolving) done so far in this stage.
+	Objects OptInt64 `json:"objects"`
+	// Objects (deltas, when resolving) this stage has to do, zero while the remote has not said.
+	ObjectsTotal OptInt64 `json:"objectsTotal"`
+	// Bytes received so far, as git counts them.
+	Bytes OptInt64 `json:"bytes"`
+}
+
+// GetStage returns the value of Stage.
+func (s *SandboxAgentCloneProgress) GetStage() CloneProgressStage {
+	return s.Stage
+}
+
+// GetObjects returns the value of Objects.
+func (s *SandboxAgentCloneProgress) GetObjects() OptInt64 {
+	return s.Objects
+}
+
+// GetObjectsTotal returns the value of ObjectsTotal.
+func (s *SandboxAgentCloneProgress) GetObjectsTotal() OptInt64 {
+	return s.ObjectsTotal
+}
+
+// GetBytes returns the value of Bytes.
+func (s *SandboxAgentCloneProgress) GetBytes() OptInt64 {
+	return s.Bytes
+}
+
+// SetStage sets the value of Stage.
+func (s *SandboxAgentCloneProgress) SetStage(val CloneProgressStage) {
+	s.Stage = val
+}
+
+// SetObjects sets the value of Objects.
+func (s *SandboxAgentCloneProgress) SetObjects(val OptInt64) {
+	s.Objects = val
+}
+
+// SetObjectsTotal sets the value of ObjectsTotal.
+func (s *SandboxAgentCloneProgress) SetObjectsTotal(val OptInt64) {
+	s.ObjectsTotal = val
+}
+
+// SetBytes sets the value of Bytes.
+func (s *SandboxAgentCloneProgress) SetBytes(val OptInt64) {
+	s.Bytes = val
+}
+
 // Ref: #/components/schemas/SandboxAgentGitSourceStatus
 type SandboxAgentGitSourceStatus struct {
 	Slug       string    `json:"slug"`
@@ -18886,8 +19254,11 @@ type SandboxAgentSourceState struct {
 	// Why the last attempt failed. Present only when state is failed.
 	Error OptString `json:"error"`
 	// The runtime-config revision this state was reached under.
-	Revision  int64     `json:"revision"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Revision int64 `json:"revision"`
+	// How far the clone has got, as git reports it. Present only while state is cloning and git has said
+	// something; a source resuming from a clone already in place fetches with no progress to report.
+	Progress  OptSandboxAgentCloneProgress `json:"progress"`
+	UpdatedAt time.Time                    `json:"updatedAt"`
 }
 
 // GetSlug returns the value of Slug.
@@ -18913,6 +19284,11 @@ func (s *SandboxAgentSourceState) GetError() OptString {
 // GetRevision returns the value of Revision.
 func (s *SandboxAgentSourceState) GetRevision() int64 {
 	return s.Revision
+}
+
+// GetProgress returns the value of Progress.
+func (s *SandboxAgentSourceState) GetProgress() OptSandboxAgentCloneProgress {
+	return s.Progress
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -18943,6 +19319,11 @@ func (s *SandboxAgentSourceState) SetError(val OptString) {
 // SetRevision sets the value of Revision.
 func (s *SandboxAgentSourceState) SetRevision(val int64) {
 	s.Revision = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *SandboxAgentSourceState) SetProgress(val OptSandboxAgentCloneProgress) {
+	s.Progress = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
@@ -19330,6 +19711,74 @@ func (s *SandboxCPUConsumptionAdditional) init() SandboxCPUConsumptionAdditional
 		*s = m
 	}
 	return m
+}
+
+// The source a materializing_source phase is cloning, and how far the clone has got. The
+// sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
+// while it waits on them. Only source is certain: a sandbox whose agent predates
+// reporting clone progress, or a clone git has said nothing about yet, has no stage.
+// Ref: #/components/schemas/SandboxCloneProgress
+type SandboxCloneProgress struct {
+	// What is being cloned, for a person to read - a remote's host and path, or a local checkout's
+	// directory name.
+	Source string                `json:"source"`
+	Stage  OptCloneProgressStage `json:"stage"`
+	// Objects (deltas, when resolving) done so far in this stage.
+	Objects OptInt64 `json:"objects"`
+	// Objects (deltas, when resolving) this stage has to do, zero while the remote has not said.
+	ObjectsTotal OptInt64 `json:"objectsTotal"`
+	// Bytes received so far, as git counts them.
+	Bytes OptInt64 `json:"bytes"`
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxCloneProgress) GetSource() string {
+	return s.Source
+}
+
+// GetStage returns the value of Stage.
+func (s *SandboxCloneProgress) GetStage() OptCloneProgressStage {
+	return s.Stage
+}
+
+// GetObjects returns the value of Objects.
+func (s *SandboxCloneProgress) GetObjects() OptInt64 {
+	return s.Objects
+}
+
+// GetObjectsTotal returns the value of ObjectsTotal.
+func (s *SandboxCloneProgress) GetObjectsTotal() OptInt64 {
+	return s.ObjectsTotal
+}
+
+// GetBytes returns the value of Bytes.
+func (s *SandboxCloneProgress) GetBytes() OptInt64 {
+	return s.Bytes
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxCloneProgress) SetSource(val string) {
+	s.Source = val
+}
+
+// SetStage sets the value of Stage.
+func (s *SandboxCloneProgress) SetStage(val OptCloneProgressStage) {
+	s.Stage = val
+}
+
+// SetObjects sets the value of Objects.
+func (s *SandboxCloneProgress) SetObjects(val OptInt64) {
+	s.Objects = val
+}
+
+// SetObjectsTotal sets the value of ObjectsTotal.
+func (s *SandboxCloneProgress) SetObjectsTotal(val OptInt64) {
+	s.ObjectsTotal = val
+}
+
+// SetBytes sets the value of Bytes.
+func (s *SandboxCloneProgress) SetBytes(val OptInt64) {
+	s.Bytes = val
 }
 
 // Ref: #/components/schemas/SandboxConfig
@@ -21592,8 +22041,9 @@ func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 // What a provisioning sandbox is being made to do right now, named for a client that
 // is waiting to attach and wants to know what it is waiting for. It is an
 // observation and never a state: it decides nothing, and it is history the moment the
-// phase ends. pulling_image is the phase that carries pull byte counts; the rest are
-// named work with no denominator to report.
+// phase ends. pulling_image carries pull byte counts and materializing_source the clone
+// of the source it is materializing; the rest are named work with no denominator to
+// report.
 // Ref: #/components/schemas/SandboxProvisionPhase
 type SandboxProvisionPhase string
 
@@ -21666,13 +22116,16 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 
 // Work underway on a sandbox that has no state transition to announce it, reported by
 // the hosting pool-agent. A client waiting to attach reads this to say what
-// it is waiting for. The phase always says what is happening; pull refines the one
-// phase that can report how far in it is, because an image pull is the longest thing
-// an attach waits behind.
+// it is waiting for. The phase always says what is happening; pull and clone refine the
+// two phases that can report how far in they are, because an image pull and a clone of
+// a large remote are the longest things an attach waits behind. The pool restates
+// materializing_source with each read of the clone, so the phase stays fresh for the
+// whole of a long one.
 // Ref: #/components/schemas/SandboxProvisionProgress
 type SandboxProvisionProgress struct {
-	Phase SandboxProvisionPhase  `json:"phase"`
-	Pull  OptSandboxPullProgress `json:"pull"`
+	Phase SandboxProvisionPhase   `json:"phase"`
+	Pull  OptSandboxPullProgress  `json:"pull"`
+	Clone OptSandboxCloneProgress `json:"clone"`
 }
 
 // GetPhase returns the value of Phase.
@@ -21685,6 +22138,11 @@ func (s *SandboxProvisionProgress) GetPull() OptSandboxPullProgress {
 	return s.Pull
 }
 
+// GetClone returns the value of Clone.
+func (s *SandboxProvisionProgress) GetClone() OptSandboxCloneProgress {
+	return s.Clone
+}
+
 // SetPhase sets the value of Phase.
 func (s *SandboxProvisionProgress) SetPhase(val SandboxProvisionPhase) {
 	s.Phase = val
@@ -21693,6 +22151,11 @@ func (s *SandboxProvisionProgress) SetPhase(val SandboxProvisionPhase) {
 // SetPull sets the value of Pull.
 func (s *SandboxProvisionProgress) SetPull(val OptSandboxPullProgress) {
 	s.Pull = val
+}
+
+// SetClone sets the value of Clone.
+func (s *SandboxProvisionProgress) SetClone(val OptSandboxCloneProgress) {
+	s.Clone = val
 }
 
 // An image pull as a status line wants it. Both totals grow while the manifest is
