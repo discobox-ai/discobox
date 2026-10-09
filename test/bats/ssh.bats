@@ -110,7 +110,9 @@ setup_file() {
 
 teardown_file() {
   cd "$REPO_ROOT"
-  [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ] && cli admin box delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
+  if [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ]; then
+    cli admin box delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
+  fi
 
   local pool_ids=""
   if [ -f "$DISCOBOX_BATS_DB" ]; then

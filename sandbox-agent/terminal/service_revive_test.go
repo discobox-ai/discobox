@@ -70,7 +70,7 @@ type reviveFixture struct {
 	installer *noopInstaller
 }
 
-func newReviveService(t *testing.T, harness config.Harness) reviveFixture {
+func newReviveService(t *testing.T, harness config.Harness, harnessMode string) reviveFixture {
 	t.Helper()
 	dir := shorttmp.Dir(t)
 	units := &shimUnits{}
@@ -92,6 +92,7 @@ func newReviveService(t *testing.T, harness config.Harness) reviveFixture {
 		RuntimeDir:  filepath.Join(dir, "rt"),
 		Env:         env,
 		Harness:     harness,
+		HarnessMode: harnessMode,
 		Units:       units,
 		Installer:   installer,
 	})
@@ -141,7 +142,7 @@ func TestReviveResumesDeadTerminalInPlace(t *testing.T) {
 		ID:              "codex",
 		Command:         []string{"codex"},
 		RelaunchCommand: []string{"codex", "resume", "--last"},
-	})
+	}, "")
 	svc, units, installer := fx.svc, fx.units, fx.installer
 	created, err := svc.Create(context.Background(), CreateRequest{})
 	if err != nil {
@@ -191,7 +192,7 @@ func TestReviveResumesDeadTerminalInPlace(t *testing.T) {
 
 // A plain (non-terminal) exec is fire-and-forget and must never be revived.
 func TestReviveRefusesNonTerminalExec(t *testing.T) {
-	fx := newReviveService(t, config.Harness{ID: "codex", Command: []string{"codex"}})
+	fx := newReviveService(t, config.Harness{ID: "codex", Command: []string{"codex"}}, "")
 	created, err := fx.execs.Create(context.Background(), execs.CreateRequest{Command: []string{"echo", "ok"}})
 	if err != nil {
 		t.Fatalf("create plain exec: %v", err)
@@ -209,7 +210,7 @@ func TestEnsurePrimaryRevivesDeadPrimaryRecord(t *testing.T) {
 		ID:              "codex",
 		Command:         []string{"codex"},
 		RelaunchCommand: []string{"codex", "resume", "--last"},
-	})
+	}, "")
 	svc, units := fx.svc, fx.units
 	if err := svc.EnsurePrimary(context.Background(), []string{"build the thing"}); err != nil {
 		t.Fatalf("first ensure: %v", err)
@@ -250,4 +251,42 @@ func TestEnsurePrimaryRevivesDeadPrimaryRecord(t *testing.T) {
 	if list := svc.List(); len(list) != 1 {
 		t.Fatalf("list = %d execs, want exactly one primary identity", len(list))
 	}
+}
+
+// A configure flow's command runs once, and how it ended is what the server
+// commits on. The client attaches to the primary and then starts it, so a
+// command that has already exited when the start arrives would, if revived, run
+// a second time nobody watches — and its fenced shim would take the first
+// run's output away from the attach replaying it.
+func TestConfigureDoesNotReviveAnEndedPrimary(t *testing.T) {
+	fx := newReviveService(t, config.Harness{ID: "codex", Command: []string{"configure-codex"}}, config.HarnessModeConfig)
+	svc, units := fx.svc, fx.units
+	if err := svc.EnsurePrimary(context.Background(), nil); err != nil {
+		t.Fatalf("ensure primary: %v", err)
+	}
+	first, ok := svc.CurrentPrimary()
+	if !ok {
+		t.Fatal("no primary after launch")
+	}
+	markExited(t, svc, first.ID)
+	if ended, _ := svc.Get(first.ID); svc.Relaunches(ended) {
+		t.Fatal("an exited configure run reports that it relaunches")
+	}
+
+	for _, resolve := range []func() (execs.Exec, error){
+		func() (execs.Exec, error) { return svc.ResolvePrimary(context.Background()) },
+		func() (execs.Exec, error) { return svc.Revive(context.Background(), first.ID) },
+	} {
+		got, err := resolve()
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if got.ID != first.ID || got.Status != execs.StatusExited {
+			t.Fatalf("resolved %s (%s), want the exited run %s left as it ended", got.ID, got.Status, first.ID)
+		}
+	}
+	if len(units.starts) != 1 {
+		t.Fatalf("unit starts = %d, want the configure command run once", len(units.starts))
+	}
+
 }

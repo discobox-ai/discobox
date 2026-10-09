@@ -1,6 +1,6 @@
 # 0145 — A sandbox declares its platform, and a non-Linux one is a VM template
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's pool-assembled template superseded by [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md), which builds a disco-vm image in the server's provider; §1 narrowed by its image kind, and §5 for macOS, whose account has a uid)
 - **Date**: 2026-09-23
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
   [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),

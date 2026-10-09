@@ -50,7 +50,13 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
+  # Through the Taskfile rather than docker directly: both agent images are
+  # built FROM a shared base image, and these targets are what know to build it
+  # first. The sandbox agent image is what the stub harness is built FROM when
+  # no `task dev` loop has named a dev build in .env, so a clean checkout needs
+  # it built here.
+  go tool task build:pool-agent-image
+  go tool task build:sandbox-agent-image
   go tool task build:harness-stub-image
   build_keep_stub_image
 
@@ -326,12 +332,14 @@ configure_stub() {
   # The value is offered separately, as a sentinel under the PREV_ prefix.
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is set"* ]]
 
-  # This run returned a fresh value, so it replaces the previous generation
-  # rather than leaking an orphan alongside it.
+  # This run returned a fresh value for an env name the harness already binds,
+  # so it updates that secret in place rather than leaking an orphan beside it.
+  # The ID stays: every sandbox sentinel is keyed on it, and running sandboxes
+  # resolve the new value through it.
   run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token'"
   [ "$output" = "1" ]
   after_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token'")"
-  [ "$after_id" != "$before_id" ]
+  [ "$after_id" = "$before_id" ]
 }
 
 @test "a configure that returns usePrevious keeps the existing secret" {

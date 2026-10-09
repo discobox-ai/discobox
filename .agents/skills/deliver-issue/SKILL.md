@@ -82,6 +82,12 @@ Nobody may be watching your screen to answer.
 
 ## 1. Implement
 
+When this box triaged the issue (`triage-issue`), start from the failing test
+it left in `issue<N>_test.go`, the one posted on the issue: move it, unchanged,
+into the file where its neighbors live, so the fix is proven by that test. The
+triage's investigation is already in your context; re-read only the comments
+posted since.
+
 Build the change the way `CLAUDE.md` says: structural, tests with it, the
 affected `DESIGN.md` updated in the same change, an ADR only when a plausible
 alternative is rejected. A decision that is not yours — scope, a product

@@ -1,6 +1,6 @@
 ---
 name: test-fix
-description: Test a change in two phases — first the unit, integration, and Bats tests that cover it, then a QA subagent that drives the running `task dev` loop as a user would and validates the behavior end to end without fixing anything. Use after a fix is written and reviewed, when the user wants a change tested or QA-verified, or when triage-issue §6 reaches its test step.
+description: Test a change in two phases — first the unit, integration, and Bats tests that cover it, then a QA subagent that drives the running `task dev` loop as a user would and validates the behavior end to end without fixing anything. Use after a fix is written and reviewed, when the user wants a change tested or QA-verified.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, SendMessage, Skill, Monitor, AskUserQuestion
 metadata:
   argument-hint: "[base-ref] [--issue N]"
@@ -17,9 +17,9 @@ tests fail is wasted.
 
 ## Inputs
 
-- **Base** — the commit before the change. `triage-issue` §6 records it; on
-  its own, use the argument, or `discobox-review base`'s merge-base. The change
-  under test is `git diff <base>` — committed and uncommitted together.
+- **Base** — the commit before the change: the argument, or `discobox-review
+  base`'s merge-base. The change under test is `git diff <base>` — committed
+  and uncommitted together.
 - **Issue**, when there is one: its number, and the triage comment's
   reproduction.
 - **Should now be true** — write this before phase 1: two to five plain
@@ -62,7 +62,7 @@ cat /proc/loadavg        # cli and tui suites fail spuriously above ~100
 - **In code the change touched, or its tests** — yours. Fix it, send the fix
   through `discobox-review`, commit, and restart phase 1 at the step that failed.
 - **In a test the change did not touch** — re-run it once. Still failing: run
-  it at `<base>` (the switch procedure in `triage-issue` §3, and only with a
+  it at `<base>` (the switch procedure in `triage-issue` §2, and only with a
   clean tree). Fails there too → pre-existing: record it, it does not block.
   Passes there → yours after all.
 - **A flake** — report the rate over `-count=20`, not one run, and whether

@@ -136,7 +136,10 @@ flowchart LR
   such as a container whose healthcheck has not passed — is not a failure at
   all: the pass writes nothing and asks again (`poolHostComingUpRequeue`),
   because repairing it would remove and recreate the container and restart the
-  healthcheck something is waiting on. Any other failed `ReconcilePool` on a
+  healthcheck something is waiting on. A run whose generation-guarded write
+  loses to newer intent (`reconcile.ErrSuperseded`), including `begin`'s
+  inside the provider call, settles cleanly without a repair; that intent's
+  mark re-runs the pool. Any other failed `ReconcilePool` on a
   pool with assigned sandboxes is repaired in place (`RepairPool`); a runtime
   whose
   agent never registers within `poolRegistrationTimeout` (2m, armed with

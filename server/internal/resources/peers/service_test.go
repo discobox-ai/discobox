@@ -144,3 +144,17 @@ func TestDeleteReportsWhatItCouldNotFind(t *testing.T) {
 		t.Fatalf("error %q does not name what was looked up", err)
 	}
 }
+
+// Deleting a peer that is not enrolled serves a 404 and still matches the
+// store's not-found sentinel, so an in-process caller can tolerate "already
+// gone" with errors.Is.
+func TestDeleteMissingPeerKeepsNotFoundSentinel(t *testing.T) {
+	svc := peers.NewService(newStore(t))
+	err := svc.DeletePeer(context.Background(), displayID)
+	if got := statusOf(t, err); got != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", got, http.StatusNotFound)
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("errors.Is(%v, store.ErrNotFound) = false, want true", err)
+	}
+}
