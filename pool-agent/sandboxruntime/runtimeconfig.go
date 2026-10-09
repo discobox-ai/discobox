@@ -360,10 +360,21 @@ func (r *DockerSandboxRuntime) sendRuntimeConfig(ctx context.Context, dial Diale
 		return sandboxconfig.RuntimeConfig{}, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Ask before sending the document. A refusal the agent answers before
+	// reading the body (its auth, or an agent with no intake) then arrives with
+	// nothing unread on the connection; without it, a document past the 256 KiB
+	// net/http drains on its own is closed over unread bytes, and the reset can
+	// reach the pool in place of the refusal (#106). The transport waits for the
+	// agent's answer as long as the call may take, not the second it would send
+	// the body after anyway: a loaded agent is when the reset happens, and an
+	// agent that accepts sends the go-ahead as soon as it reads.
+	req.Header.Set("Expect", "100-continue")
 	// The connection is no credential: the sandbox agent decides on this token
 	// alone, whatever carried it (ADR 0126 §5).
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
+	transport := dial.Transport()
+	transport.ExpectContinueTimeout = runtimeConfigCallTimeout
+	resp, err := (&http.Client{Transport: transport}).Do(req)
 	if err != nil {
 		return sandboxconfig.RuntimeConfig{}, false, fmt.Errorf("deliver runtime config to sandbox %s: %w", sandboxID, err)
 	}
