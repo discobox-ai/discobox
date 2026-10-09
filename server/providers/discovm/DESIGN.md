@@ -98,7 +98,13 @@ image, once #123 adds its twin), the sandbox agent, then the harnesses. The
 chain is `twins` in `build.go`, the same one `build:boxd-images` builds for
 boxd, which `TestTwinsMatchTheTaskfile` holds it to. A driver builds the twins it
 has a spec for and skips the rest, and one with none answers
-`ErrGuestImageBuildUnsupported`.
+`ErrGuestImageBuildUnsupported`. One chain builds at a time per state root,
+across every provider instance and every process that shares it (`lockChain`,
+a file lock at `<root>/build.lock`). The root is the user's, not one server's
+data directory, so two servers can share it. A chain resolves each parent by a
+tag the chain itself moves, and disco-vm locks only each tag update, so two at
+once would build one's children on the other's parents. A second build waits,
+says so in its output, and gives up when its caller does.
 
 The image is the server's, not the pool's, so the pool named only says where
 the operation was asked from. `RestartHost` is refused: a machine is cloned

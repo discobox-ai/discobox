@@ -10,9 +10,11 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/vm/pkg/build"
 
+	"github.com/discobox-ai/discobox/internal/filelock"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
@@ -97,6 +99,12 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 
 	reader, writer := io.Pipe()
 	go func() {
+		release, err := lockChain(ctx, r.engine.Root, writer)
+		if err != nil {
+			_ = writer.CloseWithError(err)
+			return
+		}
+		defer release()
 		builder := &build.Builder{Engine: r.engine, Out: writer}
 		for _, image := range images {
 			fmt.Fprintf(writer, "building %s from %s\n", image.Tag, image.Spec(driver))
@@ -115,6 +123,41 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		_ = writer.Close()
 	}()
 	return &sandbox.GuestImageBuild{Destination: r.engine.Images.Root, ReadCloser: reader}, nil
+}
+
+// chainLockPoll is how often a chain waiting for the root's build lock asks
+// again. A chain takes minutes, so a second is quick enough.
+const chainLockPoll = time.Second
+
+// lockChain serializes build chains per engine root, across every process that
+// shares it, by a file lock in the root. A chain resolves each parent by a tag
+// the chain itself moves, and disco-vm locks only each tag update: two chains
+// at once, from two provider instances or two servers whose data directories
+// differ but whose user's disco-vm root does not, would build one's children on
+// the other's parents. A file lock is per open file, so it also holds two
+// chains in this process apart. A waiting chain says so on out once, and gives
+// up when ctx ends.
+func lockChain(ctx context.Context, root string, out io.Writer) (func(), error) {
+	path := filepath.Join(root, "build.lock")
+	said := false
+	for {
+		lock, err := filelock.TryAcquire(path)
+		if err == nil {
+			return func() { _ = lock.Release() }, nil
+		}
+		if !errors.Is(err, filelock.ErrBusy) {
+			return nil, err
+		}
+		if !said {
+			fmt.Fprintf(out, "waiting for another image build in %s to finish\n", root)
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(chainLockPoll):
+		}
+	}
 }
 
 // checkoutDir checks the directory a build was asked to read: an absolute path
