@@ -1,6 +1,6 @@
 # 26-10-09-106 — disco-vm is a pool runtime, and the server runs its machines
 
-- **Status**: Proposed (on acceptance: supersedes [0144](0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md)
+- **Status**: Accepted (supersedes [0144](0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md)
   §2's hypervisor handle in the agent and its helper that serves no API, and
   narrows §1's "Linux sandboxes keep the existing VM-and-container pools" and
   §3's reason with it, by extending 0144's Docker-free pool to a Linux machine
