@@ -82,6 +82,12 @@ const (
 	// underline promises. See links.go.
 	hitURL
 
+	// hitIssue is the workspace header's `issue #N`: a link like hitURL, whose
+	// plain click opens the issue as a tab of the workspace rather than its
+	// page (idx is the number), while Ctrl-click still follows the link. See
+	// issue.go.
+	hitIssue
+
 	// hitPrompt is the composer's text area, where a press places the caret
 	// and a drag selects rather than meaning anything about the window.
 	hitPrompt
@@ -265,7 +271,7 @@ func (z *zones) at(x, y int) (zone, bool) {
 func (z *zones) beneathLinks(x, y int) (zone, bool) {
 	for i := len(z.marks) - 1; i >= 0; i-- {
 		m := z.marks[i]
-		if m.what.kind != hitURL && x >= m.x && x < m.x+m.width && y >= m.y && y < m.y+m.height {
+		if m.what.kind != hitURL && m.what.kind != hitIssue && x >= m.x && x < m.x+m.width && y >= m.y && y < m.y+m.height {
 			return m, true
 		}
 	}

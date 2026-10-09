@@ -26,18 +26,28 @@ type editorDoneMsg struct {
 // alternate screen, so the editor gets a screen of its own — and redraws when
 // it exits.
 func editPrompt(ctx context.Context, text string) tea.Cmd {
-	file, err := os.CreateTemp("", "discobox-prompt-*.md")
+	return editText(ctx, text, "prompt", func(path string, err error) tea.Msg {
+		return editorDoneMsg{path: path, err: err}
+	})
+}
+
+// editText is that round trip for any text the window holds — the prompt, an
+// issue comment — named in what it says when it fails. done is handed the temp
+// file once the editor exits; reading it back, and removing it, is the
+// caller's.
+func editText(ctx context.Context, text, what string, done func(path string, err error) tea.Msg) tea.Cmd {
+	file, err := os.CreateTemp("", "discobox-"+strings.ReplaceAll(what, " ", "-")+"-*.md")
 	if err != nil {
-		return failed("cannot write the prompt out: %v", err)
+		return failed("cannot write the %s out: %v", what, err)
 	}
 	if _, err := file.WriteString(text); err != nil {
 		file.Close()
 		os.Remove(file.Name())
-		return failed("cannot write the prompt out: %v", err)
+		return failed("cannot write the %s out: %v", what, err)
 	}
 	if err := file.Close(); err != nil {
 		os.Remove(file.Name())
-		return failed("cannot write the prompt out: %v", err)
+		return failed("cannot write the %s out: %v", what, err)
 	}
 
 	command, err := editorCommand(ctx, file.Name())
@@ -45,9 +55,8 @@ func editPrompt(ctx context.Context, text string) tea.Cmd {
 		os.Remove(file.Name())
 		return failed("%v", err)
 	}
-	return tea.ExecProcess(command, func(err error) tea.Msg {
-		return editorDoneMsg{path: file.Name(), err: err}
-	})
+	path := file.Name()
+	return tea.ExecProcess(command, func(err error) tea.Msg { return done(path, err) })
 }
 
 // editorCommand resolves the editor the way every tool that shells out to one

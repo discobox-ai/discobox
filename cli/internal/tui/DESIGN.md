@@ -37,6 +37,7 @@ flowchart LR
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
     WS -->|leader A| Aud["audit screen → FollowAudit / AuditDetail"]
+    WS -->|leader i, issue #N| Iss["issue tab → Issue / CommentOnIssue / SetIssueState"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|v| ACard["config card → HarnessSecrets"]
     A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
@@ -579,7 +580,54 @@ repository the tag is plain: `issue=4` alone does not say whose issue 4.
   them.
 - **In the workspace**, the header carries them as `issue #4 · PR #9`
   (`workField`) after the id, and gives them up last: they say what the work
-  is for.
+  is for. A plain click on the issue opens it as a tab, below, rather
+  than the browser (`hitIssue`); Ctrl-click still follows the link, and the
+  pull request is the page either way.
+
+## The issue tab
+
+The issue a discobox is tagged with, read in the workspace (`issue.go`):
+everything its page shows — title, state, author, assignees, labels, type,
+milestone, sub-issues, the description, and the timeline of comments and
+events — with markdown rendered by glamour, a field to comment from, and `x`
+to close it (as completed or not planned) or reopen it. It is opened by a plain
+click on the header's `issue #N`, or `leader i`.
+
+- **A tab, not a screen.** It is a pane in the shells column (`pane.issue`),
+  so it is everything a tab is for free: a number, a place in `leader ←/→`,
+  the column's `[+]` and `[x]`, `leader X`, and the whole key map behind the
+  leader. Its termpane is never attached to a stream — it is there for the key
+  map, which termpane answers with nothing attached — and the box draws the
+  issue in place of a grid. Opening the same issue again focuses its tab.
+- **Its keys are its own, never a terminal's.** Every key but the leader
+  sequence goes to the issue (`issueKeyPress`), the way a finished pane's do;
+  a press focuses it and goes on into the window's selection, and the wheel
+  scrolls it.
+- **What it does to GitHub is deliberate.** Enter is a newline in a comment, so
+  `Ctrl-S` posts; `Alt-E` writes it in `$EDITOR` (`editText`, the prompt's own
+  round trip). `x` asks before it closes or reopens, since everyone watching
+  the issue hears about it. A refused post keeps every word; whatever lands,
+  the issue is read again and scrolled to the foot to show it.
+- **GitHub is read from this machine, as its person** (`DataSource.Issue`,
+  `CommentOnIssue`, `SetIssueState`, `cli/internal/github`): the token `gh` is
+  logged in with, or `GH_TOKEN` / `GITHUB_TOKEN`. Nothing goes through the
+  discobox or the server. With no token a public issue still reads, at most
+  every five minutes; a change says how to log in.
+- **What GitHub says is display data.** The issue arrives in this package's own
+  types (`Issue`), every string already escaped by the data source: a title or
+  a comment carrying an escape sequence is shown, not obeyed. The links glamour
+  draws in a comment are controls like the header's, marked from the lines as
+  drawn (`lineLinks`) — the absolute http and https ones only (`webLink`): a
+  click hands the URL to this machine's handler, which opens a `file://` or a
+  custom scheme a stranger wrote as readily as a page.
+- **Kept fresh, not live.** Read in full on open, on `r` and after a change,
+  and every minute (`issueRefreshEvery`) as cheaply as the data source can say
+  nothing changed (`DataSource.Issue`'s `full`); its messages are addressed to the pane by id,
+  so a read for a tab that has closed is dropped, and carry the read's number,
+  so only the latest one asked for is taken. The `x` question stands over the
+  tab (`dialog.over`) and goes when it does. A failed read leaves the last
+  one on screen under the reason. The rendered lines are cached per read and
+  width, since glamour on every frame is a cost the frame rate pays.
 
 ## The audit screen
 
@@ -2635,6 +2683,7 @@ the newest one where the busy line goes.
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
+| `issue.go` | the issue tab: a GitHub issue as a pane of the shells column, its keys, the comment field, closing and reopening, and how the page is laid out as lines |
 | `audit.go` | the audit screen: the followed timeline over the workspace, its search, and a record's card |
 | `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |

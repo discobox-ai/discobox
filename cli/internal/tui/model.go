@@ -1010,6 +1010,21 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case auditUpdateMsg:
 		return m.auditUpdated(msg)
 
+	case issueLoadedMsg:
+		return m.issueLoaded(msg)
+
+	case issueTickMsg:
+		return m.issueTicked(msg)
+
+	case issuePostedMsg:
+		return m.issuePosted(msg)
+
+	case issueEditedMsg:
+		return m.issueEdited(msg)
+
+	case issueStateMsg:
+		return m.issueStateSet(msg)
+
 	case auditEndedMsg:
 		return m.auditEnded(msg)
 
@@ -3659,6 +3674,14 @@ func (m *Model) paneHints() []hint {
 		return nil
 	}
 	leader := m.leader()
+	if p.issue != nil {
+		// The issue's own keys, then the way back to the panes beside it.
+		hints := issueHints(p.issue)
+		if !p.issue.composing {
+			hints = append(hints, says(leader+" ←/→ pane"), pressing(leader+" "+paneDetachAlt+" detach", leader, paneDetachAlt))
+		}
+		return hints
+	}
 	if p.exited {
 		// The same word the banner is using: a pane that failed says so at
 		// both ends of itself, rather than reporting the end of the stream
@@ -3749,6 +3772,11 @@ func (m *Model) paneHints() []hint {
 	// nothing points at is a picker nobody opens.
 	hints = append(hints, pressing(leader+" "+toolsKey+" tools", leader, toolsKey))
 	hints = append(hints, pressing(leader+" "+auditKey+" audit", leader, auditKey))
+	// The issue is offered where there is one to show: an issue= tag on a
+	// GitHub repository.
+	if _, ok := m.currentBox().issueNumber(); ok {
+		hints = append(hints, pressing(leader+" "+issueKey+" issue", leader, issueKey))
+	}
 	if len(m.panes()) > 1 {
 		hints = append(hints, says(leader+" ←/→ pane"))
 		if len(m.numbered()) > 1 {
@@ -4010,6 +4038,13 @@ func (m *Model) helpText() string {
 		"                   as you type, fzf-style — the letters in order, not",
 		"                   together — and lights what matched; ↑ ↓ move",
 		"                   while typing, Enter keeps the filter, Esc clears it",
+		"    " + leader + " " + issueKey + "       the GitHub issue the discobox is tagged issue=N",
+		"                   with, as a tab on the right — a plain click on the",
+		"                   header's issue #N does the same, Ctrl-click opens",
+		"                   the page. ↑ ↓ scroll, c writes a comment (Ctrl-S",
+		"                   posts it, Alt-E edits it in $EDITOR), x closes or",
+		"                   reopens the issue, o opens the page, r reads it",
+		"                   again, q closes the tab",
 		"    " + leader + " " + credentialsLeaderKey + "       answer the credential request in the banner",
 		"    " + leader + " " + bannerDismissKey + "       dismiss the banner, like its ✕; it comes back",
 		"                   when what it says happens again",
