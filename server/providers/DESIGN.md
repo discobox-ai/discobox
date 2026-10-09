@@ -11,11 +11,12 @@ orchestration, and API shape.
 
 A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
 runs the pool-agent container, and the pool's sandboxes run beside it on the
-same Docker daemon — never nested inside it.
+same Docker daemon — never nested inside it. A `discovm` pool is the exception
+that runs no Docker: its sandboxes are disco-vm machines (ADR 26-10-09-106).
 
 `providers.RegisterBuiltInSandboxProviderFactories` registers the portable
-providers (`docker`, `digitalocean`, `exec`, `libkrun`) everywhere, plus one
-build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
+providers (`discovm`, `docker`, `digitalocean`, `exec`, `libkrun`) everywhere,
+plus one build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
 
 ## Runtime References
 
@@ -27,15 +28,18 @@ build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
 
 ## Provider Layers
 
-Docker container management is the invariant: every backend ends with "run the
-pool-agent container in some Docker daemon." Backends differ only in VM CRUD,
-how to reach that daemon and the pool-agent API, where the host's log lives,
-and what guest image (if any) they boot.
+`poolruntime.RuntimeProvider` has two implementations. `dockerworker.Engine`
+is every Docker backend: each ends with "run the pool-agent container in some
+Docker daemon," and they differ only in VM CRUD, how to reach that daemon and
+the pool-agent API, where the host's log lives, and what guest image (if any)
+they boot. `discovm.Runtime` is the other: pools whose sandboxes are disco-vm
+machines, on disco-vm's own drivers — see
+[discovm/DESIGN.md](discovm/DESIGN.md).
 
 ```mermaid
 flowchart TD
     pool["poolruntime.Provider\nimplements sandbox.Provider\nplacement gate · pool-agent API (docker-free)"]
-    engine["dockerworker.Engine\nthe one poolruntime.RuntimeProvider\npool-agent container, networks, volumes, drift"]
+    engine["dockerworker.Engine\nthe Docker poolruntime.RuntimeProvider\npool-agent container, networks, volumes, drift"]
     driver["dockerworker.Driver\nVM lifecycle · two connection leases ·\nhost log · guest build spec"]
     local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
     do["digitalocean.Driver\ndroplet CRUD by pool tag ·\ndocker over SSH · agent at public IP"]
@@ -43,9 +47,12 @@ flowchart TD
     libkrun["libkrun.Driver (Linux)\nre-executed launcher child ·\nregistry-seeded guest · Unix/VSOCK leases"]
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
+    discovm["discovm.Runtime\nembedded disco-vm engine · no Docker"]
+    dvdriver["disco-vm drivers\nvz: host pool agent · boxd: pool machine"]
 
     pool --> engine --> driver
     driver --> local & do & execd & libkrun & vz & wslc
+    pool --> discovm --> dvdriver
 ```
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
@@ -60,10 +67,11 @@ contract downward is the `poolruntime.RuntimeProvider` interface, and the
 runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
-`poolruntime.RuntimeProvider` is a nine-method interface: `Close`,
+`poolruntime.RuntimeProvider` is an eight-method interface: `Close`,
 `EnsurePool`, `RepairPool`, `RemovePool`,
 `AcquirePoolAgentClient`, `OpenConsole`, `OpenLogs`, and `BuildGuestImage`.
-`dockerworker.Engine` is its only implementation. The engine owns everything
+`dockerworker.Engine` implements it for every Docker backend, and
+`discovm.Runtime` for disco-vm. The engine owns everything
 Docker: launching the pool-agent container with boot env, socket bind and host
 mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
 config-revision drift detection, and container replacement during repair. It

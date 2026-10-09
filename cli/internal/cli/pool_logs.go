@@ -46,6 +46,8 @@ driver has:
   digitalocean    the droplet's Docker daemon journal, read over SSH
   wslc            the guest's journal, or its kernel ring buffer
   exec            whatever the configured command prints for its logs operation
+  discovm (boxd)  the pool machine's journal for this boot, read in the machine
+  discovm (vz)    the log of the pool agent running on this Mac
 
 The log is read through the provider driver rather than the pool agent, so it
 answers on a host whose agent never registered — which is when a host log is
