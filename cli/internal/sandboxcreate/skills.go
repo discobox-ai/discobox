@@ -1,6 +1,7 @@
 package sandboxcreate
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -237,15 +238,25 @@ func readSkillFiles(root string, size, count int) ([]sandboxconfig.SkillFile, er
 			return err
 		}
 		files = append(files, sandboxconfig.SkillFile{
-			Path:    rel,
-			Content: content,
-			// Windows has no executable bit to read, and a script there is
-			// one by its name, which the sandbox's own platform decides.
-			Executable: runtime.GOOS != "windows" && info.Mode()&0o111 != 0,
+			Path:       rel,
+			Content:    content,
+			Executable: executable(runtime.GOOS, info.Mode(), content),
 		})
 		return nil
 	})
 	return files, err
+}
+
+// executable is whether a skill's file is installed executable. Where the
+// filesystem keeps the bit, the bit says. Windows keeps none, so there a file
+// that opens with a #! line — a script a POSIX sandbox runs directly — is
+// taken as one; without that, every helper a Windows client sends would land
+// unrunnable.
+func executable(goos string, mode fs.FileMode, content []byte) bool {
+	if goos == "windows" {
+		return bytes.HasPrefix(content, []byte("#!"))
+	}
+	return mode&0o111 != 0
 }
 
 // largestSkills names the n largest skills with their sizes, for a refusal

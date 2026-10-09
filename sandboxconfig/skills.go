@@ -29,6 +29,11 @@ const MaxSkillFiles = 1000
 // the longest file name the common filesystems hold.
 const MaxSkillSegmentBytes = 255
 
+// MaxSkillPathBytes bounds a file's whole path inside its skill: with a home
+// directory and the skill directories above it, it stays well inside the
+// longest path the common filesystems take (4096 bytes on Linux).
+const MaxSkillPathBytes = 1024
+
 // Skills are the skills a sandbox is created with, by name: one directory each
 // in the harness's skill directories, installed after the image's and the
 // repository's and winning on a name they share (ADR 26-10-09-395 §3).
@@ -180,6 +185,8 @@ func validateSkillFilePath(p string) error {
 	switch {
 	case p == "":
 		return errors.New("a file needs a path")
+	case len(p) > MaxSkillPathBytes:
+		return fmt.Errorf("file path %q... is %d bytes; a path in a skill holds at most %d", p[:32], len(p), MaxSkillPathBytes)
 	case strings.Contains(p, `\`):
 		return fmt.Errorf("file path %q is not slash-separated", p)
 	case path.IsAbs(p), path.Clean(p) != p, p == "." || p == ".." || strings.HasPrefix(p, "../"):
@@ -213,7 +220,7 @@ func foldKey(s string) string {
 // windowsReservedNames are the device names Windows refuses as a file or
 // directory, with or without an extension.
 var windowsReservedNames = map[string]bool{
-	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"CON": true, "PRN": true, "AUX": true, "NUL": true, "CONIN$": true, "CONOUT$": true,
 	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true,
 	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
 	// Windows reads the superscript digits as device numbers too.

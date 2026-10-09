@@ -41,8 +41,8 @@ nothing on the client is reachable from inside it.
 - A name is one path segment: not empty, no `/` or `\`, not `.` or `..`, and
   not hidden. Names and file paths must also be writable on every platform a
   sandbox runs on: no character Windows reserves, no control character, no
-  trailing dot or space, no device name, no segment longer than 255 bytes,
-  and no two that differ only in case.
+  trailing dot or space, no device name, no segment longer than 255 bytes, no
+  file path longer than 1024 bytes, and no two that differ only in case.
 - `skill` is required and is what lands at `<name>/SKILL.md`.
 - Each file's `path` is relative and clean, stays inside the skill, and is not
   `SKILL.md`. `content` is bytes, base64 on the wire, so a skill's images and
@@ -108,7 +108,9 @@ links into a checkout. It reads content, so a link resolves on the client where
 it means something, unlike ADR 0072's copy inside the sandbox. A symlinked
 directory below a skill's root is skipped so that a link cannot loop, and
 `.git` is skipped. The CLI checks the 1 MiB limit before it sends the request
-and names the largest skills when that check fails.
+and names the largest skills when that check fails. A file's executable bit
+is read from the filesystem; on a Windows client, which has none, a file that
+opens with `#!` is sent as executable.
 
 ## Alternatives rejected
 

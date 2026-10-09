@@ -157,7 +157,10 @@ func acceptSandboxStateReport(sandbox *model.Sandbox, batch SandboxStateReportBa
 
 func (s *Store) listSandboxesForPool(ctx context.Context, tx *gorm.DB, projectID, poolID string) ([]model.Sandbox, error) {
 	var sandboxes []model.Sandbox
+	// The state sync writes back observed columns only, so the skills'
+	// content is not loaded for it (sandboxSkillColumns).
 	err := tx.WithContext(ctx).
+		Omit("skills").
 		Where("project_id = ? AND pool_id = ?", projectID, poolID).
 		Find(&sandboxes).Error
 	return sandboxes, err

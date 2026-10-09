@@ -243,3 +243,26 @@ func TestReadSkillsStopsAtTheFileLimitAcrossSkills(t *testing.T) {
 		t.Fatalf("ReadSkills() = %v, want c-more refused naming a-full", err)
 	}
 }
+
+// Where the filesystem keeps an executable bit it decides; Windows keeps none,
+// so a file opening with #! is taken as a script a POSIX sandbox runs.
+func TestExecutableKeepsAScriptRunnableFromWindows(t *testing.T) {
+	script, doc := []byte("#!/bin/sh\necho\n"), []byte("# notes\n")
+	cases := []struct {
+		goos    string
+		mode    os.FileMode
+		content []byte
+		want    bool
+	}{
+		{"linux", 0o755, doc, true},
+		{"linux", 0o644, script, false},
+		{"darwin", 0o755, script, true},
+		{"windows", 0o666, script, true},
+		{"windows", 0o666, doc, false},
+	}
+	for _, c := range cases {
+		if got := executable(c.goos, c.mode, c.content); got != c.want {
+			t.Errorf("executable(%s, %v, %q) = %v, want %v", c.goos, c.mode, c.content, got, c.want)
+		}
+	}
+}

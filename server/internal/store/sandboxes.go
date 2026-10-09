@@ -192,6 +192,9 @@ func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projec
 		// intent that clears the latched error and retries on the new image.
 		// Retries are bounded by the caller: it only re-pins a sandbox whose
 		// pin differs from a digest that just moved.
+		// Its rows choose which to re-pin; the intent is recorded on a fresh
+		// read, so the skills' content is not loaded here (sandboxSkillColumns).
+		Omit("skills").
 		Where("generation = observed_generation").
 		Where("(state = ? AND runtime_state = ?) OR (state = ? AND runtime_state IN ?)",
 			model.SandboxStateReady, model.SandboxRuntimeStateStopped,
@@ -403,6 +406,11 @@ var sandboxPlatformColumns = []string{"platform"}
 // (ADR 26-10-09-395 §2). UpdateSandbox omits them so that a row loaded by
 // ListSandboxes, which leaves the skills unloaded, cannot put an empty set
 // back over them when it is saved.
+//
+// Only the reads of one sandbox load the skills' content; every scan of many
+// leaves "skills" unloaded — a listing, a pool's state sync, the upgrade
+// sweep — since up to a megabyte a sandbox is too much to read for rows that
+// only need their state.
 var sandboxSkillColumns = []string{"skills", "skill_names"}
 
 // sandboxOmittedColumns is what UpdateSandbox never writes.
