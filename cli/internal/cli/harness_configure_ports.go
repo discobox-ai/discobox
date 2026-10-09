@@ -183,10 +183,11 @@ func forwardedConfigurePorts(ports []apimodel.HarnessConfigPort, bound map[int]b
 
 // configPortUnavailable is what to tell the user about a numbered port that
 // could not be bound here: the image's own words, which say what to do
-// instead, or failing those the fact.
+// instead, or failing those the fact. An image's words are escaped like any
+// text from inside a discobox: the warning can reach a raw terminal.
 func configPortUnavailable(port apimodel.HarnessConfigPort) string {
 	if message := strings.TrimSpace(port.Unavailable.Or("")); message != "" {
-		return message
+		return terminalSafe(message)
 	}
 	return fmt.Sprintf("port %d is already in use on this machine, so it was not forwarded into the configure discobox", port.Port)
 }
@@ -198,7 +199,7 @@ func configPortUnavailable(port apimodel.HarnessConfigPort) string {
 func discoveredPortUnavailable(port apimodel.HarnessConfigPort, number int) string {
 	fact := fmt.Sprintf("port %d is already in use on this machine, so it was not forwarded into the configure discobox", number)
 	if advice := strings.TrimSpace(port.Unavailable.Or("")); advice != "" {
-		return fact + ". " + advice
+		return fact + ". " + terminalSafe(advice)
 	}
 	return fact
 }
