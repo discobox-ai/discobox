@@ -28,9 +28,9 @@ remote, run the commands below directly and skip this section.
 Inside a discobox there is no `gh` login, and `origin` is the sandbox's own
 mirror. An `upstream` remote, when there is one, is whatever the host's branch
 tracks — possibly a mirror — so do not push to it by name: every GitHub call
-goes through `discobox-access`, with the URL spelled out. `deliver-issue` asks for its own uses up
-front; check `discobox-access list` and request only what is missing, in one
-request:
+goes through `discobox-access`, with the URL spelled out. `deliver-issue` and
+`develop` ask for their own uses up front; check `discobox-access list` and
+request only what is missing, in one request:
 
 ```bash
 discobox-access request --json <<'EOF'
