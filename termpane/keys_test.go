@@ -403,3 +403,22 @@ func TestAKeyTheEmulatorCannotEncodeStillHasAForm(t *testing.T) {
 		})
 	}
 }
+
+// A pane with nothing attached still answers its reserved keys: a host can
+// draw a view of its own in it and keep the key map.
+func TestTheReservedKeysWorkWithNothingAttached(t *testing.T) {
+	type zoom struct{}
+	m := New(WithPrefix("ctrl+a", ""), WithPrefixBinding("z", zoom{}))
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}); cmd != nil {
+		t.Fatalf("the prefix produced %v", cmd())
+	}
+	if !m.PrefixArmed() {
+		t.Fatal("the prefix did not arm with nothing attached")
+	}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'z', Text: "z"})
+	if cmd == nil || cmd() != (zoom{}) {
+		t.Fatal("the binding did not fire with nothing attached")
+	}
+	// Anything else goes nowhere, rather than anywhere.
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+}
