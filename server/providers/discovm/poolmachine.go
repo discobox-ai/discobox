@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	// poolRole is the role of the image a pool machine is created from
-	// (imageTag): pool.yaml in a driver's specs.
-	poolRole = "pool"
+	// poolImage is the tag of the image a pool machine is created from in
+	// the engine's store: the pool agent's twin (twins).
+	poolImage = "discobox/pool-agent"
 	// poolStartTimeout bounds a pool machine's boot until its disco-vm agent
 	// answers.
 	poolStartTimeout = 10 * time.Minute
@@ -111,9 +111,8 @@ func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, begi
 		}
 	}
 	if inst == nil {
-		image := imageTag(h.engine.Driver.Name(), poolRole)
-		if inst, err = h.engine.Create(ctx, image, engine.CreateOptions{Name: poolMachineName(pool.ID)}); err != nil {
-			return fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, image, err)
+		if inst, err = h.engine.Create(ctx, poolImage, engine.CreateOptions{Name: poolMachineName(pool.ID)}); err != nil {
+			return fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, poolImage, err)
 		}
 	}
 	if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {

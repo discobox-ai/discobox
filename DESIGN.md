@@ -410,7 +410,10 @@ systemd masks and labels (written as files under
 `/usr/local/share/discobox/labels`); `discobox-wire.service` is installed but
 skipped, as a machine has no volumes to wire. Docker and
 Chromium are optional there: a guest that already ships one keeps it (boxd's
-ships Docker). Nothing releases or runs these images yet.
+ships Docker). The server's `discovm` provider builds the same chain into its
+disco-vm engine for its configured driver (`discobox admin pool build-guest`;
+[server/providers/discovm/DESIGN.md](server/providers/discovm/DESIGN.md#images)).
+Nothing releases or runs these images yet.
 
 Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath

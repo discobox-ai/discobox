@@ -13,8 +13,8 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// fakeImage is the fake driver's pool image spec in a test checkout.
-const fakeImage = imagesDir + "/fake/pool.yaml"
+// fakeImage is the pool agent's twin for the fake driver, in a test checkout.
+const fakeImage = "pool-agent/fake.yaml"
 
 // fakePoolMachine hosts a pool in a machine of disco-vm's fake driver, the way
 // a remote driver's pool is hosted, so the engine, its shim, and the guest
