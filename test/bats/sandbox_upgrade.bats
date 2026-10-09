@@ -58,7 +58,13 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
+  # Through the Taskfile rather than docker directly: both agent images are
+  # built FROM a shared base image, and these targets are what know to build it
+  # first. The sandbox agent image is what the stub harness is built FROM when
+  # no `task dev` loop has named a dev build in .env, so a clean checkout needs
+  # it built here.
+  go tool task build:pool-agent-image
+  go tool task build:sandbox-agent-image
   go tool task build:harness-stub-image
 
   PORT="$DISCOBOX_BATS_PORT" \
@@ -370,6 +376,15 @@ wait_for_sandbox_running() {
 
   run cli admin box upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
+
+  # The upgrade only re-pins; the pool replaces the container afterwards. Until
+  # it does, the old container still reads as running, so waiting for running
+  # alone returns before anything has been replaced.
+  for _ in {1..90}; do
+    after_image="$(sandbox_container_image "$sandbox_id" || true)"
+    [ -n "$after_image" ] && [ "$after_image" != "$before_image" ] && break
+    sleep 1
+  done
   wait_for_sandbox_running "$sandbox_id"
 
   # Same sandbox, new container, new image, re-pinned.
@@ -395,10 +410,17 @@ wait_for_sandbox_running() {
 # the new image and stays stopped; a running one comes back up on it. Only the
 # pool agent can know which case it is in, so this is the assertion that the
 # control plane never decides power state.
+#
+# The project is held to manual upgrades: under the default automatic policy
+# (ADR 0082) the image refresh alone moves a stopped sandbox, and the explicit
+# upgrade this test drives is then refused as having nothing to do.
 @test "an upgrade preserves the power state of the sandbox it replaces" {
   local pool_id harness_id sandbox_id before_image after_image after_digest
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
+
+  run cli admin project update default --sandbox-upgrade-policy manual
+  [ "$status" -eq 0 ]
 
   build_upgrade_stub power-v1
 
