@@ -785,8 +785,14 @@ type Sandbox struct {
 	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox
 	// first reports (MetaObservedAt nil) it holds the description the sandbox
 	// was created with, which is what seeds that file.
-	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"The sandbox's description as it last reported it, or the one it was created with until it has"`
-	SandboxManifest   `gorm:"embedded"`
+	Description     *string `gorm:"type:text" json:"description,omitempty" doc:"The sandbox's description as it last reported it, or the one it was created with until it has"`
+	SandboxManifest `gorm:"embedded"`
+	// SkillNames are the names of the manifest's Skills, written beside them
+	// when the row is inserted and never after (skills are fixed at create).
+	// Listings read these instead of the skills, which they leave unloaded:
+	// up to a megabyte a sandbox is too much to hydrate for a name
+	// (ADR 26-10-09-395 §2). Outside the manifest, so no fingerprint moves.
+	SkillNames        []string `gorm:"column:skill_names;type:text;serializer:json" json:"skillNames,omitempty" doc:"Names of the skills the sandbox was created with"`
 	ResourceLifecycle `gorm:"embedded"`
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`

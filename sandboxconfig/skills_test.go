@@ -59,6 +59,8 @@ func TestSkillsValidate_Refuses(t *testing.T) {
 		"device name":          {"con": {Skill: "x"}},
 		"device path":          file("bin/NUL.txt"),
 		"names differ in case": {"Foo": {Skill: "x"}, "foo": {Skill: "x"}},
+		"names fold together":  {"Σa": {Skill: "x"}, "ςa": {Skill: "x"}},
+		"paths fold together":  {"foo": {Skill: "x", Files: []SkillFile{{Path: "Kelvin"}, {Path: "\u212aelvin"}}}},
 		"paths differ in case": {"foo": {Skill: "x", Files: []SkillFile{{Path: "Bin"}, {Path: "bin/run.sh"}}}},
 		"skill.md in any case": file("skill.md"),
 		"under SKILL.md":       file("SKILL.md/notes.md"),

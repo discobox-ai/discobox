@@ -251,8 +251,11 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 	if len(originKeys) > 0 {
 		query = query.Where("origin_key IN ?", originKeys)
 	}
+	// A listing leaves the skills' content unloaded and answers with their
+	// names (sandboxSkillColumns).
 	var sandboxes []model.Sandbox
 	err = query.
+		Omit("skills").
 		Order("created_at ASC").
 		Find(&sandboxes).Error
 	return sandboxes, err
@@ -262,6 +265,11 @@ func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
+	}
+	// The names listings read in place of the skills (sandboxSkillColumns).
+	sandbox.SkillNames = nil
+	if len(sandbox.Skills) > 0 {
+		sandbox.SkillNames = sandbox.Skills.Names()
 	}
 	persisted, err := s.sealSandboxForWrite(ctx, sandbox)
 	if err != nil {
@@ -390,8 +398,15 @@ var sandboxMetaColumns = []string{
 // the empty platform back over the one just settled.
 var sandboxPlatformColumns = []string{"platform"}
 
+// sandboxSkillColumns are the skills a sandbox was created with and their
+// names, written by the insert and by nothing else: skills are fixed at create
+// (ADR 26-10-09-395 §2). UpdateSandbox omits them so that a row loaded by
+// ListSandboxes, which leaves the skills unloaded, cannot put an empty set
+// back over them when it is saved.
+var sandboxSkillColumns = []string{"skills", "skill_names"}
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...)
+var sandboxOmittedColumns = append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...)
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions

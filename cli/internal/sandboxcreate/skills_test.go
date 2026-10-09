@@ -1,6 +1,7 @@
 package sandboxcreate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -139,7 +140,8 @@ func TestReadSkillsFollowsLinks(t *testing.T) {
 	}
 }
 
-// Over the limit, the refusal says what to leave out.
+// Many skills each under the limit stop at the one that takes the whole past
+// it, before the rest are read, and the refusal says what to leave out.
 func TestReadSkillsNamesTheLargestWhenOverTheLimit(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillsTestFile(t, filepath.Join(dir, "big", "SKILL.md"), "# big", 0o644)
@@ -149,8 +151,8 @@ func TestReadSkillsNamesTheLargestWhenOverTheLimit(t *testing.T) {
 	writeSkillsTestFile(t, filepath.Join(dir, "small", "SKILL.md"), "# small", 0o644)
 
 	_, err := ReadSkills([]string{dir}, false)
-	if err == nil || !strings.Contains(err.Error(), "bigger (") || !strings.Contains(err.Error(), "big (") {
-		t.Fatalf("ReadSkills() = %v, want a refusal naming bigger and big", err)
+	if err == nil || !strings.Contains(err.Error(), "skill bigger: it takes the skills past") || !strings.Contains(err.Error(), "the largest read before it are big (") {
+		t.Fatalf("ReadSkills() = %v, want bigger refused, naming big as the largest read before it", err)
 	}
 }
 
@@ -215,5 +217,29 @@ func TestSetCreateSandboxSkillsCarriesContentAndTheExecutableBit(t *testing.T) {
 	}
 	if !got.Files[0].Executable.Or(false) || got.Files[1].Executable.Set {
 		t.Fatalf("executable = %v, %v; want only run.sh's set", got.Files[0].Executable, got.Files[1].Executable)
+	}
+}
+
+// The file limit holds across skills: once the skills read so far hold every
+// file a discobox takes, the next is refused before its SKILL.md is read.
+func TestReadSkillsStopsAtTheFileLimitAcrossSkills(t *testing.T) {
+	dir := t.TempDir()
+	// One skill of exactly the limit: its SKILL.md and MaxSkillFiles-1 files.
+	for i := range sandboxconfig.MaxSkillFiles - 1 {
+		writeSkillsTestFile(t, filepath.Join(dir, "a-full", fmt.Sprintf("f%d", i)), "", 0o644)
+	}
+	writeSkillsTestFile(t, filepath.Join(dir, "a-full", "SKILL.md"), "# full", 0o644)
+	if skills, err := ReadSkills([]string{dir}, false); err != nil || len(skills["a-full"].Files) != sandboxconfig.MaxSkillFiles-1 {
+		t.Fatalf("ReadSkills() at the limit = %v; want it taken", err)
+	}
+	// A directory that is not a skill is skipped at the limit as anywhere.
+	writeSkillsTestFile(t, filepath.Join(dir, "b-notes", "README.md"), "notes", 0o644)
+	if _, err := ReadSkills([]string{dir}, false); err != nil {
+		t.Fatalf("ReadSkills() with a directory that is not a skill = %v; want it skipped", err)
+	}
+	writeSkillsTestFile(t, filepath.Join(dir, "c-more", "SKILL.md"), "# more", 0o644)
+	_, err := ReadSkills([]string{dir}, false)
+	if err == nil || !strings.Contains(err.Error(), "skill c-more: it takes the skills past the 1000 files") || !strings.Contains(err.Error(), "a-full (") {
+		t.Fatalf("ReadSkills() = %v, want c-more refused naming a-full", err)
 	}
 }

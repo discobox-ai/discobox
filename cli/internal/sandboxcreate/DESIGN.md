@@ -29,8 +29,10 @@ sandbox create requests.
   `SKILL.md` is a skill named after it, and the last declaration of a name
   replaces the earlier ones whole. Links are followed — a skill in
   `~/.claude/skills` is often a link into a checkout — except a linked
-  directory inside a skill, so nothing loops; `.git` is left out. The size
-  limit is checked before the request is sent, naming the largest skills.
+  directory inside a skill, so nothing loops; `.git` is left out. Reads stop
+  at the first file that takes the whole request past its byte or file limit
+  (a skill this one replaces left out of the count), before reading it, and
+  the refusal names the largest skills read before it.
   Both `discobox new` and `admin box create` take the flags.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is

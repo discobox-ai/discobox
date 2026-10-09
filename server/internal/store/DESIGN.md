@@ -83,7 +83,10 @@ save silently replays a stale value.
   `sandboxPlatformColumns` too, for the same reason: the sandbox's platform is
   written by the insert and by placement (`SchedulablePoolForSandbox`), which
   runs inside the reconciler's provider call, and the reconciler then saves the
-  row it loaded before that call.
+  row it loaded before that call. And `sandboxSkillColumns` (`skills`,
+  `skill_names`): skills are fixed at create, and `ListSandboxes` leaves
+  `skills` unloaded and answers with `skill_names`, so a listed row saved back
+  must not write an empty set over them (ADR 26-10-09-395).
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.

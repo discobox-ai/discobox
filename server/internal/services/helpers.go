@@ -276,8 +276,8 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	// The names, never the content: a listing would otherwise carry every
 	// skill of every sandbox in it (ADR 26-10-09-395 §2).
-	if len(sandbox.Skills) > 0 {
-		config["skillNames"] = sandbox.Skills.Names()
+	if len(sandbox.SkillNames) > 0 {
+		config["skillNames"] = sandbox.SkillNames
 	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,

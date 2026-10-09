@@ -55,10 +55,7 @@ func ReadSkills(dirs []string, user bool) (sandboxconfig.Skills, error) {
 	if len(skills) == 0 {
 		return nil, nil
 	}
-	if size := skills.Size(); size > sandboxconfig.MaxSkillsBytes {
-		return nil, fmt.Errorf("skills are %d bytes and a discobox takes at most %d; the largest are %s",
-			size, sandboxconfig.MaxSkillsBytes, largestSkills(skills, 3))
-	}
+	// The reads stopped at the limits; this is every other rule.
 	if err := skills.Validate(); err != nil {
 		return nil, err
 	}
@@ -118,10 +115,27 @@ func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error
 		if !info.IsDir() {
 			continue
 		}
-		text, err := readSkillText(filepath.Join(root, sandboxconfig.SkillFileName))
+		// What the skills read so far take of the limits, leaving out one of
+		// this name, which this one replaces whole.
+		usedBytes, usedFiles := skillsBesides(skills, name)
+		// Whether it is a skill at all comes before what it would take: a
+		// directory with no SKILL.md is skipped, whatever the count.
+		textPath := filepath.Join(root, sandboxconfig.SkillFileName)
+		textInfo, err := os.Stat(textPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
+		if err != nil {
+			return fmt.Errorf("skill %s: %w", name, err)
+		}
+		if usedFiles >= sandboxconfig.MaxSkillFiles {
+			// Its SKILL.md alone would be one file too many.
+			return overLimit(skills, name, overLimitError{fmt.Sprintf("it takes the skills past the %d files a discobox takes", sandboxconfig.MaxSkillFiles)})
+		}
+		if textInfo.Size() > int64(sandboxconfig.MaxSkillsBytes-usedBytes) {
+			return overLimit(skills, name, overLimitError{fmt.Sprintf("its %s takes the skills past the %d bytes a discobox takes", sandboxconfig.SkillFileName, sandboxconfig.MaxSkillsBytes)})
+		}
+		text, err := os.ReadFile(textPath)
 		if err != nil {
 			return fmt.Errorf("skill %s: %w", name, err)
 		}
@@ -133,26 +147,39 @@ func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error
 		if err != nil {
 			return err
 		}
-		files, err := readSkillFiles(resolved, len(text))
+		files, err := readSkillFiles(resolved, usedBytes+len(text), usedFiles+1)
 		if err != nil {
-			return fmt.Errorf("skill %s: %w", name, err)
+			return overLimit(skills, name, err)
 		}
 		skills[name] = sandboxconfig.Skill{Skill: string(text), Files: files}
 	}
 	return nil
 }
 
-// readSkillText reads a skill's SKILL.md, refusing one past what a discobox
-// takes before reading it.
-func readSkillText(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
+// overLimitError is a read that stopped at the limits a discobox takes.
+type overLimitError struct{ reason string }
+
+func (e overLimitError) Error() string { return e.reason }
+
+// overLimit names the skill a read of failed, and when it stopped at the
+// limits, the largest of the skills already read: what there is to leave out.
+func overLimit(skills sandboxconfig.Skills, name string, err error) error {
+	if errors.As(err, new(overLimitError)) && len(skills) > 0 {
+		return fmt.Errorf("skill %s: %w; the largest read before it are %s", name, err, largestSkills(skills, 3))
 	}
-	if info.Size() > sandboxconfig.MaxSkillsBytes {
-		return nil, fmt.Errorf("its %s is more than the %d bytes a discobox takes", sandboxconfig.SkillFileName, sandboxconfig.MaxSkillsBytes)
+	return fmt.Errorf("skill %s: %w", name, err)
+}
+
+// skillsBesides is what every skill but name takes of the limits: its bytes,
+// and its files with its SKILL.md.
+func skillsBesides(skills sandboxconfig.Skills, name string) (bytes, files int) {
+	for other, skill := range skills {
+		if other != name {
+			bytes += skill.Size()
+			files += 1 + len(skill.Files)
+		}
 	}
-	return os.ReadFile(path)
+	return bytes, files
 }
 
 // readSkillFiles reads every file under a skill's root but its SKILL.md. A
@@ -162,7 +189,11 @@ func readSkillText(path string) ([]byte, error) {
 // It stops at the first file past what a discobox takes, before reading it: a
 // link to a whole checkout reads as one skill, build output and all, and the
 // refusal should not wait for every byte of it.
-func readSkillFiles(root string, size int) ([]sandboxconfig.SkillFile, error) {
+//
+// size and count are what the skills already take, this one's SKILL.md
+// included, so the stop is at the limits on the whole request rather than on
+// one skill: a directory of many skills each under the limit stops too.
+func readSkillFiles(root string, size, count int) ([]sandboxconfig.SkillFile, error) {
 	var files []sandboxconfig.SkillFile
 	err := filepath.WalkDir(root, func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -195,11 +226,10 @@ func readSkillFiles(root string, size int) ([]sandboxconfig.SkillFile, error) {
 			return nil
 		}
 		if size += len(rel) + int(info.Size()); size > sandboxconfig.MaxSkillsBytes {
-			return fmt.Errorf("it is more than the %d bytes a discobox takes, at %s", sandboxconfig.MaxSkillsBytes, rel)
+			return overLimitError{fmt.Sprintf("it takes the skills past the %d bytes a discobox takes, at %s", sandboxconfig.MaxSkillsBytes, rel)}
 		}
-		// Its SKILL.md is one of the files a discobox counts.
-		if len(files)+1 == sandboxconfig.MaxSkillFiles {
-			return fmt.Errorf("it holds more than the %d files a discobox takes", sandboxconfig.MaxSkillFiles)
+		if count+len(files) >= sandboxconfig.MaxSkillFiles {
+			return overLimitError{fmt.Sprintf("it takes the skills past the %d files a discobox takes", sandboxconfig.MaxSkillFiles)}
 		}
 		//nolint:gosec // following links is the point: these are the caller's own files, read as the caller
 		content, err := os.ReadFile(p)
