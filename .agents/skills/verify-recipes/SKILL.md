@@ -196,6 +196,15 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `DISCOBOX_DEFAULT_SANDBOX_*`, `DISCOBOX_DOCKER_POOL_*` and
   `DISCOBOX_HARNESS_*` lines of the checkout's `.env`.
 
+- It exits at start (`project … has no harness to run`) until at least one
+  `discobox-harness-*:local` image exists; on a fresh box wait for the image
+  watcher to build one.
+- To race new intent against a pool's first reconcile (supersede paths):
+  `admin pool create`, then `admin pool delete` ~3s later — `EnsurePool` of a
+  Docker pool takes ~10s, so the delete lands mid-run. Watch `admin job ls -o
+  json` (`.jobs[]`, by `resourceId`) for `attempts`/`error` and the log for
+  `reconcile failed`. List outputs are wrapped (`.pools[]`, `.providers[]`).
+
 ## A lead discobox's calls (the sandbox role)
 
 The dev loop judges every `discobox-access run` with the project's default
