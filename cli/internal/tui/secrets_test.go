@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -122,8 +123,50 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 		t.Fatalf("revoked = %v, want the chosen grant", ds.revoked)
 	}
 	// The screen re-reads rather than guessing what the server now holds.
-	if got := m.secrets.grantsFor("sec_gh"); len(got) != 1 {
+	if got, _ := m.secrets.grantsFor("sec_gh"); len(got) != 1 {
 		t.Fatalf("grants = %#v, want the withdrawn one gone", got)
+	}
+}
+
+// A lapsed grant authorizes nothing, so it is neither counted nor listed until
+// asked for — and the row that asks says how many there are.
+func TestExpiredGrantsAreHiddenUntilAskedFor(t *testing.T) {
+	t.Parallel()
+	m, _ := secretsFixture(t)
+	m.secrets.setGrants(append(m.secrets.grants, Grant{
+		ID: "grant_old", SecretID: "sec_gh", Scope: "sandbox", ScopeKey: "sbx_gone", Host: "api.github.com",
+		Expires: time.Now().Add(-time.Hour),
+	}))
+	if body := frameText(m); !strings.Contains(body, "2 grants") {
+		t.Fatalf("the row counts a lapsed grant:\n%s", body)
+	}
+
+	send(t, m, keyPress("enter"))
+	keys := func() []string {
+		var out []string
+		for _, it := range m.dialog.items {
+			out = append(out, it.key)
+		}
+		return out
+	}
+	if got, want := keys(), []string{grantCreateItem, grantExpiredItem, "grant_1", "grant_2"}; !slices.Equal(got, want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+	if got := m.dialog.items[1].label; got != "Show 1 expired grant" {
+		t.Fatalf("toggle = %q, want it to say how many it hides", got)
+	}
+
+	send(t, m, keyPress(grantExpiredKey))
+	if got, want := keys(), []string{grantCreateItem, grantExpiredItem, "grant_1", "grant_2", "grant_old"}; !slices.Equal(got, want) {
+		t.Fatalf("rows after %s = %v, want %v", grantExpiredKey, got, want)
+	}
+	if m.dialog.cursor != 1 || m.dialog.items[1].label != "Hide expired grants" {
+		t.Fatalf("cursor %d on %q, want it left on the toggle", m.dialog.cursor, m.dialog.items[1].label)
+	}
+
+	send(t, m, keyPress(grantExpiredKey))
+	if got := len(m.dialog.items); got != 4 {
+		t.Fatalf("rows = %d after hiding again, want 4", got)
 	}
 }
 
@@ -1378,5 +1421,37 @@ func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 	want := 10
 	if got := strings.Count(text, "cred-"); got != want {
 		t.Fatalf("the requests table drew %d of 30 waiting requests, want %d:\n%s", got, want, text)
+	}
+}
+
+// A grant with seconds left says so, rather than rounding to zero minutes and
+// reading as one that never expires.
+func TestAGrantAboutToLapseDoesNotReadAsNever(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	g := Grant{Expires: now.Add(20 * time.Second)}
+	if got := grantExpiry(g, now); got != "expires in 20s" {
+		t.Fatalf("expiry = %q, want the seconds left", got)
+	}
+	if got := grantLifeLeft(g, now); got != "in 20s" {
+		t.Fatalf("life left = %q, want the seconds left", got)
+	}
+}
+
+// The row's count is taken when it is drawn, so a grant that lapses between
+// reads stops being counted without waiting for the next one.
+func TestTheRowStopsCountingAGrantWhenItLapses(t *testing.T) {
+	t.Parallel()
+	m, _ := secretsFixture(t)
+	m.secrets.setGrants(append(m.secrets.grants, Grant{
+		ID: "grant_short", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "x.github.com",
+		Expires: time.Now().Add(time.Minute),
+	}))
+	if body := frameText(m); !strings.Contains(body, "3 grants") {
+		t.Fatalf("the row does not count the live grant:\n%s", body)
+	}
+	m.secrets.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	if body := frameText(m); !strings.Contains(body, "2 grants") {
+		t.Fatalf("the row still counts a lapsed grant:\n%s", body)
 	}
 }

@@ -1530,11 +1530,8 @@ type Secret struct {
 	// WellKnownID is the well-known credential this secret answers, empty for
 	// one nothing asks for by ID.
 	WellKnownID string
-	// Grants is how many live grants stand on it, filled in by the screen from
-	// the project's grant listing rather than read per row.
-	Grants  int
-	Created time.Time
-	Updated time.Time
+	Created     time.Time
+	Updated     time.Time
 
 	// OAuth is what an oauth credential is, without being it. Nil for a token,
 	// and never the tokens themselves.
