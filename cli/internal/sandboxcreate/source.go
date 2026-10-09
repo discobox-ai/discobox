@@ -968,8 +968,15 @@ func GitHubRepositoryURL(remote string) string {
 	remote = strings.TrimSpace(remote)
 	var host, repoPath string
 	if strings.Contains(remote, "://") {
+		// Only the transports GitHub serves: a file:// URL names a path on
+		// this machine whatever it spells as its host.
 		u, err := url.Parse(remote)
 		if err != nil {
+			return ""
+		}
+		switch u.Scheme {
+		case "https", "http", "ssh", "git", "git+ssh", "ssh+git":
+		default:
 			return ""
 		}
 		host, repoPath = u.Hostname(), u.Path

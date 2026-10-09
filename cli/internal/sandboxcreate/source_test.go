@@ -1132,6 +1132,9 @@ func TestGitHubRepositoryURL(t *testing.T) {
 		{"https://github.com/-foo/bar", ""},
 		{"/src/foo/bar", ""},
 		{"file:///src/foo/bar", ""},
+		{"file://github.com/foo/bar.git", ""},
+		{"ftp://github.com/foo/bar.git", ""},
+		{"git://github.com/foo/bar.git", "https://github.com/foo/bar"},
 	} {
 		if got := GitHubRepositoryURL(tc.in); got != tc.want {
 			t.Errorf("GitHubRepositoryURL(%q) = %q, want %q", tc.in, got, tc.want)
