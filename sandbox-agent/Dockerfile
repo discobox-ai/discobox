@@ -499,6 +499,7 @@ COPY sandbox-agent/image/profile.d/sandbox-agent-store.sh /etc/profile.d/sandbox
 COPY sandbox-agent/image/shells/zsh-newuser /usr/share/zsh/scripts/newuser
 COPY sandbox-agent/image/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
+COPY sandbox-agent/image/systemd/discobox-sandbox-agent.path /etc/systemd/system/discobox-sandbox-agent.path
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
@@ -687,7 +688,7 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
-        discobox-sandbox-agent.service \
+        discobox-sandbox-agent.path \
         discobox-proxy-bridge.service \
         discobox-buildkit-bridge.service \
         discobox-trust-ca.service \

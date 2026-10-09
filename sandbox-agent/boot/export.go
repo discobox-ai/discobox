@@ -75,14 +75,18 @@ func export(ctx context.Context, subtrees []string, out io.Writer) error {
 // A sandbox whose create never wrote sandbox.json has no declared volumes, so
 // nothing is excluded and its tree travels whole.
 func exportExclusions() (func(string) bool, error) {
-	effective, err := loadEffectiveConfig()
+	effective, err := loadEffectiveConfig(manifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("load sandbox config: %w", err)
 	}
 	if len(effective.Volumes) == 0 {
 		return nil, nil
 	}
-	id, err := resolveIdentity()
+	manifest, err := manifestUser()
+	if err != nil {
+		return nil, fmt.Errorf("read the manifest's user: %w", err)
+	}
+	id, err := resolveIdentity(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox identity: %w", err)
 	}

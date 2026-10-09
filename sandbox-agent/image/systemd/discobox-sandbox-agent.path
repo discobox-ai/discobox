@@ -1,0 +1,16 @@
+# Starts the sandbox agent once its bootstrap is in place, and not before: a
+# machine with no sandbox in it runs no agent. In a container the PID-1 flow
+# binds sandbox.json onto /etc/discobox before systemd starts, so this fires at
+# boot; a VM's backend places it through the running guest, and this fires
+# then (ADR 26-10-09-143 §1). The agent waits for the file itself as well, so
+# an init with no path units of its own starts it at boot instead.
+[Unit]
+Description=Discobox Sandbox Agent bootstrap
+Documentation=https://github.com/discobox-ai/discobox
+
+[Path]
+PathExists=/etc/discobox/sandbox.json
+Unit=discobox-sandbox-agent.service
+
+[Install]
+WantedBy=paths.target

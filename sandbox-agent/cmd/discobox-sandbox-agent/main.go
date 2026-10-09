@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
 	"github.com/discobox-ai/discobox/sandbox-agent/server"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourcesready"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
@@ -72,10 +73,12 @@ func run(args []string) int {
 	}
 	var configPath string
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)
-	flags.StringVar(&configPath, "config", "", "path to sandbox manifest")
+	flags.StringVar(&configPath, "config", config.DefaultPath, "path to sandbox manifest")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	// Rebind the secrets volume here, not in the PID-1 boot flow: systemd
 	// mounts its own tmpfs over /run during its own startup, which happens
 	// after boot exec's into it, so a bind placed during PID-1 provisioning
@@ -85,13 +88,31 @@ func run(args []string) int {
 		slog.Error("wire secrets volume", "error", err)
 		return 1
 	}
+	// The agent is a service of the guest's own init, not necessarily started
+	// after a PID-1 flow that had the bootstrap: a VM's backend places
+	// sandbox.json through the running guest, so the agent may start first, and
+	// it waits rather than exiting (ADR 26-10-09-143 §1). The backend places the
+	// file whole, as a rename, so what appears is what is read. In a container
+	// the PID-1 flow bound it in place before systemd started, and this returns
+	// at once.
+	if err := sourcesready.Wait(ctx, configPath, slog.Default()); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return 0
+		}
+		slog.Error("wait for the sandbox bootstrap", "path", configPath, "error", err)
+		return 1
+	}
+	// Where no PID-1 flow ran, its provisioning happens here, before anything
+	// can launch a process as the sandbox user.
+	if err := boot.Provision(slog.Default(), configPath); err != nil {
+		slog.Error("provision sandbox", "error", err)
+		return 1
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		slog.Error("load config", "error", err)
 		return 1
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	// Before anything is served: the intake puts back the files its kept
 	// document implies, which a restart may have lost (/run is a tmpfs), so
 	// nothing reads a file the pool already replaced (ADR 0126 §3). It is
