@@ -2,10 +2,13 @@ package providers_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourceproviders "github.com/discobox-ai/discobox/server/internal/resources/providers"
@@ -79,6 +82,62 @@ func TestCreateSandboxProviderInstanceRemovesInstanceThatDoesNotResolve(t *testi
 	if len(rows) != 0 {
 		t.Errorf("rows persisted after failed resolve = %d, want 0", len(rows))
 	}
+}
+
+// A field that decides what made a pool's host cannot change under the
+// pools it made, and the refusal names it; everything else still can.
+func TestUpdateRefusesAnImmutableFieldWhileTheProviderHasPools(t *testing.T) {
+	svc, appStore := newImmutableFixture(t)
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: "provider-1"}}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(context.Background(), pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	err := update(svc, `{"driver":"vz","size":"s"}`)
+	var status apperrors.StatusError
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict || !strings.Contains(err.Error(), "driver") {
+		t.Fatalf("changing driver with a pool = %v, want 409 naming driver", err)
+	}
+	if err := update(svc, `{"size":"s"}`); err == nil {
+		t.Fatal("dropping driver with a pool was accepted; absent is a change too")
+	}
+	if err := update(svc, `{ "driver" : "boxd", "size": "m" }`); err != nil {
+		t.Fatalf("changing only a mutable field, with the immutable one reformatted, = %v", err)
+	}
+}
+
+func TestUpdateAllowsAnImmutableFieldOnceThereAreNoPools(t *testing.T) {
+	svc, _ := newImmutableFixture(t)
+	if err := update(svc, `{"driver":"vz","size":"s"}`); err != nil {
+		t.Fatalf("changing driver with no pools = %v", err)
+	}
+}
+
+// newImmutableFixture is a provider instance of a type whose "driver" field is
+// immutable and whose "size" field is not.
+func newImmutableFixture(t *testing.T) (*resourceproviders.Service, *store.Store) {
+	t.Helper()
+	svc, appStore, manager := newTestService(t)
+	// A definition alone does not make a type resolvable, and an update
+	// refuses a type that is not; nothing here resolves the instance.
+	manager.RegisterFactory("machines", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		return nil, errors.New("not resolved in this test")
+	})
+	manager.RegisterProviderDefinition("machines", sandbox.ProviderDefinition{ConfigFields: []sandbox.ProviderConfigField{
+		{Key: "driver", Label: "Driver", Type: "string", Immutable: true},
+		{Key: "size", Label: "Size", Type: "string"},
+	}})
+	instance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "machines", Name: "machines", Config: json.RawMessage(`{"driver":"boxd","size":"s"}`)}
+	if err := appStore.CreateSandboxProviderInstance(context.Background(), instance); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	return svc, appStore
+}
+
+func update(svc *resourceproviders.Service, config string) error {
+	_, err := svc.UpdateSandboxProviderInstance(context.Background(), "project-1", "provider-1", services.UpdateSandboxProviderInstanceBody{Config: []byte(config)})
+	return err
 }
 
 type catalog struct{ manager *sandbox.ProviderManager }
