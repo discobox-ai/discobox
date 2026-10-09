@@ -44,6 +44,23 @@ credential is sent in. Make it refuse on a flag file to see what the CLI does
 when a host rejects the credential — and clear the CLI's user-info cache
 first, or a cached answer hides the request entirely.
 
+## A browser sign-in's callback port
+
+A browser sign-in redirects to a callback server on the CLI's own localhost,
+which the configure flow can reach only if the image declares the port in
+`config.ports` (`harness.ConfigPort`): it forwards the same number from the
+user's machine. Point `BROWSER` at a script that appends its arguments to a
+file, start the sign-in in an isolated home (the CLI subcommand and the
+in-TUI flow both — they can differ), and read `redirect_uri` off the URL.
+Do it at least three times, and read the CLI's listen call if you can: a
+port the identity provider registered is the same every run and must be
+declared, with an `unavailable` message naming the fallback (device code, an
+API key). One that changes each run is declared `{"ephemeral": true}`: the
+flow then forwards whatever port the sandbox is found listening on, at the
+same number — copilot's `listen(0, "127.0.0.1")` works because GitHub accepts
+any loopback port. One observed port is not evidence of a fixed one, and
+declaring it as fixed forwards a port the next run never uses.
+
 ## Hooks
 
 Install a hook file at the candidate system layer whose command appends
