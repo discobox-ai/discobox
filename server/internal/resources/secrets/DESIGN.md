@@ -329,8 +329,8 @@ The entry points:
   sandbox, env var, host, well-known ID, purpose) is reused rather than
   duplicated.
 - **`GetSandboxCredentialRequest`** — a sandbox's own protocol request and, once
-  approved, its grant. `AgentCredentialRequestStatus` reports an approval whose
-  grant has since been revoked as `denied`.
+  approved, its grant. `services.AgentCredentialRequestStatus` reports an
+  approval whose grant has since been revoked as `denied`.
 - **`ApprovedUse` / `ApprovedCredentialUse`** — what a request, or a command,
   is judged against: the approved sentence, the credential's name and the host,
   read from the live grant, never from what a pool sent. `ApprovedUse` also

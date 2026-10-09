@@ -202,6 +202,9 @@ flowchart LR
   resource packages never import `server/providers`.
 - Keep HTTP transport adaptation in `internal/handlers`, service contracts and
   DTOs in `internal/services`, and persistence in `internal/store`.
+  `internal/handlers` never imports a resource package
+  (`handlers/boundary_test.go`); a derivation a handler needs, like
+  `services.AgentCredentialRequestStatus`, lives in `internal/services`.
 
 ## Not-Found Mapping
 

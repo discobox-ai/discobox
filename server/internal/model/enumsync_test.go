@@ -98,7 +98,7 @@ var yamlOwnedEnums = map[string]string{
 	// Deliberately not SecretRequest.status. The protocol answers "may I use
 	// this?", which is not the same question as "was this request approved?": a
 	// grant revoked after approval leaves the request approved and the answer
-	// no. secrets.AgentCredentialRequestStatus is the one place that maps
+	// no. services.AgentCredentialRequestStatus is the one place that maps
 	// between them (ADR 0031).
 	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
 	"SandboxTrustRequestStatus.status":      "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0149)",

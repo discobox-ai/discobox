@@ -11,7 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	secretsresource "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
@@ -295,7 +294,7 @@ func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 	}
 	resp := &apimodel.SandboxCredentialRequestStatus{
 		RequestId: req.ID,
-		Status:    serverapi.SandboxCredentialRequestStatusStatus(secretsresource.AgentCredentialRequestStatus(req, grant)),
+		Status:    serverapi.SandboxCredentialRequestStatusStatus(services.AgentCredentialRequestStatus(req, grant)),
 		Purpose:   serverapi.SandboxCredentialRequestStatusPurpose(purpose),
 	}
 	if grant != nil {

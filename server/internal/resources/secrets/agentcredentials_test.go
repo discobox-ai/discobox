@@ -414,7 +414,7 @@ func TestPollingReportsGrantedOnceApproved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if status := resourcesecrets.AgentCredentialRequestStatus(pending, grant); status != "pending" {
+	if status := services.AgentCredentialRequestStatus(pending, grant); status != "pending" {
 		t.Fatalf("status = %q, want pending", status)
 	}
 
@@ -425,7 +425,7 @@ func TestPollingReportsGrantedOnceApproved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if status := resourcesecrets.AgentCredentialRequestStatus(settled, grant); status != "granted" {
+	if status := services.AgentCredentialRequestStatus(settled, grant); status != "granted" {
 		t.Fatalf("status = %q, want granted", status)
 	}
 	if grant == nil || len(grant.Uses) != 1 {
@@ -452,7 +452,7 @@ func TestPollingReportsDeniedAfterTheGrantIsRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if status := resourcesecrets.AgentCredentialRequestStatus(settled, grant); status != "denied" {
+	if status := services.AgentCredentialRequestStatus(settled, grant); status != "denied" {
 		t.Fatalf("status = %q, want denied once the grant is gone", status)
 	}
 	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)

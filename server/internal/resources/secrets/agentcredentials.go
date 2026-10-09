@@ -280,24 +280,6 @@ func (s *Service) sandboxOwnedByPool(ctx context.Context, poolID, sandboxID stri
 	return sandbox, nil
 }
 
-// AgentCredentialRequestStatus maps a request's approval state onto the
-// protocol's vocabulary. The protocol says "granted", the control plane says
-// "approved", and only the control plane knows that an approval whose grant has
-// since been revoked is no longer a grant.
-func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) string {
-	switch req.Status {
-	case model.SecretRequestStatusApproved:
-		if grant == nil {
-			return model.SecretRequestStatusDenied
-		}
-		return "granted"
-	case model.SecretRequestStatusDenied:
-		return model.SecretRequestStatusDenied
-	default:
-		return model.SecretRequestStatusPending
-	}
-}
-
 // ApprovedUse names what a request carrying this use may be judged against:
 // the sentence a person approved, the credential in the words they read it as,
 // and the one of the grant's hosts this request falls under (ADR 26-10-02-393
