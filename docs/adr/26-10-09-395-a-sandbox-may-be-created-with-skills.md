@@ -1,6 +1,6 @@
 # 26-10-09-395 — A sandbox may be created with skills
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-09
 - **Relates to**: [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md),
   [0080](0080-the-image-ships-the-skills-for-what-it-installs.md),
