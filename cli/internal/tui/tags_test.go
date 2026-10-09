@@ -232,6 +232,20 @@ func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
 		t.Errorf("clicking #wip opened %q, want nothing opened", got)
 	default:
 	}
+	// Nor has the wheel: over a linked tag it scrolls the list, as it does
+	// anywhere else on the row, and opens nothing.
+	m.list.cursor = 0
+	x, y = at(t, m, "#issue=4")
+	send(t, m, tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
+	if m.list.cursor == 0 {
+		t.Errorf("the wheel over #issue=4 did not move the list on")
+	}
+	select {
+	case got := <-opened:
+		t.Errorf("the wheel over #issue=4 opened %q, want nothing opened", got)
+	default:
+	}
+
 	// The right button has nothing to do with a link, so it is the row's menu
 	// there as anywhere else on the row.
 	x, y = at(t, m, "#issue=4")
