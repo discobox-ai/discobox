@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -153,5 +154,130 @@ func TestATagReplacesAnotherValueOfItsKey(t *testing.T) {
 	l.addTag("ticket")
 	if want := []string{"ticket", "wip"}; !slices.Equal(l.tags, want) {
 		t.Fatalf("tags = %q, want a bare key in place of its value: %q", l.tags, want)
+	}
+}
+
+// An `issue=` or `pr=` tag on a discobox cut from a GitHub repository is the
+// number of an issue or pull request there; any other tag, or one of those on
+// a discobox with no GitHub repository to number it in, points nowhere.
+func TestATagThatNumbersGitHubWorkLinksToIt(t *testing.T) {
+	t.Parallel()
+	box := Sandbox{Repository: "https://github.com/acme/foo"}
+	for _, tc := range []struct{ tag, want string }{
+		{"issue=4", "https://github.com/acme/foo/issues/4"},
+		{"pr=123", "https://github.com/acme/foo/pull/123"},
+		{"issue", ""},
+		{"issue=", ""},
+		{"issue=04", ""},
+		{"issue=ENG-12", ""},
+		{"pr=-1", ""},
+		{"ticket=4", ""},
+		{"wip", ""},
+	} {
+		if got := box.tagURL(tc.tag); got != tc.want {
+			t.Errorf("tagURL(%q) = %q, want %q", tc.tag, got, tc.want)
+		}
+	}
+	if got := (Sandbox{}).tagURL("issue=4"); got != "" {
+		t.Errorf("tagURL on a discobox with no GitHub repository = %q, want nothing", got)
+	}
+}
+
+// githubTaggedSandboxes is the listing with the first discobox, cut from a
+// GitHub repository, working on an issue and a pull request in it.
+func githubTaggedSandboxes() []Sandbox {
+	boxes := testSandboxes()
+	boxes[0].Name = "reaper"
+	boxes[0].Repository = "https://github.com/acme/foo"
+	boxes[0].Tags = []string{"issue=4", "pr=9", "wip"}
+	return boxes
+}
+
+// On the list, the tag is the link: a plain click on `#issue=4` opens the
+// issue rather than only pointing at the row, and it is drawn as the OSC 8 a
+// terminal's own Ctrl-click follows.
+func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(githubTaggedSandboxes()...)
+	d, m := openList(t, ds)
+	// Wide enough for the tags beside the name: they give way before it does.
+	d.dispatch(tea.WindowSizeMsg{Width: 180, Height: 40})
+	d.wait("the tags", func() bool { return strings.Contains(plainFrame(m), "#issue=4 #pr=9 #wip") })
+
+	opened := make(chan string, 4)
+	m.openOS = func(url string) error { opened <- url; return nil }
+
+	if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") ||
+		!strings.Contains(frame, "https://github.com/acme/foo/pull/9") {
+		t.Fatalf("the issue and pull request tags are not links:\n%q", frame)
+	}
+
+	x, y := at(t, m, "#issue=4")
+	tap(t, m, x, y)
+	if got := <-opened; got != "https://github.com/acme/foo/issues/4" {
+		t.Errorf("clicking #issue=4 opened %q, want the issue", got)
+	}
+	x, y = at(t, m, "#pr=9")
+	slowClock(m)
+	tap(t, m, x, y)
+	if got := <-opened; got != "https://github.com/acme/foo/pull/9" {
+		t.Errorf("clicking #pr=9 opened %q, want the pull request", got)
+	}
+
+	// A tag that numbers nothing is the row, as it was.
+	x, y = at(t, m, "#wip")
+	tap(t, m, x, y)
+	select {
+	case got := <-opened:
+		t.Errorf("clicking #wip opened %q, want nothing opened", got)
+	default:
+	}
+	// The right button has nothing to do with a link, so it is the row's menu
+	// there as anywhere else on the row.
+	x, y = at(t, m, "#issue=4")
+	send(t, m,
+		tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight},
+		tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseRight},
+	)
+	if m.dialog == nil {
+		t.Errorf("right-clicking #issue=4 opened no menu, want the row's actions")
+	}
+}
+
+// The workspace says which issue and pull request it is working on at the top,
+// each a link to it.
+func TestTheWorkspaceHeaderLinksTheIssueAndPullRequest(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(githubTaggedSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
+
+	opened := make(chan string, 4)
+	m.openOS = func(url string) error { opened <- url; return nil }
+
+	x, y := at(t, m, "issue #4")
+	if y != 0 {
+		t.Fatalf("issue #4 is drawn on row %d, want the header", y)
+	}
+	tap(t, m, x, y)
+	if got := <-opened; got != "https://github.com/acme/foo/issues/4" {
+		t.Errorf("clicking issue #4 opened %q, want the issue", got)
+	}
+	x, y = at(t, m, "PR #9")
+	slowClock(m)
+	tap(t, m, x, y)
+	if got := <-opened; got != "https://github.com/acme/foo/pull/9" {
+		t.Errorf("clicking PR #9 opened %q, want the pull request", got)
+	}
+}
+
+// Without a GitHub repository, `issue=4` is only a tag: nothing in the
+// workspace header claims to know whose issue it is.
+func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
+	t.Parallel()
+	boxes := githubTaggedSandboxes()
+	boxes[0].Repository = ""
+	if field := workField(newStyles(false), boxes[0]); !field.empty() {
+		t.Fatalf("workField = %q, want nothing without a repository", field.text())
 	}
 }

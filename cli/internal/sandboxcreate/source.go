@@ -959,6 +959,44 @@ func ExpandGitHubShorthand(value string) string {
 	return expanded
 }
 
+// GitHubRepositoryURL is the web address of the GitHub repository a Git remote
+// names, `https://github.com/owner/repo`, or empty when it names something
+// else. Every spelling Git takes for one counts — https, ssh:// and git://
+// URLs and the scp-like `git@github.com:owner/repo.git` — since which of them
+// a source was written in says how it is reached, not what it is.
+func GitHubRepositoryURL(remote string) string {
+	remote = strings.TrimSpace(remote)
+	var host, repoPath string
+	if strings.Contains(remote, "://") {
+		u, err := url.Parse(remote)
+		if err != nil {
+			return ""
+		}
+		host, repoPath = u.Hostname(), u.Path
+	} else {
+		var ok bool
+		host, repoPath, ok = strings.Cut(remote, ":")
+		if !ok {
+			return ""
+		}
+		if at := strings.LastIndex(host, "@"); at >= 0 {
+			host = host[at+1:]
+		}
+	}
+	if host = strings.ToLower(host); host != "github.com" && host != "www.github.com" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(repoPath, "/"), "/")
+	if len(parts) != 2 {
+		return ""
+	}
+	owner, repo := parts[0], strings.TrimSuffix(parts[1], ".git")
+	if !githubOwner(owner) || !githubRepository(repo) {
+		return ""
+	}
+	return "https://github.com/" + owner + "/" + repo
+}
+
 // githubOwner reports whether name can be a GitHub user or organization:
 // letters, digits and single hyphens, never at either end.
 func githubOwner(name string) bool {

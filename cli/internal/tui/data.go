@@ -274,6 +274,11 @@ type Sandbox struct {
 	// filed: what the list follows the Source row to when it is set to this
 	// one. It is OriginKey itself for a discobox created here.
 	SourceOriginKey string
+	// Repository is the web address of the GitHub repository the source
+	// belongs to, `https://github.com/owner/repo`, and empty when it is not
+	// on GitHub or there is no source. It is what an `issue=` or `pr=` tag is
+	// numbered in, which is what makes such a tag a link (Sandbox.tagURL).
+	Repository string
 
 	Branch string
 	Commit string // the commit it was spawned from, short

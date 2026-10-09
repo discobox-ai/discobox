@@ -676,6 +676,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		}
 	}
 	var drawnSection *sectionKey
+	var rowLinks []rowLink
 	for i := l.offset; i < len(rows) && len(body) < rowBudget; i++ {
 		// A header in front of each section's rows, and in front of the first
 		// row drawn whichever section it is in: a window scrolled into the
@@ -688,7 +689,9 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 			l.drawn.rows = append(l.drawn.rows, -1)
 			drawnSection = &key
 		}
-		body = append(body, l.row(st, rows[i], i, focused))
+		line, links := l.row(st, z, rows[i], i, len(out)+len(body), focused)
+		rowLinks = append(rowLinks, links...)
+		body = append(body, line)
 		if l.drawn.rows != nil {
 			l.drawn.rows = append(l.drawn.rows, i)
 		}
@@ -720,6 +723,11 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// still has air between them.
 	block := append(append(out, body...), blank)
 	z.markList(hitRow, l.drawn, l.width, len(block))
+	// The links on the rows go over the rows, so a press on one opens it
+	// rather than pointing at its row.
+	for _, link := range rowLinks {
+		z.mark(urlHit(link.url), link.x, link.y, link.width, 1)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, block...)
 }
 
@@ -809,7 +817,9 @@ func (l *sandboxList) markBand(z *zones, y int, offer, marks, right string) {
 // row draws one sandbox. Widths are budgeted left to right and the columns
 // drop off the right end as the terminal narrows: the age goes
 // first, then the origin, then the diffstat, and the name never goes at all.
-func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
+// row draws one discobox on line y of the list's block, and hands back the
+// links on it for the list to mark over the row.
+func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused bool) (string, []rowLink) {
 	// The cursor belongs to the pane that has focus. With the prompt focused
 	// there is nothing to act on, so nothing is drawn as picked out — only
 	// the marks, which were put there deliberately and outlive the focus.
@@ -921,22 +931,19 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// qualifier above: they say which box this is, so they sit by the name,
 	// and they give way before the name does — as many as fit, and none when
 	// even one would squeeze the name (ADR 0136).
-	tagged := ""
+	var shown []string
+	taggedW := 0
 	if len(s.Tags) > 0 {
 		room := nameW - (nameReserve - lipgloss.Width(head))
-		text := ""
 		for _, tag := range s.Tags {
-			next := text + " #" + tag
-			if lipgloss.Width(next) > room {
+			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
+			if next > room {
 				break
 			}
-			text = next
-		}
-		if text != "" {
-			tagged = st.dimText.Render(text)
+			shown, taggedW = append(shown, tag), next
 		}
 	}
-	nameW -= lipgloss.Width(tagged)
+	nameW -= taggedW
 
 	if atCursor {
 		// The cursor row is the one that can be scrolled, so it is the one
@@ -954,18 +961,59 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 		nameStyle = st.cursorName
 	}
 
-	cell := padANSI(nameStyle.Render(truncate(name, nameW))+from+tagged, nameW+lipgloss.Width(from)+lipgloss.Width(tagged))
+	named := nameStyle.Render(truncate(name, nameW))
+	tagged, links := l.tagSpans(st, z, s, shown, lipgloss.Width(head)+lipgloss.Width(named)+lipgloss.Width(from), y)
+	cell := padANSI(named+from+tagged, nameW+lipgloss.Width(from)+taggedW)
 	line := padANSI(head+cell+tail, l.width)
 	switch {
 	case atCursor && selected:
-		return highlight(st, line, colBothBG)
+		return highlight(st, line, colBothBG), links
 	case selected:
-		return highlight(st, line, colSelectedBG)
+		return highlight(st, line, colSelectedBG), links
 	case atCursor:
-		return highlight(st, line, colHighlightBG)
+		return highlight(st, line, colHighlightBG), links
 	default:
-		return line
+		return line, links
 	}
+}
+
+// rowLink is a link drawn on a row: the cells it takes in the list's block —
+// the line the row was drawn on, and the columns from its left edge, the same
+// numbers it was lit by — and where it points. The row cannot mark it itself — the list marks
+// its rows once it knows which lines they landed on, and a link marked before
+// its row would be underneath it — so it hands it back to be marked over the
+// row (sandboxList.view).
+type rowLink struct {
+	x, y, width int
+	url         string
+}
+
+// tagSpans draws the tags a row has room for, dim, from cell x of line y. A
+// tag that numbers an issue or a pull request in the discobox's GitHub
+// repository (Sandbox.tagURL) is a link to it instead, in the color the
+// header's links are drawn in, and lit when the pointer is on it — the same
+// terms the header's links are drawn on, since a click on one opens it.
+func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x, y int) (string, []rowLink) {
+	var out strings.Builder
+	var links []rowLink
+	for _, tag := range tags {
+		label := tagLabel(tag)
+		out.WriteString(st.dimText.Render(" "))
+		x++
+		width := lipgloss.Width(label)
+		switch url := s.tagURL(tag); {
+		case url == "":
+			out.WriteString(st.dimText.Render(label))
+		case z.hovering(x, y, width, 1):
+			out.WriteString(hyperlink(url, st.hover.Render(label)))
+			links = append(links, rowLink{x: x, y: y, width: width, url: url})
+		default:
+			out.WriteString(hyperlink(url, st.info.Render(label)))
+			links = append(links, rowLink{x: x, y: y, width: width, url: url})
+		}
+		x += width
+	}
+	return out.String(), links
 }
 
 // gitStyle is the color the git position and its spelled-out mark are drawn
@@ -1075,14 +1123,14 @@ func portsField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderFiel
 	field := paneHeaderField{}
 	for _, protocol := range order {
 		if len(field.spans) > 0 {
-			field.spans = append(field.spans, portSpan(st, " · ", ""))
+			field.spans = append(field.spans, linkSpan(st, " · ", ""))
 		}
 		ports := groups[protocol]
 		sort.Slice(ports, func(i, j int) bool { return ports[i].Number < ports[j].Number })
-		field.spans = append(field.spans, portSpan(st, protocolLabel(protocol)+":", ""))
+		field.spans = append(field.spans, linkSpan(st, protocolLabel(protocol)+":", ""))
 		for i, port := range ports {
 			if i > 0 {
-				field.spans = append(field.spans, portSpan(st, ",", ""))
+				field.spans = append(field.spans, linkSpan(st, ",", ""))
 			}
 			field.spans = append(field.spans, portEntry(st, port, forwarded))
 		}
@@ -1090,13 +1138,38 @@ func portsField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderFiel
 	return field
 }
 
-// portSpan is one piece of the ports field: the text in the field's own color,
-// linked when there is somewhere for it to point.
-func portSpan(st *styles, text, url string) headerSpan {
+// linkSpan is one piece of a header field drawn in the links' color — the
+// ports, the desktop, the issue and pull request — linked when there is
+// somewhere for it to point.
+func linkSpan(st *styles, text, url string) headerSpan {
 	if url == "" {
 		return headerSpan{text: st.info.Render(text), label: text}
 	}
 	return headerSpan{text: st.info.Render(hyperlink(url, text)), label: text, url: url}
+}
+
+// workField is the issue and the pull request the discobox's `issue=` and
+// `pr=` tags number, each a link to it on GitHub (Sandbox.tagURL): the work
+// this discobox is doing, one press from what is being said about it. Empty
+// when it has neither, or no GitHub repository for them to be numbered in.
+func workField(st *styles, s Sandbox) paneHeaderField {
+	var field paneHeaderField
+	for _, tag := range s.Tags {
+		url := s.tagURL(tag)
+		if url == "" {
+			continue
+		}
+		key, number, _ := strings.Cut(tag, "=")
+		label := "issue #" + number
+		if key == "pr" {
+			label = "PR #" + number
+		}
+		if !field.empty() {
+			field.spans = append(field.spans, linkSpan(st, " · ", ""))
+		}
+		field.spans = append(field.spans, linkSpan(st, label, url))
+	}
+	return field
 }
 
 // desktopField is the sandbox's graphical desktop, as a link to the local end of
@@ -1129,7 +1202,7 @@ func desktopField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderFi
 		if label == "" {
 			label = "Desktop"
 		}
-		return paneHeaderField{spans: []headerSpan{portSpan(st, label, scheme+"://localhost:"+itoa(local))}}
+		return paneHeaderField{spans: []headerSpan{linkSpan(st, label, scheme+"://localhost:"+itoa(local))}}
 	}
 	return paneHeaderField{}
 }
@@ -1153,7 +1226,7 @@ func desktopField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderFi
 func portEntry(st *styles, port Port, forwarded map[portKey]int) headerSpan {
 	local, ok := forwarded[port.key()]
 	if !ok {
-		return portSpan(st, itoa(port.Number), "")
+		return linkSpan(st, itoa(port.Number), "")
 	}
 	text := itoa(local)
 	if local != port.Number {
@@ -1161,9 +1234,9 @@ func portEntry(st *styles, port Port, forwarded map[portKey]int) headerSpan {
 	}
 	scheme, web := portScheme(port.Protocol)
 	if !web {
-		return portSpan(st, text, "")
+		return linkSpan(st, text, "")
 	}
-	return portSpan(st, text, scheme+"://localhost:"+itoa(local))
+	return linkSpan(st, text, scheme+"://localhost:"+itoa(local))
 }
 
 // portScheme is the URL scheme a protocol is reachable under, and whether it is

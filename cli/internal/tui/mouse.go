@@ -189,7 +189,7 @@ func (m *Model) rightPress(ev tea.MouseClickMsg) tea.Cmd {
 	if cmd := m.copyShowingSelection(); cmd != nil {
 		return cmd
 	}
-	where, ok := m.zones.at(ev.X, ev.Y)
+	where, ok := m.zones.beneathLinks(ev.X, ev.Y)
 	if !ok {
 		return nil
 	}
@@ -389,7 +389,7 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// openLink opens one of the header's links through this machine's own URL
+// openLink opens one of the window's links through this machine's own URL
 // handler, and says which URL it opened: the browser comes up in front of the
 // terminal, so the line is there for the case where it does not.
 func (m *Model) openLink(url string) tea.Cmd {
@@ -671,7 +671,7 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 	if lines == 0 {
 		return nil
 	}
-	where, ok := m.zones.at(ev.X, ev.Y)
+	where, ok := m.zones.beneathLinks(ev.X, ev.Y)
 	if !ok {
 		// A dialog that scrolls is the whole card, and it is the only thing on
 		// screen while it is up.
