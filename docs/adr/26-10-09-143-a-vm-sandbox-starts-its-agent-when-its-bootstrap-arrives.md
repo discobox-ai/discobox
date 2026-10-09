@@ -1,6 +1,6 @@
 # 26-10-09-143 — A VM sandbox starts its agent when its bootstrap arrives, and its backend gives the pool one address to it
 
-- **Status**: Proposed (narrows [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md)
+- **Status**: Accepted (narrows [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md)
   §2 for backends with no PID-1 flow: the bootstrap is placed after boot,
   before the agent starts; picks [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
   §5's "address the pool can dial" for provider-hosted VMs)

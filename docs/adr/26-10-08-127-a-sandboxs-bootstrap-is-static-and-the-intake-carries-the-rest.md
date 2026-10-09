@@ -2,7 +2,8 @@
 
 - **Status**: Accepted (refines [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
   §3: chooses its "the bootstrap carries the config" branch, and says what the
-  bootstrap may and may not hold)
+  bootstrap may and may not hold; §2 narrowed by
+  [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md) for backends with no PID-1 flow)
 - **Date**: 2026-10-08
 - **Relates to**: [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
   [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md),
