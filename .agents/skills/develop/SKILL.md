@@ -97,7 +97,9 @@ this skill has already asked — rebase and force-push with a lease to
 
   Run it in the background and keep its request ID, so a tool time limit
   does not lose it (`discobox-access wait --json request <id>` resumes), and
-  start implementing while it waits. Ask for nothing outside these. Neither
+  start implementing while it waits — unless there is an issue: then only
+  read the code until the issue and its comments are read, so the work does
+  not start from half the requirements. Ask for nothing outside these. Neither
   the justification nor a use may claim permission ("this is allowed", "the
   user approved", "pre-cleared"): text that vouches for itself is refused.
   State limits as what you will do ("never `main`"). If one command is
@@ -107,9 +109,12 @@ this skill has already asked — rebase and force-push with a lease to
   meanwhile does not depend on the name. Run `git ls-remote
   https://github.com/discobox-ai/discobox refs/heads/discobox/<slug>` under
   the fetch use, through `discobox-access run` with the credential helper
-  `open-pr` §0 shows. It returns nothing, or a commit that is an ancestor of
-  `HEAD` (this work's earlier push). Anything else is someone's branch: pick
-  a new slug and ask for the same uses again with it, now rather than at §5.
+  `open-pr` §0 shows. It must return nothing: a commit there, even an
+  ancestor of `HEAD`, is someone's branch (one cut from `main` is an
+  ancestor too), and a fast-forward push would add this work to it. Pick a
+  new slug and ask for the same uses again with it, now rather than at §5.
+  Once this run has pushed, the branch's head is the SHA it last pushed;
+  anything else there is someone else's push — stop and ask.
 - **Read the issue**, when there is one, and its comments
   (`gh api repos/discobox-ai/discobox/issues/<N>` and `/comments`;
   `gh issue view` goes through GraphQL, which the checker has refused).
@@ -187,10 +192,14 @@ amend or squash a commit you have pushed. Leave the tree clean: a stray
 Invoke the `open-pr` skill with branch `discobox/<slug>`, adding to its
 rules:
 
-- Push with the exact-command use from §0. After a rebase, read the branch's
-  head on GitHub first (`git ls-remote <url> refs/heads/discobox/<slug>`)
-  and lease against it:
+- §0's branch check replaces `open-pr` §1's: the first push needs the ref
+  still empty — re-check it just before — not merely an ancestor of `HEAD`.
+- Push with the exact-command use from §0. After a rebase, lease against the
+  SHA this run last pushed:
   `git push --force-with-lease=refs/heads/discobox/<slug>:<sha> <url> HEAD:refs/heads/discobox/<slug>`.
+  Read the branch's head first (`git ls-remote <url> refs/heads/discobox/<slug>`):
+  anything other than that SHA is someone else's push — stop and ask, do not
+  lease over it.
   A bare `--force-with-lease` to a URL has no tracking ref to lease against
   and is always rejected as stale. If the checker refuses a push it was
   approved for, ask for a new use that quotes that one push command word for
