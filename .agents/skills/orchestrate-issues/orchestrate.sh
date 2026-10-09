@@ -13,6 +13,9 @@
 # </dev/null: it shows the judge what a command reads on stdin, and in a loop it
 # would read the loop's input.
 set -uo pipefail
+# nix develop exports $out, and a local of that name inherits the export: a
+# page of issue JSON in it would reach every child's environment and fail exec.
+export -n out
 
 ORCH_DIR=${ORCH_DIR:-$HOME/.local/state/orchestrate}
 REPO=${ORCH_REPO:-discobox-ai/discobox}
@@ -199,7 +202,7 @@ cmd_untriaged() { # untriaged: open issues with no triaged or platform/* label a
 			| select([.labels[].name] | any(. == "triaged" or startswith("platform/")) | not)
 			| "\(.number)\t\(.title)"')$'\n'
 	done
-	printf '%s' "$all" | awk -F'\t' 'NR==FNR{held[$1]=1; next} $1!="" && !held[$1]' <({ cut -f2 "$P"; cut -f1 "$W"; }) -
+	printf '%s' "$all" | awk -F'\t' 'FILENAME==ARGV[1]{held[$1]=1; next} $1!="" && !held[$1]' <({ cut -f2 "$P"; cut -f1 "$W"; }) -
 }
 
 verdict() { cmd_screen "$1" 40 | grep -o "triaged #$2: deliver=.*" | tail -1; }
