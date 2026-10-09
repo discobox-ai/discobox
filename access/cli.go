@@ -233,7 +233,9 @@ nowhere else, which is what lets a model judge the command before it runs.
   unavailable  the service could not answer; retry
 
 The value you receive is opaque and short-lived. Do not log it, write it to a
-file, or reuse it after it expires — ask for it again instead.
+file, or reuse it after it expires — run the use again instead. A use lasts as
+long as list says, which is what the approver chose rather than what you asked;
+check list before asking for a use again.
 
 Configured by %[2]s (default %[3]s) and %[4]s.
 `, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
