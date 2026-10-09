@@ -1,6 +1,7 @@
 package sandboxes
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
@@ -84,5 +86,40 @@ func TestSkillsLeaveTheFingerprintOfASandboxWithoutThem(t *testing.T) {
 	manifest.Skills = sandboxconfig.Skills{"foo": {Skill: "# foo"}}
 	if manifest.Fingerprint() == before {
 		t.Fatal("skills did not change the fingerprint")
+	}
+}
+
+// An archive is the caller's file: skills the sandbox would refuse at its first
+// launch are refused at import, before the tree is read, and good ones come
+// through whole (ADR 26-10-09-395 §1).
+func TestImportHoldsSkillsToTheCreatesLine(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	bad := exportArchive(t, func(m *sandboxexport.Manifest) {
+		m.Sandbox.Manifest.Skills = sandboxconfig.Skills{"evil": {Skill: "x", Files: []sandboxconfig.SkillFile{{Path: "../../.bashrc"}}}}
+	}, map[string]string{"data/big": "pretend this is a workspace"})
+
+	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(bad), services.SandboxImportOptions{})
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+		t.Fatalf("err = %v, want a 400", err)
+	}
+	if provider.imported != nil {
+		t.Fatal("the tree was uploaded before the refusal")
+	}
+
+	good := exportArchive(t, func(m *sandboxexport.Manifest) {
+		m.Sandbox.Manifest.Skills = sandboxconfig.Skills{"foo": {Skill: "# foo"}}
+	}, nil)
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(good), services.SandboxImportOptions{})
+	if err != nil {
+		t.Fatalf("import with good skills: %v", err)
+	}
+	sb, err := st.GetSandbox(ctx, "project-1", result.Sandbox.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sb.Skills, sandboxconfig.Skills{"foo": {Skill: "# foo"}}) {
+		t.Fatalf("imported skills = %#v", sb.Skills)
 	}
 }

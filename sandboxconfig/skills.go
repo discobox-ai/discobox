@@ -6,6 +6,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // SkillFileName is the file a skill directory is recognized by, and where a
@@ -110,10 +111,10 @@ func (s Skills) Validate() error {
 		}
 		// Two names one case-insensitive filesystem holds as one directory
 		// would be written over each other on macOS and Windows.
-		if other, ok := folded[strings.ToLower(name)]; ok {
+		if other, ok := folded[foldKey(name)]; ok {
 			return fmt.Errorf("skills %q and %q differ only in case", other, name)
 		}
-		folded[strings.ToLower(name)] = name
+		folded[foldKey(name)] = name
 		if err := s[name].validate(); err != nil {
 			return fmt.Errorf("skill %q: %w", name, err)
 		}
@@ -148,23 +149,23 @@ func (s Skill) validate() error {
 	if strings.TrimSpace(s.Skill) == "" {
 		return fmt.Errorf("%s is empty", SkillFileName)
 	}
-	// Keyed by the path folded to lower case: a case-insensitive filesystem
-	// holds two paths that differ only in case as one.
+	// Keyed by the path's case fold: a case-insensitive filesystem holds two
+	// paths that differ only in case as one.
 	seen := make(map[string]string, len(s.Files))
 	for _, file := range s.Files {
 		if err := validateSkillFilePath(file.Path); err != nil {
 			return err
 		}
-		if other, ok := seen[strings.ToLower(file.Path)]; ok {
+		if other, ok := seen[foldKey(file.Path)]; ok {
 			return fmt.Errorf("files %q and %q are one file where case does not count", other, file.Path)
 		}
-		seen[strings.ToLower(file.Path)] = file.Path
+		seen[foldKey(file.Path)] = file.Path
 	}
 	// A file may not be a directory another file is under: written in either
 	// order, one of them would fail.
 	for _, file := range s.Files {
 		for dir := path.Dir(file.Path); dir != "."; dir = path.Dir(dir) {
-			if other, ok := seen[strings.ToLower(dir)]; ok {
+			if other, ok := seen[foldKey(dir)]; ok {
 				return fmt.Errorf("file %q is also the directory %q is in", other, file.Path)
 			}
 		}
@@ -194,6 +195,19 @@ func validateSkillFilePath(p string) error {
 		}
 	}
 	return nil
+}
+
+// foldKey is s with every rune replaced by the smallest of its case-fold
+// orbit, so two strings strings.EqualFold holds equal have one key. Lowering
+// is not that: Σ, σ and ς fold together, and ς lowers to itself.
+func foldKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
+		}
+		return least
+	}, s)
 }
 
 // windowsReservedNames are the device names Windows refuses as a file or

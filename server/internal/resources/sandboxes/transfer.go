@@ -222,6 +222,12 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		return nil, apperrors.NotFound(err, "project not found")
 	}
 	spec := manifest.Sandbox
+	// An archive is the caller's file, so its skills are held to the line a
+	// create is (ADR 26-10-09-395 §1): ones the sandbox would refuse at its
+	// first launch are refused here, before the tree is read.
+	if err := spec.Manifest.Skills.Validate(); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "the archive's skills: "+err.Error())
+	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		name = strings.TrimSpace(spec.Name)
