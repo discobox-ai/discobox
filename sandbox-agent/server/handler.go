@@ -96,7 +96,8 @@ const terminalReadyTimeout = 90 * time.Second
 // resolveExecID maps the virtual primary exec id to the sandbox's primary
 // terminal, and revives a dead terminal addressed by its own id (ADR 0038): a
 // terminal's exec id is its durable identity, so attach/start on an ended
-// terminal resumes it in place rather than addressing a dead record. Plain
+// terminal resumes it in place rather than addressing a dead record — except a
+// configure flow's finished run, which stays as it ended (terminal.Relaunches). Plain
 // (non-terminal) exec ids pass through unchanged. Use it for attach/start,
 // where resuming is the goal.
 func (h *handler) resolveExecID(ctx context.Context, execID string) (string, error) {
@@ -166,9 +167,10 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 }
 
 // sessionGoneMessage explains an attach to an exec whose session has ended,
-// and points at the recovery: any terminal revives under its own id on the
-// next attach (ADR 0038) — reaching here means this one's revive failed —
-// while a plain exec has to be recreated.
+// and points at the recovery: a terminal that relaunches revives under its own
+// id on the next attach (ADR 0038) — reaching here means this one's revive
+// failed — while a plain exec has to be recreated. A configure flow's finished
+// run has neither: it ran once, and its exit is what the server commits on.
 func (h *handler) sessionGoneMessage(execID string) string {
 	message := "sandbox exec " + execID + " has ended"
 	exec, ok := h.execs.Get(execID)
@@ -181,10 +183,13 @@ func (h *handler) sessionGoneMessage(execID string) string {
 		}
 	}
 	message += " and its session is no longer available to attach"
-	if ok && terminal.HarnessID(exec) != "" {
-		return message + "; attach it again to relaunch it"
+	if !ok || terminal.HarnessID(exec) == "" {
+		return message + "; create a new exec to run it again"
 	}
-	return message + "; create a new exec to run it again"
+	if h.terminals != nil && !h.terminals.Relaunches(exec) {
+		return message + "; a configure command runs once, so configure the harness again to rerun it"
+	}
+	return message + "; attach it again to relaunch it"
 }
 
 // oneShotExecHTTP runs a prepared exec to completion in a single request: the

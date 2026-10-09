@@ -362,8 +362,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 
 // Revive relaunches a dead terminal-mode exec in place under its own id: a
 // terminal's exec id is its durable identity (ADR 0038), so attaching to or
-// starting an ended terminal resumes it rather than addressing a dead record.
-// The harness's relaunch command runs as a fresh login shell's typed-in job
+// starting an ended terminal resumes it rather than addressing a dead record,
+// unless it is a configure flow's finished run (see Relaunches), which is
+// returned as it ended. The harness's relaunch command runs as a fresh login shell's typed-in job
 // (ADR 0027) in a new unit generation, with env and secrets re-resolved
 // exactly as Create resolves them. A live terminal is returned untouched;
 // non-terminal execs are never revived.
@@ -380,6 +381,29 @@ func (s *Service) Revive(ctx context.Context, id string) (execs.Exec, error) {
 	})
 }
 
+// Relaunches reports whether reviving a terminal would run it again: whether
+// it has ended in a way that attaching to or starting it resumes.
+//
+// A live terminal is not relaunched, and neither is a configure flow's run that
+// exited or failed. That command runs once, and how it ended is the flow's
+// result: the server commits on it. Re-running it would replace that result
+// with one nobody watched, and fence the shim a late attacher is replaying the
+// first run's output from. The client attaches to the primary and then starts
+// it, so a command that ends before the start arrives would otherwise always
+// run twice. A lost run never produced a result, so it relaunches in any mode.
+func (s *Service) Relaunches(exec execs.Exec) bool {
+	if HarnessID(exec) == "" {
+		return false
+	}
+	switch exec.Status {
+	case execs.StatusLost:
+		return true
+	case execs.StatusExited, execs.StatusFailed:
+		return s.harnessMode != config.HarnessModeConfig
+	}
+	return false
+}
+
 func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	exec, ok := s.execs.Get(id)
 	if !ok {
@@ -388,19 +412,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	if HarnessID(exec) == "" {
 		return execs.Exec{}, fmt.Errorf("exec %s is not a terminal", id)
 	}
-	switch exec.Status {
-	case execs.StatusExited, execs.StatusFailed:
-		// A configure flow runs its command once, and how that run ended is
-		// the flow's result: the server commits on it. Re-running it would
-		// replace that result with one nobody watched, and fence the shim a
-		// late attacher is replaying the first run's output from. The client
-		// attaches to the primary and then starts it, so a command that ends
-		// before the start arrives would otherwise always run twice.
-		if s.harnessMode == config.HarnessModeConfig {
-			return exec, nil
-		}
-	case execs.StatusLost:
-	default:
+	if !s.Relaunches(exec) {
 		return exec, nil
 	}
 	harness, harnessID, err := s.resolveHarness(HarnessID(exec))
@@ -509,13 +521,14 @@ func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true"
 
 // PrimaryExecID is the virtual exec id that always resolves to the sandbox's
 // current primary terminal. Attaching or starting it relaunches a stopped
-// primary (see ResolvePrimary) rather than addressing a fixed, possibly dead
+// primary that Relaunches allows (see ResolvePrimary) rather than addressing a fixed, possibly dead
 // exec. The control plane proxies exec ids opaquely, so clients simply use this
 // value in place of a real exec id.
 const PrimaryExecID = "primary"
 
 // ResolvePrimary ensures the primary terminal is live — relaunching it with the
-// harness's relaunch command when it has stopped — and returns it.
+// harness's relaunch command when it has stopped and Relaunches allows it — and
+// returns it. A configure flow's finished run is returned as it ended.
 //
 // It returns the terminal the launch actually produced rather than re-scanning,
 // so an attach connects to the exec it waited behind. Only when there was
