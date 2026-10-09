@@ -90,10 +90,18 @@ runs today — in its container, in its Linux pool — with every service it has
 
 ### 2. The engine runs where its driver reaches its hypervisor
 
-The machine runtime talks to a **machine seam** with the operations of
-26-10-09-143 §2 and nothing else: create, start, stop, remove, inspect and
-list (power state included), place the bootstrap, and connect to the agent's
-port. Two things serve that seam, because two kinds of driver exist:
+The machine runtime talks to a **machine seam**, and the seam offers nothing
+else:
+
+- **Per instance**, the operations of 26-10-09-143 §2: create, start, stop,
+  remove, inspect and list (power state included), place the bootstrap, and
+  connect to the agent's port.
+- **Per pool**, two operations that are not about any one instance:
+  report the targets it offers, with their limits (§3), and build or confirm
+  the image for a target, reporting progress as the pool's own phase (§5,
+  after 0145 §2).
+
+Two things serve that seam, because two kinds of driver exist:
 
 - **A local hypervisor** (vz on a Mac, hcs on Windows) cannot be reached from
   inside a Linux pool VM. Its engine runs on the host, in the discobox server,
@@ -234,7 +242,8 @@ its backend:
 
 - Its **§1** is how every machine sandbox starts: an image built with the
   sandbox agent as a service of the guest's init, waiting for its bootstrap.
-- Its **§2** is the machine seam's whole surface. disco-vm's own guest agent
+- Its **§2** is the seam's whole per-instance surface; the two per-pool
+  operations of §2 above are not about an instance. disco-vm's own guest agent
   places `sandbox.json` (`CopyTo`) before the sandbox agent exists; after that,
   nothing in the pool uses it, and the pool exposes no other guest port.
 - Its **§3** decides boxd's address. Its sentence that a local VM's address is
