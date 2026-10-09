@@ -66,6 +66,10 @@ func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 			t.Fatalf("%s = %q, want system CA bundle", name, got)
 		}
 	}
+	// Node's built-in fetch ignores the proxy variables without it.
+	if got := material.Env["NODE_USE_ENV_PROXY"]; got != "1" {
+		t.Fatalf("NODE_USE_ENV_PROXY = %q, want 1", got)
+	}
 }
 
 // A Docker pool's sandboxes reach its services over TCP by the pool's DNS

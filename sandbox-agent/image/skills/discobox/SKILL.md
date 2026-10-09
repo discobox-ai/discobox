@@ -100,6 +100,12 @@ already point at the MITM CA. A TLS verification failure means a tool with its
 own root store that nothing has named — point it at `$SSL_CERT_FILE` rather
 than disabling verification.
 
+A tool that ignores the proxy variables connects directly and fails with
+`ENETUNREACH` or "connection refused" — this box has no direct route out.
+`NODE_USE_ENV_PROXY=1` (already set) makes Node's built-in `fetch` honor them;
+anything else needs its proxy configured explicitly. The forwarder connects
+requests for this box's own networks (a nested container's IP) directly.
+
 ## Getting work out
 
 Commit it. That is the mechanism.

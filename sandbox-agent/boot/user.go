@@ -228,6 +228,7 @@ var proxyEnvKeep = []string{
 	"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
 	"http_proxy", "https_proxy", "all_proxy", "no_proxy",
 	"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "PIP_CERT",
+	"NODE_USE_ENV_PROXY",
 }
 
 // sudoersContent renders the drop-in, separate from writing it so its shape can
