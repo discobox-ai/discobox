@@ -63,7 +63,10 @@ func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
-	reportedAt := time.Now()
+	// The report comes from before any restart a test begins. Windows' clock
+	// can return the same instant for both, which reads as a report from after
+	// the restart, so it is backdated well inside the heartbeat timeout.
+	reportedAt := time.Now().Add(-time.Second)
 	pool := &model.Pool{
 		StatusReportedAt: &reportedAt,
 		ID:               "pool-1", ProjectID: "project-1", Ready: true,
