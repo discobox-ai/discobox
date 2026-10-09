@@ -40,7 +40,8 @@ func TestReadSkillsReadsEverySkillInADirectory(t *testing.T) {
 		t.Fatalf("ReadSkills() = %v", err)
 	}
 	want := sandboxconfig.Skills{"foo": {Skill: "# foo", Files: []sandboxconfig.SkillFile{
-		{Path: "scripts/run.sh", Content: []byte("#!/bin/sh\n"), Executable: runtime.GOOS != "windows"},
+		// Executable by its bit here, and by its #! line on Windows.
+		{Path: "scripts/run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 	}}}
 	if !reflect.DeepEqual(skills, want) {
 		t.Fatalf("ReadSkills() = %#v, want %#v", skills, want)

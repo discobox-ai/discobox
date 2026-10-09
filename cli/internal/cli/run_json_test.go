@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -250,7 +249,8 @@ func TestRunCarriesItsSkills(t *testing.T) {
 			if file["path"] != "bin/run.sh" || file["content"] != base64.StdEncoding.EncodeToString([]byte("#!/bin/sh\n")) {
 				t.Fatalf("file = %#v, want bin/run.sh as base64", file)
 			}
-			if runtime.GOOS != "windows" && file["executable"] != true {
+			// By its bit here, and by its #! line on Windows.
+			if file["executable"] != true {
 				t.Fatalf("file = %#v, want it executable", file)
 			}
 		})
