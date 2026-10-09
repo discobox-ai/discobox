@@ -41,7 +41,7 @@ true of it, and true *by rule* rather than by slug:
   secret declarations, env, volumes, and additional groups onto the config
   (`snapshotImageMetadata`). Nothing re-reads the labels afterward. Configure
   ports (`harness.ConfigPort`) are validated as a port number each, declared
-  once; the forward they ask for is the CLI's, not this service's — see `cli/internal/cli` →
+  once, or as the single numberless ephemeral entry; the forward they ask for is the CLI's, not this service's — see `cli/internal/cli` →
   `forwardConfigurePorts`.
 - The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
   can compare it on either image store: from a registry, the digest the tag is

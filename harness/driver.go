@@ -162,13 +162,30 @@ type ImageMode struct {
 // the flow runs. Same number or nothing — the redirect URI is fixed, so a
 // forward that landed on the next free port would answer no browser while
 // looking like it had worked.
+//
+// Some sign-ins pick their callback port fresh each run — Copilot's binds
+// 127.0.0.1:0, and GitHub accepts any loopback port — so no number can be
+// declared ahead of it. Ephemeral asks the flow to follow the configure
+// sandbox's discovered listening ports instead and forward each one it sees
+// at that same number, under the same rule: never moved, because the number
+// is already in the redirect URI the browser was handed.
 type ConfigPort struct {
+	// Port is the number to forward. Zero, and only zero, when Ephemeral —
+	// still serialized, because the API keeps the field required so a client
+	// that predates Ephemeral still decodes the harness listing.
 	Port int `json:"port"`
+	// Ephemeral forwards every TCP port the configure sandbox is found
+	// listening on, each at its own number. At most one entry is ephemeral.
+	Ephemeral bool `json:"ephemeral,omitempty"`
 	// Unavailable is what to tell the user when the port cannot be bound here,
 	// because something else on their machine already holds it. Only the image
 	// knows what its harness can still do without the callback — sign in by
 	// device code, in Codex's case — so the fallback is the image's to spell
-	// out. Empty falls back to saying which port could not be bound.
+	// out. Empty falls back to saying which port could not be bound. For an
+	// ephemeral entry it follows the CLI's own words naming the discovered
+	// port that was taken, so it says what to do rather than what happened —
+	// and a CLI that predates Ephemeral prints it alone on every configure,
+	// for a port 0 it never forwards, so it has to hold true read that way.
 	Unavailable string `json:"unavailable,omitempty"`
 }
 

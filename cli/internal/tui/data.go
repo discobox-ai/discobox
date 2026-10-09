@@ -555,7 +555,12 @@ type Harness struct {
 // HarnessConfigPort is one port a harness's configure flow needs bound at its
 // own number on this machine.
 type HarnessConfigPort struct {
+	// Port is zero when Ephemeral.
 	Port int
+	// Ephemeral stands for whatever ports the configure sandbox turns out to
+	// listen on, which the flow forwards as it finds them. Nothing can be
+	// checked for it before the flow opens.
+	Ephemeral bool
 	// Unavailable is what to tell the user when it cannot be: the harness's
 	// own words, since only it knows what its sign-in can still do without
 	// the port. Always filled in.

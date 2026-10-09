@@ -288,6 +288,17 @@ launchers, and configure scripts.
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md)
   for the snapshot and [`cli/internal/tui/DESIGN.md`](../cli/internal/tui/DESIGN.md)
   for the pane.
+- **A sign-in whose callback port changes every run declares an ephemeral
+  entry** (`{"ephemeral": true}`, at most one; ADR 26-10-09-867). The flow then follows the
+  configure sandbox's discovered listening ports, as the workspace's forward
+  does, and binds each TCP one at the same number — exact, as above, since the
+  browser holds a redirect URI naming the sandbox's number. Declared services
+  (the desktop) are not followed: no sign-in redirects to them. A taken port is
+  reported when it is found, which is mid-flow, so the console's header cannot
+  warn of it ahead of time; the CLI names the number and the entry's
+  `unavailable` words say what to do. A CLI that predates ephemeral entries
+  reads one as port 0 and prints those words on every configure, so they must
+  hold true without a number.
 
 ## Driver Model
 
@@ -867,8 +878,10 @@ the two ways differ in what they hand every discobox
 
 - **A fine-grained PAT with only "Copilot Requests"**, the default, read by
   Copilot's own `copilot login --with-token`, which validates it.
-- **`/login`** in a bare Copilot, by device code, so no callback port is
-  declared. Its token is an OAuth App `gho_` token with `repo` scope among
+- **`/login`** in a bare Copilot. Its browser sign-in calls back to a port
+  it picks fresh each run (`listen(0)`; GitHub accepts any loopback port), so
+  the image declares an ephemeral config port; device code is the fallback
+  when the port it got is taken here. Its token is an OAuth App `gho_` token with `repo` scope among
   others, and Copilot sends it to both `api.github.com` and
   `githubcopilot.com`, so its secret carries no host. The script says that
   every discobox using the harness could then act on every repository the

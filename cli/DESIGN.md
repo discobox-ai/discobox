@@ -2940,7 +2940,9 @@ sequences the calls and hands the user the terminal in between:
    and forwarded into the configure sandbox (`forwardConfigurePorts`,
    `harness_configure_ports.go`) — exactly, or reported as unavailable in the
    image's own words, because a sign-in callback is sent to that number and no
-   other.
+   other. An ephemeral entry has no number to bind ahead of time: the forward
+   polls the sandbox's port listing for the length of the flow and binds each
+   TCP port it finds at that same number, never another.
 1. `POST .../configure` — the server creates the ephemeral `harnessMode: config`
    sandbox and returns it.
 2. `POST .../configure/attach` — the server seeds the previous configuration into

@@ -4958,14 +4958,26 @@ func (s *HarnessConfigFile) SetTemplate(val OptBool) {
 }
 
 // A local port a harness's configure flow needs bound at the same number on the user's machine and
-// forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to.
+// forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to. An
+// ephemeral entry names no number and stands for every TCP port the configure sandbox is found
+// listening on.
 // Ref: #/components/schemas/HarnessConfigPort
 type HarnessConfigPort struct {
-	// The port, bound locally at exactly this number or not at all.
+	// Forward each TCP port the configure sandbox is discovered listening on, at its own number, for a
+	// sign-in whose callback port changes every run. Port is 0 when set.
+	Ephemeral OptBool `json:"ephemeral"`
+	// The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry; kept
+	// required so a client predating ephemeral entries still decodes the list.
 	Port int64 `json:"port"`
 	// What to tell the user when the port cannot be bound on their machine; empty falls back to naming
-	// the port.
+	// the port. For an ephemeral entry it follows the client's own words naming the discovered port, and
+	// says what to do.
 	Unavailable OptString `json:"unavailable"`
+}
+
+// GetEphemeral returns the value of Ephemeral.
+func (s *HarnessConfigPort) GetEphemeral() OptBool {
+	return s.Ephemeral
 }
 
 // GetPort returns the value of Port.
@@ -4976,6 +4988,11 @@ func (s *HarnessConfigPort) GetPort() int64 {
 // GetUnavailable returns the value of Unavailable.
 func (s *HarnessConfigPort) GetUnavailable() OptString {
 	return s.Unavailable
+}
+
+// SetEphemeral sets the value of Ephemeral.
+func (s *HarnessConfigPort) SetEphemeral(val OptBool) {
+	s.Ephemeral = val
 }
 
 // SetPort sets the value of Port.

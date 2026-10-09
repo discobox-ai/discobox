@@ -156,9 +156,11 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 // no listener can hold, or one declared twice, is a broken image.
 func TestParseImageMetadataRejectsBadConfigPorts(t *testing.T) {
 	for name, ports := range map[string][]harness.ConfigPort{
-		"zero":      {{Port: 0}},
-		"too high":  {{Port: 65536}},
-		"duplicate": {{Port: 1455}, {Port: 1455, Unavailable: "a second opinion"}},
+		"zero":                {{Port: 0}},
+		"too high":            {{Port: 65536}},
+		"duplicate":           {{Port: 1455}, {Port: 1455, Unavailable: "a second opinion"}},
+		"ephemeral with port": {{Port: 1455, Ephemeral: true}},
+		"two ephemeral":       {{Ephemeral: true}, {Ephemeral: true, Unavailable: "a second opinion"}},
 	} {
 		label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
 			ID: "codex", Name: "Codex", RunCommand: []string{"codex"},
@@ -170,6 +172,22 @@ func TestParseImageMetadataRejectsBadConfigPorts(t *testing.T) {
 		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
 			t.Fatalf("%s config port was accepted", name)
 		}
+	}
+}
+
+// An ephemeral entry beside a fixed one is a valid declaration.
+func TestParseImageMetadataAcceptsAnEphemeralConfigPort(t *testing.T) {
+	label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
+		ID: "copilot", Name: "Copilot", RunCommand: []string{"copilot"},
+		Config: &harness.ImageMode{Command: []string{"configure"}, Ports: []harness.ConfigPort{
+			{Port: 1455}, {Ephemeral: true, Unavailable: "use a device code"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err != nil {
+		t.Fatalf("ephemeral config port was refused: %v", err)
 	}
 }
 

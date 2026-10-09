@@ -59,7 +59,8 @@ but a full-screen sign-in paints over its terminal within seconds; the header
 is where the words survive the session. The window does not bind anything: it
 asks `DataSource.LocalPortsInUse` just before opening the flow, so the probe has
 let go by the time the command binds for real, and draws the answer in the
-header's error color. On a row too narrow for both, the warning outranks the
+header's error color. An ephemeral entry is not probed: its port is whatever the
+sandbox listens on later, so only the command can say it was taken. On a row too narrow for both, the warning outranks the
 reminder — the reminder says how the flow goes, the warning says why it will
 not.
 
