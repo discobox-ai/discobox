@@ -113,23 +113,28 @@ state. It asks the provider to carry them out through a **machine seam** served
 by the server to that pool only, over the pool's authenticated connection to
 the control plane, scoped to the pool's own instances:
 
-- **Per instance**, the operations of 26-10-09-143 §2: create, start, stop,
-  remove, inspect and list (power state included), place the bootstrap, and
-  return the address of the agent's port.
+- **Per instance**: 26-10-09-143 §2's boot contract — start, place the
+  bootstrap, and return the address of the agent's port — and the lifecycle
+  this ADR adds around it: create, stop, remove, and inspect and list with
+  power state.
 - **Per pool**: report the platform and limits the driver offers (§4), and
   build or confirm the sandbox image, reporting progress as the pool's own
   phase (§5).
 
-The provider decides nothing and records nothing about a sandbox: it executes
-the pool agent's requests and answers what the hypervisor says. It does serve
+The provider owns no sandbox intent and publishes no sandbox state: it
+executes the pool agent's requests and answers what the hypervisor says. The
+engine keeps the instance metadata it needs to find, name and recover its
+machines, which is the engine's own bookkeeping, not a second record of the
+sandbox. It does serve
 an API, which 0144 §2's helper was forbidden to; it holds no pool state,
 resolves no secret, and is the one process that can hold a boxd key the pool
 agent's own machine must not.
 
-**Power state comes from the driver, not from a shim.** `Engine.State` today
-reports a machine whose shim has gone as stopped, which on boxd is a machine
-still running and billing. The seam reports what the hypervisor or the
-provider's API says, and adopts a running machine whose shim has gone.
+**Power state is the engine's.** A remote driver (`Capabilities.Remote`,
+boxd) runs no shim: each engine operation attaches to the machine and asks
+boxd (`GetVm`), so a running boxd machine is observed and reattached across
+server restarts as it is. A local machine is held by its shim, and dies with
+it, so the shim's answer is its state.
 
 **A local machine lives no longer than its server.** Every VM-backed provider
 obeys "the VM dies with the server, the disks do not" (`server/providers` "VM
@@ -159,7 +164,7 @@ provider adopts it again.
   one with no route off the machine, warm stages included.
 - **`boxd`.** The address is the sandbox machine's HTTPS URL for the agent's
   port (26-10-09-143 §3). The pool agent and the server reach each other as a
-  DigitalOcean pool's do: the pool agent dials the control plane at the
+  DigitalOcean pools do: the pool agent dials the control plane at the
   provider's explicit `controlPlaneUrl`, and the machine seam is served on that
   connection; the server's lease to the pool-agent API is the pool machine's
   HTTPS URL. A server with no URL a boxd machine can reach — one on a laptop —
@@ -180,10 +185,15 @@ other runs disco-vm images. So a harness's image declares its **kind** — OCI,
 or a disco-vm image for a driver — a pool declares the kind it runs, and a
 sandbox is placed only where both match.
 
-A pool's limits are the driver's where it has them: vz's two running macOS
-guests come from `Capabilities.MaxRunning` and close scheduling at that count,
-so a third macOS sandbox waits or is refused at placement rather than failing
-at start. boxd's org quota is not reported by disco-vm; until it is, a create
+A pool's limits are the driver's where it has them. vz's two running macOS
+guests (`Capabilities.MaxRunning`) are a limit of the host, not of a pool, and
+one provider instance may back several pools (ADR 0003). The server has one
+engine per host, and the engine already enforces the cap across every instance
+it runs at `Start`; the provider counts running guests across all its vz pools
+on that host and closes scheduling on each of them at the cap, so a third
+macOS sandbox waits at placement. A create that races past the count is
+refused by the engine at start and reported as a capacity wait, not a
+failure. boxd's org quota is not reported by disco-vm; until it is, a create
 past it fails at the provider and is reported as that failure.
 
 ### 5. What it keeps and supersedes
@@ -247,8 +257,9 @@ From **0145**:
 
 - Its **§1** is how every disco-vm sandbox starts: an image built with the
   sandbox agent as a service of the guest's init, waiting for its bootstrap.
-- Its **§2** is the seam's whole per-instance surface, and the `discovm`
-  provider is the backend it describes. disco-vm's own guest agent places
+- Its **§2** is the seam's per-instance boot contract, which §2 above wraps
+  in create, stop, remove and inspect, and the `discovm` provider is the
+  backend it describes. disco-vm's own guest agent places
   `sandbox.json` (`CopyTo`) before the sandbox agent exists; after that,
   nothing uses it, and the pool is given no other guest port.
 - Its **§3** decides a boxd sandbox's address. Its sentence that a local VM's
@@ -311,7 +322,7 @@ Nothing here changes how a container boots or how a `dockerworker` pool runs.
 - sandbox-agent is released for darwin as assets with digests, and a discobox
   build spec installs them; the pool assembles nothing.
 - disco-vm owes discobox, before the driver concerned is enabled: a vz run with
-  no route but the forwards, a shim that dies with its embedder, power state
-  from the driver and adoption of a running machine, the base version an
-  install resolved, and an HTTPS address for a boxd instance's port.
+  no route but the forwards, a shim that dies with its embedder, the base
+  version an install resolved, and an HTTPS address for a boxd instance's
+  port.
 - ADR 0141's uid range becomes per guest OS.
