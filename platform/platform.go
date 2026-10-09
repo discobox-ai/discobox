@@ -6,7 +6,12 @@
 // hosts, a harness config records the platforms its image is published for, and
 // a sandbox runs on its pool's platform, which its harness must publish; a
 // sandbox is placed only on a pool of its own platform, and a transfer never
-// crosses one (ADR 0145 §8). In the root module
+// crosses one (ADR 0145 §8).
+//
+// The image kind (ImageKind) is the second placement key (ADR 26-10-09-106
+// §4): a pool declares the kind of image it runs, a harness config records the
+// kind its image is, and a sandbox is placed only where both the platform and
+// the kind match. In the root module
 // because the control plane that places, the pool agent that declares, and
 // the CLI that offers only what a pool can run must all spell and compare it
 // the same way.

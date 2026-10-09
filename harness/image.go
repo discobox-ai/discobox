@@ -31,6 +31,12 @@ type ImageMetadata struct {
 	// for, which a label cannot know, so an image label naming one is refused
 	// at registration rather than read beside the registry's answer.
 	Platform platform.Platform `json:"platform,omitzero"`
+	// ImageKind is the kind of image a manifest file's template is built as:
+	// a disco-vm image for the driver it names (ADR 26-10-09-106 §4). Only a
+	// manifest file declares it, as it does its platform: an image is an OCI
+	// image by being one, so an image label naming a kind is refused at
+	// registration.
+	ImageKind platform.ImageKind `json:"imageKind,omitzero"`
 	// Account is the one account a sandbox without POSIX ids runs as, by its
 	// name alone (ADR 0145 §5). Shell is the login shell a terminal types its
 	// commands into (ADR 0027) on such a sandbox. On Linux both come from the

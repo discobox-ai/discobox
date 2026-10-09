@@ -238,7 +238,7 @@ func TestAwaitSandboxHTTPClientForServerWaitsForAPoolHeartbeat(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatalf("report pool status: %v", err)
 	}
 	select {
@@ -413,7 +413,7 @@ func TestProvisioningMarkIgnoresLiveness(t *testing.T) {
 
 	// The pool agent's status heartbeat: a whole-row save every 30 seconds,
 	// reporting the same capacity and the same readiness as last time.
-	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 4, 1<<30, 1<<30, nil); err != nil {
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 4, 1<<30, 1<<30, nil); err != nil {
 		t.Fatalf("pool status: %v", err)
 	}
 	if got := mark(); got != base {

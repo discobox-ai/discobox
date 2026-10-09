@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -401,7 +402,8 @@ func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	}
 
 	unchanged := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
-		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--clobbered"}},
+		ImageKind: platform.OCI,
+		Harness:   &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--clobbered"}},
 	}}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: unchanged}}
 	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}

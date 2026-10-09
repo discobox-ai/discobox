@@ -271,6 +271,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, err
 	}
+	// And the pool must run the kind of image its harness's image is
+	// (ADR 26-10-09-106 §4).
+	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
+		return nil, err
+	}
 	if harnessMode != sandboxconfig.HarnessModeConfig {
 		// A harness is only selectable once its configure flow has succeeded.
 		// harnessMode "config" is exempt: that is the configure flow itself.
@@ -417,6 +422,25 @@ func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) er
 	}
 	if err := platform.Place(sandboxPlatform, pool.Platform); err != nil {
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("pool %q: %v", pool.Name, err))
+	}
+	return nil
+}
+
+// refuseOtherImageKind refuses a sandbox on harness when pool runs another kind
+// of image, with the kinds as the reason (ADR 26-10-09-106 §4): a disco-vm
+// harness on a Docker pool of the same platform, or an OCI harness on a
+// discovm pool. It is the placement check as create and import make it,
+// before anything is written. A pool whose agent has not declared what it
+// runs is a pool still coming up, and not refused here: the provider's
+// placement (store.SchedulablePoolForSandbox) checks the kind once the agent
+// has said.
+func refuseOtherImageKind(harness *model.HarnessConfig, pool *model.Pool) error {
+	if pool.ImageKind.IsZero() {
+		return nil
+	}
+	if err := platform.PlaceKind(harness.ImageKind, pool.ImageKind); err != nil {
+		return apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q cannot run on pool %q: %v", harness.Slug, pool.Name, err))
 	}
 	return nil
 }

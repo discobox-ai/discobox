@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ const overlayManifest = `{
 	"io.discobox.image.v1.10-sandbox-base": {
 		"apiVersion": "discobox.dev/image/v1",
 		"platform": "darwin/arm64",
+		"imageKind": "discovm/vz",
 		"account": "discobox",
 		"shell": "/bin/zsh",
 		"env": {"PATH": "/usr/local/bin:/usr/bin:/bin"}
@@ -63,6 +65,9 @@ func TestInspectReadsAManifestFile(t *testing.T) {
 	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
 	if len(inspected.Platforms) != 1 || !inspected.Platforms.Contains(darwin) {
 		t.Errorf("platforms = %v, want only %v", inspected.Platforms, darwin)
+	}
+	if inspected.ImageKind != platform.DiscoVM("vz") {
+		t.Errorf("image kind = %v, want the discovm/vz the file declares", inspected.ImageKind)
 	}
 	if inspected.Account != "discobox" || inspected.Shell != "/bin/zsh" {
 		t.Errorf("account, shell = %q, %q; want the base layer's", inspected.Account, inspected.Shell)
@@ -154,7 +159,7 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 // container mechanisms may not, is refused at registration with the reason.
 func TestParseManifestFileRefuses(t *testing.T) {
 	base := func(fields string) string {
-		return `{"io.discobox.image.v1.10-sandbox-base": {` + fields + `}}`
+		return `{"io.discobox.image.v1.10-sandbox-base": {"imageKind": "discovm/vz", ` + fields + `}}`
 	}
 	for name, tc := range map[string]struct {
 		file string
@@ -163,7 +168,11 @@ func TestParseManifestFileRefuses(t *testing.T) {
 		"no base layer": {`{"io.discobox.image.v1": {"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh"}}`,
 			"not built on the sandbox agent's overlay"},
 		"no platform": {base(`"account": "a", "shell": "/bin/zsh"`), "declares no platform"},
-		"no account":  {base(`"platform": "darwin/arm64", "shell": "/bin/zsh"`), "must name the one account"},
+		"no image kind": {`{"io.discobox.image.v1.10-sandbox-base": {"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh"}}`,
+			"declares no disco-vm image kind"},
+		"an OCI image kind": {`{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "imageKind": "oci"}}`,
+			"declares no disco-vm image kind"},
+		"no account": {base(`"platform": "darwin/arm64", "shell": "/bin/zsh"`), "must name the one account"},
 		"volumes": {base(`"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh", "volumes": [{"path": "/nix", "volume": "cache"}]`),
 			"manifest file: a darwin manifest declares no volumes"},
 		"groups":  {base(`"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh", "additionalGroups": ["staff"]`), "declares no additionalGroups"},
@@ -182,14 +191,20 @@ func TestParseManifestFileRefuses(t *testing.T) {
 	}
 }
 
-// A Linux template is an image, and a Linux pool runs the reference it is
-// handed as one, so a manifest file declaring Linux is refused at
-// registration rather than failing at create.
-func TestParseManifestFileRefusesLinux(t *testing.T) {
-	file := `{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "features": {"docker": true}}}`
-	_, err := parseManifestFile("sha256:test", []byte(file))
-	if err == nil || !strings.Contains(err.Error(), "a linux template is an image") {
-		t.Errorf("err = %v, want a refusal saying a linux template is an image", err)
+// A Linux template built as a disco-vm image — a boxd sandbox's — is a
+// manifest file like any other platform's (ADR 26-10-09-106 §4): its kind,
+// not its platform, is what keeps it off a Docker pool of linux/arm64.
+func TestParseManifestFileReadsALinuxDiscoVMTemplate(t *testing.T) {
+	file := `{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "imageKind": "discovm/boxd", "features": {"docker": true}}}`
+	inspected, err := parseManifestFile("sha256:test", []byte(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspected.ImageKind != platform.DiscoVM("boxd") {
+		t.Errorf("image kind = %v, want discovm/boxd", inspected.ImageKind)
+	}
+	if !slices.Equal(inspected.Platforms, platform.Set{{OS: "linux", Arch: "arm64"}}) {
+		t.Errorf("platforms = %v, want linux/arm64", inspected.Platforms)
 	}
 }
 
@@ -202,6 +217,7 @@ func TestParseImageMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 		says string
 	}{
 		"a platform": {`{"platform": "darwin/arm64"}`, "declares platform darwin/arm64"},
+		"a kind":     {`{"imageKind": "discovm/boxd"}`, "declares image kind discovm/boxd"},
 		"an account": {`{"account": "ada"}`, "names no account"},
 		"a shell":    {`{"shell": "/bin/zsh"}`, "names no shell"},
 	} {
@@ -212,7 +228,11 @@ func TestParseImageMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 			}
 		})
 	}
-	if _, err := parseImageMetadata("sha256:test", withBaseLayer(`{"features": {"desktop": true}}`)); err != nil {
+	inspected, err := parseImageMetadata("sha256:test", withBaseLayer(`{"features": {"desktop": true}}`))
+	if err != nil {
 		t.Errorf("a Linux image declaring the desktop: %v", err)
+	}
+	if inspected.ImageKind != platform.OCI {
+		t.Errorf("an image's kind = %v, want oci", inspected.ImageKind)
 	}
 }

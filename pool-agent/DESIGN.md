@@ -91,7 +91,9 @@ platform the pool hosts (`hostedPlatform`, ADR 0145 §1): a pool's sandboxes are
 containers on the agent's own kernel and architecture, so it is the agent's
 own. Repeating it on every report is how the control plane learns what a
 pool from before platforms hosts, since an agent whose key survives a restart
-does not register again. The same platform is the runtime's
+does not register again. Beside it they declare the kind of image the pool
+runs (`hostedImageKind`, ADR 26-10-09-106 §4): `oci`, since this agent's
+sandboxes are containers. The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
 working root it writes into the manifest — is judged by its `sandboxpath`

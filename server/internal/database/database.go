@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
 )
@@ -85,7 +86,18 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := renameSecretGrantTTLColumn(write); err != nil {
 		return err
 	}
+	// Read before AutoMigrate adds the columns, which is the one moment a row
+	// with no image kind is known to be one from before kinds.
+	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
+		return err
+	}
+	if backfillPoolKinds {
+		if err := backfillPoolImageKinds(write); err != nil {
+			return err
+		}
+	}
+	if err := unsetManifestFileImageKinds(write); err != nil {
 		return err
 	}
 	if err := widenSecretUniquenessIndex(write); err != nil {
@@ -143,6 +155,47 @@ func (db *DB) Migrate(ctx context.Context) error {
 		return err
 	}
 	return rekeySandboxOrigins(write)
+}
+
+// addsImageKindColumn reports whether the pools table predates image kinds
+// (ADR 26-10-09-106 §4): it exists, and has no image_kind column for
+// AutoMigrate to add.
+func addsImageKindColumn(db *gorm.DB, model any) bool {
+	migrator := db.Migrator()
+	return migrator.HasTable(model) && !migrator.HasColumn(model, "image_kind")
+}
+
+// unsetManifestFileImageKinds takes back the OCI that adding the column gave a
+// harness config named by a file:// manifest reference (ADR 0145 §3). Every
+// other harness from before kinds is an image, and OCI; a manifest file is
+// not, and one from before kinds declares no kind to say which driver's it
+// is. Its kind is left undeclared, which places it on no pool, until its file
+// declares one and the harness's image is refreshed — a refresh of the file
+// as it stands is refused for naming none.
+//
+// It runs on every start rather than only the one that adds the column, so a
+// start that dies between the two cannot leave such a harness OCI for good:
+// nothing else would ever correct it. Repeating it touches nothing else,
+// because a manifest file registered since kinds always has a disco-vm kind.
+func unsetManifestFileImageKinds(db *gorm.DB) error {
+	return db.Model(&model.HarnessConfig{}).Where("image LIKE ? AND image_kind = ?", "file://%", platform.OCI).
+		UpdateColumn("image_kind", "").Error
+}
+
+// backfillPoolImageKinds records OCI for every pool that existed before image
+// kinds, which is the kind every one of them runs: there was no other runtime.
+//
+// It runs only on the start that adds the column, never again. The column's
+// default is empty rather than OCI because a pool created since is not known
+// to run OCI images until its agent says what it runs — a discovm pool runs a
+// driver's disco-vm images — and an idempotent rewrite of every empty kind
+// would claim OCI for such a pool on every start until its agent reported. A
+// start that dies between AutoMigrate and here leaves some old pools empty;
+// each is given OCI by its agent's next report, as an agent from before kinds
+// declares none (store.recordPoolImageKind).
+func backfillPoolImageKinds(db *gorm.DB) error {
+	return db.Model(&model.Pool{}).Where("image_kind = ''").
+		UpdateColumn("image_kind", platform.OCI).Error
 }
 
 // backfillSecretValueUpdatedAt gives every secret written before

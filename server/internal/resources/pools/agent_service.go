@@ -58,12 +58,16 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 	if err != nil {
 		return nil, err
 	}
+	runs, err := declaredImageKind(input.ImageKind)
+	if err != nil {
+		return nil, err
+	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	h := sha256.Sum256([]byte(input.BootstrapToken))
-	if _, err := s.store.RegisterPool(ctx, pool.ID, hosts, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
+	if _, err := s.store.RegisterPool(ctx, pool.ID, hosts, runs, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
 		return nil, apperrors.NotFound(err, "pool bootstrap token not found")
 	}
 	if s.pools != nil {
@@ -86,6 +90,18 @@ func declaredPlatform(declared services.OptString) (platform.Platform, error) {
 	return hosts, nil
 }
 
+// declaredImageKind reads the kind of image a pool agent says its pool runs
+// (ADR 26-10-09-106 §4). One that is neither OCI nor a disco-vm driver's is
+// refused. None at all is an agent from before kinds, which runs OCI images:
+// the zero kind it returns is resolved by store.recordPoolImageKind.
+func declaredImageKind(declared services.OptString) (platform.ImageKind, error) {
+	runs, err := platform.ParseImageKind(declared.Or(""))
+	if err != nil {
+		return platform.ImageKind{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return runs, nil
+}
+
 // UpdatePoolStatus records an agent heartbeat. Only the authenticated pool
 // principal for the same pool may report.
 func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input services.UpdatePoolStatusBody) (*model.Pool, error) {
@@ -101,7 +117,11 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	if err != nil {
 		return nil, err
 	}
-	pool, err := s.store.UpdatePoolStatus(ctx, poolID, hosts, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
+	runs, err := declaredImageKind(input.ImageKind)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := s.store.UpdatePoolStatus(ctx, poolID, hosts, runs, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}

@@ -4532,6 +4532,12 @@ type HarnessConfig struct {
 	Image OptString `json:"image"`
 	// Content digest observed when the harness image metadata was registered.
 	ImageDigest OptString `json:"imageDigest"`
+	// The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for
+	// that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a
+	// manifest-file harness registered before image kinds, which runs on no pool until its file declares
+	// one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are
+	// all oci.
+	ImageKind OptString `json:"imageKind"`
 	// Harness config name.
 	Name string `json:"name"`
 	// Platforms the harness's image is published for, as os/arch. A discobox on this harness runs on its
@@ -4640,6 +4646,11 @@ func (s *HarnessConfig) GetImage() OptString {
 // GetImageDigest returns the value of ImageDigest.
 func (s *HarnessConfig) GetImageDigest() OptString {
 	return s.ImageDigest
+}
+
+// GetImageKind returns the value of ImageKind.
+func (s *HarnessConfig) GetImageKind() OptString {
+	return s.ImageKind
 }
 
 // GetName returns the value of Name.
@@ -4770,6 +4781,11 @@ func (s *HarnessConfig) SetImage(val OptString) {
 // SetImageDigest sets the value of ImageDigest.
 func (s *HarnessConfig) SetImageDigest(val OptString) {
 	s.ImageDigest = val
+}
+
+// SetImageKind sets the value of ImageKind.
+func (s *HarnessConfig) SetImageKind(val OptString) {
+	s.ImageKind = val
 }
 
 // SetName sets the value of Name.
@@ -14164,6 +14180,9 @@ type Pool struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Stable pool ID.
 	ID string `json:"id"`
+	// The kind of image the pool runs: oci, or discovm/<driver> for disco-vm images of that driver.
+	// Declared by its agent; empty until the agent first reports.
+	ImageKind OptString `json:"imageKind"`
 	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
 	// leaves the size to the provider's configuration, then the host.
 	MemoryBytes int64 `json:"memoryBytes"`
@@ -14257,6 +14276,11 @@ func (s *Pool) GetCreatedAt() time.Time {
 // GetID returns the value of ID.
 func (s *Pool) GetID() string {
 	return s.ID
+}
+
+// GetImageKind returns the value of ImageKind.
+func (s *Pool) GetImageKind() OptString {
+	return s.ImageKind
 }
 
 // GetMemoryBytes returns the value of MemoryBytes.
@@ -14432,6 +14456,11 @@ func (s *Pool) SetCreatedAt(val time.Time) {
 // SetID sets the value of ID.
 func (s *Pool) SetID(val string) {
 	s.ID = val
+}
+
+// SetImageKind sets the value of ImageKind.
+func (s *Pool) SetImageKind(val OptString) {
+	s.ImageKind = val
 }
 
 // SetMemoryBytes sets the value of MemoryBytes.
@@ -16789,9 +16818,12 @@ func (s *RefreshSecretBodyVia) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/RegisterPoolBody
 type RegisterPoolBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema         OptURI    `json:"$schema"`
-	BootstrapToken string    `json:"bootstrapToken"`
-	KeyType        OptString `json:"keyType"`
+	Schema         OptURI `json:"$schema"`
+	BootstrapToken string `json:"bootstrapToken"`
+	// The kind of image the pool runs, oci or discovm/<driver>. An agent from before image kinds sends
+	// none, and runs OCI images, which is what is recorded for it.
+	ImageKind OptString `json:"imageKind"`
+	KeyType   OptString `json:"keyType"`
 	// The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its
 	// pool keeps the platform recorded for it.
 	Platform  OptString `json:"platform"`
@@ -16808,6 +16840,11 @@ func (s *RegisterPoolBody) GetSchema() OptURI {
 // GetBootstrapToken returns the value of BootstrapToken.
 func (s *RegisterPoolBody) GetBootstrapToken() string {
 	return s.BootstrapToken
+}
+
+// GetImageKind returns the value of ImageKind.
+func (s *RegisterPoolBody) GetImageKind() OptString {
+	return s.ImageKind
 }
 
 // GetKeyType returns the value of KeyType.
@@ -16843,6 +16880,11 @@ func (s *RegisterPoolBody) SetSchema(val OptURI) {
 // SetBootstrapToken sets the value of BootstrapToken.
 func (s *RegisterPoolBody) SetBootstrapToken(val string) {
 	s.BootstrapToken = val
+}
+
+// SetImageKind sets the value of ImageKind.
+func (s *RegisterPoolBody) SetImageKind(val OptString) {
+	s.ImageKind = val
 }
 
 // SetKeyType sets the value of KeyType.
@@ -26387,6 +26429,10 @@ type UpdatePoolStatusBody struct {
 	AvailableStorageBytes int64   `json:"availableStorageBytes"`
 	Conditions            jx.Raw  `json:"conditions"`
 	Degraded              bool    `json:"degraded"`
+	// The kind of image the pool runs, oci or discovm/<driver>, declared on every report beside the
+	// platform. An agent from before image kinds sends none, and runs OCI images, which is what is
+	// recorded for it.
+	ImageKind OptString `json:"imageKind"`
 	// The one platform the pool hosts, as os/arch. Declared on every report, because an agent whose key
 	// survives a restart does not register again. An agent from before platforms sends none, and its
 	// pool keeps the platform recorded for it.
@@ -26423,6 +26469,11 @@ func (s *UpdatePoolStatusBody) GetConditions() jx.Raw {
 // GetDegraded returns the value of Degraded.
 func (s *UpdatePoolStatusBody) GetDegraded() bool {
 	return s.Degraded
+}
+
+// GetImageKind returns the value of ImageKind.
+func (s *UpdatePoolStatusBody) GetImageKind() OptString {
+	return s.ImageKind
 }
 
 // GetPlatform returns the value of Platform.
@@ -26468,6 +26519,11 @@ func (s *UpdatePoolStatusBody) SetConditions(val jx.Raw) {
 // SetDegraded sets the value of Degraded.
 func (s *UpdatePoolStatusBody) SetDegraded(val bool) {
 	s.Degraded = val
+}
+
+// SetImageKind sets the value of ImageKind.
+func (s *UpdatePoolStatusBody) SetImageKind(val OptString) {
+	s.ImageKind = val
 }
 
 // SetPlatform sets the value of Platform.

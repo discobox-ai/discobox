@@ -85,7 +85,7 @@ func TestToTUIHarness(t *testing.T) {
 		UpdatedAt: time.Unix(10, 0),
 	}
 
-	harness := toTUIHarness(cfg, "hc_1", poolPlatforms{})
+	harness := toTUIHarness(cfg, "hc_1", poolPlacements{})
 	if harness.State != tui.HarnessEnabled || !harness.Default || !harness.BuiltIn {
 		t.Fatalf("harness = %+v, want an enabled, default, built-in harness", harness)
 	}
@@ -106,7 +106,7 @@ func TestToTUIHarness(t *testing.T) {
 		t.Fatalf("second file = %+v, want the image-declared settings.json", harness.Files[1])
 	}
 
-	if other := toTUIHarness(cfg, "hc_other", poolPlatforms{}); other.Default {
+	if other := toTUIHarness(cfg, "hc_other", poolPlacements{}); other.Default {
 		t.Fatal("a harness that is not the project's default should not say it is")
 	}
 }

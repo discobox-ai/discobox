@@ -187,6 +187,9 @@ func MergeImageMetadata(layers ...ImageMetadata) ImageMetadata {
 		if !layer.Platform.IsZero() {
 			out.Platform = layer.Platform
 		}
+		if !layer.ImageKind.IsZero() {
+			out.ImageKind = layer.ImageKind
+		}
 		if account := strings.TrimSpace(layer.Account); account != "" {
 			out.Account = account
 		}

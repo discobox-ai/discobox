@@ -46,6 +46,14 @@ flowchart LR
   not a spec that can drift, and adding it to the manifest would have moved
   every sandbox's fingerprint. An upgrade never moves a sandbox onto a harness
   config whose image is not published for its platform (`SandboxUpgradeTarget`).
+- A sandbox's pool must also run the kind of image its harness's image is
+  (`platform.ImageKind`, ADR 26-10-09-106 §4): a disco-vm harness for boxd is
+  refused on a Docker pool of its own platform and placed on a boxd pool. Create
+  and import refuse a pool whose agent has declared another kind with a 409
+  naming both (`refuseOtherImageKind`), and placement makes the same check
+  (`store.SchedulablePoolForSandbox`). A pool that has not declared one is still
+  a target. The kind is not recorded on the sandbox: it is its harness config's,
+  read at every placement.
 - Sandboxes that have no harness config converge by *upgrade*, not by
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of
@@ -352,7 +360,10 @@ and is answered as a 400 about the archive rather than an error about the pool
   sandbox's platform — its pool's, for one not placed since platforms were
   recorded. Import refuses, with 409 and before the upload, a destination
   harness whose image is not published for the archive's platform, or a
-  destination pool of another platform, and passes the platform to
+  destination pool of another platform, a destination harness that is not an
+  OCI image — an archive is a container's tree, and a machine discobox's
+  export is deferred (ADR 26-10-09-106) — or a pool that runs another kind, and
+  passes the platform to
   `Provider.ImportTree`, whose placement checks the pool it lands on — waiting
   for one that has not reported yet, and refusing one that never declares a
   platform — before the tree is read. An archive

@@ -198,8 +198,9 @@ func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apic
 		return nil, err
 	}
 	// What `--harness` completes to is what a discobox can be created on, so a
-	// harness no pool can run is not offered (ADR 0145 §1).
-	platforms, err := a.listPoolPlatforms(ctx, client, projectID)
+	// harness no pool can run is not offered (ADR 0145 §1, ADR 26-10-09-106
+	// §4).
+	placements, err := a.listPoolPlacements(ctx, client, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +209,7 @@ func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apic
 	})
 	completions := make([]string, 0, len(harnesses))
 	for _, harness := range harnesses {
-		if !platforms.run(harness) {
+		if !placements.run(harness) {
 			continue
 		}
 		completions = append(completions, completionItem(harness.Name, completionDescription(harness.ID, strings.Join(harness.RunCommand, " "))))

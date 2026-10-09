@@ -15,7 +15,6 @@ import (
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -31,6 +30,9 @@ type imageMetadata struct {
 	// platform in a registry image's index, or the one platform a locally built
 	// image was built for. Empty when nothing says, which rules nothing out.
 	Platforms platform.Set
+	// ImageMetadata is the resolved manifest. Its ImageKind is the kind the
+	// harness's image is (ADR 26-10-09-106 §4), always set once inspected: OCI
+	// for an image, or the disco-vm kind a manifest file declares.
 	harness.ImageMetadata
 }
 
@@ -397,9 +399,11 @@ const imageLabelSource = harness.ImageLabel + " label"
 
 // parseManifestFile resolves a manifest file's layers and validates the result
 // for the platform it declares, which a manifest file must: nothing else says
-// what its template runs. That platform is never Linux, whose templates are
-// images: a Linux pool runs the reference it is handed as a container image,
-// and a file:// one would fail there at create rather than here.
+// what its template runs. It must declare its image kind too, and that kind is
+// a disco-vm image for a driver (ADR 26-10-09-106 §4): an OCI template is an
+// image, and a reference to a file is none. The kind is what keeps a Linux
+// manifest file off a Docker pool of its platform — placement refuses it there
+// with that reason — so a manifest file may be any platform's.
 func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 	labels, err := harness.ReadManifestFile(data)
 	if err != nil {
@@ -417,8 +421,8 @@ func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 	if metadata.Platform.IsZero() {
 		return imageMetadata{}, fmt.Errorf("manifest file declares no platform: a template with no image says which one it runs")
 	}
-	if sandboxuser.HasPOSIXIDs(metadata.Platform.OS) {
-		return imageMetadata{}, fmt.Errorf("manifest file declares platform %s: a %s template is an image, and a manifest file is for a template with none", metadata.Platform, metadata.Platform.OS)
+	if metadata.ImageKind.Format != platform.FormatDiscoVM {
+		return imageMetadata{}, fmt.Errorf("manifest file declares no disco-vm image kind: a template with no image names the disco-vm driver its image is built for, as %s/<driver>", platform.FormatDiscoVM)
 	}
 	if err := validateImageMetadata(metadata, metadata.Platform.OS, manifestFileSource); err != nil {
 		return imageMetadata{}, err
@@ -431,9 +435,9 @@ func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 // §2). Only the merged result is validated — a layer on its own is a fragment,
 // and the base layer legitimately carries no harness at all.
 //
-// An image is a Linux container's, and its platforms are what its registry
-// publishes, so a label naming a platform is refused rather than read beside
-// that answer.
+// An image is a Linux container's, its platforms are what its registry
+// publishes, and its kind is OCI by its being an image, so a label naming a
+// platform or a kind is refused rather than read beside those answers.
 func parseImageMetadata(digest string, labels map[string]string) (imageMetadata, error) {
 	metadata, hasBase, err := harness.ResolveImageLabels(labels)
 	if err != nil {
@@ -451,9 +455,13 @@ func parseImageMetadata(digest string, labels map[string]string) (imageMetadata,
 	if !metadata.Platform.IsZero() {
 		return imageMetadata{}, fmt.Errorf("%s label declares platform %s: an image's platforms are the ones its registry publishes it for", harness.ImageLabel, metadata.Platform)
 	}
+	if !metadata.ImageKind.IsZero() {
+		return imageMetadata{}, fmt.Errorf("%s label declares image kind %s: an image is an OCI image, and only a manifest file names another kind", harness.ImageLabel, metadata.ImageKind)
+	}
 	if err := validateImageMetadata(metadata, "linux", imageLabelSource); err != nil {
 		return imageMetadata{}, err
 	}
+	metadata.ImageKind = platform.OCI
 	return imageMetadata{Digest: digest, ImageMetadata: metadata}, nil
 }
 

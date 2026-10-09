@@ -770,7 +770,7 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	if h.Platforms != "" {
 		platforms := h.Platforms
 		if h.Unhosted {
-			platforms += st.dimText.Render("  no pool hosts one")
+			platforms += st.dimText.Render("  no pool here runs it")
 		}
 		fmt.Fprintln(&b, label("Platform"), platforms)
 	}
