@@ -40,7 +40,9 @@ func DiscoVM(driver string) ImageKind {
 }
 
 // ParseImageKind reads an `oci` or `discovm/<driver>` kind. The empty string
-// is the zero kind.
+// is the zero kind. Only those exact spellings are read: one that would be
+// written back as another — `oci/` as `oci` — is refused rather than
+// normalized, so a stored or declared kind never silently changes.
 func ParseImageKind(s string) (ImageKind, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -50,6 +52,9 @@ func ParseImageKind(s string) (ImageKind, error) {
 	k := ImageKind{Format: format, Driver: driver}
 	if err := k.Validate(); err != nil {
 		return ImageKind{}, err
+	}
+	if k.String() != s {
+		return ImageKind{}, fmt.Errorf("image kind %q is neither %s nor %s/<driver>", s, FormatOCI, FormatDiscoVM)
 	}
 	return k, nil
 }
