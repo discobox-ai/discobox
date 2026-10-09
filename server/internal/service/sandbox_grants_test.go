@@ -101,9 +101,24 @@ func judgedBy(svc *service.Service, judging *grantJudge) {
 }
 
 // delegateToLead gives the lead a delegation grant of secret to github.com,
-// lapsing after lifetime (none when zero).
+// lapsing after lifetime (none when zero). The lead is created the first time:
+// a grant names a discobox that exists.
 func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *model.Secret, lifetime time.Duration) *model.SecretGrant {
 	t.Helper()
+	ctx := context.Background()
+	if _, err := st.GetSandbox(ctx, projectID, "sbx-lead"); errors.Is(err, store.ErrNotFound) {
+		project, err := st.GetProject(ctx, projectID)
+		if err != nil {
+			t.Fatalf("get project: %v", err)
+		}
+		if err := st.CreateSandbox(ctx, &model.Sandbox{
+			ID: "sbx-lead", ProjectID: projectID, PoolID: project.DefaultPoolID, CreatedByUserID: "user-lead", Name: "lead",
+		}); err != nil {
+			t.Fatalf("create lead sandbox: %v", err)
+		}
+	} else if err != nil {
+		t.Fatalf("get lead sandbox: %v", err)
+	}
 	grant := &model.SecretGrant{
 		ProjectID: projectID, SecretID: secret.ID, Scope: model.SecretGrantScopeSandbox, ScopeKey: "sbx-lead",
 		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
@@ -113,7 +128,7 @@ func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *mod
 		expires := time.Now().UTC().Add(lifetime)
 		grant.ExpiresAt = &expires
 	}
-	if err := st.CreateSecretGrant(context.Background(), grant); err != nil {
+	if err := st.CreateSecretGrant(ctx, grant); err != nil {
 		t.Fatalf("create delegation grant: %v", err)
 	}
 	return grant

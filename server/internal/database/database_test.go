@@ -828,7 +828,7 @@ func TestMigrateMovesSecretHostsToLists(t *testing.T) {
 	for _, grant := range []struct{ id, host string }{{"grant_shouty", "API.GitHub.com"}, {"grant_wildcard", ""}} {
 		if err := write.Exec(
 			"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, host, granted_by, granted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			grant.id, "project-1", "sec-1", model.SecretGrantScopeSandbox, "sbx-1", grant.host, "user-1", now, now, now).Error; err != nil {
+			grant.id, "project-1", "sec-1", model.SecretGrantScopeProject, "project-1", grant.host, "user-1", now, now, now).Error; err != nil {
 			t.Fatalf("seed grant: %v", err)
 		}
 	}
@@ -1809,5 +1809,59 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	}
 	if !gotFresh.ImageKind.IsZero() {
 		t.Errorf("pool created since: image kind = %q, want it left for its agent to declare", gotFresh.ImageKind)
+	}
+}
+
+func TestMigrateDeletesGrantsWhoseScopeIsGone(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	for _, row := range []any{
+		&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
+		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: "provider-1"}},
+		&model.Sandbox{ID: "sb-live", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-live"},
+		&model.HarnessConfig{ID: "hc-live", ProjectID: "project-1", Slug: "codex", Name: "Codex"},
+	} {
+		if err := db.Write.Create(row).Error; err != nil {
+			t.Fatalf("create %T: %v", row, err)
+		}
+	}
+	for _, g := range []model.SecretGrant{
+		{ID: "g-sb-live", Scope: model.SecretGrantScopeSandbox, ScopeKey: "sb-live"},
+		{ID: "g-sb-gone", Scope: model.SecretGrantScopeSandbox, ScopeKey: "sb-gone"},
+		{ID: "g-hc-live", Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: "hc-live"},
+		{ID: "g-hc-gone", Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: "hc-gone"},
+		{ID: "g-project", Scope: model.SecretGrantScopeProject, ScopeKey: "project-1"},
+	} {
+		g.ProjectID, g.SecretID = "project-1", "secret-1"
+		if err := db.Write.Create(&g).Error; err != nil {
+			t.Fatalf("create grant %s: %v", g.ID, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	var ids []string
+	if err := db.Write.Model(&model.SecretGrant{}).Order("id").Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if want := []string{"g-hc-live", "g-project", "g-sb-live"}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("grants after migrate = %v, want %v", ids, want)
 	}
 }

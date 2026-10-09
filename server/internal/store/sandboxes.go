@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxmeta"
@@ -579,7 +580,9 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 	}
 
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
-		query := tx.Where("project_id = ?", projectID)
+		// Locked before its grants are deleted, so a grant being written for it
+		// (CreateSecretGrant) either finds it gone or is deleted with it.
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID)
 		if opts.generation != nil {
 			query = query.Where("generation = ?", *opts.generation)
 		}
@@ -597,6 +600,9 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 			return err
 		}
 		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxInventory{}).Error; err != nil {
+			return err
+		}
+		if err := deleteSecretGrantsByScopeTx(tx, model.SecretGrantScopeSandbox, sandbox.ID); err != nil {
 			return err
 		}
 		return tx.Delete(sandbox).Error

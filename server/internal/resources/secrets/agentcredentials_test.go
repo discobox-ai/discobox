@@ -528,6 +528,11 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 	if err := write.Create(&model.Sandbox{ID: testSandboxID, ProjectID: "project-1", Name: "sandbox", PoolID: testPoolID}).Error; err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
+	// The lead the delegation tests act as: a grant names a discobox that
+	// exists, and a delegation is a grant.
+	if err := write.Create(&model.Sandbox{ID: leadID, ProjectID: "project-1", Name: "lead", PoolID: testPoolID}).Error; err != nil {
+		t.Fatalf("create lead sandbox: %v", err)
+	}
 	st := store.New(db.Write, db.Read)
 	return resourcesecrets.NewService(st), st
 }

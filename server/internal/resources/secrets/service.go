@@ -1048,7 +1048,7 @@ func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *mod
 		grant.ExpiresAt = &exp
 	}
 	if err := s.store.CreateSecretGrant(ctx, grant); err != nil {
-		return nil, err
+		return nil, apperrors.NotFound(err, fmt.Sprintf("%s %s does not exist, so nothing can be granted to it", scope, scopeKey))
 	}
 	return grant, nil
 }

@@ -217,6 +217,7 @@ func TestResolveSandboxSecretSandboxGrantDoesNotLeakToOtherSandbox(t *testing.T)
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "iso", "real-token")
+	createSandbox(t, st, "sb-1", "pool-1")
 	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-1")
 	createSandbox(t, st, "sb-2", "pool-1")
 	mustAssign(t, st, "sb-2", sec.ID, "SENTINEL-D")

@@ -154,6 +154,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateCredentialVerdictNeeds(write); err != nil {
 		return err
 	}
+	if err := deleteOrphanedSecretGrants(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
 }
 
@@ -196,6 +199,28 @@ func unsetManifestFileImageKinds(db *gorm.DB) error {
 func backfillPoolImageKinds(db *gorm.DB) error {
 	return db.Model(&model.Pool{}).Where("image_kind = ''").
 		UpdateColumn("image_kind", platform.OCI).Error
+}
+
+// deleteOrphanedSecretGrants removes the grants scoped to a sandbox or harness
+// config that no longer exists. Deleting either now takes its grants with it
+// (store.deleteSecretGrantsByScopeTx); before that, every deleted discobox
+// left its grants behind, naming an ID that is never reused and so covering
+// nothing, while every listing still showed them as standing. It is a
+// backfill: store.CreateSecretGrant refuses a grant for a scope that does not
+// exist, so after the first run this matches nothing.
+func deleteOrphanedSecretGrants(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.SecretGrant{}) {
+		return nil
+	}
+	if err := db.Where("scope = ? AND scope_key NOT IN (?)",
+		model.SecretGrantScopeSandbox, db.Model(&model.Sandbox{}).Select("id")).
+		Delete(&model.SecretGrant{}).Error; err != nil {
+		return err
+	}
+	return db.Where("scope = ? AND scope_key NOT IN (?)",
+		model.SecretGrantScopeHarnessConfig, db.Model(&model.HarnessConfig{}).Select("id")).
+		Delete(&model.SecretGrant{}).Error
 }
 
 // backfillSecretValueUpdatedAt gives every secret written before

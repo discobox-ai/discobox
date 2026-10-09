@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -92,7 +93,8 @@ func (s *Store) UpdateHarnessConfig(ctx context.Context, config *model.HarnessCo
 
 func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
-		config, err := firstByID[model.HarnessConfig](tx.Where("project_id = ?", projectID), "id", configID)
+		// Locked before its grants are deleted, as DeleteSandbox does.
+		config, err := firstByID[model.HarnessConfig](tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", configID)
 		if err != nil {
 			return err
 		}
@@ -111,6 +113,9 @@ func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID str
 		}
 		if liveRefs > 0 {
 			return ErrInUse
+		}
+		if err := deleteSecretGrantsByScopeTx(tx, model.SecretGrantScopeHarnessConfig, config.ID); err != nil {
+			return err
 		}
 		return tx.Delete(config).Error
 	})
