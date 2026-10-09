@@ -2,6 +2,7 @@ package sandbox_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -112,6 +113,46 @@ func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 	}
 }
 
+func TestProviderManagerValidatesOnlyResolvableTypes(t *testing.T) {
+	manager := sandbox.NewProviderManager()
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		return &fakeProvider{}, nil
+	})
+	manager.RegisterProvider("local", &fakeProvider{})
+	manager.RegisterProviderDefinition("described", sandbox.ProviderDefinition{Name: "Described"})
+	manager.RegisterProviderConfigValidator("remote", func(json.RawMessage) error {
+		return errors.New("bad config")
+	})
+
+	if err := manager.ValidateProviderConfig("local", nil); err != nil {
+		t.Errorf("validate registered provider type: %v", err)
+	}
+	if err := manager.ValidateProviderConfig("remote", nil); err == nil || err.Error() != "bad config" {
+		t.Errorf("validate factory type = %v, want its validator's error", err)
+	}
+	for _, providerType := range []string{"described", "missing", ""} {
+		if err := manager.ValidateProviderConfig(providerType, nil); err == nil {
+			t.Errorf("validate %q succeeded, want unknown type", providerType)
+		}
+	}
+}
+
+func TestProviderManagerClosesProviderThatFailsToInitialize(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager()
+	provider := &fakeProvider{initErr: errors.New("host unreachable")}
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		return provider, nil
+	})
+
+	if _, err := manager.ResolveInstance(ctx, &model.SandboxProviderInstance{ID: "provider-1", Type: "remote"}); err == nil {
+		t.Fatal("resolve succeeded, want the initialize error")
+	}
+	if !provider.closed {
+		t.Error("provider that failed to initialize was not closed")
+	}
+}
+
 func TestProviderManagerAggregatesProviderOperations(t *testing.T) {
 	ctx := context.Background()
 	manager := sandbox.NewProviderManager()
@@ -165,9 +206,12 @@ type fakeProvider struct {
 	removeErr       error
 	reconcileCalls  int
 	removeProjectID string
+	initErr         error
+	closed          bool
 }
 
 func (p *fakeProvider) Close() error {
+	p.closed = true
 	return nil
 }
 
@@ -178,7 +222,7 @@ func (p *fakeProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	return p.sandboxes, nil
 }
 func (p *fakeProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
-	return nil
+	return p.initErr
 }
 func (p *fakeProvider) Reconcile(context.Context) error {
 	p.reconcileCalls++

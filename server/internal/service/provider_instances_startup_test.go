@@ -104,6 +104,32 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesPoolReconcile(t *testing
 	}
 }
 
+// An instance that cannot resolve (here a type this server does not build) is
+// that instance's failure, not the server's: startup goes on and marks its
+// pools, whose reconciles retry the resolve with backoff.
+func TestEnsureExistingSandboxProviderInstancesToleratesUnresolvableInstance(t *testing.T) {
+	ctx := context.Background()
+	appStore, db := newProviderInstanceTestStore(ctx, t)
+	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "no-such-type", Name: "provider-1"}); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	createProviderWithPool(ctx, t, appStore, "provider-1", "pool-1")
+
+	engine := newStartedTestReconcileEngine(ctx, t, db)
+	svc := New(appStore, engine, Options{})
+	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
+		t.Fatalf("ensure existing providers: %v", err)
+	}
+
+	dirty, err := engine.ListDirty(ctx, pools.PoolResourceType)
+	if err != nil {
+		t.Fatalf("list dirty: %v", err)
+	}
+	if len(dirty) != 1 || dirty[0].ResourceID != pools.PoolDirtyID("project-1", "pool-1") {
+		t.Fatalf("dirty pool marks = %#v, want only pool-1", dirty)
+	}
+}
+
 func newStartedTestReconcileEngine(ctx context.Context, t *testing.T, db *database.DB) *reconcile.Engine {
 	t.Helper()
 
