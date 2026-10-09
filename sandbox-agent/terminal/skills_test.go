@@ -316,14 +316,17 @@ func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
 	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "the repository's\n", 0o644)
 	writeSkill(t, source, filepath.Join("review", "old.md"), "kept\n", 0o644)
 	writeSkill(t, source, filepath.Join("other", "SKILL.md"), "untouched\n", 0o644)
-	svc := newSkillsTestService(t, source, home, nil)
-	svc.skills = sandboxconfig.Skills{"review": {Skill: "the sandbox's\n", Files: []sandboxconfig.SkillFile{
+	skills := sandboxconfig.Skills{"review": {Skill: "the sandbox's\n", Files: []sandboxconfig.SkillFile{
 		{Path: "bin/run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 		{Path: "logo.png", Content: []byte{0x89, 0}},
 	}}}
 
-	if err := svc.installSkills(); err != nil {
-		t.Fatalf("install skills: %v", err)
+	// The repository's, then the sandbox's, in installSkills' order.
+	if err := installDeclaredSkills(source, home); err != nil {
+		t.Fatalf("install declared skills: %v", err)
+	}
+	if err := writeSkills(skills, home, nil); err != nil {
+		t.Fatalf("install the sandbox's skills: %v", err)
 	}
 	for _, dir := range skillDirectories {
 		root := filepath.Join(home, dir)
@@ -361,6 +364,11 @@ func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
 
 // A sandbox whose only skills are its own still has them installed.
 func TestTheSandboxsSkillsAreInstalledWithNothingElseToCopy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// As TestPrimaryLaunchInstallsProjectSkillsOnce: the service resolves
+		// the source as a guest path, which a C:\ temp directory is not.
+		t.Skip("guest path resolution")
+	}
 	source, home := t.TempDir(), t.TempDir()
 	svc := newSkillsTestService(t, source, home, nil)
 	svc.skills = sandboxconfig.Skills{"mine": {Skill: "# mine\n"}}
