@@ -22,7 +22,7 @@ func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
 		t.Setenv(key, "")
 	}
-	id, err := resolveIdentity()
+	id, err := resolveEnvIdentity()
 	if err != nil {
 		t.Fatalf("resolve identity: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestResolveIdentityRejectsAnImageUidWithNoPasswdEntry(t *testing.T) {
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
 		t.Setenv(key, "")
 	}
-	id, err := resolveIdentity()
+	id, err := resolveEnvIdentity()
 	if err == nil {
 		t.Fatalf("identity = %#v, want an error: uid 4242 has no passwd entry", id)
 	}
@@ -71,7 +71,7 @@ func TestResolveIdentityReadsAMissingGidFromTheAccount(t *testing.T) {
 	t.Setenv("DISCOBOX_USER_GROUP", "")
 	t.Setenv("DISCOBOX_USER_NAME", "dev")
 	t.Setenv("DISCOBOX_USER_HOME", "/home/dev")
-	id, err := resolveIdentity()
+	id, err := resolveEnvIdentity()
 	if err != nil {
 		t.Fatalf("resolve identity: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestResolveIdentityResolvesAGroupName(t *testing.T) {
 	t.Setenv("DISCOBOX_USER_GROUP", "docker")
 	t.Setenv("DISCOBOX_USER_NAME", "dev")
 	t.Setenv("DISCOBOX_USER_HOME", "/home/dev")
-	id, err := resolveIdentity()
+	id, err := resolveEnvIdentity()
 	if err != nil {
 		t.Fatalf("resolve identity: %v", err)
 	}
@@ -107,14 +107,14 @@ func TestResolveIdentityRejectsGidAndGroupTogether(t *testing.T) {
 	t.Setenv("DISCOBOX_USER_GID", "2000")
 	t.Setenv("DISCOBOX_USER_GROUP", "docker")
 	t.Setenv("DISCOBOX_USER_NAME", "dev")
-	if _, err := resolveIdentity(); err == nil {
+	if _, err := resolveEnvIdentity(); err == nil {
 		t.Fatal("expected an error when gid and group name are both set")
 	}
 }
 
 func TestResolveIdentityRejectsNonNumeric(t *testing.T) {
 	t.Setenv("DISCOBOX_USER_UID", "notanumber")
-	if _, err := resolveIdentity(); err == nil {
+	if _, err := resolveEnvIdentity(); err == nil {
 		t.Fatalf("expected error for non-numeric uid")
 	}
 }
@@ -149,4 +149,14 @@ func TestExecPlanEmptyArgsSleeps(t *testing.T) {
 	if !slices.Equal(argv, []string{"sleep", "infinity"}) {
 		t.Fatalf("argv = %#v, want sleep infinity", argv)
 	}
+}
+
+// resolveEnvIdentity is Init's resolution: the manifest's user as the pool
+// agent injected it into the container's environment.
+func resolveEnvIdentity() (identity, error) {
+	manifest, err := manifestUser()
+	if err != nil {
+		return identity{}, err
+	}
+	return resolveIdentity(manifest)
 }

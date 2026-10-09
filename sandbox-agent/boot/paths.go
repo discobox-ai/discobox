@@ -2,7 +2,8 @@
 // sandbox user, wires the image-declared data/cache volumes and manifest
 // sources from the primary volumes the pool agent mounted, binds the config volume
 // onto /etc/discobox, and then execs the container's real init (systemd). See
-// ADR 0007.
+// ADR 0007. Provision is the same provisioning for a sandbox with no PID-1
+// flow, run from the agent's own start (ADR 26-10-09-143 §1).
 package boot
 
 import (

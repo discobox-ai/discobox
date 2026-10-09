@@ -9,9 +9,10 @@ missing — so it survives review easily. Rules, and why each exists:
 - **Resolve through [`runuser`](runuser/DESIGN.md), never by hand.** One call:
   `runuser.Resolve(layers, need)`, with the image, manifest and request layers
   and the fields the caller needs. Precedence and completion belong to it and
-  to `sandboxuser.Merge`. `DISCOBOX_USER_*` (boot's `manifestUser`) and
-  `config.ExecDefaults` (the server's `execDefaultUser`) are read once each, as
-  the manifest layer. Treating either as the resolved user is a second
+  to `sandboxuser.Merge`. `DISCOBOX_USER_*` (boot's `manifestUser`, in a
+  container), the bootstrap's `user` (boot's `Provision`, where no PID-1 flow
+  ran) and `config.ExecDefaults` (the server's `execDefaultUser`) are read once
+  each, as the manifest layer. Treating either as the resolved user is a second
   construction of the same identity, and the two always drift. That drift is
   exactly how terminals came to run without the sandbox's supplementary groups
   while plain execs kept them.

@@ -233,13 +233,13 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 	return nil
 }
 
-// loadEffectiveConfig reads the sandbox's effective config from the config
-// volume. It is read from the /.discobox/config mount because /etc/discobox
-// is not populated until wireConfig runs. Both sources and volumes are
-// present in this one read (ADR 0012 §6) — there is no separate image-baked
-// file to read before the bind, unlike the old image.json.
-func loadEffectiveConfig() (sandboxconfig.Config, error) {
-	path := manifestPath
+// loadEffectiveConfig reads the sandbox's effective config from the bootstrap
+// at path. In a container that is manifestPath, the config volume's copy,
+// because /etc/discobox is not populated until wireConfig runs. Both sources
+// and volumes are present in this one read (ADR 0012 §6) — there is no
+// separate image-baked file to read before the bind, unlike the old
+// image.json.
+func loadEffectiveConfig(path string) (sandboxconfig.Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

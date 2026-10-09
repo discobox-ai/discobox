@@ -71,6 +71,10 @@ func Gate(sources []sandboxconfig.Source, awaitsRuntimeConfig bool, path string,
 // pushed, pool-agent materialized, and the file was written before this
 // process even started. Only a launch that genuinely races delivery waits, and
 // it wakes on the file appearing rather than on a poll interval.
+//
+// The agent's own start waits on its bootstrap the same way: a VM's backend
+// places sandbox.json through the running guest, after the agent may already
+// be running (ADR 26-10-09-143 §1).
 func Wait(ctx context.Context, path string, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -134,7 +138,7 @@ func Wait(ctx context.Context, path string, logger *slog.Logger) error {
 			}
 			// A failed watch degrades to the backstop rather than failing the
 			// launch: the sandbox is waiting on a file that is coming.
-			logger.Warn("source delivery watch", "error", watchErr)
+			logger.Warn("watch for the file a wait is on", "path", path, "error", watchErr)
 		case <-ticker.C:
 			if exists(path) {
 				return nil

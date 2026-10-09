@@ -3,7 +3,6 @@ Description=Discobox Sandbox Agent
 Documentation=https://github.com/discobox-ai/discobox
 After=network-online.target docker.socket nix-daemon.socket
 Wants=network-online.target docker.socket nix-daemon.socket
-ConditionPathExists=/etc/discobox/sandbox.json
 
 [Service]
 Type=simple
@@ -17,6 +16,3 @@ StandardError=journal+console
 Restart=on-failure
 RestartSec=2s
 KillMode=mixed
-
-[Install]
-WantedBy=multi-user.target

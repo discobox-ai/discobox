@@ -16,9 +16,11 @@ import (
 	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
-// identity is the resolved sandbox user, sourced from the DISCOBOX_USER_* env
-// the pool agent injects. It mirrors the values the manifest publishes so the
-// init flow, the harness, and exec defaults all use one user.
+// identity is the resolved sandbox user, sourced from the manifest's user: the
+// DISCOBOX_USER_* env the pool agent injects into a container, or sandbox.json's
+// own `user` where no PID-1 flow ran (Provision). Both are the one user the
+// manifest publishes, so the init flow, the harness, and exec defaults all use
+// one user.
 //
 // configured reports whether the manifest asked for a specific user at all.
 // When it did not, boot provisions no account and the sandbox runs as whatever
@@ -34,8 +36,7 @@ type identity struct {
 var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 
 // resolveIdentity works out who this sandbox runs as, from the manifest's user
-// (which the pool agent forwards as DISCOBOX_USER_*) layered over the image's
-// own identity. Precedence and completion belong to runuser; this function
+// layered over the image's own identity. Precedence and completion belong to runuser; this function
 // supplies the layers and declares what it needs (ADR 0033 §1).
 //
 // What it needs differs between the two cases, and that difference is the whole
@@ -44,18 +45,14 @@ var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 // it names somebody, that account may not exist yet -- ensureUser is about to
 // create it -- so only the ids can be required, and the descriptive fields are
 // asked for separately and allowed to be absent.
-func resolveIdentity() (identity, error) {
-	manifest, err := manifestUser()
-	if err != nil {
-		return identity{}, err
-	}
+func resolveIdentity(manifest *runuser.User) (identity, error) {
 	layers := runuser.Layers{Image: runuser.Current(), Manifest: manifest}
 
 	if !sandboxuser.Named(manifest) {
 		// The manifest named nobody, so the sandbox runs as whatever the image
 		// already is (ADR 0025 §5) -- but callers still need concrete values for
 		// it, to build the process environment and to expand %HOME%-templated
-		// volumes. Nothing is deferred here: boot runs as PID 1 before anything
+		// volumes. Nothing is deferred here: boot runs as root before anything
 		// has called setuid, so the image's account is this process's own and
 		// /etc/passwd answers for all of it.
 		resolved, err := runuser.Resolve(layers, sandboxuser.Complete)
@@ -90,7 +87,7 @@ func resolveIdentity() (identity, error) {
 		id.name = strings.TrimSpace(manifest.Name)
 	}
 	if id.name == "" {
-		return identity{}, errors.New("DISCOBOX_USER_NAME is required for a user the image does not already have")
+		return identity{}, errors.New("the manifest's user needs a name: the image has no account for its uid")
 	}
 	if id.home == "" {
 		id.home = strings.TrimSpace(manifest.HomeDirectory)
@@ -106,7 +103,7 @@ func resolveIdentity() (identity, error) {
 }
 
 // manifestUser reads the manifest's user out of the environment the pool agent
-// injected. Absent is absent: an unset id stays nil rather than becoming 0 or
+// injected into a container. Absent is absent: an unset id stays nil rather than becoming 0 or
 // borrowing the other one.
 func manifestUser() (*runuser.User, error) {
 	out := &runuser.User{
@@ -157,7 +154,7 @@ func (b *booter) ensureUser(id identity) error {
 		return err
 	}
 	if !sudoersNameRE.MatchString(id.name) {
-		return fmt.Errorf("DISCOBOX_USER_NAME %q is not safe for sudoers", id.name)
+		return fmt.Errorf("user name %q is not safe for sudoers", id.name)
 	}
 	return b.writeSudoers(id.name)
 }
