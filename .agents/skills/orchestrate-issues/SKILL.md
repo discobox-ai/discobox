@@ -44,7 +44,7 @@ discobox-access request --json <<'EOF'
     {"description": "discobox new -d -C https://github.com/discobox-ai/discobox[@ref] -p <any prompt>: create a discobox with any prompt and no grants or secrets, cloned from the GitHub repository discobox-ai/discobox, including the polling discobox new makes for the discobox it just created"},
     {"description": "discobox admin box ls and discobox admin box get <discobox-id>, to watch the discoboxes I created"},
     {"description": "discobox start <discobox-id>, discobox stop <discobox-id> and discobox restart <discobox-id> (or discobox admin box start|stop|restart <discobox-id>): start, stop or restart a discobox I created"},
-    {"description": "discobox tag <discobox-id> to-delete: tag a discobox I created whose pull request merged, so its user can find it with discobox ls --all --tag to-delete"},
+    {"description": "discobox tag <discobox-id> to-delete --rm ready --rm blocked, or discobox tag <discobox-id> to-delete merged --rm ready --rm blocked when its pull request merged: tag a finished discobox I created, so its user can find it with discobox ls --all --tag to-delete"},
     {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
     {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions, give it its next step, tell it to continue, or ask it to free its own Docker build cache"},
     {"description": "discobox secret request ls, to see what the discoboxes I created are asking for"},
@@ -206,9 +206,10 @@ user's move, and why that row is at that rank. Issue and PR numbers in the
 table are plain text; under the table, list each one's GitHub URL, one per
 line, because a link inside a table cell renders with its URL in a terminal.
 Rank by what unblocks the most, then by how hard a decision is to reverse.
-A worker's `ready` or `blocked` tag (deliver-issue §7) is its own verdict;
-`status` prints it as `#ready` or `#blocked`. Read it before its screen. The
-user finds them with `discobox ls --all --tag ready` (or `--tag blocked`).
+A worker's `ready`, `blocked` or `merged` tag (deliver-issue §7) is its own
+verdict; `status` prints it as `#ready`, `#blocked` or `#merged`. Read it
+before its screen. The user finds them with `discobox ls --all --tag ready`
+(or `--tag blocked`, `--tag merged`).
 List which PRs are ready and the order to merge them (foundational changes
 first, and a PR that shares files with a larger one before it). After each
 merge, `after-merge` waits for GitHub to recompute and has every PR that went `dirty` rebase its own branch. A PR that
@@ -218,7 +219,9 @@ pushed straight to `main` in between.
 `after-merge` retires a merged PR's worker (in triage mode it names the box
 instead, for §6 to move back into the pool). When a worker's issue turns out
 to need nothing, run `retire <issue>` yourself. It runs `discobox tag
-<discobox-id> to-delete` and stops the box. You can tag and stop a discobox but
+<discobox-id> to-delete`, adding `merged` for a merged PR and dropping `ready`
+and `blocked` (a stopped worker cannot move its own tag), and stops the box.
+You can tag and stop a discobox but
 not delete it, so the tag is how the user finds what to purge (`discobox ls
 --all --tag to-delete`). List each one on the table as a 🗑 row until it is
 gone. When the batch is done, report what merged, what each worker could not
