@@ -330,7 +330,8 @@ Two plain tags on the box tell the user which PRs need them: `ready` and
 and move it each time the state changes, from §0 until the end:
 
 - **`ready`**: §6 has stopped, every check on the head commit is green, every
-  review, thread and comment has a reply, `mergeable_state` is not `dirty`, and
+  review, thread and comment has a reply, `mergeable_state` is neither `dirty`
+  nor `unknown` (still recomputing: check again first), and
   the PR is marked ready. All it needs is a human merge.
 - **`blocked`**: you cannot get there without someone else. That covers a
   question waiting on the user, a grant refused or still waiting for an
