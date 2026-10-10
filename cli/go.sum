@@ -41,8 +41,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255 h1:d0ZnwjYS8WTsF3N7t/0dgfjUvEJd18H3QNTICJjs/I0=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260926040046-9d904b1c7255 h1:RAnleGvxVxZ5sw3M4eAY8+iQ+rgwK8+w99/0BwcL6b8=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260926040046-9d904b1c7255/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
+github.com/discobox-ai/charm-x/vt v0.0.0-20261009234112-360d701e4806 h1:sKW0Bb+wbD2QIxadbc5wEnOvsLKH4C1mxq453lcN2lA=
+github.com/discobox-ai/charm-x/vt v0.0.0-20261009234112-360d701e4806/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/discobox-ai/iroh-go v0.4.0 h1:ogqDwo1cxUY08s6n3dBKg48iQlZ7rHtLLRWO4Ps8lhQ=
 github.com/discobox-ai/iroh-go v0.4.0/go.mod h1:iRfJfbqYtoGA2DUeEeqpEnk9lOIjP2ZuSULSiqL3/74=
 github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.4.0 h1:SUSrjNv1Q2hl8OWbGmqM1U/HN5hhP0pw/tzKQJIrH24=

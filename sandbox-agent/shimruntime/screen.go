@@ -242,7 +242,7 @@ func (s *screenBuffer) snapshot() []byte {
 			// Reset SGR after each line: ultraviolet renders lines assuming a clean
 			// pen at the start, but does not reset a line that ends mid-style, so
 			// styling would otherwise bleed into the next line.
-			b.WriteString(sb.Line(i).Render())
+			b.WriteString(sb.RenderedLine(i))
 			b.WriteString("\x1b[m\r\n")
 		}
 		writeScreen(&b, s.emu.Render())

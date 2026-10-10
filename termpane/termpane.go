@@ -947,7 +947,7 @@ func (m *Model) lineAt(at int, screen []string) string {
 	if at < 0 {
 		history := m.ScrollbackLen()
 		if index := history + at; index >= 0 && m.emu != nil {
-			return m.emu.Scrollback().Line(index).Render()
+			return m.emu.Scrollback().RenderedLine(index)
 		}
 		return ""
 	}
