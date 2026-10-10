@@ -2,8 +2,9 @@
 
 `discovm` is the `poolruntime.RuntimeProvider` for pools whose sandboxes are
 disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
-beside `dockerworker.Engine` rather than under it: a discovm pool runs no
-Docker (ADR 26-10-09-106 §1). This package is the skeleton: the provider kind,
+beside `dockerworker.Engine` rather than under it: a discovm pool has no
+pool-agent container, BuildKit, registry or sandbox network of the engine's
+(ADR 26-10-09-106 §1), whatever its driver runs a machine as. This package is the skeleton: the provider kind,
 the embedded engine and its shim, and pool hosting with its console, log, and
 image build. The driver is configuration it passes to disco-vm; how a pool is
 hosted follows from what that driver reports. The machine seam a pool agent
@@ -40,8 +41,8 @@ flowchart TD
 - A local machine's shim is this binary re-executed as `__discovm-shim`
   (`RunShimIfInvoked`, called from `server.RunVMLauncherIfInvoked` before
   anything a server does) with the engine's root and driver, so the server
-  ships no disco-vm binary. A remote driver (boxd) runs no shim: the engine
-  attaches to boxd's machine on every call, so a running one is adopted across
+  ships no disco-vm binary. A remote driver (boxd, docker) runs no shim: the
+  engine attaches to the service's machine on every call, so a running one is adopted across
   restarts, which "VM Lifetime" in [../DESIGN.md](../DESIGN.md) does not forbid
   for a machine that is not the host's.
 - A shim does not yet die with the server; that is discobox-ai/vm#8, and it
@@ -52,9 +53,11 @@ flowchart TD
 The driver is configuration, passed to disco-vm as it is: `newDriver` is
 `machine.New(cfg.Driver)` on disco-vm's own registry, and validation asks the
 same registry. Nothing in this package is written per driver. A build links
-the real hypervisors its OS has (`drivers.go`: boxd everywhere,
+the real drivers its OS has (`drivers.go`: boxd and docker everywhere,
 `drivers_darwin.go`: vz, `drivers_windows.go`: hcs), as imports and nothing
-else. It never links disco-vm's `fake` driver, whose guest agent is the
+else. disco-vm's docker driver runs Linux guests as containers that boot
+systemd; it stands beside the `docker` provider (dockerworker), which is
+unchanged. It never links disco-vm's `fake` driver, whose guest agent is the
 running binary serving exec on loopback; only tests do.
 
 `driver` is `Immutable`: it cannot change while the provider has pools,
@@ -66,7 +69,7 @@ it:
 
 | driver reports | pool host | console | log |
 | --- | --- | --- | --- |
-| remote (boxd) | `poolMachine`: a Linux machine named `discobox-pool-<pool>` | `bash -l` in it, through disco-vm's guest exec | its journal for this boot, through the same exec |
+| remote (boxd, docker) | `poolMachine`: a Linux machine named `discobox-pool-<pool>` | `bash -l` in it, through disco-vm's guest exec | its journal for this boot, through the same exec |
 | local (vz, hcs) | `hostAgent`: a pool agent process under `<stateRoot>/pools/<pool>` (#64) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
 
 - `poolMachine` reaches the host through disco-vm's own guest agent, never
@@ -109,7 +112,15 @@ says so in its output, and gives up when its caller does.
 The image is the server's, not the pool's, so the pool named only says where
 the operation was asked from. `RestartHost` is refused: a machine is cloned
 from its image, so a new image reaches a pool only when its machine is
-replaced.
+replaced, and the build says so (`GuestImageBuild.Adoption`, which the CLI
+prints in place of its restart hint).
+
+disco-vm bakes a guest agent into every image it installs: the disco-vm
+binary built for the guest, which on the docker driver is also the guest's
+init. Left to disco-vm's default it would be the running binary, which here is
+the server, so a build needs the provider's `agent` option (a path on the
+server's machine) and is refused without it. Where that binary comes from in a
+release is the images' to settle (#123, #126).
 
 ## Not Yet
 
@@ -117,3 +128,11 @@ replaced.
   there is no pool agent: no driver starts one yet.
 - No pool size fields: a machine's size is the driver's, decided with the pool
   images.
+- The pool agent's lease will be the machine's endpoint: an image declares
+  `service: {port: N}` and `Engine.Endpoint` returns its one address, boxd's
+  public HTTPS URL or a transport into the guest (disco-vm ADR 0001 §2). That
+  URL has no access control, so the pool agent authenticates every request.
+  It lands with the pool agents (#122, #127).
+- disco-vm ADR 0001 §1 moves exec, copy and shutdown onto `machine.Machine` and
+  retires the guest client above the driver. `poolMachine`'s console and log go
+  through that client (`Engine.Guest`) and move with it when it is implemented.
