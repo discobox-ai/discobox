@@ -179,7 +179,9 @@ driver rather than the pool agent, and it streams. It rebuilds the guest image
 the pool's backend boots, on that pool's own host (ADR 0062 §7); `?source=`
 names a checkout to build from and `?restart=true` restarts the host onto the
 result. The destination is sent as `X-Discobox-Guest-Image-Destination` before
-the build starts; a failure arrives as the `X-Discobox-Guest-Image-Error`
+the build starts, and a backend a restart does not move onto the new image
+(`discovm`, whose machines are cloned from theirs) says what does in
+`X-Discobox-Guest-Image-Adoption`; a failure arrives as the `X-Discobox-Guest-Image-Error`
 trailer, because the status was written long before the build ends. The client
 disconnecting closes the build.
 

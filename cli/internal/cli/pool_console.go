@@ -37,7 +37,7 @@ Docker, an agent that never registers — and reaches the host through the
 provider driver rather than through the pool agent, so it still answers when
 the agent does not.
 
-A discovm pool has no Docker: on a remote driver the console is a login shell
+A discovm pool has no such container: on a remote driver the console is a login shell
 in the pool's machine, and on a local one there is none to open, because the
 pool agent runs on this machine itself — read its log with "discobox admin pool
 logs" instead.

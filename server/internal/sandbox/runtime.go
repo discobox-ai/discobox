@@ -463,6 +463,11 @@ type GuestImageBuildOptions struct {
 type GuestImageBuild struct {
 	// Destination is the directory the artifacts are written to on success.
 	Destination string
+	// Adoption says, for a person, how a pool comes to boot what was built
+	// when restarting its host is not how. Empty means a restart is: the
+	// host boots the artifacts it finds when it starts (RestartHost). A
+	// backend whose host is cloned from the image says what does instead.
+	Adoption string
 	io.ReadCloser
 }
 

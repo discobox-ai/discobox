@@ -3,7 +3,8 @@
 // disco-vm engine this server embeds (ADR 26-10-09-106 §§1–2).
 //
 // It is a poolruntime.RuntimeProvider beside dockerworker.Engine, not a
-// dockerworker.Driver: a discovm pool runs no Docker at all. Its driver is
+// dockerworker.Driver: a discovm pool has none of the engine's Docker mechanics,
+// whatever its driver runs a machine as. Its driver is
 // disco-vm's, named in the provider's configuration and passed to disco-vm as
 // it is. Nothing here is written per driver: where a pool's agent runs follows
 // from what the driver reports it can do.
@@ -40,6 +41,13 @@ type Config struct {
 	// root (ADR 26-10-09-106 §4). A root per provider instance would give each
 	// its own two.
 	Driver string `json:"driver,omitempty"`
+	// Agent is the path, on the server's machine, of the disco-vm binary
+	// built for the driver's guests (their OS and CPU). disco-vm bakes it
+	// into every image it installs, as the guest's agent and, on the docker
+	// driver, its init. It is an option handed to disco-vm, required only to
+	// build images: left to disco-vm's default it would be the running
+	// binary, which is this server.
+	Agent string `json:"agent,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -78,7 +86,8 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			// Immutable: a pool's host was made through the driver, and only
 			// that driver can reach it to remove it.
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver to run machines on, as disco-vm names it: for example vz on macOS, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver to run machines on, as disco-vm names it: for example vz on macOS, docker on a Docker daemon, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
+			{Key: "agent", Label: "Guest Agent", Type: "string", Description: "Path on the server's machine of the disco-vm binary built for the guests' OS and CPU. Images are built with it as the guest agent, so building one needs it.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

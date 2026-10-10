@@ -32,9 +32,20 @@ func isolateStateRoot(t *testing.T) {
 	t.Cleanup(xdg.Reload)
 }
 
+// fakeConfig is a provider on disco-vm's fake driver. Its guest agent is this
+// test binary, which TestMain lets play one.
+func fakeConfig(t *testing.T) Config {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Config{Driver: "fake", Agent: exe}
+}
+
 func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	t.Helper()
-	config, err := json.Marshal(Config{Driver: "fake"})
+	config, err := json.Marshal(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +62,7 @@ func newFakeRuntime(t *testing.T) *Runtime {
 	}
 	ctx := context.Background()
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +83,9 @@ func newFakeRuntime(t *testing.T) *Runtime {
 	_ = build.Close()
 	if err != nil {
 		t.Fatalf("build failed: %v\n%s", err, out)
+	}
+	if build.Adoption == "" {
+		t.Fatal("a discovm build said nothing of how a pool adopts it; a restart does not")
 	}
 	if build.Destination != r.engine.Images.Root {
 		t.Fatalf("Destination = %q, want the engine's image store %q", build.Destination, r.engine.Images.Root)
@@ -199,7 +213,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 // machine says so rather than hanging.
 func TestFakePoolWithoutAMachineHasNoConsoleOrLog(t *testing.T) {
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,11 +265,29 @@ func TestHostAgentRefusesAConsoleAndReadsTheAgentLog(t *testing.T) {
 	}
 }
 
+// disco-vm's default guest agent is the running binary, which in a server is
+// the server. A provider that names none builds nothing, and says what to set.
+func TestBuildGuestImageNeedsAGuestAgent(t *testing.T) {
+	isolateStateRoot(t)
+	r, err := newRuntime(Config{Driver: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-9"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()})
+	if err == nil || errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || !strings.Contains(err.Error(), "set its agent") {
+		t.Fatalf("BuildGuestImage() with no agent = %v, want a refusal that says to set it, not that there is no image", err)
+	}
+	r.agent = filepath.Join(t.TempDir(), "missing")
+	if _, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-9"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "is not a file") {
+		t.Fatalf("BuildGuestImage() with a missing agent = %v, want it named", err)
+	}
+}
+
 // Which images a driver has is the checkout's to say: one with no specs for it
 // has nothing to build.
 func TestBuildGuestImageWithNoImagesIsUnsupported(t *testing.T) {
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +301,7 @@ func TestBuildGuestImageWithNoImagesIsUnsupported(t *testing.T) {
 // the new one, and says so as its own refusal rather than as "no image".
 func TestBuildGuestImageRefusesToRestartTheHost(t *testing.T) {
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +342,7 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +359,7 @@ func TestBuildGuestImageBuildsTheTwinChain(t *testing.T) {
 		t.Skip("the fake guest's build steps are POSIX shell commands")
 	}
 	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
+	r, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +473,7 @@ func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}
 	isolateStateRoot(t)
-	local, err := newRuntime(Config{Driver: "fake"})
+	local, err := newRuntime(fakeConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -84,6 +84,15 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		// does not do.
 		return nil, fmt.Errorf("a %s pool boots a new image only once its machine is replaced, which a build does not do; build without restarting: %w", ProviderType, sandbox.ErrGuestImageRestartUnsupported)
 	}
+	if r.agent == "" {
+		// disco-vm's default agent is the running binary, and this one is a
+		// server: an image built with it would boot a guest whose agent, or
+		// whose init, is discobox-server.
+		return nil, fmt.Errorf("this %s provider names no guest agent: set its agent to a disco-vm binary built for the guests before building images", ProviderType)
+	}
+	if info, err := os.Stat(r.agent); err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("the %s provider's guest agent %s is not a file on the machine running the control plane", ProviderType, r.agent)
+	}
 	source, err := checkoutDir(opts.SourceDir)
 	if err != nil {
 		return nil, err
@@ -112,6 +121,7 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 				File:    filepath.Join(source, filepath.FromSlash(image.Spec(driver))),
 				Context: filepath.Join(source, filepath.FromSlash(image.Context)),
 				Tags:    []string{image.Tag},
+				Agent:   r.agent,
 			}
 			if _, err := builder.Build(ctx, opts); err != nil {
 				// The reader's next Read returns the build's error rather
@@ -122,7 +132,11 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		}
 		_ = writer.Close()
 	}()
-	return &sandbox.GuestImageBuild{Destination: r.engine.Images.Root, ReadCloser: reader}, nil
+	return &sandbox.GuestImageBuild{
+		Destination: r.engine.Images.Root,
+		Adoption:    "Machines created from now on boot these images. A machine that exists keeps the image it was created from.",
+		ReadCloser:  reader,
+	}, nil
 }
 
 // chainLockPoll is how often a chain waiting for the root's build lock asks

@@ -10,7 +10,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/vm v0.0.0-20261009022841-aa939a363cf4
+	github.com/discobox-ai/vm v0.0.0-20261009234924-5e0d8fa02e6f
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/distribution/reference v0.6.0
 	github.com/ebitengine/purego v0.10.2
