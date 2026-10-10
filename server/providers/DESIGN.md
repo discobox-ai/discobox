@@ -11,8 +11,10 @@ orchestration, and API shape.
 
 A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
 runs the pool-agent container, and the pool's sandboxes run beside it on the
-same Docker daemon — never nested inside it. A `discovm` pool is the exception
-that runs no Docker: its sandboxes are disco-vm machines (ADR 26-10-09-106).
+same Docker daemon — never nested inside it. A `discovm` pool is the exception:
+its sandboxes are disco-vm machines (ADR 26-10-09-106), and none of the
+engine's Docker mechanics apply to it, whatever its driver runs a machine as
+(disco-vm's docker driver runs one as a container).
 
 `providers.RegisterBuiltInSandboxProviderFactories` registers the portable
 providers (`discovm`, `docker`, `digitalocean`, `exec`, `libkrun`) everywhere,
@@ -47,8 +49,8 @@ flowchart TD
     libkrun["libkrun.Driver (Linux)\nre-executed launcher child ·\nregistry-seeded guest · Unix/VSOCK leases"]
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
-    discovm["discovm.Runtime\nembedded disco-vm engine · no Docker"]
-    dvdriver["disco-vm driver (configured)\nremote: pool machine · local: host pool agent"]
+    discovm["discovm.Runtime\nembedded disco-vm engine · machines, not the engine's containers"]
+    dvdriver["disco-vm driver (configured: vz, hcs, boxd, docker)\nremote: pool machine · local: host pool agent"]
 
     pool --> engine --> driver
     driver --> local & do & execd & libkrun & vz & wslc

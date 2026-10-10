@@ -34,9 +34,9 @@ type poolHost interface {
 }
 
 // newPoolHost places a pool's agent where the driver's machines are (ADR
-// 26-10-09-106 §1). A remote driver's machines belong to its service and can
-// be reached from anywhere, so the pool agent runs in a Linux machine of its
-// own there. A local hypervisor's machines run on this host, so the pool agent
+// 26-10-09-106 §1). A remote driver's machines belong to a service (boxd's
+// API, a Docker daemon), not to the process that booted them, so the pool
+// agent runs in a Linux machine of its own there. A local hypervisor's machines run on this host, so the pool agent
 // runs beside the server as a host process.
 func newPoolHost(e *engine.Engine) poolHost {
 	if e.Driver.Capabilities().Remote {
@@ -50,6 +50,8 @@ func newPoolHost(e *engine.Engine) poolHost {
 type Runtime struct {
 	engine *engine.Engine
 	host   poolHost
+	// agent is the disco-vm binary images are built with (Config.Agent).
+	agent string
 }
 
 var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
@@ -59,7 +61,7 @@ func newRuntime(cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{engine: e, host: newPoolHost(e)}, nil
+	return &Runtime{engine: e, host: newPoolHost(e), agent: strings.TrimSpace(cfg.Agent)}, nil
 }
 
 // newDriver constructs the named disco-vm driver. The name is disco-vm's, and

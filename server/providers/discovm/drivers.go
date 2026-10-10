@@ -11,4 +11,9 @@ package discovm
 import (
 	// boxd's hypervisor is in the cloud, so every build can drive it.
 	_ "github.com/discobox-ai/vm/pkg/machine/boxd"
+	// docker runs Linux guests as containers that boot systemd. Its daemon
+	// may be on another host, or in Docker Desktop's VM, so every build can
+	// drive it too. It stands beside the docker provider (dockerworker), not
+	// in its place.
+	_ "github.com/discobox-ai/vm/pkg/machine/docker"
 )
