@@ -35,7 +35,7 @@ const AnonymousRefresh = 5 * time.Minute
 
 // keptFor is how long a full read is trusted on the issue's updated_at alone.
 // Not everything moves it — a reaction does not — so past this a re-read is a
-// full one.
+// full one. Only with a token: anonymous requests are too few to spend so.
 const keptFor = 10 * time.Minute
 
 // tokenRetry is how long an empty token is believed before `gh` is asked
@@ -237,10 +237,13 @@ var ErrNoToken = errors.New("not logged in to GitHub: run gh auth login, or set 
 func (c *Client) Issue(ctx context.Context, owner, name string, number int, full bool) (Issue, error) {
 	key := issueKey{owner, name, number}
 	cached, ok := c.cached(key)
-	if full || c.clock().Sub(cached.full) >= keptFor {
+	anonymous := c.bearer(ctx) == ""
+	// Age forces a full read only with a token: without one, a long timeline
+	// read in full every keptFor would spend GitHub's 60 an hour on its own.
+	if full || (!anonymous && c.clock().Sub(cached.full) >= keptFor) {
 		ok = false
 	}
-	if ok && c.bearer(ctx) == "" && c.clock().Sub(cached.at) < AnonymousRefresh {
+	if ok && anonymous && c.clock().Sub(cached.at) < AnonymousRefresh {
 		return cached.issue, nil
 	}
 	base := fmt.Sprintf("/repos/%s/%s/issues/%d", url.PathEscape(owner), url.PathEscape(name), number)
