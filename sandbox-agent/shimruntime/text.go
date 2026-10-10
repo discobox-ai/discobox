@@ -8,6 +8,7 @@ import (
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ScreenText is a terminal's screen as a person looking at it would read it
@@ -76,7 +77,9 @@ func (s *screenBuffer) text(scrollback int) ScreenText {
 		sb := s.emu.Scrollback()
 		start := max(sb.Len()-scrollback, 0)
 		for i := start; i < sb.Len(); i++ {
-			text.Scrollback = append(text.Scrollback, strings.TrimRight(sb.Line(i).String(), " "))
+			// A scrollback line is kept rendered; its text is that without the
+			// escape sequences, the same as the line's cells would give.
+			text.Scrollback = append(text.Scrollback, strings.TrimRight(ansi.Strip(sb.RenderedLine(i)), " "))
 		}
 	}
 	return text

@@ -457,6 +457,12 @@ or leaving the alternate screen resets the view because alternate screens have
 no scrollback. What keys drive it is the host's business, as with everything
 else here.
 
+The emulator keeps each scrollback line as its rendered string, not as cells —
+a cell is over a hundred bytes, so a full 10,000-line scrollback of wide styled
+output is a few MB instead of hundreds. `View` draws those strings as they are
+(`RenderedLine`); only the selection grid reads cells, which the emulator
+decodes from the string and caches a screen's worth of.
+
 ## Not here
 
 There is no keyboard copy mode — no movable cursor, no vim motions, no search.
