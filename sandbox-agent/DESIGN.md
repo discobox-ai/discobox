@@ -454,7 +454,9 @@ flowchart LR
   ([ADR 0046](../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)):
   what a listening port speaks can only be learned by connecting to a user's
   process and writing a request at it, and the answer does not change while
-  that socket lives. So `ports.Watcher` scans and probes on its own interval,
+  that socket lives. So `ports.Watcher` scans and probes on its own interval —
+  every 5 s, or every 0.5 s in a configure sandbox, whose sign-in callback port
+  must reach the user's machine before their browser does (ADR 26-10-09-867) —
   caches each result against the socket inodes behind the port, and the handler
   reports its snapshot. Discovery is a socket-table read (`/proc/net/{tcp,udp}{,6}` on Linux) filtered
   by the uid `execs.Manager.ResolveUser` returns — never a uid derived some other way,

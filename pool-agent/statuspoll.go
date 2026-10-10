@@ -7,12 +7,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (
@@ -21,7 +23,12 @@ const (
 	// Distinct from sandboxruntime's 100ms poll interval, which is a one-shot
 	// readiness wait, not a standing loop.
 	sandboxAgentStatusPollInterval = 15 * time.Second
-	sandboxAgentStatusCallTimeout  = 5 * time.Second
+	// sandboxAgentConfigStatusPollInterval is how often a configure sandbox is
+	// polled, in place of the standing interval: its sign-in may listen on a callback port the user's
+	// browser is about to be sent to, and the CLI forwards it only once this
+	// poll has reported it (ADR 26-10-09-867).
+	sandboxAgentConfigStatusPollInterval = time.Second
+	sandboxAgentStatusCallTimeout        = 5 * time.Second
 	// sandboxAgentStatusTokenRefreshMargin mints a fresh token once less than
 	// this much of its TTL remains, well inside the 15-minute TTL the control
 	// plane issues.
@@ -52,6 +59,11 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 		tokens:       map[string]cachedSandboxAgentToken{},
 		samples:      map[string]sandboxResourceSample{},
 	}
+	// The two cadences poll disjoint sets — tick leaves the configure
+	// sandboxes to tickConfigure — so each sandbox's reports still come from one
+	// loop in the order they were observed (the control plane keeps the last
+	// status written, not the newest), and a slow standing tick never holds up
+	// the fast one.
 	go func() {
 		ticker := time.NewTicker(sandboxAgentStatusPollInterval)
 		defer ticker.Stop()
@@ -61,6 +73,18 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 				return
 			case <-ticker.C:
 				poller.tick(ctx)
+			}
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(sandboxAgentConfigStatusPollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				poller.tickConfigure(ctx)
 			}
 		}
 	}()
@@ -102,21 +126,45 @@ func (p *sandboxAgentStatusPoller) ResourceSamples() map[string]sandboxResourceS
 	return out
 }
 
-// tick polls every currently-running hosted sandbox independently, so one
-// unreachable or erroring sandbox never blocks or fails the batch, then
-// pushes whatever was successfully collected this tick.
+// tick polls every currently-running hosted sandbox but the configure ones,
+// which tickConfigure polls, each independently, so one unreachable or
+// erroring sandbox never blocks or fails the batch, then pushes whatever was
+// successfully collected this tick.
 func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
 	sandboxes, err := p.runtime.ListSandboxes(ctx)
 	if err != nil {
 		p.logger.Warn("list sandboxes for status poll", "error", err)
 		return
 	}
+	configure, err := p.runtime.RunningSandboxIDsInMode(ctx, sandboxconfig.HarnessModeConfig)
+	if err != nil {
+		// tickConfigure cannot find them either, so they are polled here.
+		p.logger.Warn("list configure sandboxes for status poll", "error", err)
+	}
 	var running []string
 	for _, sb := range sandboxes {
-		if sb != nil && sb.Status == sandboxruntime.StatusRunning && strings.TrimSpace(sb.SandboxID) != "" {
+		if sb != nil && sb.Status == sandboxruntime.StatusRunning && strings.TrimSpace(sb.SandboxID) != "" && !slices.Contains(configure, sb.SandboxID) {
 			running = append(running, sb.SandboxID)
 		}
 	}
+	p.pollAndReport(ctx, running)
+}
+
+// tickConfigure polls only the running configure sandboxes, between the
+// standing ticks. Finding them is one filtered list, so a pool with none pays
+// next to nothing for it.
+func (p *sandboxAgentStatusPoller) tickConfigure(ctx context.Context) {
+	running, err := p.runtime.RunningSandboxIDsInMode(ctx, sandboxconfig.HarnessModeConfig)
+	if err != nil {
+		p.logger.Warn("list configure sandboxes for status poll", "error", err)
+		return
+	}
+	p.pollAndReport(ctx, running)
+}
+
+// pollAndReport polls each of running and pushes what it collected as one
+// batch.
+func (p *sandboxAgentStatusPoller) pollAndReport(ctx context.Context, running []string) {
 	if len(running) == 0 {
 		return
 	}

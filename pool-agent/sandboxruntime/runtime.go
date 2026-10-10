@@ -93,6 +93,11 @@ const (
 	// check covers the image pin, resources, sources, and anything added to the
 	// spec later, because the control plane hashes the whole manifest.
 	sandboxLabelSpec = "discobox.spec_fingerprint"
+	// sandboxLabelHarnessMode is the harness mode the sandbox was created in,
+	// set only for a mode other than an ordinary run. It is what lets the
+	// status poller find the configure sandboxes it polls more often with one
+	// filtered list, rather than an inspect of every container.
+	sandboxLabelHarnessMode = "discobox.harness_mode"
 )
 
 var (
@@ -182,6 +187,12 @@ type Runtime interface {
 	// stopped. It is the runtime half of a sandbox, and an archived one has
 	// none — see StoredSandboxIDs for the durable half.
 	ListSandboxes(ctx context.Context) ([]*Sandbox, error)
+	// RunningSandboxIDsInMode is the running sandboxes created in harnessMode,
+	// a mode other than sandboxconfig.HarnessModeRun: a run sandbox records no
+	// mode, so asking for run (or for none) finds nothing. It is cheap enough
+	// to call every second, which ListSandboxes is not: the status poller polls
+	// configure sandboxes that often (ADR 26-10-09-867).
+	RunningSandboxIDsInMode(ctx context.Context, harnessMode string) ([]string, error)
 	// StoredSandboxIDs is every sandbox whose durable tree this pool holds,
 	// container or not.
 	//
@@ -391,6 +402,27 @@ func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, e
 			return nil, err
 		}
 		out = append(out, r.sandboxFromInspect(ctx, inspect.Container))
+	}
+	return out, nil
+}
+
+// harnessModeOf is the harness mode a create asks for, empty when it names none.
+func harnessModeOf(config workerapimodel.SandboxConfig) string {
+	mode, _ := config.HarnessMode.Get()
+	return string(mode)
+}
+
+func (r *DockerSandboxRuntime) RunningSandboxIDsInMode(ctx context.Context, harnessMode string) ([]string, error) {
+	filters := r.filters("").Add("label", sandboxLabelHarnessMode+"="+harnessMode).Add("status", "running")
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{Filters: filters})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(containers.Items))
+	for _, ctr := range containers.Items {
+		if id := ctr.Labels[sandboxLabelSandbox]; id != "" {
+			out = append(out, id)
+		}
 	}
 	return out, nil
 }
@@ -621,7 +653,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	cfg := &container.Config{
 		Image:        imageName,
 		Hostname:     sandboxHostname(sandboxID),
-		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project)),
+		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project), harnessModeOf(config)),
 		Env:          envList(envWithSandboxUser(baseEnv, user)),
 		WorkingDir:   workingDir,
 		AttachStdout: true,
@@ -2184,7 +2216,7 @@ func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
 	return args
 }
 
-func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint, projectLayer string) map[string]string {
+func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint, projectLayer, harnessMode string) map[string]string {
 	labels := map[string]string{
 		sandboxLabelManaged: "true",
 		sandboxLabelProject: r.projectID,
@@ -2199,6 +2231,9 @@ func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint, projectLayer s
 	}
 	if projectLayer != "" {
 		labels[sandboxLabelProjectLayer] = projectLayer
+	}
+	if harnessMode != "" && harnessMode != sandboxconfig.HarnessModeRun {
+		labels[sandboxLabelHarnessMode] = harnessMode
 	}
 	return labels
 }
@@ -2314,15 +2349,19 @@ type MemorySandboxRuntime struct {
 	// appliedRuntimeConfig is the revision the status poll last reported for
 	// each sandbox (ConvergeRuntimeConfig).
 	appliedRuntimeConfig map[string]int64
+	// harnessModes is each sandbox's create-time harness mode, which the Docker
+	// runtime keeps as a label.
+	harnessModes map[string]string
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 	return &MemorySandboxRuntime{
-		sandboxes:   map[string]*Sandbox{},
-		archived:    map[string]struct{}{},
-		gitOrigins:  map[string]map[string]string{},
-		liveOrigins: map[string]map[string]GitRepositoryLocation{},
-		trees:       map[string][]byte{},
+		sandboxes:    map[string]*Sandbox{},
+		archived:     map[string]struct{}{},
+		gitOrigins:   map[string]map[string]string{},
+		liveOrigins:  map[string]map[string]GitRepositoryLocation{},
+		trees:        map[string][]byte{},
+		harnessModes: map[string]string{},
 	}
 }
 
@@ -2333,6 +2372,19 @@ func (r *MemorySandboxRuntime) ListSandboxes(context.Context) ([]*Sandbox, error
 	for _, sb := range r.sandboxes {
 		out = append(out, cloneSandbox(sb))
 	}
+	return out, nil
+}
+
+func (r *MemorySandboxRuntime) RunningSandboxIDsInMode(_ context.Context, harnessMode string) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for id, sb := range r.sandboxes {
+		if sb.Status == StatusRunning && r.harnessModes[id] == harnessMode {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
 	return out, nil
 }
 
@@ -2363,6 +2415,12 @@ func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimo
 	now := time.Now().UTC()
 	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Config.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
 	r.sandboxes[req.SandboxId] = sb
+	// Kept as the Docker runtime labels it, afresh on every create: a run
+	// sandbox names no mode.
+	delete(r.harnessModes, req.SandboxId)
+	if mode := harnessModeOf(req.Config); mode != "" && mode != sandboxconfig.HarnessModeRun {
+		r.harnessModes[req.SandboxId] = mode
+	}
 	// Creating against a retained tree is what unarchive is (ADR 0022 §6).
 	delete(r.archived, req.SandboxId)
 	return cloneSandbox(sb), nil
@@ -2399,6 +2457,7 @@ func (r *MemorySandboxRuntime) ArchiveSandbox(_ context.Context, sandboxID strin
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sandboxes, sandboxID)
+	delete(r.harnessModes, sandboxID)
 	r.archived[sandboxID] = struct{}{}
 	return nil
 }
@@ -2407,6 +2466,7 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sandboxes, sandboxID)
+	delete(r.harnessModes, sandboxID)
 	delete(r.archived, sandboxID)
 	delete(r.trees, sandboxID)
 	return nil

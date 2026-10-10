@@ -15,6 +15,7 @@ import (
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -359,5 +360,78 @@ func TestPollDecodedStatusCarriesResourceCountersAndRelaysVerbatim(t *testing.T)
 	}
 	if bytes.Contains(relayed, []byte(`"Resources"`)) {
 		t.Error("the decoded counters leaked onto the status channel; they belong to the resource report")
+	}
+}
+
+// TestSandboxAgentStatusPollerConfigureTickPollsOnlyConfigureSandboxes
+// confirms the fast tick reaches only a sandbox created in configure mode, and
+// the standing tick everything else, so
+// its ports reach the CLI within a second or so while every other sandbox
+// keeps the standing cadence (ADR 26-10-09-867).
+func TestSandboxAgentStatusPollerConfigureTickPollsOnlyConfigureSandboxes(t *testing.T) {
+	configure := httptest.NewServer(statusOKHandler("2026-01-01T00:00:00Z"))
+	defer configure.Close()
+	run := httptest.NewServer(statusOKHandler("2026-01-01T00:00:01Z"))
+	defer run.Close()
+	plain := httptest.NewServer(statusOKHandler("2026-01-01T00:00:02Z"))
+	defer plain.Close()
+
+	runtime := &statusPollTestRuntime{
+		MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(),
+		servers: map[string]*httptest.Server{
+			"sandbox-configure": configure,
+			"sandbox-run":       run,
+			"sandbox-plain":     plain,
+		},
+	}
+	ctx := context.Background()
+	for id, mode := range map[string]workerclient.SandboxConfigHarnessMode{
+		"sandbox-configure": workerclient.SandboxConfigHarnessModeConfig,
+		"sandbox-run":       workerclient.SandboxConfigHarnessModeRun,
+		"sandbox-plain":     "",
+	} {
+		config := workerapimodel.SandboxConfig{}
+		if mode != "" {
+			config.HarnessMode = workerclient.NewOptSandboxConfigHarnessMode(mode)
+		}
+		if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{SandboxId: id, Config: config}); err != nil {
+			t.Fatalf("seed sandbox %s: %v", id, err)
+		}
+	}
+
+	client := &fakeSandboxAgentStatusClient{}
+	poller := &sandboxAgentStatusPoller{
+		logger:       slog.New(slog.DiscardHandler),
+		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		registration: statusPollTestRegistration(t),
+		runtime:      runtime,
+		client:       client,
+		tokens:       map[string]cachedSandboxAgentToken{},
+	}
+
+	poller.tickConfigure(ctx)
+
+	client.mu.Lock()
+	reported := append([]SandboxAgentStatusEntry(nil), client.reported...)
+	client.mu.Unlock()
+	if len(reported) != 1 || reported[0].SandboxID != "sandbox-configure" {
+		t.Fatalf("configure tick reported %+v, want only sandbox-configure", reported)
+	}
+
+	// The standing tick leaves the configure sandbox to the fast one, so no
+	// sandbox is reported by two loops whose pushes could land out of order.
+	client.mu.Lock()
+	client.reported = nil
+	client.mu.Unlock()
+	poller.tick(ctx)
+	client.mu.Lock()
+	reported = append([]SandboxAgentStatusEntry(nil), client.reported...)
+	client.mu.Unlock()
+	seen := map[string]bool{}
+	for _, entry := range reported {
+		seen[entry.SandboxID] = true
+	}
+	if len(reported) != 2 || !seen["sandbox-run"] || !seen["sandbox-plain"] {
+		t.Fatalf("standing tick reported %+v, want sandbox-run and sandbox-plain only", reported)
 	}
 }

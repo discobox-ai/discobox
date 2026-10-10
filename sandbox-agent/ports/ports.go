@@ -49,6 +49,11 @@ import (
 // control-plane poll old.
 const DefaultInterval = 5 * time.Second
 
+// ConfigureInterval is the rescan interval of a configure sandbox, whose
+// sign-in callback port has to reach the user's machine before their browser
+// is redirected to it (ADR 26-10-09-867).
+const ConfigureInterval = 500 * time.Millisecond
+
 // probeConcurrency bounds how many listeners are probed at once. A sandbox that
 // just started a compose stack can bring up a dozen ports in one tick, and each
 // probe is a connection into a process that may be slow to answer.

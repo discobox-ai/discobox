@@ -687,7 +687,14 @@ A standing poller (`startSandboxAgentStatusPoller`, `statuspoll.go`) checks
 every currently-running hosted sandbox's sandbox-agent status endpoint (git
 status, terminal sessions, active connections) on a 15s interval and
 pushes a batch of what it collected to the control plane
-(`/api/pools/{pool_id}/sandbox-agent-status`). One unreachable or erroring
+(`/api/pools/{pool_id}/sandbox-agent-status`). Sandboxes created in configure
+mode are polled every second besides, so a sign-in's callback port reaches the
+CLI before the user's browser does (ADR 26-10-09-867); the runtime finds them
+with `RunningSandboxIDsInMode`, one filtered list against the
+`discobox.harness_mode` label set at create, rather than `ListSandboxes`'s
+inspect of every container. The standing poll leaves those sandboxes to the
+fast one, so each sandbox is reported by one loop, in the order it was
+observed, and a slow standing tick never holds the fast one up. One unreachable or erroring
 sandbox is skipped, never blocking or failing the rest of the tick, and a poll
 or push failure never affects sandbox lifecycle. The bearer token for each
 sandbox-agent call is a short-lived, `status:read`-only token the control
