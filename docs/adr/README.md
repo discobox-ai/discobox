@@ -268,3 +268,4 @@ duplicated number.
 | [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md) | A VM sandbox starts its agent when its bootstrap arrives, and its backend gives the pool one address to it | Accepted (narrows [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md) §2 for backends with no PID-1 flow) |
 | [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md) | A sandbox may be created with skills | Accepted |
 | [26-10-09-867](26-10-09-867-a-configure-port-may-be-ephemeral-and-is-still-bound-at-its-own-number.md) | A configure port may be ephemeral, and is still bound at its own number | Accepted |
+| [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) | Git reaches a pool only from a client, and is cached there per remote | Proposed |
