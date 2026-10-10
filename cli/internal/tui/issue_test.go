@@ -19,20 +19,21 @@ var errNotLoggedIn = errors.New("not logged in to GitHub: run gh auth login, or 
 func testIssue() Issue {
 	opened := time.Now().Add(-72 * time.Hour)
 	return Issue{
-		Repository:    "acme/foo",
-		Number:        4,
-		Title:         "The reaper eats the wrong boxes",
-		State:         "open",
-		Author:        "alice",
-		Body:          "It reaps **running** boxes.\n\n- one\n- two",
-		CreatedAt:     opened,
-		Labels:        []IssueLabel{{Name: "bug", Color: "d73a4a"}},
-		Assignees:     []string{"bob"},
-		Milestone:     "v1",
-		Comments:      1,
-		Reactions:     IssueReactions{"+1": 2},
-		SubIssues:     []IssueRef{{Repository: "acme/foo", Number: 5, Title: "Write a failing test", State: "closed"}},
-		SubIssuesDone: 1,
+		Repository:     "acme/foo",
+		Number:         4,
+		Title:          "The reaper eats the wrong boxes",
+		State:          "open",
+		Author:         "alice",
+		Body:           "It reaps **running** boxes.\n\n- one\n- two",
+		CreatedAt:      opened,
+		Labels:         []IssueLabel{{Name: "bug", Color: "d73a4a"}},
+		Assignees:      []string{"bob"},
+		Milestone:      "v1",
+		Comments:       1,
+		Reactions:      IssueReactions{"+1": 2},
+		SubIssues:      []IssueRef{{Repository: "acme/foo", Number: 5, Title: "Write a failing test", State: "closed"}},
+		SubIssuesTotal: 1,
+		SubIssuesDone:  1,
 		Timeline: []IssueEvent{
 			{Kind: "labeled", Actor: "carol", At: opened.Add(time.Hour), Label: &IssueLabel{Name: "bug"}},
 			{Kind: "commented", Actor: "bob", At: opened.Add(2 * time.Hour), Body: "I can reproduce it."},
@@ -590,4 +591,31 @@ func TestACommentIsPostedAsWritten(t *testing.T) {
 		t.Errorf("posted %q, want %q", got, want)
 	}
 	_ = m
+}
+
+// The sub-issue count is GitHub's own: a list cut short says how much of it
+// is shown rather than claiming more done than there are.
+func TestASubIssueListCutShortKeepsGitHubsCount(t *testing.T) {
+	t.Parallel()
+	ds := issueSource()
+	issue := testIssue()
+	issue.SubIssuesTotal, issue.SubIssuesDone = 150, 120
+	ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+	_, m := openIssuePane(t, ds)
+	if frame := plainFrame(m); !strings.Contains(frame, "120 of 150 done · 1 shown") {
+		t.Errorf("the sub-issue summary does not say GitHub's count:\n%s", frame)
+	}
+}
+
+// Nor does a list that could not be read at all hide that there are any.
+func TestSubIssuesThatCouldNotBeReadAreStillCounted(t *testing.T) {
+	t.Parallel()
+	ds := issueSource()
+	issue := testIssue()
+	issue.SubIssues, issue.SubIssuesTotal, issue.SubIssuesDone = nil, 150, 120
+	ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+	_, m := openIssuePane(t, ds)
+	if frame := plainFrame(m); !strings.Contains(frame, "120 of 150 done · 0 shown") {
+		t.Errorf("the sub-issue summary is not drawn:\n%s", frame)
+	}
 }

@@ -1697,10 +1697,12 @@ type Issue struct {
 	Reactions IssueReactions
 	// PullRequest is set when the number is a pull request's.
 	PullRequest bool
-	// SubIssues are the issues this one is broken into, and SubIssuesDone
-	// how many of them are closed.
-	SubIssues     []IssueRef
-	SubIssuesDone int
+	// SubIssues are the issues this one is broken into, as far as they were
+	// read; SubIssuesTotal and SubIssuesDone are GitHub's own count of them
+	// and of those closed, which a list cut short does not change.
+	SubIssues      []IssueRef
+	SubIssuesTotal int
+	SubIssuesDone  int
 	// Timeline is everything that happened after it was opened, oldest first.
 	Timeline []IssueEvent
 	// Truncated is set when the timeline was longer than was read.
