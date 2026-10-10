@@ -122,19 +122,19 @@ this skill has already asked — rebase and force-push with a lease to
   already there, so the user's `discobox ls --tag issue=<N>` finds it
   (`open-pr` adds `pr=` in §5). With no issue, drop an `issue` or `pr` tag an
   earlier piece of work left (the same lines with
-  `jq 'del(.tags.issue, .tags.pr, .tags.ready, .tags.blocked)'` and
+  `jq 'del(.tags.issue, .tags.pr, .tags.ready, .tags.blocked, .tags.merged)'` and
   `jq -e '.tags.issue == null'`), so
   the box is not listed under work it no longer holds:
 
   ```bash
   S=<scratchpad>; M=~/.discobox/meta.json
   { cat $M 2>/dev/null || echo '{}'; } | jq --arg v <N> '(.tags.issue // "") as $prev
-    | .tags = ((.tags // {}) + {issue: $v} | del(.ready, .blocked)) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
+    | .tags = ((.tags // {}) + {issue: $v} | del(.ready, .blocked, .merged)) | if $prev != $v then del(.tags.pr) else . end' > $S/meta.json &&
     jq -e --arg v <N> '.tags.issue == $v and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
   ```
 
   A new issue drops the `pr` tag the last one left, and a fresh start drops a
-`ready` or `blocked` tag (§7) the last run left. The `jq -e` check proves
+`ready`, `blocked` or `merged` tag (§7) the last run left. The `jq -e` check proves
   the merge produced the tag and at most 64 tags (more makes the whole file
   invalid); when it fails nothing is written: with more than 64 tags merged,
   tell the user the box's tags are full and drop none of theirs to make
@@ -317,18 +317,20 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
   `CHANGES_REQUESTED` with no inline comment, Copilot's "previously missed");
   answer those in one PR comment.
 - **A failing check on the head commit** — fix it as `open-pr` §4 says.
-- **Merged or closed** — stop the Monitor, remove the keepalive, and finish.
+- **Merged or closed** — tag the box `merged` or drop its tag (below), stop
+  the Monitor, remove the keepalive, and finish.
 
 If a grant expires mid-watch, ask for the same uses again. Status line on
 every change: `PR #<pr>: <what happened, what you did>`.
 
-### Ready or blocked
+### Ready, blocked, merged
 
-Two plain tags on the box tell the user which PRs need them: `ready` and
-`blocked`, each with an empty value. The console shows them as `#ready` and
-`#blocked`, and `discobox ls --all --tag ready` lists them (without `--all`,
-`ls` skips boxes created from another source, as a lead's workers are). Set at most one of them,
-and move it each time the state changes, from §0 until the end:
+Three plain tags on the box tell the user where its PR stands: `ready`,
+`blocked` and `merged`, each with an empty value. The console shows them as
+`#ready`, `#blocked` and `#merged`, and `discobox ls --all --tag ready` lists
+them (without `--all`, `ls` skips boxes created from another source, as a
+lead's workers are). Set at most one of them, and move it each time the state
+changes, from §0 until the end:
 
 - **`ready`**: §6 has stopped, every check on the head commit is green, every
   review, thread and comment has a reply, `mergeable_state` is neither `dirty`
@@ -344,13 +346,14 @@ and move it each time the state changes, from §0 until the end:
   review or comment, or has a check on its head commit leave `pass` or `skipping`
   (re-run, failed or cancelled), drop `ready` before you start on it.
   Drop `blocked` as soon as the answer comes.
-- **merged or closed**: drop both.
+- **`merged`**: the PR merged. The box's work is done.
+- **closed without merging**: drop all three.
 
-Set `<s>` to `ready` or `blocked`, or leave it empty to drop both:
+Set `<s>` to `ready`, `blocked` or `merged`, or leave it empty to drop all three:
 
 ```bash
 S=<scratchpad>; M=~/.discobox/meta.json
-{ cat $M 2>/dev/null || echo '{}'; } | jq --arg s '<s>' '.tags = ((.tags // {}) | del(.ready, .blocked))
+{ cat $M 2>/dev/null || echo '{}'; } | jq --arg s '<s>' '.tags = ((.tags // {}) | del(.ready, .blocked, .merged))
   | if $s != "" then .tags[$s] = "" else . end' > $S/meta.json &&
   jq -e --arg s '<s>' '($s == "" or .tags[$s] == "") and (.tags | length) <= 64' $S/meta.json >/dev/null && cp $S/meta.json $M
 ```

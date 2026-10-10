@@ -54,7 +54,7 @@ cmd_status() {
 	boxes | while IFS=$'\t' read -r n id pr; do
 		echo "$j" | jq -r --arg id "$id" --arg n "$n" --arg pr "$pr" '(.sandboxes // .)[] | select(.id==$id) |
 			(((.runtime.agentStatus.sources // []) | map(select(.slug=="primary" or .slug==null))) + [{}])[0] as $g |
-			"\($n) pr=\($pr) \(.id) \(.runtime.runtimeState) \(if (.displayName|startswith("✳")) then "idle" else "busy" end) head=\(($g.headCommit // "?")[0:8]) clean=\($g.clean)\((.meta.tags // {}) | if has("ready") then " #ready" elif has("blocked") then " #blocked" else "" end)"'
+			"\($n) pr=\($pr) \(.id) \(.runtime.runtimeState) \(if (.displayName|startswith("✳")) then "idle" else "busy" end) head=\(($g.headCommit // "?")[0:8]) clean=\($g.clean)\((.meta.tags // {}) | if has("ready") then " #ready" elif has("blocked") then " #blocked" elif has("merged") then " #merged" else "" end)"'
 	done
 }
 
@@ -92,20 +92,22 @@ running() {
 	return 1
 }
 
-# retire <issue>|<discobox-id>: mark a finished box for the human to delete, then stop it. "discobox tag"
-# writes the tag through the server, which the sandbox role allows only on a box this lead
-# created (ADR 26-10-08-447). The lead cannot delete a box.
-cmd_retire() { # retire <issue>|<discobox-id>: a pool box has no issue in workers.tsv, so take its ID
-	local n=$1 id u out
+# retire <issue>|<discobox-id> [merged]: mark a finished box for the human to delete, then stop it.
+# "discobox tag" writes the tag through the server, which the sandbox role allows only on a box this
+# lead created (ADR 26-10-08-447). The lead cannot delete a box. A stopped worker cannot move its own
+# state tag (deliver-issue §7), so retire drops ready/blocked and, for a merged PR, sets merged.
+cmd_retire() { # retire <issue>|<discobox-id> [merged]: a pool box has no issue in workers.tsv, so take its ID
+	local n=$1 id u out tags=(to-delete)
+	[ "${2:-}" = merged ] && tags+=(merged)
 	case "$n" in sbx_*) id=$n ;; *) id=$(id_of "$n") ;; esac
 	[ -n "$id" ] || { echo "#$n: no worker"; return 1; }
 	box get "$id" -o json >/dev/null 2>&1 || { echo "$id" >>"$ORCH_DIR/retired.txt"; echo "#$n $id is already deleted"; return 0; }
 	u=$(use ai.discobox.sandbox '^discobox tag <'); need "$u" "discobox tag" || return 1
-	out=$(discobox-access run --use "$u" -- discobox tag "$id" to-delete </dev/null 2>&1) ||
+	out=$(discobox-access run --use "$u" -- discobox tag "$id" "${tags[@]}" --rm ready --rm blocked </dev/null 2>&1) ||
 		{ echo "#$n $id not tagged: $(echo "$out" | tail -1)"; return 1; }
 	echo "$id" >>"$ORCH_DIR/retired.txt"
 	cmd_power stop "$id" >/dev/null
-	echo "#$n $id tagged to-delete and stopped"
+	echo "#$n $id tagged ${tags[*]} and stopped"
 }
 
 cmd_approve() { # approve pending com.github.api use requests from workers, once each
@@ -181,8 +183,8 @@ cmd_after_merge() { # wait for GitHub to recompute, retire merged PRs' workers, 
 	# mode (a pool exists) it may rejoin the pool instead (SKILL.md §6), so it is only named.
 	echo "$s" | awk '$3=="closed" && $4=="true"{print $2}' | while read -r n; do
 		grep -qx "$(id_of "$n")" "$ORCH_DIR/retired.txt" && continue
-		if grep -q . "$P"; then echo "MERGED #$n $(id_of "$n"): triage it the next issue, or retire it"; continue; fi
-		cmd_retire "$n"
+		if grep -q . "$P"; then echo "MERGED #$n $(id_of "$n"): triage it the next issue, or retire $n merged"; continue; fi
+		cmd_retire "$n" merged
 	done
 	now=$(date +%s)
 	echo "$s" | awk '$3=="open" && $5=="dirty"{print $1, $2}' | while read -r pr n; do
