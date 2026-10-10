@@ -2244,6 +2244,10 @@ type CreateSecretBody struct {
 	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
 	// only.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
+	// must fall on one; the most specific route covering it decides, unjudged when it carries no use and
+	// judged against its use when it does. Omitted or empty leaves it to its grants.
+	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
 	ValueExpiresAt OptDateTime `json:"valueExpiresAt"`
@@ -2291,6 +2295,11 @@ func (s *CreateSecretBody) GetRefreshCommand() OptNilStringArray {
 // GetTtlSeconds returns the value of TtlSeconds.
 func (s *CreateSecretBody) GetTtlSeconds() OptInt64 {
 	return s.TtlSeconds
+}
+
+// GetRoutes returns the value of Routes.
+func (s *CreateSecretBody) GetRoutes() OptNilSecretRouteInputArray {
+	return s.Routes
 }
 
 // GetValueExpiresAt returns the value of ValueExpiresAt.
@@ -2351,6 +2360,11 @@ func (s *CreateSecretBody) SetRefreshCommand(val OptNilStringArray) {
 // SetTtlSeconds sets the value of TtlSeconds.
 func (s *CreateSecretBody) SetTtlSeconds(val OptInt64) {
 	s.TtlSeconds = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *CreateSecretBody) SetRoutes(val OptNilSecretRouteInputArray) {
+	s.Routes = val
 }
 
 // SetValueExpiresAt sets the value of ValueExpiresAt.
@@ -5737,6 +5751,9 @@ type HarnessConfigSecret struct {
 	// Requests that answer for the credential. Only what an upstream makes of one of them is taken as a
 	// fact about it, a refusal and an acceptance alike; empty is every request (ADR 26-10-13-595).
 	RejectionScope []SecretReportRule `json:"rejectionScope"`
+	// Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924).
+	// Configure writes them onto the secret it creates for it.
+	Routes []SecretRouteInput `json:"routes"`
 }
 
 // GetName returns the value of Name.
@@ -5764,6 +5781,11 @@ func (s *HarnessConfigSecret) GetRejectionScope() []SecretReportRule {
 	return s.RejectionScope
 }
 
+// GetRoutes returns the value of Routes.
+func (s *HarnessConfigSecret) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
 // SetName sets the value of Name.
 func (s *HarnessConfigSecret) SetName(val string) {
 	s.Name = val
@@ -5787,6 +5809,11 @@ func (s *HarnessConfigSecret) SetDelivery(val OptHarnessConfigSecretDelivery) {
 // SetRejectionScope sets the value of RejectionScope.
 func (s *HarnessConfigSecret) SetRejectionScope(val []SecretReportRule) {
 	s.RejectionScope = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *HarnessConfigSecret) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
 }
 
 // Binds one of a harness config's environment variables to a project secret.
@@ -12531,6 +12558,132 @@ func (o OptNilSandboxRuntimeResources) Get() (v SandboxRuntimeResources, ok bool
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSandboxRuntimeResources) Or(d SandboxRuntimeResources) SandboxRuntimeResources {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilSecretRouteArray returns new OptNilSecretRouteArray with value set to v.
+func NewOptNilSecretRouteArray(v []SecretRoute) OptNilSecretRouteArray {
+	return OptNilSecretRouteArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSecretRouteArray is optional nullable []SecretRoute.
+type OptNilSecretRouteArray struct {
+	Value []SecretRoute
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSecretRouteArray was set.
+func (o OptNilSecretRouteArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSecretRouteArray) Reset() {
+	var v []SecretRoute
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSecretRouteArray) SetTo(v []SecretRoute) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSecretRouteArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSecretRouteArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []SecretRoute
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSecretRouteArray) Get() (v []SecretRoute, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSecretRouteArray) Or(d []SecretRoute) []SecretRoute {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilSecretRouteInputArray returns new OptNilSecretRouteInputArray with value set to v.
+func NewOptNilSecretRouteInputArray(v []SecretRouteInput) OptNilSecretRouteInputArray {
+	return OptNilSecretRouteInputArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSecretRouteInputArray is optional nullable []SecretRouteInput.
+type OptNilSecretRouteInputArray struct {
+	Value []SecretRouteInput
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSecretRouteInputArray was set.
+func (o OptNilSecretRouteInputArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSecretRouteInputArray) Reset() {
+	var v []SecretRouteInput
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSecretRouteInputArray) SetTo(v []SecretRouteInput) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSecretRouteInputArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSecretRouteInputArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []SecretRouteInput
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSecretRouteInputArray) Get() (v []SecretRouteInput, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSecretRouteInputArray) Or(d []SecretRouteInput) []SecretRouteInput {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -22397,6 +22550,9 @@ type SandboxCredential struct {
 	Sentinel string `json:"sentinel"`
 	// Approved uses.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on
+	// one of them, as well as within the activation's approved use.
+	SecretRoutes OptNilSecretRouteArray `json:"secretRoutes"`
 }
 
 // GetEnvVar returns the value of EnvVar.
@@ -22444,6 +22600,11 @@ func (s *SandboxCredential) GetUses() OptNilSecretUseArray {
 	return s.Uses
 }
 
+// GetSecretRoutes returns the value of SecretRoutes.
+func (s *SandboxCredential) GetSecretRoutes() OptNilSecretRouteArray {
+	return s.SecretRoutes
+}
+
 // SetEnvVar sets the value of EnvVar.
 func (s *SandboxCredential) SetEnvVar(val string) {
 	s.EnvVar = val
@@ -22487,6 +22648,11 @@ func (s *SandboxCredential) SetSentinel(val string) {
 // SetUses sets the value of Uses.
 func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetSecretRoutes sets the value of SecretRoutes.
+func (s *SandboxCredential) SetSecretRoutes(val OptNilSecretRouteArray) {
+	s.SecretRoutes = val
 }
 
 // Ref: #/components/schemas/SandboxCredentialRequestStatus
@@ -26853,6 +27019,9 @@ type Secret struct {
 	WellKnownId OptString `json:"wellKnownId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924); every request it is sent in
+	// must fall on one.
+	Routes OptNilSecretRouteArray `json:"routes"`
 }
 
 // GetSchema returns the value of Schema.
@@ -26950,6 +27119,11 @@ func (s *Secret) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetRoutes returns the value of Routes.
+func (s *Secret) GetRoutes() OptNilSecretRouteArray {
+	return s.Routes
+}
+
 // SetSchema sets the value of Schema.
 func (s *Secret) SetSchema(val OptURI) {
 	s.Schema = val
@@ -27043,6 +27217,11 @@ func (s *Secret) SetWellKnownId(val OptString) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Secret) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *Secret) SetRoutes(val OptNilSecretRouteArray) {
+	s.Routes = val
 }
 
 func (*Secret) createSecretRes()  {}
@@ -28635,6 +28814,102 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 	}
 }
 
+// Where a secret may be sent. The most specific route covering a request decides it.
+// Ref: #/components/schemas/SecretRoute
+type SecretRoute struct {
+	// Host the route covers, and every host beneath it.
+	Host string `json:"host"`
+	// Path prefix matched on whole segments; empty is the whole host.
+	Path OptString `json:"path"`
+	// Sentence a request on this route is judged against; empty sends it unjudged.
+	Use OptString `json:"use"`
+	// Stable use ID of the route's use, minted when it was written; empty for a route without one.
+	UseId OptString `json:"useId"`
+}
+
+// GetHost returns the value of Host.
+func (s *SecretRoute) GetHost() string {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SecretRoute) GetPath() OptString {
+	return s.Path
+}
+
+// GetUse returns the value of Use.
+func (s *SecretRoute) GetUse() OptString {
+	return s.Use
+}
+
+// GetUseId returns the value of UseId.
+func (s *SecretRoute) GetUseId() OptString {
+	return s.UseId
+}
+
+// SetHost sets the value of Host.
+func (s *SecretRoute) SetHost(val string) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SecretRoute) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUse sets the value of Use.
+func (s *SecretRoute) SetUse(val OptString) {
+	s.Use = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *SecretRoute) SetUseId(val OptString) {
+	s.UseId = val
+}
+
+// Where a secret may be sent, as written. A host covers itself and every host beneath it; a path is
+// a prefix matched on whole segments.
+// Ref: #/components/schemas/SecretRouteInput
+type SecretRouteInput struct {
+	// Host the route covers, and every host beneath it.
+	Host string `json:"host"`
+	// Optional path prefix, starting with /, matched on whole segments; empty is the whole host.
+	Path OptString `json:"path"`
+	// Optional sentence a request on this route is judged against; without one a request on it is sent
+	// unjudged.
+	Use OptString `json:"use"`
+}
+
+// GetHost returns the value of Host.
+func (s *SecretRouteInput) GetHost() string {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SecretRouteInput) GetPath() OptString {
+	return s.Path
+}
+
+// GetUse returns the value of Use.
+func (s *SecretRouteInput) GetUse() OptString {
+	return s.Use
+}
+
+// SetHost sets the value of Host.
+func (s *SecretRouteInput) SetHost(val string) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SecretRouteInput) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUse sets the value of Use.
+func (s *SecretRouteInput) SetUse(val OptString) {
+	s.Use = val
+}
+
 // Secret type.
 type SecretType string
 
@@ -29843,6 +30118,11 @@ type UpdateSecretBody struct {
 	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
 	// only.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
+	// must fall on one; the most specific route covering it decides, unjudged when it carries no use and
+	// judged against its use when it does. Set replaces them, keeping the use ID of an unchanged route;
+	// an empty array removes them.
+	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
 	ValueExpiresAt OptDateTime `json:"valueExpiresAt"`
@@ -29884,6 +30164,11 @@ func (s *UpdateSecretBody) GetRefreshCommand() OptNilStringArray {
 // GetTtlSeconds returns the value of TtlSeconds.
 func (s *UpdateSecretBody) GetTtlSeconds() OptInt64 {
 	return s.TtlSeconds
+}
+
+// GetRoutes returns the value of Routes.
+func (s *UpdateSecretBody) GetRoutes() OptNilSecretRouteInputArray {
+	return s.Routes
 }
 
 // GetValueExpiresAt returns the value of ValueExpiresAt.
@@ -29934,6 +30219,11 @@ func (s *UpdateSecretBody) SetRefreshCommand(val OptNilStringArray) {
 // SetTtlSeconds sets the value of TtlSeconds.
 func (s *UpdateSecretBody) SetTtlSeconds(val OptInt64) {
 	s.TtlSeconds = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *UpdateSecretBody) SetRoutes(val OptNilSecretRouteInputArray) {
+	s.Routes = val
 }
 
 // SetValueExpiresAt sets the value of ValueExpiresAt.

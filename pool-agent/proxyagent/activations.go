@@ -6,6 +6,7 @@ import (
 
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/secretroute"
 )
 
 // activationTTL is how long one ephemeral sentinel stays usable. It is the
@@ -30,6 +31,10 @@ type activation struct {
 	Sentinel  string // the ephemeral sentinel handed to the sandbox
 	Stable    string // the sandbox's stable sentinel, which the control plane knows
 	UseID     string
+	// SecretRoutes are where the credential itself may be sent (ADR
+	// 26-10-02-924): a request this is sent in must fall on one of them as
+	// well as within UseID.
+	SecretRoutes []secretroute.Route
 	// Hosts are where the use was approved for. A request to any of them, or
 	// beneath one, may carry it; none at all is no host, not every host.
 	Hosts     []string
@@ -92,18 +97,19 @@ func (a *activations) setChangeHandler(onChange func()) {
 // sentinel so it byte-mimics a real key of the same provider — the same rule
 // the stable sentinel was minted under, so nothing downstream can tell the two
 // apart by looking.
-func (a *activations) mint(sandboxID, stableSentinel, useID string, hosts []string, format string, command []string) (activation, error) {
+func (a *activations) mint(sandboxID, stableSentinel, useID string, secretRoutes []secretroute.Route, hosts []string, format string, command []string) (activation, error) {
 	sentinel, err := secretformat.MintSentinel(format)
 	if err != nil {
 		return activation{}, err
 	}
 	record := activation{
-		SandboxID: sandboxID,
-		Sentinel:  sentinel,
-		Stable:    stableSentinel,
-		UseID:     useID,
-		Hosts:     hostscope.List(hosts...),
-		Command:   append([]string(nil), command...),
+		SandboxID:    sandboxID,
+		Sentinel:     sentinel,
+		Stable:       stableSentinel,
+		UseID:        useID,
+		SecretRoutes: append([]secretroute.Route(nil), secretRoutes...),
+		Hosts:        hostscope.List(hosts...),
+		Command:      append([]string(nil), command...),
 	}
 
 	a.mu.Lock()

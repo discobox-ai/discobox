@@ -570,6 +570,9 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 			opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
 		}
+		if opts.SentinelRoutes, err = r.store.SecretSentinelRoutes(ctx, sb, assignments); err != nil {
+			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
+		}
 	}
 	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences

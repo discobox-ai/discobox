@@ -160,6 +160,20 @@ components:
             required:
                 - name
             type: object
+        SentinelRoute:
+            additionalProperties: false
+            description: Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it; a path is a prefix matched on whole segments.
+            properties:
+                host:
+                    type: string
+                path:
+                    type: string
+                useId:
+                    description: The use a request on this route is judged against; empty sends it unjudged
+                    type: string
+            required:
+                - host
+            type: object
         HarnessVolume:
             additionalProperties: false
             description: An image-declared path the sandbox-agent wires from a primary volume during boot.
@@ -429,6 +443,14 @@ components:
                         type: string
                     nullable: true
                     type: array
+                sentinelRoutes:
+                    description: Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924). Every request carrying such a sentinel must fall on one, and is judged when the most specific routes it falls on all carry a use.
+                    additionalProperties:
+                        items:
+                            $ref: '#/components/schemas/SentinelRoute'
+                        type: array
+                    nullable: true
+                    type: object
                 secretEnv:
                     description: Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as secrets rotate.
                     additionalProperties:
@@ -925,6 +947,14 @@ components:
                         type: string
                     nullable: true
                     type: array
+                sentinelRoutes:
+                    description: Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole map (ADR 26-10-02-924).
+                    additionalProperties:
+                        items:
+                            $ref: '#/components/schemas/SentinelRoute'
+                        type: array
+                    nullable: true
+                    type: object
                 secretEnv:
                     description: Replacement secret-bound environment variable name to sentinel placeholder map for a running sandbox.
                     additionalProperties:

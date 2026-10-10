@@ -104,7 +104,7 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 
 	// Minting is what registers the sentinel. It happens before any request,
 	// exactly as `get` does, and must take effect without waiting for a poll.
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{originHost}, "ghp_{base62:36}", []string{"gh", "pr", "create"})
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{originHost}, "ghp_{base62:36}", []string{"gh", "pr", "create"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 	go func() { _ = server.ListenAndServe() }()
 
 	// Approved for somewhere the request is not going.
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "ghp_{base62:36}", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

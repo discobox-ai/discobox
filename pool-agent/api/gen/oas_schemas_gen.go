@@ -1668,6 +1668,69 @@ func (o OptNilPoolSandboxCreateRequestSecretEnv) Or(d PoolSandboxCreateRequestSe
 	return d
 }
 
+// NewOptNilPoolSandboxCreateRequestSentinelRoutes returns new OptNilPoolSandboxCreateRequestSentinelRoutes with value set to v.
+func NewOptNilPoolSandboxCreateRequestSentinelRoutes(v PoolSandboxCreateRequestSentinelRoutes) OptNilPoolSandboxCreateRequestSentinelRoutes {
+	return OptNilPoolSandboxCreateRequestSentinelRoutes{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxCreateRequestSentinelRoutes is optional nullable PoolSandboxCreateRequestSentinelRoutes.
+type OptNilPoolSandboxCreateRequestSentinelRoutes struct {
+	Value PoolSandboxCreateRequestSentinelRoutes
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxCreateRequestSentinelRoutes was set.
+func (o OptNilPoolSandboxCreateRequestSentinelRoutes) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxCreateRequestSentinelRoutes) Reset() {
+	var v PoolSandboxCreateRequestSentinelRoutes
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxCreateRequestSentinelRoutes) SetTo(v PoolSandboxCreateRequestSentinelRoutes) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxCreateRequestSentinelRoutes) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxCreateRequestSentinelRoutes) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxCreateRequestSentinelRoutes
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxCreateRequestSentinelRoutes) Get() (v PoolSandboxCreateRequestSentinelRoutes, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxCreateRequestSentinelRoutes) Or(d PoolSandboxCreateRequestSentinelRoutes) PoolSandboxCreateRequestSentinelRoutes {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPoolSandboxUpdateRequestSecretEnv returns new OptNilPoolSandboxUpdateRequestSecretEnv with value set to v.
 func NewOptNilPoolSandboxUpdateRequestSecretEnv(v PoolSandboxUpdateRequestSecretEnv) OptNilPoolSandboxUpdateRequestSecretEnv {
 	return OptNilPoolSandboxUpdateRequestSecretEnv{
@@ -1725,6 +1788,69 @@ func (o OptNilPoolSandboxUpdateRequestSecretEnv) Get() (v PoolSandboxUpdateReque
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPoolSandboxUpdateRequestSecretEnv) Or(d PoolSandboxUpdateRequestSecretEnv) PoolSandboxUpdateRequestSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilPoolSandboxUpdateRequestSentinelRoutes returns new OptNilPoolSandboxUpdateRequestSentinelRoutes with value set to v.
+func NewOptNilPoolSandboxUpdateRequestSentinelRoutes(v PoolSandboxUpdateRequestSentinelRoutes) OptNilPoolSandboxUpdateRequestSentinelRoutes {
+	return OptNilPoolSandboxUpdateRequestSentinelRoutes{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxUpdateRequestSentinelRoutes is optional nullable PoolSandboxUpdateRequestSentinelRoutes.
+type OptNilPoolSandboxUpdateRequestSentinelRoutes struct {
+	Value PoolSandboxUpdateRequestSentinelRoutes
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxUpdateRequestSentinelRoutes was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelRoutes) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxUpdateRequestSentinelRoutes) Reset() {
+	var v PoolSandboxUpdateRequestSentinelRoutes
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxUpdateRequestSentinelRoutes) SetTo(v PoolSandboxUpdateRequestSentinelRoutes) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxUpdateRequestSentinelRoutes) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxUpdateRequestSentinelRoutes) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxUpdateRequestSentinelRoutes
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelRoutes) Get() (v PoolSandboxUpdateRequestSentinelRoutes, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxUpdateRequestSentinelRoutes) Or(d PoolSandboxUpdateRequestSentinelRoutes) PoolSandboxUpdateRequestSentinelRoutes {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -3553,6 +3679,10 @@ type PoolSandboxCreateRequest struct {
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
 	// their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
+	// Every request carrying such a sentinel must fall on one, and is judged when the most specific
+	// routes it falls on all carry a use.
+	SentinelRoutes OptNilPoolSandboxCreateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
 	// secrets rotate.
@@ -3582,6 +3712,11 @@ func (s *PoolSandboxCreateRequest) GetSandboxId() string {
 // GetSentinels returns the value of Sentinels.
 func (s *PoolSandboxCreateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
+}
+
+// GetSentinelRoutes returns the value of SentinelRoutes.
+func (s *PoolSandboxCreateRequest) GetSentinelRoutes() OptNilPoolSandboxCreateRequestSentinelRoutes {
+	return s.SentinelRoutes
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -3614,6 +3749,11 @@ func (s *PoolSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
 }
 
+// SetSentinelRoutes sets the value of SentinelRoutes.
+func (s *PoolSandboxCreateRequest) SetSentinelRoutes(val OptNilPoolSandboxCreateRequestSentinelRoutes) {
+	s.SentinelRoutes = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -3628,6 +3768,20 @@ func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecre
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
+// Every request carrying such a sentinel must fall on one, and is judged when the most specific
+// routes it falls on all carry a use.
+type PoolSandboxCreateRequestSentinelRoutes map[string][]SentinelRoute
+
+func (s *PoolSandboxCreateRequestSentinelRoutes) init() PoolSandboxCreateRequestSentinelRoutes {
+	m := *s
+	if m == nil {
+		m = map[string][]SentinelRoute{}
 		*s = m
 	}
 	return m
@@ -3999,6 +4153,9 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole
+	// map (ADR 26-10-02-924).
+	SentinelRoutes OptNilPoolSandboxUpdateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
 	// sandbox.
 	SecretEnv OptNilPoolSandboxUpdateRequestSecretEnv `json:"secretEnv"`
@@ -4017,6 +4174,11 @@ func (s *PoolSandboxUpdateRequest) GetConfig() OptSandboxUpdateConfig {
 // GetSentinels returns the value of Sentinels.
 func (s *PoolSandboxUpdateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
+}
+
+// GetSentinelRoutes returns the value of SentinelRoutes.
+func (s *PoolSandboxUpdateRequest) GetSentinelRoutes() OptNilPoolSandboxUpdateRequestSentinelRoutes {
+	return s.SentinelRoutes
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -4039,6 +4201,11 @@ func (s *PoolSandboxUpdateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
 }
 
+// SetSentinelRoutes sets the value of SentinelRoutes.
+func (s *PoolSandboxUpdateRequest) SetSentinelRoutes(val OptNilPoolSandboxUpdateRequestSentinelRoutes) {
+	s.SentinelRoutes = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxUpdateRequest) SetSecretEnv(val OptNilPoolSandboxUpdateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -4052,6 +4219,19 @@ func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecre
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole
+// map (ADR 26-10-02-924).
+type PoolSandboxUpdateRequestSentinelRoutes map[string][]SentinelRoute
+
+func (s *PoolSandboxUpdateRequestSentinelRoutes) init() PoolSandboxUpdateRequestSentinelRoutes {
+	m := *s
+	if m == nil {
+		m = map[string][]SentinelRoute{}
 		*s = m
 	}
 	return m
@@ -4788,4 +4968,44 @@ func (s *SandboxUser) SetName(val OptString) {
 // SetUID sets the value of UID.
 func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
+}
+
+// Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it; a
+// path is a prefix matched on whole segments.
+// Ref: #/components/schemas/SentinelRoute
+type SentinelRoute struct {
+	Host string    `json:"host"`
+	Path OptString `json:"path"`
+	// The use a request on this route is judged against; empty sends it unjudged.
+	UseId OptString `json:"useId"`
+}
+
+// GetHost returns the value of Host.
+func (s *SentinelRoute) GetHost() string {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SentinelRoute) GetPath() OptString {
+	return s.Path
+}
+
+// GetUseId returns the value of UseId.
+func (s *SentinelRoute) GetUseId() OptString {
+	return s.UseId
+}
+
+// SetHost sets the value of Host.
+func (s *SentinelRoute) SetHost(val string) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SentinelRoute) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *SentinelRoute) SetUseId(val OptString) {
+	s.UseId = val
 }

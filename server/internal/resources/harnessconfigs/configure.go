@@ -114,6 +114,9 @@ type SandboxRuntime interface {
 	// config's bindings now name. Configure is one of the two places a binding's
 	// secret changes, and the only one that can replace it outright.
 	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
+	// PushSecretSentinels carries a change to a secret's routes to the
+	// running sandboxes holding it (ADR 26-10-02-924).
+	PushSecretSentinels(ctx context.Context, projectID, secretID string) error
 	// UpgradeHarnessConfigSandboxes moves this config's stopped sandboxes onto
 	// the image it now resolves to (ADR 0082). Called wherever this config's
 	// ImageDigest is written to a different value, through
@@ -565,6 +568,58 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	if s.sandboxes != nil {
 		if err := s.sandboxes.RebindHarnessConfigSecrets(ctx, config.ProjectID, config.ID); err != nil {
 			return fmt.Errorf("rebind sandboxes after configure: %w", err)
+		}
+	}
+	return s.syncConfiguredSecretRoutes(ctx, config)
+}
+
+// syncConfiguredSecretRoutes writes the routes the config's image declares for
+// each secret onto the secret its configure flow created for it (ADR
+// 26-10-02-924), so every request the harness sends it in must fall on one.
+// Only configure-created secrets are written: one a person bound to the
+// config is theirs to describe. It runs after configure and whenever the
+// image is re-read, and carries a change to running sandboxes.
+func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, config *model.HarnessConfig) error {
+	configured := make(map[string]bool, len(config.ConfiguredSecretIDs))
+	for _, secretID := range config.ConfiguredSecretIDs {
+		configured[strings.TrimSpace(secretID)] = true
+	}
+	if len(configured) == 0 {
+		return nil
+	}
+	declared := make(map[string][]model.SecretRoute, len(config.Secrets))
+	for _, secret := range config.Secrets {
+		declared[secret.Name] = secret.Routes
+	}
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if !configured[binding.SecretID] {
+			continue
+		}
+		secret, err := s.store.GetSecret(ctx, config.ProjectID, binding.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return err
+		}
+		changed, err := secret.ReplaceRoutes(declared[binding.EnvName])
+		if err != nil {
+			return fmt.Errorf("routes of configured secret %q: %w", binding.EnvName, err)
+		}
+		if !changed {
+			continue
+		}
+		if err := s.store.UpdateSecret(ctx, secret); err != nil {
+			return fmt.Errorf("write routes of configured secret %q: %w", binding.EnvName, err)
+		}
+		if s.sandboxes != nil {
+			if err := s.sandboxes.PushSecretSentinels(ctx, config.ProjectID, secret.ID); err != nil {
+				return fmt.Errorf("deliver routes of configured secret %q: %w", binding.EnvName, err)
+			}
 		}
 	}
 	return nil

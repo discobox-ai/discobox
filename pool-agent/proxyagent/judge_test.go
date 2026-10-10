@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/secretroute"
 )
 
 const (
@@ -573,5 +574,191 @@ func TestEitherUseRefusingRefusesTheRequest(t *testing.T) {
 				t.Fatalf("asked about %d uses, none of them %s", len(asked()), deny)
 			}
 		})
+	}
+}
+
+// held sets the routes sandbox-1's sentinel is held to without an
+// activation, as a SecretsFile push would.
+func held(resolver *secretResolver, sandboxID, sentinel string, routes ...secretroute.Route) {
+	resolver.setSentinelRoutes(map[string]map[string][]secretroute.Route{sandboxID: {sentinel: routes}})
+}
+
+// A stable sentinel whose secret carries routes (ADR 26-10-02-924) is judged
+// against the use of the route it is sent on, with no activation behind it,
+// exactly as an activation's use is.
+func TestAStableSentinelOnAJudgedRouteIsJudgedWithoutAnActivation(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{"allow": false, "reason": "a pull request is not Copilot's own traffic"}, http.StatusOK)
+	const harnessSentinel = "harness-sentinel-1"
+	held(resolver, "sandbox-1", harnessSentinel, secretroute.Route{Host: "github.com", UseID: "use_harness"})
+
+	req := authorizeRequest()
+	req.Sentinels = []string{harnessSentinel}
+	verdict, err := resolver.Authorize(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	if verdict.Allow || len(verdict.UseIDs) != 1 || verdict.UseIDs[0] != "use_harness" {
+		t.Fatalf("verdict = %+v, want the judge's refusal under the route's use", verdict)
+	}
+	if got := asked(); len(got) != 1 || got[0].UseID != "use_harness" || got[0].SandboxID != "sandbox-1" {
+		t.Fatalf("asked = %+v, want one ask about the route's use", got)
+	}
+
+	// Another discobox's routes say nothing about this one's sentinel.
+	held(resolver, "sandbox-2", harnessSentinel, secretroute.Route{Host: "github.com", UseID: "use_harness"})
+	verdict, err = resolver.Authorize(context.Background(), req)
+	if err != nil || !verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want a sentinel this discobox holds to no route left alone", verdict, err)
+	}
+}
+
+// A route without a use sends a request unjudged: nobody is asked.
+func TestARouteWithoutAUseAllowsWithoutTheJudge(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{"allow": false, "reason": "should not be asked"}, http.StatusOK)
+	const sentinel = "secret-sentinel-1"
+	held(resolver, "sandbox-1", sentinel, secretroute.Route{Host: "github.com"})
+
+	req := authorizeRequest()
+	req.Sentinels = []string{sentinel}
+	verdict, err := resolver.Authorize(context.Background(), req)
+	if err != nil || !verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want allowed unjudged", verdict, err)
+	}
+	if got := asked(); len(got) != 0 {
+		t.Fatalf("asked = %+v, want nobody asked", got)
+	}
+}
+
+// A request no route covers is refused without asking anybody.
+func TestARequestOffEveryRouteIsRefusedWithoutTheJudge(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{"allow": true, "reason": "should not be asked"}, http.StatusOK)
+	const sentinel = "secret-sentinel-1"
+	held(resolver, "sandbox-1", sentinel,
+		secretroute.Route{Host: "githubcopilot.com"},
+		secretroute.Route{Host: "api.github.com", Path: "/copilot_internal", UseID: "use_internal"})
+
+	req := authorizeRequest()
+	req.Sentinels = []string{sentinel}
+	verdict, err := resolver.Authorize(context.Background(), req)
+	if err != nil || verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want refused", verdict, err)
+	}
+	if want := "this credential has no route to api.github.com/repos/org/repo/pulls"; verdict.Reason != want {
+		t.Fatalf("reason = %q, want %q", verdict.Reason, want)
+	}
+	if got := asked(); len(got) != 0 {
+		t.Fatalf("asked = %+v, want nobody asked", got)
+	}
+}
+
+// The most specific route decides: /mcp/readonly passes unjudged while the
+// rest of /mcp is judged, and the host beyond both passes.
+func TestTheMostSpecificRouteDecides(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{"allow": false, "reason": "that writes"}, http.StatusOK)
+	const sentinel = "secret-sentinel-1"
+	held(resolver, "sandbox-1", sentinel,
+		secretroute.Route{Host: "githubcopilot.com"},
+		secretroute.Route{Host: "githubcopilot.com", Path: "/mcp", UseID: "use_mcp"},
+		secretroute.Route{Host: "githubcopilot.com", Path: "/mcp/readonly"})
+
+	for _, tc := range []struct {
+		url   string
+		allow bool
+		asks  int
+	}{
+		{"https://api.individual.githubcopilot.com/mcp/readonly", true, 0},
+		{"https://api.individual.githubcopilot.com/mcp/readonly/../write", false, 1},
+		{"https://api.individual.githubcopilot.com/mcp", false, 1},
+		{"https://api.individual.githubcopilot.com/v1/messages", true, 0},
+	} {
+		before := len(asked())
+		req := authorizeRequest()
+		req.Sentinels = []string{sentinel}
+		req.Host = "api.individual.githubcopilot.com"
+		req.URL = tc.url
+		verdict, err := resolver.Authorize(context.Background(), req)
+		if err != nil || verdict.Allow != tc.allow {
+			t.Fatalf("%s: verdict = %+v, err = %v, want allow %v", tc.url, verdict, err, tc.allow)
+		}
+		if got := len(asked()) - before; got != tc.asks {
+			t.Fatalf("%s: asked %d times, want %d", tc.url, got, tc.asks)
+		}
+	}
+}
+
+// Routes tied at the most specific host and path are any-of: one without a
+// use sends the request unjudged, and otherwise any one use allowing is
+// enough.
+func TestTiedRoutesAllowWhenAnyOneDoes(t *testing.T) {
+	resolver, asked := judgingPoolFunc(t, func(ask judgeAsk) response {
+		return response{status: http.StatusOK, body: map[string]any{"allow": ask.UseID == "use_read", "reason": "not this use"}}
+	})
+	const sentinel = "secret-sentinel-1"
+	held(resolver, "sandbox-1", sentinel,
+		secretroute.Route{Host: "github.com", UseID: "use_copilot"},
+		secretroute.Route{Host: "github.com", UseID: "use_read"})
+
+	req := authorizeRequest()
+	req.Sentinels = []string{sentinel}
+	verdict, err := resolver.Authorize(context.Background(), req)
+	if err != nil || !verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want allowed by the second use", verdict, err)
+	}
+	if got := asked(); len(got) != 2 || got[0].UseID != "use_copilot" || got[1].UseID != "use_read" {
+		t.Fatalf("asked = %+v, want both uses asked in turn", got)
+	}
+
+	// Every use refusing is a refusal.
+	held(resolver, "sandbox-1", sentinel, secretroute.Route{Host: "github.com", UseID: "use_copilot"})
+	verdict, err = resolver.Authorize(context.Background(), req)
+	if err != nil || verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want refused when no use allows", verdict, err)
+	}
+
+	// A tied route without a use needs nobody.
+	before := len(asked())
+	held(resolver, "sandbox-1", sentinel,
+		secretroute.Route{Host: "github.com", UseID: "use_copilot"},
+		secretroute.Route{Host: "github.com"})
+	verdict, err = resolver.Authorize(context.Background(), req)
+	if err != nil || !verdict.Allow || len(asked()) != before {
+		t.Fatalf("verdict = %+v, err = %v, asked %d more, want allowed unjudged", verdict, err, len(asked())-before)
+	}
+}
+
+func TestAnActivationIsHeldToItsSecretsRoutesAsWellAsItsGrants(t *testing.T) {
+	resolver, asked := judgingPoolFunc(t, func(ask judgeAsk) response {
+		return response{status: http.StatusOK, body: map[string]any{"allow": ask.UseID == "use_abc", "reason": "outside what the credential is for"}}
+	})
+	record := resolver.activations.byEphemeral[testEphemeral]
+	record.SecretRoutes = []secretroute.Route{{Host: "github.com", UseID: "use_secret"}}
+	resolver.activations.byEphemeral[testEphemeral] = record
+
+	verdict, err := resolver.Authorize(context.Background(), authorizeRequest())
+	if err != nil || verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want the route's use to refuse what the grant's allowed", verdict, err)
+	}
+	if got := asked(); len(got) != 2 || got[0].UseID != "use_abc" || got[1].UseID != "use_secret" {
+		t.Fatalf("asked = %+v, want the grant's use then the route's", got)
+	}
+
+	// A route without a use leaves the grant's use alone to decide.
+	record.SecretRoutes = []secretroute.Route{{Host: "api.github.com", Path: "/repos"}}
+	resolver.activations.byEphemeral[testEphemeral] = record
+	before := len(asked())
+	verdict, err = resolver.Authorize(context.Background(), authorizeRequest())
+	if err != nil || !verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want the grant's use to allow", verdict, err)
+	}
+	if got := asked()[before:]; len(got) != 1 || got[0].UseID != "use_abc" {
+		t.Fatalf("asked = %+v, want only the grant's use", got)
+	}
+
+	// Off every route the secret has, the grant's use is not enough.
+	record.SecretRoutes = []secretroute.Route{{Host: "githubcopilot.com"}}
+	resolver.activations.byEphemeral[testEphemeral] = record
+	verdict, err = resolver.Authorize(context.Background(), authorizeRequest())
+	if err != nil || verdict.Allow {
+		t.Fatalf("verdict = %+v, err = %v, want refused off every route", verdict, err)
 	}
 }

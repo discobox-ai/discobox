@@ -212,6 +212,9 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
+	if err := s.syncConfiguredSecretRoutes(ctx, config); err != nil {
+		return nil, err
+	}
 	slog.InfoContext(ctx, "refreshed harness config image",
 		"harnessConfigId", config.ID, "image", image,
 		"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
@@ -444,6 +447,13 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
+		if err := s.syncConfiguredSecretRoutes(ctx, existing); err != nil {
+			// The image is recorded; its routes reach the secrets on the next
+			// refresh or configure. A seed is not failed over a discobox that
+			// could not be reached.
+			slog.WarnContext(ctx, "sync harness secret routes after image update",
+				"harnessConfigId", existing.ID, "error", err)
+		}
 		slog.InfoContext(ctx, "updated built-in harness config image",
 			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image,
 			"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
@@ -630,6 +640,7 @@ func declaredSecrets(image *harness.Image) []model.HarnessConfigSecret {
 			// every later layer with nothing to act on.
 			Delivery:       secret.Delivery,
 			RejectionScope: rejectionScope(secret.RejectionScope),
+			Routes:         declaredRoutes(secret.Routes),
 		})
 	}
 	return secrets
@@ -642,7 +653,8 @@ func sameSecretDeclarations(a, b []model.HarnessConfigSecret) bool {
 		return x.Name == y.Name && x.Required == y.Required && x.OneOfGroup == y.OneOfGroup && x.Delivery == y.Delivery &&
 			slices.EqualFunc(x.RejectionScope, y.RejectionScope, func(p, q model.HarnessSecretRejectionRule) bool {
 				return p.Host == q.Host && slices.Equal(p.Paths, q.Paths)
-			})
+			}) &&
+			slices.Equal(x.Routes, y.Routes)
 	})
 }
 
@@ -655,6 +667,16 @@ func rejectionScope(rules []harness.RejectionRule) []model.HarnessSecretRejectio
 	out := make([]model.HarnessSecretRejectionRule, 0, len(rules))
 	for _, rule := range rules {
 		out = append(out, model.HarnessSecretRejectionRule{Host: hostscope.Normalize(rule.Host), Paths: slices.Clone(rule.Paths)})
+	}
+	return out
+}
+
+// declaredRoutes are the routes an image declares for a secret, as the
+// config records them.
+func declaredRoutes(routes []harness.SecretRoute) []model.SecretRoute {
+	var out []model.SecretRoute
+	for _, route := range routes {
+		out = append(out, model.SecretRoute{Host: route.Host, Path: route.Path, Use: route.Use})
 	}
 	return out
 }

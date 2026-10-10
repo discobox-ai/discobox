@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -533,6 +534,11 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 		for _, rule := range secret.RejectionScope {
 			if err := rule.Validate(); err != nil {
 				return fmt.Errorf("%s secret %q: %w", source, name, err)
+			}
+		}
+		for _, route := range secret.Routes {
+			if _, _, err := secretroute.Normalize(route.Host, route.Path); err != nil {
+				return fmt.Errorf("%s secret %q declares a bad route: %w", source, name, err)
 			}
 		}
 	}

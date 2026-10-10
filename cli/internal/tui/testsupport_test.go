@@ -1954,6 +1954,9 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 		if update.MaxTTLSeconds != nil {
 			f.projectSecrets[i].MaxTTL = time.Duration(*update.MaxTTLSeconds) * time.Second
 		}
+		if update.Routes != nil {
+			f.projectSecrets[i].Routes = *update.Routes
+		}
 	}
 }
 

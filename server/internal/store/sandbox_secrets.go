@@ -10,7 +10,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -125,10 +127,11 @@ func (s *Store) ListLiveAgentCredentials(ctx context.Context, projectID, sandbox
 		}
 		claimed[envName] = grant.SecretID
 		out = append(out, AgentCredential{
-			Assignment: *binding,
-			Grant:      grant,
-			Name:       secret.Name,
-			Format:     s.SentinelFormat(ctx, secret),
+			Assignment:   *binding,
+			Grant:        grant,
+			Name:         secret.Name,
+			Format:       s.SentinelFormat(ctx, secret),
+			SecretRoutes: secret.Routes,
 		})
 	}
 	return out, nil
@@ -313,6 +316,10 @@ type AgentCredential struct {
 	Grant      model.SecretGrant
 	Name       string
 	Format     string
+	// SecretRoutes are where the secret may be sent (ADR 26-10-02-924): a
+	// request an activation of this credential is sent in must fall on one,
+	// as well as within the grant's use.
+	SecretRoutes []model.SecretRoute
 }
 
 // FindAgentSandboxSecret returns a sandbox's agent-requested binding for one
@@ -399,5 +406,50 @@ func (s *Store) ListSandboxIDsForHarnessConfig(ctx context.Context, projectID, h
 		Where("state NOT IN ?", []string{model.SandboxStateArchived, model.SandboxStateDeleted}).
 		Order("id ASC").
 		Pluck("id", &out).Error
+	return out, err
+}
+
+// SecretSentinelRoutes maps each of a discobox's injected sentinels to the
+// routes of the secret it stands for, when that secret carries routes (ADR
+// 26-10-02-924): every request the sentinel is sent in must fall on one.
+// assignments are the discobox's injected secrets. A judge discobox's own are
+// held to none, since its harness's requests would wait on its own verdict.
+func (s *Store) SecretSentinelRoutes(ctx context.Context, sandbox *model.Sandbox, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
+	if sandbox.HarnessMode == sandboxconfig.HarnessModeJudge {
+		return nil, nil
+	}
+	var out map[string][]secretroute.Route
+	for _, assignment := range assignments {
+		secret, err := s.GetSecret(ctx, sandbox.ProjectID, assignment.SecretID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		routes := secret.ProxyRoutes()
+		if len(routes) == 0 {
+			continue
+		}
+		if out == nil {
+			out = map[string][]secretroute.Route{}
+		}
+		out[assignment.Sentinel] = routes
+	}
+	return out, nil
+}
+
+// ListSandboxIDsHoldingSecret returns the discoboxes with a sentinel injected
+// for a secret, so a change to where the secret may be sent reaches them.
+func (s *Store) ListSandboxIDsHoldingSecret(ctx context.Context, projectID, secretID string) ([]string, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	err = read.Model(&model.SandboxSecret{}).
+		Where("project_id = ? AND secret_id = ? AND agent_requested = ?", projectID, secretID, false).
+		Distinct("sandbox_id").Order("sandbox_id ASC").
+		Pluck("sandbox_id", &out).Error
 	return out, err
 }

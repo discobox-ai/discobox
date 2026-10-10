@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -620,10 +621,18 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "token", "--host", "github.com", "--max-grant-ttl", "7200", "--token", "token-value"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "token", "--host", "github.com", "--max-grant-ttl", "7200", "--token", "token-value",
+		"--route", "githubcopilot.com", "--route", "github.com/repos=reading public GitHub data"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret create: %v", err)
+	}
+	wantRoutes := []any{
+		map[string]any{"host": "githubcopilot.com"},
+		map[string]any{"host": "github.com", "path": "/repos", "use": "reading public GitHub data"},
+	}
+	if !reflect.DeepEqual(posted["routes"], wantRoutes) {
+		t.Fatalf("posted routes = %#v, want both --route values in order", posted["routes"])
 	}
 	if posted["name"] != "github" || posted["type"] != "token" || posted["host"] != "github.com" {
 		t.Fatalf("posted body = %#v", posted)

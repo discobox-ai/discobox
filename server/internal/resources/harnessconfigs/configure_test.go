@@ -719,7 +719,13 @@ type stubSandboxRuntime struct {
 	created   services.CreateSandboxBody
 	rebound   []string
 	upgraded  []string
+	pushed    []string
 	deleteErr error
+}
+
+func (s *stubSandboxRuntime) PushSecretSentinels(_ context.Context, _, secretID string) error {
+	s.pushed = append(s.pushed, secretID)
+	return nil
 }
 
 func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
@@ -1006,5 +1012,58 @@ func TestApplyConfigureOutputHoldsSecretsToTheTwoTypes(t *testing.T) {
 	}
 	if secrets, _ := st.ListSecrets(ctx, "project-1"); len(secrets) != 0 {
 		t.Fatalf("stored secrets = %v, want none", secrets)
+	}
+}
+
+// Configure writes the routes the image declares onto the secret it creates,
+// and a later image declaring different ones re-syncs them (ADR 26-10-02-924).
+func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "copilot", Name: "GitHub Copilot",
+		Image: "img:1", RunCommand: []string{"copilot"},
+		Secrets: []model.HarnessConfigSecret{{Name: "COPILOT_GITHUB_TOKEN", Routes: []model.SecretRoute{
+			{Host: "githubcopilot.com"},
+			{Host: "github.com", Use: "reading GitHub"},
+		}}},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	runtime := &stubSandboxRuntime{}
+	svc := &Service{store: st, inspector: &stubInspector{}, sandboxes: runtime}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "COPILOT_GITHUB_TOKEN", Type: "bearer", Value: []byte("token-value"),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(config.ConfiguredSecretIDs) != 1 {
+		t.Fatalf("configured secrets = %v, want one", config.ConfiguredSecretIDs)
+	}
+	secretID := config.ConfiguredSecretIDs[0]
+	secret, err := st.GetSecret(ctx, "project-1", secretID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secret.Routes) != 2 || secret.Routes[0] != (model.SecretRoute{Host: "githubcopilot.com"}) ||
+		secret.Routes[1].Use != "reading GitHub" || secret.Routes[1].UseID == "" {
+		t.Fatalf("routes = %+v, want the declared ones, the judged one with a minted use ID", secret.Routes)
+	}
+	kept := secret.Routes[1]
+
+	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Host: "githubcopilot.com", Path: "/mcp", Use: "read-only MCP"})
+	if err := svc.syncConfiguredSecretRoutes(ctx, config); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if secret, err = st.GetSecret(ctx, "project-1", secretID); err != nil {
+		t.Fatal(err)
+	}
+	if len(secret.Routes) != 3 || secret.Routes[1] != kept || secret.Routes[2].Path != "/mcp" {
+		t.Fatalf("routes = %+v, want the unchanged ones kept and the new one added", secret.Routes)
+	}
+	if got := runtime.pushed; len(got) != 2 || got[1] != secretID {
+		t.Fatalf("pushed = %v, want each change carried to the running sandboxes", got)
 	}
 }

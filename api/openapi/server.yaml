@@ -233,6 +233,11 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretReportRule'
                     type: array
+                routes:
+                    description: Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924). Configure writes them onto the secret it creates for it.
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    type: array
             required:
                 - name
             type: object
@@ -3410,6 +3415,12 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                secretRoutes:
+                    description: Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on one of them, as well as within the activation's approved use.
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    nullable: true
+                    type: array
             required:
                 - name
                 - envVar
@@ -5309,6 +5320,12 @@ components:
                     description: How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets only.
                     format: int64
                     type: integer
+                routes:
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, unjudged when it carries no use and judged against its use when it does. Omitted or empty leaves it to its grants.
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    nullable: true
+                    type: array
                 valueExpiresAt:
                     description: When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this value only. Token secrets only, and only with a value.
                     format: date-time
@@ -5602,6 +5619,12 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
+                routes:
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924); every request it is sent in must fall on one
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    nullable: true
+                    type: array
             required:
                 - id
                 - projectId
@@ -5610,6 +5633,41 @@ components:
                 - maxGrantTTLSeconds
                 - createdAt
                 - updatedAt
+            type: object
+        SecretRouteInput:
+            additionalProperties: false
+            description: Where a secret may be sent, as written. A host covers itself and every host beneath it; a path is a prefix matched on whole segments.
+            properties:
+                host:
+                    description: Host the route covers, and every host beneath it
+                    type: string
+                path:
+                    description: Optional path prefix, starting with /, matched on whole segments; empty is the whole host
+                    type: string
+                use:
+                    description: Optional sentence a request on this route is judged against; without one a request on it is sent unjudged
+                    type: string
+            required:
+                - host
+            type: object
+        SecretRoute:
+            additionalProperties: false
+            description: Where a secret may be sent. The most specific route covering a request decides it.
+            properties:
+                host:
+                    description: Host the route covers, and every host beneath it
+                    type: string
+                path:
+                    description: Path prefix matched on whole segments; empty is the whole host
+                    type: string
+                use:
+                    description: Sentence a request on this route is judged against; empty sends it unjudged
+                    type: string
+                useId:
+                    description: Stable use ID of the route's use, minted when it was written; empty for a route without one
+                    type: string
+            required:
+                - host
             type: object
         SecretUse:
             additionalProperties: false
@@ -6127,6 +6185,12 @@ components:
                     description: How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets only.
                     format: int64
                     type: integer
+                routes:
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, unjudged when it carries no use and judged against its use when it does. Set replaces them, keeping the use ID of an unchanged route; an empty array removes them.
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    nullable: true
+                    type: array
                 valueExpiresAt:
                     description: When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this value only. Token secrets only, and only with a value.
                     format: date-time

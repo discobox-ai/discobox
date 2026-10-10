@@ -9,6 +9,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
@@ -176,6 +177,10 @@ type CreateOptions struct {
 	// Sentinels are the placeholder secret values injected into the sandbox that
 	// the pool agent registers with the proxy for runtime swapping.
 	Sentinels []string
+	// SentinelRoutes are, for the sentinels whose secret carries routes, where
+	// a request carrying one may be sent and which of those routes judge it
+	// (ADR 26-10-02-924).
+	SentinelRoutes map[string][]secretroute.Route
 	// SecretEnv maps each secret-bound environment variable name to its
 	// sentinel placeholder value. Unlike Env, these never ride in the static
 	// sandbox.json document (docs/adr/0012 §3) — the provider delivers them
@@ -231,6 +236,9 @@ type UpdateOptions struct {
 	// Sentinels replaces the placeholder secret set registered with the proxy for
 	// runtime swapping. It mirrors CreateOptions.Sentinels.
 	Sentinels []string
+	// SentinelRoutes replaces the sentinels' routes along with Sentinels. It
+	// mirrors CreateOptions.SentinelRoutes.
+	SentinelRoutes map[string][]secretroute.Route
 	// SecretEnv replaces the sandbox's secret-bound env->sentinel map. It
 	// mirrors CreateOptions.SecretEnv.
 	SecretEnv map[string]string

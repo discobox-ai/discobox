@@ -38,3 +38,4 @@ type SandboxSkillFile = poolagentapi.SandboxSkillFile
 type SandboxSkillsSource = poolagentapi.SandboxSkillsSource
 type SandboxUpdateConfig = poolagentapi.SandboxUpdateConfig
 type SandboxUser = poolagentapi.SandboxUser
+type SentinelRoute = poolagentapi.SentinelRoute

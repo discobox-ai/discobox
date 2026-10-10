@@ -1314,6 +1314,18 @@ flowchart LR
   host by the control plane at resolve time, while one this process minted
   whose activation has lapsed — or whose host the use does not cover — never
   reaches the control plane at all, because `Resolve` refuses it here.
+- **A secret may carry routes** (ADR 26-10-02-924): where every swap of it
+  may go. For an injected sentinel, the control plane pushes them with the
+  sentinel set (`sentinelRoutes`, kept in SecretsFile). For an
+  agent-requested credential, the listing carries them (`secretRoutes`) and
+  the activation records them. `uses` matches the request's host and
+  decoded, cleaned path with `secretroute.Match`, and the most specific
+  routes win.
+  - A route there with no use allows the request unjudged.
+  - Otherwise the routes' uses are one group, and any one allowing is enough.
+  - If no route covers the request, `authorize` refuses it without asking the
+    judge.
+  - A grant's or trust's use is a group of one, and every group must pass.
 - **A use-scoped request is put to the project's judge** (`judge.go`), one ask
   per approved use it spends, and every one of them has to allow before
   anything is substituted. The ask is synchronous on the proxy's request path:
