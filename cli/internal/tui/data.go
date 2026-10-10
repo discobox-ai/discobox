@@ -1733,6 +1733,10 @@ type Secret struct {
 	// takes when nobody names one. Zero is no limit: grants on this credential
 	// may then live forever.
 	MaxTTL time.Duration
+	// Routes are where it may be sent, whoever holds it (ADR 26-10-02-924):
+	// every request it is sent in must fall on one, the most specific
+	// deciding. Empty leaves where it goes to its grants.
+	Routes []SecretRoute
 	// WellKnownID is the well-known credential this secret answers, empty for
 	// one nothing asks for by ID.
 	WellKnownID string
@@ -1887,6 +1891,9 @@ type NewSecret struct {
 	// credential may then live forever.
 	MaxTTLSeconds int64
 
+	// Routes are where it may be sent, whoever holds it.
+	Routes []SecretRoute
+
 	// RefreshCommand makes the token one got from a command: when Value has no
 	// token, the data source runs it here for the first one, and it is what a
 	// person is offered to renew it with later. Nil is a token typed in.
@@ -1949,6 +1956,18 @@ type SecretUpdate struct {
 	// Format sets the template its sentinels are minted from; empty goes back
 	// to reading it from the value.
 	Format *string
+	// Routes replaces where it may be sent; empty clears them.
+	Routes *[]SecretRoute
+}
+
+// SecretRoute is one place a secret may be sent: a host and everything
+// beneath it, narrowed to a path prefix when Path is set. A route with a Use
+// has every request on it judged against that sentence; one without sends
+// them unjudged.
+type SecretRoute struct {
+	Host string
+	Path string
+	Use  string
 }
 
 // Approval is what a person decided about a request: which secret answers it,

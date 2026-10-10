@@ -11,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -236,22 +237,13 @@ func convertAPIUses(input []apimodel.SecretUse) []model.SecretUse {
 	return uses
 }
 
-// prefixSecretUse identifies one approved way to use a granted credential. A
-// use ID is minted by the approval, never by the requester, so an agent cannot
-// name the use it will later present (ADR 0031 §5).
-//
-// It sits here rather than beside every other prefix because those live in
-// github.com/discobox-ai/x/id, outside this repository; move it there and drop
-// this const once that package carries it.
-const prefixSecretUse = "use"
-
 // mintUseIDs stamps a fresh ID onto every approved use. It runs at approval for
 // both the confirmed and the edited case, so no path can produce a grant use
 // whose ID came from outside.
 func mintUseIDs(uses []model.SecretUse) ([]model.SecretUse, error) {
 	out := make([]model.SecretUse, 0, len(uses))
 	for _, use := range uses {
-		useID, err := id.New(prefixSecretUse)
+		useID, err := id.New(model.PrefixSecretUse)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +314,17 @@ func (s *Service) ApprovedUse(ctx context.Context, poolID, sandboxID, useID, hos
 			return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden,
 				fmt.Sprintf("that use is not approved for %s", host))
 		}
+		if approvedFor == "" {
+			// A grant naming no hosts covers every destination; the one this
+			// request is going to is where it is approved for.
+			approvedFor = host
+		}
 		return approvedCredentialUse(credential, use, approvedFor), nil
+	}
+	// Not a grant's use. It may be a secret's route's, which a swap of it on
+	// that route is judged against whoever holds it (ADR 26-10-02-924).
+	if use, ok, err := s.secretOwnUse(ctx, sandbox, credentials, useID, host); err != nil || ok {
+		return use, err
 	}
 	// Not a credential's use. It may still be a host trust's: a person who
 	// pins a host approves uses for it the same way, and every request to that
@@ -363,6 +365,49 @@ func (s *Service) ApprovedCredentialUse(ctx context.Context, poolID, sandboxID, 
 		}
 	}
 	return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
+}
+
+// secretOwnUse finds useID among the routes of the secrets this discobox
+// holds: the ones injected into it and the ones its agent may ask for (ADR
+// 26-10-02-924). The use is the route's sentence, approved for the route's
+// host. A judge discobox's injected secrets are held to none.
+func (s *Service) secretOwnUse(ctx context.Context, sandbox *model.Sandbox, credentials []store.AgentCredential, useID, host string) (services.ApprovedUse, bool, error) {
+	found := func(name, grantID string, route model.SecretRoute) (services.ApprovedUse, bool, error) {
+		if !hostscope.Covers(route.Host, host) {
+			return services.ApprovedUse{}, false, apperrors.NewStatusError(http.StatusForbidden,
+				fmt.Sprintf("that use is not approved for %s", host))
+		}
+		return services.ApprovedUse{Purpose: route.Use, Credential: name, Host: route.Host, GrantID: grantID}, true, nil
+	}
+	for _, credential := range credentials {
+		for _, route := range credential.SecretRoutes {
+			if route.UseID != "" && route.UseID == useID {
+				return found(credential.Name, credential.Grant.ID, route)
+			}
+		}
+	}
+	if sandbox.HarnessMode == sandboxconfig.HarnessModeJudge {
+		return services.ApprovedUse{}, false, nil
+	}
+	injected, err := s.store.ListInjectedSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID)
+	if err != nil {
+		return services.ApprovedUse{}, false, err
+	}
+	for _, assignment := range injected {
+		secret, err := s.store.GetSecret(ctx, sandbox.ProjectID, assignment.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return services.ApprovedUse{}, false, err
+		}
+		for _, route := range secret.Routes {
+			if route.UseID != "" && route.UseID == useID {
+				return found(secret.Name, "", route)
+			}
+		}
+	}
+	return services.ApprovedUse{}, false, nil
 }
 
 func approvedCredentialUse(credential store.AgentCredential, use model.SecretUse, host string) services.ApprovedUse {

@@ -47,7 +47,7 @@ func TestTheGateForwardsALiveUseAsThePoolsWord(t *testing.T) {
 	}
 	live := newActivations()
 	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
-	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
+	use, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestTheGateForwardsALiveUseAsThePoolsWord(t *testing.T) {
 
 	// Anything but a live use of the discobox credential for this sandbox is
 	// refused, and never reaches the control plane.
-	github, err := live.mint("sb-1", "STABLE-GH", "use-2", []string{"github.com"}, "ghp_{base62:36}", nil)
+	github, err := live.mint("sb-1", "STABLE-GH", "use-2", nil, []string{"github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
 	// verdict allows the call rather than refusing it, and the test would pass
 	// for a reason that has nothing to do with what it is checking.
 	resolver.judge = nil
-	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
+	use, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestTheGateShowsTheJudgeTheBodyItAsksFor(t *testing.T) {
 	}
 	live := newActivations()
 	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
-	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
+	use, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestTheGateRefusesACallTheJudgeDoesNot(t *testing.T) {
 	}
 	live := newActivations()
 	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
-	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
+	use, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

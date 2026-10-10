@@ -33,7 +33,7 @@ func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
 	}
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "{alnum:12}", []string{"gh", "pr", "create"})
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "{alnum:12}", []string{"gh", "pr", "create"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestResolverRefusesEphemeralSentinelForAnotherHost(t *testing.T) {
 	}
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "{alnum:12}", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "{alnum:12}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestResolverRefusesAnotherSandboxesActivation(t *testing.T) {
 	}
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "{alnum:12}", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "{alnum:12}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestResolverRefusesExpiredActivation(t *testing.T) {
 	}
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "{alnum:12}", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "{alnum:12}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestMintPublishesTheSentinelToTheProxy(t *testing.T) {
 	published := 0
 	live.setChangeHandler(func() { published++ })
 
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.github.com"}, "{alnum:12}", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.github.com"}, "{alnum:12}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestMintPublishesTheSentinelToTheProxy(t *testing.T) {
 // check upstream tells a sandbox which of its values are real.
 func TestMintShapesTheSentinelLikeTheRealKey(t *testing.T) {
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE", "use-1", []string{"api.github.com"}, "ghp_{base62:36}", nil)
+	record, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{"api.github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

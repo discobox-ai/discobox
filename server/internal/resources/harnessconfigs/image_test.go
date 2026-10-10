@@ -65,6 +65,26 @@ func TestParseImageMetadataRejectsInvalidSecrets(t *testing.T) {
 	}
 }
 
+// A declared route must name a host, and a path that is a path: one that
+// does not would be refused when configure writes it onto the secret.
+func TestParseImageMetadataRejectsABadRoute(t *testing.T) {
+	for name, route := range map[string]harness.SecretRoute{
+		"no host":       {Path: "/mcp"},
+		"relative path": {Host: "github.com", Path: "mcp"},
+	} {
+		label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
+			ID: "bad", Name: "Bad", RunCommand: []string{"bad"},
+			Secrets: []harness.Secret{{Name: "TOKEN", Routes: []harness.SecretRoute{route}}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+			t.Fatalf("%s: the route was accepted", name)
+		}
+	}
+}
+
 // A scope that cannot be honored is refused where the label is read, naming the
 // image, rather than four layers away at sandbox boot — the same treatment the
 // volume kind gets. Sharing a data volume is the case: that tree is one

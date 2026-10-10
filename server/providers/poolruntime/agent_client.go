@@ -18,6 +18,7 @@ import (
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/secretroute"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -364,6 +365,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	defer release()
 	req := &poolapimodel.PoolSandboxUpdateRequest{
 		Sentinels: poolclient.NewOptNilStringArray(opts.Sentinels),
+	}
+	if len(opts.SentinelRoutes) > 0 {
+		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	if len(opts.SecretEnv) > 0 {
 		req.SecretEnv = poolclient.NewOptNilPoolSandboxUpdateRequestSecretEnv(poolclient.PoolSandboxUpdateRequestSecretEnv(opts.SecretEnv))
@@ -719,6 +723,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	}
 	if len(opts.Sentinels) > 0 {
 		out.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
+	}
+	if len(opts.SentinelRoutes) > 0 {
+		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	if len(opts.SecretEnv) > 0 {
 		out.SecretEnv = poolclient.NewOptNilPoolSandboxCreateRequestSecretEnv(poolclient.PoolSandboxCreateRequestSecretEnv(opts.SecretEnv))
@@ -1082,4 +1089,23 @@ func (s workerSecuritySource) PoolBearerAuth(ctx context.Context, _ poolclient.O
 		return poolclient.PoolBearerAuth{}, err
 	}
 	return poolclient.PoolBearerAuth{Token: strings.TrimSpace(token)}, nil
+}
+
+// poolSentinelRoutes states each sentinel's routes (ADR 26-10-02-924) the
+// way the pool agent reads them.
+func poolSentinelRoutes(in map[string][]secretroute.Route) map[string][]poolclient.SentinelRoute {
+	out := make(map[string][]poolclient.SentinelRoute, len(in))
+	for sentinel, routes := range in {
+		for _, route := range routes {
+			item := poolclient.SentinelRoute{Host: route.Host}
+			if route.Path != "" {
+				item.Path = poolclient.NewOptString(route.Path)
+			}
+			if route.UseID != "" {
+				item.UseId = poolclient.NewOptString(route.UseID)
+			}
+			out[sentinel] = append(out[sentinel], item)
+		}
+	}
+	return out
 }

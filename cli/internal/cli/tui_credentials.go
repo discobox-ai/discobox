@@ -375,6 +375,9 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 				row.Exchange.TokenExpiresAt = time.UnixMilli(expires).UTC()
 			}
 		}
+		for _, route := range s.Routes.Or(nil) {
+			row.Routes = append(row.Routes, tui.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Use: route.Use.Or("")})
+		}
 		row.Format = s.Format.Or("")
 		row.FormatSet = s.FormatSet.Or(false)
 		row.RefreshCommand = s.RefreshCommand.Or(nil)
@@ -411,6 +414,9 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 	body.Value = secretValueBody(secret.Value)
 	if secret.ValueTTLSeconds != nil {
 		body.SetTtlSeconds(apiclientgen.NewOptInt64(*secret.ValueTTLSeconds))
+	}
+	if len(secret.Routes) > 0 {
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(secretRouteInputs(secret.Routes)))
 	}
 	if id := strings.TrimSpace(secret.WellKnownID); id != "" {
 		body.SetWellKnownId(apiclientgen.NewOptString(id))
@@ -502,6 +508,9 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	}
 	if update.Format != nil {
 		body.SetFormat(apiclientgen.NewOptString(strings.TrimSpace(*update.Format)))
+	}
+	if update.Routes != nil {
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(secretRouteInputs(*update.Routes)))
 	}
 	res, err := d.client.UpdateSecret(ctx, body, apiclientgen.UpdateSecretParams{
 		ProjectId: d.projectID,
@@ -1007,4 +1016,21 @@ func (d *apiDataSource) DeleteSecret(ctx context.Context, server, secretID strin
 		return err
 	}
 	return expectNoContent[apiclientgen.DeleteSecretNoContent](res)
+}
+
+// secretRouteInputs are a card's routes as the API takes them; an empty list
+// stays empty rather than nil, since that is what clears them.
+func secretRouteInputs(routes []tui.SecretRoute) []apimodel.SecretRouteInput {
+	inputs := make([]apimodel.SecretRouteInput, 0, len(routes))
+	for _, route := range routes {
+		input := apimodel.SecretRouteInput{Host: route.Host}
+		if route.Path != "" {
+			input.SetPath(apiclientgen.NewOptString(route.Path))
+		}
+		if route.Use != "" {
+			input.SetUse(apiclientgen.NewOptString(route.Use))
+		}
+		inputs = append(inputs, input)
+	}
+	return inputs
 }

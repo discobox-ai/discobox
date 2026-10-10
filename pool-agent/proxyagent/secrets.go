@@ -19,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wire"
 )
 
@@ -33,6 +34,10 @@ const (
 // secretsDoc is the on-disk sentinel registry keyed by sandbox (proxy client) ID.
 type secretsDoc struct {
 	Clients map[string][]string `json:"clients"`
+	// Routes are, per sandbox, the routes of each injected stable sentinel
+	// whose secret carries routes (ADR 26-10-02-924): every request it is
+	// sent in must fall on one, with no activation.
+	Routes map[string]map[string][]secretroute.Route `json:"routes,omitempty"`
 }
 
 // resolveContext is the on-disk resolve credential the proxy unit reads.
@@ -47,8 +52,9 @@ type resolveContext struct {
 var secretsFileMu sync.Mutex
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
-// updating SecretsFile. Passing an empty set removes the sandbox entry.
-func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string) error {
+// updating SecretsFile, with the routes of those whose secret carries routes.
+// Passing an empty set removes the sandbox entry.
+func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, routes map[string][]secretroute.Route) error {
 	path := root.ProxySecretsFile(projectID, poolID)
 	secretsFileMu.Lock()
 	defer secretsFileMu.Unlock()
@@ -64,12 +70,26 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 	} else {
 		doc.Clients[sandboxID] = sentinels
 	}
+	held := map[string][]secretroute.Route{}
+	for _, sentinel := range sentinels {
+		if held[sentinel] = routes[sentinel]; len(held[sentinel]) == 0 {
+			delete(held, sentinel)
+		}
+	}
+	if len(held) == 0 {
+		delete(doc.Routes, sandboxID)
+	} else {
+		if doc.Routes == nil {
+			doc.Routes = map[string]map[string][]secretroute.Route{}
+		}
+		doc.Routes[sandboxID] = held
+	}
 	return writeJSONAtomic(path, doc)
 }
 
 // RemoveSandboxSentinels drops a sandbox's sentinel set from SecretsFile.
 func RemoveSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string) error {
-	return UpsertSandboxSentinels(root, projectID, poolID, sandboxID, nil)
+	return UpsertSandboxSentinels(root, projectID, poolID, sandboxID, nil, nil)
 }
 
 // WriteResolveContext writes the resolve credential the proxy unit reads.
@@ -127,6 +147,23 @@ type secretResolver struct {
 	// sentinels stand for. Nil asks nobody, which allows every request that
 	// reaches it.
 	judge *judgeClient
+
+	// sentinelRoutes are the routes a stable sentinel is held to without an
+	// activation, by sandbox, as SecretsFile last said (secretsDoc.Routes).
+	routesMu       sync.RWMutex
+	sentinelRoutes map[string]map[string][]secretroute.Route
+}
+
+func (r *secretResolver) setSentinelRoutes(routes map[string]map[string][]secretroute.Route) {
+	r.routesMu.Lock()
+	defer r.routesMu.Unlock()
+	r.sentinelRoutes = routes
+}
+
+func (r *secretResolver) heldRoutes(sandboxID, sentinel string) []secretroute.Route {
+	r.routesMu.RLock()
+	defer r.routesMu.RUnlock()
+	return r.sentinelRoutes[sandboxID][sentinel]
 }
 
 func newSecretResolver(root layout.Root, projectID, poolID string, live *activations) *secretResolver {
@@ -370,9 +407,12 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 // The project's judge reads the request against those uses, one ask per use,
 // and every one of them has to allow before anything is substituted.
 //
-// A sentinel with no live activation is spending no approved use and keeps the
-// policy it already has, which is not one policy but two. An injected harness
-// credential goes to the control plane at resolve time and is held to its
+// A sentinel whose secret carries routes (ADR 26-10-02-924) must be sent on
+// one: a request no route covers is refused here without asking anybody, one
+// on a route without a use passes, and one on routes that all carry a use is
+// judged against them. A sentinel with no live activation and no routes is
+// spending no approved use and keeps the policy it already has, which is not
+// one policy but two. An injected harness credential goes to the control plane at resolve time and is held to its
 // grant and host there. One this process minted whose activation has lapsed,
 // or that is being spent against a host the use does not cover, never gets
 // that far: Resolve refuses it here (isEphemeralCandidate, below), which is
@@ -412,24 +452,60 @@ func refusalFor(req proxy.SecretAuthorizeRequest) func(context.Context, string) 
 
 // authorize is Authorize's verdict, before how a refusal is said.
 func (r *secretResolver) authorize(ctx context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
-	uses := r.uses(req)
-	if len(uses) == 0 {
+	groups, refusal := r.uses(req)
+	if refusal != "" {
+		// Off every route the credential has: there is no use to judge it
+		// against, and it may not be sent.
+		return proxy.SecretVerdict{Reason: refusal, UseIDs: flattenUses(groups)}, nil
+	}
+	if len(groups) == 0 {
 		// Nothing here is being spent under an approved use, so there is no
 		// sentence to judge it against and nothing to ask about.
 		return proxy.SecretVerdict{Allow: true}, nil
 	}
+	uses := flattenUses(groups)
 	if r.judge == nil || !r.judge.asking(time.Now()) {
 		return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
 	}
-	for _, useID := range uses {
-		// Every applicable use has to pass before anything is substituted
-		// (ADR 26-09-22-838 §4): a request spending two credentials is two questions,
-		// and one of them saying no is the answer.
-		if verdict, settled, err := r.judgeUse(ctx, req, uses, useID); settled {
+	for _, group := range groups {
+		// Every group has to pass before anything is substituted (ADR
+		// 26-09-22-838 §4): a request spending two credentials is two
+		// questions, and one of them saying no is the answer. Within a group —
+		// the uses of the routes a secret's swap ties on — any one allowing is
+		// enough (ADR 26-10-02-924).
+		if verdict, settled, err := r.judgeGroup(ctx, req, uses, group); settled {
 			return verdict, err
 		}
 	}
 	return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+}
+
+// judgeGroup asks about a group's uses in turn until one allows. It is settled
+// the way judgeUse is, except that a judge refusing one use moves on to the
+// next: only the last refusal is the group's. Anything that is not the judge
+// deciding no — a server with nobody to ask, a silence, an ask the control
+// plane would not take — is the request's whole answer, as it is for one use.
+func (r *secretResolver) judgeGroup(ctx context.Context, req proxy.SecretAuthorizeRequest, uses, group []string) (proxy.SecretVerdict, bool, error) {
+	var refusal proxy.SecretVerdict
+	for _, useID := range group {
+		verdict, settled, err := r.judgeUse(ctx, req, uses, useID)
+		if !settled {
+			return proxy.SecretVerdict{}, false, nil
+		}
+		if verdict.Allow || err != nil {
+			return verdict, true, err
+		}
+		refusal = verdict
+	}
+	return refusal, true, nil
+}
+
+func flattenUses(groups [][]string) []string {
+	var out []string
+	for _, group := range groups {
+		out = append(out, group...)
+	}
+	return out
 }
 
 // judgeUse asks the judge about one use until it decides, showing it the body
@@ -537,18 +613,48 @@ func refusalFrom(answer judgeAnswer, useID string) (proxy.SecretVerdict, bool) {
 //
 // A request to a pinned host has to be asked about whether or not it spends a
 // credential, so the trust's uses are here and not only alongside a sentinel.
-func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) []string {
-	var ids []string
-	seen := make(map[string]struct{}, len(req.Sentinels)+len(req.TrustUseIDs))
+//
+// Each group is one question, and every group must pass; within a group any
+// one use allowing is enough. A grant's use and a host trust's are a group of
+// one. A sentinel whose secret carries routes (ADR 26-10-02-924) adds the uses
+// of the most specific routes the request falls on, as one group, or nothing
+// when one of them carries no use; an activation of an agent-requested
+// credential is held to its grant's use as well. A request off every route a
+// secret has is refused, and refusal says so.
+func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) (groups [][]string, refusal string) {
+	seen := map[string]struct{}{}
+	add := func(group []string) {
+		var fresh []string
+		for _, useID := range group {
+			if useID == "" {
+				continue
+			}
+			if _, ok := seen[useID]; ok {
+				continue
+			}
+			seen[useID] = struct{}{}
+			fresh = append(fresh, useID)
+		}
+		if len(fresh) > 0 {
+			groups = append(groups, fresh)
+		}
+	}
+	requestPath := secretroute.RequestPath(req.URL)
+	route := func(routes []secretroute.Route) {
+		if len(routes) == 0 {
+			return
+		}
+		group, covered := routeUses(routes, req.Host, requestPath)
+		if !covered {
+			if refusal == "" {
+				refusal = fmt.Sprintf("this credential has no route to %s%s", req.Host, requestPath)
+			}
+			return
+		}
+		add(group)
+	}
 	for _, useID := range req.TrustUseIDs {
-		if useID == "" {
-			continue
-		}
-		if _, ok := seen[useID]; ok {
-			continue
-		}
-		seen[useID] = struct{}{}
-		ids = append(ids, useID)
+		add([]string{useID})
 	}
 	for _, sentinel := range req.Sentinels {
 		record, ok := r.activation(proxy.SecretResolveRequest{
@@ -556,16 +662,31 @@ func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) []string {
 			Sentinel: sentinel,
 			Host:     req.Host,
 		})
-		if !ok || record.UseID == "" {
+		if ok && record.UseID != "" {
+			add([]string{record.UseID})
+			route(record.SecretRoutes)
 			continue
 		}
-		if _, ok := seen[record.UseID]; ok {
-			continue
-		}
-		seen[record.UseID] = struct{}{}
-		ids = append(ids, record.UseID)
+		route(r.heldRoutes(req.ClientID, sentinel))
 	}
-	return ids
+	return groups, refusal
+}
+
+// routeUses are the uses a request to host at requestPath is judged against
+// under a secret's routes: those of the most specific routes it falls on, or
+// none when one of them carries no use. covered is false when no route does.
+func routeUses(routes []secretroute.Route, host, requestPath string) (uses []string, covered bool) {
+	matched := secretroute.Match(routes, host, requestPath)
+	if len(matched) == 0 {
+		return nil, false
+	}
+	for _, route := range matched {
+		if route.UseID == "" {
+			return nil, true
+		}
+		uses = append(uses, route.UseID)
+	}
+	return uses, true
 }
 
 // activation returns the live activation for a resolve request, if the sentinel
@@ -702,7 +823,7 @@ func (p *policyPublisher) publish() {
 // publisher. It uses fsnotify so a sentinel push takes effect immediately
 // (rather than after a poll interval), with a slow ticker backstop in case an
 // event is missed.
-func watchSecretsFile(ctx context.Context, publisher *policyPublisher, path string) {
+func watchSecretsFile(ctx context.Context, publisher *policyPublisher, resolver *secretResolver, path string) {
 	onError := publisher.onError
 	var lastMod time.Time
 	apply := func() {
@@ -724,6 +845,7 @@ func watchSecretsFile(ctx context.Context, publisher *policyPublisher, path stri
 			return
 		}
 		publisher.setFileSentinels(doc.Clients)
+		resolver.setSentinelRoutes(doc.Routes)
 		lastMod = info.ModTime()
 	}
 	apply()

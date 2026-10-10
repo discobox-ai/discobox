@@ -4631,6 +4631,12 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Routes.Set {
+			e.FieldStart("routes")
+			s.Routes.Encode(e)
+		}
+	}
+	{
 		if s.ValueExpiresAt.Set {
 			e.FieldStart("valueExpiresAt")
 			s.ValueExpiresAt.Encode(e, json.EncodeDateTime)
@@ -4656,7 +4662,7 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSecretBody = [12]string{
+var jsonFieldsNameOfCreateSecretBody = [13]string{
 	0:  "$schema",
 	1:  "exchange",
 	2:  "maxGrantTTLSeconds",
@@ -4664,11 +4670,12 @@ var jsonFieldsNameOfCreateSecretBody = [12]string{
 	4:  "host",
 	5:  "refreshCommand",
 	6:  "ttlSeconds",
-	7:  "valueExpiresAt",
-	8:  "name",
-	9:  "type",
-	10: "value",
-	11: "wellKnownId",
+	7:  "routes",
+	8:  "valueExpiresAt",
+	9:  "name",
+	10: "type",
+	11: "value",
+	12: "wellKnownId",
 }
 
 // Decode decodes CreateSecretBody from json.
@@ -4750,6 +4757,16 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"ttlSeconds\"")
 			}
+		case "routes":
+			if err := func() error {
+				s.Routes.Reset()
+				if err := s.Routes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
+			}
 		case "valueExpiresAt":
 			if err := func() error {
 				s.ValueExpiresAt.Reset()
@@ -4761,7 +4778,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"valueExpiresAt\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -4773,7 +4790,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Type.Decode(d); err != nil {
 					return err
@@ -4783,7 +4800,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "value":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				if err := s.Value.Decode(d); err != nil {
 					return err
@@ -4813,7 +4830,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000000,
-		0b00000111,
+		0b00001110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -10278,14 +10295,25 @@ func (s *HarnessConfigSecret) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.Routes != nil {
+			e.FieldStart("routes")
+			e.ArrStart()
+			for _, elem := range s.Routes {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfHarnessConfigSecret = [5]string{
+var jsonFieldsNameOfHarnessConfigSecret = [6]string{
 	0: "name",
 	1: "required",
 	2: "oneOfGroup",
 	3: "delivery",
 	4: "rejectionScope",
+	5: "routes",
 }
 
 // Decode decodes HarnessConfigSecret from json.
@@ -10355,6 +10383,23 @@ func (s *HarnessConfigSecret) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"rejectionScope\"")
+			}
+		case "routes":
+			if err := func() error {
+				s.Routes = make([]SecretRouteInput, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SecretRouteInput
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Routes = append(s.Routes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -20296,6 +20341,128 @@ func (s OptNilSandboxRuntimeResources) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilSandboxRuntimeResources) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes []SecretRoute as json.
+func (o OptNilSecretRouteArray) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.ArrStart()
+	for _, elem := range o.Value {
+		elem.Encode(e)
+	}
+	e.ArrEnd()
+}
+
+// Decode decodes []SecretRoute from json.
+func (o *OptNilSecretRouteArray) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilSecretRouteArray to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v []SecretRoute
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make([]SecretRoute, 0)
+	if err := d.Arr(func(d *jx.Decoder) error {
+		var elem SecretRoute
+		if err := elem.Decode(d); err != nil {
+			return err
+		}
+		o.Value = append(o.Value, elem)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilSecretRouteArray) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilSecretRouteArray) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes []SecretRouteInput as json.
+func (o OptNilSecretRouteInputArray) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.ArrStart()
+	for _, elem := range o.Value {
+		elem.Encode(e)
+	}
+	e.ArrEnd()
+}
+
+// Decode decodes []SecretRouteInput from json.
+func (o *OptNilSecretRouteInputArray) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilSecretRouteInputArray to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v []SecretRouteInput
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make([]SecretRouteInput, 0)
+	if err := d.Arr(func(d *jx.Decoder) error {
+		var elem SecretRouteInput
+		if err := elem.Decode(d); err != nil {
+			return err
+		}
+		o.Value = append(o.Value, elem)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilSecretRouteInputArray) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilSecretRouteInputArray) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -36709,9 +36876,15 @@ func (s *SandboxCredential) encodeFields(e *jx.Encoder) {
 			s.Uses.Encode(e)
 		}
 	}
+	{
+		if s.SecretRoutes.Set {
+			e.FieldStart("secretRoutes")
+			s.SecretRoutes.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxCredential = [9]string{
+var jsonFieldsNameOfSandboxCredential = [10]string{
 	0: "envVar",
 	1: "expiresAt",
 	2: "format",
@@ -36721,6 +36894,7 @@ var jsonFieldsNameOfSandboxCredential = [9]string{
 	6: "secretId",
 	7: "sentinel",
 	8: "uses",
+	9: "secretRoutes",
 }
 
 // Decode decodes SandboxCredential from json.
@@ -36841,6 +37015,16 @@ func (s *SandboxCredential) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"uses\"")
+			}
+		case "secretRoutes":
+			if err := func() error {
+				s.SecretRoutes.Reset()
+				if err := s.SecretRoutes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretRoutes\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -46175,9 +46359,15 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
+	{
+		if s.Routes.Set {
+			e.FieldStart("routes")
+			s.Routes.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSecret = [19]string{
+var jsonFieldsNameOfSecret = [20]string{
 	0:  "$schema",
 	1:  "anonymous",
 	2:  "createdAt",
@@ -46197,6 +46387,7 @@ var jsonFieldsNameOfSecret = [19]string{
 	16: "type",
 	17: "wellKnownId",
 	18: "updatedAt",
+	19: "routes",
 }
 
 // Decode decodes Secret from json.
@@ -46409,6 +46600,16 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
+			}
+		case "routes":
+			if err := func() error {
+				s.Routes.Reset()
+				if err := s.Routes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -48940,6 +49141,283 @@ func (s SecretRequestType) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretRequestType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretRoute) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRoute) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("host")
+		e.Str(s.Host)
+	}
+	{
+		if s.Path.Set {
+			e.FieldStart("path")
+			s.Path.Encode(e)
+		}
+	}
+	{
+		if s.Use.Set {
+			e.FieldStart("use")
+			s.Use.Encode(e)
+		}
+	}
+	{
+		if s.UseId.Set {
+			e.FieldStart("useId")
+			s.UseId.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretRoute = [4]string{
+	0: "host",
+	1: "path",
+	2: "use",
+	3: "useId",
+}
+
+// Decode decodes SecretRoute from json.
+func (s *SecretRoute) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRoute to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "host":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Host = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"host\"")
+			}
+		case "path":
+			if err := func() error {
+				s.Path.Reset()
+				if err := s.Path.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "use":
+			if err := func() error {
+				s.Use.Reset()
+				if err := s.Use.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"use\"")
+			}
+		case "useId":
+			if err := func() error {
+				s.UseId.Reset()
+				if err := s.UseId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"useId\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRoute")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSecretRoute) {
+					name = jsonFieldsNameOfSecretRoute[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRoute) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRoute) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretRouteInput) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRouteInput) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("host")
+		e.Str(s.Host)
+	}
+	{
+		if s.Path.Set {
+			e.FieldStart("path")
+			s.Path.Encode(e)
+		}
+	}
+	{
+		if s.Use.Set {
+			e.FieldStart("use")
+			s.Use.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretRouteInput = [3]string{
+	0: "host",
+	1: "path",
+	2: "use",
+}
+
+// Decode decodes SecretRouteInput from json.
+func (s *SecretRouteInput) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRouteInput to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "host":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Host = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"host\"")
+			}
+		case "path":
+			if err := func() error {
+				s.Path.Reset()
+				if err := s.Path.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "use":
+			if err := func() error {
+				s.Use.Reset()
+				if err := s.Use.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"use\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRouteInput")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSecretRouteInput) {
+					name = jsonFieldsNameOfSecretRouteInput[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRouteInput) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRouteInput) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -51477,6 +51955,12 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Routes.Set {
+			e.FieldStart("routes")
+			s.Routes.Encode(e)
+		}
+	}
+	{
 		if s.ValueExpiresAt.Set {
 			e.FieldStart("valueExpiresAt")
 			s.ValueExpiresAt.Encode(e, json.EncodeDateTime)
@@ -51496,17 +51980,18 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateSecretBody = [10]string{
-	0: "$schema",
-	1: "exchange",
-	2: "maxGrantTTLSeconds",
-	3: "format",
-	4: "host",
-	5: "refreshCommand",
-	6: "ttlSeconds",
-	7: "valueExpiresAt",
-	8: "name",
-	9: "value",
+var jsonFieldsNameOfUpdateSecretBody = [11]string{
+	0:  "$schema",
+	1:  "exchange",
+	2:  "maxGrantTTLSeconds",
+	3:  "format",
+	4:  "host",
+	5:  "refreshCommand",
+	6:  "ttlSeconds",
+	7:  "routes",
+	8:  "valueExpiresAt",
+	9:  "name",
+	10: "value",
 }
 
 // Decode decodes UpdateSecretBody from json.
@@ -51586,6 +52071,16 @@ func (s *UpdateSecretBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"ttlSeconds\"")
+			}
+		case "routes":
+			if err := func() error {
+				s.Routes.Reset()
+				if err := s.Routes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
 			}
 		case "valueExpiresAt":
 			if err := func() error {

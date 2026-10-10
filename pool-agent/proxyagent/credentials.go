@@ -14,6 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -67,6 +68,9 @@ type credentialDoc struct {
 	Format    string             `json:"format,omitempty"`
 	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
 	Uses      []credentialUseDoc `json:"uses,omitempty"`
+	// SecretRoutes are where the credential may be sent (ADR 26-10-02-924),
+	// which an activation of it is held to as well as to the grant's use.
+	SecretRoutes []secretroute.Route `json:"secretRoutes,omitempty"`
 }
 
 type listCredentialsDoc struct {
@@ -312,7 +316,7 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 			if err := b.judgeCommand(ctx, useID, body); err != nil {
 				return agentcreds.UseResponse{}, err
 			}
-			record, err := b.activations.mint(b.sandboxID, doc.Sentinel, useID, doc.Hosts, doc.Format, body.Command)
+			record, err := b.activations.mint(b.sandboxID, doc.Sentinel, useID, doc.SecretRoutes, doc.Hosts, doc.Format, body.Command)
 			if err != nil {
 				return agentcreds.UseResponse{}, err
 			}

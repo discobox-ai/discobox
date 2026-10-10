@@ -245,6 +245,9 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 			item.SetExpiresAt(serverapi.NewOptDateTime(*credential.Grant.ExpiresAt))
 		}
 		item.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(credential.Grant.Uses)))
+		if len(credential.SecretRoutes) > 0 {
+			item.SetSecretRoutes(serverapi.NewOptNilSecretRouteArray(apiSecretRoutes(credential.SecretRoutes)))
+		}
 		resp.Credentials = append(resp.Credentials, item)
 	}
 	return &resp, nil
@@ -315,6 +318,24 @@ func apiSecretUses(uses []model.SecretUse) []apimodel.SecretUse {
 		item := apimodel.SecretUse{Description: use.Description}
 		if use.UseID != "" {
 			item.SetUseId(serverapi.NewOptString(use.UseID))
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func apiSecretRoutes(routes []model.SecretRoute) []apimodel.SecretRoute {
+	out := make([]apimodel.SecretRoute, 0, len(routes))
+	for _, route := range routes {
+		item := apimodel.SecretRoute{Host: route.Host}
+		if route.Path != "" {
+			item.SetPath(serverapi.NewOptString(route.Path))
+		}
+		if route.Use != "" {
+			item.SetUse(serverapi.NewOptString(route.Use))
+		}
+		if route.UseID != "" {
+			item.SetUseId(serverapi.NewOptString(route.UseID))
 		}
 		out = append(out, item)
 	}

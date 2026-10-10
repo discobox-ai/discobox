@@ -225,12 +225,19 @@ type File struct {
 // Only what an upstream makes of a request the scope names is taken as a fact
 // about the credential, a refusal and an acceptance alike. Empty is every
 // request.
+//
+// Routes are where the harness itself sends this credential (ADR
+// 26-10-02-924): a request carrying it must fall on one, and the most specific
+// covering it decides whether it is sent unjudged or judged against the
+// route's use. Configure writes them onto the secret it creates; they are the
+// image's alone, and a configure flow cannot add to them or change them.
 type Secret struct {
 	Name           string
 	Required       bool
 	OneOfGroup     string
 	Delivery       string
 	RejectionScope []RejectionRule
+	Routes         []SecretRoute `json:",omitempty"`
 }
 
 // RejectionRule is one host of a Secret's RejectionScope, and the paths on it.
@@ -264,6 +271,15 @@ func (r RejectionRule) Validate() error {
 		}
 	}
 	return nil
+}
+
+// SecretRoute is one place a harness sends a credential: a host and every
+// host beneath it, within it an optional path prefix matched on whole
+// segments, and an optional use a request on it is judged against.
+type SecretRoute struct {
+	Host string
+	Path string `json:",omitempty"`
+	Use  string `json:",omitempty"`
 }
 
 const (

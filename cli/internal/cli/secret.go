@@ -13,6 +13,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -377,6 +378,7 @@ reading it from the value gets it wrong, and is kept when the value changes.`, R
 	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLCreateFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage)
 	cmd.Flags().StringVar(&wellKnownID, "well-known", "", "Well-known credential the secret answers, such as com.github.api; fills in the name, host, and refresh command it suggests")
+	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage)
 	addSecretValueFlags(cmd.Flags(), &value)
 	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
@@ -458,6 +460,8 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
 	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLUpdateFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage+`; "" goes back to that. A running discobox keeps the sentinel already in its environment`)
+	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage+"; replaces the secret's routes")
+	cmd.Flags().Bool("no-routes", false, "Remove the secret's routes, leaving where it may be sent to its grants")
 	addSecretValueFlags(cmd.Flags(), &value)
 	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
@@ -836,7 +840,48 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host, ttl string, 
 	if given {
 		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 	}
+	if routes, ok, err := secretRoutesFlags(flags); err != nil {
+		return nil, err
+	} else if ok {
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(routes))
+	}
 	return body, nil
+}
+
+const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as HOST[/PATH][=USE]: a host covers itself and every host beneath it, a path is a prefix on whole segments, and a use judges every request on the route against it, while a route without one sends them unjudged. Every request it is sent in must fall on one; the most specific decides (repeatable)"
+
+// secretRoutesFlags reads --route, and --no-routes where the command has it.
+// ok reports whether either was given; --no-routes is an empty list, which
+// clears.
+func secretRoutesFlags(flags *pflag.FlagSet) (routes []apimodel.SecretRouteInput, ok bool, err error) {
+	if flags.Changed("no-routes") {
+		if flags.Changed("route") {
+			return nil, false, fmt.Errorf("--no-routes cannot be combined with --route")
+		}
+		return []apimodel.SecretRouteInput{}, true, nil
+	}
+	if !flags.Changed("route") {
+		return nil, false, nil
+	}
+	values, err := flags.GetStringArray("route")
+	if err != nil {
+		return nil, false, err
+	}
+	for _, value := range values {
+		host, path, use, err := secretroute.Parse(value)
+		if err != nil {
+			return nil, false, fmt.Errorf("--route %q: %w", value, err)
+		}
+		route := apimodel.SecretRouteInput{Host: host}
+		if path != "" {
+			route.SetPath(apiclientgen.NewOptString(path))
+		}
+		if use != "" {
+			route.SetUse(apiclientgen.NewOptString(use))
+		}
+		routes = append(routes, route)
+	}
+	return routes, true, nil
 }
 
 func updateSecretBody(flags *pflag.FlagSet, name, host, ttl string, valueOpts secretValueOptions) (*apimodel.UpdateSecretBody, error) {
@@ -865,6 +910,11 @@ func updateSecretBody(flags *pflag.FlagSet, name, host, ttl string, valueOpts se
 		return nil, err
 	} else if ok {
 		body.SetExchange(apiclientgen.NewOptExchangeRecipe(recipe))
+	}
+	if routes, ok, err := secretRoutesFlags(flags); err != nil {
+		return nil, err
+	} else if ok {
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(routes))
 	}
 	return body, nil
 }

@@ -130,7 +130,7 @@ func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
 		t.Fatalf("EnsureSandboxMaterial(root, orphan) error = %v", err)
 	}
 	for _, id := range []string{"live-sandbox", "orphan-sandbox"} {
-		if err := UpsertSandboxSentinels(root, "project-1", "pool-1", id, []string{"sk-" + id}); err != nil {
+		if err := UpsertSandboxSentinels(root, "project-1", "pool-1", id, []string{"sk-" + id}, nil); err != nil {
 			t.Fatalf("UpsertSandboxSentinels(root, %s) error = %v", id, err)
 		}
 	}

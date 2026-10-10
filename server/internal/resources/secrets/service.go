@@ -49,6 +49,16 @@ type Service struct {
 	// dirtier has approval rules tested against what is pending when a
 	// request is filed or a rule changes (ADR 26-10-12-330 §4).
 	dirtier Dirtier
+	// sentinels re-registers the sentinels of the running discoboxes holding
+	// a secret, so a change to its routes reaches the proxies enforcing them.
+	sentinels SentinelPusher
+}
+
+// SentinelPusher re-registers, with their proxies, the sentinels of every
+// running discobox holding a secret. The sandbox service is one; it is set
+// after construction because it is built from this service.
+type SentinelPusher interface {
+	PushSecretSentinels(ctx context.Context, projectID, secretID string) error
 }
 
 func NewService(store *store.Store) *Service {
@@ -59,6 +69,27 @@ func NewService(store *store.Store) *Service {
 // judges service is built from this one (SetUses), so it is wired after.
 func (s *Service) SetJudge(judge services.JudgeService) {
 	s.judge = judge
+}
+
+// SetSentinelPusher gives the service what carries a change to a secret's
+// routes to the discoboxes holding it.
+func (s *Service) SetSentinelPusher(pusher SentinelPusher) {
+	s.sentinels = pusher
+}
+
+// replaceRoutes writes the routes a create or update names onto sec (ADR
+// 26-10-02-924). A route without a host, or with a malformed path, is refused
+// rather than dropped: a person who wrote one meant somewhere.
+func replaceRoutes(sec *model.Secret, input []apigen.SecretRouteInput) (bool, error) {
+	routes := make([]model.SecretRoute, 0, len(input))
+	for _, route := range input {
+		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Use: route.Use.Or("")})
+	}
+	changed, err := sec.ReplaceRoutes(routes)
+	if err != nil {
+		return false, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return changed, nil
 }
 
 func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Secret, error) {
@@ -199,6 +230,11 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	if err := createLifetime(input).apply(sec, true); err != nil {
 		return nil, err
 	}
+	if routes, ok := input.Routes.Get(); ok {
+		if _, err := replaceRoutes(sec, routes); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.store.CreateSecret(ctx, sec); err != nil {
 		return nil, secretCollision(err, sec)
 	}
@@ -261,6 +297,12 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
 		return nil, err
 	}
+	routesChanged := false
+	if routes, ok := input.Routes.Get(); ok {
+		if routesChanged, err = replaceRoutes(sec, routes); err != nil {
+			return nil, err
+		}
+	}
 	// A recipe says where a stored key is sent, so it changes only with the
 	// key beside it: pointing a stored key at a new endpoint would hand it to
 	// whoever runs that endpoint. A new binding is held to the recipe too.
@@ -296,6 +338,13 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	// each of them remembering to.
 	if err := s.store.UpdateSecret(ctx, sec); err != nil {
 		return nil, secretCollision(err, sec)
+	}
+	if routesChanged && s.sentinels != nil {
+		// A running discobox's proxy holds its swaps to the routes it was last
+		// handed; until this reaches it, it holds them to the old ones.
+		if err := s.sentinels.PushSecretSentinels(ctx, projectID, sec.ID); err != nil {
+			return nil, fmt.Errorf("deliver the secret's routes to the discoboxes holding it: %w", err)
+		}
 	}
 	// Through the service's own read, so a create and an update answer with the
 	// same summary a get does rather than a bare row.

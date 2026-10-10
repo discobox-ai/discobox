@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	"charm.land/bubbles/v2/textinput"
@@ -853,6 +855,20 @@ func describeSecret(secret Secret, now time.Time) []section {
 		{label: "may be sent to", value: where, tone: tone},
 		{label: "grant limit", value: limit},
 	}}
+	// Where it may be sent, whoever holds it, and whether a request there is
+	// judged (ADR 26-10-02-924).
+	for i, route := range secret.Routes {
+		label := "route"
+		if i > 0 {
+			label = "or route"
+		}
+		where := secretroute.Format(route.Host, route.Path, "")
+		value, tone := where+" · allowed", toneDim
+		if route.Use != "" {
+			value, tone = where+" · judged: "+route.Use, toneAccent
+		}
+		credential.fields = append(credential.fields, field{label: label, value: value, tone: tone})
+	}
 	// How the value is renewed, for a token that has a lifetime
 	// (ADR 26-09-25-122).
 	if len(secret.RefreshCommand) > 0 {
@@ -1299,6 +1315,12 @@ func secretForm(existing *Secret) *form {
 	host.section = what
 	host.hint = "it covers that host and everything beneath it: github.com answers for api.github.com too · empty leaves the grants to decide alone"
 
+	var existingRoutes []SecretRoute
+	if editing {
+		existingRoutes = existing.Routes
+	}
+	routes := secretRouteRows("where it may be sent", existingRoutes)
+
 	// The shape of the sentinels that stand in for it, for a client that
 	// checks a key's prefix. Empty is the ordinary answer: the shape is read
 	// from the value, and re-read whenever the value changes.
@@ -1471,13 +1493,64 @@ func secretForm(existing *Secret) *form {
 		rows = append(rows, plain, command)
 		rows = append(rows, lasts...)
 		rows = append(rows, exchangeRows...)
-		return newForm(append(rows, access, refresh, tokenURL, client, scopes, format)...)
+		rows = append(rows, access, refresh, tokenURL, client, scopes, format)
+		return newForm(append(rows, routes...)...)
 	}
 	rows = append(rows, source, command)
 	rows = append(rows, lasts...)
 	rows = append(rows, plain)
 	rows = append(rows, exchangeRows...)
-	return newForm(append(rows, access, refresh, tokenURL, client, scopes, format)...)
+	rows = append(rows, access, refresh, tokenURL, client, scopes, format)
+	return newForm(append(rows, routes...)...)
+}
+
+// secretRouteRows are the rows a secret's routes are typed in: one per route
+// it has, and one empty for another. A route is HOST[/PATH][=USE], and a use
+// is a sentence that may hold any punctuation, so each has its own row rather
+// than sharing one behind a separator; emptying a row removes that route.
+func secretRouteRows(section string, routes []SecretRoute) []formRow {
+	rows := make([]formRow, 0, len(routes)+1)
+	for i, route := range append(append([]SecretRoute(nil), routes...), SecretRoute{}) {
+		label := "route"
+		if i > 0 {
+			label = "or route"
+		}
+		value := ""
+		if route.Host != "" {
+			value = secretroute.Format(route.Host, route.Path, route.Use)
+		}
+		row := textRow(secretRouteKey+strconv.Itoa(i), label, "e.g. github.com/repos=Read-only GitHub queries", value)
+		row.section = section
+		row.hint = "HOST[/PATH][=USE]: every request it is sent in must fall on one, the most specific deciding; with a use it is judged, without one it is sent unjudged · empty for none"
+		if i == len(routes) && i > 0 {
+			row.input.Placeholder = "another route (optional)"
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// secretRouteKey prefixes the keys of the route rows.
+const secretRouteKey = "route:"
+
+// formRoutes are the routes typed on the card, in order, empty rows dropped.
+// why is set, naming the row, when one is not a route.
+func formRoutes(f *form) (routes []SecretRoute, why string) {
+	for _, row := range f.rows {
+		if !strings.HasPrefix(row.key, secretRouteKey) {
+			continue
+		}
+		text := strings.TrimSpace(row.input.Value())
+		if text == "" {
+			continue
+		}
+		host, path, use, err := secretroute.Parse(text)
+		if err != nil {
+			return nil, fmt.Sprintf("route %q: %v", text, err)
+		}
+		routes = append(routes, SecretRoute{Host: host, Path: path, Use: use})
+	}
+	return routes, ""
 }
 
 // exchangeFieldRows are the rows an exchange credential's fields are replaced
@@ -1592,11 +1665,17 @@ func secretFromForm(f *form) (NewSecret, bool) {
 		f.err = why
 		return NewSecret{}, false
 	}
+	routes, why := formRoutes(f)
+	if why != "" {
+		f.err = why
+		return NewSecret{}, false
+	}
 	secret := NewSecret{
 		Name:          f.value("name"),
 		Type:          f.chosen("kind"),
 		Host:          f.value("host"),
 		MaxTTLSeconds: seconds,
+		Routes:        routes,
 		Format:        format,
 		Value:         formSecretValue(f),
 	}
@@ -1705,6 +1784,17 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 		}
 		if time.Duration(seconds)*time.Second != was.MaxTTL {
 			update.MaxTTLSeconds = &seconds
+		}
+		routes, why := formRoutes(f)
+		if why != "" {
+			f.err = why
+			return nil
+		}
+		if !slices.Equal(routes, was.Routes) {
+			if routes == nil {
+				routes = []SecretRoute{}
+			}
+			update.Routes = &routes
 		}
 		format, why := formFormat(f)
 		if why != "" {
@@ -1832,6 +1922,14 @@ func (m *Model) saveSecret(server, id string, was Secret, update SecretUpdate) t
 	if update.MaxTTLSeconds != nil {
 		limit := grantLimit(time.Duration(*update.MaxTTLSeconds) * time.Second)
 		did = append(did, "grants on "+was.Name+" now last "+limit)
+	}
+	if update.Routes != nil {
+		switch len(*update.Routes) {
+		case 0:
+			did = append(did, was.Name+" carries no routes")
+		default:
+			did = append(did, was.Name+" now carries "+plural(len(*update.Routes), "route", "routes"))
+		}
 	}
 	if update.Value != nil {
 		did = append(did, "replaced "+was.Name+"'s value")

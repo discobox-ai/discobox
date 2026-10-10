@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/secretroute"
 )
 
 func TestUpsertAndRemoveSentinels(t *testing.T) {
 	root := withTestRoot(t)
 
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil); err != nil {
 		t.Fatalf("upsert sb-1: %v", err)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}, nil); err != nil {
 		t.Fatalf("upsert sb-2: %v", err)
 	}
 
@@ -163,7 +164,7 @@ func TestActivationHostCoversSubdomainsAndNothingAbove(t *testing.T) {
 	live := newActivations()
 	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
-	record, err := live.mint("sb-1", "STABLE", "use-1", []string{"github.com"}, "ghp_{base62:36}", nil)
+	record, err := live.mint("sb-1", "STABLE", "use-1", nil, []string{"github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestActivationHostCoversSubdomainsAndNothingAbove(t *testing.T) {
 		t.Fatal("a use approved for the site does not cover its API")
 	}
 
-	narrow, err := live.mint("sb-1", "STABLE", "use-2", []string{"api.github.com"}, "ghp_{base62:36}", nil)
+	narrow, err := live.mint("sb-1", "STABLE", "use-2", nil, []string{"api.github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestReportTranslatesAnEphemeralSentinel(t *testing.T) {
 	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.example.com"}, "", []string{"curl"})
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.example.com"}, "", []string{"curl"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -244,7 +245,7 @@ func TestReportTranslatesALapsedActivation(t *testing.T) {
 	now := time.Now()
 	live := newActivations()
 	live.now = func() time.Time { return now }
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.example.com"}, "", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.example.com"}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -287,7 +288,7 @@ func TestReportRefusesAnotherSandboxesSentinel(t *testing.T) {
 	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
 	live := newActivations()
-	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.example.com"}, "", nil)
+	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", nil, []string{"api.example.com"}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -299,5 +300,32 @@ func TestReportRefusesAnotherSandboxesSentinel(t *testing.T) {
 	}
 	if called {
 		t.Fatal("a report was sent for a sentinel minted for another sandbox")
+	}
+}
+
+// Routes are written only for sentinels the sandbox holds, and replaced with
+// its sentinel set.
+func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
+	root := withTestRoot(t)
+	routes := map[string][]secretroute.Route{
+		"SENT-A":    {{Host: "github.com", UseID: "use_a"}},
+		"SENT-GONE": {{Host: "example.com"}},
+	}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, routes); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if err != nil {
+		t.Fatalf("read doc: %v", err)
+	}
+	if got := doc.Routes["sb-1"]; len(got) != 1 || len(got["SENT-A"]) != 1 || got["SENT-A"][0].UseID != "use_a" {
+		t.Fatalf("routes = %#v, want only SENT-A's", doc.Routes)
+	}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if _, ok := doc.Routes["sb-1"]; ok {
+		t.Fatalf("routes = %#v, want them replaced with the set", doc.Routes)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -462,6 +463,10 @@ type HarnessConfigSecret struct {
 	// (ADR 26-10-13-595): only what an upstream makes of one of them is taken
 	// as a fact about it. Empty is every request.
 	RejectionScope []HarnessSecretRejectionRule `json:"rejectionScope,omitempty" doc:"Requests whose refusal or acceptance says whether the credential is alive; empty is every request"`
+	// Routes are where the harness itself sends the credential, declared by
+	// the image and never by a caller or a configure flow. Configure writes
+	// them onto the secret it creates for it (ADR 26-10-02-924).
+	Routes []SecretRoute `json:"routes,omitempty" doc:"Where the harness itself sends this credential, declared by its image"`
 }
 
 // HarnessSecretRejectionRule is one host of a harness secret's rejection scope,
@@ -1299,6 +1304,12 @@ type Secret struct {
 	// produce a new value. It is advice to that client: nothing on this side
 	// runs it, or checks that a value came from it.
 	RefreshCommand []string `gorm:"column:refresh_command;type:text;serializer:json" json:"refreshCommand,omitempty" doc:"Command a person's client may run to produce a new value"`
+	// Routes are where the credential may be sent, whoever holds it (ADR
+	// 26-10-02-924). With any, every request a sentinel for it is swapped into
+	// must fall on one: the most specific routes covering it send it unjudged
+	// when one of them carries no use, and judge it against their uses when
+	// all do. None leaves it to its grants.
+	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; every request it is sent in must fall on one"`
 	// ValueUpdatedAt is when the current value was written, set by the store
 	// on create and on every replaced value.
 	ValueUpdatedAt *time.Time `gorm:"column:value_updated_at" json:"valueUpdatedAt,omitempty" doc:"When the current value was written" format:"date-time"`
@@ -1316,6 +1327,68 @@ type Secret struct {
 }
 
 func (Secret) TableName() string { return "secrets" }
+
+// SecretRoute is one place a secret may be sent (ADR 26-10-02-924): a host
+// and everything beneath it, and within it an optional path prefix matched on
+// whole segments. A route with a use judges every request on it against that
+// sentence, under UseID; one without sends them unjudged.
+type SecretRoute struct {
+	UseID string `json:"useId,omitempty" doc:"Stable use ID of the route's use, minted when it was written"`
+	Host  string `json:"host" doc:"Host the route covers, and every host beneath it"`
+	Path  string `json:"path,omitempty" doc:"Path prefix matched on whole segments; empty is the whole host"`
+	Use   string `json:"use,omitempty" doc:"Sentence a request on this route is judged against; empty sends it unjudged"`
+}
+
+// ReplaceRoutes sets the secret's routes to routes, in order, normalized. A
+// route whose host, path and use are unchanged keeps its use ID, so a verdict
+// recorded against it still stands; a new use is minted an ID, never handed
+// one, and a route without a use has none. Repeats collapse. A route with no
+// host or a malformed path is an error. changed reports whether anything moved.
+func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
+	type key struct{ host, path, use string }
+	existing := make(map[key]string, len(s.Routes))
+	for _, route := range s.Routes {
+		existing[key{route.Host, route.Path, route.Use}] = route.UseID
+	}
+	var out []SecretRoute
+	seen := map[key]bool{}
+	for _, route := range routes {
+		host, path, err := secretroute.Normalize(route.Host, route.Path)
+		if err != nil {
+			return false, err
+		}
+		k := key{host, path, strings.TrimSpace(route.Use)}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		next := SecretRoute{Host: k.host, Path: k.path, Use: k.use}
+		if next.Use != "" {
+			if next.UseID = existing[k]; next.UseID == "" {
+				if next.UseID, err = id.New(PrefixSecretUse); err != nil {
+					return false, err
+				}
+			}
+		}
+		out = append(out, next)
+	}
+	changed = len(out) != len(s.Routes)
+	for i := 0; !changed && i < len(out); i++ {
+		changed = out[i] != s.Routes[i]
+	}
+	s.Routes = out
+	return changed, nil
+}
+
+// ProxyRoutes are the secret's routes as the pool proxy enforces them: by use
+// ID, never by sentence. Nil when it carries none.
+func (s *Secret) ProxyRoutes() []secretroute.Route {
+	var out []secretroute.Route
+	for _, route := range s.Routes {
+		out = append(out, secretroute.Route{Host: route.Host, Path: route.Path, UseID: route.UseID})
+	}
+	return out
+}
 
 // DefaultRefreshTTL is the lifetime a token takes when it names a refresh
 // command and no lifetime: a value worth fetching by command is short-lived by
@@ -1448,6 +1521,16 @@ type SecretValue struct {
 	// names its recipe declares. It never leaves the server.
 	Exchange map[string]string `json:"exchange,omitempty"`
 }
+
+// PrefixSecretUse identifies one approved way to use a credential. A use ID is
+// the control plane's — minted at approval, or when a secret's routes are
+// written — never the requester's, so an agent cannot name the use it will
+// later present (ADR 0031 §5).
+//
+// It sits here rather than beside every other prefix because those live in
+// github.com/discobox-ai/x/id, outside this repository; move it there and drop
+// this const once that package carries it.
+const PrefixSecretUse = "use"
 
 // SecretUse is one way a credential may be used: a human-readable sentence an
 // agent asked for and an approver confirmed or edited. UseID is empty on the

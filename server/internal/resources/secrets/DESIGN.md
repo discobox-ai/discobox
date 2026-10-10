@@ -484,8 +484,11 @@ The entry points:
 - **`ApprovedUse` / `ApprovedCredentialUse`** — what a request, or a command,
   is judged against: the approved sentence, the credential's name and the host,
   read from the live grant, never from what a pool sent. `ApprovedUse` also
-  matches a host trust's use for its host; `ApprovedCredentialUse` matches only
-  a credential's, since only one of those takes a value. Verdicts are recorded
+  matches a host trust's use for its host, and a secret's route use
+  (`secretOwnUse`, ADR 26-10-02-924): one the discobox holds, injected or
+  agent-requested, with the grant it was handed out under when there is one;
+  `ApprovedCredentialUse` matches only a grant's use, since only that takes a
+  value and nobody runs a command under a secret's own. Verdicts are recorded
   by `judges`, not here, against the grant these hand it (ADR 26-09-22-838 §3).
   Rows of kind `command` and origin `sandbox`, with `Volunteered`, predate that:
   a discobox's own judge's word, relayed by its pool, and kept readable.
@@ -679,6 +682,30 @@ different questions:
 A secret with no host is unconstrained by this, and the grant is what scopes it.
 A binding stays one host: a credential sent to unrelated sites is an unbound
 secret whose grants list them (ADR 26-10-02-393 §2).
+
+## A secret's routes bind whoever holds it
+
+`Secret.Routes` (ADR 26-10-02-924) say where the credential itself may be
+sent. Each is a host with an optional path prefix and an optional use. They
+are set at create or update (`--route HOST[/PATH][=USE]`) or written by a
+harness configure flow from its image. Every swap of the secret must fall on
+one, and the most specific route decides: with no use the request goes
+unjudged, with one it is judged, and a request no route covers is refused.
+This is on top of the use of any grant the secret was handed out under. No
+routes leaves it to its grants. The matching is `secretroute`'s, run by the
+pool.
+
+- **IDs are minted here, never named.** `Secret.ReplaceRoutes` normalizes and
+  dedupes. It keeps the ID of a route whose host, path and use did not
+  change, so a verdict recorded against it stands, and mints IDs only for
+  routes with a use.
+- **A change reaches running discoboxes.** `UpdateSecret` hands a changed set
+  to the `SentinelPusher` (the sandbox service). That re-pushes the sentinel
+  set, with `sentinelRoutes`, of every running discobox the secret is
+  injected into. An agent-requested credential needs no push: the pool lists
+  it, with `secretRoutes`, fresh for every activation.
+- **A judge discobox's own are exempt** (`store.SecretSentinelRoutes`,
+  `secretOwnUse`): its harness's requests would wait on its own verdict.
 
 ## A secret's grant limit is a ceiling, not a default
 

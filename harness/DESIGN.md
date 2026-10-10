@@ -570,6 +570,18 @@ rebuilds.
 Every configure command should offer to keep an existing credential rather than
 force a re-login, and should verify it first — it may have been revoked since.
 
+**A secret may declare routes** (`Secret.Routes`,
+[ADR 26-10-02-924](../docs/adr/26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md)):
+where the harness itself sends the credential, the image's alone. Each route
+is a host, an optional path prefix, and an optional use. Configure writes the
+routes onto the secret it creates. An image declaring different ones
+re-syncs them, while a secret a person bound is theirs to route. Every request
+carrying the secret's sentinel must fall on one, and the most specific
+decides. A route with no use is sent unjudged. One with a use is judged where
+the server judges requests. Anything else is refused. Name the harness's own
+endpoints without a use, and judge only the routes that reach what the account
+owns. A judge discobox's own are exempt.
+
 The CLI applies returned files and encrypted secret bindings only after the
 configure terminal exits successfully. No configure flow stores credentials in a
 public harness file.
@@ -943,6 +955,11 @@ Either way Copilot stores the token, and the script reads it back:
   account inside the kept session replaces it, once that token has cleared
   the warning. A kept token that fails
   verification stops being offered.
+- **The token is held to Copilot's own traffic.** `COPILOT_GITHUB_TOKEN`
+  declares one use: Copilot's AI requests and light read-only GitHub queries,
+  nothing that creates, changes or deletes anything on GitHub. Where requests
+  are judged, every request carrying it is held to that; the agent needs a
+  grant of its own for anything else on GitHub (ADR 26-10-02-924).
 - Every path ends in a tool-free `copilot -p` with only the chosen token, in a
   `COPILOT_HOME` of its own so the stored login cannot stand in for it.
 - It returns `~/.copilot/settings.json` as the user left it (`/config model`,

@@ -375,12 +375,42 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		sentinels = append(sentinels, assignment.Sentinel)
 		secretEnv[assignment.EnvName] = assignment.Sentinel
 	}
+	sentinelRoutes, err := s.store.SecretSentinelRoutes(ctx, sandboxModel, assignments)
+	if err != nil {
+		return err
+	}
 	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
 	if err != nil {
 		return err
 	}
-	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SecretEnv: secretEnv}); err != nil {
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelRoutes: sentinelRoutes, SecretEnv: secretEnv}); err != nil {
 		return err
+	}
+	return nil
+}
+
+// PushSecretSentinels re-registers the sentinel set of every running sandbox
+// holding a secret, so a change to the secret's routes (ADR 26-10-02-924)
+// reaches the proxy enforcing them without waiting for a restart.
+func (s *Service) PushSecretSentinels(ctx context.Context, projectID, secretID string) error {
+	sandboxIDs, err := s.store.ListSandboxIDsHoldingSecret(ctx, projectID, secretID)
+	if err != nil {
+		return err
+	}
+	for _, sandboxID := range sandboxIDs {
+		sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return err
+		}
+		if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning {
+			continue
+		}
+		if err := s.pushSandboxSentinels(ctx, sandboxModel); err != nil {
+			return fmt.Errorf("push sentinels to sandbox %s: %w", sandboxID, err)
+		}
 	}
 	return nil
 }

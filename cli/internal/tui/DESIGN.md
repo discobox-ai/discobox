@@ -319,6 +319,14 @@ rotating a token a matter of deleting the secret and storing it again, taking
 every grant standing on it along with it. The value rows say
 `unchanged — type to replace it`, and leaving them empty is the ordinary answer.
 
+**A secret's routes are one row each** (`secretRouteRows`), under their own
+rule at the foot of the card, with one empty row after them for another. Each
+is typed as the CLI's `--route` takes it, `HOST[/PATH][=USE]`. A use is a
+sentence that may hold any punctuation, so no separator could share a row
+between two. A row that is not a route is refused on the card. Emptying a row
+drops that route, and emptying them all clears them (ADR 26-10-02-924). The
+detail card lists each route as `allowed` or `judged: <use>`.
+
 The **kind** is the one row an existing credential locks: a token and an oauth
 credential are stored and renewed differently, and the server has no answer for
 a secret that changes from one to the other — that is a new credential, and

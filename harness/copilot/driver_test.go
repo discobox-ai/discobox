@@ -9,6 +9,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
+	"github.com/discobox-ai/discobox/secretroute"
 )
 
 func TestDefinitionConfigure(t *testing.T) {
@@ -236,14 +237,65 @@ type imageManifest struct {
 		RelaunchCommand []string       `json:"relaunchCommand"`
 		Files           []harness.File `json:"files"`
 		Secrets         []struct {
-			Name     string `json:"name"`
-			Required bool   `json:"required"`
-			Delivery string `json:"delivery"`
+			Name     string                `json:"name"`
+			Required bool                  `json:"required"`
+			Delivery string                `json:"delivery"`
+			Routes   []harness.SecretRoute `json:"routes"`
 		} `json:"secrets"`
 		Config struct {
 			Ports []harness.ConfigPort `json:"ports"`
 		} `json:"config"`
 	} `json:"harness"`
+}
+
+// The token's routes send Copilot's own traffic unjudged, judge its MCP and
+// agent calls and GitHub beyond Copilot, and send it nowhere else (ADR
+// 26-10-02-924).
+func TestTheTokensRoutesSendCopilotsOwnTrafficUnjudged(t *testing.T) {
+	image := readImage(t)
+	var routes []secretroute.Route
+	for _, secret := range image.Harness.Secrets {
+		if secret.Name != "COPILOT_GITHUB_TOKEN" {
+			continue
+		}
+		for i, route := range secret.Routes {
+			host, path, err := secretroute.Normalize(route.Host, route.Path)
+			if err != nil {
+				t.Fatalf("route %d: %v", i, err)
+			}
+			// The sentence stands in for the use ID it would be minted.
+			routes = append(routes, secretroute.Route{Host: host, Path: path, UseID: route.Use})
+		}
+	}
+	for _, tc := range []struct {
+		url    string
+		judged bool
+	}{
+		{"https://api.individual.githubcopilot.com/v1/messages", false},
+		{"https://api.individual.githubcopilot.com/chat/completions", false},
+		{"https://telemetry.individual.githubcopilot.com/telemetry", false},
+		{"https://api.individual.githubcopilot.com/mcp/readonly", false},
+		{"https://api.individual.githubcopilot.com/agents/swe/internal/memory/x", false},
+		{"https://api.github.com/copilot_internal/user", false},
+		{"https://api.github.com/repos/github/copilot-cli/releases/latest", false},
+		{"https://api.individual.githubcopilot.com/mcp", true},
+		{"https://api.individual.githubcopilot.com/agents/swe/v1/jobs", true},
+		{"https://api.github.com/repos/org/repo/pulls", true},
+		{"https://github.com/org/repo", true},
+	} {
+		u := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)
+		matched := secretroute.Match(routes, u[0], secretroute.RequestPath(tc.url))
+		if len(matched) == 0 {
+			t.Fatalf("%s: no route covers it", tc.url)
+		}
+		judged := !slices.ContainsFunc(matched, func(r secretroute.Route) bool { return r.UseID == "" })
+		if judged != tc.judged {
+			t.Fatalf("%s: judged = %v, want %v (matched %+v)", tc.url, judged, tc.judged, matched)
+		}
+	}
+	if matched := secretroute.Match(routes, "example.com", "/"); len(matched) != 0 {
+		t.Fatalf("example.com: matched %+v, want no route", matched)
+	}
 }
 
 func readImage(t *testing.T) imageManifest {

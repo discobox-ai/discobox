@@ -310,7 +310,7 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	policy := newPolicyPublisher(server, cfg, live, func(err error) {
 		logger.Warn("apply proxy policy", "error", err)
 	})
-	go watchSecretsFile(ctx, policy, root.ProxySecretsFile(projectID, poolID))
+	go watchSecretsFile(ctx, policy, resolver, root.ProxySecretsFile(projectID, poolID))
 	// The pins people approved for this pool's sandboxes, kept in step with
 	// the control plane (ADR 0149).
 	controlPlane := newControlPlaneCredentials(root, projectID, poolID)

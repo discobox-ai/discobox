@@ -51,7 +51,7 @@ func TestAuditHTTPReadsOnlyTheCallersRefusals(t *testing.T) {
 
 	// A sentinel minted for a command, which the command put in a URL: the
 	// proxy records the URL as sent, and swaps nothing in one.
-	minted, err := live.mint("sb-1", "stable-sentinel", "use_1", []string{"example.test"}, "", []string{"curl"})
+	minted, err := live.mint("sb-1", "stable-sentinel", "use_1", nil, []string{"example.test"}, "", []string{"curl"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

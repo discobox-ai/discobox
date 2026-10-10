@@ -140,6 +140,7 @@ COPY sandboxservices ./sandboxservices
 COPY sandboxshell ./sandboxshell
 COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat
+COPY secretroute ./secretroute
 COPY serverstage ./serverstage
 COPY sourcecache ./sourcecache
 COPY tools ./tools

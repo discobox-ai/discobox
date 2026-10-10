@@ -30,6 +30,7 @@ import (
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/tarsums"
 	"github.com/discobox-ai/x/id"
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -670,7 +671,8 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		return nil, false, err
 	}
 	sentinels, _ := req.Sentinels.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels); err != nil {
+	sentinelRoutes, _ := req.SentinelRoutes.Get()
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
 		return nil, false, err
 	}
 	// The bootstrap: placed before the container exists, and the one thing the
@@ -1498,12 +1500,26 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	return r.sandboxFromInspect(ctx, inspect.Container), nil
 }
 
+// proxySentinelRoutes are the routes the control plane sent with a sandbox's
+// sentinels (ADR 26-10-02-924), as the proxy enforces them.
+func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[string][]secretroute.Route {
+	out := make(map[string][]secretroute.Route, len(in))
+	for sentinel, routes := range in {
+		for _, route := range routes {
+			out[sentinel] = append(out[sentinel], secretroute.Route{Host: route.Host, Path: route.Path.Or(""), UseID: route.UseId.Or("")})
+		}
+	}
+	return out
+}
+
 func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	if req != nil {
 		if sentinels, ok := req.Sentinels.Get(); ok {
 			// Re-register the sandbox's sentinel set with the proxy so newly bound
-			// secrets resolve without a restart.
-			if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels); err != nil {
+			// secrets resolve without a restart. Its sentinels' routes travel
+			// with it, and are replaced with it.
+			sentinelRoutes, _ := req.SentinelRoutes.Get()
+			if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
 				return nil, err
 			}
 		}
