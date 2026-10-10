@@ -148,10 +148,12 @@ type Issue struct {
 	// PullRequest is set when the number is a pull request's: every pull
 	// request is an issue to this API, and its page is a different one.
 	PullRequest bool
-	// SubIssues are the issues this one is broken into, and SubIssuesDone
-	// how many of them are closed.
-	SubIssues     []Ref
-	SubIssuesDone int
+	// SubIssues are the issues this one is broken into, as far as they were
+	// read; SubIssuesTotal and SubIssuesDone are GitHub's own count of them
+	// and of those closed, which a list cut short does not change.
+	SubIssues      []Ref
+	SubIssuesTotal int
+	SubIssuesDone  int
 	// Timeline is everything that happened after it was opened, oldest first:
 	// the comments and the events between them.
 	Timeline []Event
@@ -315,6 +317,7 @@ func (c *Client) readIssue(ctx context.Context, base, owner, name string, raw ra
 			}
 			next = nextPage(link)
 		}
+		issue.SubIssuesTotal = raw.SubIssuesSummary.Total
 		issue.SubIssuesDone = raw.SubIssuesSummary.Completed
 	}
 

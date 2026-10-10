@@ -139,7 +139,7 @@ func TestAnIssueIsReadWithItsWholeTimeline(t *testing.T) {
 	if want := (Reactions{"+1": 2, "heart": 1}); fmt.Sprint(issue.Reactions) != fmt.Sprint(want) {
 		t.Errorf("reactions = %v, want %v", issue.Reactions, want)
 	}
-	if len(issue.SubIssues) != 2 || issue.SubIssues[0].Number != 5 || issue.SubIssues[1].Number != 6 || issue.SubIssuesDone != 1 {
+	if len(issue.SubIssues) != 2 || issue.SubIssues[0].Number != 5 || issue.SubIssues[1].Number != 6 || issue.SubIssuesDone != 1 || issue.SubIssuesTotal != 1 {
 		t.Errorf("sub-issues = %+v, %d done", issue.SubIssues, issue.SubIssuesDone)
 	}
 	var kinds []string

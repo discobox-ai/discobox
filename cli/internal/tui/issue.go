@@ -733,8 +733,15 @@ func (m *Model) issueLines(v *issuePane, issue Issue, width int, now time.Time) 
 	if issue.Locked {
 		fact("Locked", "the conversation is limited to collaborators")
 	}
-	if len(issue.SubIssues) > 0 {
-		fact("Sub-issues", fmt.Sprintf("%d of %d done", issue.SubIssuesDone, len(issue.SubIssues)))
+	if issue.SubIssuesTotal > 0 || len(issue.SubIssues) > 0 {
+		// GitHub's own total: the list may have been cut short, and the
+		// count done is GitHub's too.
+		total := max(issue.SubIssuesTotal, len(issue.SubIssues))
+		summary := fmt.Sprintf("%d of %d done", issue.SubIssuesDone, total)
+		if len(issue.SubIssues) < total {
+			summary += fmt.Sprintf(" · %d shown", len(issue.SubIssues))
+		}
+		fact("Sub-issues", summary)
 		for _, sub := range issue.SubIssues {
 			out = append(out, truncate(strings.Repeat(" ", issueLabelWidth)+refText(st, sub, issue.Repository), width))
 		}
