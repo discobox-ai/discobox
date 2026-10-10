@@ -302,6 +302,7 @@ gh api repos/discobox-ai/discobox/pulls/<pr> --jq '"\(.state) \(.merged_at != nu
 gh api repos/discobox-ai/discobox/pulls/<pr>/reviews --jq '.[] | "\(.id) \(.user.login) \(.state)"'
 gh api repos/discobox-ai/discobox/pulls/<pr>/comments --jq '.[] | "\(.id) \(.in_reply_to_id) \(.user.login)"'
 gh api repos/discobox-ai/discobox/issues/<pr>/comments --jq '.[] | "\(.id) \(.user.login)"'
+gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
 ```
 
 - **`mergeable_state` `dirty`** — `main` moved under you. Fetch `main`,
@@ -340,7 +341,8 @@ and move it each time the state changes, from §0 until the end:
   own `mergeable_state` `blocked` (a required review not yet given) is not
   this tag: that PR is waiting for its human, so it can still be `ready`.
 - **neither**: you are working. When a `ready` PR goes `dirty`, gets a new
-  review or comment, or fails a check, drop `ready` before you start on it.
+  review or comment, or has a check on its head commit leave `pass` or `skipping`
+  (re-run, failed or cancelled), drop `ready` before you start on it.
   Drop `blocked` as soon as the answer comes.
 - **merged or closed**: drop both.
 
