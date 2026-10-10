@@ -416,3 +416,28 @@ func TestAFullReadAndAnOldOneReadTheTimeline(t *testing.T) {
 		t.Errorf("an anonymous full read asked for nothing")
 	}
 }
+
+// Without a token, age alone never forces a full read: a long timeline read in
+// full every keptFor would spend the anonymous 60 an hour by itself. An
+// unchanged issue costs its one request every AnonymousRefresh.
+func TestWithoutATokenAgeDoesNotForceAFullRead(t *testing.T) {
+	t.Parallel()
+	fake := &fakeGitHub{}
+	srv := fake.serve(t)
+	now := time.Now()
+	c := client(srv, "")
+	c.now = func() time.Time { return now }
+	if _, err := c.Issue(t.Context(), "acme", "foo", 4, false); err != nil {
+		t.Fatal(err)
+	}
+	fake.requests()
+	for range 3 {
+		now = now.Add(keptFor + time.Second)
+		if _, err := c.Issue(t.Context(), "acme", "foo", 4, false); err != nil {
+			t.Fatal(err)
+		}
+		if got := fake.requests(); len(got) != 1 || got[0] != "GET /repos/acme/foo/issues/4" {
+			t.Fatalf("an anonymous re-read %v later asked for %v, want only the issue", keptFor, got)
+		}
+	}
+}
