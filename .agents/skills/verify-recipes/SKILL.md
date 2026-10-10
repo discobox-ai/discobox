@@ -39,6 +39,18 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
 - `sudo pkill -f <pattern>` kills your own tool shell when the pattern is in
   its command line; kill by pid instead.
 - Kill the tmux server (`tmux -L verify kill-server`) when done.
+- The console's heap: run it as `GODEBUG=gctrace=1 ./build/discobox ... 2>$S/gc.log`
+  and read the live heap (`A->B->C MB`, C) from the last lines; RSS keeps
+  freed pages. For a before/after, build the baseline from `git archive HEAD
+  | tar -x -C $S/base` and run both consoles attached to one box at once.
+- A copy (drag with SGR mouse sequences sent by `send-keys -l $'\e[<0;X;YM'`,
+  `32;` to drag, a lowercase `m` to release) goes out as OSC 52: the box has no
+  clipboard tool, so `tmux -L verify set -g set-clipboard on` first and read it
+  with `show-buffer`. The wheel is `$'\e[<64;X;YM'` (up) / `65` (down).
+- A change in a module outside the checkout (a `replace` to `../../<fork>`)
+  is not rebuilt by the loop: build the console yourself with `go build -o
+  $S/discobox ./cli/cmd/discobox`, and expect the image watcher to fail on
+  that path until the replace names a pushed version.
 
 # Verifying the runc wrapper (runcca, sandbox-agent/cmd/discobox-runc)
 
