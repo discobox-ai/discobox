@@ -51,8 +51,14 @@ func (a *App) forwardConfigurePorts(ctx context.Context, client *apiclientgen.Cl
 	list := func(ctx context.Context) ([]portforward.Target, error) {
 		return fetchSandboxPortTargets(ctx, client, projectID, sandboxID)
 	}
-	return startConfigureForward(ctx, dialer, list, proxyPollInterval, ports, status), nil
+	return startConfigureForward(ctx, dialer, list, configurePortPollInterval, ports, status), nil
 }
+
+// configurePortPollInterval is how often an ephemeral configure port asks the
+// sandbox what it is listening on: half the workspace's cadence, matching how
+// often the pool reports a configure sandbox, since the user's browser is on
+// its way to the port.
+const configurePortPollInterval = time.Second
 
 // configureForward is the forward a configure flow holds open: the forwarder,
 // and the listing poll that feeds it when an ephemeral port is declared.

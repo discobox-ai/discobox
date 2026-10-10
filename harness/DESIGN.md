@@ -297,9 +297,10 @@ launchers, and configure scripts.
   reported when it is found, which is mid-flow, so the console's header cannot
   warn of it ahead of time; the CLI names the number and the entry's
   `unavailable` words say what to do. A port is found through the sandbox's
-  reported listing, which the pool refreshes every 15 s, so a bind can trail
-  the listener by up to about 22 s; the harness's own instructions tell the user
-  to reload a callback page the browser could not reach.
+  reported listing, which a configure sandbox refreshes on a fast cadence (a
+  0.5 s scan, a 1 s pool poll, a 1 s CLI poll), so a bind trails the listener
+  by a few seconds at most; the harness's own instructions tell the user to
+  reload a callback page the browser could not reach.
 
 ## Driver Model
 

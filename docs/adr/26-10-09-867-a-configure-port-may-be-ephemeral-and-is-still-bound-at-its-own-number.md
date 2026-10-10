@@ -73,14 +73,20 @@ to run `/login` again for another port or pick "Sign in with a device code".
 
 ## Consequences
 
-- Latency: the CLI reads the control plane's copy of the sandbox's ports, which
-  the pool refreshes every 15 s after the sandbox's own 5 s scan; with the CLI's
-  2 s poll, a callback port can be bound up to about 22 s after it starts
-  listening. A user who authorizes faster gets a browser that cannot connect,
-  so the harness's instructions say to reload that page: the redirect carries
-  the same code and state to the same port, which answers once it is bound. A
-  live port path from the sandbox would close the gap and is not built here;
-  revisit if reloading proves a real cost.
+- Latency: the CLI reads the control plane's copy of the sandbox's ports, three
+  polls from the listener. At the workspace's cadence (a 5 s scan, a 15 s pool
+  poll, a 2 s CLI poll) a callback port would trail its listener by up to about
+  22 s, longer than a user takes to authorize. So a configure sandbox runs all
+  three faster: the sandbox-agent scans every 0.5 s, the pool polls the
+  sandboxes it created in configure mode every 1 s in a loop of their own,
+  which its standing poll then leaves them to (found by one filtered container
+  list, a label set at create, not by inspecting every container), and the CLI polls every 1 s — about 2.5 s
+  worst case. A configure sandbox is short-lived and few run at once, so the
+  extra polling is bounded. A user who still beats it gets a browser that
+  cannot connect, so the harness's instructions say to reload that page: the
+  redirect carries the same code and state to the same port, which answers
+  once it is bound. A live port path from the sandbox would close the gap
+  entirely and is not built here; revisit if reloading proves a real cost.
 - A bind failure for a discovered port is reported mid-flow. A full-screen CLI
   may paint over it, as it can for a fixed port's warning.
 - Every discovered TCP port the configure sandbox listens on is forwarded, not

@@ -454,7 +454,7 @@ while [ -z "$TOKEN" ]; do
 	if [ "$METHOD" = login ]; then
 		printf '%s\n' "  1. ${C_BOLD}${C_CMD}/login${C_RESET}   Sign in. Nothing can be saved without it. Open the link it"
 		echo "              prints in your own browser: the port it calls back to is"
-		echo "              forwarded from your machine, within about 20 seconds. If"
+		echo "              forwarded from your machine within a few seconds. If"
 		echo "              the browser cannot connect after you authorize, reload"
 		echo "              that page. \"Sign in with a device code\" works too."
 		printf '%s\n' "  2. ${C_BOLD}${C_CMD}/exit${C_RESET}    Leave Copilot when you're done. Setup only finishes"

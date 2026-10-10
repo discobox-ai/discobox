@@ -409,6 +409,13 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 		UID:             uid,
 		ExcludeTCPPorts: agentListenPorts(cfg.ListenAddress),
 	}
+	// A configure sandbox's sign-in may listen on a callback port the user's
+	// browser is about to be redirected to, which the CLI can forward only once
+	// it is reported (ADR 26-10-09-867). The sandbox is short-lived and runs
+	// little else, so it scans far more often than a working one.
+	if cfg.HarnessMode == config.HarnessModeConfig {
+		watcher.Interval = ports.ConfigureInterval
+	}
 	// One seam, two directories behind it: the image's declarations and the
 	// repository's, which services.Discover already merges. A declaration that
 	// states a protocol keeps its port out of the probe queue entirely, which
