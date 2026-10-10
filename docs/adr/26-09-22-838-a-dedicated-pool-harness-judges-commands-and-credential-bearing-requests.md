@@ -7,6 +7,9 @@
   [26-09-26-240](26-09-26-240-a-request-is-recognized-and-its-body-is-shown-in-one-shape.md)
   — a body is shown in one shape, with parser metadata from the first ask,
   rather than in a form the judge picks (§6)
+- **§4 narrowed by**: [26-10-02-924](26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md)
+  — an injected credential whose secret carries routes is held to them, and
+  judged on a judged route, with no activation
 - **Amends**: [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md)'s
   placement of the judge in the sandbox and its deferred trusted-side half;
   [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md)'s invocation
