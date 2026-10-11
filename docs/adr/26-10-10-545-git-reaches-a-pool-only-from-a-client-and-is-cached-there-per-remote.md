@@ -2,7 +2,8 @@
 
 - **Status**: Proposed
 - **Date**: 2026-10-10
-- **On acceptance supersedes**, for sandboxes created after it:
+- **On acceptance supersedes**, for sandboxes created after it except where
+  a line says every sandbox:
   [0001](0001-sandbox-origin-and-remote-source-push.md) §3 (local bind as a
   provider capability) and §4's placing of the push after provisioning;
   [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) §3,
@@ -17,10 +18,14 @@
   [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) §4
   and what `tree/origins/` is written from (§9 here);
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
-  §4's live origin, its bare-origin fallback, and "a source that is a remote
-  URL still clones that remote directly";
+  §4's live origin for every sandbox (§8 here), and, for new ones, its
+  bare-origin fallback and "a source that is a remote URL still clones that
+  remote directly";
   [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)
-  §2's origin-host rule, for a remote-URL source. 0058 §§3, 6 and 7, 0126's
+  §2's origin-host rule, for a remote-URL source;
+  [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md)
+  §2's condition that only a `push`-delivered source is pushed, for every
+  sandbox (§8 here). 0058 §§3, 6 and 7, 0126's
   Git HTTP route and its convergence, and
   [26-10-08-561](26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md)
   stand.
@@ -30,8 +35,7 @@
   what this decides.
 - **Relates to**: [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md),
   [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md),
-  [0129](0129-the-sandbox-agent-reads-the-tree-an-export-carries.md),
-  [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md).
+  [0129](0129-the-sandbox-agent-reads-the-tree-an-export-carries.md).
 
 ## Context
 
@@ -269,7 +273,11 @@ list the project's sandboxes and read the commit each was created at.
   source's namespace, on protocol v0. A v2 `upload-pack` serves any object
   asked for by id whatever namespace it is in — the reason ADR 0126's live
   origin is already pinned to v0 — and v0 refuses a want that no advertised
-  ref reaches.
+  ref reaches, but only while `uploadpack.allowAnySHA1InWant`,
+  `allowReachableSHA1InWant`, `allowTipSHA1InWant` and `allowRefInWant` are
+  off and `http.getanyfile` is false. The pool agent forces all five on the
+  command line of every request it serves a sandbox, as it does for a live
+  origin today, so nothing in a cache's own configuration can loosen them.
 - **A sandbox never writes its own namespace.** Work leaves a sandbox through
   the worktree route, as now.
 - **A discobox delivering to one it created** (ADR 26-09-24-630) is held to
@@ -303,9 +311,12 @@ Nothing that exists is rewritten, in a sandbox or on a pool.
   pushed into as before, and is reaped with the sandbox. It is not moved into
   a cache.
 - **A sandbox whose origin was live gets a per-sandbox repository**, empty
-  until a client next pushes; its checkout is untouched. One created before
-  this and not yet materialized parks in `awaiting_source` for its client to
-  push, as a push-delivered source does.
+  until a client next pushes; its checkout is untouched. Its recorded delivery
+  stays `clone`, so `discobox push` and the attached client's push accept a
+  local source recorded as `clone` and push into that repository, where today
+  they refuse anything but `push`. One created before this and not yet
+  materialized parks in `awaiting_source` for its client to push, as a
+  push-delivered source does.
 
 Only a source created after this has a namespace in a cache.
 
@@ -356,8 +367,9 @@ into a per-sandbox repository (§8); the recorded delivery says which.
   credential for it exists anywhere but the client.
 - `sourceNeedsPush`, the host-identity comparison, `LocalSourceRoots`,
   `live-origins.json` and the live snapshot in `pool-agent/githttp` are
-  removed for new sandboxes. The per-sandbox origin of 0058 §1 stays, for the
-  sandboxes that have one (§8), until the last of them is gone.
+  removed, the live origin for existing sandboxes as well as new ones (§8).
+  The per-sandbox origin of 0058 §1 stays, for the sandboxes that have one,
+  until the last of them is gone.
   `NoLocalRepository`, `NoLocalCommits` and `NoLocalGitDirectory` stop
   deciding anything on the server.
 - A remote-URL create needs a client until its source is delivered. It needed
