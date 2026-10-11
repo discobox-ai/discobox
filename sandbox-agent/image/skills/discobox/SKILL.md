@@ -370,6 +370,10 @@ Read from the primary source's tree, versioned with it:
 - `.discobox/skills/` — skills installed into the harness's skill directories
   once, at the box's first launch. One added later reaches the next box, not
   this one.
+- `.discobox/review/` — more reviewers for the `discobox-review` skill: each
+  `<name>.md` says what one reviewer looks for, and the skill runs it beside
+  its default reviewer, signing what it finds as `<name>`. Read when a review
+  starts, so one added now is in the next review.
 
 Most repositories have none of these.
 
@@ -380,8 +384,9 @@ Installed in every discobox, whatever it was made from:
 - **discobox-access** — ask a human for a credential this box was not given,
   and run one command with it. Use on a 401/403, or when a CLI says it is not
   logged in.
-- **discobox-review** — have a fresh-eyes subagent review the working tree and
-  drive it to sign-off.
+- **discobox-review** — have fresh-eyes subagents review the working tree —
+  the default reviewer and any the repository defines in `.discobox/review/` —
+  and drive it to sign-off.
 
 ## Answering questions about discobox
 
