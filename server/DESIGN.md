@@ -179,7 +179,9 @@ driver rather than the pool agent, and it streams. It rebuilds the guest image
 the pool's backend boots, on that pool's own host (ADR 0062 §7); `?source=`
 names a checkout to build from and `?restart=true` restarts the host onto the
 result. The destination is sent as `X-Discobox-Guest-Image-Destination` before
-the build starts; a failure arrives as the `X-Discobox-Guest-Image-Error`
+the build starts, and a backend a restart does not move onto the new image
+(`discovm`, whose machines are cloned from theirs) says what does in
+`X-Discobox-Guest-Image-Adoption`; a failure arrives as the `X-Discobox-Guest-Image-Error`
 trailer, because the status was written long before the build ends. The client
 disconnecting closes the build.
 
@@ -920,6 +922,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
 | `internal/sshd` | [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md) |
 | `providers` | [`providers/DESIGN.md`](providers/DESIGN.md) |
+| `providers/discovm` | [`providers/discovm/DESIGN.md`](providers/discovm/DESIGN.md) |
 | `providers/libkrun` | [`providers/libkrun/DESIGN.md`](providers/libkrun/DESIGN.md) |
 | `providers/vz` | [`providers/vz/DESIGN.md`](providers/vz/DESIGN.md) |
 

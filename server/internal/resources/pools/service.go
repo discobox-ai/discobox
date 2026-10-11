@@ -647,6 +647,9 @@ func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string,
 	}
 	console, err := runtime.OpenConsole(ctx, provider, pool, opts)
 	if err != nil {
+		if errors.Is(err, sandbox.ErrPoolConsoleUnsupported) {
+			return nil, apperrors.NewStatusError(http.StatusNotImplemented, err.Error())
+		}
 		return nil, err
 	}
 	return console, nil
@@ -681,7 +684,7 @@ func (s *Service) BuildPoolGuestImage(ctx context.Context, projectID, poolID str
 	}
 	build, err := runtime.BuildGuestImage(ctx, provider, pool, opts)
 	if err != nil {
-		if errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
+		if errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || errors.Is(err, sandbox.ErrGuestImageRestartUnsupported) {
 			return nil, apperrors.NewStatusError(http.StatusNotImplemented, err.Error())
 		}
 		return nil, err

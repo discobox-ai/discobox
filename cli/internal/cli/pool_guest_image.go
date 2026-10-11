@@ -21,6 +21,7 @@ import (
 // trailer, because the response began minutes before the build ended.
 const (
 	guestImageDestinationHeader = "X-Discobox-Guest-Image-Destination"
+	guestImageAdoptionHeader    = "X-Discobox-Guest-Image-Adoption"
 	guestImageErrorTrailer      = "X-Discobox-Guest-Image-Error"
 )
 
@@ -152,6 +153,7 @@ func (a *App) streamGuestImageBuild(ctx context.Context, projectID, poolID, sour
 		return fmt.Errorf("build the guest image: %s", resp.Status)
 	}
 	destination := strings.TrimSpace(resp.Header.Get(guestImageDestinationHeader))
+	adoption := strings.TrimSpace(resp.Header.Get(guestImageAdoptionHeader))
 	fmt.Fprintf(stderr, "Building the guest image from %s on pool %s\n", source, poolID)
 
 	if _, err := io.Copy(stdout, resp.Body); err != nil {
@@ -171,6 +173,12 @@ func (a *App) streamGuestImageBuild(ctx context.Context, projectID, poolID, sour
 	fmt.Fprintf(stderr, "\nGuest image written to %s\n", destination)
 	if restart {
 		fmt.Fprintf(stderr, "The pool host was stopped; its reconcile starts it again on this image.\n")
+		return nil
+	}
+	if adoption != "" {
+		// The backend's own account of how a pool comes to boot this image,
+		// for one that a restart does not move onto it.
+		fmt.Fprintln(stderr, adoption)
 		return nil
 	}
 	// Said in full rather than as advice: a running VM keeps the artifacts it

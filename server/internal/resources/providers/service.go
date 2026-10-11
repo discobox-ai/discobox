@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -88,6 +89,9 @@ func providerConfigFieldToService(field sandboxesvc.ProviderConfigField) service
 	if field.CredentialAuthType != "" {
 		out.CredentialAuthType = services.OptString{Value: field.CredentialAuthType, Set: true}
 	}
+	if field.Immutable {
+		out.Immutable = services.OptBool{Value: field.Immutable, Set: true}
+	}
 	return out
 }
 
@@ -155,6 +159,9 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 		if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(provider.Type, config); err != nil {
 			return nil, err
 		}
+		if err := s.refuseImmutableChange(ctx, provider, config); err != nil {
+			return nil, err
+		}
 		provider.Config = config
 	}
 	if disabled, ok := input.Disabled.Get(); ok {
@@ -164,6 +171,67 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 		return nil, err
 	}
 	return s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+}
+
+// refuseImmutableChange refuses a config that changes a field the provider
+// declares immutable while the instance has pools: their hosts were made by
+// what the field names, and nothing under the new value could remove them. It
+// is the update's counterpart of the delete refusal below, and like it allows
+// anything once the pools are gone.
+func (s *Service) refuseImmutableChange(ctx context.Context, provider *model.SandboxProviderInstance, config json.RawMessage) error {
+	definition, ok := s.sandboxes.SandboxProviderManager().GetProviderDefinition(provider.Type)
+	if !ok {
+		return nil
+	}
+	var changed []string
+	for _, field := range definition.ConfigFields {
+		if !field.Immutable {
+			continue
+		}
+		before, err := configValue(provider.Config, field.Key)
+		if err != nil {
+			return err
+		}
+		after, err := configValue(config, field.Key)
+		if err != nil {
+			return err
+		}
+		if before != after {
+			changed = append(changed, field.Key)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	pools, err := s.store.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
+	if err != nil {
+		return err
+	}
+	if len(pools) > 0 {
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("provider instance has pools, so %s cannot change: delete its pools first", strings.Join(changed, ", ")))
+	}
+	return nil
+}
+
+// configValue is one top-level field of a provider config, compacted, so that
+// formatting does not read as a change. An absent field is empty.
+func configValue(config json.RawMessage, key string) (string, error) {
+	if len(config) == 0 {
+		return "", nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(config, &fields); err != nil {
+		return "", fmt.Errorf("decode provider config: %w", err)
+	}
+	value, ok := fields[key]
+	if !ok {
+		return "", nil
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, value); err != nil {
+		return "", fmt.Errorf("decode provider config %s: %w", key, err)
+	}
+	return compact.String(), nil
 }
 
 func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error {

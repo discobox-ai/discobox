@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/version"
 
 	internalserver "github.com/discobox-ai/discobox/server/internal/server"
+	"github.com/discobox-ai/discobox/server/providers/discovm"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
 )
 
@@ -58,6 +59,7 @@ func PrintImages(w io.Writer) error {
 // main is what guarantees it does none of them.
 func RunVMLauncherIfInvoked() {
 	libkrun.RunLauncherIfInvoked()
+	discovm.RunShimIfInvoked()
 }
 
 // PrintReleaseManifest exports the image set this binary was built against.

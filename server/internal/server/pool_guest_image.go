@@ -19,8 +19,12 @@ import (
 // long before the build ends — so it is an HTTP trailer, which is what trailers
 // are for. A client that reads the body to the end finds the trailer set only
 // when the build failed, and never has to parse the build's own output to know.
+//
+// The adoption header is set only by a backend a restart does not move onto
+// the new image, and says what does (sandbox.GuestImageBuild.Adoption).
 const (
 	guestImageDestinationHeader = "X-Discobox-Guest-Image-Destination"
+	guestImageAdoptionHeader    = "X-Discobox-Guest-Image-Adoption"
 	guestImageErrorTrailer      = "X-Discobox-Guest-Image-Error"
 )
 
@@ -71,6 +75,9 @@ func poolGuestImageHandler(service services.PoolService) http.Handler {
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set(guestImageDestinationHeader, build.Destination)
+		if build.Adoption != "" {
+			w.Header().Set(guestImageAdoptionHeader, build.Adoption)
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Trailer", guestImageErrorTrailer)
 		w.WriteHeader(http.StatusOK)

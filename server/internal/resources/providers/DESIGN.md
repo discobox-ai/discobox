@@ -35,6 +35,11 @@ flowchart LR
 - Provider instance deletion must refuse deletion (409) while pools are still
   bound to the instance: pools bind immutably at create, and sandboxes hang off
   the pools. Delete the pools first.
+- For the same reason, update refuses (409, naming the fields) a config that
+  changes a field the provider's definition marks `Immutable` while pools are
+  bound. Such a field decides what made a pool's host, as a disco-vm driver
+  does, so a new value would leave hosts nothing can remove. Fields compare by
+  compacted JSON value, and an absent field differs from a present one.
 - Startup reconciliation (`EnsureExistingSandboxProviderInstances`), run from
   `internal/service.Service.Start` once the reconcile engine is up, resolves
   every enabled instance in every project. Resolving runs the provider's

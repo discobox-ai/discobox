@@ -583,6 +583,9 @@ func writeProviderCreateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 			if field.Advanced.Or(false) {
 				advanced = " [advanced]"
 			}
+			if field.Immutable.Or(false) {
+				advanced += " [fixed while it has pools]"
+			}
 			fmt.Fprintf(w, "      --%-22s %s%s%s%s\n", providerFieldFlagName(field.Key)+" string", description, required, placeholder, advanced)
 		}
 	}
@@ -611,6 +614,9 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 			advanced := ""
 			if field.Advanced.Or(false) {
 				advanced = " [advanced]"
+			}
+			if field.Immutable.Or(false) {
+				advanced += " [fixed while it has pools]"
 			}
 			fmt.Fprintf(w, "      --%-22s %s%s%s\n", providerFieldFlagName(field.Key)+" string", description, placeholder, advanced)
 		}
