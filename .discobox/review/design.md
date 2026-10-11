@@ -35,12 +35,13 @@ Look for:
   condition, recorded nowhere. An accepted ADR edited instead of superseded. An
   ADR numbered by "the next number" instead of `YY-MM-DD-RRR`. Code that does
   what an accepted ADR decided against, with no superseding ADR.
-- **Module and package boundaries.** An import that crosses a boundary
-  `DESIGN.md` draws: provider or runtime code depending on `api/gen` or
-  `api/model`; a root-module package importing a nested module or server
-  internals; `termpane` depending on the rest of the repository; code placed in
-  a package whose stated responsibility is something else. Follow the
-  ownership path — if the right home is another package, say which.
+- **Module and package boundaries.** An import that crosses a boundary the
+  root `DESIGN.md` (**Module Boundaries**) or root `REVIEW.md` draws — the
+  module graph, what the root module may import, which DTOs provider and
+  runtime code may use. Those files state the rules and their exceptions; read
+  them there and cite the line, do not go by a summary. Code placed in a
+  package whose stated responsibility is something else. Follow the ownership
+  path — if the right home is another package, say which.
 - **Shims instead of structure.** An optional interface for behavior the
   system now requires, or one that exists to avoid updating implementations. A
   wrapper type, adapter, or helper whose only job is to preserve an old call
@@ -54,9 +55,9 @@ Look for:
   assumes it sees every change; the server deciding runtime state that the
   pool agent observes and reports.
 - **Contracts and generated code.** An API change made in generated code
-  instead of the OpenAPI document; a contract changed on one side only; a
-  `Dockerfile` changed without the `boxd.yaml` beside it; a hand-run command
-  documented where a `Taskfile.yml` target belongs.
+  instead of the OpenAPI document; a contract changed on one side only; one of
+  the files root `REVIEW.md` says has a twin changed without it; a hand-run
+  command documented where a `Taskfile.yml` target belongs.
 - **Persisted state.** A schema or on-disk format change with no migration or
   backfill; a design that only works on a fresh database or a recreated
   sandbox, without saying so.
