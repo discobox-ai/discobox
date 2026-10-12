@@ -10,7 +10,8 @@ it.
 
 | File | What it holds |
 | --- | --- |
-| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, or a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated) — its bounds, and the JSON prompt it becomes. |
+| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated), or one of an approval rule's two readings (`scope`: its sentence against a `Discobox` fact sheet; `rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
+| `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the wider scopes and uses of an approval rule. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
@@ -70,6 +71,37 @@ server is upgraded, and a judge is replaced when its image changes, so that is
 a window; a custom harness built FROM an older sandbox-agent image is judged
 by nothing until it is rebuilt.
 
+**A rule is read as two jobs, each with its own words** (ADR 26-10-12-330).
+An approval rule approves a credential request without asking, so its text is
+the authorization and the ask is what is measured against it.
+
+- **`scope`** — `Purpose` is the rule's scope sentence and `Discobox` is the
+  fact sheet the control plane composed from the asking discobox's own
+  record: its repository and ref, its other sources, who created it, the
+  prompt it was created with, its skills, harness and platform. Nothing a
+  discobox writes about itself is on it. The prompt is data, labelled with
+  who wrote it (`PromptWrittenBy`, which `Validate` holds to `CreatedBy`), so
+  a scope that wants a person's word is not met by a discobox's. A scope job
+  has no host, credential or uses.
+- **`rule`** — a delegation job's shape with its own words, because who wrote
+  what differs: `Purpose` is the rule's uses, a person's, naming a class
+  ("any issue in org/repo", a branch `discobox/<slug>`, "never main"), and
+  `Uses` are an agent's, which may be worded to pass. The justification is
+  never in the job.
+
+Both are asked once; nothing stands for either. `Digest` is the SHA-256 of the
+job's prompt, which a verdict records so the same question is answered from
+the record and an edited rule is asked afresh.
+
+**A proposal is written, never decided** (`propose.go`, ADR 26-10-12-330 §7).
+The wider levels of a rule a person may choose are a model's to write, as a
+typed job like any other here: its own system prompt and schema, no tools, and
+a decode as strict as `Decode`. The request's uses and the fact sheet are data
+in it. It writes sentences only — two scopes and two lists of uses — and
+`ProposalSystem` has it keep every limit a use states. What it writes
+authorizes nothing: the control plane puts each sentence to the judge as the
+job a rule would later ask, and a person reads it, before it is a rule.
+
 **Guidance is the trusted side's.** A request names what a pool recognized it
 as (`Request.Protocol`, `Request.Endpoint`); the words that go with a name are
 here (`GuidanceFor`), and the control plane puts them in `Job.Guidance`. A pool
@@ -119,6 +151,11 @@ command job is asked once: there is nothing further to show.
 answers typed questions with probabilities and writes no text, so `System`,
 `Schema` and `Decode` do not apply to it. Instead:
 
+- **A rule's jobs.** A `rule` job is one `use_N` question per use asked for,
+  with the rule's uses in the instructions and the uses asked for as the
+  state. A `scope` job is one `within` question, with the sentence in the
+  instructions and the fact sheet as the state. Each has the
+  claim-of-approval hazard, told what its evidence is.
 - **Questions.** A job becomes yes/no questions. The approved purpose, host,
   credential and guidance go in each question's instructions; only the
   evidence goes in the state. The claim-of-approval hazard is told what its
@@ -161,6 +198,9 @@ harness's judge model, and run it against every harness that judges.
 `go tool task eval:judge:jev` asks Jev about the same cases through `jev/`,
 and counts what it was unsure of and what it refused alone on a case a correct
 judge does not refuse; change a question or a threshold there and run it.
+A proposer case has the wrapper write a proposal (`ProposalSystem`) and the
+same judge score it: each level covers its request, the wider uses cover the
+narrower, and no level covers a control.
 
 **A job says beside its request whether the judge may still ask.** `Prompt`
 derives `BodyCanBeShown` and `AsksLeft` — a request job before its last round,
