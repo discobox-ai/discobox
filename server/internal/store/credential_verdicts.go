@@ -26,8 +26,11 @@ type CredentialVerdictFilter struct {
 	// ID reads the one verdict it names, which is how a caller holding an ID
 	// from a listing reads that verdict in full.
 	ID string
-	// Kind keeps one kind of verdict, command or request.
+	// Kind keeps one kind of verdict: command, request, delegation, scope or
+	// rule.
 	Kind string
+	// RuleID keeps the verdicts recorded while testing one approval rule.
+	RuleID string
 	// SandboxID is matched against the recorded ID, never resolved through the
 	// sandboxes table: the trail outlives the sandbox it describes, and the
 	// sandboxes most worth asking about are often already purged.
@@ -62,6 +65,9 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 	}
 	if filter.Kind != "" {
 		query = query.Where("kind = ?", filter.Kind)
+	}
+	if filter.RuleID != "" {
+		query = query.Where("rule_id = ?", filter.RuleID)
 	}
 	if filter.SandboxID != "" {
 		query = query.Where("sandbox_id = ?", filter.SandboxID)

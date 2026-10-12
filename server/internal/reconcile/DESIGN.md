@@ -197,6 +197,8 @@ resource forever.
 | `sandbox` | [sandboxes](../resources/sandboxes/DESIGN.md) | generation mismatch, plus archived sandboxes past retention |
 | `pool` | [pools](../resources/pools/DESIGN.md) | every pool |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
+| `judge` | [judges](../resources/DESIGN.md) | every project |
+| `ruleRequest` | [secrets](../resources/secrets/DESIGN.md#approval-rules) | none: a scan would re-mark a request whose judge cannot answer and cancel its backoff |
 
 ## What callers look like
 

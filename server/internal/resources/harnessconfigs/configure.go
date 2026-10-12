@@ -575,7 +575,7 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 // secret's host. Only the harness-config-scoped grants this flow created are
 // touched.
 func (s *Service) updateConfiguredGrantHost(ctx context.Context, config *model.HarnessConfig, secretID, host string) error {
-	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID)
+	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID, "")
 	if err != nil {
 		return err
 	}

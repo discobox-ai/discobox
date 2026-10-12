@@ -144,6 +144,9 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
 		return nil, err
 	}
+	// Filing returns at once; the project's approval rules are tested against
+	// the request off this path (ADR 26-10-12-330 §4).
+	s.requestFiled(ctx, req)
 	return req, nil
 }
 

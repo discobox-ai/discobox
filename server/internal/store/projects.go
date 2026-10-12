@@ -219,6 +219,8 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&model.HarnessConfig{},
 			&model.SecretGrant{},
 			&model.SecretRequest{},
+			// Rules are a project's, and name its secrets.
+			&model.ApprovalRule{},
 			&model.Secret{},
 			&model.SandboxProviderInstance{},
 			&model.SandboxAccessIssuerKey{},

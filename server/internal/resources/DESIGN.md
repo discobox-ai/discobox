@@ -16,7 +16,7 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | [projects](projects/DESIGN.md) | Projects and the default-project flag | none |
 | [providers](providers/DESIGN.md) | Provider-instance API and startup reconciliation | none |
 | [sandboxes](sandboxes/DESIGN.md) | Sandbox API, lifecycle intent, and reconciliation | `sandbox` |
-| [secrets](secrets/DESIGN.md) | Credentials, their approval lifecycle, and sandbox delivery | none |
+| [secrets](secrets/DESIGN.md) | Credentials, their approval lifecycle, approval rules, and sandbox delivery | `ruleRequest` |
 | `sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes | none |
 
 `peers` and `sshkeys` are plain store-backed CRUD services with no design doc of
@@ -43,6 +43,31 @@ default harness. A pool that asks about a kind the server does not judge is
 answered with the judging-disabled problem before a judge is looked for: for a
 request the proxy allows it, for a command the pool mints with no verdict, and
 a delegation is refused.
+
+An approval rule is a third reason to keep a judge, and hangs on neither switch
+([ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
+§6): a project with a rule switched on (`store.HasEnabledApprovalRule`) wants
+one on a server that judges nothing else, and nothing but rules is put to it.
+`rules.go` answers a rule's two questions for the secrets service, each from
+the verdict on record for the same job (`store.AnsweredQuestion`, by
+`judge.Digest`) before it asks anybody, and records what it asked as a `scope`
+or `rule` verdict before the answer is acted on:
+
+- `JudgeScope` — with Jev, Jev alone: its yes is a match and anything else is
+  not, and nothing is sent on to the judge discobox whatever `jevUnsure` says.
+  A server with no Jev key asks its judge discobox.
+- `JudgeRule` — through `put`, like a delegation: Jev first, and what it does
+  not allow handled by `jevUnsure`.
+- `ProposeRule` — the judge discobox writes a rule's wider scopes and uses
+  (`POST .../judge/proposal`). Jev writes nothing, so a server with no judge
+  discobox has nobody to ask, and says so.
+
+An answer on record is never asked about again, so only a decision is
+recorded. A judge that did not answer, one that asked to be shown something,
+and — where Jev's refusals go on — a Jev refusal the judge discobox never saw
+are each no verdict, and the question is asked again. An answer reused for a
+rule it does not name is recorded again under that rule (`reuse`), so a rule
+made from a proposal has its verdicts.
 
 A judge is an ordinary discobox in judge mode. Judge mode is a create body's to
 ask for like any other, so what makes one *the project's* judge is that the

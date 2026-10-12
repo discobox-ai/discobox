@@ -372,7 +372,7 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 // authorized to resolve, and every sandbox would raise a fresh approval.
 // Sandbox-scoped grants are not copied: the new project has no sandboxes.
 func (s *Service) copyGrants(ctx context.Context, sourceConfig *model.HarnessConfig, config *model.HarnessConfig, projectID string, secretIDs map[string]string) error {
-	grants, err := s.store.ListSecretGrants(ctx, sourceConfig.ProjectID, "")
+	grants, err := s.store.ListSecretGrants(ctx, sourceConfig.ProjectID, "", "")
 	if err != nil {
 		return err
 	}

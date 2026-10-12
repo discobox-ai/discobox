@@ -86,8 +86,10 @@ func (s *Store) GetSecretGrant(ctx context.Context, projectID, grantID string) (
 }
 
 // ListSecretGrants returns a project's grants, optionally filtered to a single
-// secret.
-func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
+// secret, or to those one approval rule minted (ADR 26-10-12-330 §4): a rule's
+// grants are independent of it once made, and this is how they are found to
+// be revoked deliberately.
+func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID, ruleID string) ([]model.SecretGrant, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -95,6 +97,9 @@ func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID string
 	query := read.Where("project_id = ?", projectID)
 	if secretID != "" {
 		query = query.Where("secret_id = ?", secretID)
+	}
+	if ruleID != "" {
+		query = query.Where("rule_id = ?", ruleID)
 	}
 	var out []model.SecretGrant
 	err = query.Order("granted_at ASC").Find(&out).Error

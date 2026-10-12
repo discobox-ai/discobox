@@ -640,7 +640,7 @@ func TestARefusedApprovalLeavesTheSecretAsItWas(t *testing.T) {
 	if stored.Host != "www.github.com" || stored.MaxGrantTTL != 3600 {
 		t.Fatalf("secret = %s, limit %d; want it as it was, bound to www.github.com with a 3600s limit", stored.Host, stored.MaxGrantTTL)
 	}
-	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
+	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID, "")
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

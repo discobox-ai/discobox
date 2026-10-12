@@ -152,6 +152,11 @@ Current authorizers:
   and a secret request's get, approve, and deny only when a discobox the
   caller created filed it — the request's owner. A request filed by no
   discobox, or by one that is gone, has no owner and is a person's to answer.
+  The role lists no approval-rule route and no `rule-proposals`: a discobox
+  never makes, edits, reads, or is proposed a rule
+  ([ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
+  §1), and the secrets service refuses one that reached it another way,
+  including a rule sent on an approve.
   The request and secret listings cannot be decided by their routes, so the
   secrets service filters them: to the caller's owned requests, and to the
   secrets of its live delegation grants

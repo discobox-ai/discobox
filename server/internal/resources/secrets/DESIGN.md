@@ -292,6 +292,99 @@ and a discobox that needs both holds two grants.
   grant is traced to the delegation that allowed it. A request that names no uses is a person's, since a grant without
   uses authorizes everything sent to its host.
 
+## Approval rules
+
+An `ApprovalRule` is a project's standing answer to a credential request
+([ADR 26-10-12-330](../../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)):
+a request like this, from a discobox like that, is approved without asking.
+`rules.go` owns the rule and what holds a request to it, `rule_requests.go` the
+reconciler that tests rules, and `rule_proposals.go` what "auto approve" offers.
+
+```mermaid
+flowchart LR
+    ask["agent files a request"] -->|"pending, returns at once"| dirty[(ruleRequest dirty)]
+    made["rule made or edited"] --> dirty
+    dirty --> test["RuleRequests.Reconcile"]
+    test -->|"facts: credential, hosts, purpose"| scope["JudgeScope: sentence vs fact sheet"]
+    scope -->|"in scope"| content["JudgeRule: rule's uses vs uses asked"]
+    content -->|"covers"| write["commitApproval: grant as asked, RuleID"]
+    test -. "no rule covers" .-> person["stays pending for a person"]
+```
+
+- **A rule approves or says nothing.** A request no rule covers waits for a
+  person exactly as it does with no rules. No rule denies.
+- **Only a person makes one** (`onlyAPerson`), directly
+  (`CreateApprovalRule`) or by answering a request with a `rule` on the
+  approve body, which makes the rule and approves under it in one write. The
+  sandbox role lists none of the routes.
+- **Facts are checked here; sentences are the judge's** (`ruleFacts`,
+  `ruleReadings`), the way an approval is held to a delegation:
+  - the pin, compared, never read;
+  - the same credential — the well-known ID the request names, or, for an ask
+    that names none, a secret whose host binding covers the hosts asked for;
+  - the same purpose, hosts within the rule's, and the secret's own binding;
+  - the lifetime, fitted and never refused (`ruleTTL`): the ask, else the
+    hour, capped by the rule and the secret's limit;
+  - the scope sentence against the **fact sheet** (`factSheet`), and the
+    rule's uses against the uses asked for. The justification is in neither.
+- **The fact sheet is the control plane's record of the discobox**, fixed
+  when it was created: its primary source's repository (the remote a local
+  checkout tracks, and for a remote source the URL it is cloned from; without
+  userinfo) and ref, its other sources, who created
+  it, the prompt it was created with labelled with who wrote it, its skills,
+  harness and platform. Never its tags or description (ADR 0136), and nothing
+  from its request: a box that could write its way into a scope has chosen
+  its own rule.
+- **Rules are tested off the path that files a request**
+  (`RuleRequests`, reconcile type `ruleRequest`, id a request ID). A request
+  is marked when filed in a project with a rule (`requestFiled`) and when a
+  rule changes (`ruleChanged`, which also marks the project's judge). There
+  is no scan: a run whose judge could not answer fails and is retried by the
+  engine's backoff, which a periodic re-mark would cancel, and a lost mark
+  costs what no rule costs — a person is asked. Only a pending agent
+  credentials request is tested
+  (`ruleTestable`): reactive requests, refresh requests and host trusts stay
+  a person's.
+- **One rule at a time, cheapest step first**: rules pinned to the discobox
+  first, each on its own, never several rules' uses together. The first that
+  covers ends it. A judge that could not answer about some rule, when none
+  covered, fails the run so the request is tested again.
+- **A rule's approval is a person's approval's write** (`commitApproval`,
+  shared with a person's and a delegated approval): the grant is
+  sandbox-scoped with the uses **as asked**, so each box holds its own branch
+  and not the class, and names the rule (`SecretGrant.RuleID`). The rule is
+  read again in the transaction (`heldRule`): still live, with the text the
+  judge read, else nothing is minted. `GrantedBy` is the person who made the
+  rule.
+- **A grant is independent of its rule.** Disabling or deleting a rule mints
+  nothing more and revokes nothing; `ListSecretGrants` filters by rule. A rule
+  itself goes with its project, the secret it names, and the discobox it is
+  pinned to: one that could never approve again would still keep a judge.
+- **A rule for a well-known credential answers with the secret marked for
+  it**, so auto approve is refused when the approval names another.
+- **Each question is asked once.** The judges service answers from the
+  verdict on record for the same job. An edited rule is a different job, so
+  it is tested afresh against what is pending.
+- **The card says why** (`ruleTestDescriber`): a person reading a pending
+  request sees each rule tested and the fact or verdict that kept it from
+  covering, read from the record — a replica's, and making nothing — without
+  asking anybody. A discobox is shown none of it.
+- **A rule may hand on a gate or a delegation** (§9), which only a person
+  otherwise approves: a rule is that person's approval given in advance.
+
+**"Auto approve" proposes, and offers only what the judge found to cover**
+(`ProposeApprovalRules`, §§7–8). Three scopes and three lists of uses,
+narrowest first. The narrowest of each needs no model: the pin, and the uses
+as asked. The wider two are written by the project's judge discobox
+(`JudgeService.ProposeRule`); the credential, hosts and purpose are copied
+from the request by code. Every candidate but the pin is then put to the judge
+as the job a rule would later ask, and its verdict recorded, so choosing one
+approves under the verdict on record and a failed one is shown with its
+reason. A candidate that could not be a rule's (`ruleSentencesProblem`) is
+shown as failed without being judged. Edited text is judged again by the approve (`ruleFromApproval`), which
+refuses a rule that would not cover the request it is made from. Where no
+model can write, the narrowest of each is offered alone, with why.
+
 ## The agent credentials broker
 
 `agentcredentials.go` is the control-plane half of ADR 0031. A pool agent calls

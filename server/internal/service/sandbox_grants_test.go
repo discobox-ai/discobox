@@ -95,6 +95,18 @@ func (j *grantJudge) JudgeDelegation(_ context.Context, _ string, ask services.D
 	return judge.Answer{Allow: j.allow, Reason: "decided"}, nil
 }
 
+func (j *grantJudge) JudgeScope(context.Context, string, services.ScopeAsk) (judge.Answer, error) {
+	return judge.Answer{}, errors.New("not a rule judge")
+}
+
+func (j *grantJudge) JudgeRule(context.Context, string, services.RuleAsk) (judge.Answer, error) {
+	return judge.Answer{}, errors.New("not a rule judge")
+}
+
+func (j *grantJudge) ProposeRule(context.Context, string, judge.ProposalJob) (judge.Proposal, error) {
+	return judge.Proposal{}, errors.New("not a rule judge")
+}
+
 // judgedBy makes judging the service's grants that answer.
 func judgedBy(svc *service.Service, judging *grantJudge) {
 	svc.SecretService.(*secrets.Service).SetJudge(judging)
@@ -163,7 +175,7 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 	if created.CreatedBySandboxID == nil || *created.CreatedBySandboxID != "sbx-lead" {
 		t.Fatalf("created by sandbox %v, want the lead (ADR 26-09-24-630 §1)", created.CreatedBySandboxID)
 	}
-	grants, err := svc.ListSecretGrants(ctx, projectID, secret.ID)
+	grants, err := svc.ListSecretGrants(ctx, projectID, secret.ID, "")
 	var given []model.SecretGrant
 	for _, grant := range grants {
 		if grant.Purpose == model.SecretGrantPurposeUse {
