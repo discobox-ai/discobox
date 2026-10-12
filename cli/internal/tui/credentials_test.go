@@ -1157,8 +1157,9 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 }
 
 // A credential with nothing behind it — the discobox API — is let in or not.
-// Its card offers no secret to choose and nothing to type, and approving it
-// names no secret: the server answers it.
+// Its card offers no secret to choose and nothing to type — only to let it in,
+// this once or by a rule — and approving it names no secret: the server
+// answers it.
 func TestAGateIsApprovedWithoutASecret(t *testing.T) {
 	t.Parallel()
 	req := waitingRequest()
@@ -1169,8 +1170,8 @@ func TestAGateIsApprovedWithoutASecret(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || len(m.dialog.items) != 2 || m.dialog.items[0].key != "gate" || m.dialog.items[1].key != "deny" {
-		t.Fatalf("dialog = %s, want only approve and deny", describe(m.dialog))
+	if m.dialog == nil || len(m.dialog.items) != 3 || m.dialog.items[0].key != "gate" || m.dialog.items[1].key != "auto" || m.dialog.items[2].key != "deny" {
+		t.Fatalf("dialog = %s, want only approve, auto approve and deny", describe(m.dialog))
 	}
 	// It says what it hands over before it is agreed to.
 	if card := dialogText(m); !strings.Contains(card, "what approving gives it") || !strings.Contains(card, "within what you separately delegate") {

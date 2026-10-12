@@ -1001,6 +1001,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case credentialAnsweredMsg:
 		return m.credentialAnswered(msg)
 
+	case ruleProposalsMsg:
+		return m.ruleProposalsLoaded(msg)
+
 	case renewalAnsweredMsg:
 		return m.renewalAnswered(msg)
 

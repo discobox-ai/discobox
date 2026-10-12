@@ -95,17 +95,22 @@ type fakeSource struct {
 	// for a window with several; one not named there answers with
 	// projectSecrets and harnesses. onServer is every server-scoped call, as
 	// "Method@server", which is what says where the window sent it.
-	secretsOn       map[string][]Secret
-	harnessesOn     map[string][]Harness
-	onServer        []string
-	requestsErr     error
-	secretsErr      error
-	approvals       []Approval
-	trustApprovals  []TrustApproval
-	trustDenials    []string
-	denials         []string
-	createdSecrets  []NewSecret
-	approveErr      error
+	secretsOn      map[string][]Secret
+	harnessesOn    map[string][]Harness
+	onServer       []string
+	requestsErr    error
+	secretsErr     error
+	approvals      []Approval
+	trustApprovals []TrustApproval
+	trustDenials   []string
+	denials        []string
+	createdSecrets []NewSecret
+	approveErr     error
+	// proposals is what "auto approve" is offered; proposed is each request it
+	// was asked about.
+	proposals       RuleProposals
+	proposalsErr    error
+	proposed        []string
 	createSecretErr error
 	unbound         []string
 	bound           []string
@@ -1689,6 +1694,14 @@ func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, 
 	f.approvals = append(f.approvals, approval)
 	f.dropRequestLocked(approval.RequestID)
 	return nil
+}
+
+func (f *fakeSource) RuleProposals(_ context.Context, server, requestID string) (RuleProposals, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "RuleProposals@"+server)
+	f.proposed = append(f.proposed, requestID)
+	return f.proposals, f.proposalsErr
 }
 
 func (f *fakeSource) DenyCredentialRequest(_ context.Context, server, requestID string) error {
