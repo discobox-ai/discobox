@@ -120,6 +120,13 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
 	ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (ConfigureHarnessConfigRes, error)
+	// CreateApprovalRule invokes create-approval-rule operation.
+	//
+	// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every
+	// request pending in the project.
+	//
+	// POST /projects/{projectId}/approval-rules
+	CreateApprovalRule(ctx context.Context, request *CreateApprovalRuleBody, params CreateApprovalRuleParams) (CreateApprovalRuleRes, error)
 	// CreateHarnessConfig invokes create-harness-config operation.
 	//
 	// Create a harness config.
@@ -207,6 +214,13 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure
 	DeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (DeconfigureHarnessConfigRes, error)
+	// DeleteApprovalRule invokes delete-approval-rule operation.
+	//
+	// Deletes an approval rule. It mints nothing more; the grants it minted stay, and are listed by rule
+	// to be revoked deliberately.
+	//
+	// DELETE /projects/{projectId}/approval-rules/{ruleId}
+	DeleteApprovalRule(ctx context.Context, params DeleteApprovalRuleParams) (DeleteApprovalRuleRes, error)
 	// DeleteHarnessConfig invokes delete-harness-config operation.
 	//
 	// Delete a harness config.
@@ -293,6 +307,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
+	// GetApprovalRule invokes get-approval-rule operation.
+	//
+	// Get an approval rule.
+	//
+	// GET /projects/{projectId}/approval-rules/{ruleId}
+	GetApprovalRule(ctx context.Context, params GetApprovalRuleParams) (GetApprovalRuleRes, error)
 	// GetHTTPAudit invokes get-http-audit operation.
 	//
 	// One audited HTTP exchange in full, read from the pool that recorded it. The pool is in the path
@@ -487,6 +507,13 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/approval-requests
 	ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (ListApprovalRequestsRes, error)
+	// ListApprovalRules invokes list-approval-rules operation.
+	//
+	// A project's approval rules (ADR 26-10-12-330), oldest first. A rule is a standing answer to a
+	// credential request, made only by a person. A discobox never lists, reads, makes or edits one.
+	//
+	// GET /projects/{projectId}/approval-rules
+	ListApprovalRules(ctx context.Context, params ListApprovalRulesParams) (ListApprovalRulesRes, error)
 	// ListCredentialVerdicts invokes list-credential-verdicts operation.
 	//
 	// The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped
@@ -702,6 +729,26 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
 	MintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
+	// ProposeApprovalRules invokes propose-approval-rules operation.
+	//
+	// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), three scopes
+	// and three lists of uses, each narrowest first. The narrowest of each needs no model. The wider
+	// ones are written by the project's judge and each is then put to the judge as the question a rule
+	// would later ask, so only a candidate found to cover this request may be chosen. Where no model can
+	// write, the narrowest of each is offered alone. Only a person may ask.
+	//
+	// POST /projects/{projectId}/secret-requests/{requestId}/rule-proposals
+	ProposeApprovalRules(ctx context.Context, params ProposeApprovalRulesParams) (ProposeApprovalRulesRes, error)
+	// ProposeSandboxRule invokes propose-sandbox-rule operation.
+	//
+	// Has this discobox's harness write the wider scopes and uses a person may choose for an approval
+	// rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying
+	// judge:run may ask. The caller supplies the uses a request asked for and what was recorded about
+	// the asking discobox; the prompt, the schema, the model role and the tools restriction are the
+	// judge runtime's own, as for a judging job. What comes back authorizes nothing.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
+	ProposeSandboxRule(ctx context.Context, request *JudgeProposalJob, params ProposeSandboxRuleParams) (ProposeSandboxRuleRes, error)
 	// PurgeSandbox invokes purge-sandbox operation.
 	//
 	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -918,6 +965,13 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/pools/{poolId}/default
 	UnsetDefaultPool(ctx context.Context, params UnsetDefaultPoolParams) (UnsetDefaultPoolRes, error)
+	// UpdateApprovalRule invokes update-approval-rule operation.
+	//
+	// Edits an approval rule. Only the fields sent change. A rule whose scope or uses changed is tested
+	// afresh against what is pending; grants it already minted are untouched.
+	//
+	// PATCH /projects/{projectId}/approval-rules/{ruleId}
+	UpdateApprovalRule(ctx context.Context, request *UpdateApprovalRuleBody, params UpdateApprovalRuleParams) (UpdateApprovalRuleRes, error)
 	// UpdateHarnessConfig invokes update-harness-config operation.
 	//
 	// Update a harness config.
@@ -2349,6 +2403,103 @@ func (c *Client) sendConfigureHarnessConfig(ctx context.Context, params Configur
 	return result, nil
 }
 
+// CreateApprovalRule invokes create-approval-rule operation.
+//
+// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every
+// request pending in the project.
+//
+// POST /projects/{projectId}/approval-rules
+func (c *Client) CreateApprovalRule(ctx context.Context, request *CreateApprovalRuleBody, params CreateApprovalRuleParams) (CreateApprovalRuleRes, error) {
+	res, err := c.sendCreateApprovalRule(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateApprovalRule(ctx context.Context, request *CreateApprovalRuleBody, params CreateApprovalRuleParams) (res CreateApprovalRuleRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-approval-rule"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-rules"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateApprovalRuleOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-rules"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateApprovalRuleRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateApprovalRuleResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CreateHarnessConfig invokes create-harness-config operation.
 //
 // Create a harness config.
@@ -3707,6 +3858,118 @@ func (c *Client) sendDeconfigureHarnessConfig(ctx context.Context, params Deconf
 
 	stage = "DecodeResponse"
 	result, err := decodeDeconfigureHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeleteApprovalRule invokes delete-approval-rule operation.
+//
+// Deletes an approval rule. It mints nothing more; the grants it minted stay, and are listed by rule
+// to be revoked deliberately.
+//
+// DELETE /projects/{projectId}/approval-rules/{ruleId}
+func (c *Client) DeleteApprovalRule(ctx context.Context, params DeleteApprovalRuleParams) (DeleteApprovalRuleRes, error) {
+	res, err := c.sendDeleteApprovalRule(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteApprovalRule(ctx context.Context, params DeleteApprovalRuleParams) (res DeleteApprovalRuleRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-approval-rule"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-rules/{ruleId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteApprovalRuleOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-rules/"
+	{
+		// Encode "ruleId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "ruleId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RuleId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteApprovalRuleResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -5285,6 +5548,117 @@ func (c *Client) sendForceJob(ctx context.Context, params ForceJobParams) (res F
 
 	stage = "DecodeResponse"
 	result, err := decodeForceJobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetApprovalRule invokes get-approval-rule operation.
+//
+// Get an approval rule.
+//
+// GET /projects/{projectId}/approval-rules/{ruleId}
+func (c *Client) GetApprovalRule(ctx context.Context, params GetApprovalRuleParams) (GetApprovalRuleRes, error) {
+	res, err := c.sendGetApprovalRule(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetApprovalRule(ctx context.Context, params GetApprovalRuleParams) (res GetApprovalRuleRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-approval-rule"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-rules/{ruleId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetApprovalRuleOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-rules/"
+	{
+		// Encode "ruleId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "ruleId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RuleId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetApprovalRuleResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -8493,6 +8867,100 @@ func (c *Client) sendListApprovalRequests(ctx context.Context, params ListApprov
 	return result, nil
 }
 
+// ListApprovalRules invokes list-approval-rules operation.
+//
+// A project's approval rules (ADR 26-10-12-330), oldest first. A rule is a standing answer to a
+// credential request, made only by a person. A discobox never lists, reads, makes or edits one.
+//
+// GET /projects/{projectId}/approval-rules
+func (c *Client) ListApprovalRules(ctx context.Context, params ListApprovalRulesParams) (ListApprovalRulesRes, error) {
+	res, err := c.sendListApprovalRules(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListApprovalRules(ctx context.Context, params ListApprovalRulesParams) (res ListApprovalRulesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-approval-rules"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-rules"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListApprovalRulesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-rules"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListApprovalRulesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListCredentialVerdicts invokes list-credential-verdicts operation.
 //
 // The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped
@@ -8595,6 +9063,23 @@ func (c *Client) sendListCredentialVerdicts(ctx context.Context, params ListCred
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Kind.Get(); ok {
 				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "ruleId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "ruleId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.RuleId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
 			}
 			return nil
 		}); err != nil {
@@ -12214,6 +12699,23 @@ func (c *Client) sendListSecretGrants(ctx context.Context, params ListSecretGran
 			return res, errors.Wrap(err, "encode query")
 		}
 	}
+	{
+		// Encode "ruleId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "ruleId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.RuleId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
 	u.RawQuery = q.Values().Encode()
 
 	stage = "EncodeRequest"
@@ -12961,6 +13463,241 @@ func (c *Client) sendMintSandboxAgentStatusTokens(ctx context.Context, request *
 
 	stage = "DecodeResponse"
 	result, err := decodeMintSandboxAgentStatusTokensResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ProposeApprovalRules invokes propose-approval-rules operation.
+//
+// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), three scopes
+// and three lists of uses, each narrowest first. The narrowest of each needs no model. The wider
+// ones are written by the project's judge and each is then put to the judge as the question a rule
+// would later ask, so only a candidate found to cover this request may be chosen. Where no model can
+// write, the narrowest of each is offered alone. Only a person may ask.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/rule-proposals
+func (c *Client) ProposeApprovalRules(ctx context.Context, params ProposeApprovalRulesParams) (ProposeApprovalRulesRes, error) {
+	res, err := c.sendProposeApprovalRules(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendProposeApprovalRules(ctx context.Context, params ProposeApprovalRulesParams) (res ProposeApprovalRulesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("propose-approval-rules"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests/{requestId}/rule-proposals"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ProposeApprovalRulesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/rule-proposals"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeProposeApprovalRulesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ProposeSandboxRule invokes propose-sandbox-rule operation.
+//
+// Has this discobox's harness write the wider scopes and uses a person may choose for an approval
+// rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying
+// judge:run may ask. The caller supplies the uses a request asked for and what was recorded about
+// the asking discobox; the prompt, the schema, the model role and the tools restriction are the
+// judge runtime's own, as for a judging job. What comes back authorizes nothing.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
+func (c *Client) ProposeSandboxRule(ctx context.Context, request *JudgeProposalJob, params ProposeSandboxRuleParams) (ProposeSandboxRuleRes, error) {
+	res, err := c.sendProposeSandboxRule(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendProposeSandboxRule(ctx context.Context, request *JudgeProposalJob, params ProposeSandboxRuleParams) (res ProposeSandboxRuleRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("propose-sandbox-rule"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ProposeSandboxRuleOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/judge/proposal"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeProposeSandboxRuleRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeProposeSandboxRuleResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -16465,6 +17202,121 @@ func (c *Client) sendUnsetDefaultPool(ctx context.Context, params UnsetDefaultPo
 
 	stage = "DecodeResponse"
 	result, err := decodeUnsetDefaultPoolResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateApprovalRule invokes update-approval-rule operation.
+//
+// Edits an approval rule. Only the fields sent change. A rule whose scope or uses changed is tested
+// afresh against what is pending; grants it already minted are untouched.
+//
+// PATCH /projects/{projectId}/approval-rules/{ruleId}
+func (c *Client) UpdateApprovalRule(ctx context.Context, request *UpdateApprovalRuleBody, params UpdateApprovalRuleParams) (UpdateApprovalRuleRes, error) {
+	res, err := c.sendUpdateApprovalRule(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateApprovalRule(ctx context.Context, request *UpdateApprovalRuleBody, params UpdateApprovalRuleParams) (res UpdateApprovalRuleRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-approval-rule"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-rules/{ruleId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateApprovalRuleOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-rules/"
+	{
+		// Encode "ruleId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "ruleId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RuleId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateApprovalRuleRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateApprovalRuleResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

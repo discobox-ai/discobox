@@ -139,6 +139,16 @@ func (UnimplementedHandler) ConfigureHarnessConfig(ctx context.Context, params C
 	return r, ht.ErrNotImplemented
 }
 
+// CreateApprovalRule implements create-approval-rule operation.
+//
+// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every
+// request pending in the project.
+//
+// POST /projects/{projectId}/approval-rules
+func (UnimplementedHandler) CreateApprovalRule(ctx context.Context, req *CreateApprovalRuleBody, params CreateApprovalRuleParams) (r CreateApprovalRuleRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateHarnessConfig implements create-harness-config operation.
 //
 // Create a harness config.
@@ -268,6 +278,16 @@ func (UnimplementedHandler) DeconfigureHarnessConfig(ctx context.Context, params
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteApprovalRule implements delete-approval-rule operation.
+//
+// Deletes an approval rule. It mints nothing more; the grants it minted stay, and are listed by rule
+// to be revoked deliberately.
+//
+// DELETE /projects/{projectId}/approval-rules/{ruleId}
+func (UnimplementedHandler) DeleteApprovalRule(ctx context.Context, params DeleteApprovalRuleParams) (r DeleteApprovalRuleRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteHarnessConfig implements delete-harness-config operation.
 //
 // Delete a harness config.
@@ -393,6 +413,15 @@ func (UnimplementedHandler) DenyTrustRequest(ctx context.Context, params DenyTru
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams) (r ForceJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetApprovalRule implements get-approval-rule operation.
+//
+// Get an approval rule.
+//
+// GET /projects/{projectId}/approval-rules/{ruleId}
+func (UnimplementedHandler) GetApprovalRule(ctx context.Context, params GetApprovalRuleParams) (r GetApprovalRuleRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -671,6 +700,16 @@ func (UnimplementedHandler) JudgeSandbox(ctx context.Context, req *JudgeJob, par
 //
 // GET /projects/{projectId}/approval-requests
 func (UnimplementedHandler) ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (r ListApprovalRequestsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListApprovalRules implements list-approval-rules operation.
+//
+// A project's approval rules (ADR 26-10-12-330), oldest first. A rule is a standing answer to a
+// credential request, made only by a person. A discobox never lists, reads, makes or edits one.
+//
+// GET /projects/{projectId}/approval-rules
+func (UnimplementedHandler) ListApprovalRules(ctx context.Context, params ListApprovalRulesParams) (r ListApprovalRulesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -990,6 +1029,32 @@ func (UnimplementedHandler) MintSandboxAgentStatusTokens(ctx context.Context, re
 	return r, ht.ErrNotImplemented
 }
 
+// ProposeApprovalRules implements propose-approval-rules operation.
+//
+// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), three scopes
+// and three lists of uses, each narrowest first. The narrowest of each needs no model. The wider
+// ones are written by the project's judge and each is then put to the judge as the question a rule
+// would later ask, so only a candidate found to cover this request may be chosen. Where no model can
+// write, the narrowest of each is offered alone. Only a person may ask.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/rule-proposals
+func (UnimplementedHandler) ProposeApprovalRules(ctx context.Context, params ProposeApprovalRulesParams) (r ProposeApprovalRulesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ProposeSandboxRule implements propose-sandbox-rule operation.
+//
+// Has this discobox's harness write the wider scopes and uses a person may choose for an approval
+// rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying
+// judge:run may ask. The caller supplies the uses a request asked for and what was recorded about
+// the asking discobox; the prompt, the schema, the model role and the tools restriction are the
+// judge runtime's own, as for a judging job. What comes back authorizes nothing.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
+func (UnimplementedHandler) ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (r ProposeSandboxRuleRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PurgeSandbox implements purge-sandbox operation.
 //
 // Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -1296,6 +1361,16 @@ func (UnimplementedHandler) UnsetDefaultHarnessConfig(ctx context.Context, param
 //
 // DELETE /projects/{projectId}/pools/{poolId}/default
 func (UnimplementedHandler) UnsetDefaultPool(ctx context.Context, params UnsetDefaultPoolParams) (r UnsetDefaultPoolRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdateApprovalRule implements update-approval-rule operation.
+//
+// Edits an approval rule. Only the fields sent change. A rule whose scope or uses changed is tested
+// afresh against what is pending; grants it already minted are untouched.
+//
+// PATCH /projects/{projectId}/approval-rules/{ruleId}
+func (UnimplementedHandler) UpdateApprovalRule(ctx context.Context, req *UpdateApprovalRuleBody, params UpdateApprovalRuleParams) (r UpdateApprovalRuleRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

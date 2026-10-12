@@ -551,6 +551,215 @@ func (s *JudgeAnswer) SetStanding(val OptJudgeStanding) {
 	s.Standing = val
 }
 
+// What the control plane recorded about a discobox when it was created, which an approval rule's
+// scope is read against (ADR 26-10-12-330). Nothing a discobox writes about itself is here.
+// Ref: #/components/schemas/JudgeDiscobox
+type JudgeDiscobox struct {
+	// Who created it, a person or a discobox.
+	CreatedBy JudgeDiscoboxCreatedBy `json:"createdBy"`
+	// The discobox that created it, when one did.
+	Creator OptString `json:"creator"`
+	// The harness it runs.
+	Harness OptString `json:"harness"`
+	// The repositories beside its primary source, each with its ref when it names one.
+	OtherSources []string `json:"otherSources"`
+	// Its pool's platform.
+	Platform OptString     `json:"platform"`
+	Prompt   OptJudgeInput `json:"prompt"`
+	// Who wrote the prompt, which is who created the discobox.
+	PromptWrittenBy OptJudgeDiscoboxPromptWrittenBy `json:"promptWrittenBy"`
+	// The ref of its primary source.
+	Ref OptString `json:"ref"`
+	// The repository of its primary source.
+	Repository OptString `json:"repository"`
+	// The names of the skills it was created with.
+	Skills []string `json:"skills"`
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *JudgeDiscobox) GetCreatedBy() JudgeDiscoboxCreatedBy {
+	return s.CreatedBy
+}
+
+// GetCreator returns the value of Creator.
+func (s *JudgeDiscobox) GetCreator() OptString {
+	return s.Creator
+}
+
+// GetHarness returns the value of Harness.
+func (s *JudgeDiscobox) GetHarness() OptString {
+	return s.Harness
+}
+
+// GetOtherSources returns the value of OtherSources.
+func (s *JudgeDiscobox) GetOtherSources() []string {
+	return s.OtherSources
+}
+
+// GetPlatform returns the value of Platform.
+func (s *JudgeDiscobox) GetPlatform() OptString {
+	return s.Platform
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *JudgeDiscobox) GetPrompt() OptJudgeInput {
+	return s.Prompt
+}
+
+// GetPromptWrittenBy returns the value of PromptWrittenBy.
+func (s *JudgeDiscobox) GetPromptWrittenBy() OptJudgeDiscoboxPromptWrittenBy {
+	return s.PromptWrittenBy
+}
+
+// GetRef returns the value of Ref.
+func (s *JudgeDiscobox) GetRef() OptString {
+	return s.Ref
+}
+
+// GetRepository returns the value of Repository.
+func (s *JudgeDiscobox) GetRepository() OptString {
+	return s.Repository
+}
+
+// GetSkills returns the value of Skills.
+func (s *JudgeDiscobox) GetSkills() []string {
+	return s.Skills
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *JudgeDiscobox) SetCreatedBy(val JudgeDiscoboxCreatedBy) {
+	s.CreatedBy = val
+}
+
+// SetCreator sets the value of Creator.
+func (s *JudgeDiscobox) SetCreator(val OptString) {
+	s.Creator = val
+}
+
+// SetHarness sets the value of Harness.
+func (s *JudgeDiscobox) SetHarness(val OptString) {
+	s.Harness = val
+}
+
+// SetOtherSources sets the value of OtherSources.
+func (s *JudgeDiscobox) SetOtherSources(val []string) {
+	s.OtherSources = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *JudgeDiscobox) SetPlatform(val OptString) {
+	s.Platform = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *JudgeDiscobox) SetPrompt(val OptJudgeInput) {
+	s.Prompt = val
+}
+
+// SetPromptWrittenBy sets the value of PromptWrittenBy.
+func (s *JudgeDiscobox) SetPromptWrittenBy(val OptJudgeDiscoboxPromptWrittenBy) {
+	s.PromptWrittenBy = val
+}
+
+// SetRef sets the value of Ref.
+func (s *JudgeDiscobox) SetRef(val OptString) {
+	s.Ref = val
+}
+
+// SetRepository sets the value of Repository.
+func (s *JudgeDiscobox) SetRepository(val OptString) {
+	s.Repository = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *JudgeDiscobox) SetSkills(val []string) {
+	s.Skills = val
+}
+
+// Who created it, a person or a discobox.
+type JudgeDiscoboxCreatedBy string
+
+const (
+	JudgeDiscoboxCreatedByAPerson   JudgeDiscoboxCreatedBy = "a person"
+	JudgeDiscoboxCreatedByADiscobox JudgeDiscoboxCreatedBy = "a discobox"
+)
+
+// AllValues returns all JudgeDiscoboxCreatedBy values.
+func (JudgeDiscoboxCreatedBy) AllValues() []JudgeDiscoboxCreatedBy {
+	return []JudgeDiscoboxCreatedBy{
+		JudgeDiscoboxCreatedByAPerson,
+		JudgeDiscoboxCreatedByADiscobox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeDiscoboxCreatedBy) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeDiscoboxCreatedByAPerson:
+		return []byte(s), nil
+	case JudgeDiscoboxCreatedByADiscobox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeDiscoboxCreatedBy) UnmarshalText(data []byte) error {
+	switch JudgeDiscoboxCreatedBy(data) {
+	case JudgeDiscoboxCreatedByAPerson:
+		*s = JudgeDiscoboxCreatedByAPerson
+		return nil
+	case JudgeDiscoboxCreatedByADiscobox:
+		*s = JudgeDiscoboxCreatedByADiscobox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Who wrote the prompt, which is who created the discobox.
+type JudgeDiscoboxPromptWrittenBy string
+
+const (
+	JudgeDiscoboxPromptWrittenByAPerson   JudgeDiscoboxPromptWrittenBy = "a person"
+	JudgeDiscoboxPromptWrittenByADiscobox JudgeDiscoboxPromptWrittenBy = "a discobox"
+)
+
+// AllValues returns all JudgeDiscoboxPromptWrittenBy values.
+func (JudgeDiscoboxPromptWrittenBy) AllValues() []JudgeDiscoboxPromptWrittenBy {
+	return []JudgeDiscoboxPromptWrittenBy{
+		JudgeDiscoboxPromptWrittenByAPerson,
+		JudgeDiscoboxPromptWrittenByADiscobox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeDiscoboxPromptWrittenBy) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeDiscoboxPromptWrittenByAPerson:
+		return []byte(s), nil
+	case JudgeDiscoboxPromptWrittenByADiscobox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeDiscoboxPromptWrittenBy) UnmarshalText(data []byte) error {
+	switch JudgeDiscoboxPromptWrittenBy(data) {
+	case JudgeDiscoboxPromptWrittenByAPerson:
+		*s = JudgeDiscoboxPromptWrittenByAPerson
+		return nil
+	case JudgeDiscoboxPromptWrittenByADiscobox:
+		*s = JudgeDiscoboxPromptWrittenByADiscobox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // What a command will read on standard input, as much of it as the discobox showed (ADR
 // 26-09-27-905).
 // Ref: #/components/schemas/JudgeInput
@@ -590,14 +799,16 @@ type JudgeJob struct {
 	// which is context and not authority.
 	Command []string `json:"command"`
 	// The credential in the words a person reads, never its value.
-	Credential OptString `json:"credential"`
+	Credential OptString        `json:"credential"`
+	Discobox   OptJudgeDiscobox `json:"discobox"`
 	// What Discobox knows about what the request was recognized as, set by the control plane from the
 	// judge package and never by a pool. It explains; it never authorizes.
 	Guidance []string `json:"guidance"`
-	// The host the use was approved for.
+	// The host the use was approved for. Empty on a scope job, which has none.
 	Host string `json:"host"`
-	// What is being judged: a command about to run, a request the proxy observed, or a discobox about to
-	// hand a credential on by approving another's request.
+	// What is being judged: a command about to run, a request the proxy observed, a discobox about to
+	// hand a credential on by approving another's request, whether a discobox is one an approval rule's
+	// scope describes, or whether what a discobox asked for is within an approval rule's uses.
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in. For a delegation job, the uses the discobox was
 	// delegated, one per line.
@@ -620,6 +831,11 @@ func (s *JudgeJob) GetCommand() []string {
 // GetCredential returns the value of Credential.
 func (s *JudgeJob) GetCredential() OptString {
 	return s.Credential
+}
+
+// GetDiscobox returns the value of Discobox.
+func (s *JudgeJob) GetDiscobox() OptJudgeDiscobox {
+	return s.Discobox
 }
 
 // GetGuidance returns the value of Guidance.
@@ -677,6 +893,11 @@ func (s *JudgeJob) SetCredential(val OptString) {
 	s.Credential = val
 }
 
+// SetDiscobox sets the value of Discobox.
+func (s *JudgeJob) SetDiscobox(val OptJudgeDiscobox) {
+	s.Discobox = val
+}
+
 // SetGuidance sets the value of Guidance.
 func (s *JudgeJob) SetGuidance(val []string) {
 	s.Guidance = val
@@ -722,14 +943,17 @@ func (s *JudgeJob) SetUses(val []string) {
 	s.Uses = val
 }
 
-// What is being judged: a command about to run, a request the proxy observed, or a discobox about to
-// hand a credential on by approving another's request.
+// What is being judged: a command about to run, a request the proxy observed, a discobox about to
+// hand a credential on by approving another's request, whether a discobox is one an approval rule's
+// scope describes, or whether what a discobox asked for is within an approval rule's uses.
 type JudgeJobKind string
 
 const (
 	JudgeJobKindCommand    JudgeJobKind = "command"
 	JudgeJobKindRequest    JudgeJobKind = "request"
 	JudgeJobKindDelegation JudgeJobKind = "delegation"
+	JudgeJobKindScope      JudgeJobKind = "scope"
+	JudgeJobKindRule       JudgeJobKind = "rule"
 )
 
 // AllValues returns all JudgeJobKind values.
@@ -738,6 +962,8 @@ func (JudgeJobKind) AllValues() []JudgeJobKind {
 		JudgeJobKindCommand,
 		JudgeJobKindRequest,
 		JudgeJobKindDelegation,
+		JudgeJobKindScope,
+		JudgeJobKindRule,
 	}
 }
 
@@ -749,6 +975,10 @@ func (s JudgeJobKind) MarshalText() ([]byte, error) {
 	case JudgeJobKindRequest:
 		return []byte(s), nil
 	case JudgeJobKindDelegation:
+		return []byte(s), nil
+	case JudgeJobKindScope:
+		return []byte(s), nil
+	case JudgeJobKindRule:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -766,6 +996,12 @@ func (s *JudgeJobKind) UnmarshalText(data []byte) error {
 		return nil
 	case JudgeJobKindDelegation:
 		*s = JudgeJobKindDelegation
+		return nil
+	case JudgeJobKindScope:
+		*s = JudgeJobKindScope
+		return nil
+	case JudgeJobKindRule:
+		*s = JudgeJobKindRule
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -799,6 +1035,114 @@ func (s *JudgeNeed) SetBody(val bool) {
 // SetBytes sets the value of Bytes.
 func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
+}
+
+// The wider scopes and uses a model wrote for an approval rule, narrower first. They authorize
+// nothing; each is judged, and read by a person, before it becomes a rule.
+// Ref: #/components/schemas/JudgeProposal
+type JudgeProposal struct {
+	// Any discobox on the asking discobox's repository.
+	ScopeRepository string `json:"scopeRepository"`
+	// Discoboxes doing the asking discobox's kind of work on its repository.
+	ScopeWork string `json:"scopeWork"`
+	// The same kind of work across the resource.
+	UsesAcrossResource []string `json:"usesAcrossResource"`
+	// The same work on any target of its kind.
+	UsesAnyTarget []string `json:"usesAnyTarget"`
+}
+
+// GetScopeRepository returns the value of ScopeRepository.
+func (s *JudgeProposal) GetScopeRepository() string {
+	return s.ScopeRepository
+}
+
+// GetScopeWork returns the value of ScopeWork.
+func (s *JudgeProposal) GetScopeWork() string {
+	return s.ScopeWork
+}
+
+// GetUsesAcrossResource returns the value of UsesAcrossResource.
+func (s *JudgeProposal) GetUsesAcrossResource() []string {
+	return s.UsesAcrossResource
+}
+
+// GetUsesAnyTarget returns the value of UsesAnyTarget.
+func (s *JudgeProposal) GetUsesAnyTarget() []string {
+	return s.UsesAnyTarget
+}
+
+// SetScopeRepository sets the value of ScopeRepository.
+func (s *JudgeProposal) SetScopeRepository(val string) {
+	s.ScopeRepository = val
+}
+
+// SetScopeWork sets the value of ScopeWork.
+func (s *JudgeProposal) SetScopeWork(val string) {
+	s.ScopeWork = val
+}
+
+// SetUsesAcrossResource sets the value of UsesAcrossResource.
+func (s *JudgeProposal) SetUsesAcrossResource(val []string) {
+	s.UsesAcrossResource = val
+}
+
+// SetUsesAnyTarget sets the value of UsesAnyTarget.
+func (s *JudgeProposal) SetUsesAnyTarget(val []string) {
+	s.UsesAnyTarget = val
+}
+
+// What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox
+// asked for and what was recorded about it; both are data. The system prompt, the schema and the
+// tools restriction are the judge runtime's own.
+// Ref: #/components/schemas/JudgeProposalJob
+type JudgeProposalJob struct {
+	// The credential asked for, in the words a person reads, never its value.
+	Credential OptString     `json:"credential"`
+	Discobox   JudgeDiscobox `json:"discobox"`
+	// The hosts the request asked to send the credential to.
+	Hosts []string `json:"hosts"`
+	// The uses the request asked for, verbatim.
+	Uses []string `json:"uses"`
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeProposalJob) GetCredential() OptString {
+	return s.Credential
+}
+
+// GetDiscobox returns the value of Discobox.
+func (s *JudgeProposalJob) GetDiscobox() JudgeDiscobox {
+	return s.Discobox
+}
+
+// GetHosts returns the value of Hosts.
+func (s *JudgeProposalJob) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetUses returns the value of Uses.
+func (s *JudgeProposalJob) GetUses() []string {
+	return s.Uses
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeProposalJob) SetCredential(val OptString) {
+	s.Credential = val
+}
+
+// SetDiscobox sets the value of Discobox.
+func (s *JudgeProposalJob) SetDiscobox(val JudgeDiscobox) {
+	s.Discobox = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *JudgeProposalJob) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetUses sets the value of Uses.
+func (s *JudgeProposalJob) SetUses(val []string) {
+	s.Uses = val
 }
 
 // What trusted code recognized a request, or its body, as, and the version of that code (ADR
@@ -1594,6 +1938,98 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeDiscobox returns new OptJudgeDiscobox with value set to v.
+func NewOptJudgeDiscobox(v JudgeDiscobox) OptJudgeDiscobox {
+	return OptJudgeDiscobox{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeDiscobox is optional JudgeDiscobox.
+type OptJudgeDiscobox struct {
+	Value JudgeDiscobox
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeDiscobox was set.
+func (o OptJudgeDiscobox) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeDiscobox) Reset() {
+	var v JudgeDiscobox
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeDiscobox) SetTo(v JudgeDiscobox) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeDiscobox) Get() (v JudgeDiscobox, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeDiscobox) Or(d JudgeDiscobox) JudgeDiscobox {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeDiscoboxPromptWrittenBy returns new OptJudgeDiscoboxPromptWrittenBy with value set to v.
+func NewOptJudgeDiscoboxPromptWrittenBy(v JudgeDiscoboxPromptWrittenBy) OptJudgeDiscoboxPromptWrittenBy {
+	return OptJudgeDiscoboxPromptWrittenBy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeDiscoboxPromptWrittenBy is optional JudgeDiscoboxPromptWrittenBy.
+type OptJudgeDiscoboxPromptWrittenBy struct {
+	Value JudgeDiscoboxPromptWrittenBy
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeDiscoboxPromptWrittenBy was set.
+func (o OptJudgeDiscoboxPromptWrittenBy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeDiscoboxPromptWrittenBy) Reset() {
+	var v JudgeDiscoboxPromptWrittenBy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeDiscoboxPromptWrittenBy) SetTo(v JudgeDiscoboxPromptWrittenBy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeDiscoboxPromptWrittenBy) Get() (v JudgeDiscoboxPromptWrittenBy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeDiscoboxPromptWrittenBy) Or(d JudgeDiscoboxPromptWrittenBy) JudgeDiscoboxPromptWrittenBy {
 	if v, ok := o.Get(); ok {
 		return v
 	}

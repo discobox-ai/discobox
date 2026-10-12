@@ -45,6 +45,10 @@ type ConfigureHarnessConfigRes interface {
 	configureHarnessConfigRes()
 }
 
+type CreateApprovalRuleRes interface {
+	createApprovalRuleRes()
+}
+
 type CreateHarnessConfigRes interface {
 	createHarnessConfigRes()
 }
@@ -101,6 +105,10 @@ type DeconfigureHarnessConfigRes interface {
 	deconfigureHarnessConfigRes()
 }
 
+type DeleteApprovalRuleRes interface {
+	deleteApprovalRuleRes()
+}
+
 type DeleteHarnessConfigRes interface {
 	deleteHarnessConfigRes()
 }
@@ -155,6 +163,10 @@ type DenyTrustRequestRes interface {
 
 type ForceJobRes interface {
 	forceJobRes()
+}
+
+type GetApprovalRuleRes interface {
+	getApprovalRuleRes()
 }
 
 type GetHTTPAuditRes interface {
@@ -267,6 +279,10 @@ type JudgeSandboxRes interface {
 
 type ListApprovalRequestsRes interface {
 	listApprovalRequestsRes()
+}
+
+type ListApprovalRulesRes interface {
+	listApprovalRulesRes()
 }
 
 type ListCredentialVerdictsRes interface {
@@ -401,6 +417,14 @@ type MintSandboxAgentStatusTokensRes interface {
 	mintSandboxAgentStatusTokensRes()
 }
 
+type ProposeApprovalRulesRes interface {
+	proposeApprovalRulesRes()
+}
+
+type ProposeSandboxRuleRes interface {
+	proposeSandboxRuleRes()
+}
+
 type PurgeSandboxRes interface {
 	purgeSandboxRes()
 }
@@ -523,6 +547,10 @@ type UnsetDefaultHarnessConfigRes interface {
 
 type UnsetDefaultPoolRes interface {
 	unsetDefaultPoolRes()
+}
+
+type UpdateApprovalRuleRes interface {
+	updateApprovalRuleRes()
 }
 
 type UpdateHarnessConfigRes interface {

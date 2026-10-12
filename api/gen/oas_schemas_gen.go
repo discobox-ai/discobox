@@ -172,6 +172,252 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ApprovalRule
+type ApprovalRule struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Principal ID of the person who made the rule.
+	CreatedBy OptString `json:"createdBy"`
+	// Whether the rule approves anything. A disabled rule mints nothing and revokes nothing.
+	Enabled bool `json:"enabled"`
+	// When the rule stops approving; empty never.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Hosts a grant minted under the rule may name. A request is covered only when every host it asks
+	// for is within them.
+	Hosts []string `json:"hosts"`
+	// Stable approval rule ID.
+	ID string `json:"id"`
+	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
+	MaxGrantTTLSeconds int64 `json:"maxGrantTTLSeconds"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// What the rule approves a credential for -- to use it, or to delegate it to other discoboxes. One
+	// or the other, as a grant has one.
+	Purpose ApprovalRulePurpose `json:"purpose"`
+	// The one discobox the rule is pinned to, when it is pinned.
+	SandboxId OptString `json:"sandboxId"`
+	// Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a
+	// discobox when it was created. Empty, with no pinned discobox, is every discobox in the project.
+	Scope OptString `json:"scope"`
+	// The project secret the rule approves, when it names one.
+	SecretId OptString `json:"secretId"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// What may be approved, as sentences the judge reads the uses a request asks for against.
+	Uses []string `json:"uses"`
+	// The well-known credential the rule approves, when it names one by ID.
+	WellKnownId OptString `json:"wellKnownId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ApprovalRule) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *ApprovalRule) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *ApprovalRule) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetEnabled returns the value of Enabled.
+func (s *ApprovalRule) GetEnabled() bool {
+	return s.Enabled
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *ApprovalRule) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetHosts returns the value of Hosts.
+func (s *ApprovalRule) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetID returns the value of ID.
+func (s *ApprovalRule) GetID() string {
+	return s.ID
+}
+
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *ApprovalRule) GetMaxGrantTTLSeconds() int64 {
+	return s.MaxGrantTTLSeconds
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *ApprovalRule) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *ApprovalRule) GetPurpose() ApprovalRulePurpose {
+	return s.Purpose
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ApprovalRule) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetScope returns the value of Scope.
+func (s *ApprovalRule) GetScope() OptString {
+	return s.Scope
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *ApprovalRule) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *ApprovalRule) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetUses returns the value of Uses.
+func (s *ApprovalRule) GetUses() []string {
+	return s.Uses
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *ApprovalRule) GetWellKnownId() OptString {
+	return s.WellKnownId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ApprovalRule) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *ApprovalRule) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *ApprovalRule) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetEnabled sets the value of Enabled.
+func (s *ApprovalRule) SetEnabled(val bool) {
+	s.Enabled = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *ApprovalRule) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *ApprovalRule) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetID sets the value of ID.
+func (s *ApprovalRule) SetID(val string) {
+	s.ID = val
+}
+
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *ApprovalRule) SetMaxGrantTTLSeconds(val int64) {
+	s.MaxGrantTTLSeconds = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *ApprovalRule) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *ApprovalRule) SetPurpose(val ApprovalRulePurpose) {
+	s.Purpose = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ApprovalRule) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetScope sets the value of Scope.
+func (s *ApprovalRule) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *ApprovalRule) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *ApprovalRule) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetUses sets the value of Uses.
+func (s *ApprovalRule) SetUses(val []string) {
+	s.Uses = val
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *ApprovalRule) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
+}
+
+func (*ApprovalRule) createApprovalRuleRes() {}
+func (*ApprovalRule) getApprovalRuleRes()    {}
+func (*ApprovalRule) updateApprovalRuleRes() {}
+
+// What the rule approves a credential for -- to use it, or to delegate it to other discoboxes. One
+// or the other, as a grant has one.
+type ApprovalRulePurpose string
+
+const (
+	ApprovalRulePurposeUse      ApprovalRulePurpose = "use"
+	ApprovalRulePurposeDelegate ApprovalRulePurpose = "delegate"
+)
+
+// AllValues returns all ApprovalRulePurpose values.
+func (ApprovalRulePurpose) AllValues() []ApprovalRulePurpose {
+	return []ApprovalRulePurpose{
+		ApprovalRulePurposeUse,
+		ApprovalRulePurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApprovalRulePurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case ApprovalRulePurposeUse:
+		return []byte(s), nil
+	case ApprovalRulePurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApprovalRulePurpose) UnmarshalText(data []byte) error {
+	switch ApprovalRulePurpose(data) {
+	case ApprovalRulePurposeUse:
+		*s = ApprovalRulePurposeUse
+		return nil
+	case ApprovalRulePurposeDelegate:
+		*s = ApprovalRulePurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ApproveSecretRequestBody
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
@@ -184,7 +430,8 @@ type ApproveSecretRequestBody struct {
 	// Hosts the minted grant is limited to (ADR 26-10-02-393). Left out, the hosts the request named; an
 	// empty list names none. Approving a protocol-originated request with no host at all is rejected; a
 	// wildcard grant stays an explicit administrative act.
-	Hosts []string `json:"hosts"`
+	Hosts []string           `json:"hosts"`
+	Rule  OptApproveWithRule `json:"rule"`
 	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
 	// otherwise project.
 	Scope OptApproveSecretRequestBodyScope `json:"scope"`
@@ -220,6 +467,11 @@ func (s *ApproveSecretRequestBody) GetGrantTTLSeconds() OptInt64 {
 // GetHosts returns the value of Hosts.
 func (s *ApproveSecretRequestBody) GetHosts() []string {
 	return s.Hosts
+}
+
+// GetRule returns the value of Rule.
+func (s *ApproveSecretRequestBody) GetRule() OptApproveWithRule {
+	return s.Rule
 }
 
 // GetScope returns the value of Scope.
@@ -260,6 +512,11 @@ func (s *ApproveSecretRequestBody) SetGrantTTLSeconds(val OptInt64) {
 // SetHosts sets the value of Hosts.
 func (s *ApproveSecretRequestBody) SetHosts(val []string) {
 	s.Hosts = val
+}
+
+// SetRule sets the value of Rule.
+func (s *ApproveSecretRequestBody) SetRule(val OptApproveWithRule) {
+	s.Rule = val
 }
 
 // SetScope sets the value of Scope.
@@ -387,6 +644,80 @@ func (s *ApproveTrustRequestBody) SetPin(val OptTrustPin) {
 
 // SetUses sets the value of Uses.
 func (s *ApproveTrustRequestBody) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+// Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the
+// request and the request is approved under it, in one write. The rule's credential, hosts and
+// purpose are the request's, copied by the server and never taken from here. Its scope and uses are
+// what a person chose or wrote, and are held to the judge's word before anything is made, so a rule
+// that would not cover this request is refused. Only a person approves this way.
+// Ref: #/components/schemas/ApproveWithRule
+type ApproveWithRule struct {
+	// When the rule stops approving. Left out, it does not lapse.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
+	// Left out, the lifetime this approval grants.
+	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
+	// Pins the rule to one discobox, which must be the one that filed the request. A pin is compared,
+	// not read.
+	SandboxId OptString `json:"sandboxId"`
+	// Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a
+	// discobox when it was created. Left out, with no pinned discobox, the rule is for every discobox in
+	// the project, including ones that do not exist yet.
+	Scope OptString `json:"scope"`
+	// What the rule approves, as sentences the judge reads the uses a request asks for against. Left out,
+	//  the request's uses as asked.
+	Uses []string `json:"uses"`
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *ApproveWithRule) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *ApproveWithRule) GetMaxGrantTTLSeconds() OptInt64 {
+	return s.MaxGrantTTLSeconds
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ApproveWithRule) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetScope returns the value of Scope.
+func (s *ApproveWithRule) GetScope() OptString {
+	return s.Scope
+}
+
+// GetUses returns the value of Uses.
+func (s *ApproveWithRule) GetUses() []string {
+	return s.Uses
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *ApproveWithRule) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *ApproveWithRule) SetMaxGrantTTLSeconds(val OptInt64) {
+	s.MaxGrantTTLSeconds = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ApproveWithRule) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetScope sets the value of Scope.
+func (s *ApproveWithRule) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// SetUses sets the value of Uses.
+func (s *ApproveWithRule) SetUses(val []string) {
 	s.Uses = val
 }
 
@@ -687,6 +1018,187 @@ func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushB
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/CreateApprovalRuleBody
+type CreateApprovalRuleBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Whether the rule approves anything. Left out, it does.
+	Enabled OptBool `json:"enabled"`
+	// When the rule stops approving. Left out, it does not lapse.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Hosts a grant minted under the rule may name. Left out, the well-known credential's own hosts, or
+	// the host the secret is bound to. A rule always names at least one concrete host.
+	Hosts []string `json:"hosts"`
+	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
+	// Left out, an hour.
+	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
+	// What the rule approves a credential for. Left out, to use it.
+	Purpose OptCreateApprovalRuleBodyPurpose `json:"purpose"`
+	// Pins the rule to one discobox.
+	SandboxId OptString `json:"sandboxId"`
+	// Which discoboxes the rule is for, as a sentence the judge reads. Left out, with no pinned discobox,
+	//  the rule is for every discobox in the project, including ones that do not exist yet.
+	Scope OptString `json:"scope"`
+	// The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
+	SecretId OptString `json:"secretId"`
+	// What may be approved, as sentences. At least one.
+	Uses []string `json:"uses"`
+	// The well-known credential the rule approves, by its ID.
+	WellKnownId OptString `json:"wellKnownId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateApprovalRuleBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetEnabled returns the value of Enabled.
+func (s *CreateApprovalRuleBody) GetEnabled() OptBool {
+	return s.Enabled
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *CreateApprovalRuleBody) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetHosts returns the value of Hosts.
+func (s *CreateApprovalRuleBody) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *CreateApprovalRuleBody) GetMaxGrantTTLSeconds() OptInt64 {
+	return s.MaxGrantTTLSeconds
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *CreateApprovalRuleBody) GetPurpose() OptCreateApprovalRuleBodyPurpose {
+	return s.Purpose
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *CreateApprovalRuleBody) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetScope returns the value of Scope.
+func (s *CreateApprovalRuleBody) GetScope() OptString {
+	return s.Scope
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *CreateApprovalRuleBody) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetUses returns the value of Uses.
+func (s *CreateApprovalRuleBody) GetUses() []string {
+	return s.Uses
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *CreateApprovalRuleBody) GetWellKnownId() OptString {
+	return s.WellKnownId
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateApprovalRuleBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetEnabled sets the value of Enabled.
+func (s *CreateApprovalRuleBody) SetEnabled(val OptBool) {
+	s.Enabled = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *CreateApprovalRuleBody) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *CreateApprovalRuleBody) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *CreateApprovalRuleBody) SetMaxGrantTTLSeconds(val OptInt64) {
+	s.MaxGrantTTLSeconds = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *CreateApprovalRuleBody) SetPurpose(val OptCreateApprovalRuleBodyPurpose) {
+	s.Purpose = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *CreateApprovalRuleBody) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetScope sets the value of Scope.
+func (s *CreateApprovalRuleBody) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *CreateApprovalRuleBody) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetUses sets the value of Uses.
+func (s *CreateApprovalRuleBody) SetUses(val []string) {
+	s.Uses = val
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *CreateApprovalRuleBody) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
+}
+
+// What the rule approves a credential for. Left out, to use it.
+type CreateApprovalRuleBodyPurpose string
+
+const (
+	CreateApprovalRuleBodyPurposeUse      CreateApprovalRuleBodyPurpose = "use"
+	CreateApprovalRuleBodyPurposeDelegate CreateApprovalRuleBodyPurpose = "delegate"
+)
+
+// AllValues returns all CreateApprovalRuleBodyPurpose values.
+func (CreateApprovalRuleBodyPurpose) AllValues() []CreateApprovalRuleBodyPurpose {
+	return []CreateApprovalRuleBodyPurpose{
+		CreateApprovalRuleBodyPurposeUse,
+		CreateApprovalRuleBodyPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateApprovalRuleBodyPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateApprovalRuleBodyPurposeUse:
+		return []byte(s), nil
+	case CreateApprovalRuleBodyPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateApprovalRuleBodyPurpose) UnmarshalText(data []byte) error {
+	switch CreateApprovalRuleBodyPurpose(data) {
+	case CreateApprovalRuleBodyPurposeUse:
+		*s = CreateApprovalRuleBodyPurposeUse
+		return nil
+	case CreateApprovalRuleBodyPurposeDelegate:
+		*s = CreateApprovalRuleBodyPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/CreateHarnessConfigBody
@@ -2207,10 +2719,17 @@ type CredentialVerdict struct {
 	JevInput jx.Raw `json:"jevInput"`
 	// The project's judge that answered, on a request verdict. It may no longer exist.
 	JudgeSandboxId OptString `json:"judgeSandboxId"`
-	// What was judged: a command about to run, a request the proxy observed, or a discobox about to hand
-	// a credential on by approving another's request. A server that predates request verdicts leaves it
-	// out, and every verdict it has is a command verdict.
+	// What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
+	// credential on by approving another's request, or an approval rule being tested: its scope against
+	// the asking discobox, or its uses against what the request asked for (ADR 26-10-12-330). A server
+	// that predates request verdicts leaves it out, and every verdict it has is a command verdict.
 	Kind OptCredentialVerdictKind `json:"kind"`
+	// On a scope or rule verdict, the approval rule tested. Absent on one recorded while the rule was
+	// still a proposal, which names its request instead.
+	RuleId OptString `json:"ruleId"`
+	// On a scope or rule verdict, the SHA-256 of the question judged, by which an answer on record is
+	// reused rather than asked again.
+	QuestionDigest OptString `json:"questionDigest"`
 	// Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked:
 	// discobox-access around its wrapper for a command verdict, the control plane around the call to the
 	// judge for a request verdict.
@@ -2326,6 +2845,16 @@ func (s *CredentialVerdict) GetJudgeSandboxId() OptString {
 // GetKind returns the value of Kind.
 func (s *CredentialVerdict) GetKind() OptCredentialVerdictKind {
 	return s.Kind
+}
+
+// GetRuleId returns the value of RuleId.
+func (s *CredentialVerdict) GetRuleId() OptString {
+	return s.RuleId
+}
+
+// GetQuestionDigest returns the value of QuestionDigest.
+func (s *CredentialVerdict) GetQuestionDigest() OptString {
+	return s.QuestionDigest
 }
 
 // GetLatencyMs returns the value of LatencyMs.
@@ -2488,6 +3017,16 @@ func (s *CredentialVerdict) SetKind(val OptCredentialVerdictKind) {
 	s.Kind = val
 }
 
+// SetRuleId sets the value of RuleId.
+func (s *CredentialVerdict) SetRuleId(val OptString) {
+	s.RuleId = val
+}
+
+// SetQuestionDigest sets the value of QuestionDigest.
+func (s *CredentialVerdict) SetQuestionDigest(val OptString) {
+	s.QuestionDigest = val
+}
+
 // SetLatencyMs sets the value of LatencyMs.
 func (s *CredentialVerdict) SetLatencyMs(val OptInt64) {
 	s.LatencyMs = val
@@ -2583,15 +3122,18 @@ func (s *CredentialVerdict) SetVolunteered(val bool) {
 	s.Volunteered = val
 }
 
-// What was judged: a command about to run, a request the proxy observed, or a discobox about to hand
-// a credential on by approving another's request. A server that predates request verdicts leaves it
-// out, and every verdict it has is a command verdict.
+// What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
+// credential on by approving another's request, or an approval rule being tested: its scope against
+// the asking discobox, or its uses against what the request asked for (ADR 26-10-12-330). A server
+// that predates request verdicts leaves it out, and every verdict it has is a command verdict.
 type CredentialVerdictKind string
 
 const (
 	CredentialVerdictKindCommand    CredentialVerdictKind = "command"
 	CredentialVerdictKindRequest    CredentialVerdictKind = "request"
 	CredentialVerdictKindDelegation CredentialVerdictKind = "delegation"
+	CredentialVerdictKindScope      CredentialVerdictKind = "scope"
+	CredentialVerdictKindRule       CredentialVerdictKind = "rule"
 )
 
 // AllValues returns all CredentialVerdictKind values.
@@ -2600,6 +3142,8 @@ func (CredentialVerdictKind) AllValues() []CredentialVerdictKind {
 		CredentialVerdictKindCommand,
 		CredentialVerdictKindRequest,
 		CredentialVerdictKindDelegation,
+		CredentialVerdictKindScope,
+		CredentialVerdictKindRule,
 	}
 }
 
@@ -2611,6 +3155,10 @@ func (s CredentialVerdictKind) MarshalText() ([]byte, error) {
 	case CredentialVerdictKindRequest:
 		return []byte(s), nil
 	case CredentialVerdictKindDelegation:
+		return []byte(s), nil
+	case CredentialVerdictKindScope:
+		return []byte(s), nil
+	case CredentialVerdictKindRule:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2628,6 +3176,12 @@ func (s *CredentialVerdictKind) UnmarshalText(data []byte) error {
 		return nil
 	case CredentialVerdictKindDelegation:
 		*s = CredentialVerdictKindDelegation
+		return nil
+	case CredentialVerdictKindScope:
+		*s = CredentialVerdictKindScope
+		return nil
+	case CredentialVerdictKindRule:
+		*s = CredentialVerdictKindRule
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -2833,6 +3387,11 @@ func (s *DNSAuditQuery) SetSandboxId(val string) {
 func (s *DNSAuditQuery) SetType(val string) {
 	s.Type = val
 }
+
+// DeleteApprovalRuleNoContent is response for DeleteApprovalRule operation.
+type DeleteApprovalRuleNoContent struct{}
+
+func (*DeleteApprovalRuleNoContent) deleteApprovalRuleRes() {}
 
 // DeleteHarnessConfigNoContent is response for DeleteHarnessConfig operation.
 type DeleteHarnessConfigNoContent struct{}
@@ -3063,6 +3622,7 @@ func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()     {}
 func (*ErrorModelStatusCode) completeSandboxApplyRes()             {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
+func (*ErrorModelStatusCode) createApprovalRuleRes()               {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createPeerRes()                       {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
@@ -3076,6 +3636,7 @@ func (*ErrorModelStatusCode) createSecretGrantRes()                {}
 func (*ErrorModelStatusCode) createSecretRequestRes()              {}
 func (*ErrorModelStatusCode) createSecretRes()                     {}
 func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
+func (*ErrorModelStatusCode) deleteApprovalRuleRes()               {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deletePeerRes()                       {}
@@ -3089,6 +3650,7 @@ func (*ErrorModelStatusCode) deleteSecretRes()                     {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                {}
 func (*ErrorModelStatusCode) denyTrustRequestRes()                 {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
+func (*ErrorModelStatusCode) getApprovalRuleRes()                  {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
@@ -3107,6 +3669,7 @@ func (*ErrorModelStatusCode) getTrustRequestRes()                  {}
 func (*ErrorModelStatusCode) judgeCommandForPoolRes()              {}
 func (*ErrorModelStatusCode) judgeForPoolRes()                     {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()             {}
+func (*ErrorModelStatusCode) listApprovalRulesRes()                {}
 func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                     {}
 func (*ErrorModelStatusCode) listHTTPAuditRes()                    {}
@@ -3131,6 +3694,7 @@ func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
 func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
+func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
@@ -3155,6 +3719,7 @@ func (*ErrorModelStatusCode) stopSandboxRes()                      {}
 func (*ErrorModelStatusCode) unarchiveSandboxRes()                 {}
 func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()        {}
 func (*ErrorModelStatusCode) unsetDefaultPoolRes()                 {}
+func (*ErrorModelStatusCode) updateApprovalRuleRes()               {}
 func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) updatePoolRes()                       {}
 func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
@@ -3230,6 +3795,7 @@ func (*ErrorResponseStatusCode) listSandboxExecsRes()               {}
 func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()         {}
 func (*ErrorResponseStatusCode) listSandboxServicesRes()            {}
 func (*ErrorResponseStatusCode) listSandboxToolsRes()               {}
+func (*ErrorResponseStatusCode) proposeSandboxRuleRes()             {}
 func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()           {}
@@ -6315,6 +6881,215 @@ func (*JudgeAnswer) judgeCommandForPoolRes() {}
 func (*JudgeAnswer) judgeForPoolRes()        {}
 func (*JudgeAnswer) judgeSandboxRes()        {}
 
+// What the control plane recorded about a discobox when it was created, which an approval rule's
+// scope is read against (ADR 26-10-12-330). Nothing a discobox writes about itself is here.
+// Ref: #/components/schemas/JudgeDiscobox
+type JudgeDiscobox struct {
+	// Who created it, a person or a discobox.
+	CreatedBy JudgeDiscoboxCreatedBy `json:"createdBy"`
+	// The discobox that created it, when one did.
+	Creator OptString `json:"creator"`
+	// The harness it runs.
+	Harness OptString `json:"harness"`
+	// The repositories beside its primary source, each with its ref when it names one.
+	OtherSources []string `json:"otherSources"`
+	// Its pool's platform.
+	Platform OptString     `json:"platform"`
+	Prompt   OptJudgeInput `json:"prompt"`
+	// Who wrote the prompt, which is who created the discobox.
+	PromptWrittenBy OptJudgeDiscoboxPromptWrittenBy `json:"promptWrittenBy"`
+	// The ref of its primary source.
+	Ref OptString `json:"ref"`
+	// The repository of its primary source.
+	Repository OptString `json:"repository"`
+	// The names of the skills it was created with.
+	Skills []string `json:"skills"`
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *JudgeDiscobox) GetCreatedBy() JudgeDiscoboxCreatedBy {
+	return s.CreatedBy
+}
+
+// GetCreator returns the value of Creator.
+func (s *JudgeDiscobox) GetCreator() OptString {
+	return s.Creator
+}
+
+// GetHarness returns the value of Harness.
+func (s *JudgeDiscobox) GetHarness() OptString {
+	return s.Harness
+}
+
+// GetOtherSources returns the value of OtherSources.
+func (s *JudgeDiscobox) GetOtherSources() []string {
+	return s.OtherSources
+}
+
+// GetPlatform returns the value of Platform.
+func (s *JudgeDiscobox) GetPlatform() OptString {
+	return s.Platform
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *JudgeDiscobox) GetPrompt() OptJudgeInput {
+	return s.Prompt
+}
+
+// GetPromptWrittenBy returns the value of PromptWrittenBy.
+func (s *JudgeDiscobox) GetPromptWrittenBy() OptJudgeDiscoboxPromptWrittenBy {
+	return s.PromptWrittenBy
+}
+
+// GetRef returns the value of Ref.
+func (s *JudgeDiscobox) GetRef() OptString {
+	return s.Ref
+}
+
+// GetRepository returns the value of Repository.
+func (s *JudgeDiscobox) GetRepository() OptString {
+	return s.Repository
+}
+
+// GetSkills returns the value of Skills.
+func (s *JudgeDiscobox) GetSkills() []string {
+	return s.Skills
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *JudgeDiscobox) SetCreatedBy(val JudgeDiscoboxCreatedBy) {
+	s.CreatedBy = val
+}
+
+// SetCreator sets the value of Creator.
+func (s *JudgeDiscobox) SetCreator(val OptString) {
+	s.Creator = val
+}
+
+// SetHarness sets the value of Harness.
+func (s *JudgeDiscobox) SetHarness(val OptString) {
+	s.Harness = val
+}
+
+// SetOtherSources sets the value of OtherSources.
+func (s *JudgeDiscobox) SetOtherSources(val []string) {
+	s.OtherSources = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *JudgeDiscobox) SetPlatform(val OptString) {
+	s.Platform = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *JudgeDiscobox) SetPrompt(val OptJudgeInput) {
+	s.Prompt = val
+}
+
+// SetPromptWrittenBy sets the value of PromptWrittenBy.
+func (s *JudgeDiscobox) SetPromptWrittenBy(val OptJudgeDiscoboxPromptWrittenBy) {
+	s.PromptWrittenBy = val
+}
+
+// SetRef sets the value of Ref.
+func (s *JudgeDiscobox) SetRef(val OptString) {
+	s.Ref = val
+}
+
+// SetRepository sets the value of Repository.
+func (s *JudgeDiscobox) SetRepository(val OptString) {
+	s.Repository = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *JudgeDiscobox) SetSkills(val []string) {
+	s.Skills = val
+}
+
+// Who created it, a person or a discobox.
+type JudgeDiscoboxCreatedBy string
+
+const (
+	JudgeDiscoboxCreatedByAPerson   JudgeDiscoboxCreatedBy = "a person"
+	JudgeDiscoboxCreatedByADiscobox JudgeDiscoboxCreatedBy = "a discobox"
+)
+
+// AllValues returns all JudgeDiscoboxCreatedBy values.
+func (JudgeDiscoboxCreatedBy) AllValues() []JudgeDiscoboxCreatedBy {
+	return []JudgeDiscoboxCreatedBy{
+		JudgeDiscoboxCreatedByAPerson,
+		JudgeDiscoboxCreatedByADiscobox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeDiscoboxCreatedBy) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeDiscoboxCreatedByAPerson:
+		return []byte(s), nil
+	case JudgeDiscoboxCreatedByADiscobox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeDiscoboxCreatedBy) UnmarshalText(data []byte) error {
+	switch JudgeDiscoboxCreatedBy(data) {
+	case JudgeDiscoboxCreatedByAPerson:
+		*s = JudgeDiscoboxCreatedByAPerson
+		return nil
+	case JudgeDiscoboxCreatedByADiscobox:
+		*s = JudgeDiscoboxCreatedByADiscobox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Who wrote the prompt, which is who created the discobox.
+type JudgeDiscoboxPromptWrittenBy string
+
+const (
+	JudgeDiscoboxPromptWrittenByAPerson   JudgeDiscoboxPromptWrittenBy = "a person"
+	JudgeDiscoboxPromptWrittenByADiscobox JudgeDiscoboxPromptWrittenBy = "a discobox"
+)
+
+// AllValues returns all JudgeDiscoboxPromptWrittenBy values.
+func (JudgeDiscoboxPromptWrittenBy) AllValues() []JudgeDiscoboxPromptWrittenBy {
+	return []JudgeDiscoboxPromptWrittenBy{
+		JudgeDiscoboxPromptWrittenByAPerson,
+		JudgeDiscoboxPromptWrittenByADiscobox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeDiscoboxPromptWrittenBy) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeDiscoboxPromptWrittenByAPerson:
+		return []byte(s), nil
+	case JudgeDiscoboxPromptWrittenByADiscobox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeDiscoboxPromptWrittenBy) UnmarshalText(data []byte) error {
+	switch JudgeDiscoboxPromptWrittenBy(data) {
+	case JudgeDiscoboxPromptWrittenByAPerson:
+		*s = JudgeDiscoboxPromptWrittenByAPerson
+		return nil
+	case JudgeDiscoboxPromptWrittenByADiscobox:
+		*s = JudgeDiscoboxPromptWrittenByADiscobox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // What a command will read on standard input, as much of it as the discobox showed (ADR
 // 26-09-27-905).
 // Ref: #/components/schemas/JudgeInput
@@ -6352,16 +7127,18 @@ func (s *JudgeInput) SetMissing(val OptString) {
 type JudgeJob struct {
 	// The argv, for a command job. For a request job it is what the discobox declared it was running,
 	// which is context and not authority.
-	Command []string `json:"command"`
+	Command  []string         `json:"command"`
+	Discobox OptJudgeDiscobox `json:"discobox"`
 	// The credential in the words a person reads, never its value.
 	Credential OptString `json:"credential"`
 	// What Discobox knows about what the request was recognized as, set by the control plane from the
 	// judge package and never by a pool. It explains; it never authorizes.
 	Guidance []string `json:"guidance"`
-	// The host the use was approved for.
+	// The host the use was approved for. Empty on a scope job, which has none.
 	Host string `json:"host"`
-	// What is being judged: a command about to run, a request the proxy observed, or a discobox about to
-	// hand a credential on by approving another's request.
+	// What is being judged: a command about to run, a request the proxy observed, a discobox about to
+	// hand a credential on by approving another's request, whether a discobox is one an approval rule's
+	// scope describes, or whether what a discobox asked for is within an approval rule's uses.
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in. For a delegation job, the uses the discobox was
 	// delegated, one per line.
@@ -6379,6 +7156,11 @@ type JudgeJob struct {
 // GetCommand returns the value of Command.
 func (s *JudgeJob) GetCommand() []string {
 	return s.Command
+}
+
+// GetDiscobox returns the value of Discobox.
+func (s *JudgeJob) GetDiscobox() OptJudgeDiscobox {
+	return s.Discobox
 }
 
 // GetCredential returns the value of Credential.
@@ -6436,6 +7218,11 @@ func (s *JudgeJob) SetCommand(val []string) {
 	s.Command = val
 }
 
+// SetDiscobox sets the value of Discobox.
+func (s *JudgeJob) SetDiscobox(val OptJudgeDiscobox) {
+	s.Discobox = val
+}
+
 // SetCredential sets the value of Credential.
 func (s *JudgeJob) SetCredential(val OptString) {
 	s.Credential = val
@@ -6486,14 +7273,17 @@ func (s *JudgeJob) SetUses(val []string) {
 	s.Uses = val
 }
 
-// What is being judged: a command about to run, a request the proxy observed, or a discobox about to
-// hand a credential on by approving another's request.
+// What is being judged: a command about to run, a request the proxy observed, a discobox about to
+// hand a credential on by approving another's request, whether a discobox is one an approval rule's
+// scope describes, or whether what a discobox asked for is within an approval rule's uses.
 type JudgeJobKind string
 
 const (
 	JudgeJobKindCommand    JudgeJobKind = "command"
 	JudgeJobKindRequest    JudgeJobKind = "request"
 	JudgeJobKindDelegation JudgeJobKind = "delegation"
+	JudgeJobKindScope      JudgeJobKind = "scope"
+	JudgeJobKindRule       JudgeJobKind = "rule"
 )
 
 // AllValues returns all JudgeJobKind values.
@@ -6502,6 +7292,8 @@ func (JudgeJobKind) AllValues() []JudgeJobKind {
 		JudgeJobKindCommand,
 		JudgeJobKindRequest,
 		JudgeJobKindDelegation,
+		JudgeJobKindScope,
+		JudgeJobKindRule,
 	}
 }
 
@@ -6513,6 +7305,10 @@ func (s JudgeJobKind) MarshalText() ([]byte, error) {
 	case JudgeJobKindRequest:
 		return []byte(s), nil
 	case JudgeJobKindDelegation:
+		return []byte(s), nil
+	case JudgeJobKindScope:
+		return []byte(s), nil
+	case JudgeJobKindRule:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6530,6 +7326,12 @@ func (s *JudgeJobKind) UnmarshalText(data []byte) error {
 		return nil
 	case JudgeJobKindDelegation:
 		*s = JudgeJobKindDelegation
+		return nil
+	case JudgeJobKindScope:
+		*s = JudgeJobKindScope
+		return nil
+	case JudgeJobKindRule:
+		*s = JudgeJobKindRule
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -6563,6 +7365,116 @@ func (s *JudgeNeed) SetBody(val bool) {
 // SetBytes sets the value of Bytes.
 func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
+}
+
+// The wider scopes and uses a model wrote for an approval rule, narrower first. They authorize
+// nothing; each is judged, and read by a person, before it becomes a rule.
+// Ref: #/components/schemas/JudgeProposal
+type JudgeProposal struct {
+	// Any discobox on the asking discobox's repository.
+	ScopeRepository string `json:"scopeRepository"`
+	// Discoboxes doing the asking discobox's kind of work on its repository.
+	ScopeWork string `json:"scopeWork"`
+	// The same kind of work across the resource.
+	UsesAcrossResource []string `json:"usesAcrossResource"`
+	// The same work on any target of its kind.
+	UsesAnyTarget []string `json:"usesAnyTarget"`
+}
+
+// GetScopeRepository returns the value of ScopeRepository.
+func (s *JudgeProposal) GetScopeRepository() string {
+	return s.ScopeRepository
+}
+
+// GetScopeWork returns the value of ScopeWork.
+func (s *JudgeProposal) GetScopeWork() string {
+	return s.ScopeWork
+}
+
+// GetUsesAcrossResource returns the value of UsesAcrossResource.
+func (s *JudgeProposal) GetUsesAcrossResource() []string {
+	return s.UsesAcrossResource
+}
+
+// GetUsesAnyTarget returns the value of UsesAnyTarget.
+func (s *JudgeProposal) GetUsesAnyTarget() []string {
+	return s.UsesAnyTarget
+}
+
+// SetScopeRepository sets the value of ScopeRepository.
+func (s *JudgeProposal) SetScopeRepository(val string) {
+	s.ScopeRepository = val
+}
+
+// SetScopeWork sets the value of ScopeWork.
+func (s *JudgeProposal) SetScopeWork(val string) {
+	s.ScopeWork = val
+}
+
+// SetUsesAcrossResource sets the value of UsesAcrossResource.
+func (s *JudgeProposal) SetUsesAcrossResource(val []string) {
+	s.UsesAcrossResource = val
+}
+
+// SetUsesAnyTarget sets the value of UsesAnyTarget.
+func (s *JudgeProposal) SetUsesAnyTarget(val []string) {
+	s.UsesAnyTarget = val
+}
+
+func (*JudgeProposal) proposeSandboxRuleRes() {}
+
+// What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox
+// asked for and what was recorded about it; both are data. The system prompt, the schema and the
+// tools restriction are the judge runtime's own.
+// Ref: #/components/schemas/JudgeProposalJob
+type JudgeProposalJob struct {
+	// The credential asked for, in the words a person reads, never its value.
+	Credential OptString     `json:"credential"`
+	Discobox   JudgeDiscobox `json:"discobox"`
+	// The hosts the request asked to send the credential to.
+	Hosts []string `json:"hosts"`
+	// The uses the request asked for, verbatim.
+	Uses []string `json:"uses"`
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeProposalJob) GetCredential() OptString {
+	return s.Credential
+}
+
+// GetDiscobox returns the value of Discobox.
+func (s *JudgeProposalJob) GetDiscobox() JudgeDiscobox {
+	return s.Discobox
+}
+
+// GetHosts returns the value of Hosts.
+func (s *JudgeProposalJob) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetUses returns the value of Uses.
+func (s *JudgeProposalJob) GetUses() []string {
+	return s.Uses
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeProposalJob) SetCredential(val OptString) {
+	s.Credential = val
+}
+
+// SetDiscobox sets the value of Discobox.
+func (s *JudgeProposalJob) SetDiscobox(val JudgeDiscobox) {
+	s.Discobox = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *JudgeProposalJob) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetUses sets the value of Uses.
+func (s *JudgeProposalJob) SetUses(val []string) {
+	s.Uses = val
 }
 
 // What trusted code recognized a request, or its body, as, and the version of that code (ADR
@@ -6946,6 +7858,35 @@ func (s *ListApprovalRequestsStatus) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ListApprovalRulesBody
+type ListApprovalRulesBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema        OptURI         `json:"$schema"`
+	ApprovalRules []ApprovalRule `json:"approvalRules"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListApprovalRulesBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetApprovalRules returns the value of ApprovalRules.
+func (s *ListApprovalRulesBody) GetApprovalRules() []ApprovalRule {
+	return s.ApprovalRules
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListApprovalRulesBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetApprovalRules sets the value of ApprovalRules.
+func (s *ListApprovalRulesBody) SetApprovalRules(val []ApprovalRule) {
+	s.ApprovalRules = val
+}
+
+func (*ListApprovalRulesBody) listApprovalRulesRes() {}
+
 // Ref: #/components/schemas/ListCredentialVerdictsBody
 type ListCredentialVerdictsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -6983,6 +7924,8 @@ const (
 	ListCredentialVerdictsKindCommand    ListCredentialVerdictsKind = "command"
 	ListCredentialVerdictsKindRequest    ListCredentialVerdictsKind = "request"
 	ListCredentialVerdictsKindDelegation ListCredentialVerdictsKind = "delegation"
+	ListCredentialVerdictsKindScope      ListCredentialVerdictsKind = "scope"
+	ListCredentialVerdictsKindRule       ListCredentialVerdictsKind = "rule"
 )
 
 // AllValues returns all ListCredentialVerdictsKind values.
@@ -6991,6 +7934,8 @@ func (ListCredentialVerdictsKind) AllValues() []ListCredentialVerdictsKind {
 		ListCredentialVerdictsKindCommand,
 		ListCredentialVerdictsKindRequest,
 		ListCredentialVerdictsKindDelegation,
+		ListCredentialVerdictsKindScope,
+		ListCredentialVerdictsKindRule,
 	}
 }
 
@@ -7002,6 +7947,10 @@ func (s ListCredentialVerdictsKind) MarshalText() ([]byte, error) {
 	case ListCredentialVerdictsKindRequest:
 		return []byte(s), nil
 	case ListCredentialVerdictsKindDelegation:
+		return []byte(s), nil
+	case ListCredentialVerdictsKindScope:
+		return []byte(s), nil
+	case ListCredentialVerdictsKindRule:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -7019,6 +7968,12 @@ func (s *ListCredentialVerdictsKind) UnmarshalText(data []byte) error {
 		return nil
 	case ListCredentialVerdictsKindDelegation:
 		*s = ListCredentialVerdictsKindDelegation
+		return nil
+	case ListCredentialVerdictsKindScope:
+		*s = ListCredentialVerdictsKindScope
+		return nil
+	case ListCredentialVerdictsKindRule:
+		*s = ListCredentialVerdictsKindRule
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -8219,6 +9174,52 @@ func (o OptApproveSecretRequestBodyScope) Or(d ApproveSecretRequestBodyScope) Ap
 	return d
 }
 
+// NewOptApproveWithRule returns new OptApproveWithRule with value set to v.
+func NewOptApproveWithRule(v ApproveWithRule) OptApproveWithRule {
+	return OptApproveWithRule{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApproveWithRule is optional ApproveWithRule.
+type OptApproveWithRule struct {
+	Value ApproveWithRule
+	Set   bool
+}
+
+// IsSet returns true if OptApproveWithRule was set.
+func (o OptApproveWithRule) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApproveWithRule) Reset() {
+	var v ApproveWithRule
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApproveWithRule) SetTo(v ApproveWithRule) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApproveWithRule) Get() (v ApproveWithRule, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApproveWithRule) Or(d ApproveWithRule) ApproveWithRule {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -8305,6 +9306,52 @@ func (o OptCloneProgressStage) Get() (v CloneProgressStage, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCloneProgressStage) Or(d CloneProgressStage) CloneProgressStage {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCreateApprovalRuleBodyPurpose returns new OptCreateApprovalRuleBodyPurpose with value set to v.
+func NewOptCreateApprovalRuleBodyPurpose(v CreateApprovalRuleBodyPurpose) OptCreateApprovalRuleBodyPurpose {
+	return OptCreateApprovalRuleBodyPurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateApprovalRuleBodyPurpose is optional CreateApprovalRuleBodyPurpose.
+type OptCreateApprovalRuleBodyPurpose struct {
+	Value CreateApprovalRuleBodyPurpose
+	Set   bool
+}
+
+// IsSet returns true if OptCreateApprovalRuleBodyPurpose was set.
+func (o OptCreateApprovalRuleBodyPurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateApprovalRuleBodyPurpose) Reset() {
+	var v CreateApprovalRuleBodyPurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateApprovalRuleBodyPurpose) SetTo(v CreateApprovalRuleBodyPurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateApprovalRuleBodyPurpose) Get() (v CreateApprovalRuleBodyPurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateApprovalRuleBodyPurpose) Or(d CreateApprovalRuleBodyPurpose) CreateApprovalRuleBodyPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -9547,6 +10594,98 @@ func (o OptIrohListener) Get() (v IrohListener, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIrohListener) Or(d IrohListener) IrohListener {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeDiscobox returns new OptJudgeDiscobox with value set to v.
+func NewOptJudgeDiscobox(v JudgeDiscobox) OptJudgeDiscobox {
+	return OptJudgeDiscobox{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeDiscobox is optional JudgeDiscobox.
+type OptJudgeDiscobox struct {
+	Value JudgeDiscobox
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeDiscobox was set.
+func (o OptJudgeDiscobox) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeDiscobox) Reset() {
+	var v JudgeDiscobox
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeDiscobox) SetTo(v JudgeDiscobox) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeDiscobox) Get() (v JudgeDiscobox, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeDiscobox) Or(d JudgeDiscobox) JudgeDiscobox {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeDiscoboxPromptWrittenBy returns new OptJudgeDiscoboxPromptWrittenBy with value set to v.
+func NewOptJudgeDiscoboxPromptWrittenBy(v JudgeDiscoboxPromptWrittenBy) OptJudgeDiscoboxPromptWrittenBy {
+	return OptJudgeDiscoboxPromptWrittenBy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeDiscoboxPromptWrittenBy is optional JudgeDiscoboxPromptWrittenBy.
+type OptJudgeDiscoboxPromptWrittenBy struct {
+	Value JudgeDiscoboxPromptWrittenBy
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeDiscoboxPromptWrittenBy was set.
+func (o OptJudgeDiscoboxPromptWrittenBy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeDiscoboxPromptWrittenBy) Reset() {
+	var v JudgeDiscoboxPromptWrittenBy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeDiscoboxPromptWrittenBy) SetTo(v JudgeDiscoboxPromptWrittenBy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeDiscoboxPromptWrittenBy) Get() (v JudgeDiscoboxPromptWrittenBy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeDiscoboxPromptWrittenBy) Or(d JudgeDiscoboxPromptWrittenBy) JudgeDiscoboxPromptWrittenBy {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12141,6 +13280,52 @@ func (o OptProjectSandboxUpgradePolicy) Get() (v ProjectSandboxUpgradePolicy, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptProjectSandboxUpgradePolicy) Or(d ProjectSandboxUpgradePolicy) ProjectSandboxUpgradePolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRuleTestStage returns new OptRuleTestStage with value set to v.
+func NewOptRuleTestStage(v RuleTestStage) OptRuleTestStage {
+	return OptRuleTestStage{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRuleTestStage is optional RuleTestStage.
+type OptRuleTestStage struct {
+	Value RuleTestStage
+	Set   bool
+}
+
+// IsSet returns true if OptRuleTestStage was set.
+func (o OptRuleTestStage) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRuleTestStage) Reset() {
+	var v RuleTestStage
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRuleTestStage) SetTo(v RuleTestStage) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRuleTestStage) Get() (v RuleTestStage, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRuleTestStage) Or(d RuleTestStage) RuleTestStage {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18176,6 +19361,376 @@ func (s *RestartSandboxBody) SetForce(val OptBool) {
 type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
+
+// One list of uses a person may choose for an approval rule, already tested against the uses the
+// request asked for.
+// Ref: #/components/schemas/RuleContentProposal
+type RuleContentProposal struct {
+	// Whether the judge found every use the request asked for within these. Only uses that cover may be
+	// chosen as written.
+	Covers bool `json:"covers"`
+	// How wide: 1 as asked, 2 the same work on any target of its kind, 3 the same kind of work across
+	// the resource.
+	Level int64 `json:"level"`
+	// What the judge said.
+	Reason OptString `json:"reason"`
+	// The rule's uses at this level.
+	Uses []string `json:"uses"`
+}
+
+// GetCovers returns the value of Covers.
+func (s *RuleContentProposal) GetCovers() bool {
+	return s.Covers
+}
+
+// GetLevel returns the value of Level.
+func (s *RuleContentProposal) GetLevel() int64 {
+	return s.Level
+}
+
+// GetReason returns the value of Reason.
+func (s *RuleContentProposal) GetReason() OptString {
+	return s.Reason
+}
+
+// GetUses returns the value of Uses.
+func (s *RuleContentProposal) GetUses() []string {
+	return s.Uses
+}
+
+// SetCovers sets the value of Covers.
+func (s *RuleContentProposal) SetCovers(val bool) {
+	s.Covers = val
+}
+
+// SetLevel sets the value of Level.
+func (s *RuleContentProposal) SetLevel(val int64) {
+	s.Level = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RuleContentProposal) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetUses sets the value of Uses.
+func (s *RuleContentProposal) SetUses(val []string) {
+	s.Uses = val
+}
+
+// Ref: #/components/schemas/RuleProposalsBody
+type RuleProposalsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Uses the rule may approve, narrowest first.
+	Contents []RuleContentProposal `json:"contents"`
+	// The credential a rule made from this request would approve, copied from the request.
+	Credential OptString `json:"credential"`
+	// The hosts a rule made from this request would name, copied from the request.
+	Hosts []string `json:"hosts"`
+	// Why only the narrowest level of each is offered, when no model could write the wider ones.
+	Note OptString `json:"note"`
+	// What a rule made from this request would approve the credential for, copied from the request.
+	Purpose RuleProposalsBodyPurpose `json:"purpose"`
+	// Scopes the rule may have, narrowest first.
+	Scopes []RuleScopeProposal `json:"scopes"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *RuleProposalsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetContents returns the value of Contents.
+func (s *RuleProposalsBody) GetContents() []RuleContentProposal {
+	return s.Contents
+}
+
+// GetCredential returns the value of Credential.
+func (s *RuleProposalsBody) GetCredential() OptString {
+	return s.Credential
+}
+
+// GetHosts returns the value of Hosts.
+func (s *RuleProposalsBody) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetNote returns the value of Note.
+func (s *RuleProposalsBody) GetNote() OptString {
+	return s.Note
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *RuleProposalsBody) GetPurpose() RuleProposalsBodyPurpose {
+	return s.Purpose
+}
+
+// GetScopes returns the value of Scopes.
+func (s *RuleProposalsBody) GetScopes() []RuleScopeProposal {
+	return s.Scopes
+}
+
+// SetSchema sets the value of Schema.
+func (s *RuleProposalsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetContents sets the value of Contents.
+func (s *RuleProposalsBody) SetContents(val []RuleContentProposal) {
+	s.Contents = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *RuleProposalsBody) SetCredential(val OptString) {
+	s.Credential = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *RuleProposalsBody) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetNote sets the value of Note.
+func (s *RuleProposalsBody) SetNote(val OptString) {
+	s.Note = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *RuleProposalsBody) SetPurpose(val RuleProposalsBodyPurpose) {
+	s.Purpose = val
+}
+
+// SetScopes sets the value of Scopes.
+func (s *RuleProposalsBody) SetScopes(val []RuleScopeProposal) {
+	s.Scopes = val
+}
+
+func (*RuleProposalsBody) proposeApprovalRulesRes() {}
+
+// What a rule made from this request would approve the credential for, copied from the request.
+type RuleProposalsBodyPurpose string
+
+const (
+	RuleProposalsBodyPurposeUse      RuleProposalsBodyPurpose = "use"
+	RuleProposalsBodyPurposeDelegate RuleProposalsBodyPurpose = "delegate"
+)
+
+// AllValues returns all RuleProposalsBodyPurpose values.
+func (RuleProposalsBodyPurpose) AllValues() []RuleProposalsBodyPurpose {
+	return []RuleProposalsBodyPurpose{
+		RuleProposalsBodyPurposeUse,
+		RuleProposalsBodyPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RuleProposalsBodyPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case RuleProposalsBodyPurposeUse:
+		return []byte(s), nil
+	case RuleProposalsBodyPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RuleProposalsBodyPurpose) UnmarshalText(data []byte) error {
+	switch RuleProposalsBodyPurpose(data) {
+	case RuleProposalsBodyPurposeUse:
+		*s = RuleProposalsBodyPurposeUse
+		return nil
+	case RuleProposalsBodyPurposeDelegate:
+		*s = RuleProposalsBodyPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// One scope a person may choose for an approval rule, already tested against the discobox that asked.
+// Ref: #/components/schemas/RuleScopeProposal
+type RuleScopeProposal struct {
+	// Whether the judge found the asking discobox to be one this scope describes. Only a scope that
+	// covers may be chosen as written.
+	Covers bool `json:"covers"`
+	// How wide: 1 this discobox, 2 discoboxes doing this work on this repository, 3 any discobox on this
+	// repository.
+	Level int64 `json:"level"`
+	// What the judge said, or why no judge was asked.
+	Reason OptString `json:"reason"`
+	// The discobox a level 1 scope is pinned to.
+	SandboxId OptString `json:"sandboxId"`
+	// The scope sentence; empty at level 1, which is a pin.
+	Scope OptString `json:"scope"`
+}
+
+// GetCovers returns the value of Covers.
+func (s *RuleScopeProposal) GetCovers() bool {
+	return s.Covers
+}
+
+// GetLevel returns the value of Level.
+func (s *RuleScopeProposal) GetLevel() int64 {
+	return s.Level
+}
+
+// GetReason returns the value of Reason.
+func (s *RuleScopeProposal) GetReason() OptString {
+	return s.Reason
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *RuleScopeProposal) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetScope returns the value of Scope.
+func (s *RuleScopeProposal) GetScope() OptString {
+	return s.Scope
+}
+
+// SetCovers sets the value of Covers.
+func (s *RuleScopeProposal) SetCovers(val bool) {
+	s.Covers = val
+}
+
+// SetLevel sets the value of Level.
+func (s *RuleScopeProposal) SetLevel(val int64) {
+	s.Level = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RuleScopeProposal) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *RuleScopeProposal) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetScope sets the value of Scope.
+func (s *RuleScopeProposal) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// What came of testing one approval rule against one request (ADR 26-10-12-330). A rule approves or
+// says nothing, so a rule that does not cover a request leaves it for a person, and this says why.
+// Ref: #/components/schemas/RuleTest
+type RuleTest struct {
+	// Whether the rule covers the request.
+	Covered bool `json:"covered"`
+	// True while a judge has still to be asked about the rule.
+	Pending OptBool `json:"pending"`
+	// Why the rule does not cover the request, or that it does.
+	Reason OptString `json:"reason"`
+	// The rule tested.
+	RuleId string `json:"ruleId"`
+	// The stage that decided: facts the server checked, the rule's scope, or its content.
+	Stage OptRuleTestStage `json:"stage"`
+}
+
+// GetCovered returns the value of Covered.
+func (s *RuleTest) GetCovered() bool {
+	return s.Covered
+}
+
+// GetPending returns the value of Pending.
+func (s *RuleTest) GetPending() OptBool {
+	return s.Pending
+}
+
+// GetReason returns the value of Reason.
+func (s *RuleTest) GetReason() OptString {
+	return s.Reason
+}
+
+// GetRuleId returns the value of RuleId.
+func (s *RuleTest) GetRuleId() string {
+	return s.RuleId
+}
+
+// GetStage returns the value of Stage.
+func (s *RuleTest) GetStage() OptRuleTestStage {
+	return s.Stage
+}
+
+// SetCovered sets the value of Covered.
+func (s *RuleTest) SetCovered(val bool) {
+	s.Covered = val
+}
+
+// SetPending sets the value of Pending.
+func (s *RuleTest) SetPending(val OptBool) {
+	s.Pending = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RuleTest) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetRuleId sets the value of RuleId.
+func (s *RuleTest) SetRuleId(val string) {
+	s.RuleId = val
+}
+
+// SetStage sets the value of Stage.
+func (s *RuleTest) SetStage(val OptRuleTestStage) {
+	s.Stage = val
+}
+
+// The stage that decided: facts the server checked, the rule's scope, or its content.
+type RuleTestStage string
+
+const (
+	RuleTestStageFacts   RuleTestStage = "facts"
+	RuleTestStageScope   RuleTestStage = "scope"
+	RuleTestStageContent RuleTestStage = "content"
+)
+
+// AllValues returns all RuleTestStage values.
+func (RuleTestStage) AllValues() []RuleTestStage {
+	return []RuleTestStage{
+		RuleTestStageFacts,
+		RuleTestStageScope,
+		RuleTestStageContent,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RuleTestStage) MarshalText() ([]byte, error) {
+	switch s {
+	case RuleTestStageFacts:
+		return []byte(s), nil
+	case RuleTestStageScope:
+		return []byte(s), nil
+	case RuleTestStageContent:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RuleTestStage) UnmarshalText(data []byte) error {
+	switch RuleTestStage(data) {
+	case RuleTestStageFacts:
+		*s = RuleTestStageFacts
+		return nil
+	case RuleTestStageScope:
+		*s = RuleTestStageScope
+		return nil
+	case RuleTestStageContent:
+		*s = RuleTestStageContent
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // What an SSH client needs to verify this server. There is no address to discover; SSH reaches the
 // server over the same endpoint every other request uses, so the host key is the whole document.
@@ -25542,6 +27097,9 @@ type SecretGrant struct {
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.
 	Purpose SecretGrantPurpose `json:"purpose"`
+	// The approval rule the grant was minted under, when a rule approved the request rather than a
+	// person or a discobox (ADR 26-10-12-330). The grant is independent of the rule once made.
+	RuleId OptString `json:"ruleId"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Expiry time; empty never expires.
@@ -25585,6 +27143,11 @@ func (s *SecretGrant) GetUses() OptNilSecretUseArray {
 // GetPurpose returns the value of Purpose.
 func (s *SecretGrant) GetPurpose() SecretGrantPurpose {
 	return s.Purpose
+}
+
+// GetRuleId returns the value of RuleId.
+func (s *SecretGrant) GetRuleId() OptString {
+	return s.RuleId
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -25660,6 +27223,11 @@ func (s *SecretGrant) SetUses(val OptNilSecretUseArray) {
 // SetPurpose sets the value of Purpose.
 func (s *SecretGrant) SetPurpose(val SecretGrantPurpose) {
 	s.Purpose = val
+}
+
+// SetRuleId sets the value of RuleId.
+func (s *SecretGrant) SetRuleId(val OptString) {
+	s.RuleId = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -26609,6 +28177,9 @@ type SecretRequest struct {
 	Status SecretRequestStatus `json:"status"`
 	// Secret type requested.
 	Type SecretRequestType `json:"type"`
+	// The approval rules tested against a pending request, and why each did not cover it (ADR
+	// 26-10-12-330). Shown to a person; never to a discobox.
+	RuleTests []RuleTest `json:"ruleTests"`
 	// The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills
 	// that ID.
 	WellKnownId OptString `json:"wellKnownId"`
@@ -26714,6 +28285,11 @@ func (s *SecretRequest) GetStatus() SecretRequestStatus {
 // GetType returns the value of Type.
 func (s *SecretRequest) GetType() SecretRequestType {
 	return s.Type
+}
+
+// GetRuleTests returns the value of RuleTests.
+func (s *SecretRequest) GetRuleTests() []RuleTest {
+	return s.RuleTests
 }
 
 // GetWellKnownId returns the value of WellKnownId.
@@ -26824,6 +28400,11 @@ func (s *SecretRequest) SetStatus(val SecretRequestStatus) {
 // SetType sets the value of Type.
 func (s *SecretRequest) SetType(val SecretRequestType) {
 	s.Type = val
+}
+
+// SetRuleTests sets the value of RuleTests.
+func (s *SecretRequest) SetRuleTests(val []RuleTest) {
+	s.RuleTests = val
 }
 
 // SetWellKnownId sets the value of WellKnownId.
@@ -27616,6 +29197,106 @@ func (s *UnavailableAuditPool) SetPoolId(val string) {
 // SetReason sets the value of Reason.
 func (s *UnavailableAuditPool) SetReason(val string) {
 	s.Reason = val
+}
+
+// Ref: #/components/schemas/UpdateApprovalRuleBody
+type UpdateApprovalRuleBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Whether the rule approves anything. Disabling a rule mints nothing more and revokes nothing.
+	Enabled OptBool `json:"enabled"`
+	// When the rule stops approving.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Hosts a grant minted under the rule may name.
+	Hosts []string `json:"hosts"`
+	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
+	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
+	// True clears the rule's expiry, so it does not lapse.
+	NeverExpires OptBool `json:"neverExpires"`
+	// Which discoboxes the rule is for. An edited rule is tested afresh against what is pending.
+	Scope OptString `json:"scope"`
+	// What may be approved. An edited rule is tested afresh against what is pending.
+	Uses []string `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdateApprovalRuleBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetEnabled returns the value of Enabled.
+func (s *UpdateApprovalRuleBody) GetEnabled() OptBool {
+	return s.Enabled
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *UpdateApprovalRuleBody) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetHosts returns the value of Hosts.
+func (s *UpdateApprovalRuleBody) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *UpdateApprovalRuleBody) GetMaxGrantTTLSeconds() OptInt64 {
+	return s.MaxGrantTTLSeconds
+}
+
+// GetNeverExpires returns the value of NeverExpires.
+func (s *UpdateApprovalRuleBody) GetNeverExpires() OptBool {
+	return s.NeverExpires
+}
+
+// GetScope returns the value of Scope.
+func (s *UpdateApprovalRuleBody) GetScope() OptString {
+	return s.Scope
+}
+
+// GetUses returns the value of Uses.
+func (s *UpdateApprovalRuleBody) GetUses() []string {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdateApprovalRuleBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetEnabled sets the value of Enabled.
+func (s *UpdateApprovalRuleBody) SetEnabled(val OptBool) {
+	s.Enabled = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *UpdateApprovalRuleBody) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *UpdateApprovalRuleBody) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *UpdateApprovalRuleBody) SetMaxGrantTTLSeconds(val OptInt64) {
+	s.MaxGrantTTLSeconds = val
+}
+
+// SetNeverExpires sets the value of NeverExpires.
+func (s *UpdateApprovalRuleBody) SetNeverExpires(val OptBool) {
+	s.NeverExpires = val
+}
+
+// SetScope sets the value of Scope.
+func (s *UpdateApprovalRuleBody) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// SetUses sets the value of Uses.
+func (s *UpdateApprovalRuleBody) SetUses(val []string) {
+	s.Uses = val
 }
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody
