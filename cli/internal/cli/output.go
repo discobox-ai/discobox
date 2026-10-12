@@ -654,6 +654,10 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 		}
 	}
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
+	// A grant an approval rule minted names it; nobody read this ask.
+	if ruleID := grant.RuleId.Or(""); ruleID != "" {
+		fmt.Fprintf(tw, "APPROVED BY RULE\t%s\n", ruleID)
+	}
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
 	return tw.Flush()
@@ -744,6 +748,15 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	}
 	if grantID, ok := request.GrantId.Get(); ok && grantID != "" {
 		fmt.Fprintf(tw, "GRANT\t%s\n", grantID)
+	}
+	// Why each approval rule tested against a pending request did not cover
+	// it, which is why it is waiting for a person.
+	for i, test := range request.RuleTests {
+		label := "RULES"
+		if i > 0 {
+			label = ""
+		}
+		fmt.Fprintf(tw, "%s\t%s\n", label, ruleTestText(test))
 	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))

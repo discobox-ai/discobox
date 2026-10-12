@@ -1686,8 +1686,9 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 
 `creds` lists the judge's verdicts, `--kind` picks one: `command`, a command
 `discobox-access run` declared, judged before its value was minted;
-`request`, a request the proxy observed; and `delegation`, a discobox handing a
-credential on. The control plane records each `judge` before it answers. A
+`request`, a request the proxy observed; `delegation`, a discobox handing a
+credential on; and `scope` and `rule`, an approval rule's two readings (below),
+which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
 `command` row of origin `sandbox` predates that: a discobox's own judge's word.
 `RTT` is the round trip each asker timed. `--prompt` prints each verdict in
 full; `--jev-input` does too, with exactly what Jev was sent on a server that
@@ -2718,6 +2719,37 @@ with a note, when the server refuses it with a 403: a discobox creating
 another may not enroll a key, which would reach every discobox in the
 project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
 `writeProjectSSHConfig` itself, where a refusal is the answer.
+
+## Approval Rules (`discobox secret rule`, ADR 26-10-12-330)
+
+`secret_rule.go`. An approval rule is a project's standing answer to a
+credential request, and the CLI is the two ways a person makes one:
+
+- **Directly**: `secret rule create|ls|get|update|delete`, as
+  `secret grant create` makes a pre-approval. `update` sends only the flags
+  given; `--enable`/`--disable` are edits. A rule's credential, purpose and pin
+  are not edited.
+- **From a request**: `secret request approve --auto` sends a `rule` on the
+  approve body, so the rule and the approval are one write. With nothing else
+  said it is the narrowest rule, which needs no model: pinned to the discobox
+  that asked (read from the request), the uses as asked. `--rule-scope`,
+  `--rule-every-discobox` and `--rule-use` say otherwise, and are refused
+  without `--auto` rather than dropped. The rule made is read back whole.
+
+`secret request propose` prints what auto approve offers — three scopes and
+three lists of uses, each with what the judge made of it — and makes nothing.
+The CLI never chooses a level for the person: a sentence becomes a rule only
+by being passed to `--rule-scope` or `--rule-use`, so the text approved is
+text they handled.
+
+- A proposal is a model's sentence written from an agent's ask, and a rule's
+  uses may be one too: both are shown whole and through `terminalSafe`.
+- A rule with neither a scope nor a pin is said in the ADR's words wherever
+  it is shown (`everyDiscoboxScope`): it approves for discoboxes that do not
+  exist yet.
+- `secret request get` lists each rule tested against a pending request and
+  why it did not cover it; `secret grant ls --rule` lists what a rule minted,
+  by its full ID, since the rule may be gone.
 
 ## The Two IDs an Enrollment Is Made Of (`discobox id`)
 

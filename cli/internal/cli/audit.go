@@ -354,7 +354,7 @@ func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAu
 }
 
 func (a *App) newAuditCredsCommand() *cobra.Command {
-	var sandboxID, useID, grantID, kind, since string
+	var sandboxID, useID, grantID, ruleID, kind, since string
 	var denied, allowed, showPrompt, showJevInput, follow bool
 	var limit int
 	cmd := &cobra.Command{
@@ -366,8 +366,11 @@ they are recorded.
 
 The project's judge decides about a command before a credential is issued for
 it, about each request the proxy sees carrying a credential when the server
-judges requests, and about a discobox handing a credential on. Its verdicts are
-recorded "judge": the server records every answer before giving it, whether it
+judges requests, about a discobox handing a credential on, and about an
+approval rule being tested against a credential request: whether the asking
+discobox is one the rule's scope describes (scope), and whether what it asked
+for is within the rule's uses (rule); --rule-id picks one rule's. Its verdicts
+are recorded "judge": the server records every answer before giving it, whether it
 allowed, denied, or asked to be shown a request's body, which the proxy
 refuses. An ask with no answer, or whose use was revoked while it was judged,
 has no verdict; for a request, the proxy's blocked http row is its record. A
@@ -399,9 +402,10 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 			}
 			switch kind {
 			case "", string(apiclientgen.ListCredentialVerdictsKindCommand), string(apiclientgen.ListCredentialVerdictsKindRequest),
-				string(apiclientgen.ListCredentialVerdictsKindDelegation):
+				string(apiclientgen.ListCredentialVerdictsKindDelegation),
+				string(apiclientgen.ListCredentialVerdictsKindScope), string(apiclientgen.ListCredentialVerdictsKindRule):
 			default:
-				return fmt.Errorf("--kind %q: want command, request, or delegation", kind)
+				return fmt.Errorf("--kind %q: want command, request, delegation, scope, or rule", kind)
 			}
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -424,6 +428,9 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 			}
 			if grantID != "" {
 				params.GrantId = apiclientgen.NewOptString(grantID)
+			}
+			if ruleID != "" {
+				params.RuleId = apiclientgen.NewOptString(ruleID)
 			}
 			if kind != "" {
 				params.Kind = apiclientgen.NewOptListCredentialVerdictsKind(apiclientgen.ListCredentialVerdictsKind(kind))
@@ -468,7 +475,8 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's verdicts; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&useID, "use-id", "", "Only verdicts on this approved use")
 	cmd.Flags().StringVar(&grantID, "grant-id", "", "Only verdicts on uses of this grant")
-	cmd.Flags().StringVar(&kind, "kind", "", "Only verdicts on a command, a request, or a delegation (a discobox handing a credential on)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Only verdicts on a command, a request, a delegation (a discobox handing a credential on), or an approval rule being tested: its scope against a discobox, or its uses (rule) against a request")
+	cmd.Flags().StringVar(&ruleID, "rule-id", "", "Only verdicts recorded while testing this approval rule")
 	cmd.Flags().BoolVar(&denied, "denied", false, "Only denied verdicts, including a judge asking to see a request's body")
 	cmd.Flags().BoolVar(&allowed, "allowed", false, "Only allowed verdicts")
 	cmd.Flags().StringVar(&since, "since", "", "Only verdicts from this long ago (e.g. 1h) or since this RFC 3339 time")
@@ -598,7 +606,7 @@ func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialV
 		)
 		// A request is judged on what was observed, and the command the
 		// discobox declared is only context, which it need not have given.
-		if (!isRequestVerdict(v) && !isDelegationVerdict(v)) || len(v.Command) > 0 {
+		if (!isRequestVerdict(v) && !isDelegationVerdict(v) && !isRuleVerdict(v)) || len(v.Command) > 0 {
 			lines = append(lines, "command:  "+displayArgv(v.Command))
 		}
 		lines = append(lines,
@@ -797,6 +805,18 @@ func isDelegationVerdict(v apimodel.CredentialVerdict) bool {
 	return v.Kind.Or(apiclientgen.CredentialVerdictKindCommand) == apiclientgen.CredentialVerdictKindDelegation
 }
 
+// isRuleVerdict reports whether the judge decided one of an approval rule's
+// two readings (ADR 26-10-12-330): whether a discobox is one its scope
+// describes, or whether what a request asked for is within its uses. What was
+// judged is in its prompt.
+func isRuleVerdict(v apimodel.CredentialVerdict) bool {
+	switch v.Kind.Or(apiclientgen.CredentialVerdictKindCommand) {
+	case apiclientgen.CredentialVerdictKindScope, apiclientgen.CredentialVerdictKindRule:
+		return true
+	}
+	return false
+}
+
 // verdictWord is what the judge answered. "ask" is a judge that asked to be
 // shown the body instead of deciding, which is not an allow.
 func verdictWord(v apimodel.CredentialVerdict) string {
@@ -820,7 +840,7 @@ func verdictRecorded(v apimodel.CredentialVerdict) string {
 	switch {
 	case v.StandingVerdictId.Or("") != "":
 		return "standing"
-	case judgedOnTrustedGround(v), isRequestVerdict(v), isDelegationVerdict(v):
+	case judgedOnTrustedGround(v), isRequestVerdict(v), isDelegationVerdict(v), isRuleVerdict(v):
 		return "judge"
 	case v.Volunteered:
 		return "report"
@@ -830,14 +850,25 @@ func verdictRecorded(v apimodel.CredentialVerdict) string {
 }
 
 // verdictJudged is what was judged: the argv of a command, the method and
-// destination of a request, or the delegation grant a discobox handed a
-// credential on under.
+// destination of a request, the delegation grant a discobox handed a
+// credential on under, or the approval rule that was being tested.
 func verdictJudged(v apimodel.CredentialVerdict) string {
 	if request, ok := v.Request.Get(); ok && isRequestVerdict(v) {
 		return terminalSafe(request.Method + " " + request.URL)
 	}
 	if isDelegationVerdict(v) {
 		return "handed on under " + terminalSafe(v.GrantId.Or(""))
+	}
+	if isRuleVerdict(v) {
+		// A rule still being proposed has no ID yet, and names its request.
+		rule := terminalSafe(v.RuleId.Or(""))
+		if rule == "" {
+			rule = "a proposed rule"
+		}
+		if v.Kind.Or("") == apiclientgen.CredentialVerdictKindScope {
+			return "the scope of " + rule
+		}
+		return "request " + terminalSafe(v.SecretRequestId.Or("")) + " under " + rule
 	}
 	return displayArgv(v.Command)
 }
