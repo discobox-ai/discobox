@@ -734,6 +734,13 @@ development images without a registry.
   The route has its own scope (`judge:run`),
   which no token for a discobox's own work carries, and a discobox that is not
   a judge refuses the ask outright.
+- **The same runtime writes an approval rule's proposal** (`terminal.Propose`,
+  `POST .../judge/proposal`; [ADR 26-10-12-330](../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
+  §7). It is a run like a judging one — the same wrapper, role, `--no-tools`,
+  scope and bound on runs — with `judge.ProposalSystem` and
+  `judge.ProposalSchema` in place of the judging pair, decoded with
+  `judge.DecodeProposal`. The caller supplies the uses a request asked for and
+  the asking discobox's fact sheet, and nothing else.
 - **The sandbox serves its own repositories** (`server/git.go`,
   [ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)).
   `.../git-repositories/{slug}.git` runs `git http-backend` through the shared
