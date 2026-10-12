@@ -325,6 +325,7 @@ func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.L
 	filter := services.CredentialVerdictFilter{
 		ID:        params.ID.Or(""),
 		Kind:      string(params.Kind.Or("")),
+		RuleID:    params.RuleId.Or(""),
 		SandboxID: params.SandboxId.Or(""),
 		UseID:     params.UseId.Or(""),
 		GrantID:   params.GrantId.Or(""),
@@ -386,7 +387,7 @@ func (h *Handler) ListSecretRefreshes(ctx context.Context, params serverapi.List
 }
 
 func (h *Handler) ListSecretGrants(ctx context.Context, params serverapi.ListSecretGrantsParams) (serverapi.ListSecretGrantsRes, error) {
-	grants, err := h.services.Secrets.ListSecretGrants(ctx, params.ProjectId, params.SecretId.Or(""))
+	grants, err := h.services.Secrets.ListSecretGrants(ctx, params.ProjectId, params.SecretId.Or(""), params.RuleId.Or(""))
 	if err != nil {
 		return apiError(err), nil
 	}

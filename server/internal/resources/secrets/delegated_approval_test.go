@@ -26,6 +26,7 @@ import (
 // asked about a delegation and answers as it is told. A create's grants are
 // asked about at once, so what it records is read with asks.
 type delegationJudge struct {
+	noRules
 	allow bool
 	err   error
 	// within, when set, answers instead: yes when it finds the uses within
@@ -437,7 +438,10 @@ func judgeThen(then func()) services.JudgeService {
 	return &afterJudge{then: then}
 }
 
-type afterJudge struct{ then func() }
+type afterJudge struct {
+	noRules
+	then func()
+}
 
 func (j *afterJudge) Judge(context.Context, string, services.JudgeAsk) (judge.Answer, error) {
 	return judge.Answer{}, errors.New("not a request judge")
@@ -577,6 +581,7 @@ func TestEachGrantACreateGivesIsJudged(t *testing.T) {
 
 // countingJudge is safe to ask from several goroutines at once.
 type countingJudge struct {
+	noRules
 	allow bool
 	asked atomic.Int32
 }
@@ -743,6 +748,7 @@ func TestADelegationTheJudgeCannotAnswerAboutLeavesTheOthers(t *testing.T) {
 // errorUnderJudge fails to answer about one delegation, and answers allow
 // about every other.
 type errorUnderJudge struct {
+	noRules
 	delegationID string
 	err          error
 	allow        bool

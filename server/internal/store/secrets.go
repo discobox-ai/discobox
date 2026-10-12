@@ -508,6 +508,11 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
 			return err
 		}
+		// A rule that names the secret could never approve again, and would
+		// go on counting as a reason for the project to keep a judge.
+		if err := tx.Where("project_id = ? AND secret_id = ?", projectID, secretID).Delete(&model.ApprovalRule{}).Error; err != nil {
+			return err
+		}
 		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
 			return err
 		}

@@ -56,6 +56,8 @@ type Service struct {
 	poolControlPlane *pools.ControlPlane
 	harnessConfigs   *harnessconfigs.Service
 	judges           *judges.Service
+	// ruleRequests tests approval rules against pending credential requests.
+	ruleRequests *secrets.RuleRequests
 }
 
 type Options struct {
@@ -154,6 +156,9 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// project's judge — whether the uses fall within its delegation — while
 	// the credential broker approves (ADR 26-09-30-782 §3).
 	secretService.SetJudge(judgeService)
+	// Approval rules are tested against a request when it is filed and when
+	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
+	secretService.SetDirtier(engine)
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
 		HarnessConfigService:           harnessConfigService,
@@ -175,6 +180,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		poolControlPlane: poolControlPlane,
 		harnessConfigs:   harnessConfigService,
 		judges:           judgeService,
+		ruleRequests:     secretService.RuleRequests(),
 	}
 }
 
@@ -262,6 +268,11 @@ func (s *Service) registerReconcilers() error {
 	// Keeps each project's judge matching what the project says it should be,
 	// and finds the ones nothing thought to mark.
 	if err := s.engine.Register(judges.JudgeResourceType, s.judges); err != nil {
+		return err
+	}
+	// Tests each project's approval rules against its pending credential
+	// requests, off the path that files one (ADR 26-10-12-330 §4).
+	if err := s.engine.Register(secrets.RuleRequestResourceType, s.ruleRequests); err != nil {
 		return err
 	}
 	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())

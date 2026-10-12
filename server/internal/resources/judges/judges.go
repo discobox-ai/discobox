@@ -223,8 +223,19 @@ func (s *Service) wanted(ctx context.Context, project *model.Project, record boo
 	// Off is off everywhere, and it reads the same as any other reason a
 	// project has no judge: nothing is created, and a judge created while it
 	// was on is taken away by the convergence that finds none wanted.
+	//
+	// A rule is a reason of its own to keep a judge (ADR 26-10-12-330 §6):
+	// its jobs hang on neither switch, so a project with a rule switched on
+	// keeps a judge on a server that otherwise judges nothing, and nothing but
+	// rules is put to it.
 	if !s.judging.Any() {
-		return nil, "this server does not judge credential use", nil
+		ruled, err := s.store.HasEnabledApprovalRule(ctx, project.ID)
+		if err != nil {
+			return nil, "", err
+		}
+		if !ruled {
+			return nil, "this server does not judge credential use, and the project has no approval rule", nil
+		}
 	}
 	// Jev is asked by this server, so no discobox is wanted to ask, and one
 	// left from before the server switched is taken away like any other

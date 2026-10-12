@@ -827,7 +827,7 @@ func TestConfigureCreatedSecretsHaveNoGrantLimit(t *testing.T) {
 	}
 
 	// And the grant it stands on says the same thing from the other side.
-	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
+	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID, "")
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

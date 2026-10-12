@@ -95,6 +95,12 @@ func (h *Handler) JudgeSandbox(context.Context, *serverapi.JudgeJob, serverapi.J
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// ProposeSandboxRule is the judge runtime's other route, reached the way
+// JudgeSandbox is and for the same reason neither served nor proxied here.
+func (h *Handler) ProposeSandboxRule(context.Context, *serverapi.JudgeProposalJob, serverapi.ProposeSandboxRuleParams) (serverapi.ProposeSandboxRuleRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksParams) (serverapi.ListHarnessHooksRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

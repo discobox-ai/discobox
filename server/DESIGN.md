@@ -929,7 +929,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/sandboxes` | Sandbox API service behavior, intent writes, the sandbox reconciler, agent observation ingest, and sandbox provider catalog helpers. |
 | `internal/resources/pools` | Pool resource API, the pool-agent surface (registration, status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
-| `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
+| `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, approval rules and the reconciler that tests them against pending requests (ADR 26-10-12-330), sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/resources/peers` | Enrolled iroh peers (ADR 0095): the managed half of peer admission. |
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |
 | `internal/harnessdefs` | Seed data for the built-in harness images and the dev image env overrides. |

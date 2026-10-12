@@ -173,7 +173,12 @@ be asked for at `githubcopilot.com` by naming it. Discobox's registry is the roo
 ```
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
-`202 Accepted` immediately and the client polls.
+`202 Accepted` immediately and the client polls. A project may hold approval
+rules that answer a request without a person
+([ADR 26-10-12-330](adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md));
+the protocol is the same either way. A rule only ever approves, so a request
+none covers stays `pending` for a person, and a client cannot tell — and need
+not know — which of the two answered.
 
 ```
 GET /v1/credentials/requests/{requestId}

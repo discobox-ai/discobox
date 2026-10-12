@@ -608,6 +608,10 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
 			return err
 		}
+		// A rule pinned to the discobox is for nothing else, and goes with it.
+		if err := tx.Where("project_id = ? AND sandbox_id = ?", projectID, sandbox.ID).Delete(&model.ApprovalRule{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(sandbox).Error
 	})
 }

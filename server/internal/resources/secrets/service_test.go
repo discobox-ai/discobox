@@ -78,7 +78,7 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 	}
 
 	// Approval mints a standing grant. A non-sandbox request defaults to project scope.
-	grants, err := svc.ListSecretGrants(ctx, "project-1", selected.ID)
+	grants, err := svc.ListSecretGrants(ctx, "project-1", selected.ID, "")
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}
@@ -841,7 +841,7 @@ func TestApprovalTakesTheSecretsLimitAndIsBoundByIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	grants, err := svc.ListSecretGrants(ctx, "project-1", secret.ID)
+	grants, err := svc.ListSecretGrants(ctx, "project-1", secret.ID, "")
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

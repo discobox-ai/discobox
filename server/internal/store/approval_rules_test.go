@@ -1,0 +1,142 @@
+package store_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
+)
+
+func rule(projectID string) *model.ApprovalRule {
+	return &model.ApprovalRule{
+		ProjectID: projectID, WellKnownID: "com.github.api", Hosts: []string{"github.com"},
+		Purpose: model.SecretGrantPurposeUse, Uses: []string{"read any issue in org/repo"}, MaxGrantTTL: 3600, Enabled: true,
+	}
+}
+
+// A rule is a project's row: it goes with the project, which could not
+// otherwise be deleted for the rows still pointing at it, and nobody else's
+// goes with it.
+func TestDeleteProjectRemovesItsApprovalRulesAndNoOneElses(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	doomed := &model.Project{Name: "doomed"}
+	kept := &model.Project{Name: "kept"}
+	for _, project := range []*model.Project{doomed, kept} {
+		if err := st.CreateProject(ctx, project); err != nil {
+			t.Fatalf("create project: %v", err)
+		}
+		if err := st.CreateApprovalRule(ctx, rule(project.ID)); err != nil {
+			t.Fatalf("create rule: %v", err)
+		}
+	}
+	if err := st.DeleteProject(ctx, doomed.ID); err != nil {
+		t.Fatalf("DeleteProject() with an approval rule: %v", err)
+	}
+	if rows, err := st.ListApprovalRules(ctx, doomed.ID); err != nil || len(rows) != 0 {
+		t.Fatalf("deleted project's rules = %d, %v; want none", len(rows), err)
+	}
+	if rows, err := st.ListApprovalRules(ctx, kept.ID); err != nil || len(rows) != 1 {
+		t.Fatalf("other project's rules = %d, %v; want its one rule untouched", len(rows), err)
+	}
+}
+
+// An edit stores what it was given, zeros included: a rule switched off and a
+// cap set to zero are both the zero value, and a default would put back the
+// rule that was on and the cap it had.
+func TestAnApprovalRuleKeepsItsZeros(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	project := &model.Project{Name: "project"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	off := rule(project.ID)
+	off.Enabled = false
+	if err := st.CreateApprovalRule(ctx, off); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.GetApprovalRule(ctx, project.ID, off.ID); err != nil || got.Enabled {
+		t.Fatalf("a rule created switched off = %+v, %v", got, err)
+	}
+	if enabled, err := st.HasEnabledApprovalRule(ctx, project.ID); err != nil || enabled {
+		t.Fatalf("HasEnabledApprovalRule() = %v, %v, want false with only a disabled rule", enabled, err)
+	}
+
+	on := rule(project.ID)
+	if err := st.CreateApprovalRule(ctx, on); err != nil {
+		t.Fatal(err)
+	}
+	created := on.CreatedAt
+	on.Enabled, on.MaxGrantTTL, on.Scope = false, 0, ""
+	if err := st.UpdateApprovalRule(ctx, on); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetApprovalRule(ctx, project.ID, on.ID)
+	if err != nil || got.Enabled || got.MaxGrantTTL != 0 || !got.CreatedAt.Equal(created) {
+		t.Fatalf("edited rule = %+v, %v, want it off, uncapped, and created when it was", got, err)
+	}
+	if err := st.UpdateApprovalRule(ctx, rule("another-project")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("editing a rule that is not there = %v, want not found", err)
+	}
+	if err := st.DeleteApprovalRule(ctx, project.ID, on.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteApprovalRule(ctx, project.ID, on.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deleting a rule twice = %v, want not found", err)
+	}
+}
+
+// An answer on record is found by the question it answered: the kind, the
+// discobox, the digest and, for a question asked per request, the request. The
+// newest answer is the one that stands.
+func TestAnAnsweredQuestionIsFoundByItsDigest(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	project := &model.Project{Name: "project"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	record := func(kind, sandboxID, requestID, digest string, allow bool, at time.Time) {
+		t.Helper()
+		if err := st.CreateCredentialVerdict(ctx, &model.CredentialVerdict{
+			ProjectID: project.ID, Kind: kind, Origin: model.CredentialVerdictOriginJudge, SandboxID: sandboxID,
+			SecretRequestID: requestID, QuestionDigest: digest, Allow: allow, Reason: "decided", CreatedAt: at,
+		}); err != nil {
+			t.Fatalf("record verdict: %v", err)
+		}
+	}
+	now := time.Now().UTC()
+	record(model.CredentialVerdictKindScope, "sbx_1", "sreq_1", "digest-scope", false, now.Add(-time.Minute))
+	record(model.CredentialVerdictKindScope, "sbx_1", "sreq_2", "digest-scope", true, now)
+	record(model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", true, now)
+	// A discobox's own judge's word is never an answer to a rule's question.
+	if err := st.CreateCredentialVerdict(ctx, &model.CredentialVerdict{
+		ProjectID: project.ID, Kind: model.CredentialVerdictKindRule, Origin: model.CredentialVerdictOriginSandbox,
+		SandboxID: "sbx_1", SecretRequestID: "sreq_9", QuestionDigest: "digest-volunteered", Allow: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A scope is decided for a discobox, whatever request it came up under.
+	if got, err := st.AnsweredQuestion(ctx, project.ID, model.CredentialVerdictKindScope, "sbx_1", "", "digest-scope", true); err != nil || !got.Allow {
+		t.Fatalf("scope answer = %+v, %v, want the newest", got, err)
+	}
+	if got, err := st.AnsweredQuestion(ctx, project.ID, model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", false); err != nil || !got.Allow {
+		t.Fatalf("rule answer = %+v, %v", got, err)
+	}
+	for name, miss := range map[string][4]string{
+		"another request":    {model.CredentialVerdictKindRule, "sbx_1", "sreq_2", "digest-rule"},
+		"another discobox":   {model.CredentialVerdictKindScope, "sbx_2", "", "digest-scope"},
+		"another kind":       {model.CredentialVerdictKindRule, "sbx_1", "", "digest-scope"},
+		"an edited question": {model.CredentialVerdictKindScope, "sbx_1", "", "digest-edited"},
+		"a volunteered row":  {model.CredentialVerdictKindRule, "sbx_1", "sreq_9", "digest-volunteered"},
+	} {
+		if _, err := st.AnsweredQuestion(ctx, project.ID, miss[0], miss[1], miss[2], miss[3], true); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s = %v, want no answer on record", name, err)
+		}
+	}
+}

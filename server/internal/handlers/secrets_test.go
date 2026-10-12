@@ -115,8 +115,46 @@ func (fakeSecretService) DenySecretRequest(context.Context, string, string) erro
 	return nil
 }
 
-func (fakeSecretService) ListSecretGrants(context.Context, string, string) ([]model.SecretGrant, error) {
+func (fakeSecretService) ListSecretGrants(context.Context, string, string, string) ([]model.SecretGrant, error) {
 	return []model.SecretGrant{fakeSecretGrant()}, nil
+}
+
+func (fakeSecretService) ListApprovalRules(context.Context, string) ([]model.ApprovalRule, error) {
+	return nil, nil
+}
+
+func (fakeSecretService) GetApprovalRule(context.Context, string, string) (*model.ApprovalRule, error) {
+	rule := fakeApprovalRule()
+	return &rule, nil
+}
+
+func (fakeSecretService) CreateApprovalRule(context.Context, string, svcapi.CreateApprovalRuleBody) (*model.ApprovalRule, error) {
+	rule := fakeApprovalRule()
+	return &rule, nil
+}
+
+func (fakeSecretService) UpdateApprovalRule(context.Context, string, string, svcapi.UpdateApprovalRuleBody) (*model.ApprovalRule, error) {
+	rule := fakeApprovalRule()
+	return &rule, nil
+}
+
+func (fakeSecretService) DeleteApprovalRule(context.Context, string, string) error { return nil }
+
+func (fakeSecretService) ProposeApprovalRules(context.Context, string, string) (*svcapi.RuleProposals, error) {
+	return &svcapi.RuleProposals{
+		Hosts:    []string{"github.com"},
+		Purpose:  "use",
+		Scopes:   []serverapi.RuleScopeProposal{{Level: 1, SandboxId: serverapi.NewOptString("sbx_1"), Covers: true}},
+		Contents: []serverapi.RuleContentProposal{{Level: 1, Uses: []string{"read issue 4"}, Covers: true}},
+	}, nil
+}
+
+func fakeApprovalRule() model.ApprovalRule {
+	return model.ApprovalRule{
+		ID: "rule_1", ProjectID: "project-1", WellKnownID: "com.github.api",
+		Scope: "any discobox on org/repo", Hosts: []string{"github.com"}, Purpose: "use",
+		Uses: []string{"read any issue <number> in org/repo"}, MaxGrantTTL: 3600, Enabled: true,
+	}
 }
 
 func (fakeSecretService) CreateSecretGrant(context.Context, string, svcapi.CreateSecretGrantBody) (*model.SecretGrant, error) {
