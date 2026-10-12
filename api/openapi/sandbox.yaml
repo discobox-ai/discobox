@@ -138,6 +138,52 @@ components:
             required:
                 - reason
             type: object
+        JudgeDiscobox:
+            additionalProperties: false
+            description: What the control plane recorded about a discobox when it was created, which an approval rule's scope is read against (ADR 26-10-12-330). Nothing a discobox writes about itself is here.
+            properties:
+                createdBy:
+                    description: Who created it, a person or a discobox.
+                    enum:
+                        - a person
+                        - a discobox
+                    type: string
+                creator:
+                    description: The discobox that created it, when one did.
+                    type: string
+                harness:
+                    description: The harness it runs.
+                    type: string
+                otherSources:
+                    description: The repositories beside its primary source, each with its ref when it names one.
+                    items:
+                        type: string
+                    type: array
+                platform:
+                    description: Its pool's platform.
+                    type: string
+                prompt:
+                    $ref: '#/components/schemas/JudgeInput'
+                promptWrittenBy:
+                    description: Who wrote the prompt, which is who created the discobox.
+                    enum:
+                        - a person
+                        - a discobox
+                    type: string
+                ref:
+                    description: The ref of its primary source.
+                    type: string
+                repository:
+                    description: The repository of its primary source.
+                    type: string
+                skills:
+                    description: The names of the skills it was created with.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - createdBy
+            type: object
         JudgeInput:
             additionalProperties: false
             description: What a command will read on standard input, as much of it as the discobox showed (ADR 26-09-27-905).
@@ -163,20 +209,24 @@ components:
                 credential:
                     description: The credential in the words a person reads, never its value.
                     type: string
+                discobox:
+                    $ref: '#/components/schemas/JudgeDiscobox'
                 guidance:
                     description: What Discobox knows about what the request was recognized as, set by the control plane from the judge package and never by a pool. It explains; it never authorizes.
                     items:
                         type: string
                     type: array
                 host:
-                    description: The host the use was approved for.
+                    description: The host the use was approved for. Empty on a scope job, which has none.
                     type: string
                 kind:
-                    description: 'What is being judged: a command about to run, a request the proxy observed, or a discobox about to hand a credential on by approving another''s request.'
+                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, whether a discobox is one an approval rule''s scope describes, or whether what a discobox asked for is within an approval rule''s uses.'
                     enum:
                         - command
                         - request
                         - delegation
+                        - scope
+                        - rule
                     type: string
                 purpose:
                     description: The approved use, in the words it was approved in. For a delegation job, the uses the discobox was delegated, one per line.
@@ -214,6 +264,55 @@ components:
                     type: integer
             required:
                 - body
+            type: object
+        JudgeProposal:
+            additionalProperties: false
+            description: The wider scopes and uses a model wrote for an approval rule, narrower first. They authorize nothing; each is judged, and read by a person, before it becomes a rule.
+            properties:
+                scopeRepository:
+                    description: Any discobox on the asking discobox's repository.
+                    type: string
+                scopeWork:
+                    description: Discoboxes doing the asking discobox's kind of work on its repository.
+                    type: string
+                usesAcrossResource:
+                    description: The same kind of work across the resource.
+                    items:
+                        type: string
+                    type: array
+                usesAnyTarget:
+                    description: The same work on any target of its kind.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - scopeWork
+                - scopeRepository
+                - usesAnyTarget
+                - usesAcrossResource
+            type: object
+        JudgeProposalJob:
+            additionalProperties: false
+            description: What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox asked for and what was recorded about it; both are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
+            properties:
+                credential:
+                    description: The credential asked for, in the words a person reads, never its value.
+                    type: string
+                discobox:
+                    $ref: '#/components/schemas/JudgeDiscobox'
+                hosts:
+                    description: The hosts the request asked to send the credential to.
+                    items:
+                        type: string
+                    type: array
+                uses:
+                    description: The uses the request asked for, verbatim.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - uses
+                - discobox
             type: object
         JudgeRecognition:
             additionalProperties: false
@@ -2402,6 +2501,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Put one judging job to this discobox's harness.
+            tags:
+                - Sandbox Judge
+    /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
+        post:
+            description: Has this discobox's harness write the wider scopes and uses a person may choose for an approval rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for and what was recorded about the asking discobox; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            operationId: propose-sandbox-rule
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeProposalJob'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgeProposal'
+                    description: The proposed wording.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Have this discobox's harness propose an approval rule's wording.
             tags:
                 - Sandbox Judge
     /api/projects/{projectId}/sandboxes/{sandboxId}/meta:

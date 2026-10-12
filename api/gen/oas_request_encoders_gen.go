@@ -90,6 +90,20 @@ func encodeCompleteSandboxSourcePushRequest(
 	return nil
 }
 
+func encodeCreateApprovalRuleRequest(
+	req *CreateApprovalRuleBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateHarnessConfigRequest(
 	req *CreateHarnessConfigBody,
 	r *http.Request,
@@ -328,6 +342,20 @@ func encodeMintSandboxAgentStatusTokensRequest(
 	return nil
 }
 
+func encodeProposeSandboxRuleRequest(
+	req *JudgeProposalJob,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodePutSandboxRuntimeConfigRequest(
 	req *SandboxRuntimeConfig,
 	r *http.Request,
@@ -512,6 +540,20 @@ func encodeStartSandboxRequest(
 
 func encodeStopSandboxRequest(
 	req *StopSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateApprovalRuleRequest(
+	req *UpdateApprovalRuleBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
