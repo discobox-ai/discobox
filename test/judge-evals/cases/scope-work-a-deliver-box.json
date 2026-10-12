@@ -1,0 +1,33 @@
+{
+  "name": "scope-work-a-deliver-box",
+  "why": "A worker started with /deliver-issue, against the kind of work its prompt names.",
+  "expect": "allow",
+  "job": {
+    "kind": "scope",
+    "purpose": "discoboxes started to deliver or triage an issue in discobox-ai/discobox",
+    "round": 1,
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a discobox",
+      "creator": "sbx_dzwcskm10hx1gyjp",
+      "prompt": {
+        "content": "/deliver-issue 162"
+      },
+      "promptWrittenBy": "a discobox",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  }
+}

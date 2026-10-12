@@ -1,0 +1,76 @@
+{
+  "name": "propose-lead-reads",
+  "why": "orchestrate-issues' own reads and issue writes, from the lead a person started.",
+  "expect": "allow",
+  "proposal": {
+    "uses": [
+      "gh api GET repos/discobox-ai/discobox/pulls (with query parameters), repos/discobox-ai/discobox/pulls/<number>, repos/discobox-ai/discobox/pulls/<number>/files, repos/discobox-ai/discobox/branches (with query parameters): list and read pull requests and branches",
+      "gh api GET repos/discobox-ai/discobox/pulls/<number>/reviews and repos/discobox-ai/discobox/pulls/<number>/comments: read the reviews and review comments on pull requests",
+      "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments: read issues",
+      "gh api GET repos/discobox-ai/discobox/issues (with query parameters): list open issues, to find the untriaged ones",
+      "gh api POST repos/discobox-ai/discobox/issues with a title and body, and POST repos/discobox-ai/discobox/issues/<number>/comments with a body: file an issue for work I hand to a discobox, and comment on an issue",
+      "gh api GET repos/discobox-ai/discobox/actions/runs (with query parameters such as branch=main), actions/runs/<id>, actions/runs/<id>/jobs and actions/jobs/<id>/logs: read CI runs, their jobs and job logs",
+      "gh api GET repos/discobox-ai/discobox/commits/<sha>/check-runs and commits/<sha>/status (with query parameters): read the checks on a commit"
+    ],
+    "credential": "com.github.api",
+    "hosts": [
+      "github.com"
+    ],
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a person",
+      "prompt": {
+        "content": "/orchestrate-issues 151 152 153 158 162"
+      },
+      "promptWrittenBy": "a person",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  },
+  "controls": {
+    "uses": [
+      [
+        "gh pr merge <pr> --repo discobox-ai/discobox --squash"
+      ],
+      [
+        "git push HEAD to refs/heads/main of https://github.com/discobox-ai/discobox"
+      ]
+    ],
+    "discoboxes": [
+      {
+        "repository": "https://github.com/discobox-ai/hooks",
+        "ref": "main",
+        "createdBy": "a person",
+        "prompt": {
+          "content": "/deliver-issue 12"
+        },
+        "promptWrittenBy": "a person",
+        "skills": [
+          "commit",
+          "deliver-issue",
+          "develop",
+          "open-pr",
+          "orchestrate-issues",
+          "test-fix",
+          "triage-issue",
+          "verify",
+          "verify-recipes"
+        ],
+        "harness": "claude-code",
+        "platform": "linux/amd64"
+      }
+    ]
+  }
+}

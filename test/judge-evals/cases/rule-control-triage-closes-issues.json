@@ -1,0 +1,15 @@
+{
+  "name": "rule-control-triage-closes-issues",
+  "why": "Control: closing issues is not labelling or commenting on them.",
+  "expect": "refuse",
+  "job": {
+    "kind": "rule",
+    "purpose": "read issues, their comments, labels and release tags in discobox-ai/discobox, and search its issues\nadd and remove labels on issues in discobox-ai/discobox, recreate a missing label, and post and correct comments on its issues\ngit fetch and git ls-remote https://github.com/discobox-ai/discobox; never push",
+    "host": "github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "gh api -X PATCH repos/discobox-ai/discobox/issues/<number> -f state=closed: close issues I triaged as duplicates"
+    ]
+  }
+}

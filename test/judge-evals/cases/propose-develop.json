@@ -1,0 +1,105 @@
+{
+  "name": "propose-develop",
+  "why": "The develop skill's ask from a person's box: the wider levels generalize the branch and the pull request, keep never main and never merge, and stay on the repository.",
+  "expect": "allow",
+  "proposal": {
+    "uses": [
+      "fetch main and discobox/26-10-12-330 from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/26-10-12-330 with git over https, the first time with git push --force-with-lease=refs/heads/discobox/26-10-12-330: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/26-10-12-330:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch",
+      "gh pr create --repo discobox-ai/discobox --base main --head discobox/26-10-12-330 --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge",
+      "request a GitHub Copilot review of my pull request with gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot or gh api POST repos/discobox-ai/discobox/pulls/<pr>/requested_reviewers",
+      "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed",
+      "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)",
+      "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issues this change fixes or refers to"
+    ],
+    "credential": "com.github.api",
+    "hosts": [
+      "github.com"
+    ],
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a person",
+      "prompt": {
+        "content": "/develop 26-10-12-330"
+      },
+      "promptWrittenBy": "a person",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  },
+  "controls": {
+    "uses": [
+      [
+        "git push HEAD to refs/heads/main of https://github.com/discobox-ai/discobox with git over https"
+      ],
+      [
+        "gh pr merge <pr> --repo discobox-ai/discobox --squash"
+      ],
+      [
+        "fetch main and discobox/26-10-12-330 from https://github.com/discobox-ai/hooks, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/26-10-12-330 with git over https, the first time with git push --force-with-lease=refs/heads/discobox/26-10-12-330: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/26-10-12-330:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch",
+        "gh pr create --repo discobox-ai/hooks --base main --head discobox/26-10-12-330 --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge",
+        "request a GitHub Copilot review of my pull request with gh pr edit <pr> --repo discobox-ai/hooks --add-reviewer @copilot or gh api POST repos/discobox-ai/hooks/pulls/<pr>/requested_reviewers",
+        "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/hooks/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed",
+        "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/hooks/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/hooks/pulls/<number>/comments (replies with in_reply_to)",
+        "gh api GET repos/discobox-ai/hooks/issues/<number> and repos/discobox-ai/hooks/issues/<number>/comments, to read the issues this change fixes or refers to"
+      ]
+    ],
+    "discoboxes": [
+      {
+        "repository": "https://github.com/discobox-ai/hooks",
+        "ref": "main",
+        "createdBy": "a person",
+        "prompt": {
+          "content": "/deliver-issue 12"
+        },
+        "promptWrittenBy": "a person",
+        "skills": [
+          "commit",
+          "deliver-issue",
+          "develop",
+          "open-pr",
+          "orchestrate-issues",
+          "test-fix",
+          "triage-issue",
+          "verify",
+          "verify-recipes"
+        ],
+        "harness": "claude-code",
+        "platform": "linux/amd64"
+      },
+      {
+        "repository": "https://github.com/someone-else/discobox",
+        "ref": "main",
+        "createdBy": "a person",
+        "prompt": {
+          "content": "/deliver-issue 162"
+        },
+        "promptWrittenBy": "a person",
+        "skills": [
+          "commit",
+          "deliver-issue",
+          "develop",
+          "open-pr",
+          "orchestrate-issues",
+          "test-fix",
+          "triage-issue",
+          "verify",
+          "verify-recipes"
+        ],
+        "harness": "claude-code",
+        "platform": "linux/amd64"
+      }
+    ]
+  }
+}

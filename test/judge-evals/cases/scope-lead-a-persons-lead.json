@@ -1,0 +1,32 @@
+{
+  "name": "scope-lead-a-persons-lead",
+  "why": "The lead a person started with /orchestrate-issues.",
+  "expect": "allow",
+  "job": {
+    "kind": "scope",
+    "purpose": "discoboxes started by a person to orchestrate issues in discobox-ai/discobox",
+    "round": 1,
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a person",
+      "prompt": {
+        "content": "/orchestrate-issues 151 152 153 158 162"
+      },
+      "promptWrittenBy": "a person",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  }
+}
