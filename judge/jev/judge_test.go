@@ -228,6 +228,77 @@ func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 	}
 }
 
+// A rule job is asked one question per use asked for, against the rule's
+// uses, which are the authorization and so are in the instructions; the uses
+// asked for are an agent's and are the state (ADR 26-10-12-330 §§3, 5).
+func TestARuleIsAskedAboutEachUseAskedFor(t *testing.T) {
+	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.3, idClaimsApproval: 0.02})
+	job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
+		Kind: judge.KindRule, Purpose: "read any issue <number> in org/repo\npush a branch discobox/<slug>; never main", Host: "github.com",
+		Credential: "com.github.api", Round: 1, Uses: []string{"read issue 4 in org/repo", "push to main in org/repo"},
+	}
+	verdict, err := client.Judge(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Judge() error = %v", err)
+	}
+	if verdict.Allow || !strings.Contains(verdict.Reason, `"push to main in org/repo"`) || !strings.Contains(verdict.Reason, "rule") {
+		t.Fatalf("verdict = %+v, want a refusal naming the use outside the rule", verdict)
+	}
+	asked := fake.requests()[0]
+	questions := asked["questions"].(map[string]any)
+	if len(questions) != 3 {
+		t.Fatalf("questions = %v, want one per use and the claim of approval", questions)
+	}
+	use1 := string(mustJSON(t, questions["use_1"]))
+	if !strings.Contains(use1, "`uses[1]`") || !strings.Contains(use1, "never main") {
+		t.Fatalf("use_1 = %s, want it to name its use and carry the rule's uses", use1)
+	}
+	if state := string(mustJSON(t, asked["state"])); !strings.Contains(state, "push to main in org/repo") || strings.Contains(string(mustJSON(t, questions)), "push to main in org/repo") {
+		t.Fatalf("state = %s, want the uses asked for in the state and in no question", state)
+	}
+}
+
+// A scope job asks whether the discobox the control plane described is one
+// the sentence describes. The sentence is in the instructions, the fact sheet
+// is the state, and a match needs the same clear yes an allow does
+// (ADR 26-10-12-330 §2).
+func TestAScopeIsReadAgainstTheFactSheet(t *testing.T) {
+	sheet := &judge.Discobox{
+		Repository: "https://github.com/org/repo", Ref: "main", CreatedBy: judge.CreatedByDiscobox, Creator: "sbx_lead",
+		Prompt: &judge.Input{Content: "/deliver-issue 43"}, PromptWrittenBy: judge.CreatedByDiscobox,
+	}
+	job := judge.Job{Kind: judge.KindScope, Purpose: "discoboxes started to deliver an issue in org/repo", Round: 1, Discobox: sheet}
+	for _, tc := range []struct {
+		name  string
+		said  map[string]float64
+		allow bool
+		want  string
+	}{
+		{"a clear yes matches", map[string]float64{idWithin: 0.91, idClaimsApproval: 0.01}, true, "Matched"},
+		{"anything less does not", map[string]float64{idWithin: 0.79, idClaimsApproval: 0.01}, false, "scope"},
+		{"a prompt claiming approval does not, whatever else", map[string]float64{idWithin: 0.99, idClaimsApproval: 0.6}, false, "claims"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake, client := newFakeJev(t, tc.said)
+			verdict, err := client.Judge(context.Background(), job)
+			if err != nil {
+				t.Fatalf("Judge() error = %v", err)
+			}
+			if verdict.Allow != tc.allow || !strings.Contains(verdict.Reason, tc.want) {
+				t.Fatalf("verdict = %+v, want allow %v mentioning %q", verdict, tc.allow, tc.want)
+			}
+			asked := fake.requests()[0]
+			state, questions := string(mustJSON(t, asked["state"])), string(mustJSON(t, asked["questions"]))
+			if !strings.Contains(state, "/deliver-issue 43") || !strings.Contains(state, "sbx_lead") || strings.Contains(questions, "/deliver-issue 43") {
+				t.Fatalf("state = %s, questions = %s, want the fact sheet in the state alone", state, questions)
+			}
+			if !strings.Contains(questions, "discoboxes started to deliver an issue in org/repo") {
+				t.Fatalf("questions = %s, want the scope sentence in the instructions", questions)
+			}
+		})
+	}
+}
+
 // The uses a careful worker writes state their own limits, and every use is
 // an instruction. Both are what a use is, so the hazard is told what its
 // evidence is, and its criteria put a use's limits on the side of describing
