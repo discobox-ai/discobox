@@ -39,12 +39,52 @@ const judgePrompt = "discobox-prompt"
 // harness CLI takes. An ask past that waits for a run to finish for at most
 // judgingWait, and is Busy when none frees up.
 func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error) {
-	if s.harnessMode != config.HarnessModeJudge {
-		return judge.Answer{}, errors.New("this discobox is not a judge")
-	}
 	prompt, err := judge.Prompt(job)
 	if err != nil {
 		return judge.Answer{}, err
+	}
+	out, err := s.askJudge(ctx, judge.System, prompt, judge.Schema)
+	if err != nil {
+		return judge.Answer{}, err
+	}
+	answer, err := judge.Decode(out)
+	if err != nil {
+		// What came back is not a verdict, and a caller must not be able to
+		// read it as one. What it said is not passed on: it is model output
+		// about a request the sandbox wrote, and the caller refuses either way.
+		return judge.Answer{}, fmt.Errorf("the judge did not answer with a verdict: %w", err)
+	}
+	return answer, nil
+}
+
+// Propose has the judge's model write the wider scopes and uses of an
+// approval rule from one request (ADR 26-10-12-330 §7). It is a run like a
+// judging one — the same wrapper, role and --no-tools, its own system prompt
+// and schema — and counts against the same runs. What it writes authorizes
+// nothing: the control plane puts each sentence to Judge before a person may
+// choose it.
+func (s *Service) Propose(ctx context.Context, job judge.ProposalJob) (judge.Proposal, error) {
+	prompt, err := judge.ProposalPrompt(job)
+	if err != nil {
+		return judge.Proposal{}, err
+	}
+	out, err := s.askJudge(ctx, judge.ProposalSystem, prompt, judge.ProposalSchema)
+	if err != nil {
+		return judge.Proposal{}, err
+	}
+	proposal, err := judge.DecodeProposal(out)
+	if err != nil {
+		// Not passed on, for the reason a verdict that does not decode is not.
+		return judge.Proposal{}, fmt.Errorf("the judge did not answer with a proposal: %w", err)
+	}
+	return proposal, nil
+}
+
+// askJudge runs the wrapper once, with the system prompt and schema of the
+// job in hand, and returns what it printed.
+func (s *Service) askJudge(ctx context.Context, system, prompt, schema string) ([]byte, error) {
+	if s.harnessMode != config.HarnessModeJudge {
+		return nil, errors.New("this discobox is not a judge")
 	}
 	// The wait has a bound of its own, and not only the caller's: the caller
 	// here is the control plane, whose request carries no deadline this
@@ -57,7 +97,7 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 		defer func() { <-s.judging }()
 	case <-wait.Done():
 		stopWaiting()
-		return judge.Answer{}, fmt.Errorf("%w: %w", errBusy, wait.Err())
+		return nil, fmt.Errorf("%w: %w", errBusy, wait.Err())
 	}
 	// Whichever is sooner: the caller's deadline, or this ceiling on the run,
 	// which is what bounds it for a caller that passed none (judge.Timeout).
@@ -72,17 +112,17 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	}
 	workdir, err := s.execs.DefaultWorkdir()
 	if err != nil {
-		return judge.Answer{}, err
+		return nil, err
 	}
 	if err := s.installer.EnsureInstalled(ctx, s.harness, workdir, env); err != nil {
-		return judge.Answer{}, fmt.Errorf("the judge's harness is not installed: %w", err)
+		return nil, fmt.Errorf("the judge's harness is not installed: %w", err)
 	}
 	out, err := s.execs.RunOnce(ctx, execs.OnceRequest{
 		Command: []string{judgePrompt,
 			"--model", judge.Role,
-			"--system", judge.System,
+			"--system", system,
 			"--prompt", prompt,
-			"--output-schema", judge.Schema,
+			"--output-schema", schema,
 			"--no-tools"},
 		Env:       env,
 		MaxOutput: judge.MaxOutput,
@@ -97,16 +137,9 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 		if errors.As(err, &failure) && failure.Stderr != "" {
 			slog.DebugContext(ctx, "the judge's wrapper failed", "stderr", failure.Stderr)
 		}
-		return judge.Answer{}, fmt.Errorf("the judge could not be asked: %w", err)
+		return nil, fmt.Errorf("the judge could not be asked: %w", err)
 	}
-	answer, err := judge.Decode(out)
-	if err != nil {
-		// What came back is not a verdict, and a caller must not be able to
-		// read it as one. What it said is not passed on: it is model output
-		// about a request the sandbox wrote, and the caller refuses either way.
-		return judge.Answer{}, fmt.Errorf("the judge did not answer with a verdict: %w", err)
-	}
-	return answer, nil
+	return out, nil
 }
 
 // maxJudgingRuns is how many asks a judge answers at once. A run is a harness

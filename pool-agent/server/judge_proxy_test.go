@@ -20,6 +20,9 @@ func TestJudgeIsForwardedOnItsOwnScope(t *testing.T) {
 		name, method, path, want string
 	}{
 		{"putting a job to the judge", http.MethodPost, path, ScopeJudgeRun},
+		// Proposing a rule's wording is the same runtime's other job.
+		{"asking it to propose a rule", http.MethodPost, path + "/proposal", ScopeJudgeRun},
+		{"reading a proposal", http.MethodGet, path + "/proposal", ""},
 		// No scope is not a refusal — it means this hop checks none — so what
 		// keeps a GET out is that the route is registered for POST alone.
 		// The table is asked anyway, to keep it in step with the sandbox

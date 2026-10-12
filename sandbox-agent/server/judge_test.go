@@ -68,3 +68,40 @@ func TestJudgeIsRefusedByADiscoboxThatIsNotOne(t *testing.T) {
 		t.Fatalf("status = %d, body = %s; want no verdict from a discobox that is not a judge", resp.Code, resp.Body.String())
 	}
 }
+
+// Proposing a rule's wording is the judge runtime's other job, on the same
+// scope and nothing else's (ADR 26-10-12-330 §7), and a discobox that is not a
+// judge writes none.
+func TestProposingARuleRequiresTheJudgeScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	job := `{"uses":["gh api GET repos/org/repo/issues/43"],"hosts":["github.com"],"discobox":{"createdBy":"a person"}}`
+
+	for _, tc := range []struct {
+		name, scope string
+		refused     bool
+	}{
+		{"a token for the sandbox's own work", ScopeExecWrite, true},
+		{"a token for terminals", ScopeTerminalWrite, true},
+		{"a token that may ask the judge", ScopeJudgeRun, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
+				"/api/projects/project-1/sandboxes/sandbox-1/judge/proposal", strings.NewReader(job))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", tc.scope))
+			router.ServeHTTP(resp, req)
+
+			switch {
+			case tc.refused && resp.Code != http.StatusForbidden:
+				t.Fatalf("status = %d, want 403: this token may not ask the judge", resp.Code)
+			case !tc.refused && (resp.Code == http.StatusForbidden || resp.Code == http.StatusOK):
+				t.Fatalf("status = %d, body = %s; want the scope accepted and no proposal from a discobox that is not a judge", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}

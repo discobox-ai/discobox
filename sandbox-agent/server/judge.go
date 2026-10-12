@@ -68,6 +68,9 @@ func judgeJob(in *sandboxapi.JudgeJob) judge.Job {
 	if stdin, ok := in.Stdin.Get(); ok {
 		job.Stdin = &judge.Input{Content: stdin.Content, Missing: stdin.Missing.Or("")}
 	}
+	if sheet, ok := in.Discobox.Get(); ok {
+		job.Discobox = factSheet(sheet)
+	}
 	if reported, ok := in.Reported.Get(); ok {
 		job.Reported = &judge.Reported{
 			WorkingDirectory: reported.WorkingDirectory.Or(""),
@@ -100,6 +103,51 @@ func judgeJob(in *sandboxapi.JudgeJob) judge.Job {
 		}
 	}
 	return job
+}
+
+// factSheet is what the control plane recorded about a discobox, as this
+// process judges a scope against it.
+func factSheet(in sandboxapi.JudgeDiscobox) *judge.Discobox {
+	sheet := &judge.Discobox{
+		Repository:      in.Repository.Or(""),
+		Ref:             in.Ref.Or(""),
+		OtherSources:    in.OtherSources,
+		CreatedBy:       string(in.CreatedBy),
+		Creator:         in.Creator.Or(""),
+		PromptWrittenBy: string(in.PromptWrittenBy.Or("")),
+		Skills:          in.Skills,
+		Harness:         in.Harness.Or(""),
+		Platform:        in.Platform.Or(""),
+	}
+	if prompt, ok := in.Prompt.Get(); ok {
+		sheet.Prompt = &judge.Input{Content: prompt.Content, Missing: prompt.Missing.Or("")}
+	}
+	return sheet
+}
+
+// ProposeSandboxRule has this discobox's harness write the wider scopes and
+// uses a person may choose for an approval rule (ADR 26-10-12-330 §7). Like a
+// judging job, the caller supplies data and nothing else: the prompt, the
+// schema, the model role and the tools restriction are the runtime's.
+func (h *handler) ProposeSandboxRule(ctx context.Context, req *sandboxapi.JudgeProposalJob, _ sandboxapi.ProposeSandboxRuleParams) (*sandboxapi.JudgeProposal, error) {
+	proposal, err := h.terminals.Propose(ctx, judge.ProposalJob{
+		Uses:       req.Uses,
+		Credential: req.Credential.Or(""),
+		Hosts:      req.Hosts,
+		Discobox:   *factSheet(req.Discobox),
+	})
+	if err != nil {
+		if terminal.Busy(err) {
+			return nil, errorStatus(http.StatusTooManyRequests, err.Error())
+		}
+		return nil, err
+	}
+	return &sandboxapi.JudgeProposal{
+		ScopeWork:          proposal.ScopeWork,
+		ScopeRepository:    proposal.ScopeRepository,
+		UsesAnyTarget:      proposal.UsesAnyTarget,
+		UsesAcrossResource: proposal.UsesAcrossResource,
+	}, nil
 }
 
 // recognition is what the request was recognized as, when it was.
