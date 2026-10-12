@@ -1437,6 +1437,83 @@ type CredentialRequest struct {
 	// Name, EnvVar, and Type are empty: the answer is not a secret but which
 	// certificate to pin.
 	Trust *TrustAsk
+	// RuleTests is each of the project's approval rules tested against this
+	// request and why it did not answer it (ADR 26-10-12-330 §4): a request
+	// still waiting on a person is one no rule covered, and the card says
+	// which were tried.
+	RuleTests []RuleTest
+}
+
+// RuleTest is one approval rule held against one request.
+type RuleTest struct {
+	RuleID string
+	// Covered is the rule answering the request; one that is still on the
+	// card is about to be approved under it.
+	Covered bool
+	// Pending is a rule the judge has still to be asked about.
+	Pending bool
+	// Stage is what decided, as the server names it: "facts" the server
+	// checked, the rule's "scope", or its "content".
+	Stage  string
+	Reason string
+}
+
+// ApprovalRule is the part of an approval rule a person chooses when they
+// answer a request with "auto approve": which discoboxes it is for, and what
+// it approves for them. Its credential, hosts and purpose are the request's,
+// copied by the server.
+type ApprovalRule struct {
+	// Scope is a sentence the judge reads against what was recorded about a
+	// discobox when it was created, and SandboxID pins the rule to one
+	// discobox, compared rather than read. Both empty is every discobox in the
+	// project, including ones that do not exist yet.
+	Scope     string
+	SandboxID string
+	// Uses are sentences saying what the rule approves.
+	Uses []string
+}
+
+// RuleProposals is what a person who chose "auto approve" picks a rule from:
+// scopes and contents, each narrowest first, each already put to the judge as
+// the question the rule would later ask about this request (ADR 26-10-12-330
+// §§7–8).
+type RuleProposals struct {
+	Scopes   []RuleScopeProposal
+	Contents []RuleContentProposal
+	// Credential, Hosts and Delegate are what a rule made from the request
+	// will say, as the server copies them from it.
+	Credential string
+	Hosts      []string
+	Delegate   bool
+	// Note says why only the narrowest of each is offered, when no model could
+	// write the wider ones.
+	Note string
+}
+
+// RuleScopeProposal is one scope a rule may have. Level is how wide: 1 this
+// discobox (SandboxID, no sentence), 2 discoboxes doing this work on this
+// repository, 3 any discobox on this repository.
+type RuleScopeProposal struct {
+	Level     int
+	SandboxID string
+	Scope     string
+	// Covers is the judge finding the asking discobox to be one the scope
+	// describes; only such a scope may be chosen as written. Reason is what
+	// the judge said either way.
+	Covers bool
+	Reason string
+}
+
+// RuleContentProposal is one set of uses a rule may approve. Level is how
+// wide: 1 as asked, 2 the same work on any target of its kind, 3 the same
+// kind of work across the resource.
+type RuleContentProposal struct {
+	Level int
+	Uses  []string
+	// Covers is the judge finding every use the request asked for within
+	// these; only such uses may be chosen as written.
+	Covers bool
+	Reason string
 }
 
 // RefreshAsk is which token a refresh request wants a new value of, and why.
@@ -1513,6 +1590,14 @@ type TrustApproval struct {
 // FromAgent reports whether a person is being asked a question with reasons
 // attached, rather than being told the proxy hit an unresolvable sentinel.
 func (r CredentialRequest) FromAgent() bool { return len(r.Uses) > 0 }
+
+// Ruleable reports whether a request can be answered with a rule: an agent's
+// own ask for a credential, naming its uses. A rule's content is uses read
+// against uses, so a request the proxy opened, a refresh, and a trust stay a
+// person's to answer each time (ADR 26-10-12-330 §4).
+func (r CredentialRequest) Ruleable() bool {
+	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil
+}
 
 // Secret is a project secret as the window needs it: enough to choose between
 // them and to manage them, and never a value.
@@ -1729,6 +1814,11 @@ type Approval struct {
 	// secret as it was.
 	SecretHost          *string
 	SecretMaxTTLSeconds *int64
+	// Rule, when set, also makes an approval rule from the request and
+	// approves it under that rule, in the same write: the answer "auto
+	// approve". The server refuses a rule that would not cover the request it
+	// is made from, and then approves nothing.
+	Rule *ApprovalRule
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the
@@ -2320,6 +2410,12 @@ type DataSource interface {
 	// authorizes it. The server decides the scope and the approved uses from
 	// the request itself.
 	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
+
+	// RuleProposals asks a request's server which approval rules could answer
+	// it and requests like it. It is slow — a model writes the wider ones and
+	// the judge reads every one — so it is asked only when a person chooses
+	// "auto approve".
+	RuleProposals(ctx context.Context, server, requestID string) (RuleProposals, error)
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.

@@ -204,6 +204,16 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 			}
 		}
 	}
+	for _, test := range r.RuleTests {
+		req.RuleTests = append(req.RuleTests, tui.RuleTest{
+			RuleID:  test.RuleId,
+			Covered: test.Covered,
+			Pending: test.Pending.Or(false),
+			Stage:   string(test.Stage.Or("")),
+			// A judge's reason can quote the uses an agent wrote.
+			Reason: terminalSafe(strings.TrimSpace(test.Reason.Or(""))),
+		})
+	}
 	return req
 }
 
@@ -523,6 +533,21 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	if approval.SecretMaxTTLSeconds != nil {
 		body.SetSecretMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*approval.SecretMaxTTLSeconds))
 	}
+	// "Auto approve": the rule is made and the request approved under it in
+	// this one write. Its lifetime cap and expiry are left unsaid, so the
+	// server caps it at the lifetime this approval grants. An empty scope with
+	// no pin is said by leaving both out, which is how the server reads "every
+	// discobox in the project".
+	if rule := approval.Rule; rule != nil {
+		with := apimodel.ApproveWithRule{Uses: rule.Uses}
+		if scope := strings.TrimSpace(rule.Scope); scope != "" {
+			with.SetScope(apiclientgen.NewOptString(scope))
+		}
+		if pinned := strings.TrimSpace(rule.SandboxID); pinned != "" {
+			with.SetSandboxId(apiclientgen.NewOptString(pinned))
+		}
+		body.SetRule(apiclientgen.NewOptApproveWithRule(with))
+	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,
@@ -535,6 +560,67 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	}
 	window.answered(server, approval.RequestID)
 	return nil
+}
+
+// RuleProposals asks the request's server for the rules "auto approve" may
+// choose between (ADR 26-10-12-330 §7). The server writes the wider ones with
+// a model and puts every one to the judge before answering, so this is on no
+// leash of its own: the window shows that it is waiting, and its context ends
+// the call when the person stops.
+//
+// A proposal is a model's sentence written from an agent's ask, and a reason
+// can quote that ask, so each is made safe to draw on the way, as an issue's
+// text is: an escape sequence in one is shown, not obeyed. What is shown is
+// what is sent back when it is chosen, so the rule is the text that was read.
+func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID string) (tui.RuleProposals, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	res, err := d.client.ProposeApprovalRules(ctx, apiclientgen.ProposeApprovalRulesParams{
+		ProjectId: d.projectID,
+		RequestId: requestID,
+	})
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	body, err := expectResponse[apimodel.RuleProposalsBody](res)
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	hosts := make([]string, 0, len(body.Hosts))
+	for _, host := range body.Hosts {
+		hosts = append(hosts, terminalSafe(host))
+	}
+	out := tui.RuleProposals{
+		// The name an agent asked under, for an ask that names no ID.
+		Credential: terminalSafe(strings.TrimSpace(body.Credential.Or(""))),
+		Hosts:      hosts,
+		Delegate:   body.Purpose == apiclientgen.RuleProposalsBodyPurposeDelegate,
+		Note:       terminalSafe(strings.TrimSpace(body.Note.Or(""))),
+	}
+	for _, scope := range body.Scopes {
+		out.Scopes = append(out.Scopes, tui.RuleScopeProposal{
+			Level:     int(scope.Level),
+			SandboxID: strings.TrimSpace(scope.SandboxId.Or("")),
+			Scope:     terminalSafe(strings.TrimSpace(scope.Scope.Or(""))),
+			Covers:    scope.Covers,
+			Reason:    terminalSafe(strings.TrimSpace(scope.Reason.Or(""))),
+		})
+	}
+	for _, content := range body.Contents {
+		uses := make([]string, 0, len(content.Uses))
+		for _, use := range content.Uses {
+			uses = append(uses, terminalSafe(strings.TrimSpace(use)))
+		}
+		out.Contents = append(out.Contents, tui.RuleContentProposal{
+			Level:  int(content.Level),
+			Uses:   uses,
+			Covers: content.Covers,
+			Reason: terminalSafe(strings.TrimSpace(content.Reason.Or(""))),
+		})
+	}
+	return out, nil
 }
 
 // RefreshSecret answers a refresh request with a new value: the output of the

@@ -30,7 +30,7 @@ flowchart LR
     WS -->|leader S0| SvcMenu["services menu → DoService"]
     WS -->|open| Fwd["port forward → DataSource.Forward"]
     WS -->|beat| Push["automatic push → PushSources"]
-    L -->|C| Cred["credential dialog → Secrets / CreateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / RuleProposals / ApproveCredentialRequest / DenyCredentialRequest"]
     M --> S["secretList (F4)"]
     S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
@@ -378,7 +378,9 @@ The steps run: request → binding question, only when the secret is bound
 elsewhere → name question, only when a new credential's name is taken →
 lifetime → limit question, only when the lifetime is over the secret's cap →
 approve. A new credential takes its lifetime *before* its token, so going back
-never has to hold a token that was already typed.
+never has to hold a token that was already typed. "Auto approve" adds its own
+between the binding question and the lifetime, and one before the approve; see
+below.
 
 **A gate is let in, not answered** (`askAboutGate`). A request for a
 credential with nothing behind it — the discobox API, `ai.discobox.sandbox` —
@@ -414,6 +416,50 @@ agrees to is applied until the last step. Then the binding and the limit ride on
 the approval itself (`finishApproval`), and the server writes them with the
 grant or not at all. A refused approval leaves the credential as it was, and a
 failure never has a changed secret to report.
+
+**"Auto approve" answers a request with the rule that answers the next one**
+(`rules.go`, [ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md) §§7–9).
+`A` on the request card and on a gate's — capitalized for the reason `C` is, and
+on a gate a shift away from the `a` that approves once — is offered only on an
+agent's own ask naming its uses (`CredentialRequest.Ruleable`): a request the
+proxy opened, a refresh, and a trust stay a person's each time. It is the same
+`approval` value with `auto` set, on the same chain, with four steps added:
+
+- **what answers** (`askRuleSecret`): the project's secrets only, since a rule
+  is read whole before anything is written and a typed credential is stored
+  late. A gate skips it. With no secret stored the row is disabled and says so.
+- **the wait** (`proposeRules`): `DataSource.RuleProposals` takes a minute or
+  two, so a status card is up; Esc cancels the call and goes back, and an
+  answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
+  raising a dialog on its own.
+- **which discoboxes, then which uses** (`askRuleScope`, `askRuleContent`): the
+  proposals narrowest first, each shown whole in the body with the judge's
+  verdict, because a menu row holds a label and not a sentence. One that does
+  not cover this request is drawn failed with its reason and its row is
+  disabled. `w` writes either by hand, sent as written for the server to judge:
+  the scope as one sentence, the uses a line at a time (Enter adds, an empty
+  line finishes, Esc takes one back). An empty hand-written scope is the only
+  way to a rule for every discobox, and the field says what that does. The
+  server's `Note` — why only the narrowest is offered — is on both.
+- **the rule** (`reviewRule`), after the lifetime and its limit question: the
+  full text — credential, hosts, purpose, what answers it, the pin or the scope
+  sentence, every use, the lifetime, and any change to the secret — as a y/n
+  defaulting to No. A rule with neither scope nor pin says it `approves for
+  discoboxes that do not exist yet, including ones a discobox creates`
+  (`everyDiscobox`); one for a gate or a delegation says what it hands out in
+  the request card's own words (`gateGives`, `delegationPurpose`).
+
+The rule rides on the approval (`Approval.Rule`), one write; its cap is left
+for the server, which takes the lifetime chosen. A refusal — the server judges
+hand-written text and makes no rule that would not cover its own request —
+keeps the server's sentence on the failure card, and Esc there goes back to the
+rule so another scope or other uses can be chosen
+(`credentialAnsweredMsg.again`).
+
+**The request card lists the rules that were tried** (`ruleTestsSection`,
+`CredentialRequest.RuleTests`): each rule's ID, the stage that decided, and the
+reason, or that it is still being judged — a request is in front of a person
+because none covered it.
 
 ## The attention band
 
@@ -2937,6 +2983,7 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
+| `rules.go` | "auto approve": the proposals, the two choices, and the rule read whole before it is made |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `apply.go` | apply: its key, and what is offered when it succeeds |
