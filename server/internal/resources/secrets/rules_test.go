@@ -303,7 +303,7 @@ func TestARuleThatDoesNotCoverLeavesTheRequestForAPerson(t *testing.T) {
 // request ends it, and the grant names that rule.
 func TestRulesAreTestedOneAtATimeAndTheFirstThatCoversEndsIt(t *testing.T) {
 	svc, st, judging, _ := ruledService(t)
-	narrow := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"read pull requests in org/repo"} })
+	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"read pull requests in org/repo"} })
 	wide := githubRule(t, svc, nil)
 	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"anything at all in org/repo"} })
 	pinned := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
@@ -327,13 +327,16 @@ func TestRulesAreTestedOneAtATimeAndTheFirstThatCoversEndsIt(t *testing.T) {
 		}
 		asked = append(asked, ask.RuleID)
 	}
-	if !slices.Equal(asked, []string{pinned.ID, narrow.ID, wide.ID}) {
-		t.Fatalf("rules asked about = %v, want the pinned one first and none after the first that covers", asked)
+	// The rest are tested oldest first, and rules made in one tick of the
+	// clock have no order between them, so what is held is what must hold:
+	// the pinned rule first, the one that covers last, and none asked twice.
+	if len(asked) < 2 || asked[0] != pinned.ID || asked[len(asked)-1] != wide.ID || len(slices.Compact(slices.Sorted(slices.Values(asked)))) != len(asked) {
+		t.Fatalf("rules asked about = %v, want the pinned one (%s) first and none after the first that covers (%s)", asked, pinned.ID, wide.ID)
 	}
-	// A pin is compared, not read: only the two rules with a sentence had it
-	// put to the judge.
-	if len(judging.scopes) != 2 {
-		t.Fatalf("scope asks = %d, want none for the pinned rule", len(judging.scopes))
+	// A pin is compared, not read: only the rules with a sentence had it put
+	// to the judge.
+	if len(judging.scopes) != len(asked)-1 {
+		t.Fatalf("scope asks = %d for %d rules asked about, want none for the pinned rule", len(judging.scopes), len(asked))
 	}
 	grant, err := st.GetSecretGrant(context.Background(), "project-1", requestNow(t, st, req).GrantID)
 	if err != nil || grant.RuleID != wide.ID {
@@ -914,6 +917,9 @@ func TestRequestsAreMarkedForTestingWhenFiledAndWhenARuleChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = []string{resourcejudges.JudgeResourceType + "/project-1", resourcesecrets.RuleRequestResourceType + "/" + before.ID, resourcesecrets.RuleRequestResourceType + "/" + after.ID}
+	// In any order: two requests filed in one tick of the clock have none.
+	slices.Sort(want)
+	slices.Sort(dirty.marked)
 	if !slices.Equal(dirty.marked, want) {
 		t.Fatalf("marked = %v, want an edited rule tested afresh against what is pending: %v", dirty.marked, want)
 	}
