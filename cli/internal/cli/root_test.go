@@ -301,6 +301,7 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 		{"secret", "ls"},
 		{"secret", "grant", "ls"},
 		{"secret", "request", "ls"},
+		{"secret", "rule", "ls"},
 		{"admin", "harnesses", "ls"},
 		{"admin", "harnesses", "secrets", "ls"},
 	}

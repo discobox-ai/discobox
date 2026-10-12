@@ -78,6 +78,7 @@ func (a *App) newSecretCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretRefreshCommand())
 	cmd.AddCommand(a.newSecretRequestCommand())
 	cmd.AddCommand(a.newSecretGrantCommand())
+	cmd.AddCommand(a.newSecretRuleCommand())
 	return cmd
 }
 
@@ -90,7 +91,7 @@ func (a *App) newSecretGrantCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGrantListCommand() *cobra.Command {
-	var secretRef string
+	var secretRef, ruleRef string
 	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List secret grants", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -108,6 +109,12 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 			}
 			params.SecretId = apiclientgen.NewOptString(secretID)
 		}
+		// The grants one approval rule minted, which outlive it: this is how
+		// they are found to be revoked deliberately. The ID is passed as
+		// given, since the rule may already be deleted.
+		if ruleRef = strings.TrimSpace(ruleRef); ruleRef != "" {
+			params.RuleId = apiclientgen.NewOptString(ruleRef)
+		}
 		res, err := client.ListSecretGrants(cmd.Context(), params)
 		if err != nil {
 			return err
@@ -119,6 +126,7 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 		return a.writeSecretGrants(cmd, body.GetSecretGrants())
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "Filter by granted secret ID")
+	cmd.Flags().StringVar(&ruleRef, "rule", "", "Only grants minted under this approval rule, by its full ID; a deleted rule's grants are still listed")
 	a.addQuietFlag(cmd)
 	return cmd
 }
@@ -487,6 +495,7 @@ func (a *App) newSecretRequestCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretRequestListCommand())
 	cmd.AddCommand(a.newSecretRequestGetCommand())
 	cmd.AddCommand(a.newSecretRequestCreateCommand())
+	cmd.AddCommand(a.newSecretRequestProposeCommand())
 	cmd.AddCommand(a.newSecretRequestApproveCommand())
 	cmd.AddCommand(a.newSecretRequestDenyCommand())
 	return cmd
@@ -581,7 +590,8 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretID, scope, ttl string
 	var uses, hosts []string
-	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET_ID]", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var auto autoApproval
+	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET_ID] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -634,6 +644,24 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			}
 			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
 		}
+		// --auto makes an approval rule from the request and approves it
+		// under that rule, in one write (ADR 26-10-12-330). The request is
+		// read only to pin the rule to the discobox that asked.
+		if auto.auto {
+			pending, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
+			if err != nil {
+				return err
+			}
+			asked, err := expectResponse[apimodel.SecretRequest](pending)
+			if err != nil {
+				return err
+			}
+			if body.Rule, err = auto.rule(cmd, asked); err != nil {
+				return err
+			}
+		} else if _, err := auto.rule(cmd, nil); err != nil {
+			return err
+		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -642,14 +670,50 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return a.writeSecretRequest(cmd, request)
+		if err := a.writeSecretRequest(cmd, request); err != nil || !auto.auto || a.output == "json" {
+			return err
+		}
+		// The rule's text is what was approved, so it is read back whole.
+		return a.writeRuleMadeBy(cmd, client, projectID, request)
 	}}
 	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret to grant, by name or ID")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts the grant is limited to, comma-separated or repeated; defaults to the hosts the request named")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLApproveFlagUsage)
+	auto.addFlags(cmd)
 	return cmd
+}
+
+// writeRuleMadeBy prints the approval rule an auto approval made, found
+// through the grant it minted, which records it.
+func (a *App) writeRuleMadeBy(cmd *cobra.Command, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest) error {
+	grantID := request.GrantId.Or("")
+	res, err := client.ListSecretGrants(cmd.Context(), apiclientgen.ListSecretGrantsParams{ProjectId: projectID, SecretId: request.SecretId})
+	if err != nil {
+		return err
+	}
+	grants, err := expectResponse[apimodel.ListSecretGrantsBody](res)
+	if err != nil {
+		return err
+	}
+	for _, grant := range grants.GetSecretGrants() {
+		ruleID := grant.RuleId.Or("")
+		if grant.ID != grantID || ruleID == "" {
+			continue
+		}
+		made, err := client.GetApprovalRule(cmd.Context(), apiclientgen.GetApprovalRuleParams{ProjectId: projectID, RuleId: ruleID})
+		if err != nil {
+			return err
+		}
+		rule, err := expectResponse[apimodel.ApprovalRule](made)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "\nApproval rule made:")
+		return a.writeApprovalRule(cmd, rule)
+	}
+	return nil
 }
 
 // grantHosts are the --hosts values as a body takes them: trimmed, with empty
