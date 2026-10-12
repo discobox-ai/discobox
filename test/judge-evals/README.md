@@ -41,11 +41,28 @@ final there, so the run also counts those given to a case that does not accept
 a refusal: the evidence against the bar Jev's no is read at
 (ADR 26-10-12-669).
 
+A **proposer case** (`propose-*`) has a `proposal` — the uses a request asked
+for and the asking discobox's fact sheet — in place of a `job`, and `controls`:
+asks and discoboxes its rule must not cover. The wrapper writes the rule's
+wider scopes and uses (`judge.ProposalSystem`), and the same judge scores what
+it wrote, as the control plane does before a person may choose any of it: each
+level covers the request, the wider uses cover the narrower, and no level
+covers a control. The run is an `allow` when every check held, a `refuse` when
+one did not — the report names it — and `invalid` when the wrapper wrote no
+proposal. With `-jev` the wrapper still writes and Jev scores, which is who
+does each on a server that judges with Jev.
+
 ## Cases
 
 `cases/*.json` are a `name`, `why` — what happened, or what the case controls
-for — `expect`, and the `job`: a request the proxy observed, or a delegation —
-the uses a discobox would hand on, against the uses it was delegated. A case names what its request was recognized as
+for — `expect`, and the `job`: a request the proxy observed, a delegation —
+the uses a discobox would hand on, against the uses it was delegated — or one
+of an approval rule's two readings (ADR 26-10-12-330): `scope-*`, a rule's
+scope sentence against a discobox's fact sheet, and `rule-*`, a rule's uses
+against the uses a request asked for. Those are the asks the `develop`,
+`triage-issue` and `orchestrate-issues` skills file, with controls no rule may
+cover: another repository, a push to `main`, a merge, a box started for other
+work. A case names what its request was recognized as
 (`endpoint`, `protocol`, `parser`); the runner adds the trusted guidance for
 it, as the control plane does. Real refusals come from the proxy's audit
 record and the verdict a judge gave; controls are requests that must stay

@@ -1,0 +1,32 @@
+{
+  "name": "scope-control-other-work",
+  "why": "Control: a box on the repository started for other work than the scope names: cutting a release is neither delivering nor triaging an issue.",
+  "expect": "refuse",
+  "job": {
+    "kind": "scope",
+    "purpose": "discoboxes started to deliver or triage an issue in discobox-ai/discobox",
+    "round": 1,
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a person",
+      "prompt": {
+        "content": "/release cut 0.42.0: tag it, watch the release workflow, and land it on the dev Homebrew channel"
+      },
+      "promptWrittenBy": "a person",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  }
+}

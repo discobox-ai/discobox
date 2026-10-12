@@ -1,0 +1,18 @@
+{
+  "name": "rule-triage-as-asked",
+  "why": "The triage-issue skill asks for the same four uses word for word every run.",
+  "expect": "allow",
+  "job": {
+    "kind": "rule",
+    "purpose": "gh api GET repos/discobox-ai/discobox/issues (with query parameters), repos/discobox-ai/discobox/issues/<number>, repos/discobox-ai/discobox/issues/<number>/comments, repos/discobox-ai/discobox/labels (with query parameters), search/issues (with query parameters), repos/discobox-ai/discobox/git/ref/tags/<tag> and repos/discobox-ai/discobox/git/tags/<sha>: read issues, their comments and labels, search for duplicates, and resolve a release tag to its commit\ngh api POST repos/discobox-ai/discobox/issues/<number>/labels -f labels[]=<label> (one or more) and gh api -X DELETE repos/discobox-ai/discobox/issues/<number>/labels/<label>: add and remove the triage-issue skill's labels on an issue I am triaging or delivering; and gh api POST repos/discobox-ai/discobox/labels -f name=<label> -f color=<hex> -f description=<text>: recreate a missing label from that skill's table\ngh api POST repos/discobox-ai/discobox/issues/<number>/comments -f body=\"$(cat <file>)\" and gh api -X PATCH repos/discobox-ai/discobox/issues/comments/<id> -f body=\"$(cat <file>)\": post and correct the triage comment and short follow-ups on an issue I am triaging or delivering\ngit fetch https://github.com/discobox-ai/discobox main and git ls-remote https://github.com/discobox-ai/discobox, with git over https, to start each triage from GitHub's main; never push",
+    "host": "github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "gh api GET repos/discobox-ai/discobox/issues (with query parameters), repos/discobox-ai/discobox/issues/<number>, repos/discobox-ai/discobox/issues/<number>/comments, repos/discobox-ai/discobox/labels (with query parameters), search/issues (with query parameters), repos/discobox-ai/discobox/git/ref/tags/<tag> and repos/discobox-ai/discobox/git/tags/<sha>: read issues, their comments and labels, search for duplicates, and resolve a release tag to its commit",
+      "gh api POST repos/discobox-ai/discobox/issues/<number>/labels -f labels[]=<label> (one or more) and gh api -X DELETE repos/discobox-ai/discobox/issues/<number>/labels/<label>: add and remove the triage-issue skill's labels on an issue I am triaging or delivering; and gh api POST repos/discobox-ai/discobox/labels -f name=<label> -f color=<hex> -f description=<text>: recreate a missing label from that skill's table",
+      "gh api POST repos/discobox-ai/discobox/issues/<number>/comments -f body=\"$(cat <file>)\" and gh api -X PATCH repos/discobox-ai/discobox/issues/comments/<id> -f body=\"$(cat <file>)\": post and correct the triage comment and short follow-ups on an issue I am triaging or delivering",
+      "git fetch https://github.com/discobox-ai/discobox main and git ls-remote https://github.com/discobox-ai/discobox, with git over https, to start each triage from GitHub's main; never push"
+    ]
+  }
+}

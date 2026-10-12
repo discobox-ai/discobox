@@ -75,12 +75,31 @@ const (
 )
 
 // Case is one recorded job and what a correct judge does with it.
+//
+// A proposer case has a proposal job in place of a judge job (ADR 26-10-12-330
+// §8): the wrapper writes an approval rule's wider scopes and uses from one
+// request, and the same judge then scores what it wrote, as the control plane
+// puts every candidate to the judge before a person may choose it.
 type Case struct {
 	Name   string      `json:"name"`
 	Why    string      `json:"why"`
 	Expect Expectation `json:"expect"`
 	Job    judge.Job   `json:"job"`
-	path   string
+	// Proposal is the request a proposer case's rule is written from.
+	Proposal *judge.ProposalJob `json:"proposal,omitempty"`
+	// Controls are what no level of a proposer case's rule may cover.
+	Controls *Controls `json:"controls,omitempty"`
+	path     string
+}
+
+// Controls are what a proposed rule must not cover: asks that are not the
+// request's kind of work, and discoboxes that are not the asking one's kind.
+type Controls struct {
+	// Uses are asks, each a list of uses, none of which any level of the
+	// proposed uses may cover: a push to main, a merge, another repository.
+	Uses [][]string `json:"uses,omitempty"`
+	// Discoboxes are fact sheets neither proposed scope may match.
+	Discoboxes []judge.Discobox `json:"discoboxes,omitempty"`
 }
 
 // Run is one answer to one case.
@@ -122,6 +141,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+	// The wrapper writes a proposer case's rule whichever judge scores it:
+	// Jev writes nothing, so a server that judges with Jev has its judge
+	// discobox write and Jev read.
+	command := strings.Fields(*wrapper)
 	var asker func(context.Context, Case, time.Duration, string) Run
 	version := judge.PromptVersion
 	if *useJev {
@@ -130,18 +153,32 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%v: set %s\n", err, jevKeyEnv)
 			os.Exit(2)
 		}
-		asker = func(ctx context.Context, c Case, timeout time.Duration, _ string) Run {
-			return askJev(ctx, client, c, timeout)
+		judging := func(ctx context.Context, job judge.Job, timeout time.Duration, _ string) verdict {
+			return judgeWithJev(ctx, client, job, timeout)
+		}
+		asker = func(ctx context.Context, c Case, timeout time.Duration, log string) Run {
+			if c.Proposal != nil {
+				if len(command) == 0 {
+					return Run{Case: c.Name, Outcome: OutcomeInvalid, Error: "a proposer case needs -wrapper to write the proposal Jev scores"}
+				}
+				return propose(ctx, command, *model, judging, c, timeout, log)
+			}
+			return scored(c, judging(ctx, c.Job, timeout, log))
 		}
 		version = jev.QuestionsVersion
 	} else {
-		command := strings.Fields(*wrapper)
 		if len(command) == 0 {
 			fmt.Fprintln(os.Stderr, "-wrapper names no command")
 			os.Exit(2)
 		}
+		judging := func(ctx context.Context, job judge.Job, timeout time.Duration, log string) verdict {
+			return judgeWithWrapper(ctx, command, *model, job, timeout, log)
+		}
 		asker = func(ctx context.Context, c Case, timeout time.Duration, log string) Run {
-			return askOnce(ctx, command, *model, c, timeout, log)
+			if c.Proposal != nil {
+				return propose(ctx, command, *model, judging, c, timeout, log)
+			}
+			return scored(c, judging(ctx, c.Job, timeout, log))
 		}
 	}
 
@@ -203,6 +240,21 @@ func loadCases(dir, glob string) ([]Case, error) {
 		if c.Job.Guidance != nil {
 			return nil, fmt.Errorf("%s: a case names what its request was recognized as, not guidance", path)
 		}
+		if c.Proposal != nil {
+			// A proposer case passes when every check on what was written
+			// holds, which is an allow and nothing else.
+			if c.Expect != ExpectAllow || c.Job.Kind != "" {
+				return nil, fmt.Errorf("%s: a proposer case has a proposal in place of a job, and expects allow", path)
+			}
+			if _, err := judge.ProposalPrompt(*c.Proposal); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			cases = append(cases, c)
+			continue
+		}
+		if c.Controls != nil {
+			return nil, fmt.Errorf("%s: only a proposer case has controls", path)
+		}
 		c.Job.Guidance = judge.GuidanceFor(c.Job.Request)
 		if _, err := judge.Prompt(c.Job); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
@@ -255,73 +307,186 @@ func ask(ctx context.Context, asker func(context.Context, Case, time.Duration, s
 	return results
 }
 
-// askOnce invokes the wrapper as the judge runtime does and scores its answer.
-func askOnce(ctx context.Context, command []string, model string, c Case, timeout time.Duration, log string) Run {
-	run := Run{Case: c.Name}
-	prompt, err := judge.Prompt(c.Job)
-	if err != nil {
-		run.Outcome, run.Error = OutcomeInvalid, err.Error()
-		return run
-	}
+// verdict is one judge's answer to one job, scored as the control plane acts
+// on it.
+type verdict struct {
+	outcome Outcome
+	answer  string
+	err     string
+	elapsed time.Duration
+	// unsure is a Jev refusal because Jev could not tell (Run.Unsure).
+	unsure bool
+}
+
+// scored is a verdict as the run of the case it answers.
+func scored(c Case, v verdict) Run {
+	return Run{Case: c.Name, Outcome: v.outcome, Pass: v.err == "" && c.Expect.accepts(v.outcome), Answer: v.answer, Error: v.err, Elapsed: v.elapsed, Unsure: v.unsure}
+}
+
+// runWrapper invokes the wrapper as the judge runtime does, with the system
+// prompt and schema of the job in hand, and returns what it printed.
+func runWrapper(ctx context.Context, command []string, model, system, prompt, schema string, timeout time.Duration, log string) (out []byte, elapsed time.Duration, failure string) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	args := append(slices.Clone(command[1:]),
 		"--model", model,
-		"--system", judge.System,
+		"--system", system,
 		"--prompt", prompt,
-		"--output-schema", judge.Schema,
+		"--output-schema", schema,
 		"--no-tools")
 	cmd := exec.CommandContext(ctx, command[0], args...) //nolint:gosec // Running the wrapper its caller names is what this tool is for.
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	start := time.Now()
 	out, err := cmd.Output()
-	run.Elapsed = time.Since(start)
-	run.Answer = strings.TrimSpace(string(out))
+	elapsed = time.Since(start)
 	if log != "" {
 		if werr := os.WriteFile(log, []byte(stderr.String()), 0o600); werr != nil {
 			fmt.Fprintln(os.Stderr, werr)
 		}
 	}
 	if err != nil {
-		run.Outcome = OutcomeInvalid
-		run.Error = err.Error()
+		failure = err.Error()
 		if said := lastLine(stderr.String()); said != "" {
-			run.Error += ": " + said
+			failure += ": " + said
 		}
-		return run
 	}
-	run.Outcome = outcomeOf(c.Job, out)
-	run.Pass = c.Expect.accepts(run.Outcome)
-	return run
+	return out, elapsed, failure
 }
 
-// askJev asks Jev about a case the way a server that judges with it does, and
-// scores the verdict decided from what it said.
-func askJev(ctx context.Context, client *jev.Client, c Case, timeout time.Duration) Run {
-	run := Run{Case: c.Name}
+// judgeWithWrapper asks the wrapper about one job and scores its answer.
+func judgeWithWrapper(ctx context.Context, command []string, model string, job judge.Job, timeout time.Duration, log string) verdict {
+	prompt, err := judge.Prompt(job)
+	if err != nil {
+		return verdict{outcome: OutcomeInvalid, err: err.Error()}
+	}
+	out, elapsed, failure := runWrapper(ctx, command, model, judge.System, prompt, judge.Schema, timeout, log)
+	v := verdict{answer: strings.TrimSpace(string(out)), elapsed: elapsed}
+	if failure != "" {
+		v.outcome, v.err = OutcomeInvalid, failure
+		return v
+	}
+	v.outcome = outcomeOf(job, out)
+	return v
+}
+
+// judgeWithJev asks Jev about one job the way a server that judges with it
+// does, and scores the verdict decided from what it said.
+func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeout time.Duration) verdict {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	start := time.Now()
-	verdict, err := client.Judge(ctx, c.Job)
-	run.Elapsed = time.Since(start)
+	decided, err := client.Judge(ctx, job)
+	v := verdict{elapsed: time.Since(start)}
 	if err != nil {
-		run.Outcome, run.Error = OutcomeInvalid, err.Error()
-		return run
+		v.outcome, v.err = OutcomeInvalid, err.Error()
+		return v
 	}
 	said, err := json.Marshal(struct {
 		judge.Answer
 		Model         string             `json:"model"`
 		Probabilities map[string]float64 `json:"probabilities"`
-	}{verdict.Answer, verdict.Model, verdict.Probabilities})
+	}{decided.Answer, decided.Model, decided.Probabilities})
+	if err != nil {
+		v.outcome, v.err = OutcomeInvalid, err.Error()
+		return v
+	}
+	v.answer = string(said)
+	v.unsure = decided.Unsure
+	v.outcome = outcomeOfAnswer(job, decided.Answer)
+	return v
+}
+
+// propose has the wrapper write a rule's wider scopes and uses from a proposer
+// case's request, and then scores what it wrote with the judge, as the control
+// plane does before a person may choose any of it (ADR 26-10-12-330 §8):
+//
+//   - each level covers its request: both scopes match the asking discobox,
+//     and the uses at every level — as asked included — hold the uses asked for;
+//   - each wider level covers the narrower: the widest uses hold the middle ones;
+//   - no level covers a control: no scope matches a control discobox, and no
+//     level's uses hold a control ask.
+//
+// The run allows when every check held, refuses when one did not, and is
+// invalid when the wrapper did not write a proposal at all. Its answer is the
+// proposal, and its error names each check that failed.
+func propose(ctx context.Context, command []string, model string, judging func(context.Context, judge.Job, time.Duration, string) verdict, c Case, timeout time.Duration, log string) Run {
+	run := Run{Case: c.Name}
+	prompt, err := judge.ProposalPrompt(*c.Proposal)
 	if err != nil {
 		run.Outcome, run.Error = OutcomeInvalid, err.Error()
 		return run
 	}
-	run.Answer = string(said)
-	run.Unsure = verdict.Unsure
-	run.Outcome = outcomeOfAnswer(c.Job, verdict.Answer)
-	run.Pass = c.Expect.accepts(run.Outcome)
+	out, elapsed, failure := runWrapper(ctx, command, model, judge.ProposalSystem, prompt, judge.ProposalSchema, timeout, log)
+	run.Answer, run.Elapsed = strings.TrimSpace(string(out)), elapsed
+	if failure != "" {
+		run.Outcome, run.Error = OutcomeInvalid, failure
+		return run
+	}
+	proposal, err := judge.DecodeProposal(out)
+	if err != nil {
+		run.Outcome, run.Error = OutcomeInvalid, "not a proposal: "+err.Error()
+		return run
+	}
+
+	type check struct {
+		what string
+		job  judge.Job
+		want Outcome
+	}
+	var checks []check
+	scopeJob := func(sentence string, sheet judge.Discobox) judge.Job {
+		return judge.Job{Kind: judge.KindScope, Purpose: sentence, Round: 1, Discobox: &sheet}
+	}
+	ruleJob := func(rule, uses []string) judge.Job {
+		return judge.Job{
+			Kind: judge.KindRule, Purpose: strings.Join(rule, "\n"), Host: strings.Join(c.Proposal.Hosts, ", "),
+			Credential: c.Proposal.Credential, Round: 1, Uses: uses,
+		}
+	}
+	var controls Controls
+	if c.Controls != nil {
+		controls = *c.Controls
+	}
+	for _, scope := range []struct{ level, sentence string }{{"scopeWork", proposal.ScopeWork}, {"scopeRepository", proposal.ScopeRepository}} {
+		checks = append(checks, check{scope.level + " matches the asking discobox", scopeJob(scope.sentence, c.Proposal.Discobox), OutcomeAllow})
+		for i, sheet := range controls.Discoboxes {
+			checks = append(checks, check{fmt.Sprintf("%s does not match control discobox %d", scope.level, i), scopeJob(scope.sentence, sheet), OutcomeRefuse})
+		}
+	}
+	levels := []struct {
+		level string
+		uses  []string
+	}{{"as asked", c.Proposal.Uses}, {"usesAnyTarget", proposal.UsesAnyTarget}, {"usesAcrossResource", proposal.UsesAcrossResource}}
+	for _, level := range levels {
+		checks = append(checks, check{level.level + " covers the request", ruleJob(level.uses, c.Proposal.Uses), OutcomeAllow})
+		for i, control := range controls.Uses {
+			checks = append(checks, check{fmt.Sprintf("%s does not cover control ask %d", level.level, i), ruleJob(level.uses, control), OutcomeRefuse})
+		}
+	}
+	checks = append(checks, check{"usesAcrossResource covers usesAnyTarget", ruleJob(proposal.UsesAcrossResource, proposal.UsesAnyTarget), OutcomeAllow})
+
+	// One wrapper run already holds this worker; the checks run one after
+	// another inside it, so -parallel bounds the models asked at once.
+	var failed []string
+	for i, check := range checks {
+		checkLog := ""
+		if log != "" {
+			checkLog = fmt.Sprintf("%s.check%d", log, i)
+		}
+		v := judging(ctx, check.job, timeout, checkLog)
+		run.Elapsed += v.elapsed
+		switch {
+		case v.err != "":
+			failed = append(failed, fmt.Sprintf("%s: %s", check.what, v.err))
+		case v.outcome != check.want:
+			failed = append(failed, fmt.Sprintf("%s: the judge answered %s", check.what, v.outcome))
+		}
+	}
+	run.Outcome, run.Pass = OutcomeAllow, true
+	if len(failed) > 0 {
+		run.Outcome, run.Pass, run.Error = OutcomeRefuse, false, strings.Join(failed, "; ")
+	}
 	return run
 }
 
@@ -383,7 +548,9 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 			counts[r.Outcome]++
 			if r.Unsure {
 				caseUnsure++
-			} else if r.Outcome == OutcomeRefuse && !c.Expect.accepts(OutcomeRefuse) {
+			} else if c.Proposal == nil && r.Outcome == OutcomeRefuse && !c.Expect.accepts(OutcomeRefuse) {
+				// A proposer run's refuse is a check that failed, not one
+				// answer of Jev's.
 				wronglyDecided++
 			}
 			elapsed = append(elapsed, r.Elapsed)
@@ -420,7 +587,7 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 		fmt.Fprintf(w, "%d of %d runs were refusals Jev decided on a case a correct judge does not refuse\n", wronglyDecided, total)
 	}
 	if len(errs) > 0 {
-		fmt.Fprintln(w, "\nwrapper errors:")
+		fmt.Fprintln(w, "\nerrors, and proposer checks that failed:")
 		for _, e := range dedupe(errs) {
 			fmt.Fprintln(w, "  "+e)
 		}

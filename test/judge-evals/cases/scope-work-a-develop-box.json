@@ -1,0 +1,32 @@
+{
+  "name": "scope-work-a-develop-box",
+  "why": "A box started with /develop, against a scope that names that work.",
+  "expect": "allow",
+  "job": {
+    "kind": "scope",
+    "purpose": "discoboxes started to build an agreed change and deliver it as a pull request in discobox-ai/discobox",
+    "round": 1,
+    "discobox": {
+      "repository": "https://github.com/discobox-ai/discobox",
+      "ref": "main",
+      "createdBy": "a person",
+      "prompt": {
+        "content": "/develop 26-10-12-330"
+      },
+      "promptWrittenBy": "a person",
+      "skills": [
+        "commit",
+        "deliver-issue",
+        "develop",
+        "open-pr",
+        "orchestrate-issues",
+        "test-fix",
+        "triage-issue",
+        "verify",
+        "verify-recipes"
+      ],
+      "harness": "claude-code",
+      "platform": "linux/amd64"
+    }
+  }
+}
