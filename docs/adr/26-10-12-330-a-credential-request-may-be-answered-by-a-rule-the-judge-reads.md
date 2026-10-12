@@ -1,6 +1,6 @@
 # 26-10-12-330 — A credential request may be answered by a rule the judge reads
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-12
 - **Relates to**: [26-09-30-782](26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md),
   whose split — the server checks facts, the judge reads two authorization
