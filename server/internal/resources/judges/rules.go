@@ -210,7 +210,7 @@ func (s *Service) ProposeRule(ctx context.Context, projectID string, job judge.P
 	ctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
 	reachCtx, cancelReach := context.WithTimeout(ctx, judge.ReachWait)
-	lease, sandboxModel, err := s.leases.AwaitSandboxHTTPClientForServer(reachCtx, project.ID, judgeSandbox.ID, []string{poolagentauth.ScopeJudgeRun})
+	lease, sandboxModel, err := s.leases.AcquireSandboxHTTPClientForServer(reachCtx, project.ID, judgeSandbox.ID, []string{poolagentauth.ScopeJudgeRun}, services.SandboxAction("judge"))
 	cancelReach()
 	if err != nil {
 		return judge.Proposal{}, err
