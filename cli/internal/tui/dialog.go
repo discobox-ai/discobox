@@ -99,6 +99,14 @@ type dialog struct {
 	// itemOffset is the first menu row drawn, on a card whose menu is longer
 	// than the window gives it. It follows the cursor; see viewItems.
 	itemOffset int
+	// wrapDetails draws each menu item's detail whole, wrapped across the
+	// card under its label, rather than cut to what is left of the label's
+	// row: for a menu that chooses between sentences somebody has to read,
+	// where a row ending in "…" hides the very thing being chosen. It holds
+	// while the whole menu fits the window; a menu that does not is drawn one
+	// row an item, as every other is, so the cursor can still be walked into
+	// view.
+	wrapDetails bool
 	// page is how many rows of body the last draw had room for, which is what
 	// PgUp and PgDn move by.
 	page  int
@@ -723,12 +731,28 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	// and a question that cannot be seen is answered blind. The measuring
 	// draw marks nothing and moves nothing — the hit map is made by the draw
 	// that is kept.
+	// A menu that wraps its details is measured at the rows it wraps to, and
+	// keeps them only if the card still has room for the least of a body:
+	// it is never windowed, so the body is what gives way to it.
 	itemRoom := len(d.items)
+	wrapped := d.itemRows(inner)
 	measure := func() int {
 		return rowsOf(d.viewFoot(st, &zones{hoverX: -1, hoverY: -1}, 0, inner, avail, itemRoom, len(lines) > 0), inner)
 	}
 	foot := measure()
-	if len(lines)+foot > avail {
+	if wrapped > len(d.items) {
+		itemRoom = wrapped
+		least := 0
+		if len(lines) > 0 {
+			least = min(len(lines), dialogMinRows) + 1
+		}
+		if tall := measure(); tall+least <= avail {
+			foot = tall
+		} else {
+			itemRoom = len(d.items)
+		}
+	}
+	if itemRoom == len(d.items) && len(lines)+foot > avail {
 		// A menu as long as its window shares it with the body. It takes what
 		// the body does not need, and half of what is not spoken for when the
 		// body is long too, so neither a card of twenty secrets nor one of ten
@@ -1085,28 +1109,17 @@ func answerRule(st *styles, label string, room int) string {
 }
 
 // viewItems draws the menu rows: the key that runs each one, the label, and
-// what choosing it means.
-//
-// The key column is as wide as the widest key and no wider, and a menu whose
-// rows have no keys — one choosing between secrets, or grants, or discoboxes —
-// has no column at all rather than a ragged one full of IDs.
+// what choosing it means. On a card that asks for it (wrapDetails) each detail
+// is drawn whole under its label instead, while the whole menu fits.
 func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
-	pressW := 0
-	for _, it := range d.items {
-		pressW = max(pressW, lipgloss.Width(it.press))
+	pressW, keyCol, labelW := d.itemColumns(inner)
+	// The details wrap when the menu was given the rows that takes (view).
+	wrapping := d.wrapDetails && room > len(d.items) && room >= d.itemRows(inner)
+	if wrapping {
+		// The label has its row to itself, so nothing is held back for a
+		// detail beside it.
+		labelW = max(inner-2-keyCol, 14)
 	}
-	keyCol := 0
-	if pressW > 0 {
-		keyCol = pressW + 2
-	}
-	// The label column fits the longest label rather than a fixed width:
-	// action names are a word, but the Source row's list is paths, and a
-	// path cut off at fourteen cells is not a path you can choose between.
-	labelW := 14
-	for _, it := range d.items {
-		labelW = max(labelW, lipgloss.Width(it.label))
-	}
-	labelW = min(labelW, max(inner-keyCol-24, 14))
 
 	// A menu longer than its room shows the rows around the cursor, and gives
 	// its last row to saying there are more: the cursor is what Enter runs, so
@@ -1120,22 +1133,10 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 	}
 
 	var b strings.Builder
+	y := top
 	for i, it := range d.items {
 		if i < first || i >= last {
 			continue
-		}
-		y := top + i - first
-		// The row is a press, and it says so under the pointer: a menu that
-		// only answered its letters is a menu the pointer cannot work, and one
-		// that answered the pointer silently is one nobody tries twice. The
-		// chevron stays the cursor's — what Enter runs — so the two never say
-		// the same thing.
-		z.markRow(hit{kind: hitDialogItem, idx: i}, y, inner+2*dialogPadLeft)
-		bar, label := " ", st.dimText
-		if i == d.cursor && it.enabled {
-			bar, label = st.key.Render("❯"), st.cursorName
-		} else if it.enabled && z.hovering(0, y, inner+2*dialogPadLeft, 1) {
-			label = st.hover
 		}
 		key, detail := "", it.detail
 		if pressW > 0 {
@@ -1154,11 +1155,52 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 		if it.note != "" {
 			note = "  " + st.statusOK.Render(it.note)
 		}
-		room := max(inner-keyCol-labelW-4-lipgloss.Width(note), 8)
-		row := bar + " " + key + label.Render(pad(it.label, labelW)) + "  " +
-			emphasized(st, truncate(detail, room), it.emphasis) + note
-		b.WriteString(padANSI(row, inner))
+		detailRoom := max(inner-keyCol-labelW-4-lipgloss.Width(note), 8)
+		// An item that wraps is its label on a row of its own and its detail
+		// under it, across the card: a sentence wrapped into what the label
+		// column leaves would be a column a few words wide.
+		var under []string
+		if wrapping {
+			under = wrappedDetail(detail, d.wrapRoom(inner, keyCol))
+		} else {
+			// One row an item, whatever the detail holds: a line break drawn
+			// here would be a second row nothing marked, and every mark under
+			// it would sit a row above the item it is for.
+			// Only the breaks go: the spacing inside a line is the detail's.
+			detail = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(detail)
+		}
+		rows := 1 + len(under)
+		// The row is a press, and it says so under the pointer: a menu that
+		// only answered its letters is a menu the pointer cannot work, and one
+		// that answered the pointer silently is one nobody tries twice. The
+		// chevron stays the cursor's — what Enter runs — so the two never say
+		// the same thing. An item that wraps is one press over all its rows.
+		for line := range rows {
+			z.markRow(hit{kind: hitDialogItem, idx: i}, y+line, inner+2*dialogPadLeft)
+		}
+		bar, label := " ", st.dimText
+		if i == d.cursor && it.enabled {
+			bar, label = st.key.Render("❯"), st.cursorName
+		} else if it.enabled && z.hovering(0, y, inner+2*dialogPadLeft, rows) {
+			label = st.hover
+		}
+		labelRoom := labelW
+		if wrapping {
+			// The note shares the label's row, where the detail no longer is.
+			labelRoom = max(labelW-lipgloss.Width(note), 14)
+		}
+		row := bar + " " + key + label.Render(pad(it.label, labelRoom))
+		if !wrapping {
+			row += "  " + emphasized(st, truncate(detail, detailRoom), it.emphasis)
+		}
+		b.WriteString(padANSI(row+note, inner))
 		b.WriteString("\n")
+		hang := strings.Repeat(" ", 2+keyCol+wrapIndent)
+		for _, more := range under {
+			b.WriteString(padANSI(hang+emphasized(st, more, it.emphasis), inner))
+			b.WriteString("\n")
+		}
+		y += rows
 	}
 	if room < len(d.items) {
 		// The row that says there are more is the menu's too: the wheel over
@@ -1169,6 +1211,65 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// itemColumns is how a menu's rows are laid out in a card inner cells wide:
+// the width of the widest key, the key column that makes, and the label's.
+//
+// The key column is as wide as the widest key and no wider, and a menu whose
+// rows have no keys has no column at all. The label column fits the longest
+// label rather than a fixed width: action names are a word, but the Source
+// row's list is paths, and a path cut off at fourteen cells is not a path you
+// can choose between.
+func (d *dialog) itemColumns(inner int) (pressW, keyCol, labelW int) {
+	for _, it := range d.items {
+		pressW = max(pressW, lipgloss.Width(it.press))
+	}
+	if pressW > 0 {
+		keyCol = pressW + 2
+	}
+	labelW = 14
+	for _, it := range d.items {
+		labelW = max(labelW, lipgloss.Width(it.label))
+	}
+	return pressW, keyCol, min(labelW, max(inner-keyCol-24, 14))
+}
+
+// wrapIndent is how far under its label a wrapped detail is set in.
+const wrapIndent = 2
+
+// wrapRoom is the width a wrapped detail has: the card, less the cursor and
+// key columns its label sits after and the indent under that label.
+func (d *dialog) wrapRoom(inner, keyCol int) int {
+	return max(inner-2-keyCol-wrapIndent, 8)
+}
+
+// itemRows is how many rows the menu takes with every detail drawn whole: one
+// an item, and on a card that asks for it (wrapDetails) the rows each detail
+// wraps to under its label as well.
+func (d *dialog) itemRows(inner int) int {
+	if !d.wrapDetails {
+		return len(d.items)
+	}
+	_, keyCol, _ := d.itemColumns(inner)
+	rows := 0
+	for _, it := range d.items {
+		detail := it.detail
+		if !it.enabled && it.why != "" {
+			detail = it.why
+		}
+		rows += 1 + len(wrappedDetail(detail, d.wrapRoom(inner, keyCol)))
+	}
+	return rows
+}
+
+// wrappedDetail is the rows a detail takes under its label: none for an item
+// that has nothing to say, rather than a blank row.
+func wrappedDetail(detail string, room int) []string {
+	if strings.TrimSpace(detail) == "" {
+		return nil
+	}
+	return wrap(detail, room)
 }
 
 // dialogMark is the chevron column down the left of a scrolling body: the match
