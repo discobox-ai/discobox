@@ -299,7 +299,7 @@ func newProposingJudge(t *testing.T, reply string) *proposingJudge {
 	return fake
 }
 
-func (f *proposingJudge) AwaitSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (f *proposingJudge) AcquireSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string, _ services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	lease := transport.NewHTTPClientLeaseWithBaseURL(f.server.Client(), f.server.URL, func() {})
 	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
 }
