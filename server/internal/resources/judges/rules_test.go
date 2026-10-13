@@ -162,8 +162,8 @@ func TestAScopeJevDoesNotMatchIsNotSentOn(t *testing.T) {
 	}
 }
 
-// A rule job goes the way every job does: Jev first, and what Jev does not
-// allow to the judge discobox on a server that sends its refusals on. The
+// A rule job goes the way every job does: Jev first, and what Jev
+// is unsure of to the judge discobox on a server that sends those on. The
 // verdict is recorded before anything is minted, as kind rule, naming the
 // rule, the request and the asking discobox, with Jev's model and input.
 func TestARuleJobFallsBackLikeAnyOther(t *testing.T) {
@@ -362,8 +362,29 @@ func TestNoProposalIsWrittenWithoutAJudgeDiscobox(t *testing.T) {
 	}
 }
 
-// Where Jev's refusals go on to the judge discobox, a refusal that comes back
-// as Jev's alone — the discobox was not up, or did not answer — is not the
+// A refusal Jev is sure of is final (ADR 26-10-12-669): it is recorded as the
+// rule's verdict and the judge discobox is not asked.
+func TestAConfidentJevRefusalOfARuleIsFinal(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, jevFake, harnessJudge, _ := jevWithFallback(t,
+		map[string]float64{"use_0": 0.03, "claims_approval": 0.02},
+		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "the discobox would have said yes"})
+	if answer, err := service.JudgeRule(ctx, "project-1", ruleAsk()); err != nil || answer.Allow {
+		t.Fatalf("JudgeRule() = %+v, %v, want Jev's refusal", answer, err)
+	}
+	if len(harnessJudge.asked()) != 0 {
+		t.Fatal("a refusal Jev was sure of went on to the judge discobox")
+	}
+	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule); len(rows) != 1 || rows[0].Allow || rows[0].JudgeSandboxID != "" {
+		t.Fatalf("verdicts = %+v, want Jev's own refusal on record", rows)
+	}
+	if _, err := service.JudgeRule(ctx, "project-1", ruleAsk()); err != nil || jevFake.count() != 1 {
+		t.Fatalf("Jev was asked %d times (%v), want the refusal on record reused", jevFake.count(), err)
+	}
+}
+
+// Where what Jev is unsure of goes on to the judge discobox, an unsure refusal
+// that comes back as Jev's alone — the discobox was not up, or did not answer — is not the
 // decision of the one who decides. It is no verdict, and nothing is recorded:
 // an answer on record is never asked about again.
 func TestAJevRefusalTheDiscoboxNeverSawIsNoVerdict(t *testing.T) {
