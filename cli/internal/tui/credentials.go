@@ -143,8 +143,8 @@ func (m *Model) syncRequestRows() {
 	}
 	had := len(m.requestRows.all)
 	m.requestRows.setAll(rows)
-	if len(rows) == 0 {
-		m.onRequests = false
+	if len(rows) == 0 && m.table == tableRequests {
+		m.table = tableSecrets
 	}
 	// The table is as tall as its rows, up to its share of the screen, and
 	// layout is where that is counted. A poll is not a key: without this the

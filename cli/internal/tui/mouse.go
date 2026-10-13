@@ -296,6 +296,9 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitRequestRow:
 		return m.pressRequestRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
+	case hitRuleRow:
+		return m.pressRuleRow(what.idx, clicks), clicks > 1 && what.idx >= 0
+
 	case hitAuditRow:
 		return m.pressAuditRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
@@ -528,7 +531,7 @@ func (m *Model) pressHarnessRow(idx, clicks int) tea.Cmd {
 }
 
 func (m *Model) pressSecretRow(idx, clicks int) tea.Cmd {
-	m.onRequests = false
+	m.table = tableSecrets
 	if idx < 0 || idx >= len(m.secrets.all) {
 		return nil
 	}
@@ -540,11 +543,28 @@ func (m *Model) pressSecretRow(idx, clicks int) tea.Cmd {
 }
 
 func (m *Model) pressRequestRow(idx, clicks int) tea.Cmd {
-	m.onRequests = true
+	m.table = tableRequests
 	if idx < 0 || idx >= len(m.requestRows.all) {
 		return nil
 	}
 	m.requestRows.moveTo(idx)
+	if clicks > 1 {
+		return m.updateKey(keyPress("enter"))
+	}
+	return nil
+}
+
+func (m *Model) pressRuleRow(idx, clicks int) tea.Cmd {
+	// A table with no row — empty, or not read — has nothing to put the keys
+	// on, and a press in it leaves them where they were.
+	if len(m.rules.all) == 0 {
+		return nil
+	}
+	m.table = tableRules
+	if idx < 0 || idx >= len(m.rules.all) {
+		return nil
+	}
+	m.rules.moveTo(idx)
 	if clicks > 1 {
 		return m.updateKey(keyPress("enter"))
 	}
@@ -735,6 +755,8 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 		m.secrets.move(-lines)
 	case hitRequestRow:
 		m.requestRows.move(-lines)
+	case hitRuleRow:
+		m.rules.move(-lines)
 	case hitAuditRow:
 		if m.audit != nil {
 			m.audit.move(-lines)

@@ -828,25 +828,25 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
-	if m.onRequests {
+	if m.table == tableRequests {
 		t.Fatal("the screen opens on the requests")
 	}
 	send(t, m, keyPress("end"))
 	send(t, m, keyPress("down"))
-	if !m.onRequests {
+	if m.table != tableRequests {
 		t.Fatal("down past the last secret did not reach the requests")
 	}
 	send(t, m, keyPress("up"))
-	if m.onRequests {
+	if m.table == tableRequests {
 		t.Fatal("up past the first request did not return to the secrets")
 	}
 	// And Tab crosses either way, wherever the cursor is.
 	send(t, m, keyPress("tab"))
-	if !m.onRequests {
+	if m.table != tableRequests {
 		t.Fatal("tab did not cross to the requests")
 	}
 	send(t, m, keyPress("tab"))
-	if m.onRequests {
+	if m.table == tableRequests {
 		t.Fatal("tab did not cross back")
 	}
 	// Tab does not leave the screen; esc does.
@@ -873,7 +873,7 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	send(t, m, tickMsg{})
 
 	send(t, m, keyPress("tab"))
-	if !m.onRequests || len(m.requestRows.all) != 2 {
+	if m.table != tableRequests || len(m.requestRows.all) != 2 {
 		t.Fatalf("requests = %d, want both", len(m.requestRows.all))
 	}
 	// The second row, which is not the one C would have picked.
