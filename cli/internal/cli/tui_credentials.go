@@ -623,6 +623,90 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 	return out, nil
 }
 
+// Rules lists the project's approval rules, newest first (ADR 26-10-12-330
+// §1). A rule's scope and uses may be a model's sentences written from an
+// agent's ask, and who made it is whatever the server recorded, so each is
+// made safe to draw on the way, as a proposal is.
+func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	res, err := d.client.ListApprovalRules(ctx, apiclientgen.ListApprovalRulesParams{ProjectId: d.projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListApprovalRulesBody](res)
+	if err != nil {
+		return nil, err
+	}
+	rules := sortedByRecency(body.GetApprovalRules(), func(rule apimodel.ApprovalRule) time.Time { return rule.CreatedAt })
+	out := make([]tui.Rule, 0, len(rules))
+	for _, r := range rules {
+		rule := tui.Rule{
+			ID: r.ID,
+			ApprovalRule: tui.ApprovalRule{
+				Scope:     terminalSafe(strings.TrimSpace(r.Scope.Or(""))),
+				SandboxID: terminalSafe(strings.TrimSpace(r.SandboxId.Or(""))),
+			},
+			WellKnownID: terminalSafe(strings.TrimSpace(r.WellKnownId.Or(""))),
+			SecretID:    strings.TrimSpace(r.SecretId.Or("")),
+			Delegate:    r.Purpose == apiclientgen.ApprovalRulePurposeDelegate,
+			MaxGrantTTL: time.Duration(r.MaxGrantTTLSeconds) * time.Second,
+			CreatedBy:   terminalSafe(strings.TrimSpace(r.CreatedBy.Or(""))),
+			Created:     r.CreatedAt,
+			Enabled:     r.Enabled,
+		}
+		for _, host := range r.Hosts {
+			rule.Hosts = append(rule.Hosts, terminalSafe(host))
+		}
+		for _, use := range r.Uses {
+			rule.Uses = append(rule.Uses, terminalSafe(strings.TrimSpace(use)))
+		}
+		if expires, ok := r.ExpiresAt.Get(); ok {
+			rule.Expires = expires
+		}
+		out = append(out, rule)
+	}
+	return out, nil
+}
+
+// SetRuleEnabled turns one rule off or on. Only that is sent: the route takes
+// what changes, and everything else a rule says stays as a person read it.
+func (d *apiDataSource) SetRuleEnabled(ctx context.Context, server, ruleID string, enabled bool) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	body := &apimodel.UpdateApprovalRuleBody{}
+	body.SetEnabled(apiclientgen.NewOptBool(enabled))
+	res, err := d.client.UpdateApprovalRule(ctx, body, apiclientgen.UpdateApprovalRuleParams{
+		ProjectId: d.projectID,
+		RuleId:    ruleID,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.ApprovalRule](res)
+	return err
+}
+
+// DeleteRule removes one rule; the grants it minted stay.
+func (d *apiDataSource) DeleteRule(ctx context.Context, server, ruleID string) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	res, err := d.client.DeleteApprovalRule(ctx, apiclientgen.DeleteApprovalRuleParams{
+		ProjectId: d.projectID,
+		RuleId:    ruleID,
+	})
+	if err != nil {
+		return err
+	}
+	return expectNoContent[apiclientgen.DeleteApprovalRuleNoContent](res)
+}
+
 // RefreshSecret answers a refresh request with a new value: the output of the
 // token's command, run here, or the value a person entered. The command is
 // run on this machine because this is where the person who agreed to it is
@@ -695,14 +779,17 @@ func (d *apiDataSource) DenyCredentialRequest(ctx context.Context, server, reque
 
 // Grants lists the standing grants on a secret, or on one server's whole
 // project.
-func (d *apiDataSource) Grants(ctx context.Context, server, secretID string) ([]tui.Grant, error) {
+func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.GrantFilter) ([]tui.Grant, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 	params := apiclientgen.ListSecretGrantsParams{ProjectId: d.projectID}
-	if secretID = strings.TrimSpace(secretID); secretID != "" {
+	if secretID := strings.TrimSpace(filter.SecretID); secretID != "" {
 		params.SecretId = apiclientgen.NewOptString(secretID)
+	}
+	if ruleID := strings.TrimSpace(filter.RuleID); ruleID != "" {
+		params.RuleId = apiclientgen.NewOptString(ruleID)
 	}
 	res, err := d.client.ListSecretGrants(ctx, params)
 	if err != nil {
@@ -724,6 +811,7 @@ func (d *apiDataSource) Grants(ctx context.Context, server, secretID string) ([]
 			Delegate:  g.Purpose == apiclientgen.SecretGrantPurposeDelegate,
 			GrantedBy: strings.TrimSpace(g.GrantedBy.Or("")),
 			Granted:   g.GrantedAt,
+			RuleID:    strings.TrimSpace(g.RuleId.Or("")),
 		}
 		if expires, ok := g.ExpiresAt.Get(); ok {
 			grant.Expires = expires

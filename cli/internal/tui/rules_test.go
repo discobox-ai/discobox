@@ -156,7 +156,7 @@ func TestAFailedProposalIsShownWithItsReasonAndCannotBeChosen(t *testing.T) {
 	toRuleScope(t, m)
 	card := wholeCard(m)
 	for _, want := range []string{"This discobox", "Discoboxes doing this work on this repository", "Any discobox on this repository",
-		"any discobox whose primary source is acme/pool", "failed, and cannot be chosen", "a local checkout with no remote named"} {
+		"any discobox whose primary source is acme/pool", "failed, and cannot be chosen", "its source is a local checkout"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}

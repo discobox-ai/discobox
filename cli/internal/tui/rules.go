@@ -128,25 +128,22 @@ const ruleByHand = "hand"
 const everyDiscobox = "approves for discoboxes that do not exist yet, including ones a discobox creates"
 
 // askRuleScope is the rule's first half: which discoboxes it is tested for.
-// The proposals are listed narrowest first and shown whole above the rows that
-// choose them, because a row has room for a label and a sentence has to be
-// read.
+// The proposals are listed narrowest first, each row carrying its sentence
+// whole and wrapped under it: the sentence is what is being chosen, and a row
+// that cut it off would have a person choose a rule by its label.
 func (m *Model) askRuleScope(a approval, back func() tea.Cmd) tea.Cmd {
-	offered := section{label: "scopes the judge read against this discobox"}
 	items := make([]action, 0, len(a.proposals.Scopes)+1)
 	for _, p := range a.proposals.Scopes {
-		label := ruleLevelLabel(ruleScopeLabels, p.Level)
 		text := p.Scope
 		if p.SandboxID != "" {
 			text = pinnedScope(p.SandboxID)
 		}
-		offered.lines = append(offered.lines, proposalLines(label, []string{text}, "this discobox", p.Covers, p.Reason)...)
 		items = append(items, action{
 			key:     fmt.Sprintf("scope:%d", p.Level),
-			label:   label,
+			label:   ruleLevelLabel(ruleScopeLabels, p.Level),
 			detail:  text,
 			enabled: p.Covers,
-			why:     "does not cover this discobox, so it cannot be chosen",
+			why:     failedProposal(text, "this discobox", p.Reason),
 		})
 	}
 	items = append(items, action{key: ruleByHand, press: "w", label: "Write the scope by hand…",
@@ -166,7 +163,8 @@ func (m *Model) askRuleScope(a approval, back func() tea.Cmd) tea.Cmd {
 		}
 		return nil
 	})
-	d.sections = append([]section{grantSection(a), closed(offered)}, ruleNote(a)...)
+	d.sections = append([]section{grantSection(a)}, ruleNote(a)...)
+	d.wrapDetails = true
 	d.answerLabel = "which discoboxes is the rule for?"
 	d.footer = "a discobox is read by what was recorded when it was created, never by what it says of itself"
 	d.keys = []hint{pressing("enter chooses the highlighted scope", "enter"), pressing("esc goes back", "esc")}
@@ -196,19 +194,19 @@ func (m *Model) askRuleScopeByHand(a approval, back func() tea.Cmd) tea.Cmd {
 }
 
 // askRuleContent is the rule's second half: the uses it approves, chosen the
-// way the scope was.
+// way the scope was, each row carrying its uses whole.
 func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
-	offered := section{label: "uses the judge read against what was asked"}
 	items := make([]action, 0, len(a.proposals.Contents)+1)
 	for _, p := range a.proposals.Contents {
-		label := ruleLevelLabel(ruleContentLabels, p.Level)
-		offered.lines = append(offered.lines, proposalLines(label, p.Uses, "what was asked", p.Covers, p.Reason)...)
+		// One use a line, each wrapped under itself, so where one sentence
+		// ends and the next begins is not a matter of reading for it.
+		uses := "· " + strings.Join(p.Uses, "\n· ")
 		items = append(items, action{
 			key:     fmt.Sprintf("content:%d", p.Level),
-			label:   label,
-			detail:  strings.Join(p.Uses, " · "),
+			label:   ruleLevelLabel(ruleContentLabels, p.Level),
+			detail:  uses,
 			enabled: p.Covers,
-			why:     "does not cover what was asked, so it cannot be chosen",
+			why:     failedProposal(uses, "what was asked", p.Reason),
 		})
 	}
 	items = append(items, action{key: ruleByHand, press: "w", label: "Write the uses by hand…",
@@ -228,7 +226,8 @@ func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
 		}
 		return nil
 	})
-	d.sections = append([]section{grantSection(a), ruleScopeSection(a.rule), closed(offered)}, ruleNote(a)...)
+	d.sections = append([]section{grantSection(a), ruleScopeSection(a.rule)}, ruleNote(a)...)
+	d.wrapDetails = true
 	d.answerLabel = "what may the rule approve?"
 	d.footer = "a later request is approved only when every use it asks for is within these"
 	d.keys = []hint{pressing("enter chooses the highlighted uses", "enter"), pressing("esc goes back", "esc")}
@@ -284,8 +283,13 @@ func (m *Model) reviewRule(a approval, back func() tea.Cmd) tea.Cmd {
 	d := confirmDialog("Auto approve: the rule", "", func(string) tea.Cmd {
 		return m.finishApproval(a, again)
 	})
-	d.sections = append([]section{ruleFactsSection(a)}, ruleSections(a)...)
-	if gives, ok := ruleHandsOut(a); ok {
+	rule := a.asRule()
+	answered := a.secret.Name
+	if a.gate {
+		answered = gateAnswers
+	}
+	d.sections = append([]section{ruleFactsSection(rule, a.ruleCredential(), answered, lifetime.Label(a.ttl))}, ruleSections(rule)...)
+	if gives, ok := ruleHandsOut(rule); ok {
 		d.sections = append(d.sections, gives)
 	}
 	if len(a.changes) > 0 {
@@ -303,46 +307,69 @@ func (m *Model) reviewRule(a approval, back func() tea.Cmd) tea.Cmd {
 	return nil
 }
 
+// asRule is the rule this approval would make, as far as it has been chosen:
+// the scope and uses picked, around what the server copies from the request.
+// It is the value the review card and a stored rule's card are both drawn
+// from, so a rule reads the same before it is made and after.
+func (a approval) asRule() Rule {
+	hosts := a.proposals.Hosts
+	if len(hosts) == 0 {
+		hosts = a.req.hosts()
+	}
+	return Rule{
+		ApprovalRule: a.rule,
+		WellKnownID:  a.req.WellKnownID,
+		Hosts:        hosts,
+		Delegate:     a.proposals.Delegate || a.req.Delegate,
+		MaxGrantTTL:  a.ttl,
+	}
+}
+
+// ruleCredential is what the rule being made will call its credential: the
+// server's word for it, or the request's own.
+func (a approval) ruleCredential() string {
+	if a.proposals.Credential != "" {
+		return a.proposals.Credential
+	}
+	return credentialName(a.req)
+}
+
+// gateAnswers is what answers a rule for a gate, which no secret does.
+const gateAnswers = "no secret: its pool lets its uses in"
+
 // ruleFactsSection is the half of a rule nobody chose: its credential, where
 // that may be sent and what for, as the server copies them from the request,
-// with what answers it and how long each grant it mints may live.
-func ruleFactsSection(a approval) section {
-	credential := a.proposals.Credential
-	if credential == "" {
-		credential = credentialName(a.req)
-	}
-	answered := a.secret.Name
-	if a.gate {
-		answered = "no secret: its pool lets its uses in"
-	}
-	where := strings.Join(a.proposals.Hosts, ", ")
-	if where == "" {
-		where = a.req.where()
+// with what answers it and how long each grant it mints may live. credential
+// and lasts are said by the caller, which knows the names and whether the
+// lifetime is one being chosen or a cap; answered is left out when empty.
+func ruleFactsSection(rule Rule, credential, answered, lasts string) section {
+	sec := section{label: "the rule", fields: []field{{label: "credential", value: credential, tone: toneAccent}}}
+	if answered != "" {
+		sec.fields = append(sec.fields, field{label: "answered with", value: answered})
 	}
 	purpose := "use"
-	if a.proposals.Delegate || a.req.Delegate {
+	if rule.Delegate {
 		purpose = delegationPurpose
 	}
-	return section{label: "the rule", fields: []field{
-		{label: "credential", value: credential, tone: toneAccent},
-		{label: "answered with", value: answered},
-		{label: "may be sent to", value: where, tone: toneAccent},
-		{label: "purpose", value: purpose, tone: toneAccent},
-		{label: "each grant lasts", value: lifetime.Label(a.ttl), tone: toneAccent},
-	}}
+	sec.fields = append(sec.fields,
+		field{label: "may be sent to", value: strings.Join(rule.Hosts, ", "), tone: toneAccent},
+		field{label: "purpose", value: purpose, tone: toneAccent},
+		field{label: "each grant lasts", value: lasts, tone: toneAccent},
+	)
+	return sec
 }
 
 // ruleSections is the half that was chosen, as far as it has been: which
 // discoboxes, and every use.
-func ruleSections(a approval) []section {
+func ruleSections(rule Rule) []section {
 	uses := section{label: "what it approves"}
-	if a.proposals.Delegate || a.req.Delegate {
+	if rule.Delegate {
 		uses.label = "uses it would delegate"
 	}
-	for _, use := range a.rule.Uses {
+	for _, use := range rule.Uses {
 		uses.lines = append(uses.lines, line{text: use, bullet: true})
 	}
-	return []section{ruleScopeSection(a.rule), uses}
+	return []section{ruleScopeSection(rule.ApprovalRule), uses}
 }
 
 // ruleScopeSection says which discoboxes a rule is for: the one it is pinned
@@ -351,18 +378,25 @@ func ruleSections(a approval) []section {
 func ruleScopeSection(rule ApprovalRule) section {
 	sec := section{label: "the discoboxes it is for"}
 	switch {
+	case rule.SandboxID != "" && rule.Scope != "":
+		// Both, which only the CLI makes: the one discobox, and it still has
+		// to read as the sentence says.
+		sec.lines = []line{{text: rule.Scope}, {text: "and only " + rule.SandboxID + ", by its ID"}}
 	case rule.SandboxID != "":
 		sec.lines = []line{{text: pinnedScope(rule.SandboxID)}}
 	case rule.Scope != "":
 		sec.lines = []line{{text: rule.Scope}}
 	default:
 		sec.lines = []line{
-			{text: "every discobox in this project"},
+			{text: everyDiscoboxScope},
 			{text: everyDiscobox, tone: toneAlert},
 		}
 	}
 	return sec
 }
+
+// everyDiscoboxScope names the scope that is neither a sentence nor a pin.
+const everyDiscoboxScope = "every discobox in this project"
 
 // pinnedScope is the scope that is no sentence.
 func pinnedScope(sandboxID string) string {
@@ -373,40 +407,23 @@ func pinnedScope(sandboxID string) string {
 // one credential to use: a gate, or a delegation. Either was a person's alone
 // to approve, and a rule is that approval given in advance, so the card says
 // it in the words the request's own card does.
-func ruleHandsOut(a approval) (section, bool) {
+func ruleHandsOut(rule Rule) (section, bool) {
 	sec := section{label: "what the rule gives each discobox it approves"}
-	if known, ok := wellknown.Lookup(a.req.WellKnownID); ok && known.Gate {
+	if known, ok := wellknown.Lookup(rule.WellKnownID); ok && known.Gate {
 		sec.lines = gateGives(known)
 	}
-	if a.proposals.Delegate || a.req.Delegate {
+	if rule.Delegate {
 		sec.lines = append(sec.lines, line{text: delegationPurpose, tone: toneAlert})
 	}
 	return sec, len(sec.lines) > 0
 }
 
-// proposalLines is one proposal shown whole: what it is called, its text, and
-// what the judge made of it — covering names what it was read against. One
-// that does not cover is shown as failed with the reason, since why it failed
-// is what says which way to write one by hand. A blank row follows, to part it
-// from the next.
-func proposalLines(label string, text []string, covering string, covers bool, reason string) []line {
-	verdict := line{text: "covers " + covering, tone: toneOK}
-	if !covers {
-		verdict = line{text: "failed, and cannot be chosen: " + reasonOr(reason, "the judge did not find it covers "+covering), tone: toneAlert}
-	}
-	lines := []line{{text: label, tone: toneAccent}}
-	for _, sentence := range text {
-		lines = append(lines, line{text: sentence, bullet: true})
-	}
-	return append(lines, verdict, line{})
-}
-
-// closed is a section of proposals without the blank row after its last one.
-func closed(sec section) section {
-	if n := len(sec.lines); n > 0 {
-		sec.lines = sec.lines[:n-1]
-	}
-	return sec
+// failedProposal is what the row of a proposal the judge did not find to
+// cover says: the proposal still whole, and under it that it failed and why —
+// covering names what it was read against — since why it failed is what says
+// which way to write one by hand.
+func failedProposal(text, covering, reason string) string {
+	return text + "\nfailed, and cannot be chosen: " + reasonOr(reason, "the judge did not find it covers "+covering)
 }
 
 func reasonOr(reason, otherwise string) string {

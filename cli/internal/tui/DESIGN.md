@@ -115,6 +115,38 @@ many live grants go with it and defaulting to No. `C` answers the oldest
 request waiting anywhere in the project — including one no discobox owns, which
 the list's row mark cannot carry and which would otherwise have no home.
 
+**`a` opens the project's approval rules** (`projectrules.go`,
+[ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
+§§1, 4), over either table and on both key lines: a rule answers requests
+nobody is shown, so what the project holds is read where its credentials are.
+They are cards over the screen, as a secret's grants are, each started from a
+read (`loadRules`, `DataSource.Rules`) on the screen's server, which every
+later action is sent to (`ruleBook`).
+
+- **the list** (`listRules`): a row a rule — its credential (a secret by name),
+  then state (`enabled`/`disabled`/`lapsed`), scope, how many uses and expiry,
+  drawn whole under it (`dialog.wrapDetails`). No rules is a card saying so and
+  how one is made: auto approve, or `discobox secret rule create`.
+- **one rule** (`showRule`): the review card's own sections, drawn from the
+  same `Rule` value (`ruleFactsSection`, `ruleSections`, `ruleHandsOut`;
+  `approval.asRule` is the rule a review is of), with state, the cap on each
+  grant, expiry, and who made it and when. Its rows are `s` disable/enable,
+  `d` delete, and the grants it minted that still stand, read by rule
+  (`GrantFilter.RuleID`) and named by their discobox. Enter reads a grant and
+  `x` revokes it, through the secret's own cards (`reviewGrant`,
+  `confirmRevokeGrant`).
+- **what it does not do**: a rule's scope and uses are sentences the server
+  judges, so they are changed with `discobox secret rule update`, which the
+  card names; making one is auto approve's and the CLI's.
+
+Disabling sends only `enabled` (`DataSource.SetRuleEnabled`) and asks nothing:
+it mints nothing more and revokes nothing, and the same key undoes it. Deleting
+asks, defaulting to No, and says the grants it minted stay to be revoked one by
+one. Each change re-reads and comes back to the rule's card, or to the list
+for one deleted (`ruleActed`); a revoke comes back the same way
+(`secretActionMsg.after`). A refusal is an error card, and Esc on it goes back
+to the rule.
+
 **A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
 pre-approval or a new secret has seven or eight parts, and a sequence of
 modals is the wrong shape for a decision whose parts are read against each
@@ -433,9 +465,12 @@ proxy opened, a refresh, and a trust stay a person's each time. It is the same
   answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
   raising a dialog on its own.
 - **which discoboxes, then which uses** (`askRuleScope`, `askRuleContent`): the
-  proposals narrowest first, each shown whole in the body with the judge's
-  verdict, because a menu row holds a label and not a sentence. One that does
-  not cover this request is drawn failed with its reason and its row is
+  proposals narrowest first, each a menu row with its sentences whole and
+  wrapped under its label (`dialog.wrapDetails`): the sentence is what is
+  chosen, and a row cut to "…" would have a rule chosen by its label. A menu
+  that wraps is drawn so only while all of it fits the window; one that does
+  not goes back to a row an item, windowed on the cursor. One that does not
+  cover this request keeps its text, says it failed and why, and its row is
   disabled. `w` writes either by hand, sent as written for the server to judge:
   the scope as one sentence, the uses a line at a time (Enter adds, an empty
   line finishes, Esc takes one back). An empty hand-written scope is the only
@@ -2984,6 +3019,7 @@ the newest one where the busy line goes.
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `rules.go` | "auto approve": the proposals, the two choices, and the rule read whole before it is made |
+| `projectrules.go` | the project's approval rules, from the secrets screen (`a`): the list, one rule whole with the grants it minted, and disabling, deleting and revoking from its card |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `apply.go` | apply: its key, and what is offered when it succeeds |

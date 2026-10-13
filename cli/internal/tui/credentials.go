@@ -412,7 +412,7 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 	if a.auto {
 		// One answer for both: the server caps what the rule mints at the
 		// lifetime of the approval that made it.
-		d.sections = append(d.sections, ruleSections(a)...)
+		d.sections = append(d.sections, ruleSections(a.asRule())...)
 		d.footer = "this grant lives that long, and so does each one the rule approves after it"
 	}
 	d.keys = []hint{pressing("enter chooses the highlighted lifetime", "enter"), pressing("esc goes back", "esc")}

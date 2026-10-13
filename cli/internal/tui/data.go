@@ -1473,6 +1473,34 @@ type ApprovalRule struct {
 	Uses []string
 }
 
+// Rule is an approval rule a project holds: what a person chose, and around
+// it what the server copied from the request it was made from or was told
+// when it was made (ADR 26-10-12-330 §1). Its sentences may have been written
+// by a model from an agent's ask, so a data source makes them safe to draw.
+type Rule struct {
+	ID string
+	ApprovalRule
+	// The one credential it answers for: a well-known ID, or a project
+	// secret's ID.
+	WellKnownID string
+	SecretID    string
+	// Hosts are the hosts a grant it mints may name.
+	Hosts []string
+	// Delegate is a rule that approves asks to delegate the credential, never
+	// to use it. A rule has one purpose, as a grant has.
+	Delegate bool
+	// MaxGrantTTL caps the life of each grant it mints; zero leaves the
+	// secret's own limit.
+	MaxGrantTTL time.Duration
+	// Expires is when the rule itself lapses; zero never does.
+	Expires   time.Time
+	CreatedBy string
+	Created   time.Time
+	// Enabled is whether it is tested at all. Disabling one mints nothing
+	// more and revokes nothing.
+	Enabled bool
+}
+
 // RuleProposals is what a person who chose "auto approve" picks a rule from:
 // scopes and contents, each narrowest first, each already put to the judge as
 // the question the rule would later ask about this request (ADR 26-10-12-330
@@ -1706,6 +1734,19 @@ type Grant struct {
 	Granted   time.Time
 	// Expires is when the authorization lapses; zero never does.
 	Expires time.Time
+	// RuleID is the approval rule that minted it, empty for one a person
+	// granted. The grant stands on its own once made: the rule going does not
+	// take it.
+	RuleID string
+}
+
+// GrantFilter narrows a listing of grants. Empty is every grant the server
+// holds for the project.
+type GrantFilter struct {
+	// SecretID is the grants standing on one secret.
+	SecretID string
+	// RuleID is the grants one approval rule minted.
+	RuleID string
 }
 
 // NewSecret is a credential typed into the window: from the approval dialog,
@@ -2391,9 +2432,10 @@ type DataSource interface {
 	// second one failed, and would report two things where a person did one.
 	UpdateSecret(ctx context.Context, server, secretID string, update SecretUpdate) error
 
-	// Grants lists the standing grants on one secret, or on every secret the
-	// server holds for the project when secretID is empty.
-	Grants(ctx context.Context, server, secretID string) ([]Grant, error)
+	// Grants lists the standing grants the filter names: on one secret, minted
+	// by one approval rule, or — with an empty filter — every one the server
+	// holds for the project.
+	Grants(ctx context.Context, server string, filter GrantFilter) ([]Grant, error)
 
 	// CreateGrant mints a standing grant without a request behind it: the
 	// pre-approval an operator makes because they already know the answer.
@@ -2416,6 +2458,18 @@ type DataSource interface {
 	// the judge reads every one — so it is asked only when a person chooses
 	// "auto approve".
 	RuleProposals(ctx context.Context, server, requestID string) (RuleProposals, error)
+
+	// Rules lists the approval rules the server holds for the project, newest
+	// first. Only a person may read or change them.
+	Rules(ctx context.Context, server string) ([]Rule, error)
+
+	// SetRuleEnabled turns one rule off or on, and changes nothing else about
+	// it. A disabled rule is tested for nothing; the grants it minted stand.
+	SetRuleEnabled(ctx context.Context, server, ruleID string, enabled bool) error
+
+	// DeleteRule removes one rule. The grants it minted stay, to be revoked
+	// one by one.
+	DeleteRule(ctx context.Context, server, ruleID string) error
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.

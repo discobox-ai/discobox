@@ -112,6 +112,16 @@ func (l *secretList) setGrants(grants []Grant) {
 	l.grants = grants
 }
 
+// grant is one of the project's grants, by its ID.
+func (l *secretList) grant(id string) (Grant, bool) {
+	for _, g := range l.grants {
+		if g.ID == id {
+			return g, true
+		}
+	}
+	return Grant{}, false
+}
+
 // grantsFor is the grants on one secret: those still standing, and those that
 // have lapsed.
 func (l *secretList) grantsFor(secretID string) (live, expired []Grant) {
@@ -316,6 +326,10 @@ type secretsLoadedListMsg struct {
 type secretActionMsg struct {
 	did string
 	err error
+	// after is where a finished action goes on to, for one started from a
+	// card that should come back: a grant revoked from the rule that minted
+	// it. Nil leaves the screen.
+	after func() tea.Cmd
 }
 
 func (m *Model) loadSecrets() tea.Cmd {
@@ -325,7 +339,7 @@ func (m *Model) loadSecrets() tea.Cmd {
 		if err != nil {
 			return secretsLoadedListMsg{server: server, err: err}
 		}
-		grants, err := m.ds.Grants(m.ctx, server, "")
+		grants, err := m.ds.Grants(m.ctx, server, GrantFilter{})
 		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants, err: err}
 	}
 }
@@ -379,6 +393,8 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		return m.cycleServer(serverStep(msg))
 	case credentialsKey:
 		return m.openWaitingRequest()
+	case rulesKey:
+		return m.showRules()
 	}
 	if m.onRequests {
 		return m.updateRequestTable(msg)
@@ -697,7 +713,11 @@ func (m *Model) showGrants() tea.Cmd {
 			m.dialog.cursor = 1
 			return cmd
 		}
-		return m.reviewGrant(secret.Name, result)
+		grant, ok := m.secrets.grant(result)
+		if !ok {
+			return m.report(true, "that grant is no longer there")
+		}
+		return m.reviewGrant(secret.Name, grant, m.showGrants)
 	})
 	d.titleRight = secretAge(*secret, m.secrets.now())
 	d.sections = describeSecret(*secret, m.secrets.now())
@@ -708,7 +728,8 @@ func (m *Model) showGrants() tea.Cmd {
 		if grantID == grantCreateItem || grantID == grantExpiredItem {
 			return nil
 		}
-		return m.confirmRevokeGrant(secret.Name, grantID)
+		grant, _ := m.secrets.grant(grantID)
+		return m.confirmRevokeGrant(secret.Name, grant, m.showGrants, nil)
 	}
 	m.dialog = d
 	return nil
@@ -829,17 +850,10 @@ const grantRevokeKey = "x"
 
 // reviewGrant is the grant read in full: what it covers, how long it lives,
 // and — for one minted by approving an agent's request — every use it was
-// approved for, with the ID an agent presents to take a value under it.
-func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
-	var grant *Grant
-	for i := range m.secrets.grants {
-		if m.secrets.grants[i].ID == grantID {
-			grant = &m.secrets.grants[i]
-		}
-	}
-	if grant == nil {
-		return m.report(true, "that grant is no longer there")
-	}
+// approved for, with the ID an agent presents to take a value under it. back
+// is the list it was opened from: a secret's grants, or the ones a rule
+// minted.
+func (m *Model) reviewGrant(secretName string, grant Grant, back func() tea.Cmd) tea.Cmd {
 	where := grant.Host
 	tone := toneAccent
 	if where == "" {
@@ -853,7 +867,7 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 	}
 	covers := section{label: "the grant", fields: []field{
 		{label: "secret", value: secretName, tone: toneAccent},
-		{label: grantHolderLabel(*grant), value: scope},
+		{label: grantHolderLabel(grant), value: scope},
 		{label: "may go to", value: where, tone: tone},
 	}}
 	if grant.Delegate {
@@ -863,7 +877,11 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 	if grant.GrantedBy != "" {
 		covers.fields = append(covers.fields, field{label: "granted by", value: grant.GrantedBy})
 	}
-	covers.fields = append(covers.fields, field{label: "expires", value: grantLifeLeft(*grant, m.secrets.now())})
+	if grant.RuleID != "" {
+		// Nobody read the request this one answers: a rule did.
+		covers.fields = append(covers.fields, field{label: "minted by", value: "approval rule " + grant.RuleID})
+	}
+	covers.fields = append(covers.fields, field{label: "expires", value: grantLifeLeft(grant, m.secrets.now())})
 
 	uses := section{label: "approved uses"}
 	if len(grant.Uses) == 0 {
@@ -893,21 +911,17 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 	// Back to the grants you were reading, not to the list behind them. The
 	// common next move after reading one is reading the next, or withdrawing
 	// this one, and both are in the list this came from.
-	d.onCancel = func() tea.Cmd { return m.showGrants() }
+	d.onCancel = back
 	m.dialog = d
 	return nil
 }
 
 // confirmRevokeGrant asks before withdrawing, and says what stops working.
-func (m *Model) confirmRevokeGrant(secretName, grantID string) tea.Cmd {
-	var grant Grant
-	for _, g := range m.secrets.grants {
-		if g.ID == grantID {
-			grant = g
-		}
-	}
-	d := confirmDialog("Revoke grant", "", func(string) tea.Cmd { return m.revokeGrant(grantID) })
-	d.titleRight = grantID
+// back is the list the question was asked from, which No returns to, and
+// after where a finished revoke goes on to (secretActionMsg.after).
+func (m *Model) confirmRevokeGrant(secretName string, grant Grant, back, after func() tea.Cmd) tea.Cmd {
+	d := confirmDialog("Revoke grant", "", func(string) tea.Cmd { return m.revokeGrant(grant.ID, after) })
+	d.titleRight = grant.ID
 	stops := line{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert}
 	if grant.Delegate {
 		stops = line{text: "this discobox can no longer delegate the credential", tone: toneAlert}
@@ -929,7 +943,7 @@ func (m *Model) confirmRevokeGrant(secretName, grantID string) tea.Cmd {
 	// No goes back to the grants, the way leaving a grant you were reading
 	// does: a question answered "not that one" should leave you where the
 	// question was asked, not on the screen behind it.
-	d.onCancel = func() tea.Cmd { return m.showGrants() }
+	d.onCancel = back
 	m.dialog = d
 	return nil
 }
@@ -1010,12 +1024,12 @@ func grantExpiry(g Grant, now time.Time) string {
 	}
 }
 
-func (m *Model) revokeGrant(grantID string) tea.Cmd {
+func (m *Model) revokeGrant(grantID string, after func() tea.Cmd) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "revoking…")
 	server := m.configServer()
 	return func() tea.Msg {
 		err := m.ds.RevokeGrant(m.ctx, server, grantID)
-		return secretActionMsg{did: "revoked", err: err}
+		return secretActionMsg{did: "revoked", err: err, after: after}
 	}
 }
 
@@ -1773,7 +1787,11 @@ func (m *Model) secretActed(msg secretActionMsg) tea.Cmd {
 		return m.loadSecrets()
 	}
 	m.dialog = nil
-	return tea.Batch(m.loadSecrets(), m.loadCredentialRequests(), m.report(false, "%s", msg.did))
+	cmds := []tea.Cmd{m.loadSecrets(), m.loadCredentialRequests(), m.report(false, "%s", msg.did)}
+	if msg.after != nil {
+		cmds = append(cmds, msg.after())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) viewSecrets() string {
@@ -1830,6 +1848,7 @@ func (m *Model) secretHints() []hint {
 			says("↑↓ move"),
 			keyed("enter", "enter", "answer it"),
 			keyed("tab", "tab", "secrets"),
+			keyed(rulesKey, rulesKey, "rules"),
 			keyed("esc", "esc", "back"),
 		}
 	}
@@ -1840,6 +1859,7 @@ func (m *Model) secretHints() []hint {
 		keyed(grantCreateKey, grantCreateKey, "grant"),
 		keyed("e", "e", "edit"),
 		keyed("d", "d", "delete"),
+		keyed(rulesKey, rulesKey, "rules"),
 	}
 	if len(m.requestRows.all) > 0 {
 		hints = append(hints, keyed("tab", "tab", "requests"))
