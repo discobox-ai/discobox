@@ -1,6 +1,7 @@
 package privatefs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,5 +66,47 @@ func TestRestrictRepairsAWidenedFile(t *testing.T) {
 	}
 	if err := Check(file); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A file written into a directory others can reach is private all the same,
+// holds what was written, and leaves no staging behind.
+func TestWriteExclusiveWritesAPrivateFile(t *testing.T) {
+	dir := t.TempDir()
+	// Widened first, so the file cannot pass by inheriting a private temporary
+	// directory, which is what a default Windows profile's is.
+	privatefstest.Widen(t, dir)
+	path := filepath.Join(dir, "key")
+	if err := WriteExclusive(path, []byte("key")); err != nil {
+		t.Fatalf("WriteExclusive: %v", err)
+	}
+	if err := Check(path); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "key" {
+		t.Fatalf("read back %q, %v; want %q", got, err, "key")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("directory holds %d entries after the write, want only the file", len(entries))
+	}
+}
+
+// The file that is already there wins: it is not replaced, and the caller is
+// told so in a way it can test for.
+func TestWriteExclusiveLeavesAnExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	if err := WriteExclusive(path, []byte("first")); err != nil {
+		t.Fatalf("first WriteExclusive: %v", err)
+	}
+	err := WriteExclusive(path, []byte("second"))
+	if !errors.Is(err, os.ErrExist) {
+		t.Fatalf("second WriteExclusive error = %v, want one matching os.ErrExist", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "first" {
+		t.Fatalf("read back %q, %v; want %q", got, err, "first")
 	}
 }

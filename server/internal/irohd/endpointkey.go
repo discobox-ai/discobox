@@ -69,39 +69,12 @@ func LoadOrCreateEndpointKey(dataDir string) (ed25519.PrivateKey, error) {
 		return nil, err
 	}
 
-	// Write-then-link rather than O_CREATE|O_EXCL, for the reason
-	// sshd.LoadOrCreateHostKey documents at length: exclusive creation makes
-	// only the creation atomic, so a process racing this startup can open the
-	// file between create and write and read a truncated key. Linking a
-	// fully-written temp file into place means any reader that can see the
-	// path at all sees complete content.
-	tmpFile, err := os.CreateTemp(dataDir, endpointKeyFileName+".tmp-*")
-	if err != nil {
-		return nil, fmt.Errorf("create iroh endpoint key temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-	if err := tmpFile.Chmod(0o600); err != nil {
-		_ = tmpFile.Close()
-		return nil, fmt.Errorf("chmod iroh endpoint key temp file: %w", err)
-	}
-	// Before the key is written, so it is never readable by anyone else: on
-	// Windows the 0600 above grants and restricts nothing, and the link below
-	// carries this ACL with it, since both names are the one file.
-	if err := privatefs.Restrict(tmpPath); err != nil {
-		_ = tmpFile.Close()
-		return nil, fmt.Errorf("restrict iroh endpoint key to this user: %w", err)
-	}
-	if _, err := tmpFile.Write(pemBytes); err != nil {
-		_ = tmpFile.Close()
-		return nil, fmt.Errorf("write iroh endpoint key: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("close iroh endpoint key temp file: %w", err)
-	}
-	if err := os.Link(tmpPath, path); err != nil {
-		if !os.IsExist(err) {
-			return nil, fmt.Errorf("install iroh endpoint key: %w", err)
+	// Private from the moment it exists and complete from the moment it is
+	// visible, and never replacing a key another process racing this startup
+	// wrote first: see privatefs.WriteExclusive.
+	if err := privatefs.WriteExclusive(path, pemBytes); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("write iroh endpoint key: %w", err)
 		}
 		// Lost the race: another process wrote a complete key first, and its
 		// key is the server's identity now.

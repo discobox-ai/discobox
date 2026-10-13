@@ -220,15 +220,27 @@ dial, and nothing to enable, because every server serves it.
 
 `hostkey.go`'s `LoadOrCreateHostKey` writes an ed25519 key once to
 `<data dir>/ssh_host_ed25519_key` and never regenerates it implicitly —
-rotating it breaks every enrolled client's `known_hosts` entry. Creation is
-write-to-temp-then-`Link`, not a direct `O_CREATE|O_EXCL` write: `O_EXCL`
-makes *creation* atomic but not the write that follows it, so a concurrent
-reader could see a truncated file mid-write. Writing the complete key to a
-temp file first and only then hard-linking it into place means the
-destination is always either absent or complete. The loser of a concurrent
-generation race reloads the winner's bytes rather than trusting its own,
-mirroring `internal/auth/poolagent/auth.go`'s `EnsureTrustKey` idiom for a DB
+rotating it breaks every enrolled client's `known_hosts` entry. The iroh
+endpoint key (`internal/irohd`'s `LoadOrCreateEndpointKey`) is kept the same
+way, and what follows holds for both.
+
+Creation is [`privatefs.WriteExclusive`](../../../internal/privatefs): the key
+is staged in a directory of its own, restricted to this user before the key is
+written, and hard-linked into place. Linking, not a direct `O_CREATE|O_EXCL`
+write, because `O_EXCL` makes *creation* atomic but not the write that follows
+it, so the destination is always either absent or complete. Staged in a
+restricted directory, because a mode grants nothing on Windows and a file is
+born there with what its parent grants. The loser of a concurrent generation
+race reloads the winner's bytes rather than trusting its own, mirroring
+`internal/auth/poolagent/auth.go`'s `EnsureTrustKey` idiom for a DB
 unique-constraint race, adapted to a filesystem one.
+
+A key that already exists is restricted again on every load, which repairs one
+an earlier Windows server left with only its directory's ACL. That is
+best-effort: a failure is logged as an error and the key is used as it is,
+because refusing to start does not make a readable key any less exposed.
+Only the two key files are restricted; the data directory and the database in
+it are not.
 
 ## Auto-start
 
