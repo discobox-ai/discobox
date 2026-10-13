@@ -121,11 +121,19 @@ type fakeSource struct {
 	revalued        []string
 	projectGrants   []Grant
 	grantsErr       error
-	revoked         []string
-	createdGrants   []NewGrant
-	createGrantErr  error
-	deleted         []string
-	deleteErr       error
+	// rules is the project's approval rules; ruleEdits is each change made to
+	// one, as "id enabled=…", and deletedRules each one removed.
+	rules          []Rule
+	rulesErr       error
+	ruleEdits      []string
+	ruleEditErr    error
+	deletedRules   []string
+	deleteRuleErr  error
+	revoked        []string
+	createdGrants  []NewGrant
+	createGrantErr error
+	deleted        []string
+	deleteErr      error
 
 	listErr   error
 	runErr    error
@@ -1807,7 +1815,7 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 	}
 }
 
-func (f *fakeSource) Grants(_ context.Context, server, secretID string) ([]Grant, error) {
+func (f *fakeSource) Grants(_ context.Context, server string, filter GrantFilter) ([]Grant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "Grants@"+server)
@@ -1816,11 +1824,55 @@ func (f *fakeSource) Grants(_ context.Context, server, secretID string) ([]Grant
 	}
 	var out []Grant
 	for _, g := range f.projectGrants {
-		if secretID == "" || g.SecretID == secretID {
+		if (filter.SecretID == "" || g.SecretID == filter.SecretID) && (filter.RuleID == "" || g.RuleID == filter.RuleID) {
 			out = append(out, g)
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeSource) Rules(_ context.Context, server string) ([]Rule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "Rules@"+server)
+	if f.rulesErr != nil {
+		return nil, f.rulesErr
+	}
+	return append([]Rule(nil), f.rules...), nil
+}
+
+func (f *fakeSource) SetRuleEnabled(_ context.Context, server, ruleID string, enabled bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "SetRuleEnabled@"+server)
+	if f.ruleEditErr != nil {
+		return f.ruleEditErr
+	}
+	f.ruleEdits = append(f.ruleEdits, fmt.Sprintf("%s enabled=%t", ruleID, enabled))
+	for i := range f.rules {
+		if f.rules[i].ID == ruleID {
+			f.rules[i].Enabled = enabled
+		}
+	}
+	return nil
+}
+
+func (f *fakeSource) DeleteRule(_ context.Context, server, ruleID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DeleteRule@"+server)
+	if f.deleteRuleErr != nil {
+		return f.deleteRuleErr
+	}
+	f.deletedRules = append(f.deletedRules, ruleID)
+	kept := f.rules[:0]
+	for _, rule := range f.rules {
+		if rule.ID != ruleID {
+			kept = append(kept, rule)
+		}
+	}
+	f.rules = kept
+	return nil
 }
 
 func (f *fakeSource) CreateGrant(_ context.Context, server string, grant NewGrant) (Grant, error) {

@@ -1004,6 +1004,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case ruleProposalsMsg:
 		return m.ruleProposalsLoaded(msg)
 
+	case rulesLoadedMsg:
+		return m.rulesLoaded(msg)
+
+	case ruleActionMsg:
+		return m.ruleActed(msg)
+
 	case renewalAnsweredMsg:
 		return m.renewalAnswered(msg)
 
@@ -4400,6 +4406,10 @@ func (m *Model) helpText() string {
 		"    Enter          what stands on it. There, Enter reads a grant,",
 		"                   " + grantRevokeKey + " withdraws one, and the first row grants the",
 		"                   secret. On a request, Enter answers it",
+		"    " + rulesKey + "              the approval rules: what answers a request",
+		"                   without asking. There, Enter reads one whole, with",
+		"                   the grants it minted; it is disabled, enabled or",
+		"                   deleted from its card, and " + grantRevokeKey + " withdraws a grant",
 		"    r              refresh",
 		"    Esc or " + SecretsKeyName + "      leave this screen",
 		"",
