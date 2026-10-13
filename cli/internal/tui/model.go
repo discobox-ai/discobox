@@ -139,10 +139,14 @@ type Model struct {
 
 	// requestRows is the credential requests waiting on a person, drawn under
 	// the secrets on that screen: what the project holds, and what is waiting
-	// on it. onRequests is which of the two tables has the keys. See
-	// requests.go.
+	// on it, and rules the project's approval rules under those. table is
+	// which of the three has the keys. See requests.go and projectrules.go.
 	requestRows *requestList
-	onRequests  bool
+	rules       *ruleList
+	table       secretsTable
+	// requestsHidden and rulesHidden are a lower table left out of a window
+	// too short for all three; see layout.
+	requestsHidden, rulesHidden bool
 
 	// The workspace screen: the discobox's terminals on the left, the primary
 	// among them, and its shells as tabs on the right, both following the
@@ -497,6 +501,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		harnesses:   newHarnessList(),
 		secrets:     newSecretList(),
 		requestRows: newRequestList(),
+		rules:       newRuleList(),
 		prompt:      ta,
 		logo:        newLogo(color),
 		focus:       focusPrompt,
@@ -1004,8 +1009,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case ruleProposalsMsg:
 		return m.ruleProposalsLoaded(msg)
 
-	case rulesLoadedMsg:
-		return m.rulesLoaded(msg)
+	case ruleCardMsg:
+		return m.ruleCardLoaded(msg)
 
 	case ruleActionMsg:
 		return m.ruleActed(msg)
@@ -3145,7 +3150,26 @@ func (m *Model) layout() {
 	// the room instead, a short list would pad itself to the foot of the window
 	// and push the requests down with it — two tables read together, with a
 	// screen of nothing in between.
-	secretsLeft := max(secretsRoom-waiting-requestsChrome, 1)
+	//
+	// The rules under them are sized the same way, to a quarter. A window too
+	// short for a row of each table leaves one of the lower two out rather
+	// than running off its foot: the rules, unless they have the keys, and
+	// then the requests. Moving into the one left out brings it back.
+	ruleRows := min(max(len(m.rules.all), 1), max(secretsRoom/4, 1))
+	m.requestsHidden, m.rulesHidden = false, false
+	secretsLeft := secretsRoom - waiting - requestsChrome - ruleRows - rulesChrome
+	if secretsLeft < 1 {
+		if m.table == tableRules {
+			m.requestsHidden = true
+			secretsLeft = secretsRoom - ruleRows - rulesChrome
+		} else {
+			m.rulesHidden = true
+			secretsLeft = secretsRoom - waiting - requestsChrome
+		}
+	}
+	secretsLeft = max(secretsLeft, 1)
+	m.rules.width, m.rules.height = m.bodyWidth(), ruleRows
+	m.rules.clamp()
 	m.secrets.width, m.secrets.height = m.bodyWidth(), min(max(len(m.secrets.all), 1), secretsLeft)
 	m.secrets.clamp()
 	// The workspace takes the whole window: a terminal wants every row it can
@@ -4395,9 +4419,9 @@ func (m *Model) helpText() string {
 		"───────────────────────────────────────────────────────────────",
 		"The secrets (" + SecretsKeyName + ")",
 		"",
-		"  Two tables: the project's secrets, and the requests waiting on",
-		"  you. Tab crosses between them, and ↓ off the bottom of one reaches",
-		"  the other.",
+		"  Three tables: the project's secrets, the requests waiting on",
+		"  you, and its approval rules. Tab crosses between them, and ↓ off",
+		"  the bottom of one reaches the next.",
 		"",
 		"    n              a new secret",
 		"    " + grantCreateKey + "              grant it before anything asks",
@@ -4406,10 +4430,11 @@ func (m *Model) helpText() string {
 		"    Enter          what stands on it. There, Enter reads a grant,",
 		"                   " + grantRevokeKey + " withdraws one, and the first row grants the",
 		"                   secret. On a request, Enter answers it",
-		"    " + rulesKey + "              the approval rules: what answers a request",
-		"                   without asking. There, Enter reads one whole, with",
-		"                   the grants it minted; it is disabled, enabled or",
-		"                   deleted from its card, and " + grantRevokeKey + " withdraws a grant",
+		"                   Under the requests, the approval rules: what",
+		"                   answers a request without asking. On a rule,",
+		"                   Enter reads it whole, with the grants it minted,",
+		"                   and there " + grantRevokeKey + " withdraws one",
+		"    " + ruleToggleKey + "              on a rule, disable or enable it",
 		"    r              refresh",
 		"    Esc or " + SecretsKeyName + "      leave this screen",
 		"",

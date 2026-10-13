@@ -9,27 +9,27 @@ import (
 	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
-// The project's approval rules, read and managed from the secrets screen
-// (ADR 26-10-12-330 §§1, 4).
+// The project's approval rules: the third table of the secrets screen, under
+// the requests they answer, and one rule's card (ADR 26-10-12-330 §§1, 4).
 //
 // A rule answers requests nobody is shown, so what a project holds has to be
-// somewhere a person can read it: the list, then one rule whole — in the
+// somewhere a person can read it: a row a rule, then one rule whole — in the
 // sections the card that made it was read in (rules.go) — with the grants it
-// minted that still stand. From that card it is disabled, enabled or deleted,
-// and one of its grants revoked. Its scope and uses are not edited here: the
-// server judges a rule's sentences, and `discobox secret rule update` is where
-// that is asked for. Making one stays with "auto approve" and the CLI.
-//
-// Every card is a dialog over the secrets screen, as a secret's grants are:
-// rules are about credentials, and that screen already owns what stands on
-// them.
+// minted that still stand. It is disabled, enabled or deleted from its row or
+// its card, and one of its grants revoked from the card. Its scope and uses
+// are not edited here: the server judges a rule's sentences, and `discobox
+// secret rule update` is where that is asked for. Making one stays with "auto
+// approve" and the CLI.
 
-// rulesKey opens the rules from the secrets screen, over either of its tables:
-// a rule belongs to the project, not to the secret or the request under the
-// cursor. Lower case beside the A that makes one from a request's card.
-const rulesKey = "a"
+// ruleToggleKey disables or enables the rule under the cursor, and the rule a
+// card is of; ruleDeleteKey deletes it, behind a question.
+const (
+	ruleToggleKey = "s"
+	ruleDeleteKey = "d"
+)
 
 // Rows of a rule's card that are not a grant.
 const (
@@ -37,22 +37,308 @@ const (
 	ruleDeleteItem = "rule:delete"
 )
 
-// ruleBook is the rules as last read, and the server they were read from:
-// what a card is drawn from and goes back to, so every action lands on the
-// server the rule was read on whatever the header has moved to since.
-type ruleBook struct {
-	server string
-	rules  []Rule
+// ruleList is the screen's third table and where the cursor is in it.
+type ruleList struct {
+	all    []Rule
+	cursor int
+	offset int
+
+	// loaded is a listing that has landed, as on the secrets: until it has,
+	// the table does not say the project has none.
+	loaded bool
+	// failed is why the last listing could not be read, on one line. The
+	// table then says so where its rows would be, and holds none.
+	failed string
+
+	width, height int
+
+	now func() time.Time
+
+	// drawn is which rows the last render put on screen; see zones.go.
+	drawn drawn
 }
 
-// rulesLoadedMsg carries a reading of the rules back. wait is the dialog that
-// was up while it was made, as for the proposals (ruleProposalsMsg); open is
-// the rule whose card goes up, with the grants it minted, or empty for the
-// list.
-type rulesLoadedMsg struct {
+func newRuleList() *ruleList { return &ruleList{now: time.Now} }
+
+// clear forgets the listing, for a server whose rules have not been read yet.
+func (l *ruleList) clear() { l.all, l.loaded, l.failed, l.cursor, l.offset = nil, false, "", 0, 0 }
+
+// fail takes a listing that could not be read. The rows go with it: rules
+// drawn from an earlier read would be acted on as though they were current.
+// The next read tries again.
+func (l *ruleList) fail(err error) {
+	l.clear()
+	l.failed = strings.Join(strings.Fields(err.Error()), " ")
+}
+
+// setAll takes a refreshed listing, keeping the cursor on the rule it was on.
+// One that is gone leaves the cursor where it was, on the row that took its
+// place.
+func (l *ruleList) setAll(all []Rule) {
+	l.loaded, l.failed = true, ""
+	var onID string
+	if r := l.current(); r != nil {
+		onID = r.ID
+	}
+	l.all = all
+	if onID != "" {
+		for i := range l.all {
+			if l.all[i].ID == onID {
+				l.cursor = i
+				break
+			}
+		}
+	}
+	l.clamp()
+}
+
+func (l *ruleList) current() *Rule {
+	if l.cursor < 0 || l.cursor >= len(l.all) {
+		return nil
+	}
+	return &l.all[l.cursor]
+}
+
+func (l *ruleList) move(delta int) { l.cursor += delta; l.clamp() }
+
+func (l *ruleList) moveTo(i int) { l.cursor = i; l.clamp() }
+
+func (l *ruleList) clamp() {
+	if l.cursor >= len(l.all) {
+		l.cursor = len(l.all) - 1
+	}
+	if l.cursor < 0 {
+		l.cursor = 0
+	}
+	if l.height <= 0 {
+		l.offset = 0
+		return
+	}
+	if l.cursor < l.offset {
+		l.offset = l.cursor
+	}
+	if l.cursor >= l.offset+l.height {
+		l.offset = l.cursor - l.height + 1
+	}
+	// A window that grew shows the rows it now has room for, rather than
+	// staying scrolled past them.
+	if l.offset > len(l.all)-l.height {
+		l.offset = len(l.all) - l.height
+	}
+	if l.offset < 0 {
+		l.offset = 0
+	}
+}
+
+// noRules is the table's empty line: that there are none, and the two ways
+// one is made, since neither is a key on this screen.
+const noRules = "  no rules: answer a request with auto approve, or `discobox secret rule create`"
+
+// view draws the table. credential names a rule's credential, which for a
+// project secret is the secret's name and so the screen's to say.
+func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule) string) string {
+	titleStyle := st.titleList
+	if !focused {
+		titleStyle = st.titleDim
+	}
+	right := ""
+	if len(l.all) > 0 {
+		right = plural(len(l.all), "rule", "rules")
+	}
+	blank := strings.Repeat(" ", max(l.width, 0))
+	out := []string{renderTitle(titleStyle, "Rules", right, l.width)}
+
+	body := make([]string, 0, l.height)
+	switch {
+	case l.failed != "":
+		body = append(body, st.dimText.Render(pad(truncate("  cannot read rules: "+l.failed, l.width), l.width)))
+	case len(l.all) == 0 && l.loaded:
+		body = append(body, st.dimText.Render(pad(truncate(noRules, l.width), l.width)))
+	}
+	l.drawn = drawn{top: len(out), first: l.offset}
+	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
+		body = append(body, l.row(st, l.all[i], credential(l.all[i]), i, focused))
+		l.drawn.count++
+	}
+	for len(body) < l.height {
+		body = append(body, blank)
+	}
+	block := append(out, body...)
+	z.markList(hitRuleRow, l.drawn, l.width, len(block))
+	return lipgloss.JoinVertical(lipgloss.Left, block...)
+}
+
+// row draws one rule: its credential, whether it is answering, which
+// discoboxes for, how much it approves and until when. Columns drop off the
+// right end as the terminal narrows, as on the tables above; the credential
+// never goes.
+//
+// The scope is the one column that is a sentence, so it is the one that takes
+// what the others leave and is cut to it: the row tells two rules apart, and
+// Enter reads the sentence whole.
+func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused bool) string {
+	atCursor := i == l.cursor && focused
+	now := l.now()
+
+	tail := ""
+	addCol := func(text string, w int) {
+		if l.width-lipgloss.Width(tail)-w < ruleLeadWidth {
+			return
+		}
+		tail += padANSI(text, w)
+	}
+	addCol("  "+st.dimText.Render(pad(plural(len(rule.Uses), "use", "uses"), 7)), 10)
+	addCol(st.dimText.Render(pad(ruleRowExpiry(rule, now), 14)), 15)
+
+	marker := "  "
+	if atCursor {
+		marker = st.key.Render("❯") + " "
+	}
+	nameStyle := st.name
+	if atCursor {
+		nameStyle = st.cursorName
+	}
+	room := max(l.width-lipgloss.Width(marker)-lipgloss.Width(tail), 4)
+	// The state and then the scope come out of the credential's room, each
+	// only while the credential keeps a column of its own; narrower than
+	// that the row is the credential.
+	lead := padANSI(nameStyle.Render(truncate(credential, room)), room)
+	if scopeW := room - ruleCredentialWidth - ruleStateWidth; scopeW >= 0 {
+		state := ruleState(rule, now)
+		lead = padANSI(nameStyle.Render(truncate(credential, ruleCredentialWidth-1)), ruleCredentialWidth) +
+			ruleStateTone(state).style(st).Render(pad(state, ruleStateWidth))
+		scope := ""
+		if scopeW >= ruleScopeMin {
+			scope = truncate(ruleRowScope(rule), scopeW)
+		}
+		lead += st.name.Render(pad(scope, scopeW))
+	}
+	line := padANSI(marker+lead+tail, l.width)
+	if atCursor {
+		return highlight(st, line, colHighlightBG)
+	}
+	return line
+}
+
+// A rule row's columns. ruleLeadWidth is what the tail columns leave the
+// credential, state and scope before one of them is dropped instead.
+const (
+	ruleCredentialWidth = 24
+	ruleStateWidth      = 10
+	ruleScopeMin        = 16
+	ruleLeadWidth       = ruleCredentialWidth + ruleStateWidth + ruleScopeMin + 2
+)
+
+// ruleRowScope is a rule's scope at the width of a column: the sentence, the
+// pin, or — with neither — that it is for every discobox, which the card says
+// the meaning of. A rule to delegate says so first, as a grant's row does: one
+// to use the same credential is a different rule.
+func ruleRowScope(rule Rule) string {
+	scope := "every discobox"
+	switch {
+	case rule.Scope != "":
+		scope = rule.Scope
+	case rule.SandboxID != "":
+		scope = "pinned to " + rule.SandboxID
+	}
+	if rule.Delegate {
+		return "delegates · " + scope
+	}
+	return scope
+}
+
+// ruleRowExpiry is the last column: when the rule itself stops answering.
+func ruleRowExpiry(rule Rule, now time.Time) string {
+	switch {
+	case rule.Expires.IsZero():
+		return "no expiry"
+	case !rule.Expires.After(now):
+		return "lapsed " + ago(rule.Expires, now)
+	}
+	return "expires " + ruleExpiry(rule, now)
+}
+
+// ruleRowCredential is a rule's credential as its row names it.
+func (m *Model) ruleRowCredential(rule Rule) string {
+	credential, _ := m.ruleCredential(rule)
+	return credential
+}
+
+// updateRuleTable handles the third table: moving in it, and reading or
+// changing the rule under the cursor.
+func (m *Model) updateRuleTable(msg tea.KeyPressMsg) tea.Cmd {
+	switch keyName(msg) {
+	case "up", "k":
+		// Off the top is what the rules answer, and above that the secrets.
+		if m.rules.cursor <= 0 {
+			m.table = m.tableAbove(tableRules)
+			return nil
+		}
+		m.rules.move(-1)
+	case "down", "j":
+		m.rules.move(1)
+	case "pgup":
+		m.rules.move(-m.rules.height)
+	case "pgdown":
+		m.rules.move(m.rules.height)
+	case "home", "g":
+		m.rules.moveTo(0)
+	case "end", "G":
+		m.rules.moveTo(len(m.rules.all) - 1)
+	case "enter", "v":
+		if rule := m.rules.current(); rule != nil {
+			return m.openRule(m.configServer(), rule.ID)
+		}
+	case ruleToggleKey:
+		if rule := m.rules.current(); rule != nil {
+			return m.setRuleEnabled(m.configServer(), *rule, !rule.Enabled, false)
+		}
+	case ruleDeleteKey:
+		if rule := m.rules.current(); rule != nil {
+			return m.confirmDeleteRule(m.configServer(), *rule, len(m.standingGrants(m.secrets.grants, rule.ID)), nil)
+		}
+	}
+	return nil
+}
+
+// ruleHints is the bottom line on a rule row: what that rule can take, with
+// the word for what the toggle would do to it.
+func (m *Model) ruleHints(tab hint) []hint {
+	toggle := "disable"
+	if rule := m.rules.current(); rule != nil && !rule.Enabled {
+		toggle = "enable"
+	}
+	return []hint{
+		says("↑↓ move"),
+		keyed("enter", "enter", "read it"),
+		keyed(ruleToggleKey, ruleToggleKey, toggle),
+		keyed(ruleDeleteKey, ruleDeleteKey, "delete"),
+		tab,
+		keyed("esc", "esc", "back"),
+	}
+}
+
+// standingGrants is the grants one rule minted that still authorize
+// something. One that has lapsed has nothing to withdraw.
+func (m *Model) standingGrants(grants []Grant, ruleID string) []Grant {
+	now := m.secrets.now()
+	var out []Grant
+	for _, g := range grants {
+		if g.RuleID == ruleID && (g.Expires.IsZero() || g.Expires.After(now)) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// ruleCardMsg carries what a rule's card is drawn from back. wait is the
+// dialog that was up while it was read, as for the proposals
+// (ruleProposalsMsg).
+type ruleCardMsg struct {
 	wait   *dialog
-	book   ruleBook
-	open   string
+	server string
+	rule   string
+	rules  []Rule
 	grants []Grant
 	err    error
 }
@@ -62,90 +348,54 @@ type rulesLoadedMsg struct {
 type ruleActionMsg struct {
 	server string
 	rule   string
-	// gone is a rule deleted, which has no card to come back to.
-	gone bool
-	did  string
-	err  error
+	// card is a change made from the rule's card, which comes back to it;
+	// one made from its row stays on the screen. gone is a rule deleted,
+	// which has no card to come back to.
+	card, gone bool
+	did        string
+	err        error
 }
 
-// showRules opens the list for the server the screen shows.
-func (m *Model) showRules() tea.Cmd { return m.loadRules(m.configServer(), "") }
-
-// loadRules reads the rules and, for a rule that is being opened, the grants
-// it minted — by rule, since a grant stands on its own and nothing else says
-// which rule it came from. Every card here starts from a read rather than
-// from what the last one held: a rule can be made, or lapse, behind it.
-func (m *Model) loadRules(server, open string) tea.Cmd {
-	wait := statusDialog("Approval rules", "reading the project's approval rules…")
+// openRule reads one rule and the grants it minted — by rule, since a grant
+// stands on its own and nothing else says which rule it came from. The card
+// starts from a read rather than from the row: a rule can lapse, or be
+// changed from the CLI, behind the table.
+func (m *Model) openRule(server, ruleID string) tea.Cmd {
+	wait := statusDialog("Approval rule", "reading the rule and the grants it minted…")
 	m.dialog = wait
 	return func() tea.Msg {
-		msg := rulesLoadedMsg{wait: wait, book: ruleBook{server: server}, open: open}
-		msg.book.rules, msg.err = m.ds.Rules(m.ctx, server)
-		if msg.err == nil && open != "" {
-			msg.grants, msg.err = m.ds.Grants(m.ctx, server, GrantFilter{RuleID: open})
+		msg := ruleCardMsg{wait: wait, server: server, rule: ruleID}
+		msg.rules, msg.err = m.ds.Rules(m.ctx, server)
+		if msg.err == nil {
+			msg.grants, msg.err = m.ds.Grants(m.ctx, server, GrantFilter{RuleID: ruleID})
 		}
 		return msg
 	}
 }
 
-// rulesLoaded puts up what was asked for, unless the wait was left. A rule
-// that is gone by the time it is opened lands on the list it is gone from.
-func (m *Model) rulesLoaded(msg rulesLoadedMsg) tea.Cmd {
+// ruleCardLoaded puts the card up, unless the wait was left, and gives the
+// table the listing it was read with, so the row behind the card agrees with
+// it. A rule that is gone by the time it is opened has no card.
+func (m *Model) ruleCardLoaded(msg ruleCardMsg) tea.Cmd {
 	if m.dialog != msg.wait {
 		return nil
 	}
 	if msg.err != nil {
-		m.dialog = errorDialog("Could not read the approval rules", fmt.Sprintf("%v", msg.err))
+		m.dialog = errorDialog("Could not read the approval rule", fmt.Sprintf("%v", msg.err))
 		return nil
 	}
-	for _, rule := range msg.book.rules {
-		if msg.open != "" && rule.ID == msg.open {
-			return m.showRule(msg.book, rule, msg.grants)
+	if m.serverName(msg.server) == m.configServer() {
+		m.rules.setAll(msg.rules)
+		m.leaveEmptyRules()
+		m.layout()
+	}
+	for _, rule := range msg.rules {
+		if rule.ID == msg.rule {
+			return m.showRule(msg.server, rule, m.standingGrants(msg.grants, rule.ID))
 		}
 	}
-	return m.listRules(msg.book, msg.open)
-}
-
-// listRules is the project's rules, one a row: its credential, and under it
-// whether it is answering, which discoboxes for, how much, and until when.
-// The scope is the row's sentence and is drawn whole (dialog.wrapDetails),
-// since it is what tells two rules for one credential apart. at is the rule
-// the cursor returns to.
-func (m *Model) listRules(book ruleBook, at string) tea.Cmd {
-	const made = "one is made by answering a request with auto approve (" + autoApproveKey + " on its card), or with `discobox secret rule create`"
-	if len(book.rules) == 0 {
-		// Said, with the way to one: an empty menu reads as a listing that
-		// did not land.
-		d := textDialog("Approval rules", "")
-		d.titleRight = "none"
-		d.sections = []section{{lines: []line{
-			{text: "this project has no approval rules: every credential request waits for a person"},
-			{text: made, tone: toneDim},
-		}}}
-		m.dialog = d
-		return nil
-	}
-	now := m.secrets.now()
-	items := make([]action, 0, len(book.rules))
-	for _, rule := range book.rules {
-		credential, _ := m.ruleCredential(rule)
-		items = append(items, action{key: rule.ID, label: credential, detail: ruleDetail(rule, now), enabled: true})
-	}
-	d := actionsDialog("Approval rules", "", items, func(ruleID string) tea.Cmd {
-		return m.loadRules(book.server, ruleID)
-	})
-	for i, rule := range book.rules {
-		if rule.ID == at {
-			d.cursor = i
-		}
-	}
-	d.titleRight = plural(len(book.rules), "rule", "rules")
-	d.wrapDetails = true
-	d.answerLabel = "what answers a request without asking"
-	d.footer = made
-	d.keys = []hint{pressing("enter reads the highlighted rule", "enter"), pressing("esc leaves them alone", "esc")}
-	m.dialog = d
-	return nil
+	m.dialog = nil
+	return m.report(true, "that rule is no longer there")
 }
 
 // showRule is one rule read whole, in the sections the card that made it had,
@@ -153,25 +403,24 @@ func (m *Model) listRules(book ruleBook, at string) tea.Cmd {
 // withdraw a grant it minted. The grants are rows the way a secret's are —
 // Enter reads one, x withdraws it — because a rule that should not have
 // approved something is undone a grant at a time (ADR 26-10-12-330 §4).
-func (m *Model) showRule(book ruleBook, rule Rule, grants []Grant) tea.Cmd {
+// server is where the rule was read, which every action from the card is sent
+// to; grants are the ones it minted that still stand. Leaving the card is
+// back on the screen, on the rule's row.
+func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 	now := m.secrets.now()
 	credential, answered := m.ruleCredential(rule)
-	again := func() tea.Cmd { return m.showRule(book, rule, grants) }
-	reread := func() tea.Cmd { return m.loadRules(book.server, rule.ID) }
+	again := func() tea.Cmd { return m.showRule(server, rule, grants) }
+	reread := func() tea.Cmd { return m.openRule(server, rule.ID) }
 
-	toggle := action{key: ruleToggleItem, press: "s", label: "Disable this rule",
+	toggle := action{key: ruleToggleItem, press: ruleToggleKey, label: "Disable this rule",
 		detail: "it mints nothing more, and revokes nothing", enabled: true}
 	if !rule.Enabled {
 		toggle.label, toggle.detail = "Enable this rule", "it answers the requests it covers again, without asking"
 	}
-	items := []action{toggle, {key: ruleDeleteItem, press: "d", label: "Delete this rule…",
+	items := []action{toggle, {key: ruleDeleteItem, press: ruleDeleteKey, label: "Delete this rule…",
 		detail: "the grants it minted stay, and are revoked one by one", enabled: true}}
 	standing := map[string]Grant{}
 	for _, g := range grants {
-		// One that has lapsed authorizes nothing and has nothing to withdraw.
-		if !g.Expires.IsZero() && !g.Expires.After(now) {
-			continue
-		}
 		standing[g.ID] = g
 		items = append(items, action{key: g.ID, label: m.grantHolder(g), detail: grantHost(g) + " · " + grantExpiry(g, now), enabled: true})
 	}
@@ -187,9 +436,9 @@ func (m *Model) showRule(book ruleBook, rule Rule, grants []Grant) tea.Cmd {
 	d := actionsDialog("Approval rule", "", items, func(result string) tea.Cmd {
 		switch result {
 		case ruleToggleItem:
-			return m.setRuleEnabled(book.server, rule, !rule.Enabled)
+			return m.setRuleEnabled(server, rule, !rule.Enabled, true)
 		case ruleDeleteItem:
-			return m.confirmDeleteRule(book.server, rule, len(standing), again)
+			return m.confirmDeleteRule(server, rule, len(standing), again)
 		}
 		return m.reviewGrant(named(standing[result]), standing[result], again)
 	})
@@ -218,7 +467,7 @@ func (m *Model) showRule(book ruleBook, rule Rule, grants []Grant) tea.Cmd {
 		d.answerLabel = plural(len(standing), "grant it minted still stands", "grants it minted still stand")
 	}
 	d.footer = "its scope and uses are changed with `discobox secret rule update " + rule.ID + "`, where the server judges them"
-	d.keys = []hint{pressing("enter runs it, or reads a grant", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes a grant"), pressing("esc goes back to the rules", "esc")}
+	d.keys = []hint{pressing("enter runs it, or reads a grant", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes a grant"), pressing("esc leaves it alone", "esc")}
 	d.altKey = grantRevokeKey
 	d.alt = func(key string) tea.Cmd {
 		grant, ok := standing[key]
@@ -229,14 +478,14 @@ func (m *Model) showRule(book ruleBook, rule Rule, grants []Grant) tea.Cmd {
 		}
 		return m.confirmRevokeGrant(named(grant), grant, again, reread)
 	}
-	d.onCancel = func() tea.Cmd { return m.listRules(book, rule.ID) }
 	m.dialog = d
 	return nil
 }
 
 // setRuleEnabled turns a rule off or on. It asks nothing first: either is
-// undone by the other from the same card, and neither touches a grant.
-func (m *Model) setRuleEnabled(server string, rule Rule, enabled bool) tea.Cmd {
+// undone by the other on the same key, and neither touches a grant. card is
+// whether it was asked from the rule's card, which it then comes back to.
+func (m *Model) setRuleEnabled(server string, rule Rule, enabled, card bool) tea.Cmd {
 	doing, did := "disabling", "disabled"
 	if enabled {
 		doing, did = "enabling", "enabled"
@@ -244,27 +493,28 @@ func (m *Model) setRuleEnabled(server string, rule Rule, enabled bool) tea.Cmd {
 	m.dialog = statusDialog("Approval rules", doing+" "+rule.ID+"…")
 	return func() tea.Msg {
 		err := m.ds.SetRuleEnabled(m.ctx, server, rule.ID, enabled)
-		return ruleActionMsg{server: server, rule: rule.ID, did: did + " " + rule.ID, err: err}
+		return ruleActionMsg{server: server, rule: rule.ID, card: card, did: did + " " + rule.ID, err: err}
 	}
 }
 
 // confirmDeleteRule asks before removing a rule, and says what does not go
 // with it: the grants it minted are independent once made, so deleting the
-// rule is not how what it approved is taken back.
+// rule is not how what it approved is taken back. back is the card it was
+// asked from, which No returns to; nil is the rule's row.
 func (m *Model) confirmDeleteRule(server string, rule Rule, standing int, back func() tea.Cmd) tea.Cmd {
 	credential, _ := m.ruleCredential(rule)
 	d := confirmDialog("Delete approval rule", "", func(string) tea.Cmd {
 		m.dialog = statusDialog("Approval rules", "deleting "+rule.ID+"…")
 		return func() tea.Msg {
 			err := m.ds.DeleteRule(m.ctx, server, rule.ID)
-			return ruleActionMsg{server: server, rule: rule.ID, gone: true, did: "deleted " + rule.ID, err: err}
+			return ruleActionMsg{server: server, rule: rule.ID, card: back != nil, gone: true, did: "deleted " + rule.ID, err: err}
 		}
 	})
 	d.titleRight = rule.ID
 	stays := line{text: "it has no grants standing", tone: toneDim}
 	if standing > 0 {
 		stays = line{text: plural(standing, "grant it minted stays", "grants it minted stay") +
-			": each is revoked on its own, from this rule's card before it goes or from its secret after", tone: toneAlert}
+			": each is revoked on its own, from the rule's card before it goes or from its secret after", tone: toneAlert}
 	}
 	goes := section{label: "what goes", fields: []field{
 		{label: "credential", value: credential, tone: toneAccent},
@@ -285,21 +535,25 @@ func (m *Model) confirmDeleteRule(server string, rule Rule, standing int, back f
 	return nil
 }
 
-// ruleActed re-reads after a change and comes back to where it was made: the
-// rule's card, or the list for one that is gone. A refusal is shown, and
-// leaving it goes back to the rule as the server now has it.
+// ruleActed re-reads the screen after a change, which keeps the cursor on the
+// rule — or, for one deleted, on the row that took its place — and comes back
+// to the rule's card when that is where it was made. A refusal is shown, and
+// leaving it goes back to the card as the server now has the rule.
 func (m *Model) ruleActed(msg ruleActionMsg) tea.Cmd {
 	if msg.err != nil {
 		d := errorDialog("Approval rules", fmt.Sprintf("%v", msg.err))
-		d.onCancel = func() tea.Cmd { return m.loadRules(msg.server, msg.rule) }
+		if msg.card {
+			d.onCancel = func() tea.Cmd { return m.openRule(msg.server, msg.rule) }
+		}
 		m.dialog = d
-		return nil
+		return m.loadSecrets()
 	}
-	open := msg.rule
-	if msg.gone {
-		open = ""
+	m.dialog = nil
+	cmds := []tea.Cmd{m.loadSecrets(), m.report(false, "%s", msg.did)}
+	if msg.card && !msg.gone {
+		cmds = append(cmds, m.openRule(msg.server, msg.rule))
 	}
-	return tea.Batch(m.loadRules(msg.server, open), m.report(false, "%s", msg.did))
+	return tea.Batch(cmds...)
 }
 
 // ruleCredential is what a rule calls its credential, and what answers it
@@ -343,22 +597,8 @@ func (m *Model) grantHolder(g Grant) string {
 	return who
 }
 
-// ruleDetail is the rest of a rule's row: whether it is answering, which
-// discoboxes for, how much it approves, and until when.
-func ruleDetail(rule Rule, now time.Time) string {
-	parts := []string{ruleState(rule, now)}
-	if rule.Delegate {
-		parts = append(parts, "delegates")
-	}
-	parts = append(parts, ruleScopeText(rule), plural(len(rule.Uses), "use", "uses"))
-	if !rule.Expires.IsZero() && rule.Expires.After(now) {
-		parts = append(parts, "expires "+ruleExpiry(rule, now))
-	}
-	return strings.Join(parts, " · ")
-}
-
-// ruleScopeText is a rule's scope on one line, for a row and for the question
-// before it is deleted: ruleScopeSection's lines, joined.
+// ruleScopeText is a rule's scope on one line, for the question before it is
+// deleted: ruleScopeSection's lines, joined.
 func ruleScopeText(rule Rule) string {
 	lines := ruleScopeSection(rule.ApprovalRule).lines
 	text := make([]string, 0, len(lines))

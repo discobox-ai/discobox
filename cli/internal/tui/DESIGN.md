@@ -74,12 +74,13 @@ key, one letter per action, and every action the same API call the `discobox
 secret` commands make. A window that could approve something the CLI could not
 would be a second policy. See `secrets.go`.
 
-**Two tables, read downwards.** The secrets on top, what is waiting on a person
-underneath. They belong on one screen because they are one question: which of
-these credentials answers this request. Off the bottom of the secrets is the
-requests table and off the top of that is the secrets again, the way the
-discobox list and the prompt hand focus to each other; Tab crosses either way,
-and Esc — not Tab — leaves. The lower table takes only the rows it needs, up to
+**Three tables, read downwards.** The secrets on top, what is waiting on a
+person underneath, and under that the approval rules (below). The first two
+belong on one screen because they are one question: which of these credentials
+answers this request. Off the bottom of the secrets is the requests table and
+off the top of that is the secrets again, the way the discobox list and the
+prompt hand focus to each other; Tab goes down through the tables and round,
+and Esc — not Tab — leaves. The requests table takes only the rows it needs, up to
 a third of the screen, so "nothing is waiting" costs one line rather than half
 the window, and the secrets take only the rows they have, so the two tables sit
 together with two blank rows between them. What is left over falls below them
@@ -115,26 +116,43 @@ many live grants go with it and defaulting to No. `C` answers the oldest
 request waiting anywhere in the project — including one no discobox owns, which
 the list's row mark cannot carry and which would otherwise have no home.
 
-**`a` opens the project's approval rules** (`projectrules.go`,
+**The rules are a third table, under the requests** (`projectrules.go`,
+`ruleList`,
 [ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
-§§1, 4), over either table and on both key lines: a rule answers requests
-nobody is shown, so what the project holds is read where its credentials are.
-They are cards over the screen, as a secret's grants are, each started from a
-read (`loadRules`, `DataSource.Rules`) on the screen's server, which every
-later action is sent to (`ruleBook`).
+§§1, 4): a rule answers requests nobody is shown, so what the project holds is
+on the screen, not behind a key. They are read with the screen's own load
+(`loadSecrets`, `DataSource.Rules`) and cleared with it on a change of server.
+A rules read that fails alone — a server that predates the route — does not
+take the screen down: the secrets and requests load, and the table says
+`cannot read rules: <error>` on one dim line (`ruleList.fail`), holding no rows
+and taking no cursor until the next load reads them.
 
-- **the list** (`listRules`): a row a rule — its credential (a secret by name),
-  then state (`enabled`/`disabled`/`lapsed`), scope, how many uses and expiry,
-  drawn whole under it (`dialog.wrapDetails`). No rules is a card saying so and
-  how one is made: auto approve, or `discobox secret rule create`.
-- **one rule** (`showRule`): the review card's own sections, drawn from the
-  same `Rule` value (`ruleFactsSection`, `ruleSections`, `ruleHandsOut`;
-  `approval.asRule` is the rule a review is of), with state, the cap on each
-  grant, expiry, and who made it and when. Its rows are `s` disable/enable,
-  `d` delete, and the grants it minted that still stand, read by rule
-  (`GrantFilter.RuleID`) and named by their discobox. Enter reads a grant and
-  `x` revokes it, through the secret's own cards (`reviewGrant`,
-  `confirmRevokeGrant`).
+- **focus** (`Model.table`, `tableBelow`/`tableAbove`/`nextTable`): ↓ off the
+  bottom of a table reaches the next one down that has a row, ↑ off the top
+  the one above, Tab goes down the screen and round to the secrets, and a
+  press says which table it landed in (`hitRuleRow`). An empty table is a line
+  and takes no cursor.
+- **a row**: credential (a secret by name), state (`enabled`/`disabled`/
+  `lapsed`), scope — the sentence cut to the column, `pinned to <id>`, or
+  `every discobox`, led by `delegates` for a rule to delegate — use count, and
+  expiry. Uses and expiry drop first as the window narrows, then the scope;
+  the credential and state stay. No rules is a line naming auto approve and
+  `discobox secret rule create`.
+- **height** (`layout`): the rules take their rows up to a quarter of the
+  screen, as the requests take a third. A window too short for a row of each
+  table leaves one of the lower two out — the rules unless they have the keys,
+  then the requests (`rulesHidden`, `requestsHidden`); one left out is neither
+  drawn nor marked.
+- **keys on a rule row** (`ruleHints`): Enter reads it, `s` disables or
+  enables it (the key line says which), `d` deletes it behind a question.
+- **the card** (`openRule`, `showRule`): read fresh, with the grants the rule
+  minted by rule (`GrantFilter.RuleID`). The review card's own sections, drawn
+  from the same `Rule` value (`ruleFactsSection`, `ruleSections`,
+  `ruleHandsOut`; `approval.asRule` is the rule a review is of), with state,
+  the cap on each grant, expiry, and who made it and when. Its rows are `s`,
+  `d`, and the grants still standing, named by their discobox: Enter reads one
+  and `x` revokes it, through the secret's own cards (`reviewGrant`,
+  `confirmRevokeGrant`). Esc is back on the rule's row.
 - **what it does not do**: a rule's scope and uses are sentences the server
   judges, so they are changed with `discobox secret rule update`, which the
   card names; making one is auto approve's and the CLI's.
@@ -142,10 +160,10 @@ later action is sent to (`ruleBook`).
 Disabling sends only `enabled` (`DataSource.SetRuleEnabled`) and asks nothing:
 it mints nothing more and revokes nothing, and the same key undoes it. Deleting
 asks, defaulting to No, and says the grants it minted stay to be revoked one by
-one. Each change re-reads and comes back to the rule's card, or to the list
-for one deleted (`ruleActed`); a revoke comes back the same way
-(`secretActionMsg.after`). A refusal is an error card, and Esc on it goes back
-to the rule.
+one. Each change re-reads the screen, which keeps the cursor on the rule or, for
+one deleted, on the row that took its place, and one made from the card comes
+back to the card (`ruleActed`); a revoke comes back the same way
+(`secretActionMsg.after`). A refusal is an error card.
 
 **A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
 pre-approval or a new secret has seven or eight parts, and a sequence of
@@ -3019,7 +3037,7 @@ the newest one where the busy line goes.
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `rules.go` | "auto approve": the proposals, the two choices, and the rule read whole before it is made |
-| `projectrules.go` | the project's approval rules, from the secrets screen (`a`): the list, one rule whole with the grants it minted, and disabling, deleting and revoking from its card |
+| `projectrules.go` | the secrets screen's third table, the project's approval rules, and a rule's card: the rule whole with the grants it minted, and disabling, deleting and revoking |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `apply.go` | apply: its key, and what is offered when it succeeds |
@@ -3034,7 +3052,7 @@ the newest one where the busy line goes.
 | `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
-| `secrets.go` | the secrets screen (`F4`): the secrets table, a secret's card and grants, the secret and grant forms |
+| `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and grants, the secret and grant forms |
 | `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per folder and restored |

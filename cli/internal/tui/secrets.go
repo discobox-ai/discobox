@@ -187,6 +187,11 @@ func (l *secretList) clamp() {
 	if l.cursor >= l.offset+l.height {
 		l.offset = l.cursor - l.height + 1
 	}
+	// A window that grew shows the rows it now has room for, rather than
+	// staying scrolled past them.
+	if l.offset > len(l.all)-l.height {
+		l.offset = len(l.all) - l.height
+	}
 	if l.offset < 0 {
 		l.offset = 0
 	}
@@ -318,8 +323,23 @@ type secretsLoadedListMsg struct {
 	server  string
 	secrets []Secret
 	grants  []Grant
+	rules   []Rule
 	err     error
+	// rulesErr is the rules alone failing to be read: a server that predates
+	// them still has secrets and requests to show, so it is said in the rules
+	// table rather than taking the screen down.
+	rulesErr error
 }
+
+// secretsTable is which of the screen's tables has the keys: they are one
+// screen read downwards, in this order.
+type secretsTable int
+
+const (
+	tableSecrets secretsTable = iota
+	tableRequests
+	tableRules
+)
 
 // secretActionMsg carries a completed action back into the update loop, so the
 // listing is re-read from one place however the action was started.
@@ -340,7 +360,11 @@ func (m *Model) loadSecrets() tea.Cmd {
 			return secretsLoadedListMsg{server: server, err: err}
 		}
 		grants, err := m.ds.Grants(m.ctx, server, GrantFilter{})
-		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants, err: err}
+		if err != nil {
+			return secretsLoadedListMsg{server: server, err: err}
+		}
+		rules, rulesErr := m.ds.Rules(m.ctx, server)
+		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants, rules: rules, rulesErr: rulesErr}
 	}
 }
 
@@ -368,8 +392,24 @@ func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
 	}
 	m.secrets.setAll(msg.secrets)
 	m.secrets.setGrants(msg.grants)
+	if msg.rulesErr != nil {
+		m.rules.fail(msg.rulesErr)
+	} else {
+		m.rules.setAll(msg.rules)
+	}
+	m.leaveEmptyRules()
 	m.layout()
 	return nil
+}
+
+// leaveEmptyRules moves the keys to the secrets when the rules table they
+// were in has no row left: a table with no row takes no cursor, so its key
+// line would offer keys that do nothing. Everything that sets or clears the
+// rules calls it.
+func (m *Model) leaveEmptyRules() {
+	if len(m.rules.all) == 0 && m.table == tableRules {
+		m.table = tableSecrets
+	}
 }
 
 // updateSecrets handles the screen. A letter is a command here, the way it is
@@ -381,7 +421,7 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		m.closeSecrets()
 		return nil
 	case "tab":
-		m.onRequests = !m.onRequests
+		m.table = m.nextTable()
 		return nil
 	case "?":
 		m.dialog = m.helpDialog()
@@ -393,19 +433,20 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		return m.cycleServer(serverStep(msg))
 	case credentialsKey:
 		return m.openWaitingRequest()
-	case rulesKey:
-		return m.showRules()
 	}
-	if m.onRequests {
+	switch m.table {
+	case tableRequests:
 		return m.updateRequestTable(msg)
+	case tableRules:
+		return m.updateRuleTable(msg)
 	}
 	switch keyName(msg) {
 	case "down", "j":
 		// Off the bottom of the secrets is the requests table, the way off the
 		// bottom of the discobox list is the prompt: the tables are one screen
 		// read downwards, not two panes to be switched between.
-		if m.secrets.cursor >= len(m.secrets.all)-1 && len(m.requestRows.all) > 0 {
-			m.onRequests = true
+		if below := m.tableBelow(tableSecrets); m.secrets.cursor >= len(m.secrets.all)-1 && below != tableSecrets {
+			m.table = below
 			return nil
 		}
 		m.secrets.move(1)
@@ -443,11 +484,16 @@ func (m *Model) updateRequestTable(msg tea.KeyPressMsg) tea.Cmd {
 	case "up", "k":
 		// Off the top is the secrets, which is where the answer comes from.
 		if m.requestRows.cursor <= 0 {
-			m.onRequests = false
+			m.table = tableSecrets
 			return nil
 		}
 		m.requestRows.move(-1)
 	case "down", "j":
+		// Off the bottom of the requests are the rules, the same way.
+		if below := m.tableBelow(tableRequests); m.requestRows.cursor >= len(m.requestRows.all)-1 && below != tableRequests {
+			m.table = below
+			return nil
+		}
 		m.requestRows.move(1)
 	case "pgup":
 		m.requestRows.move(-m.requestRows.height)
@@ -463,6 +509,47 @@ func (m *Model) updateRequestTable(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// tableBelow is the table ↓ leaves from's last row for: the next one down
+// that has a row to land on, or from itself when there is none. An empty
+// table says so in a line and has nothing to put a cursor on.
+func (m *Model) tableBelow(from secretsTable) secretsTable {
+	if from == tableSecrets && len(m.requestRows.all) > 0 {
+		return tableRequests
+	}
+	if from != tableRules && len(m.rules.all) > 0 {
+		return tableRules
+	}
+	return from
+}
+
+// tableAbove is the same going up; the secrets are always there to land in.
+func (m *Model) tableAbove(from secretsTable) secretsTable {
+	if from == tableRules && len(m.requestRows.all) > 0 {
+		return tableRequests
+	}
+	return tableSecrets
+}
+
+// nextTable is where Tab goes: down the screen through the tables that have
+// rows, and round to the secrets.
+func (m *Model) nextTable() secretsTable {
+	if below := m.tableBelow(m.table); below != m.table {
+		return below
+	}
+	return tableSecrets
+}
+
+// tableName is a table as the key line names it.
+func tableName(t secretsTable) string {
+	switch t {
+	case tableRequests:
+		return "requests"
+	case tableRules:
+		return "rules"
+	}
+	return "secrets"
 }
 
 // grantCreateKey mints a standing grant on the secret under the cursor: the
@@ -1799,14 +1886,24 @@ func (m *Model) viewSecrets() string {
 	// person. They are read together: which secret answers this request is the
 	// question, and the answer is in the table above it.
 	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
-	secrets := m.secrets.view(m.st, &m.zones, !m.onRequests)
-	// The lower table is pushed past the upper one and the two blank rows
-	// between them, so its rows are marked where they are actually drawn.
-	m.zones.push(0, lipgloss.Height(secrets)+2)
-	requests := m.requestRows.view(m.st, &m.zones, m.onRequests)
+	body := m.secrets.view(m.st, &m.zones, m.table == tableSecrets)
+	// Each lower table is pushed past everything drawn above it and the two
+	// blank rows between, so its rows are marked where they are actually
+	// drawn. One the window has no room for is neither drawn nor marked
+	// (layout).
+	under := func(view func() string) {
+		m.zones.push(0, lipgloss.Height(body)+2)
+		table := view()
+		m.zones.pop()
+		body = lipgloss.JoinVertical(lipgloss.Left, body, "", "", table)
+	}
+	if !m.requestsHidden {
+		under(func() string { return m.requestRows.view(m.st, &m.zones, m.table == tableRequests) })
+	}
+	if !m.rulesHidden {
+		under(func() string { return m.rules.view(m.st, &m.zones, m.table == tableRules, m.ruleRowCredential) })
+	}
 	m.zones.pop()
-	m.zones.pop()
-	body := lipgloss.JoinVertical(lipgloss.Left, secrets, "", "", requests)
 	// The secrets take only the rows they have, so what is left over falls
 	// below the lower table rather than between the two: the window keeps its
 	// full height, and the tables stay next to each other where they are read
@@ -1837,20 +1934,27 @@ func (m *Model) viewSecrets() string {
 const secretsChrome = 8
 
 // requestsChrome is what the lower table costs beside its rows: its title, and
-// the two blank rows between the tables.
-const requestsChrome = 3
+// the two blank rows between the tables. rulesChrome is the same for the
+// table under it.
+const (
+	requestsChrome = 3
+	rulesChrome    = 3
+)
 
 // secretHints is the bottom line here: what the secret under the cursor can
 // take, most reached-for first.
 func (m *Model) secretHints() []hint {
-	if m.onRequests {
+	tab := keyed("tab", "tab", tableName(m.nextTable()))
+	switch m.table {
+	case tableRequests:
 		return []hint{
 			says("↑↓ move"),
 			keyed("enter", "enter", "answer it"),
-			keyed("tab", "tab", "secrets"),
-			keyed(rulesKey, rulesKey, "rules"),
+			tab,
 			keyed("esc", "esc", "back"),
 		}
+	case tableRules:
+		return m.ruleHints(tab)
 	}
 	hints := []hint{
 		says("↑↓ move"),
@@ -1859,10 +1963,9 @@ func (m *Model) secretHints() []hint {
 		keyed(grantCreateKey, grantCreateKey, "grant"),
 		keyed("e", "e", "edit"),
 		keyed("d", "d", "delete"),
-		keyed(rulesKey, rulesKey, "rules"),
 	}
-	if len(m.requestRows.all) > 0 {
-		hints = append(hints, keyed("tab", "tab", "requests"))
+	if m.nextTable() != tableSecrets {
+		hints = append(hints, tab)
 	}
 	if m.manyServers() {
 		hints = append(hints, says("←→ server"))

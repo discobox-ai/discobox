@@ -509,7 +509,7 @@ func TestPressingASecretRowMovesItsCursor(t *testing.T) {
 	x, y := at(t, m, "OpenAI key")
 	tap(t, m, x, y)
 
-	if m.onRequests {
+	if m.table == tableRequests {
 		t.Fatalf("a press in the secrets table should leave the keys in it")
 	}
 	if got := m.secrets.current(); got == nil || got.Name != "OpenAI key" {
