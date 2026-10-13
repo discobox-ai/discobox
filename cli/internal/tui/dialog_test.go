@@ -717,3 +717,106 @@ func TestAWrappedFieldDoesNotMoveTheKeyLinesMarks(t *testing.T) {
 		}
 	}
 }
+
+// A menu that chooses between sentences draws each one whole under its label
+// rather than cutting it to what the label's row has left: a row ending in "…"
+// hides the thing being chosen. Every row an item takes is that item's press,
+// so the pointer on a wrapped line runs the item it belongs to.
+func TestAMenuThatWrapsShowsEveryDetailWhole(t *testing.T) {
+	t.Parallel()
+	long := "Discoboxes whose primary source is discobox-ai/discobox, started to answer a person's request to list or look up their own GitHub repositories."
+	items := []action{
+		{key: "one", label: "This discobox", detail: "pinned by its ID", enabled: true},
+		{key: "two", label: "Discoboxes doing this work on this repository", detail: long, enabled: true},
+		{key: "three", label: "Any discobox", detail: "any discobox", enabled: false, why: "any discobox\nfailed, and cannot be chosen: no repository is recorded"},
+	}
+	d := actionsDialog("Title", "", items, nil)
+	d.wrapDetails = true
+	z := &zones{}
+	text := ansi.Strip(d.view(newStyles(false), z, 80, 40))
+	if strings.Contains(text, "…") {
+		t.Fatalf("a detail was cut:\n%s", text)
+	}
+	words := strings.Join(strings.Fields(strings.NewReplacer("│", " ").Replace(text)), " ")
+	for _, want := range []string{long, "failed, and cannot be chosen: no repository is recorded"} {
+		if !strings.Contains(words, want) {
+			t.Fatalf("the card does not carry %q whole:\n%s", want, text)
+		}
+	}
+	// The marks cover each item's label row and the rows under it, in order,
+	// and nothing else: a row marked for the wrong item is a press that runs
+	// the choice beside the one pointed at.
+	lines := strings.Split(text, "\n")
+	rowsOf := map[int][]int{}
+	for _, mark := range z.marks {
+		if mark.what.kind == hitDialogItem {
+			rowsOf[mark.what.idx] = append(rowsOf[mark.what.idx], mark.y)
+		}
+	}
+	if len(rowsOf[1]) < 3 {
+		t.Fatalf("the long item is marked on rows %v, want its label and each wrapped row", rowsOf[1])
+	}
+	for idx, label := range []string{"This discobox", "Discoboxes doing this work on this repository", "Any discobox"} {
+		rows := rowsOf[idx]
+		if len(rows) == 0 || !strings.Contains(lines[rows[0]], label) {
+			t.Fatalf("item %d is marked on rows %v, the first of which draws %q", idx, rows, lines[rows[0]])
+		}
+		for i := 1; i < len(rows); i++ {
+			if rows[i] != rows[i-1]+1 {
+				t.Fatalf("item %d is marked on rows %v, want them together", idx, rows)
+			}
+		}
+	}
+	if last := rowsOf[1][len(rowsOf[1])-1]; !strings.Contains(lines[last], "repositories.") {
+		t.Fatalf("the long item's last marked row draws %q, want the end of its sentence", lines[last])
+	}
+}
+
+// A wrapped menu that does not fit its window goes back to one row an item,
+// windowed around the cursor as any long menu is, so what Enter runs is still
+// on screen; and a card that never asked to wrap is unchanged.
+func TestAMenuThatWrapsFallsBackWhenItDoesNotFit(t *testing.T) {
+	t.Parallel()
+	var items []action
+	for i := range 30 {
+		// Two lines, as a list of uses or a failed proposal's reason is: one
+		// row an item has to hold whatever the detail carries.
+		items = append(items, action{key: "item-" + itoa(i), label: "choice " + itoa(i), detail: "· a sentence to read whole\n· and another under it", enabled: true})
+	}
+	d := actionsDialog("Title", "", items, nil)
+	d.wrapDetails = true
+	z := &zones{}
+	text := ansi.Strip(d.view(newStyles(false), z, 80, 20))
+	if rows := strings.Count(text, "\n") + 1; rows > 20 {
+		t.Fatalf("%d rows in a window of 20:\n%s", rows, text)
+	}
+	if !strings.Contains(text, "❯ choice 0 ") || !strings.Contains(text, "of 30") {
+		t.Fatalf("a menu too long to wrap is not windowed on its cursor:\n%s", text)
+	}
+	// The row marked for the pointer is the row the frame drew there: a press
+	// on one choice must not run the one under it.
+	lines := strings.Split(text, "\n")
+	marks := 0
+	for _, mark := range z.marks {
+		if mark.what.kind != hitDialogItem || mark.what.idx < 0 {
+			continue
+		}
+		marks++
+		if want := "choice " + itoa(mark.what.idx) + " "; !strings.Contains(lines[mark.y], want) {
+			t.Errorf("row %d is marked as %q and draws %q", mark.y, want, lines[mark.y])
+		}
+	}
+	if marks == 0 {
+		t.Error("no menu row is marked")
+	}
+
+	long := []action{
+		{key: "a", label: "choice 0", detail: strings.Repeat("a sentence to read whole ", 6), enabled: true},
+		{key: "b", label: "choice 1", detail: strings.Repeat("a sentence to read whole ", 6), enabled: true},
+	}
+	plain := actionsDialog("Title", "", long, nil)
+	text = ansi.Strip(plain.view(newStyles(false), &zones{}, 80, 40))
+	if !strings.Contains(text, "…") || strings.Count(text, "choice ") != 2 {
+		t.Fatalf("a menu that did not ask to wrap changed:\n%s", text)
+	}
+}
