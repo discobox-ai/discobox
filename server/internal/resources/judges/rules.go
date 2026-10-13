@@ -34,8 +34,8 @@ import (
 
 // JudgeScope asks whether one discobox is among those a rule is for.
 //
-// With Jev, Jev's yes is a match and anything else is not, and nothing is put
-// to the judge discobox (§2): most discoboxes do not match most rules, and a
+// With Jev, Jev's yes is a match and anything else is not — unsure included —
+// and nothing is put to the judge discobox (§2): most discoboxes do not match most rules, and a
 // wrong "no match" costs only a person being asked, which is what happens
 // today. A server with no Jev key asks its judge discobox.
 func (s *Service) JudgeScope(ctx context.Context, projectID string, ask services.ScopeAsk) (judge.Answer, error) {
@@ -56,7 +56,7 @@ func (s *Service) JudgeScope(ctx context.Context, projectID string, ask services
 
 // JudgeRule asks whether the uses a request asked for fall within a rule's.
 // It goes the way every job does: Jev first when the server has a key, what
-// Jev does not allow handled by jevUnsure, and the judge discobox otherwise
+// Jev is unsure of handled by jevUnsure, and the judge discobox otherwise
 // (§5). The fallback is kept here and not for a scope because of how often
 // each is asked: this runs only for a discobox already in scope, about a
 // request somebody would otherwise have to read.
@@ -123,17 +123,18 @@ func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.
 	}
 	// An answer on record is reused for good, so only a decision is recorded.
 	// Neither job has a body to be shown, so an ask for one decides nothing.
-	// And where Jev's refusals go on to the judge discobox, a refusal that
-	// comes back as Jev's alone is one the discobox did not answer — not up
-	// yet, or out of time — so the one who decides has not: it is no verdict,
-	// and the question is asked again.
+	// And where what Jev is unsure of goes on to the judge discobox
+	// (ADR 26-10-12-669), an unsure refusal that comes back as Jev's alone is
+	// one the discobox did not answer — not up yet, or out of time — so the
+	// one who decides has not: it is no verdict, and the question is asked
+	// again. A refusal Jev was sure of is final, and is recorded.
 	switch {
 	case !decided.Decided():
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadGateway,
 			"the judge asked to be shown something a rule's question does not have, which decides nothing")
-	case row.Kind == model.CredentialVerdictKindRule && s.jevFallback && !decided.Allow && decided.sandbox == nil:
+	case row.Kind == model.CredentialVerdictKindRule && s.jevFallback && s.leases != nil && decided.unsure && decided.sandbox == nil:
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusServiceUnavailable,
-			"Jev did not allow it and the project's judge discobox, which decides what Jev does not, did not answer")
+			"Jev could not tell and the project's judge discobox, which decides what Jev is unsure of, did not answer")
 	}
 	// Nothing stands for either job: each is its own question.
 	decided.Standing = nil

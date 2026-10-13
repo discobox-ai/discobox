@@ -56,16 +56,16 @@ or `rule` verdict before the answer is acted on:
 - `JudgeScope` — with Jev, Jev alone: its yes is a match and anything else is
   not, and nothing is sent on to the judge discobox whatever `jevUnsure` says.
   A server with no Jev key asks its judge discobox.
-- `JudgeRule` — through `put`, like a delegation: Jev first, and what it does
-  not allow handled by `jevUnsure`.
+- `JudgeRule` — through `put`, like a delegation: Jev first, and what it is
+  unsure of handled by `jevUnsure`.
 - `ProposeRule` — the judge discobox writes a rule's wider scopes and uses
   (`POST .../judge/proposal`). Jev writes nothing, so a server with no judge
   discobox has nobody to ask, and says so.
 
 An answer on record is never asked about again, so only a decision is
 recorded. A judge that did not answer, one that asked to be shown something,
-and — where Jev's refusals go on — a Jev refusal the judge discobox never saw
-are each no verdict, and the question is asked again. An answer reused for a
+and — where what Jev is unsure of goes on — an unsure refusal the judge
+discobox never saw are each no verdict, and the question is asked again. An answer reused for a
 rule it does not name is recorded again under that rule (`reuse`), so a rule
 made from a proposal has its verdicts.
 
