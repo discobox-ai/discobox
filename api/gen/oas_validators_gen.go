@@ -3261,6 +3261,29 @@ func (s *ListPoolsBody) Validate() error {
 	return nil
 }
 
+func (s *ListProjectSkillsSourcesBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.SkillsSources == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "skillsSources",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *ListProjectsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

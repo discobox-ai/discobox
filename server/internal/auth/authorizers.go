@@ -163,6 +163,10 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodGet, path: "secret-requests/*", owner: ownedRequest},
 	{method: http.MethodPost, path: "secret-requests/*/approve", owner: ownedRequest},
 	{method: http.MethodPost, path: "secret-requests/*/deny", owner: ownedRequest},
+	// The project's skills sources, which a discobox creating discoboxes
+	// copies into each create as a person's client does (ADR 26-10-14-894
+	// §1). Adding and removing them are a member's.
+	{method: http.MethodGet, path: "skills-sources"},
 }
 
 func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {

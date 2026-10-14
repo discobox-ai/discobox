@@ -224,6 +224,7 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&model.Secret{},
 			&model.SandboxProviderInstance{},
 			&model.SandboxAccessIssuerKey{},
+			&model.ProjectSkillsSource{},
 			&model.ProjectMember{},
 		} {
 			if err := tx.Where("project_id = ?", projectID).Delete(scoped).Error; err != nil {

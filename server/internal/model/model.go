@@ -1982,6 +1982,7 @@ func AllModels() []any {
 		&SandboxSecret{},
 		&SandboxInventory{},
 		&SSHKey{},
+		&ProjectSkillsSource{},
 		&Peer{},
 		&CredentialVerdict{},
 		&SecretRejection{},
