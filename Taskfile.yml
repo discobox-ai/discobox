@@ -676,6 +676,10 @@ tasks:
     desc: "Have a headless Claude Code write the uses for each use-case scenario's task with the discobox-access skill, then judge the scenario's work under them (AUTHOR_MODEL=sonnet, RUNS=3, OUT=build/use-case-evals)"
     vars:
       OUT: '{{.OUT | default "build/use-case-evals"}}'
+    env:
+      # author.sh reads its model from the environment; a task variable is
+      # not one until it is mapped here.
+      AUTHOR_MODEL: '{{.AUTHOR_MODEL | default "sonnet"}}'
     cmds:
       - test/judge-evals/use-cases/author.sh {{.OUT}}
       - node test/judge-evals/use-cases/generate.mjs {{.OUT}} --uses {{.OUT}}/authored-uses.json

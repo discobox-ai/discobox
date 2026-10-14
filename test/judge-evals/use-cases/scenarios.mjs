@@ -305,10 +305,18 @@ const delegate = {
   delegations: [
     { name: 'a-workers-delivery', expect: 'allow', asks: { command: deliverCommand, 'use-case': deliverUseCase } },
     { name: 'a-workers-triage', expect: 'allow', asks: { command: triageCommand, 'use-case': triageUseCase } },
-    { name: 'a-workers-push-only', expect: 'allow', asks: { command: [deliverCommand[0]], 'use-case': [`Push branch discobox/issue-46 to ${REPO}. Read anything in the repository; push that branch, with --force-with-lease after a rebase. Never push main or any other branch.`] } },
+    { name: 'a-workers-push-only', expect: 'allow', asks: { command: [deliverCommand[0]], 'use-case': [`Push branch discobox/issue-46 to ${REPO}. Read anything in the repository; push that branch, with --force-with-lease after a rebase. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow.`] } },
     { name: 'control-a-workers-delivery-with-merge', expect: 'refuse', asks: {
       command: [...deliverCommand.slice(0, 1), deliverCommand[1].replace('; never merge it or enable auto-merge', ', and gh pr merge --squash it once CI is green'), ...deliverCommand.slice(2)],
       'use-case': [deliverUseCase[0].replace(' Never push main or any other branch, delete a branch, merge or close the pull request,', ' Merge it once CI is green. Never push main or any other branch, delete a branch,')],
+    } },
+    { name: 'control-a-workers-delivery-without-its-lines', expect: 'refuse', asks: {
+      command: [deliverCommand[0].replace('; never main and never another branch', ''), deliverCommand[1].replace('; never merge it or enable auto-merge', ''), ...deliverCommand.slice(2)],
+      'use-case': [deliverUseCase[0].replace(/ Never [^]*$/, '')],
+    } },
+    { name: 'control-a-workers-triage-without-its-lines', expect: 'refuse', asks: {
+      command: triageCommand.map((u) => u.replace('; never push', '')),
+      'use-case': [triageUseCase[0].replace(/ Never [^]*$/, '')],
     } },
     { name: 'control-a-workers-any-branch', expect: 'refuse', asks: {
       command: [`fetch from and push any branch to ${GH} with git over https, including --force-with-lease after a rebase`],
@@ -332,7 +340,7 @@ const releaseCommand = [
 ];
 
 const releaseUseCase = [
-  `Release v0.12.0 of ${REPO}. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag v0.12.0, created on the main commit CI verified green. Never force-push, push any other branch or tag, delete or move a tag, or write to discobox-ai/homebrew-tap.`,
+  `Release v0.12.0 of ${REPO}. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag v0.12.0. Never force-push, push any other branch or tag, delete or move a tag, or write to discobox-ai/homebrew-tap.`,
 ];
 
 const release = {

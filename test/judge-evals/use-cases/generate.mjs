@@ -6,9 +6,9 @@
 // writes OUT_DIR/command/*.json, OUT_DIR/use-case/*.json and
 // OUT_DIR/no-never/*.json, the same case names in each. no-never is the
 // use-case style with each use's closing "Never …" sentence taken off: what a
-// use says when its writer did not rule out the neighbors of its writes. --uses adds a third style, "authored", from a JSON file
-// mapping a scenario's name to the uses an agent wrote for its task (see
-// author.sh). Nothing says which authored use a job would run under, so a job
+// use says when its writer did not rule out the neighbors of its writes.
+// --uses adds a fourth style, "authored", from a JSON file mapping a
+// scenario's name to the uses an agent wrote for its task (see author.sh). Nothing says which authored use a job would run under, so a job
 // is written once per authored use, as NAME--uN, and score.mjs counts it as
 // allowed under whichever use allows it most.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -80,10 +80,10 @@ for (const [style, slot] of Object.entries(styles)) {
       });
     }
     for (const d of s.delegations ?? []) {
-      const asks = style === 'authored' ? authored[`${s.name}:${d.name}`]
-        : style === 'no-never' ? d.asks['use-case'].map(withoutNever)
-          : d.asks[style];
-      if (!asks) continue;
+      // author.sh writes a scenario's own uses, not a worker's asks against a
+      // lead's delegation, so the authored style has no delegation cases.
+      if (style === 'authored') continue;
+      const asks = style === 'no-never' ? d.asks['use-case'].map(withoutNever) : d.asks[style];
       write(d.name, `${s.name}, ${style} style: a worker's ask against the lead's delegation.`, d.expect, {
         kind: 'delegation',
         purpose: uses.join('\n'),
