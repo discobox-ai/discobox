@@ -1389,3 +1389,132 @@ func TestAServerThatDoesNotJudgeRefusesADelegation(t *testing.T) {
 		t.Fatal("a server that does not judge answered a delegation")
 	}
 }
+
+// gateJudge is standingJudge with the discobox API's own use: what a call
+// from a discobox to the discobox API is judged against.
+func gateJudge(t *testing.T, answer sandboxapi.JudgeAnswer) (*Service, *store.Store, *answeringJudge) {
+	t.Helper()
+	service, appStore, fake := standingJudge(t, answer)
+	service.SetUses(approvedUses{use: services.ApprovedUse{
+		Purpose: "look after the discoboxes this discobox created", Host: "api.discobox.internal", Credential: "ai.discobox.sandbox", GrantID: "grant-1",
+	}})
+	return service, appStore, fake
+}
+
+// A call to the discobox API that names a discobox in the project is judged
+// knowing what was recorded about that discobox when it was created, beside
+// the one asking: who created it is what a use bounded to "the discoboxes
+// this discobox created" is read by (ADR 26-10-14-320 §5). A call naming none,
+// one outside the project, or one that does not exist states only the
+// discobox asking.
+func TestACallToTheDiscoboxAPIStatesTheDiscoboxItNames(t *testing.T) {
+	ctx := context.Background()
+	service, _, fake := gateJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "its own worker"})
+	leadFacts := []string{
+		"The discobox asking is sbx-lead.",
+		"sbx-lead was created with no source.",
+	}
+	targetWorker := []string{
+		"The discobox the request names, which it would act on, is sandbox-1.",
+		"The primary source sandbox-1 was created with is the Git repository github.com/org/repo, checked out from the branch main.",
+		"sandbox-1 was created by the discobox sbx-lead.",
+	}
+	targetOther := []string{
+		"The discobox the request names, which it would act on, is sandbox-2.",
+		"sandbox-2 was created with no source.",
+		"sandbox-2 was created by no discobox.",
+	}
+	for _, tc := range []struct {
+		name, url string
+		want      []string
+	}{
+		{"its worker's screen", "https://api.discobox.internal/api/projects/default/sandboxes/sandbox-1/execs/primary/screen", append(slices.Clone(leadFacts), targetWorker...)},
+		{"its worker by the project's ID", "https://api.discobox.internal/projects/project-1/sandboxes/sandbox-1/stop", append(slices.Clone(leadFacts), targetWorker...)},
+		{"another discobox", "https://api.discobox.internal/projects/default/sandboxes/sandbox-2", append(slices.Clone(leadFacts), targetOther...)},
+		{"no discobox", "https://api.discobox.internal/projects/default/sandboxes", leadFacts},
+		{"a discobox that does not exist", "https://api.discobox.internal/projects/default/sandboxes/sandbox-none/stop", leadFacts},
+		{"another project", "https://api.discobox.internal/projects/project-2/sandboxes/sandbox-1/stop", leadFacts},
+		{"another host", "https://api.github.com/projects/default/sandboxes/sandbox-1/stop", leadFacts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := len(fake.asked())
+			if _, err := service.Judge(ctx, "pool-1", getAsk("sbx-lead", tc.url)); err != nil {
+				t.Fatalf("Judge() error = %v", err)
+			}
+			jobs := fake.asked()
+			if len(jobs) != asked+1 {
+				t.Fatalf("the judge was asked %d times, want once more", len(jobs)-asked)
+			}
+			if got := jobs[len(jobs)-1].Facts; !slices.Equal(got, tc.want) {
+				t.Fatalf("facts =\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A standing allow on the discobox API names the discobox it acts on: one
+// that leaves it open would answer calls to every other discobox in the
+// project without the judge reading what is known about them (ADR
+// 26-10-14-320 §6). The allow stays; only the route does not stand.
+func TestAStandingAllowOnTheDiscoboxAPINamesItsDiscobox(t *testing.T) {
+	for _, tc := range []struct {
+		route  string
+		stands bool
+	}{
+		{"GET /api/projects/default/sandboxes/sandbox-1/execs/{exec}/screen", true},
+		{"GET /api/projects/{project}/sandboxes/sandbox-1/execs/primary/screen", true},
+		{"GET /api/projects/default/sandboxes/{id}/execs/primary/screen", false},
+		{"GET /api/projects/default/{rest...}", false},
+	} {
+		t.Run(tc.route, func(t *testing.T) {
+			ctx := context.Background()
+			service, appStore, _ := gateJudge(t, standingAnswer(tc.route, 600))
+			answer, err := service.Judge(ctx, "pool-1", getAsk("sbx-lead", "https://api.discobox.internal/api/projects/default/sandboxes/sandbox-1/execs/primary/screen"))
+			if err != nil || !answer.Allow {
+				t.Fatalf("Judge() = %+v, %v, want the allow kept", answer, err)
+			}
+			verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+			if err != nil || len(verdicts) != 1 {
+				t.Fatalf("verdicts = %+v, %v", verdicts, err)
+			}
+			if stood := verdicts[0].StandingRoute != ""; stood != tc.stands {
+				t.Fatalf("route %q stood = %v, want %v", tc.route, stood, tc.stands)
+			}
+		})
+	}
+}
+
+// A standing allow granted on a call that names no discobox — the listing —
+// never answers one that does, however broad its route: the check is made
+// against the call being answered, so neither a broad route nor one recorded
+// before the rule covers a discobox the judge was not told about (ADR
+// 26-10-14-320 §6).
+func TestAStandingAllowOnTheListingNeverAnswersForADiscobox(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, fake := gateJudge(t, standingAnswer("GET /projects/default/{rest...}", 600))
+	if answer, err := service.Judge(ctx, "pool-1", getAsk("sbx-lead", "https://api.discobox.internal/projects/default/sandboxes")); err != nil || !answer.Allow {
+		t.Fatalf("Judge(listing) = %+v, %v, want the judge's allow", answer, err)
+	}
+	verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+	if err != nil || len(verdicts) != 1 || verdicts[0].StandingRoute == "" {
+		t.Fatalf("verdicts = %+v, %v, want the listing's allow standing", verdicts, err)
+	}
+	if _, err := service.Judge(ctx, "pool-1", getAsk("sbx-lead", "https://api.discobox.internal/projects/default/sandboxes?page=2")); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(fake.asked()); n != 1 {
+		t.Fatalf("the judge was asked %d times, want the listing's next page answered by the standing allow", n)
+	}
+	for _, url := range []string{
+		"https://api.discobox.internal/projects/default/sandboxes/sandbox-2",
+		"https://api.discobox.internal/projects/default/sandboxes/sandbox-2/execs/primary/screen",
+	} {
+		asked := len(fake.asked())
+		if _, err := service.Judge(ctx, "pool-1", getAsk("sbx-lead", url)); err != nil {
+			t.Fatalf("Judge(%s) error = %v", url, err)
+		}
+		if len(fake.asked()) != asked+1 {
+			t.Fatalf("%s was answered by the listing's standing allow, want the judge asked", url)
+		}
+	}
+}

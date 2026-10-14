@@ -109,8 +109,12 @@ Guidance explains; the system prompt says it never authorizes.
 **Facts are the trusted side's too** (ADR 26-10-01-324 §8,
 ADR 26-10-14-691). `Job.Facts` are sentences the control plane states, at
 most `MaxFacts`, so a purpose can say "this discobox's repository". `Facts`
-writes them about the discobox asking and `DelegationFacts` about both
-discoboxes of a delegation, since a use handed on means the receiving one: each
+writes them about the discobox asking, `DelegationFacts` about both
+discoboxes of a delegation, since a use handed on means the receiving one, and
+`TargetFacts` about the discobox asking and the one a call to the discobox API
+names, since that call names it only by an ID and "the discoboxes this
+discobox created" is read by who created it (ADR 26-10-14-320 §5), so for the
+target it says so when no discobox did: each
 from what was recorded when that discobox was created — its ID, its sources'
 remotes and the ref each was created from, and the discobox that created it —
 and from nothing the discobox can move afterwards: not its name (meta it
@@ -142,7 +146,9 @@ could not read) — a JSON object's keys are its
 shape, not its operation, and do not stop one; the control plane asks the same
 of every request a standing allow would answer, since a route says nothing
 about a body — standing
-for some time, with a literal segment, that covers its own request; `Duration`
+for some time, with a literal segment, that covers its own request; `Route.Literal` says whether a segment is
+named as written, which the control plane asks of the segment a discobox API
+route names its discobox in (ADR 26-10-14-320 §6); `Duration`
 caps it at `MaxStanding`. A route matches the method and the unescaped path
 segments and nothing else. A path with a dot or empty segment, or a segment
 that unescapes to a slash or backslash, matches no route, because the upstream

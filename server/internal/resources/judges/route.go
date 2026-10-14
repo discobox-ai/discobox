@@ -163,7 +163,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	if _, err := s.uses.ApprovedUse(afterCtx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask.Request)); err != nil {
 		return judge.Answer{}, err
 	}
-	standingUntil := s.admit(afterCtx, job, &decided.Answer, time.Now())
+	standingUntil := s.admit(afterCtx, project.ID, job, &decided.Answer, time.Now())
 	// Recorded before the answer goes back, and gating it: an answer with no
 	// record of it is no verdict (ADR 26-09-22-838 §§4, 8). The model has
 	// already been paid to give it, so an answer that arrived just inside the
@@ -505,7 +505,7 @@ func (s *Service) record(ctx context.Context, projectID string, ask services.Jud
 // derived from this request's evidence, and how long it may last, are this
 // side's. A route that fails is dropped from the answer and the allow stays:
 // the request was allowed, and only the shortcut for the next one is refused.
-func (s *Service) admit(ctx context.Context, job judge.Job, decided *judge.Answer, now time.Time) *time.Time {
+func (s *Service) admit(ctx context.Context, projectID string, job judge.Job, decided *judge.Answer, now time.Time) *time.Time {
 	if decided.Standing == nil {
 		return nil
 	}
@@ -513,13 +513,31 @@ func (s *Service) admit(ctx context.Context, job judge.Job, decided *judge.Answe
 		decided.Standing = nil
 		return nil
 	}
-	if _, err := job.Admits(*decided.Standing); err != nil {
+	route, err := job.Admits(*decided.Standing)
+	if err == nil {
+		err = admitsTarget(projectID, job, route)
+	}
+	if err != nil {
 		s.logger.InfoContext(ctx, "the judge's standing route was not admitted", "route", decided.Standing.Route, "reason", err)
 		decided.Standing = nil
 		return nil
 	}
 	until := now.Add(decided.Standing.Duration())
 	return &until
+}
+
+// admitsTarget refuses a standing route on the discobox API that leaves open
+// which discobox it acts on, for a request that names one (ADR 26-10-14-320
+// §6). It is asked of the request an allow is granted on and of every request
+// one would answer: the judge was told what it knew about the discobox a
+// request names, and a route with a wildcard there would answer calls to every
+// other discobox in the project without anyone reading what is known about
+// them.
+func admitsTarget(projectID string, job judge.Job, route judge.Route) error {
+	if _, segment, ok := namedDiscobox(projectID, job.Request); ok && !route.Literal(segment) {
+		return errors.New("a standing route on the discobox API names the discobox it acts on in a literal segment")
+	}
+	return nil
 }
 
 // standing answers an ask that an allow already stands for, without asking the
@@ -556,7 +574,7 @@ func (s *Service) standing(ctx context.Context, projectID string, ask services.J
 	origin := standingOrigin(job.Request)
 	for i := range rows {
 		granted := &rows[i]
-		if !covers(granted, job, use, origin) {
+		if !covers(projectID, granted, job, use, origin) {
 			continue
 		}
 		row := &model.CredentialVerdict{
@@ -595,7 +613,13 @@ func (s *Service) standing(ctx context.Context, projectID string, ask services.J
 // and the sentence are compared as well as the use ID, because a standing
 // allow was the judge's reading of the purpose it was shown, and a use that
 // now approves something else has not been read by anyone.
-func covers(granted *model.CredentialVerdict, job judge.Job, use services.ApprovedUse, origin string) bool {
+//
+// On the discobox API a route covers a call that names a discobox only when it
+// names that discobox literally (admitsTarget, ADR 26-10-14-320 §6), checked
+// here against the call being answered, not only the one the allow was
+// granted on: a broad route granted on the listing, or one recorded before the
+// rule, would otherwise answer for every discobox in the project.
+func covers(projectID string, granted *model.CredentialVerdict, job judge.Job, use services.ApprovedUse, origin string) bool {
 	if granted.GrantID != use.GrantID || origin == "" || standingOrigin(granted.Request) != origin {
 		return false
 	}
@@ -610,7 +634,7 @@ func covers(granted *model.CredentialVerdict, job judge.Job, use services.Approv
 	if err != nil {
 		return false
 	}
-	return route.Matches(job.Request.Method, job.Request.URL)
+	return route.Matches(job.Request.Method, job.Request.URL) && admitsTarget(projectID, job, route) == nil
 }
 
 // job is the question this server puts, built from what the pool sent and what
@@ -639,7 +663,7 @@ func (s *Service) job(ctx context.Context, projectID, poolID string, ask service
 		// side's (ADR 26-09-26-240 §4).
 		Guidance: judge.GuidanceFor(ask.Request),
 	}
-	if job.Facts, err = s.facts(ctx, projectID, ask.SandboxID); err != nil {
+	if job.Facts, err = s.requestFacts(ctx, projectID, ask.SandboxID, ask.Request); err != nil {
 		return judge.Job{}, services.ApprovedUse{}, err
 	}
 	if err := job.Validate(); err != nil {

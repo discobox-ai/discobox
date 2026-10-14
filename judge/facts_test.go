@@ -114,6 +114,42 @@ func TestADelegationStatesBothDiscoboxes(t *testing.T) {
 	}
 }
 
+// A call to the discobox API names the discobox it would act on only by an
+// ID, so its facts state that discobox beside the one asking: who created it
+// is what a use bounded to "the discoboxes this discobox created" is read by
+// (ADR 26-10-14-320 §5).
+func TestARequestNamingADiscoboxStatesItBesideTheOneAsking(t *testing.T) {
+	t.Parallel()
+	asking := judge.Discobox{
+		SandboxID: "sbx_lead",
+		Primary:   &judge.Source{Remote: "https://github.com/acme/web", RefType: "branch", RefName: "main"},
+	}
+	target := judge.Discobox{SandboxID: "sbx_child", CreatedBy: "sbx_lead", Primary: &judge.Source{Remote: "https://github.com/acme/web"}}
+	want := []string{
+		"The discobox asking is sbx_lead.",
+		"The primary source sbx_lead was created with is the Git repository github.com/acme/web, checked out from the branch main.",
+		"The discobox the request names, which it would act on, is sbx_child.",
+		"The primary source sbx_child was created with is the Git repository github.com/acme/web.",
+		"sbx_child was created by the discobox sbx_lead.",
+	}
+	if got := judge.TargetFacts(asking, target); !slices.Equal(got, want) {
+		t.Fatalf("TargetFacts() =\n%q\nwant\n%q", got, want)
+	}
+	// A discobox no discobox created is said to be one, not left to the
+	// absence of a sentence: it is what such a use turns on.
+	persons := judge.Discobox{SandboxID: "sbx_persons"}
+	want = []string{
+		"The discobox asking is sbx_lead.",
+		"The primary source sbx_lead was created with is the Git repository github.com/acme/web, checked out from the branch main.",
+		"The discobox the request names, which it would act on, is sbx_persons.",
+		"sbx_persons was created with no source.",
+		"sbx_persons was created by no discobox.",
+	}
+	if got := judge.TargetFacts(asking, persons); !slices.Equal(got, want) {
+		t.Fatalf("TargetFacts() for a person's discobox =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // Whoever created a discobox named its ref, and a fact is Discobox speaking:
 // a name that could carry a sentence is not repeated, nor one JSON would
 // escape, and nor is a commit that is not one.

@@ -46,7 +46,7 @@ type Source struct {
 // Facts is what the judge is told about the discobox asking, in Discobox's
 // words, at most MaxFacts of them.
 func Facts(asking Discobox) []string {
-	return facts(subject{"The discobox asking", asking})
+	return facts(subject{role: "The discobox asking", discobox: asking})
 }
 
 // DelegationFacts is what the judge is told about a delegation: the discobox
@@ -56,8 +56,22 @@ func Facts(asking Discobox) []string {
 // see that from what each was created with.
 func DelegationFacts(giving, receiving Discobox) []string {
 	return facts(
-		subject{"The discobox asking, which would hand the credential on,", giving},
-		subject{"The discobox it would hand the credential to", receiving},
+		subject{role: "The discobox asking, which would hand the credential on,", discobox: giving},
+		subject{role: "The discobox it would hand the credential to", discobox: receiving},
+	)
+}
+
+// TargetFacts is what the judge is told about a request to the discobox API
+// that names a discobox (ADR 26-10-14-320 §5): the discobox asking, and the
+// one the request would act on. The target is stated because the call names
+// it only by an ID, and a use bounded by who created a discobox ("the
+// discoboxes this discobox created") can be read only from what was recorded
+// when the target was. That no discobox created the target is stated, not
+// left to the absence of a sentence: it is the fact such a use turns on.
+func TargetFacts(asking, target Discobox) []string {
+	return facts(
+		subject{role: "The discobox asking", discobox: asking},
+		subject{role: "The discobox the request names, which it would act on,", discobox: target, statesNoCreator: true},
 	)
 }
 
@@ -66,6 +80,9 @@ func DelegationFacts(giving, receiving Discobox) []string {
 type subject struct {
 	role     string
 	discobox Discobox
+	// statesNoCreator says that no discobox created it when none did, rather
+	// than saying nothing.
+	statesNoCreator bool
 }
 
 // facts states each subject: who it is, its primary source and its creator,
@@ -95,6 +112,8 @@ func facts(subjects ...subject) []string {
 		}
 		if creator := strings.TrimSpace(s.discobox.CreatedBy); creator != "" {
 			out = append(out, fmt.Sprintf("%s was created by the discobox %s.", id, creator))
+		} else if s.statesNoCreator {
+			out = append(out, fmt.Sprintf("%s was created by no discobox.", id))
 		}
 	}
 	// One slot each is held back for the subjects after this one that have

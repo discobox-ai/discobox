@@ -124,6 +124,22 @@ func (r Route) names() bool {
 	return false
 }
 
+// Literal reports whether the route's segment at index, counted from the
+// path's first, is a literal: not a {name}, and not under a {name...} at or
+// before it. A route that admits the request it was granted on has that
+// request's segment there, so a literal one names what the request named.
+func (r Route) Literal(index int) bool {
+	if index < 0 || index >= len(r.segments) {
+		return false
+	}
+	for _, segment := range r.segments[:index+1] {
+		if segment.rest {
+			return false
+		}
+	}
+	return !r.segments[index].wild
+}
+
 func wildcardName(name string) bool {
 	if name == "" {
 		return false

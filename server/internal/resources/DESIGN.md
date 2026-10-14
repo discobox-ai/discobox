@@ -97,7 +97,11 @@ asking from its row, read for that job (`facts.go`, `judge.Facts`,
 ADR 26-10-14-691), since a use can be held by more than one discobox. A
 delegation is told about the discobox receiving the credential too
 (`judge.DelegationFacts`), from the row the secrets service hands over: on a
-create it is not stored yet. The grant is read
+create it is not stored yet. A request to the discobox API that names a
+discobox in the project is told about that discobox too (`judge.TargetFacts`,
+ADR 26-10-14-320 §5), read from its row: which discobox a call may act on is
+the judge's to decide, and who created it is what a use bounded to "the
+discoboxes this discobox created" is read by. The grant is read
 again after the verdict, because a verdict takes a while and a grant can
 be revoked inside one. The question is composed only once a judge is found: a
 project with no judge refuses whatever the use turns out to say, and that
@@ -116,7 +120,10 @@ the proxy's blocked audit row is its record.
 
 An allow may stand (ADR 26-09-25-428). The judge may name a route
 (`judge.Standing`); `admit` keeps it only when `judge.Job.Admits` does (a
-first-round allow whose route covers its own request), caps it at
+first-round allow whose route covers its own request) and, on the discobox
+API, the route names in a literal segment the discobox the request names
+(`admitsTarget`, ADR 26-10-14-320 §6, asked again by `covers` of every request
+an allow would answer), caps it at
 `judge.MaxStanding`, and records the route and expiry on that verdict's row.
 Before routing a first-round ask, `standing` looks for an unexpired standing
 row for the same discobox and use, and uses it only if the grant, the approved
