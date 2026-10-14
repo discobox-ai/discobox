@@ -1143,12 +1143,14 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// Its tags follow, dim, for the same reason and on the same terms as the
 	// qualifier above: they say which box this is, so they sit by the name,
 	// and they give way before the name does — as many as fit, and none when
-	// even one would squeeze the name (ADR 0136).
+	// even one would squeeze the name (ADR 0136). A pull request status comes
+	// first, so it is the last to give way: without color it has no band to
+	// say it once the tag is gone.
 	var shown []string
 	taggedW := 0
 	if len(s.Tags) > 0 {
 		room := nameW - (nameReserve - lipgloss.Width(head))
-		for _, tag := range s.Tags {
+		for _, tag := range s.rowTags() {
 			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
 			if next > room {
 				break
@@ -1185,6 +1187,10 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 		return highlight(st, line, colSelectedBG), links
 	case atCursor:
 		return highlight(st, line, colHighlightBG), links
+	case s.prStatus() == prBlocked:
+		return highlight(st, line, colPRBlockedBG), links
+	case s.prStatus() == prReady:
+		return highlight(st, line, colPRReadyBG), links
 	default:
 		return line, links
 	}
@@ -1202,8 +1208,9 @@ type rowLink struct {
 }
 
 // tagSpans draws the tags a row has room for, dim, from cell x of line y. A
-// tag that numbers an issue or a pull request in the discobox's GitHub
-// repository (Sandbox.tagURL) is a link to it instead, in the color the
+// pull request status (Sandbox.prStatus) is drawn bold in its band's color
+// instead. A tag that numbers an issue or a pull request in the discobox's
+// GitHub repository (Sandbox.tagURL) is a link to it instead, in the color the
 // header's links are drawn in, and lit when the pointer is on it — the same
 // terms the header's links are drawn on, since a click on one opens it.
 func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x, y int) (string, []rowLink) {
@@ -1215,6 +1222,10 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x
 		x++
 		width := lipgloss.Width(label)
 		switch url := s.tagURL(tag); {
+		case tagKey(tag) == prBlocked:
+			out.WriteString(st.prBlockedTag.Render(label))
+		case tagKey(tag) == prReady:
+			out.WriteString(st.prReadyTag.Render(label))
 		case url == "":
 			out.WriteString(st.dimText.Render(label))
 		case z.hovering(x, y, width, 1):
