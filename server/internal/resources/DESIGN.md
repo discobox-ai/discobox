@@ -91,7 +91,7 @@ nothing a pool or a sandbox sends can widen its own question. The same goes
 for guidance: a pool names the protocol and endpoint it recognized the request
 as, and the words about them are added here from the judge package
 (`judge.GuidanceFor`, ADR 26-09-26-240 §4), never taken from the pool. And the
-facts: every job — request, command, delegation — is told about the discobox
+facts: every job — request, command, delegation, rule — is told about the discobox
 asking from its row, read for that job (`facts.go`, `judge.Facts`,
 ADR 26-10-14-691), since a use can be held by more than one discobox. A
 delegation is told about the discobox receiving the credential too

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -553,23 +554,66 @@ func (s *GitSource) Root() string {
 	return ""
 }
 
-// Remote is the source's network remote as it was recorded at create: the URL
-// of a remote-URL source, and the remote its client reported for a local
-// checkout. It is empty when there is none.
-func (s *GitSource) Remote() string {
-	if s == nil {
+// RepositoryURL is the repository a source is of, as it was recorded at
+// create: its URL when it has one, and otherwise the remote its client
+// reported for a local checkout. A source that names both is its URL's: the
+// URL is the repository its creator named, and an upstream beside it is not
+// asked to stand in for it. It is the one answer to
+// which repository a discobox is: an approval rule's repositories are
+// compared with it, and the judge is told it (ADR 26-10-14-691), so the two
+// cannot name different repositories for one discobox.
+func (s *GitSource) RepositoryURL() string {
+	switch {
+	case s == nil:
 		return ""
-	}
-	if s.LocalDirectory == nil || strings.TrimSpace(*s.LocalDirectory) == "" {
-		if s.URL != nil {
-			return strings.TrimSpace(*s.URL)
-		}
-		return ""
-	}
-	if s.UpstreamURL != nil {
+	case s.URL != nil && strings.TrimSpace(*s.URL) != "":
+		return strings.TrimSpace(*s.URL)
+	case s.UpstreamURL != nil:
 		return strings.TrimSpace(*s.UpstreamURL)
 	}
 	return ""
+}
+
+// JudgeDiscobox is the part of a sandbox's row the judge is told about (ADR
+// 26-10-14-691): what was recorded when it was created, and nothing it
+// reports about itself since. Its other sources are in destination order, so
+// the facts a job states are the same every time.
+func (s *Sandbox) JudgeDiscobox() judge.Discobox {
+	out := judge.Discobox{SandboxID: s.ID}
+	if s.CreatedBySandboxID != nil {
+		out.CreatedBy = *s.CreatedBySandboxID
+	}
+	if s.Source != nil {
+		primary := s.Source.judgeSource()
+		out.Primary = &primary
+	}
+	destinations := make([]string, 0, len(s.SourceCodeReferences))
+	for destination := range s.SourceCodeReferences {
+		destinations = append(destinations, destination)
+	}
+	sort.Strings(destinations)
+	for _, destination := range destinations {
+		source := s.SourceCodeReferences[destination]
+		out.Additional = append(out.Additional, source.judgeSource())
+	}
+	return out
+}
+
+// judgeSource is one source as it was created.
+func (s *GitSource) judgeSource() judge.Source {
+	out := judge.Source{Remote: s.RepositoryURL()}
+	if checkout := s.Checkout; checkout != nil {
+		if checkout.RefType != nil {
+			out.RefType = *checkout.RefType
+		}
+		if checkout.RefName != nil {
+			out.RefName = *checkout.RefName
+		}
+		if checkout.Commit != nil {
+			out.Commit = *checkout.Commit
+		}
+	}
+	return out
 }
 
 // GitSourceCheckout identifies the immutable checkout and user-facing ref.

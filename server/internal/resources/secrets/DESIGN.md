@@ -321,6 +321,11 @@ flowchart LR
   (`CreateApprovalRule`) or by answering a request with a `rule` on the
   approve body, which makes the rule and approves under it in one write. The
   sandbox role lists none of the routes.
+- **One question, composed one way** (`ruleAsk`): proposing, approving,
+  reconciling and reading the card all build it from the rule, the request,
+  and the requesting discobox's row, whose facts the judge is told
+  (ADR 26-10-14-691), so one answer on record (`judge.Digest`) serves all
+  four.
 - **Facts are checked here; the uses are the judge's** (`ruleFacts`,
   `ruleUsesCover`), the way an approval is held to a delegation:
   - the same credential — the well-known ID the request names, or, for an ask
@@ -339,7 +344,8 @@ flowchart LR
     reduces a remote: no scheme or userinfo, host lower-cased, no trailing
     slash or `.git`, the scp-like `git@host:org/repo.git` understood.
   - A discobox's is its source's `URL`, else the `UpstreamURL` its client
-    reported for a local checkout (`repositoryIdentity`). A local source with
+    reported for a local checkout (`model.GitSource.RepositoryURL`, which
+    the judge's facts state too, ADR 26-10-14-691 §6). A local source with
     no remote has none, and only a rule for every discobox answers it.
   - A rule's are normalised by the same code when it is made or edited
     (`ruleRepositories`) and stored that way: a URL, the scp-like form or

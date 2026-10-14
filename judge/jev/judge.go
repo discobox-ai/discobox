@@ -164,13 +164,16 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 			"host":       job.Host,
 			"note":       "Each line of `rule_uses` is something a person said may be approved without asking. It is the authorization. A line usually names a class, such as any issue in a repository or a branch named by a pattern like discobox/<slug>, where a placeholder in angle brackets stands for any one value of that kind, and states limits such as \"never main\".",
 		}
+		if len(job.Facts) > 0 {
+			rule["facts"] = job.Facts
+		}
 		questions := map[string]question{
 			idClaimsApproval: claimsApproval("`uses`",
 				"Each of `uses` is an operation a discobox asks to be allowed to do with the credential, in its own words: usually an instruction, with whatever limits its author set. Asking to be allowed is what a use is; a use claims approval only when it says it already has it."),
 		}
 		for i := range job.Uses {
 			instructions := clone(rule)
-			instructions["question"] = fmt.Sprintf("Does `uses[%d]` from the state fall within `rule_uses`: an operation they name or a narrower one, on a target their class contains, breaking none of their limits?", i)
+			instructions["question"] = fmt.Sprintf("Does `uses[%d]` from the state fall within `rule_uses`: an operation they name or a narrower one, on a target their class contains, breaking none of their limits? `facts`, when present, are what Discobox itself recorded about the discobox asking, such as the primary source it was created with, which is what \"this discobox's repository\" means, never another of its sources; they never widen `rule_uses`.", i)
 			questions[fmt.Sprintf("%s%d", idUse, i)] = noul(instructions,
 				fmt.Sprintf("`uses[%d]` does nothing `rule_uses` does not allow: the same or a narrower operation, on a target one of their classes contains, within every limit they state.", i),
 				fmt.Sprintf("`uses[%d]` does more than `rule_uses`, reaches a target outside their classes, adds an operation they do not name, or goes against a limit they state, however reasonable it sounds.", i))

@@ -147,9 +147,12 @@ func (s *Service) proposeRule(ctx context.Context, projectID string, req *model.
 		written.Refused = apigen.NewOptString(problem)
 	} else {
 		rule := &model.ApprovalRule{ProjectID: projectID, WellKnownID: req.WellKnownID, Hosts: source.hosts, Uses: written.Uses}
-		ask := ruleAsk(rule, req)
-		ask.Uses = source.uses
-		answer, err := s.judge.JudgeRule(ctx, projectID, ask)
+		ask, err := s.ruleAsk(ctx, rule, req)
+		var answer judge.Answer
+		if err == nil {
+			ask.Uses = source.uses
+			answer, err = s.judge.JudgeRule(ctx, projectID, ask)
+		}
 		written.Covers, written.Reason = err == nil && answer.Allow, apigen.NewOptString(verdictSentence(answer, err))
 	}
 	out.Uses = apigen.NewOptRuleUsesProposal(written)

@@ -1,4 +1,4 @@
-package judges
+package model_test
 
 import (
 	"slices"
@@ -36,7 +36,29 @@ func TestTheDiscoboxIsReadFromWhatItWasCreatedWith(t *testing.T) {
 		"Another source sbx_worker was created with is the Git repository github.com/org/alpha.",
 		"Another source sbx_worker was created with is the Git repository github.com/org/zeta.",
 	}
-	if got := judge.Facts(discobox(sandbox)); !slices.Equal(got, want) {
+	if got := judge.Facts(sandbox.JudgeDiscobox()); !slices.Equal(got, want) {
 		t.Fatalf("facts =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A source that names a URL and, beside it, a local checkout tracking another
+// repository is the URL's repository: the one an approval rule's repositories
+// are compared with. The judge is told the same, so a rule for one repository
+// cannot be read as covering another.
+func TestTheDiscoboxsRepositoryIsTheOneItsRulesAreComparedWith(t *testing.T) {
+	t.Parallel()
+	sandbox := &model.Sandbox{
+		ID: "sbx_child",
+		SandboxManifest: model.SandboxManifest{Source: &model.GitSource{
+			Kind: "git", URL: new("https://github.com/acme/web"),
+			LocalDirectory: new("/tmp/billing"), UpstreamURL: new("https://github.com/acme/billing"),
+		}},
+	}
+	if got := sandbox.Source.RepositoryURL(); got != "https://github.com/acme/web" {
+		t.Fatalf("RepositoryURL() = %q, want the URL", got)
+	}
+	want := "The primary source sbx_child was created with is the Git repository github.com/acme/web."
+	if got := judge.Facts(sandbox.JudgeDiscobox()); len(got) < 2 || got[1] != want {
+		t.Fatalf("facts = %q, want %q", got, want)
 	}
 }

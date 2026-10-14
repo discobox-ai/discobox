@@ -253,6 +253,11 @@ func TestARuleApprovesTheRequestItCovers(t *testing.T) {
 	if strings.Contains(prompt, "pre-approved") {
 		t.Fatalf("the judge was shown the justification: %s", prompt)
 	}
+	// The judge is told about the discobox that asked, as it was created
+	// (ADR 26-10-14-691): a rule may say "this discobox's repository" too.
+	if facts := content.Job().Facts; len(facts) == 0 || facts[0] != "The discobox asking is "+testSandboxID+"." {
+		t.Fatalf("facts = %q, want the requesting discobox stated", facts)
+	}
 }
 
 // A rule approves or says nothing. Whatever finds it does not cover the
@@ -1243,7 +1248,14 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 	}
 
 	// The judge says no to the uses, and the card carries its sentence.
+	// The question names the discobox asking, as it was created (ADR
+	// 26-10-14-691), so the digest on record is of the job with its facts.
+	asking, err := st.GetSandbox(ctx, "project-1", testSandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	digest, err := judge.Digest(services.RuleAsk{
+		Asking:   asking.JudgeDiscobox(),
 		RuleUses: []string{issueRule}, Uses: []string{issueUse}, Credential: wellknown.GitHubAPI, Hosts: []string{"github.com"},
 	}.Job())
 	if err != nil {
