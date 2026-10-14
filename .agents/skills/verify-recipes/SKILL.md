@@ -445,3 +445,32 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
   /usr/local/bin/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
   it logs `waiting for a file to appear` and exits 0 on SIGTERM.
 - `docker restart` is the guest's reboot; `systemctl kill -s KILL` the crash.
+
+# Verifying what the judge is asked (judge jobs, facts)
+
+To see the job a judge discobox is handed, without a model: on the isolated
+server above, register a stub harness whose `discobox-prompt` logs `--prompt`
+and allows, and make it the project's default, which brings up a judge.
+
+```bash
+# Dockerfile: FROM the dev sandbox-agent image (.env's DISCOBOX_DEFAULT_SANDBOX_IMAGE);
+# LABEL io.discobox.image.v1 from test/harness-stub/image.json with a new harness.id;
+# COPY test/harness-stub/configure.sh to /usr/local/libexec/discobox/configure-stub;
+# COPY a /usr/local/bin/discobox-prompt that appends its --prompt to
+# /var/tmp/judge-prompts.jsonl and prints {"allow": true, "reason": "stub"}.
+e() { ./build/discobox --server http://127.0.0.1:18471 "$@"; }   # the isolated server, never the dev loop's
+e admin harness create --image discobox-harness-judgestub:local
+e admin harness configure judgestub && e admin harness set-default judgestub
+docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
+```
+
+- `discobox-access run` in a box triggers a command job. Have a box create a
+  child with `--grant` under a `purpose: delegate` grant to trigger a
+  delegation job.
+- Approving `com.github.api` with a secret bound only to `api.github.com`
+  needs `--hosts api.github.com`: the well-known credential's default hosts
+  include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
+- To see what a real judge does with a captured job, wrap it as a
+  `test/judge-evals` case (`{name, why, expect, job}`) in a scratch directory,
+  and run `go run ./internal/cmd/discobox-judge-eval -wrapper
+  harness/claude-code/prompt.sh <dir>`.
