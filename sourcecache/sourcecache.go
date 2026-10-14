@@ -45,7 +45,7 @@ const (
 	// KeyHeader carries the cache's key.
 	KeyHeader = "X-Discobox-Git-Cache"
 	// CallerHeader carries the id of the sandbox making the request, when one
-	// is: a discobox delivering the source of a discobox it created, which a
+	// is: a discobox delivering the source of another in its project, which a
 	// pool holds to what it sends and what its own sources hold (§7).
 	CallerHeader = "X-Discobox-Git-Cache-Caller"
 )

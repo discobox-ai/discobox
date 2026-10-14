@@ -96,13 +96,13 @@ var guidance = map[string][]string{
 		"This reads one discobox back, the one named in the path: its configuration and how far it is in starting. It changes nothing. `discobox new` polls it about once a second after creating a discobox, until that discobox is ready to receive its source, and `discobox admin box get` reads it too. A purpose that approves creating discoboxes approves reading back the ones it creates.",
 	},
 	EndpointDiscoboxSandboxOriginRefs: {
-		"This is git asking what the origin repository of the discobox named in the path holds, before pushing to it. It changes nothing. It is the first half of `discobox new` delivering the source of a discobox it created.",
+		"This is git asking what the origin repository of the discobox named in the path holds, before pushing to it. It changes nothing. It is the first half of `discobox new` delivering the source of a discobox it created. The facts say which discobox created the one named.",
 	},
 	EndpointDiscoboxSandboxOriginPush: {
-		"This pushes into the origin repository (\"git-origins\") that the discobox named in the path checks its source out from. It is how `discobox new` delivers the source of a discobox it has just created — the commit that discobox was created from — before it starts: a discobox getting its code, not a push to any upstream repository such as GitHub. A purpose that approves creating discoboxes approves delivering the source of the ones it creates, even when the prompt it quotes tells the new discobox not to push.",
+		"This pushes into the origin repository (\"git-origins\") that the discobox named in the path checks its source out from. It is how `discobox new` delivers the source of a discobox it has just created — the commit that discobox was created from — before it starts: a discobox getting its code, not a push to any upstream repository such as GitHub. A purpose that approves creating discoboxes approves delivering the source of the ones it creates, even when the prompt it quotes tells the new discobox not to push, and the facts say which discobox created the one named: a push into one it did not create puts commits where another discobox's agent will take them as its newest.",
 	},
 	EndpointDiscoboxSandboxSourcePushed: {
-		"This reports that the sources of the discobox named in the path have been pushed, so it can start: the last step of `discobox new` delivering the source of a discobox it created. Its body names each source and the commit pushed for it. A purpose that approves creating discoboxes approves this for the ones it creates.",
+		"This reports that the sources of the discobox named in the path have been pushed, so it can start: the last step of `discobox new` delivering the source of a discobox it created. Its body names each source and the commit pushed for it. A purpose that approves creating discoboxes approves this for the ones it creates, which the facts say.",
 	},
 }
 

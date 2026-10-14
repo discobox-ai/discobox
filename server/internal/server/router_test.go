@@ -268,7 +268,7 @@ func TestSandboxGitOriginRouteProxiesReceivePackToPool(t *testing.T) {
 
 // A cache-delivered source's origin is its namespace of the pool's Git cache,
 // which the control plane names when it forwards: the pool's cache route, the
-// cache's key, and — for a discobox delivering to one it created — the caller.
+// cache's key, and — for a discobox delivering to another — the caller.
 // None of that is ever the client's word (ADR 26-10-10-545 §§3, 7).
 func TestSandboxGitOriginRouteNamesTheCacheOfACacheDeliveredSource(t *testing.T) {
 	ctx := context.Background()
@@ -343,7 +343,7 @@ func TestSandboxGitOriginRouteNamesTheCacheOfACacheDeliveredSource(t *testing.T)
 		}
 	}
 
-	// A discobox delivering to one it created is named to the pool, which
+	// A discobox delivering to another is named to the pool, which
 	// holds it to what it sends and what its own sources hold.
 	got = seen{}
 	asSandbox := httptest.NewRequestWithContext(ctx, http.MethodPost, base+"git-origins/primary.git/git-receive-pack", nil)

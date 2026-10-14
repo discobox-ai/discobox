@@ -273,7 +273,7 @@ type PinResult struct {
 // everything else, at once.
 //
 // caller is empty for a project member, who is trusted with everything a
-// cache holds. For a sandbox delivering to one it created it is that
+// cache holds. For a sandbox delivering to another discobox it is that
 // sandbox's id, and an object is held only where the caller's own namespaces
 // reach it (ADR 26-10-10-545 §7).
 func (s *Store) Pin(ctx context.Context, path, sandboxID, slug string, refs map[string]string, caller string) (PinResult, error) {
@@ -659,7 +659,8 @@ func (s *Store) Import(ctx context.Context, path, sandboxID, slug, src string) e
 	if len(imported.refs) > 0 {
 		var tips, updates bytes.Buffer
 		for ref, object := range imported.refs {
-			tips.WriteString(object + "\n")
+			tips.WriteString(object)
+			tips.WriteByte('\n')
 			fmt.Fprintf(&updates, "update %s %s\n", namespaceRef(namespace, ref), object)
 		}
 		if err := packImported(ctx, path, imported.objects, tips.Bytes()); err != nil {

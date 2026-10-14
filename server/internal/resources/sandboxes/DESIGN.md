@@ -538,21 +538,23 @@ inline secrets, which put a value inside the new discobox where anything in it
 could read it.
 
 The new discobox records its creator (`CreatedBySandboxID`, immutable after
-create), and the creator is authorized by it for these things and no others:
-delivering the new discobox's source
-([ADR 26-09-24-630](../../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) §2);
-reading and typing into its terminals
-([ADR 26-10-01-397](../../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
-starting, stopping, and restarting it
-([ADR 26-10-02-478](../../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md)),
-which are the same power instructions a person sends and need nothing of the
-service beyond the role's ownership check; changing its name, description and tags
-([ADR 26-10-08-447](../../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md)),
-whose write into the discobox leases the `exec:write` its terminal input
-already does; and reading and answering the
-secret requests it files, within what the creator was delegated
+create). The creator authorizes one thing by it: reading and answering the
+secret requests the new discobox files, within what the creator was delegated
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
-§§2–3). Nothing cascades by it: no archive, no purge, no inherited grant.
+§§2–3). Everything else the role does to a discobox it may do to any in its
+project but the project's judge, and which one is the judge's question
+([ADR 26-10-14-320](../../../../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md)):
+delivering its source; reading and typing into its terminals, and reading an
+exec's record, transcript and events; starting, stopping, restarting,
+repairing and upgrading it, which are the same instructions a person sends and
+need nothing of the service beyond the role; reading its services and their
+logs and starting, stopping and restarting them; reaching its ports over HTTP;
+and changing its name, description and tags, whose write into the discobox
+leases the `exec:write` its terminal input already does. A sandbox's calls
+lease only `sandbox:write`, `exec:read`, `exec:write` and `sandbox:http`
+(`authorizeRequestedScopes`), and never attach. The creator is a fact the judge
+is told about the discobox a call names. Nothing cascades by it: no archive,
+no purge, no inherited grant.
 
 ## Display name
 

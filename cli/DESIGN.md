@@ -942,8 +942,8 @@ not an everyday verb, and stays `admin box purge`.
 everyday power commands, and `admin box start|stop|restart` stay the raw forms
 that take an ID, accept `--force`, and print the record the API answered with.
 They resolve arguments by `rm`'s rule over the same listing, and report through
-`runActionMany`. A discobox driving the ones it created runs them under the
-sandbox role (ADR 26-10-02-478 §1), where every call is judged against the use
+`runActionMany`. A discobox driving others in its project runs them under the
+sandbox role (ADR 26-10-02-478 §1, ADR 26-10-14-320), where every call is judged against the use
 it was approved for; so when every argument is a full ID the listing is not
 fetched, and the command makes only the call its use names. The in-box skills
 teach these forms.
@@ -984,7 +984,7 @@ looks under `tag` for. No `NAME` clears it. Both go through
 root command beside `ls --tag`, which filters on what it sets, and has no `admin box` twin: there is no raw option
 to carry, and `admin box get` already prints the record, meta included. It
 resolves its one discobox by the power commands' rule, full ID skipping the
-listing, because a lead tags the workers it created under the sandbox role
+listing, because a lead tags its workers under the sandbox role
 (ADR 26-10-08-447). Arguments are parsed with `sandboxmeta` (`ParseTag`,
 `ValidateKey`, `Change.Check`) and refused before any call, the listing
 included, naming the argument. The server checks the change again before it

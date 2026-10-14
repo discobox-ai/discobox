@@ -118,7 +118,7 @@ getting them wrong is then impossible:
 | ID | What it is for | Delivered in | Sent to |
 | --- | --- | --- | --- |
 | `com.github.api` | GitHub: repositories over HTTPS, the REST and GraphQL API as `gh` uses it, and the Copilot API | `GH_TOKEN` | `github.com`, and the hosts beneath it such as `api.github.com`; `githubcopilot.com` too when named, as `--hosts api.github.com,githubcopilot.com` for Copilot CLI |
-| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes, read and type into the terminals of the ones you created, start and stop them, and tag them, and answer credential requests | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
+| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes; on any discobox in this project but its judge, deliver its source, read and type into its terminals, start, stop, restart, repair, and upgrade it, run its services and read their logs, reach its ports over HTTP, and tag it; and answer the credential requests of the ones you created | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
 discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR" --wait
@@ -346,7 +346,10 @@ discobox-access run --use <id> -- discobox admin terminal wait primary --discobo
 `primary` is the worker's harness terminal; `discobox admin terminal ls
 --discobox-id <discobox-id>` lists the others. Ask for these in the up-front
 request above, as their own uses — reading (`ls`, `screen`, `wait`) and typing
-(`input`) — worded as the commands. Only the discoboxes you created answer.
+(`input`) — worded as the commands. Any discobox in this project but its judge
+answers; which ones a use reaches is the judge's to read from its words, and the
+judge is told which discobox created the one a call names, so a use that says
+"the discoboxes this discobox created" holds you to those.
 
 A worker that has stopped — `discobox admin box ls` shows it, and `screen`
 answers that it is stopped rather than starting it — is started again with

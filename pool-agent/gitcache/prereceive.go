@@ -24,7 +24,7 @@ const (
 )
 
 // SandboxReceiveConfig is what a push from a sandbox — one delivering the
-// source of a discobox it created — is received under, on top of
+// source of another discobox in its project — is received under, on top of
 // ReceiveConfig, and the environment its hook reads (ADR 26-10-10-545 §7).
 //
 // Project members are trusted with everything a cache holds; a sandbox is
@@ -123,7 +123,8 @@ func preReceive(stdin io.Reader) error {
 		if strings.Trim(fields[1], "0") == "" {
 			continue
 		}
-		revisions.WriteString(fields[1] + "\n")
+		revisions.WriteString(fields[1])
+		revisions.WriteByte('\n')
 	}
 	if err := scanner.Err(); err != nil {
 		return err
@@ -163,7 +164,8 @@ func preReceive(stdin io.Reader) error {
 	var objects bytes.Buffer
 	for _, line := range strings.Split(needed, "\n") {
 		if object, _, _ := strings.Cut(strings.TrimSpace(line), " "); object != "" {
-			objects.WriteString(object + "\n")
+			objects.WriteString(object)
+			objects.WriteByte('\n')
 		}
 	}
 	if objects.Len() == 0 {
