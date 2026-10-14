@@ -2,6 +2,9 @@
 
 - **Status**: Accepted
 - **Date**: 2026-10-14
+- **Supersedes in part**: [26-10-12-330](26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)'s
+  rejection of a fact sheet the judge reads, for a rule's uses only (§6):
+  which discoboxes a rule answers is still the server's check.
 - **Relates to**: [ADR 26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
   §8, which added `judge.Job.Facts` and left each fact to be decided with its
   source; [ADR 26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md),
@@ -43,12 +46,13 @@ choose.
 
 ### 2. Facts are stated for each job, at the time it is judged
 
-What builds the job — the server's request, command, and delegation judges —
-reads the asking sandbox's row after it reloads the approved use, and states
-the facts from it. Facts are not stored with the use, and not cached between
-jobs: a use can be held by more than one discobox, and "this discobox" means
-the one asking now. The only thing a pool supplies is the sandbox ID, which the
-server already checks against the authenticated pool when it reloads the use.
+What builds the job — the server's request, command, delegation and rule
+judges — reads the asking sandbox's row and states the facts from it. For a
+rule job (§6) the discobox asking is the one that filed the request. Facts are
+not stored with the use, and not cached between jobs: a use can be held by
+more than one discobox, and "this discobox" means the one asking now. The only
+thing a pool supplies is the sandbox ID, which the server already checks
+against the authenticated pool when it reloads the use.
 
 ### 3. Every job carries the same core facts about the discobox asking
 
@@ -58,9 +62,10 @@ few tokens, and leaving out one it needs costs a refusal nobody can diagnose.
 Within `judge.MaxFacts`, every job states:
 
 - the asking discobox's ID;
-- its primary source as it was created: the repository's remote (`url`, or
-  `upstreamUrl` for a local source) normalized to host and path, and the ref
-  it was created from; or that it has no remote;
+- its primary source as it was created: its repository (`url` when it has
+  one, else `upstreamUrl`, the remote a local checkout's client reported; §6)
+  normalized to host and path, and the ref it was created from; or that it
+  has no remote;
 - the ID of the discobox that created it, when one did (`createdBySandboxId`,
   fixed at create);
 - each additional source, stated as the primary source is, one fact each,
@@ -116,6 +121,32 @@ so the delegation is judged from the row about to be created.
   repository" for the repository its facts name, a control refusing the same
   request against another repository, and the same use handed on to a child
   created from the lead's repository (allowed) and from another (refused).
+
+### 6. A rule's uses are read with the facts too
+
+A person can write a rule whose uses refer to the discobox asking: "create
+issues in this discobox's repository". The rule job carries the requesting
+discobox's facts like every other job, so the judge can tell which repository
+that is.
+
+ADR 26-10-12-330 rejected a fact sheet the judge reads, because which
+discoboxes a rule answers should not depend on a model. That still holds, and
+nothing here changes it. A rule's repositories are compared by the server
+first, and a request from a discobox outside them is never put to the judge.
+The facts only tell the judge what the uses' words refer to for a discobox
+the server has already let through. They carry no prompt, skills, or anything
+else a creator wrote, which 330 also objected to: a source's repository and
+ref, and IDs.
+
+A discobox's repository has one definition (`GitSource.RepositoryURL`): its
+URL when it has one, else the remote its client reported for a local checkout.
+The server compares a rule's repositories with it, and the facts state it, so
+the two cannot name different repositories for one discobox.
+
+The facts are part of the rule's question. The answer on record is found by the
+job's digest, so every place that composes the question — approving,
+reconciling, the card, a proposal — reads the same row, and an answer recorded
+before facts existed is asked again once.
 
 ## Alternatives considered
 
