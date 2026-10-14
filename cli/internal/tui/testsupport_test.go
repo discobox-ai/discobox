@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -47,7 +48,9 @@ type fakeSource struct {
 	// unreachable are the servers the listing reports it did not hear back
 	// from, the way a window listing more than one server does.
 	unreachable []string
-	workspace   SourceWorkspace
+	// listed is when the listing says each server last answered.
+	listed    map[string]time.Time
+	workspace SourceWorkspace
 	// resolved records every source handed to ResolveSource, and sourceErr is
 	// what it answers with — a directory that is not on this machine.
 	resolved  []string
@@ -419,6 +422,7 @@ func (f *fakeSource) List(context.Context) (Listing, error) {
 	return Listing{
 		Sandboxes:   append([]Sandbox(nil), f.sandboxes...),
 		Unreachable: append([]string(nil), f.unreachable...),
+		Listed:      maps.Clone(f.listed),
 	}, nil
 }
 

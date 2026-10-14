@@ -223,6 +223,10 @@ type serverPoll[T any] struct {
 	// is not one the window is still waiting on.
 	last     []T
 	answered bool
+	// answeredAt is when last arrived. A server that answered once and is
+	// now taking its time goes on showing those rows, and how old they are
+	// is what the window says about them (Listing.Listed).
+	answeredAt time.Time
 	// failed is whether the last attempt ended in an error, which is what puts
 	// the server under "not answering" instead of leaving its rows on screen.
 	failed bool
@@ -483,7 +487,10 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 		defer cancel()
 		sandboxes, err := d.listHere(ctx)
-		return tui.Listing{Sandboxes: sandboxes}, err
+		if err != nil {
+			return tui.Listing{}, err
+		}
+		return tui.Listing{Sandboxes: sandboxes, Listed: map[string]time.Time{"": time.Now()}}, nil
 	}
 	return d.listEveryServer(ctx)
 }
@@ -505,7 +512,7 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	var listing tui.Listing
+	listing := tui.Listing{Listed: map[string]time.Time{}}
 	seen := map[string]bool{}
 	for _, s := range d.servers {
 		if s.listing.failed {
@@ -517,12 +524,13 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 		// worth saying because a request that is still in flight here has been
 		// in flight for at least the patience this poll just spent: anything
 		// quicker than that had answered before the wait ended. A server that
-		// has rows says nothing — they are on screen, and the next poll
-		// replaces them.
+		// has rows keeps them while it is asked again, with when it last
+		// answered, so the window can say how old they have got.
 		if s.listing.asking && !s.listing.answered {
 			listing.Waiting = append(listing.Waiting, s.name)
 			continue
 		}
+		listing.Listed[s.name] = s.listing.answeredAt
 		for _, box := range s.listing.last {
 			if seen[box.ID] {
 				continue
@@ -576,7 +584,7 @@ func pollEveryServer[T any](ctx context.Context, d *apiDataSource, poll func(*tu
 				p.retryAt = time.Now().Add(unreachableServerRetry)
 				return
 			}
-			p.last, p.answered, p.failed = got, true, false
+			p.last, p.answered, p.failed, p.answeredAt = got, true, false, time.Now()
 		}()
 	}
 	waitForAnswers(ctx, &asked)

@@ -1088,3 +1088,128 @@ func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testin
 		t.Fatalf("the window's folder lists %+v, want the fork's discobox alone", rows)
 	}
 }
+
+// Rows kept on screen while their server is slow to answer again say how old
+// they are once they have missed a couple of refreshes — and not before: an
+// ordinary poll leaves them a refresh old, and saying so every cycle is the
+// always-on indicator nobody reads.
+func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
+	l := listForTest(Session{}, []Sandbox{{ID: "sbx_a1", Name: "one", State: StateRunning}})
+	now := l.now()
+
+	l.setListed(map[string]time.Time{"": now.Add(-refreshEvery)})
+	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "listed") {
+		t.Fatalf("rows one refresh old say how old they are:\n%s", out)
+	}
+
+	l.setListed(map[string]time.Time{"": now.Add(-40 * time.Second)})
+	l.slow = true
+	out := l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "listed 40s ago") {
+		t.Fatalf("the band does not say the rows are 40s old:\n%s", out)
+	}
+	// The age is the same news as "still listing" with the size of it.
+	if strings.Contains(out, "still listing") {
+		t.Fatalf("the band says both how old the rows are and that it is still listing:\n%s", out)
+	}
+
+	l.setListed(map[string]time.Time{"": now.Add(-3 * time.Minute)})
+	if out := l.view(newStyles(false), &zones{}, true); !strings.Contains(out, "listed 3m ago") {
+		t.Fatalf("the band does not say the rows are 3m old:\n%s", out)
+	}
+}
+
+// With several servers on screen their rows share folders, so it is a note of
+// the server that has fallen behind that says so, after the rows the way a
+// server that did not answer is said — and only that server, and not the band.
+// Filtered to that one server, the band says it instead.
+func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
+	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+		{ID: "sbx_b1", Name: "two", Server: "beta", State: StateRunning},
+	})
+	now := l.now()
+	l.setListed(map[string]time.Time{"alpha": now, "beta": now.Add(-time.Minute)})
+
+	out := l.view(newStyles(false), &zones{}, true)
+	var alpha, beta, band string
+	for line := range strings.SplitSeq(out, "\n") {
+		switch {
+		case strings.Contains(line, "server alpha"):
+			alpha = line
+		case strings.Contains(line, "server beta"):
+			beta = line
+		case strings.Contains(line, "Discoboxes"):
+			band = line
+		}
+	}
+	if !strings.Contains(beta, "listed 1m ago") {
+		t.Fatalf("there is no note saying beta's rows are a minute old: %q\n%s", beta, out)
+	}
+	if alpha != "" {
+		t.Fatalf("alpha, which is current, got a note: %q", alpha)
+	}
+	if strings.Contains(band, "listed") {
+		t.Fatalf("the band, which counts both servers' rows, says how old they are: %q", band)
+	}
+	if !slices.Contains(l.drawn.rows, -1) {
+		t.Fatalf("the note was marked as a row: %v", l.drawn.rows)
+	}
+
+	l.server = "beta"
+	out = l.view(newStyles(false), &zones{}, true)
+	if strings.Contains(out, "server beta") {
+		t.Fatalf("filtered to beta, the note is drawn as well as the band:\n%s", out)
+	}
+	if !strings.Contains(out, "listed 1m ago") {
+		t.Fatalf("filtered to beta, the band does not say its rows are a minute old:\n%s", out)
+	}
+}
+
+// The workspace header is read off the listing, so it says the same thing the
+// list does when that listing has stopped keeping up.
+func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+
+	if got := m.paneHeaderFields().text(); strings.Contains(got, "listed") {
+		t.Fatalf("a header with nothing stale says how old it is: %q", got)
+	}
+	// Through a listing landing, as the data source reports it.
+	ds.mu.Lock()
+	ds.listed = map[string]time.Time{"": m.list.now().Add(-20 * time.Second)}
+	ds.mu.Unlock()
+	drain(t, m, m.refresh(), 0)
+	if got := m.paneHeaderFields().text(); !strings.Contains(got, "listed 20s ago") {
+		t.Fatalf("the header does not say the listing is 20s old: %q", got)
+	}
+}
+
+// Ctrl-L re-reads the listing, not only the screen: whoever reaches for it is
+// asking whether what is on screen is current. A read already out is not
+// doubled — it is said, once it is late.
+func TestCtrlLReReadsTheListing(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+	ds.mu.Lock()
+	ds.sandboxes = []Sandbox{{ID: "sbx_new", Name: "arrived", State: StateRunning}}
+	ds.mu.Unlock()
+
+	press(t, m, "ctrl+l")
+	if len(m.list.all) != 1 || m.list.all[0].ID != "sbx_new" {
+		t.Fatalf("Ctrl-L did not re-read the listing: %+v", m.list.all)
+	}
+
+	m.listPoll.since = m.now().Add(-12 * time.Second)
+	_, cmd := m.Update(keyPress("ctrl+l"))
+	if !m.listPoll.again {
+		t.Fatal("Ctrl-L with a read out did not ask for another once it lands")
+	}
+	drain(t, m, cmd, 0)
+	if !strings.Contains(m.status, "still listing") || !strings.Contains(m.status, "12s") {
+		t.Fatalf("Ctrl-L with a read out 12s did not say so: %q", m.status)
+	}
+}
