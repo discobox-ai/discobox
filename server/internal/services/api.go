@@ -31,6 +31,7 @@ type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
+type CreateProjectSkillsSourceBody = apimodel.CreateProjectSkillsSourceBody
 type CreatePeerBody = apimodel.CreatePeerBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
@@ -509,6 +510,15 @@ type SSHKeyService interface {
 	DeleteSSHKey(ctx context.Context, projectID, keyID string) error
 }
 
+// SkillsSourceService manages a project's skills sources: the skills
+// repositories every discobox of the project is created with, which the
+// creating client copies into its request (ADR 26-10-14-894).
+type SkillsSourceService interface {
+	ListProjectSkillsSources(ctx context.Context, projectID string) ([]model.ProjectSkillsSource, error)
+	CreateProjectSkillsSource(ctx context.Context, projectID string, input CreateProjectSkillsSourceBody) (*model.ProjectSkillsSource, error)
+	DeleteProjectSkillsSource(ctx context.Context, projectID, sourceID string) error
+}
+
 // PeerService manages the iroh endpoint IDs enrolled on this server (ADR
 // 0095). It is server-scoped rather than project-scoped: an iroh connection
 // carries the entire control-plane API, so an enrolled ID authenticates as a
@@ -610,6 +620,7 @@ type Services struct {
 	Secrets        SecretService
 	HostTrusts     HostTrustService
 	SSHKeys        SSHKeyService
+	SkillsSources  SkillsSourceService
 	Peers          PeerService
 	// Judges answers a pool asking for a verdict from the project's judge
 	// (ADR 26-09-22-838 §2). It has no other route: nothing a person calls reaches it.

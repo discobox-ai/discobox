@@ -1490,6 +1490,60 @@ func (s *CreateProjectBodyCopyItem) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/CreateProjectSkillsSourceBody
+type CreateProjectSkillsSourceBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The directory inside the repository that holds the skills, relative and slash-separated, or . for
+	// the root, which is also what an absent value means. Each immediate subdirectory holding a SKILL.md
+	// is one skill.
+	Directory OptString `json:"directory"`
+	// The branch, tag or commit to check out. Absent checks out the repository's default branch.
+	Ref OptString `json:"ref"`
+	// The skills repository's remote Git URL.
+	URL string `json:"url"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateProjectSkillsSourceBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDirectory returns the value of Directory.
+func (s *CreateProjectSkillsSourceBody) GetDirectory() OptString {
+	return s.Directory
+}
+
+// GetRef returns the value of Ref.
+func (s *CreateProjectSkillsSourceBody) GetRef() OptString {
+	return s.Ref
+}
+
+// GetURL returns the value of URL.
+func (s *CreateProjectSkillsSourceBody) GetURL() string {
+	return s.URL
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateProjectSkillsSourceBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDirectory sets the value of Directory.
+func (s *CreateProjectSkillsSourceBody) SetDirectory(val OptString) {
+	s.Directory = val
+}
+
+// SetRef sets the value of Ref.
+func (s *CreateProjectSkillsSourceBody) SetRef(val OptString) {
+	s.Ref = val
+}
+
+// SetURL sets the value of URL.
+func (s *CreateProjectSkillsSourceBody) SetURL(val string) {
+	s.URL = val
+}
+
 // Ref: #/components/schemas/CreateSSHKeyBody
 type CreateSSHKeyBody struct {
 	// A URL to the JSON Schema for this object.
@@ -3410,6 +3464,11 @@ type DeleteProjectNoContent struct{}
 
 func (*DeleteProjectNoContent) deleteProjectRes() {}
 
+// DeleteProjectSkillsSourceNoContent is response for DeleteProjectSkillsSource operation.
+type DeleteProjectSkillsSourceNoContent struct{}
+
+func (*DeleteProjectSkillsSourceNoContent) deleteProjectSkillsSourceRes() {}
+
 // DeleteSSHKeyNoContent is response for DeleteSSHKey operation.
 type DeleteSSHKeyNoContent struct{}
 
@@ -3619,6 +3678,7 @@ func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createPeerRes()                       {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
 func (*ErrorModelStatusCode) createProjectRes()                    {}
+func (*ErrorModelStatusCode) createProjectSkillsSourceRes()        {}
 func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()   {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
@@ -3634,6 +3694,7 @@ func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deletePeerRes()                       {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
+func (*ErrorModelStatusCode) deleteProjectSkillsSourceRes()        {}
 func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()           {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
@@ -3672,6 +3733,7 @@ func (*ErrorModelStatusCode) listPeersRes()                        {}
 func (*ErrorModelStatusCode) listPoolHeldSandboxesRes()            {}
 func (*ErrorModelStatusCode) listPoolHostTrustsRes()               {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
+func (*ErrorModelStatusCode) listProjectSkillsSourcesRes()         {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
 func (*ErrorModelStatusCode) listSandboxCredentialsRes()           {}
@@ -8225,6 +8287,37 @@ func (s *ListPoolsBody) SetPools(val []Pool) {
 }
 
 func (*ListPoolsBody) listPoolsRes() {}
+
+// Ref: #/components/schemas/ListProjectSkillsSourcesBody
+type ListProjectSkillsSourcesBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The project's skills repositories, in the order they were added, which is the order a creating
+	// client adds them in.
+	SkillsSources []ProjectSkillsSource `json:"skillsSources"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListProjectSkillsSourcesBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSkillsSources returns the value of SkillsSources.
+func (s *ListProjectSkillsSourcesBody) GetSkillsSources() []ProjectSkillsSource {
+	return s.SkillsSources
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListProjectSkillsSourcesBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSkillsSources sets the value of SkillsSources.
+func (s *ListProjectSkillsSourcesBody) SetSkillsSources(val []ProjectSkillsSource) {
+	s.SkillsSources = val
+}
+
+func (*ListProjectSkillsSourcesBody) listProjectSkillsSourcesRes() {}
 
 // Ref: #/components/schemas/ListProjectsBody
 type ListProjectsBody struct {
@@ -18088,6 +18181,112 @@ func (s *ProjectSandboxUpgradePolicy) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// A skills repository every discobox of the project is created with. The creating client reads the
+// project's list and adds each entry to the create request as a --skills URL[@REF][//PATH] would be,
+// ahead of its own, so a discobox holds a copy made at create.
+// Ref: #/components/schemas/ProjectSkillsSource
+type ProjectSkillsSource struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Principal ID that added the entry.
+	CreatedBy OptString `json:"createdBy"`
+	// The directory inside the repository that holds the skills, relative and slash-separated, or . for
+	// the root.
+	Directory string `json:"directory"`
+	// Stable skills source ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// The branch, tag or commit to check out; absent for the repository's default branch.
+	Ref OptString `json:"ref"`
+	// The skills repository's remote Git URL.
+	URL string `json:"url"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ProjectSkillsSource) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *ProjectSkillsSource) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *ProjectSkillsSource) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetDirectory returns the value of Directory.
+func (s *ProjectSkillsSource) GetDirectory() string {
+	return s.Directory
+}
+
+// GetID returns the value of ID.
+func (s *ProjectSkillsSource) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *ProjectSkillsSource) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRef returns the value of Ref.
+func (s *ProjectSkillsSource) GetRef() OptString {
+	return s.Ref
+}
+
+// GetURL returns the value of URL.
+func (s *ProjectSkillsSource) GetURL() string {
+	return s.URL
+}
+
+// SetSchema sets the value of Schema.
+func (s *ProjectSkillsSource) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *ProjectSkillsSource) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *ProjectSkillsSource) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetDirectory sets the value of Directory.
+func (s *ProjectSkillsSource) SetDirectory(val string) {
+	s.Directory = val
+}
+
+// SetID sets the value of ID.
+func (s *ProjectSkillsSource) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *ProjectSkillsSource) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRef sets the value of Ref.
+func (s *ProjectSkillsSource) SetRef(val OptString) {
+	s.Ref = val
+}
+
+// SetURL sets the value of URL.
+func (s *ProjectSkillsSource) SetURL(val string) {
+	s.URL = val
+}
+
+func (*ProjectSkillsSource) createProjectSkillsSourceRes() {}
 
 // Ref: #/components/schemas/ProviderConfigField
 type ProviderConfigField struct {

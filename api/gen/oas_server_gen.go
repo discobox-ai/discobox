@@ -132,6 +132,12 @@ type Handler interface {
 	//
 	// POST /projects
 	CreateProject(ctx context.Context, req *CreateProjectBody) (CreateProjectRes, error)
+	// CreateProjectSkillsSource implements create-project-skills-source operation.
+	//
+	// Add a skills repository to the end of the project's list.
+	//
+	// POST /projects/{projectId}/skills-sources
+	CreateProjectSkillsSource(ctx context.Context, req *CreateProjectSkillsSourceBody, params CreateProjectSkillsSourceParams) (CreateProjectSkillsSourceRes, error)
 	// CreateSSHKey implements create-ssh-key operation.
 	//
 	// Enroll a project-scoped SSH key.
@@ -232,6 +238,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}
 	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
+	// DeleteProjectSkillsSource implements delete-project-skills-source operation.
+	//
+	// Remove a skills repository from the project's list.
+	//
+	// DELETE /projects/{projectId}/skills-sources/{skillsSourceId}
+	DeleteProjectSkillsSource(ctx context.Context, params DeleteProjectSkillsSourceParams) (DeleteProjectSkillsSourceRes, error)
 	// DeleteSSHKey implements delete-ssh-key operation.
 	//
 	// Revoke an SSH key.
@@ -577,6 +589,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/pools
 	ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error)
+	// ListProjectSkillsSources implements list-project-skills-sources operation.
+	//
+	// List the skills repositories every discobox of the project is created with, in order.
+	//
+	// GET /projects/{projectId}/skills-sources
+	ListProjectSkillsSources(ctx context.Context, params ListProjectSkillsSourcesParams) (ListProjectSkillsSourcesRes, error)
 	// ListProjects implements list-projects operation.
 	//
 	// List projects.

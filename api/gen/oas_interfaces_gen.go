@@ -65,6 +65,10 @@ type CreateProjectRes interface {
 	createProjectRes()
 }
 
+type CreateProjectSkillsSourceRes interface {
+	createProjectSkillsSourceRes()
+}
+
 type CreateSSHKeyRes interface {
 	createSSHKeyRes()
 }
@@ -127,6 +131,10 @@ type DeletePoolRes interface {
 
 type DeleteProjectRes interface {
 	deleteProjectRes()
+}
+
+type DeleteProjectSkillsSourceRes interface {
+	deleteProjectSkillsSourceRes()
 }
 
 type DeleteSSHKeyRes interface {
@@ -331,6 +339,10 @@ type ListPoolHostTrustsRes interface {
 
 type ListPoolsRes interface {
 	listPoolsRes()
+}
+
+type ListProjectSkillsSourcesRes interface {
+	listProjectSkillsSourcesRes()
 }
 
 type ListProjectsRes interface {

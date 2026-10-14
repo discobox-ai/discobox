@@ -28,6 +28,7 @@ Public REST API schema types live under the root `api/model` package.
 | `SandboxSecret` | Binds a sandbox env var to a secret through a sentinel placeholder. |
 | `CredentialVerdict` | One judge decision about an agent credential use: a discobox's own judge on a command (ADR 0091), or the project's judge on a request (ADR 26-09-22-838 §8). A request allow the judge let stand carries its route and expiry, and a request it covered names it (ADR 26-09-25-428). A `rule` verdict is an approval rule's uses read against a request's: it names the rule and the `QuestionDigest` an answer on record is found by. |
 | `SSHKey` | Project-scoped public key authorizing SSH to the project's sandboxes (ADR 0024). |
+| `ProjectSkillsSource` | One skills repository (`url`, `ref`, `directory`) every discobox of the project is created with, in the order added. The creating client copies the list into its create request; the server never adds it to one (ADR 26-10-14-894). |
 | `Peer` | Machine permitted to connect to this server, keyed by peer ID (ADR 0095). Not project-scoped. |
 | `Job` | Non-persisted, read-only API view of a pending reconcile mark. |
 

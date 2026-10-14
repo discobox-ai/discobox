@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/resources/providers"
 	sandboxes "github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
 	"github.com/discobox-ai/discobox/server/internal/resources/secrets"
+	"github.com/discobox-ai/discobox/server/internal/resources/skillssources"
 	"github.com/discobox-ai/discobox/server/internal/resources/sshkeys"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -46,6 +47,7 @@ type Service struct {
 	services.SecretService
 	services.HostTrustService
 	services.SSHKeyService
+	services.SkillsSourceService
 	services.PeerService
 
 	store            *store.Store
@@ -169,6 +171,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		SecretService:                  secretService,
 		HostTrustService:               secretService,
 		SSHKeyService:                  sshkeys.NewService(store),
+		SkillsSourceService:            skillssources.NewService(store),
 		PeerService:                    peers.NewService(store),
 
 		jobs:            jobsService,

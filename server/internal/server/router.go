@@ -245,6 +245,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Secrets:        appServices,
 		HostTrusts:     appServices,
 		SSHKeys:        appServices,
+		SkillsSources:  appServices,
 		Peers:          appServices,
 		Judges:         appServices.Judges(),
 	}

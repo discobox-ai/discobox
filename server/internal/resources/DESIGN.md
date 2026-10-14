@@ -17,9 +17,10 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | [providers](providers/DESIGN.md) | Provider-instance API and startup reconciliation | none |
 | [sandboxes](sandboxes/DESIGN.md) | Sandbox API, lifecycle intent, and reconciliation | `sandbox` |
 | [secrets](secrets/DESIGN.md) | Credentials, their approval lifecycle, approval rules, and sandbox delivery | `ruleRequest` |
+| `skillssources` | A project's skills repositories, which the creating client copies into every create (ADR 26-10-14-894) | none |
 | `sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes | none |
 
-`peers` and `sshkeys` are plain store-backed CRUD services with no design doc of
+`peers`, `skillssources` and `sshkeys` are plain store-backed CRUD services with no design doc of
 their own.
 
 `judges` has no API of its own: nothing a client calls creates, lists or deletes

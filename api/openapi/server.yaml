@@ -6783,6 +6783,83 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        CreateProjectSkillsSourceBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateProjectSkillsSourceBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                directory:
+                    description: The directory inside the repository that holds the skills, relative and slash-separated, or . for the root, which is also what an absent value means. Each immediate subdirectory holding a SKILL.md is one skill.
+                    type: string
+                ref:
+                    description: The branch, tag or commit to check out. Absent checks out the repository's default branch.
+                    type: string
+                url:
+                    description: The skills repository's remote Git URL.
+                    type: string
+            required:
+                - url
+            type: object
+        ListProjectSkillsSourcesBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListProjectSkillsSourcesBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                skillsSources:
+                    description: The project's skills repositories, in the order they were added, which is the order a creating client adds them in.
+                    items:
+                        $ref: '#/components/schemas/ProjectSkillsSource'
+                    type: array
+            required:
+                - skillsSources
+            type: object
+        ProjectSkillsSource:
+            additionalProperties: false
+            description: A skills repository every discobox of the project is created with. The creating client reads the project's list and adds each entry to the create request as a --skills URL[@REF][//PATH] would be, ahead of its own, so a discobox holds a copy made at create.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ProjectSkillsSource.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                createdBy:
+                    description: Principal ID that added the entry
+                    type: string
+                directory:
+                    description: The directory inside the repository that holds the skills, relative and slash-separated, or . for the root.
+                    type: string
+                id:
+                    description: Stable skills source ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                ref:
+                    description: The branch, tag or commit to check out; absent for the repository's default branch.
+                    type: string
+                url:
+                    description: The skills repository's remote Git URL.
+                    type: string
+            required:
+                - id
+                - projectId
+                - url
+                - directory
+                - createdAt
+            type: object
         CreateSSHKeyBody:
             additionalProperties: false
             properties:
@@ -12653,6 +12730,98 @@ paths:
             summary: List sandbox provider catalog
             tags:
                 - Providers
+    /projects/{projectId}/skills-sources:
+        get:
+            operationId: list-project-skills-sources
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListProjectSkillsSourcesBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the skills repositories every discobox of the project is created with, in order
+            tags:
+                - Skills
+        post:
+            operationId: create-project-skills-source
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateProjectSkillsSourceBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectSkillsSource'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Add a skills repository to the end of the project's list
+            tags:
+                - Skills
+    /projects/{projectId}/skills-sources/{skillsSourceId}:
+        delete:
+            operationId: delete-project-skills-source
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Skills source ID
+                  in: path
+                  name: skillsSourceId
+                  required: true
+                  schema:
+                    description: Skills source ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Remove a skills repository from the project's list
+            tags:
+                - Skills
     /projects/{projectId}/ssh-keys:
         get:
             operationId: list-ssh-keys

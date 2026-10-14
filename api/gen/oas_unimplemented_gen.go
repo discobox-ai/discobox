@@ -185,6 +185,15 @@ func (UnimplementedHandler) CreateProject(ctx context.Context, req *CreateProjec
 	return r, ht.ErrNotImplemented
 }
 
+// CreateProjectSkillsSource implements create-project-skills-source operation.
+//
+// Add a skills repository to the end of the project's list.
+//
+// POST /projects/{projectId}/skills-sources
+func (UnimplementedHandler) CreateProjectSkillsSource(ctx context.Context, req *CreateProjectSkillsSourceBody, params CreateProjectSkillsSourceParams) (r CreateProjectSkillsSourceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSSHKey implements create-ssh-key operation.
 //
 // Enroll a project-scoped SSH key.
@@ -330,6 +339,15 @@ func (UnimplementedHandler) DeletePool(ctx context.Context, params DeletePoolPar
 //
 // DELETE /projects/{projectId}
 func (UnimplementedHandler) DeleteProject(ctx context.Context, params DeleteProjectParams) (r DeleteProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeleteProjectSkillsSource implements delete-project-skills-source operation.
+//
+// Remove a skills repository from the project's list.
+//
+// DELETE /projects/{projectId}/skills-sources/{skillsSourceId}
+func (UnimplementedHandler) DeleteProjectSkillsSource(ctx context.Context, params DeleteProjectSkillsSourceParams) (r DeleteProjectSkillsSourceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -830,6 +848,15 @@ func (UnimplementedHandler) ListPoolHostTrusts(ctx context.Context, params ListP
 //
 // GET /projects/{projectId}/pools
 func (UnimplementedHandler) ListPools(ctx context.Context, params ListPoolsParams) (r ListPoolsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListProjectSkillsSources implements list-project-skills-sources operation.
+//
+// List the skills repositories every discobox of the project is created with, in order.
+//
+// GET /projects/{projectId}/skills-sources
+func (UnimplementedHandler) ListProjectSkillsSources(ctx context.Context, params ListProjectSkillsSourcesParams) (r ListProjectSkillsSourcesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
