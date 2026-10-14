@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,5 +248,43 @@ func TestAFormerlyLiveOriginGetsItsRepositoryWhenFirstAsked(t *testing.T) {
 		if _, err := r.originLocation(t.Context(), deliveryTestSandboxID, slug, env); !errors.Is(err, ErrRepositoryNotFound) {
 			t.Fatalf("origin of %q = %v, want ErrRepositoryNotFound", slug, err)
 		}
+	}
+}
+
+// sandbox.json carries the skills sources' directories in the order the
+// request gave them, each resolved to the checkout its reference lands in
+// (ADR 26-10-14-294 §3).
+func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
+	req := originTestRequest("/home/user/src/app")
+	tools := workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}
+	tools.Slug = workerclient.NewOptString("tools")
+	refs := req.Config.SourceCodeReferences.Or(nil)
+	if refs == nil {
+		refs = workerclient.SandboxConfigSourceCodeReferences{}
+	}
+	refs["/workspace/skill-sources/tools"] = tools
+	req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(refs)
+	req.Config.SkillsSources = []workerapimodel.SandboxSkillsSource{
+		{Source: "/workspace/skill-sources/tools", Directory: "z-last-alphabetically"},
+		{Source: "/workspace/skill-sources/tools", Directory: "."},
+	}
+	req.Config.Image = workerclient.NewOptString("image")
+	req.ResolvedHarnessConfig = workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{})
+	if err := validateCreateRequest(deliveryTestSandboxID, req); err != nil {
+		t.Fatalf("validate create request: %v", err)
+	}
+
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	want := []sandboxconfig.SkillsSource{
+		{Target: "/workspace/skill-sources/tools", Directory: "z-last-alphabetically"},
+		{Target: "/workspace/skill-sources/tools", Directory: "."},
+	}
+	if !reflect.DeepEqual(doc.Runtime.SkillsSources, want) {
+		t.Fatalf("skills sources = %+v, want %+v", doc.Runtime.SkillsSources, want)
+	}
+
+	req.Config.SkillsSources = []workerapimodel.SandboxSkillsSource{{Source: "/nowhere", Directory: "."}}
+	if err := validateCreateRequest(deliveryTestSandboxID, req); err == nil {
+		t.Fatal("validate create request naming no source: nil, want a refusal")
 	}
 }

@@ -3,11 +3,13 @@ package sandboxes
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -50,6 +52,52 @@ func resolveSourceDelivery(sandboxID string, source *model.GitSource, refs model
 		entry.source.Delivery = model.GitSourceDeliveryCache
 		entry.source.CacheKey = &key
 		entry.store()
+	}
+	return nil
+}
+
+// validateSkillsSources refuses skills sources that do not match the sources
+// they name (ADR 26-10-14-294 §2): the primary source is what the sandbox is
+// worked on in and is never one; every skills directory names a source code
+// reference whose purpose is skills, at a clean path inside it; and every such
+// reference is named, since one with no directory would be checked out for
+// nothing. A purpose is one of model.GitSourcePurposes: a create's is decoded
+// against the API's enum, but an imported archive's is not. An explicit work
+// purpose is recorded as absent, the one spelling every source created before
+// purposes has.
+func validateSkillsSources(source *model.GitSource, refs model.SourceCodeReferences, skillsSources []model.SkillsSource) error {
+	for _, entry := range sandboxGitSources(source, refs) {
+		if purpose := entry.source.Purpose; purpose != "" && !slices.Contains(model.GitSourcePurposes, purpose) {
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("source purpose %q is not one of %v", purpose, model.GitSourcePurposes))
+		}
+	}
+	if source != nil {
+		if source.IsSkills() {
+			return apperrors.NewStatusError(http.StatusBadRequest, "the primary source cannot be a skills source")
+		}
+		source.Purpose = ""
+	}
+	named := map[string]bool{}
+	for _, skills := range skillsSources {
+		ref, ok := refs[skills.Source]
+		if !ok || !ref.IsSkills() {
+			return apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("skills source %q is not a source code reference whose purpose is skills", skills.Source))
+		}
+		if err := sandboxconfig.ValidateSkillsDirectory(skills.Directory); err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("skills source %q: %v", skills.Source, err))
+		}
+		named[skills.Source] = true
+	}
+	for key, ref := range refs {
+		if ref.IsSkills() && !named[key] {
+			return apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("source %q is a skills source that no skills source directory names", key))
+		}
+		if ref.Purpose == model.GitSourcePurposeWork {
+			ref.Purpose = ""
+			refs[key] = ref
+		}
 	}
 	return nil
 }

@@ -229,6 +229,12 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err := spec.Manifest.Skills.Validate(); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "the archive's skills: "+err.Error())
 	}
+	// Its skills sources too, by the same rules as a create's (ADR
+	// 26-10-14-294 §2): an archive is not decoded against the API's enums, so
+	// a purpose is checked here as well.
+	if err := validateSkillsSources(spec.Manifest.Source, spec.Manifest.SourceCodeReferences, spec.Manifest.SkillsSources); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		name = strings.TrimSpace(spec.Name)

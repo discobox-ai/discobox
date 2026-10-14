@@ -6139,6 +6139,12 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Purpose.Set {
+			e.FieldStart("purpose")
+			s.Purpose.Encode(e)
+		}
+	}
+	{
 		if s.Slug.Set {
 			e.FieldStart("slug")
 			s.Slug.Encode(e)
@@ -6164,7 +6170,7 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfGitSource = [13]string{
+var jsonFieldsNameOfGitSource = [14]string{
 	0:  "checkout",
 	1:  "cacheKey",
 	2:  "delivery",
@@ -6174,10 +6180,11 @@ var jsonFieldsNameOfGitSource = [13]string{
 	6:  "noLocalCommits",
 	7:  "noLocalGitDirectory",
 	8:  "noLocalRepository",
-	9:  "slug",
-	10: "upstreamUrl",
-	11: "url",
-	12: "workspace",
+	9:  "purpose",
+	10: "slug",
+	11: "upstreamUrl",
+	12: "url",
+	13: "workspace",
 }
 
 // Decode decodes GitSource from json.
@@ -6278,6 +6285,16 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"noLocalRepository\"")
+			}
+		case "purpose":
+			if err := func() error {
+				s.Purpose.Reset()
+				if err := s.Purpose.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"purpose\"")
 			}
 		case "slug":
 			if err := func() error {
@@ -6629,6 +6646,46 @@ func (s GitSourceKind) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *GitSourceKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourcePurpose as json.
+func (s GitSourcePurpose) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes GitSourcePurpose from json.
+func (s *GitSourcePurpose) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourcePurpose to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch GitSourcePurpose(v) {
+	case GitSourcePurposeWork:
+		*s = GitSourcePurposeWork
+	case GitSourcePurposeSkills:
+		*s = GitSourcePurposeSkills
+	default:
+		*s = GitSourcePurpose(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s GitSourcePurpose) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourcePurpose) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -16799,6 +16856,39 @@ func (s OptGitSourceDestination) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptGitSourceDestination) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourcePurpose as json.
+func (o OptGitSourcePurpose) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes GitSourcePurpose from json.
+func (o *OptGitSourcePurpose) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSourcePurpose to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSourcePurpose) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSourcePurpose) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -32845,6 +32935,16 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SkillsSources != nil {
+			e.FieldStart("skillsSources")
+			e.ArrStart()
+			for _, elem := range s.SkillsSources {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		e.FieldStart("image")
 		e.Str(s.Image)
 	}
@@ -32888,7 +32988,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [15]string{
+var jsonFieldsNameOfSandboxConfig = [16]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -32897,13 +32997,14 @@ var jsonFieldsNameOfSandboxConfig = [15]string{
 	5:  "env",
 	6:  "git",
 	7:  "skillNames",
-	8:  "image",
-	9:  "imageDigest",
-	10: "name",
-	11: "prompt",
-	12: "source",
-	13: "sourceCodeReferences",
-	14: "user",
+	8:  "skillsSources",
+	9:  "image",
+	10: "imageDigest",
+	11: "name",
+	12: "prompt",
+	13: "source",
+	14: "sourceCodeReferences",
+	15: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -33004,8 +33105,25 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"skillNames\"")
 			}
+		case "skillsSources":
+			if err := func() error {
+				s.SkillsSources = make([]SandboxSkillsSource, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SandboxSkillsSource
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.SkillsSources = append(s.SkillsSources, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"skillsSources\"")
+			}
 		case "image":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Image = string(v)
@@ -33027,7 +33145,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -33098,7 +33216,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000000,
-		0b00000101,
+		0b00001010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -33360,6 +33478,16 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SkillsSources != nil {
+			e.FieldStart("skillsSources")
+			e.ArrStart()
+			for _, elem := range s.SkillsSources {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -33409,7 +33537,7 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [16]string{
+var jsonFieldsNameOfSandboxCreateConfig = [17]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -33419,13 +33547,14 @@ var jsonFieldsNameOfSandboxCreateConfig = [16]string{
 	6:  "env",
 	7:  "git",
 	8:  "skills",
-	9:  "image",
-	10: "name",
-	11: "prompt",
-	12: "secrets",
-	13: "source",
-	14: "sourceCodeReferences",
-	15: "user",
+	9:  "skillsSources",
+	10: "image",
+	11: "name",
+	12: "prompt",
+	13: "secrets",
+	14: "source",
+	15: "sourceCodeReferences",
+	16: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -33433,7 +33562,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxCreateConfig to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -33527,6 +33656,23 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"skills\"")
 			}
+		case "skillsSources":
+			if err := func() error {
+				s.SkillsSources = make([]SandboxSkillsSource, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SandboxSkillsSource
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.SkillsSources = append(s.SkillsSources, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"skillsSources\"")
+			}
 		case "image":
 			if err := func() error {
 				s.Image.Reset()
@@ -33538,7 +33684,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"image\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -33624,9 +33770,10 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00000100,
+		0b00001000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -41243,6 +41390,119 @@ func (s *SandboxSkillFile) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxSkillFile) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxSkillsSource) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxSkillsSource) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("directory")
+		e.Str(s.Directory)
+	}
+	{
+		e.FieldStart("source")
+		e.Str(s.Source)
+	}
+}
+
+var jsonFieldsNameOfSandboxSkillsSource = [2]string{
+	0: "directory",
+	1: "source",
+}
+
+// Decode decodes SandboxSkillsSource from json.
+func (s *SandboxSkillsSource) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxSkillsSource to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "directory":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Directory = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"directory\"")
+			}
+		case "source":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Source = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxSkillsSource")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxSkillsSource) {
+					name = jsonFieldsNameOfSandboxSkillsSource[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxSkillsSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxSkillsSource) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -371,3 +371,55 @@ func TestVerifySourcePushCommits(t *testing.T) {
 		t.Fatal("a report naming a source the sandbox does not push was accepted")
 	}
 }
+
+// Skills sources name skills references, in order, at clean paths; a skills
+// reference no directory names, a skills primary, and a directory naming a
+// source being worked on are each refused. An explicit work purpose is
+// recorded as absent.
+func TestValidateSkillsSources(t *testing.T) {
+	skills := func() model.GitSource { return model.GitSource{Kind: "git", Purpose: model.GitSourcePurposeSkills} }
+	work := model.GitSource{Kind: "git", Purpose: model.GitSourcePurposeWork}
+	refs := model.SourceCodeReferences{"/workspace/skill-sources/tools": skills(), "/workspace/lib": work}
+	ordered := []model.SkillsSource{
+		{Source: "/workspace/skill-sources/tools", Directory: "agents/skills"},
+		{Source: "/workspace/skill-sources/tools", Directory: "."},
+	}
+	if err := validateSkillsSources(nil, refs, ordered); err != nil {
+		t.Fatalf("validate skills sources: %v", err)
+	}
+	if got := refs["/workspace/lib"].Purpose; got != "" {
+		t.Fatalf("work purpose recorded as %q, want absent", got)
+	}
+
+	refused := map[string]func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource){
+		"a skills primary": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			primary := skills()
+			return &primary, nil, nil
+		},
+		"an unnamed skills reference": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return nil, model.SourceCodeReferences{"/s": skills()}, nil
+		},
+		"a directory naming a worked-on source": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return nil, model.SourceCodeReferences{"/w": {Kind: "git"}}, []model.SkillsSource{{Source: "/w", Directory: "."}}
+		},
+		"a directory naming no source": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return nil, nil, []model.SkillsSource{{Source: "/nowhere", Directory: "."}}
+		},
+		"a directory leaving the repository": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return nil, model.SourceCodeReferences{"/s": skills()}, []model.SkillsSource{{Source: "/s", Directory: "../x"}}
+		},
+		"an unknown purpose on the primary": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return &model.GitSource{Kind: "git", Purpose: "docs"}, nil, nil
+		},
+		"an unknown purpose": func() (*model.GitSource, model.SourceCodeReferences, []model.SkillsSource) {
+			return nil, model.SourceCodeReferences{"/s": {Kind: "git", Purpose: "docs"}}, nil
+		},
+	}
+	for name, build := range refused {
+		t.Run(name, func(t *testing.T) {
+			if err := validateSkillsSources(build()); err == nil {
+				t.Fatal("validate skills sources: nil, want a refusal")
+			}
+		})
+	}
+}

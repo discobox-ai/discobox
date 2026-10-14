@@ -94,6 +94,9 @@ type ServiceConfig struct {
 	// Skills are the skills the sandbox was created with, the last of the
 	// three sources installSkills copies from (ADR 26-10-09-395 §3).
 	Skills sandboxconfig.Skills
+	// SkillsSources are the skills sources' directories, whose skills are
+	// linked in after Skills are written (ADR 26-10-14-294 §3).
+	SkillsSources []sandboxconfig.SkillsSource
 	// AwaitSources blocks until the sandbox's sources are in place, and is
 	// cleared for every sandbox that already had them when its container was
 	// created (see sourcesready.Gate). Only the primary terminal's very first
@@ -124,10 +127,11 @@ type Service struct {
 	judging chan struct{}
 	// judgingWait bounds how long an ask waits for a slot in judging
 	// (judgeQueueWait).
-	judgingWait  time.Duration
-	bootPrompt   []string
-	skills       sandboxconfig.Skills
-	awaitSources func(context.Context) error
+	judgingWait   time.Duration
+	bootPrompt    []string
+	skills        sandboxconfig.Skills
+	skillsSources []sandboxconfig.SkillsSource
+	awaitSources  func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -185,6 +189,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		judgingWait:   judgeQueueWait,
 		bootPrompt:    append([]string(nil), cfg.Prompt...),
 		skills:        cfg.Skills,
+		skillsSources: append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
 		awaitSources:  cfg.AwaitSources,
 		installing:    map[string]struct{}{},
 		launches:      map[string]*terminalLaunch{},

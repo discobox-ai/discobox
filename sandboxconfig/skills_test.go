@@ -165,3 +165,19 @@ func TestSkillsValidate_AcceptsTheLimitsAndPortableNames(t *testing.T) {
 		t.Fatalf("Validate() = %v", err)
 	}
 }
+
+// A skills directory is a clean path inside the repository; it names a
+// directory the checkout already has, so it may hold what a Windows file name
+// may not.
+func TestValidateSkillsDirectory(t *testing.T) {
+	for _, dir := range []string{".", "skills", "agents/skills", "odd@name:dir", ".claude/skills"} {
+		if err := ValidateSkillsDirectory(dir); err != nil {
+			t.Fatalf("ValidateSkillsDirectory(%q) = %v", dir, err)
+		}
+	}
+	for _, dir := range []string{"", "/abs", "..", "../up", "a/../b", "a/", "./a", `a\b`, "a//b", "a\nb"} {
+		if err := ValidateSkillsDirectory(dir); err == nil {
+			t.Fatalf("ValidateSkillsDirectory(%q) = nil, want a refusal", dir)
+		}
+	}
+}

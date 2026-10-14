@@ -278,6 +278,11 @@ components:
                     additionalProperties:
                         "$ref": "#/components/schemas/SandboxSkill"
                     type: object
+                skillsSources:
+                    description: Directories of skills sources whose skills the sandbox links into the harness's skill directories on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
+                    items:
+                        "$ref": "#/components/schemas/SandboxSkillsSource"
+                    type: array
                 image:
                     type: string
                 imageDigest:
@@ -360,6 +365,21 @@ components:
                     type: string
                 userName:
                     type: string
+            type: object
+        SandboxSkillsSource:
+            additionalProperties: false
+            properties:
+                directory:
+                    description: The directory inside the source's checkout that holds the skills, or . for its root.
+                    minLength: 1
+                    type: string
+                source:
+                    description: The sourceCodeReferences key of the skills source.
+                    minLength: 1
+                    type: string
+            required:
+            - source
+            - directory
             type: object
         SandboxSkill:
             additionalProperties: false

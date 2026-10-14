@@ -46,9 +46,12 @@ type Config struct {
 	Sources []sandboxconfig.Source `json:"sources,omitempty"`
 	// Skills are the ones the sandbox was created with, installed on the
 	// primary terminal's first launch (ADR 26-10-09-395 §3).
-	Skills        sandboxconfig.Skills `json:"skills,omitempty"`
-	SandboxConfig map[string]any       `json:"-"`
-	Resources     ResourceConfig       `json:"resources"`
+	Skills sandboxconfig.Skills `json:"skills,omitempty"`
+	// SkillsSources are the skills sources' directories, linked in after
+	// Skills on that same launch (ADR 26-10-14-294 §3).
+	SkillsSources []sandboxconfig.SkillsSource `json:"skillsSources,omitempty"`
+	SandboxConfig map[string]any               `json:"-"`
+	Resources     ResourceConfig               `json:"resources"`
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime-config
 	// documents, and nothing else (ADR 26-10-08-127 §3). Empty for a sandbox no
 	// pool delivers to.
@@ -197,6 +200,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Volumes:               effective.Volumes,
 		Sources:               effective.Sources,
 		Skills:                effective.Skills,
+		SkillsSources:         effective.SkillsSources,
 	}
 	if sampleInterval := strings.TrimSpace(effective.AgentRuntime.ResourceSampleInterval); sampleInterval != "" {
 		if parsed, err := time.ParseDuration(sampleInterval); err == nil {

@@ -35,5 +35,6 @@ type SandboxConfig = poolagentapi.SandboxConfig
 type SandboxGitIdentity = poolagentapi.SandboxGitIdentity
 type SandboxSkill = poolagentapi.SandboxSkill
 type SandboxSkillFile = poolagentapi.SandboxSkillFile
+type SandboxSkillsSource = poolagentapi.SandboxSkillsSource
 type SandboxUpdateConfig = poolagentapi.SandboxUpdateConfig
 type SandboxUser = poolagentapi.SandboxUser

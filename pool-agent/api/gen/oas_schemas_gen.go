@@ -4246,7 +4246,10 @@ type SandboxConfig struct {
 	Env                 OptSandboxConfigEnv         `json:"env"`
 	Git                 OptSandboxGitIdentity       `json:"git"`
 	Skills              OptSandboxConfigSkills      `json:"skills"`
-	Image               OptString                   `json:"image"`
+	// Directories of skills sources whose skills the sandbox links into the harness's skill directories
+	// on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
+	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
+	Image         OptString             `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
 	// built from any other, so a moved tag never silently changes a running sandbox.
 	ImageDigest OptString `json:"imageDigest"`
@@ -4310,6 +4313,11 @@ func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
 // GetSkills returns the value of Skills.
 func (s *SandboxConfig) GetSkills() OptSandboxConfigSkills {
 	return s.Skills
+}
+
+// GetSkillsSources returns the value of SkillsSources.
+func (s *SandboxConfig) GetSkillsSources() []SandboxSkillsSource {
+	return s.SkillsSources
 }
 
 // GetImage returns the value of Image.
@@ -4400,6 +4408,11 @@ func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
 // SetSkills sets the value of Skills.
 func (s *SandboxConfig) SetSkills(val OptSandboxConfigSkills) {
 	s.Skills = val
+}
+
+// SetSkillsSources sets the value of SkillsSources.
+func (s *SandboxConfig) SetSkillsSources(val []SandboxSkillsSource) {
+	s.SkillsSources = val
 }
 
 // SetImage sets the value of Image.
@@ -4620,6 +4633,34 @@ func (s *SandboxSkillFile) SetExecutable(val OptBool) {
 // SetPath sets the value of Path.
 func (s *SandboxSkillFile) SetPath(val string) {
 	s.Path = val
+}
+
+// Ref: #/components/schemas/SandboxSkillsSource
+type SandboxSkillsSource struct {
+	// The directory inside the source's checkout that holds the skills, or . for its root.
+	Directory string `json:"directory"`
+	// The sourceCodeReferences key of the skills source.
+	Source string `json:"source"`
+}
+
+// GetDirectory returns the value of Directory.
+func (s *SandboxSkillsSource) GetDirectory() string {
+	return s.Directory
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxSkillsSource) GetSource() string {
+	return s.Source
+}
+
+// SetDirectory sets the value of Directory.
+func (s *SandboxSkillsSource) SetDirectory(val string) {
+	s.Directory = val
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxSkillsSource) SetSource(val string) {
+	s.Source = val
 }
 
 // Ref: #/components/schemas/SandboxUpdateConfig

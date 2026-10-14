@@ -3406,6 +3406,10 @@ type GitSource struct {
 	// reachable it is. The client resolved this source from a repository of its own and can only deliver
 	// it by push. localDirectory still records the directory the source came from.
 	NoLocalRepository OptBool `json:"noLocalRepository"`
+	// What the source is in the sandbox for. work, the default, is a source being worked on. skills is a
+	// repository whose skills the sandbox links into the harness's skill directories on its first launch,
+	//  from the directories skillsSources names; it is never the primary source.
+	Purpose OptGitSourcePurpose `json:"purpose"`
 	// Stable URL-safe source slug used to address the source as a sandbox Git repository.
 	Slug OptString `json:"slug"`
 	// Network URL of a local source's remote on the client. It is the remote its checked-out branch
@@ -3462,6 +3466,11 @@ func (s *GitSource) GetNoLocalGitDirectory() OptBool {
 // GetNoLocalRepository returns the value of NoLocalRepository.
 func (s *GitSource) GetNoLocalRepository() OptBool {
 	return s.NoLocalRepository
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *GitSource) GetPurpose() OptGitSourcePurpose {
+	return s.Purpose
 }
 
 // GetSlug returns the value of Slug.
@@ -3527,6 +3536,11 @@ func (s *GitSource) SetNoLocalGitDirectory(val OptBool) {
 // SetNoLocalRepository sets the value of NoLocalRepository.
 func (s *GitSource) SetNoLocalRepository(val OptBool) {
 	s.NoLocalRepository = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *GitSource) SetPurpose(val OptGitSourcePurpose) {
+	s.Purpose = val
 }
 
 // SetSlug sets the value of Slug.
@@ -3701,6 +3715,51 @@ func (s *GitSourceKind) UnmarshalText(data []byte) error {
 	switch GitSourceKind(data) {
 	case GitSourceKindGit:
 		*s = GitSourceKindGit
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What the source is in the sandbox for. work, the default, is a source being worked on. skills is a
+// repository whose skills the sandbox links into the harness's skill directories on its first launch,
+//
+//	from the directories skillsSources names; it is never the primary source.
+type GitSourcePurpose string
+
+const (
+	GitSourcePurposeWork   GitSourcePurpose = "work"
+	GitSourcePurposeSkills GitSourcePurpose = "skills"
+)
+
+// AllValues returns all GitSourcePurpose values.
+func (GitSourcePurpose) AllValues() []GitSourcePurpose {
+	return []GitSourcePurpose{
+		GitSourcePurposeWork,
+		GitSourcePurposeSkills,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GitSourcePurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case GitSourcePurposeWork:
+		return []byte(s), nil
+	case GitSourcePurposeSkills:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GitSourcePurpose) UnmarshalText(data []byte) error {
+	switch GitSourcePurpose(data) {
+	case GitSourcePurposeWork:
+		*s = GitSourcePurposeWork
+		return nil
+	case GitSourcePurposeSkills:
+		*s = GitSourcePurposeSkills
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -9087,6 +9146,52 @@ func (o OptGitSourceDestination) Get() (v GitSourceDestination, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptGitSourceDestination) Or(d GitSourceDestination) GitSourceDestination {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourcePurpose returns new OptGitSourcePurpose with value set to v.
+func NewOptGitSourcePurpose(v GitSourcePurpose) OptGitSourcePurpose {
+	return OptGitSourcePurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourcePurpose is optional GitSourcePurpose.
+type OptGitSourcePurpose struct {
+	Value GitSourcePurpose
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourcePurpose was set.
+func (o OptGitSourcePurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourcePurpose) Reset() {
+	var v GitSourcePurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourcePurpose) SetTo(v GitSourcePurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourcePurpose) Get() (v GitSourcePurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourcePurpose) Or(d GitSourcePurpose) GitSourcePurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -20318,6 +20423,9 @@ type SandboxConfig struct {
 	Git OptSandboxGitIdentity `json:"git"`
 	// Names of the skills the sandbox was created with. Their content is not read back.
 	SkillNames []string `json:"skillNames"`
+	// The directories of skills sources whose skills the sandbox links into the harness's skill
+	// directories on its first launch, in order.
+	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
 	// Sandbox base image.
 	Image string `json:"image"`
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
@@ -20373,6 +20481,11 @@ func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
 // GetSkillNames returns the value of SkillNames.
 func (s *SandboxConfig) GetSkillNames() []string {
 	return s.SkillNames
+}
+
+// GetSkillsSources returns the value of SkillsSources.
+func (s *SandboxConfig) GetSkillsSources() []SandboxSkillsSource {
+	return s.SkillsSources
 }
 
 // GetImage returns the value of Image.
@@ -20448,6 +20561,11 @@ func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
 // SetSkillNames sets the value of SkillNames.
 func (s *SandboxConfig) SetSkillNames(val []string) {
 	s.SkillNames = val
+}
+
+// SetSkillsSources sets the value of SkillsSources.
+func (s *SandboxConfig) SetSkillsSources(val []SandboxSkillsSource) {
+	s.SkillsSources = val
 }
 
 // SetImage sets the value of Image.
@@ -20586,6 +20704,12 @@ type SandboxCreateConfig struct {
 	// 1 MiB in all, counting every file's path as well as its content, in at most 1000 files, each
 	// skill's SKILL.md among them.
 	Skills OptSandboxCreateConfigSkills `json:"skills"`
+	// The directories of skills sources whose skills the sandbox links into the harness's skill
+	// directories on its first launch, in the order given, after the skills given as content. A later
+	// directory wins over an earlier one, and any linked skill over a copied skill, on a skill's name.
+	// Each names a sourceCodeReferences entry whose purpose is skills, and each such entry is named at
+	// least once.
+	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Sandbox name.
@@ -20646,6 +20770,11 @@ func (s *SandboxCreateConfig) GetGit() OptSandboxGitIdentity {
 // GetSkills returns the value of Skills.
 func (s *SandboxCreateConfig) GetSkills() OptSandboxCreateConfigSkills {
 	return s.Skills
+}
+
+// GetSkillsSources returns the value of SkillsSources.
+func (s *SandboxCreateConfig) GetSkillsSources() []SandboxSkillsSource {
+	return s.SkillsSources
 }
 
 // GetImage returns the value of Image.
@@ -20726,6 +20855,11 @@ func (s *SandboxCreateConfig) SetGit(val OptSandboxGitIdentity) {
 // SetSkills sets the value of Skills.
 func (s *SandboxCreateConfig) SetSkills(val OptSandboxCreateConfigSkills) {
 	s.Skills = val
+}
+
+// SetSkillsSources sets the value of SkillsSources.
+func (s *SandboxCreateConfig) SetSkillsSources(val []SandboxSkillsSource) {
+	s.SkillsSources = val
 }
 
 // SetImage sets the value of Image.
@@ -24395,6 +24529,36 @@ func (s *SandboxSkillFile) SetExecutable(val OptBool) {
 // SetPath sets the value of Path.
 func (s *SandboxSkillFile) SetPath(val string) {
 	s.Path = val
+}
+
+// One directory of a skills source whose skills are linked into the harness's skill directories.
+// Ref: #/components/schemas/SandboxSkillsSource
+type SandboxSkillsSource struct {
+	// The directory inside the source's repository that holds the skills, relative and slash-separated,
+	// or . for the root. Each immediate subdirectory holding a SKILL.md is one skill.
+	Directory string `json:"directory"`
+	// The sourceCodeReferences key of the skills source.
+	Source string `json:"source"`
+}
+
+// GetDirectory returns the value of Directory.
+func (s *SandboxSkillsSource) GetDirectory() string {
+	return s.Directory
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxSkillsSource) GetSource() string {
+	return s.Source
+}
+
+// SetDirectory sets the value of Directory.
+func (s *SandboxSkillsSource) SetDirectory(val string) {
+	s.Directory = val
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxSkillsSource) SetSource(val string) {
+	s.Source = val
 }
 
 // A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox
