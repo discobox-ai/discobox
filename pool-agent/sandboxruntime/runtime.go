@@ -538,10 +538,27 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			if err != nil {
 				return nil, err
 			}
-			if !rebuild {
+			switch {
+			case rebuild:
+				reason = "the project configuration its delivered source declares"
+			case createStarts(req) && existing.Status == StatusCreated:
+				// A create asked to start that finds the container built and
+				// never started is finishing one whose request was lost in
+				// between: the control plane sends a create again when the
+				// agent it went to was replaced under it. It is rebuilt the
+				// way the first attempt would have gone on to, started and
+				// settled, rather than returned as done.
+				//
+				// Only a container that never started. A parked sandbox is
+				// asked to start on every reconcile until its source is
+				// pushed, and one that was stopped — by a person, by idling,
+				// by its pool restarting — stays stopped until something acts
+				// on it (ADR 26-10-12-711). A create lost after its container
+				// booted is finished by that same next action.
+				reason = "an earlier create of it that did not start it"
+			default:
 				return existing, nil
 			}
-			reason = "the project configuration its delivered source declares"
 		}
 		// The container is replaced below, once the image the new one needs is
 		// in hand; the sandbox's state lives in the pool-host binds prepared
@@ -575,6 +592,14 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			"reason", "the project configuration its delivered source declares", "running", true)
 		replaced, replacedRunning = sb, sb.Status == StatusRunning
 	}
+}
+
+// createStarts reports whether a create asks for the sandbox to be started.
+// Only an explicit ask counts here: a create that finds the container already
+// built starts it on nothing less (ADR 0017 §13).
+func createStarts(req *workerapimodel.PoolSandboxCreateRequest) bool {
+	start, ok := req.Config.Start.Get()
+	return ok && start
 }
 
 // buildSandboxContainer builds the sandbox's container, replacing replaced

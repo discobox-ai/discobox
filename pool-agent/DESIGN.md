@@ -1678,6 +1678,17 @@ state for a sandbox that already exists, so the two inputs can only add a start.
 An upgrade therefore restarts a running sandbox into its new image and never
 powers a stopped one on.
 
+A create is sent again when the agent it went to was replaced before answering
+(`server/providers` DESIGN.md), so a create that finds an undrifted container
+can be finishing one the lost request began. Asked explicitly to start and
+finding a container that was built and never started, it rebuilds and starts
+it rather than answering with a container that never booted. A container that
+has run and is stopped is left stopped: a parked sandbox is asked to start on
+every reconcile until its source is pushed, and a stop is not undone by that.
+Neither is a lost replace's power state recorded: one cut after stopping a
+running container is finished stopped. Both are started by the next action
+(ADR 26-10-12-711).
+
 Replacing a container makes the old one vanish, and its `destroy` reaches the
 control plane as an ordinary `stopped` delta on the state channel, followed by
 the new container's `start` and the end-of-create read-back, all ordered by boot
