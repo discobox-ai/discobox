@@ -1004,11 +1004,24 @@ tasks:
     cmds:
       - task: test:all
 
+  check:darwin:
+    desc: Lint the packages darwin builds from other files than Linux, and type-check the whole tree for darwin
+    platforms: [darwin]
+    # `check` already lints every package on Linux. The Mac adds the packages
+    # darwin compiles differently — scripts/lint-darwin.sh owns which those
+    # are — and `go vet`, which type-checks every package and its tests against
+    # darwin's files far cheaper than linting them again.
+    deps:
+      - build:lint-tool
+    cmds:
+      - scripts/lint-darwin.sh ./build/tools/{{.LINT_BIN}}
+      - go vet {{.PACKAGES}} ./access/... ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
+
   ci:darwin:
-    desc: "The macOS half of CI: static checks plus the native, signed release build"
+    desc: "The macOS half of CI: darwin's own static checks plus the native, signed release build"
     platforms: [darwin]
     cmds:
-      - task: check
+      - task: check:darwin
       - task: release:build
 
   release:build:

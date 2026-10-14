@@ -263,7 +263,9 @@ Release binaries are built on the platform they target — darwin has to be, sin
 [`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)). Windows is the
 exception in both directions: no Nix, so the same action sets up plain Go there
 with `actions/setup-go`, and no cgo, so its binary is cross-compiled from the
-Linux job. Agent images are
+Linux job. The macOS job lints only the packages darwin builds from other files
+than Linux (`scripts/lint-darwin.sh`) and type-checks the rest; the Linux job
+already lints everything. Agent images are
 built once for both architectures by `depot build`, falling back to emulated
 `docker buildx`.
 
