@@ -70,6 +70,7 @@ func TestProjectSkillsSourcesKeepTheOrderAdded(t *testing.T) {
 	}
 }
 
+//nolint:gosec // G101: fixtures of a credential in a URL, which is what is refused.
 func TestCreateProjectSkillsSourceRefuses(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
@@ -87,6 +88,11 @@ func TestCreateProjectSkillsSourceRefuses(t *testing.T) {
 		{"a URL holding //", body("https://github.com/acme//tools", "", ""), http.StatusBadRequest},
 		{"a ref holding @", body("https://github.com/acme/other", "a@b", ""), http.StatusBadRequest},
 		{"a directory outside", body("https://github.com/acme/other", "", "../x"), http.StatusBadRequest},
+		{"a URL Git reads as an option", body("--upload-pack=touch /tmp/x#@x:y", ".", ""), http.StatusBadRequest},
+		{"a ref Git reads as an option", body("https://github.com/acme/other", "--upload-pack=x", ""), http.StatusBadRequest},
+		{"a ref Git refuses", body("https://github.com/acme/other", ".", ""), http.StatusBadRequest},
+		{"a URL with a token", body("https://x-access-token:ghp_secret@github.com/acme/other", "", ""), http.StatusBadRequest},
+		{"an https URL with a user", body("https://ghp_secret@github.com/acme/other", "", ""), http.StatusBadRequest},
 		{"the same entry twice", body("https://github.com/acme/tools", "main", "skills"), http.StatusConflict},
 		{"the repository at another ref", body("https://github.com/acme/tools", "dev", "other"), http.StatusConflict},
 		{"the repository at its default branch", body("https://github.com/acme/tools", "", "other"), http.StatusConflict},

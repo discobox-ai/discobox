@@ -6,9 +6,7 @@ package skillssources
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -69,64 +67,12 @@ func (s *Service) DeleteProjectSkillsSource(ctx context.Context, projectID, sour
 	return nil
 }
 
-// validate refuses an entry a creating client could not add as a --skills
-// URL[@REF][//PATH] reads (ADR 26-10-14-294 §1): a URL that is not a remote
-// one, a ref that would not survive being written after its `@`, or a
-// directory outside the repository.
+// validate refuses an entry a creating client could not, or must not, add as
+// the --skills URL[@REF][//PATH] it stands for (ADR 26-10-14-894 §1). The rule
+// is sandboxconfig's, so the clients reading the list hold it too.
 func validate(source *model.ProjectSkillsSource) error {
-	if err := validateURL(source.URL); err != nil {
-		return err
-	}
-	if err := validateRef(source.Ref); err != nil {
+	if err := sandboxconfig.ValidateSkillsRepository(source.URL, source.Ref); err != nil {
 		return err
 	}
 	return sandboxconfig.ValidateSkillsDirectory(source.Directory)
-}
-
-// validateURL accepts a URL with a scheme and a host, or an scp-style
-// `user@host:path`. A file URL is a path on one machine, which is not the
-// project's to name (ADR 26-10-14-894 §1).
-func validateURL(raw string) error {
-	if raw == "" {
-		return errors.New("a skills source needs a Git URL")
-	}
-	if strings.ContainsFunc(raw, isSpaceOrControl) {
-		return fmt.Errorf("the Git URL %q holds a space or a control character", raw)
-	}
-	rest := raw
-	if scheme, after, ok := strings.Cut(raw, "://"); ok {
-		u, err := url.Parse(raw)
-		if err != nil || u.Host == "" || scheme == "file" {
-			return fmt.Errorf("%q is not a remote Git URL", raw)
-		}
-		rest = after
-	} else if !strings.Contains(raw, "@") || !strings.Contains(raw, ":") || strings.HasPrefix(raw, ".") {
-		return fmt.Errorf("%q is not a remote Git URL", raw)
-	}
-	// What follows a URL's `//` is a skills directory when a client reads it
-	// back as a --skills value, so the URL may hold none of its own.
-	if strings.Contains(rest, "//") {
-		return fmt.Errorf("the Git URL %q holds //, which starts a skills directory", raw)
-	}
-	return nil
-}
-
-// validateRef refuses what Git refuses in a ref name and a --skills value
-// would misread: `@` ends the URL, and `//` starts the directory.
-func validateRef(ref string) error {
-	switch {
-	case ref == "":
-		return nil
-	case strings.ContainsFunc(ref, isSpaceOrControl):
-		return fmt.Errorf("ref %q holds a space or a control character", ref)
-	case strings.HasPrefix(ref, "-"):
-		return fmt.Errorf("ref %q starts with -", ref)
-	case strings.Contains(ref, "@"), strings.Contains(ref, "//"):
-		return fmt.Errorf("ref %q holds @ or //, which Git refuses in a ref name", ref)
-	}
-	return nil
-}
-
-func isSpaceOrControl(r rune) bool {
-	return r <= ' ' || r == 0x7f
 }

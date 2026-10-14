@@ -3,6 +3,7 @@ package sandboxconfig
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -280,6 +281,101 @@ func ValidateSkillsDirectory(dir string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateSkillsRepository refuses a skills repository a project may not name
+// for its discoboxes (ADR 26-10-14-894 §1). The server holds it to this when
+// an entry is added, and every client that copies the project's entries into
+// a create holds it to this again, since what it runs Git on is what the
+// server answered.
+//
+// The URL is a remote one: a scheme and a host, or an scp-style
+// `user@host:path`, never a file URL, which is a path on one machine. It
+// carries no credential: every member's client and every discobox of the
+// project reads it, so a token pasted into it would reach them all; an
+// http(s) URL takes no user at all, since a token is as often the user as the
+// password there. Neither the URL nor the ref may start with `-`, which Git
+// would read as an option, and the ref is a name Git takes for a branch, tag
+// or commit, which a --skills value carries after its `@` and before its `//`.
+func ValidateSkillsRepository(rawURL, ref string) error {
+	if err := validateSkillsRepositoryURL(rawURL); err != nil {
+		return err
+	}
+	return validateSkillsRef(ref)
+}
+
+func validateSkillsRepositoryURL(rawURL string) error {
+	switch {
+	case rawURL == "":
+		return errors.New("a skills repository needs a Git URL")
+	case strings.ContainsFunc(rawURL, isSpaceOrControl):
+		return fmt.Errorf("the Git URL %q holds a space or a control character", rawURL)
+	case strings.HasPrefix(rawURL, "-"):
+		return fmt.Errorf("the Git URL %q starts with -", rawURL)
+	}
+	rest := rawURL
+	if scheme, after, ok := strings.Cut(rawURL, "://"); ok {
+		u, err := url.Parse(rawURL)
+		if err != nil || u.Host == "" || scheme == "file" {
+			return fmt.Errorf("%q is not a remote Git URL", rawURL)
+		}
+		if _, hasPassword := u.User.Password(); hasPassword || (u.User != nil && (scheme == "http" || scheme == "https")) {
+			return fmt.Errorf("the Git URL %q carries a credential; name the repository without it, and its readers sign in their own way", u.Redacted())
+		}
+		// ssh takes a host or user that starts with - as one of its own
+		// options; Git refuses one since 2.14.1, and nothing older is trusted
+		// to.
+		if strings.HasPrefix(u.Hostname(), "-") || strings.HasPrefix(u.User.Username(), "-") {
+			return fmt.Errorf("the Git URL %q names a host or user starting with -", rawURL)
+		}
+		rest = after
+	} else {
+		host, _, ok := strings.Cut(rawURL, ":")
+		if !ok || !strings.Contains(host, "@") || strings.HasPrefix(rawURL, ".") || strings.ContainsAny(host, `/\`) {
+			return fmt.Errorf("%q is not a remote Git URL", rawURL)
+		}
+		if user, name, _ := strings.Cut(host, "@"); strings.HasPrefix(name, "-") || strings.HasPrefix(user, "-") {
+			return fmt.Errorf("the Git URL %q names a host or user starting with -", rawURL)
+		}
+	}
+	// What follows a URL's `//` is a skills directory when a client reads it
+	// back as a --skills value, so the URL may hold none of its own.
+	if strings.Contains(rest, "//") {
+		return fmt.Errorf("the Git URL %q holds //, which starts a skills directory", rawURL)
+	}
+	return nil
+}
+
+// validateSkillsRef refuses what git check-ref-format refuses in a name, and
+// what a --skills value would misread: `@` ends the URL, and `//` starts the
+// directory.
+func validateSkillsRef(ref string) error {
+	if ref == "" {
+		return nil
+	}
+	bad := func(why string) error { return fmt.Errorf("ref %q %s", ref, why) }
+	switch {
+	case strings.ContainsFunc(ref, isSpaceOrControl):
+		return bad("holds a space or a control character")
+	case strings.HasPrefix(ref, "-"):
+		return bad("starts with -")
+	case strings.ContainsAny(ref, `@~^:?*[\`):
+		return bad("holds a character Git refuses in a ref name")
+	case strings.Contains(ref, ".."), strings.Contains(ref, "//"):
+		return bad("holds .. or //, which Git refuses in a ref name")
+	case strings.HasPrefix(ref, "/"), strings.HasSuffix(ref, "/"), strings.HasSuffix(ref, "."), strings.HasSuffix(ref, ".lock"):
+		return bad("is not a name Git takes for a ref")
+	}
+	for _, segment := range strings.Split(ref, "/") {
+		if strings.HasPrefix(segment, ".") {
+			return bad("has a part starting with ., which Git refuses in a ref name")
+		}
+	}
+	return nil
+}
+
+func isSpaceOrControl(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r)
 }
 
 // SkillsSource is one directory of a skills source's checkout whose skills

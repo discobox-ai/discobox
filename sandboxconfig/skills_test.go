@@ -181,3 +181,43 @@ func TestValidateSkillsDirectory(t *testing.T) {
 		}
 	}
 }
+
+// A project's skills repository is a remote one, carries no credential, and
+// holds nothing Git would read as an option (ADR 26-10-14-894 §1).
+//
+//nolint:gosec // G101: fixtures of a credential in a URL, which is what is refused.
+func TestValidateSkillsRepository(t *testing.T) {
+	for _, tc := range []struct {
+		url, ref string
+		ok       bool
+	}{
+		{url: "https://github.com/acme/tools", ok: true},
+		{url: "https://github.com/acme/tools", ref: "release/v2", ok: true},
+		{url: "git@github.com:acme/tools.git", ref: "0123abcd", ok: true},
+		{url: "ssh://git@example.com:2222/acme/tools.git", ok: true},
+		{url: ""},
+		{url: "./tools"},
+		{url: "/srv/tools"},
+		{url: "file:///srv/tools"},
+		{url: "--upload-pack=touch x#@x:y"},
+		{url: "https://x-access-token:ghp_x@github.com/acme/tools"},
+		{url: "https://ghp_x@github.com/acme/tools"},
+		{url: "ssh://git:pw@example.com/acme/tools"},
+		{url: "https://github.com/acme//tools"},
+		{url: "ssh://-oProxyCommand=x/acme/tools"},
+		{url: "ssh://-oProxyCommand=x@example.com/acme/tools"},
+		{url: "git@-oProxyCommand=x:acme/tools"},
+		{url: "https://github.com/acme/tools\u0085"},
+		{url: "https://github.com/acme/tools", ref: "-x"},
+		{url: "https://github.com/acme/tools", ref: "."},
+		{url: "https://github.com/acme/tools", ref: "a..b"},
+		{url: "https://github.com/acme/tools", ref: "a@b"},
+		{url: "https://github.com/acme/tools", ref: "a/.b"},
+		{url: "https://github.com/acme/tools", ref: "a.lock"},
+		{url: "https://github.com/acme/tools", ref: "a b"},
+	} {
+		if err := ValidateSkillsRepository(tc.url, tc.ref); (err == nil) != tc.ok {
+			t.Errorf("ValidateSkillsRepository(%q, %q) = %v, want ok %v", tc.url, tc.ref, err, tc.ok)
+		}
+	}
+}
