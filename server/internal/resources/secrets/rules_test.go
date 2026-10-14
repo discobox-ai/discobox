@@ -796,7 +796,6 @@ func TestAutoApproveForEveryDiscoboxIsSaid(t *testing.T) {
 func TestADiscoboxNeverTouchesARule(t *testing.T) {
 	svc, st, _, secret := ruledService(t)
 	rule := githubRule(t, svc, nil)
-	createSandbox(t, st, leadID, testPoolID)
 	delegate(t, st, secret, "github.com", 0)
 	req := githubAsk(t, svc, nil)
 	lead := asLead()
