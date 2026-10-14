@@ -652,6 +652,9 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 		// A rule the server holds with no repository is one somebody made
 		// for every discobox: no route stores one any other way.
 		rule.EveryDiscobox = len(r.Repositories) == 0
+		// The server's own text, sent back for every line an edit leaves
+		// alone.
+		rule.Stored = tui.ApprovalRule{Repositories: r.Repositories, Uses: r.Uses, EveryDiscobox: rule.EveryDiscobox}
 		for _, host := range r.Hosts {
 			rule.Hosts = append(rule.Hosts, terminalSafe(host))
 		}
@@ -664,6 +667,69 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 		out = append(out, rule)
 	}
 	return out, nil
+}
+
+// CreateRule makes a rule from the secrets screen. Which discoboxes it is for
+// is sent as the person said it — the repositories named, or every discobox
+// in so many words — and the purpose is left to the server, which takes
+// "use". The hosts are sent as the card that made the rule read them. The hosts are sent as the card that made the rule read them.
+func (d *apiDataSource) CreateRule(ctx context.Context, server string, rule tui.NewRule) (tui.Rule, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.Rule{}, err
+	}
+	body := &apimodel.CreateApprovalRuleBody{Repositories: rule.Repositories, Uses: rule.Uses, Hosts: rule.Hosts}
+	if id := strings.TrimSpace(rule.WellKnownID); id != "" {
+		body.SetWellKnownId(apiclientgen.NewOptString(id))
+	} else {
+		body.SetSecretId(apiclientgen.NewOptString(strings.TrimSpace(rule.SecretID)))
+	}
+	if rule.EveryDiscobox {
+		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+	}
+	// Always said, zero included: zero is the secret's own limit, where
+	// leaving it out would be the server's hour.
+	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(int64(rule.MaxGrantTTL / time.Second)))
+	if !rule.Expires.IsZero() {
+		body.SetExpiresAt(apiclientgen.NewOptDateTime(rule.Expires.UTC()))
+	}
+	res, err := d.client.CreateApprovalRule(ctx, body, apiclientgen.CreateApprovalRuleParams{ProjectId: d.projectID})
+	if err != nil {
+		return tui.Rule{}, err
+	}
+	made, err := expectResponse[apimodel.ApprovalRule](res)
+	if err != nil {
+		return tui.Rule{}, err
+	}
+	return tui.Rule{ID: made.ID}, nil
+}
+
+// UpdateRule sends what the change sets and nothing else: a field the person
+// did not touch is not the server's to read again.
+func (d *apiDataSource) UpdateRule(ctx context.Context, server, ruleID string, change tui.RuleChange) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	body := &apimodel.UpdateApprovalRuleBody{Repositories: change.Repositories, Uses: change.Uses}
+	if change.EveryDiscobox {
+		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+	}
+	if change.MaxGrantTTL != nil {
+		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(int64(*change.MaxGrantTTL / time.Second)))
+	}
+	switch {
+	case change.NeverExpires:
+		body.SetNeverExpires(apiclientgen.NewOptBool(true))
+	case change.Expires != nil:
+		body.SetExpiresAt(apiclientgen.NewOptDateTime(change.Expires.UTC()))
+	}
+	res, err := d.client.UpdateApprovalRule(ctx, body, apiclientgen.UpdateApprovalRuleParams{ProjectId: d.projectID, RuleId: ruleID})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.ApprovalRule](res)
+	return err
 }
 
 // SetRuleEnabled turns one rule off or on. Only that is sent: the route takes

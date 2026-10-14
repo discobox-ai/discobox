@@ -321,3 +321,38 @@ func TestRuleProposalsReachTheConsoleSafeToDraw(t *testing.T) {
 		t.Fatalf("use = %q, want its escape sequence shown as data", written)
 	}
 }
+
+// Every field the API takes on an edit has a flag, and each is sent as given:
+// the uses and hosts replaced, the cap, the expiry, and the switch.
+func TestSecretRuleUpdateCoversTheWholeBody(t *testing.T) {
+	sent := map[string]map[string]any{}
+	server := ruleServer(t, sent)
+	runCLI(t, server.URL, "secret", "rule", "update", "rule_1",
+		"--repo", "github.com/org/repo", "--use", "read any issue in org/repo", "--use", "comment on any issue in org/repo",
+		"--hosts", "github.com,api.github.com", "--max-grant-ttl", "2h", "--expires-in", "3d", "--enable")
+	body := sent["PATCH /projects/project-1/approval-rules/rule_1"]
+	repositories, _ := body["repositories"].([]any)
+	uses, _ := body["uses"].([]any)
+	hosts, _ := body["hosts"].([]any)
+	expires, _ := body["expiresAt"].(string)
+	if len(repositories) != 1 || len(uses) != 2 || len(hosts) != 2 || body["maxGrantTTLSeconds"] != float64(7200) ||
+		expires == "" || body["enabled"] != true || len(body) != 6 {
+		t.Fatalf("update body = %#v, want every field given and nothing else", body)
+	}
+}
+
+// A rule made directly can say everything the API takes: a project secret
+// rather than an ID, its hosts, to delegate, an expiry, and switched off.
+func TestSecretRuleCreateCoversTheWholeBody(t *testing.T) {
+	sent := map[string]map[string]any{}
+	server := ruleServer(t, sent)
+	runCLI(t, server.URL, "secret", "rule", "create", "--secret", "secret_0123456789abcdef", "--every-discobox",
+		"--use", "hand on read access to issues", "--hosts", "github.com", "--delegate", "--expires-in", "1w", "--disabled")
+	body := sent["POST /projects/project-1/approval-rules"]
+	hosts, _ := body["hosts"].([]any)
+	expires, _ := body["expiresAt"].(string)
+	if body["secretId"] != "secret_0123456789abcdef" || body["wellKnownId"] != nil || body["everyDiscobox"] != true ||
+		len(hosts) != 1 || body["purpose"] != "delegate" || expires == "" || body["enabled"] != false {
+		t.Fatalf("create body = %#v, want every field given", body)
+	}
+}

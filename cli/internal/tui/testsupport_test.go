@@ -123,12 +123,17 @@ type fakeSource struct {
 	grantsErr       error
 	// rules is the project's approval rules; ruleEdits is each change made to
 	// one, as "id enabled=…", and deletedRules each one removed.
-	rules          []Rule
-	rulesErr       error
-	ruleEdits      []string
-	ruleEditErr    error
-	deletedRules   []string
-	deleteRuleErr  error
+	rules         []Rule
+	rulesErr      error
+	ruleEdits     []string
+	ruleEditErr   error
+	deletedRules  []string
+	deleteRuleErr error
+	// madeRules is each rule made from the screen, changedRules each change
+	// sent, keyed by the rule's ID; writeRuleErr refuses both.
+	madeRules      []NewRule
+	changedRules   []RuleChange
+	writeRuleErr   error
 	revoked        []string
 	createdGrants  []NewGrant
 	createGrantErr error
@@ -1681,8 +1686,16 @@ func (f *fakeSource) CreateSecret(_ context.Context, server string, secret NewSe
 	if f.createSecretErr != nil {
 		return Secret{}, f.createSecretErr
 	}
+	// The server marks one secret per well-known ID, and refuses a second.
+	if secret.WellKnownID != "" {
+		for _, held := range f.projectSecrets {
+			if held.WellKnownID == secret.WellKnownID {
+				return Secret{}, fmt.Errorf("409: %s already answers %s; delete it, or store this one without the ID", held.Name, secret.WellKnownID)
+			}
+		}
+	}
 	f.createdSecrets = append(f.createdSecrets, secret)
-	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Host: secret.Host}
+	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Host: secret.Host, WellKnownID: secret.WellKnownID}
 	f.projectSecrets = append(f.projectSecrets, created)
 	return created, nil
 }
@@ -1852,6 +1865,55 @@ func (f *fakeSource) SetRuleEnabled(_ context.Context, server, ruleID string, en
 	for i := range f.rules {
 		if f.rules[i].ID == ruleID {
 			f.rules[i].Enabled = enabled
+		}
+	}
+	return nil
+}
+
+func (f *fakeSource) CreateRule(_ context.Context, server string, rule NewRule) (Rule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "CreateRule@"+server)
+	if f.writeRuleErr != nil {
+		return Rule{}, f.writeRuleErr
+	}
+	f.madeRules = append(f.madeRules, rule)
+	made := Rule{ID: fmt.Sprintf("rule_made%d", len(f.madeRules)), ApprovalRule: rule.ApprovalRule,
+		WellKnownID: rule.WellKnownID, SecretID: rule.SecretID, MaxGrantTTL: rule.MaxGrantTTL, Expires: rule.Expires, Enabled: true}
+	f.rules = append([]Rule{made}, f.rules...)
+	return made, nil
+}
+
+func (f *fakeSource) UpdateRule(_ context.Context, server, ruleID string, change RuleChange) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "UpdateRule@"+server)
+	if f.writeRuleErr != nil {
+		return f.writeRuleErr
+	}
+	f.changedRules = append(f.changedRules, change)
+	for i := range f.rules {
+		if f.rules[i].ID != ruleID {
+			continue
+		}
+		rule := &f.rules[i]
+		switch {
+		case change.EveryDiscobox:
+			rule.Repositories, rule.EveryDiscobox = nil, true
+		case change.Repositories != nil:
+			rule.Repositories, rule.EveryDiscobox = change.Repositories, false
+		}
+		if change.Uses != nil {
+			rule.Uses = change.Uses
+		}
+		if change.MaxGrantTTL != nil {
+			rule.MaxGrantTTL = *change.MaxGrantTTL
+		}
+		switch {
+		case change.NeverExpires:
+			rule.Expires = time.Time{}
+		case change.Expires != nil:
+			rule.Expires = *change.Expires
 		}
 	}
 	return nil

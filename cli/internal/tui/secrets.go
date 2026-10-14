@@ -407,7 +407,7 @@ func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
 // line would offer keys that do nothing. Everything that sets or clears the
 // rules calls it.
 func (m *Model) leaveEmptyRules() {
-	if len(m.rules.all) == 0 && m.table == tableRules {
+	if !m.rulesReachable() && m.table == tableRules {
 		m.table = tableSecrets
 	}
 }
@@ -518,10 +518,19 @@ func (m *Model) tableBelow(from secretsTable) secretsTable {
 	if from == tableSecrets && len(m.requestRows.all) > 0 {
 		return tableRequests
 	}
-	if from != tableRules && len(m.rules.all) > 0 {
+	if from != tableRules && m.rulesReachable() {
 		return tableRules
 	}
 	return from
+}
+
+// rulesReachable is whether the cursor may land in the rules table: one with
+// rows, or one read and found empty, whose line makes the first rule —
+// whether or not a short window has it drawn, since moving into it is what
+// swaps it in. A listing not read yet, or one that failed, has nothing to act
+// on.
+func (m *Model) rulesReachable() bool {
+	return len(m.rules.all) > 0 || (m.rules.loaded && m.rules.failed == "")
 }
 
 // tableAbove is the same going up; the secrets are always there to land in.
@@ -1535,46 +1544,56 @@ func valued(ti textinput.Model, value string) textinput.Model {
 // newSecretForm stores a credential the project does not have yet.
 func (m *Model) newSecretForm() tea.Cmd {
 	d := formDialog("New secret", secretForm(nil), func(f *form) tea.Cmd {
-		seconds, ok := ttlSeconds(f, "ttl")
+		secret, ok := secretFromForm(f)
 		if !ok {
-			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
 			return nil
-		}
-		format, why := formFormat(f)
-		if why != "" {
-			f.err = why
-			return nil
-		}
-		secret := NewSecret{
-			Name:          f.value("name"),
-			Type:          f.chosen("kind"),
-			Host:          f.value("host"),
-			MaxTTLSeconds: seconds,
-			Format:        format,
-			Value:         formSecretValue(f),
-		}
-		if known, ok := chosenWellKnown(f); ok {
-			secret.Type, secret.WellKnownID = "token", known.ID
-		}
-		if secret.Type == "token" && f.chosen("source") == "command" {
-			command, err := refreshcmd.Split(f.value("command"))
-			if err != nil || len(command) == 0 {
-				f.err = "the command is words, with quotes around one that holds a space"
-				return nil
-			}
-			secret.RefreshCommand, secret.Value = command, SecretValue{}
-			lasts, ok := ttlSeconds(f, "lasts")
-			if !ok {
-				f.err = "a value lasts 5m, 90m, 8h, or never goes stale"
-				return nil
-			}
-			secret.ValueTTLSeconds = &lasts
 		}
 		return m.storeSecret(secret)
 	})
 	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter stores it", "enter"), pressing("esc cancels", "esc")}
 	m.dialog = d
 	return nil
+}
+
+// secretFromForm is the secret the new-secret form says, or false with why on
+// the form: the screen's own new secret, and one stored to answer a request.
+func secretFromForm(f *form) (NewSecret, bool) {
+	seconds, ok := ttlSeconds(f, "ttl")
+	if !ok {
+		f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
+		return NewSecret{}, false
+	}
+	format, why := formFormat(f)
+	if why != "" {
+		f.err = why
+		return NewSecret{}, false
+	}
+	secret := NewSecret{
+		Name:          f.value("name"),
+		Type:          f.chosen("kind"),
+		Host:          f.value("host"),
+		MaxTTLSeconds: seconds,
+		Format:        format,
+		Value:         formSecretValue(f),
+	}
+	if known, ok := chosenWellKnown(f); ok {
+		secret.Type, secret.WellKnownID = "token", known.ID
+	}
+	if secret.Type == "token" && f.chosen("source") == "command" {
+		command, err := refreshcmd.Split(f.value("command"))
+		if err != nil || len(command) == 0 {
+			f.err = "the command is words, with quotes around one that holds a space"
+			return NewSecret{}, false
+		}
+		secret.RefreshCommand, secret.Value = command, SecretValue{}
+		lasts, ok := ttlSeconds(f, "lasts")
+		if !ok {
+			f.err = "a value lasts 5m, 90m, 8h, or never goes stale"
+			return NewSecret{}, false
+		}
+		secret.ValueTTLSeconds = &lasts
+	}
+	return secret, true
 }
 
 // formSecretValue is the credential's material as the card holds it. An oauth

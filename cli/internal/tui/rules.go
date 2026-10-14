@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/wellknown"
@@ -52,7 +54,21 @@ type ruleProposalsMsg struct {
 // credential typed in on the spot is stored after the lifetime is chosen, and
 // a rule is read whole before anything is written.
 func (m *Model) askRuleSecret(a approval) tea.Cmd {
-	d := actionsDialog("Auto approve", "", secretRows(a.secrets, a.req), func(result string) tea.Cmd {
+	newRow := action{key: "new", press: "n", label: "New credential…",
+		detail: "store it as a project secret now, then make the rule with it", enabled: true}
+	if marked := markedFor(a.secrets, a.req.WellKnownID); marked != nil {
+		// A rule for the ID answers with the secret marked for it, and the
+		// server marks no second one: a new credential could never be the
+		// rule's.
+		newRow.enabled = false
+		newRow.why = "a rule for " + a.req.WellKnownID + " answers with " + marked.Name +
+			", the secret marked for it: to change what it answers with, edit " + marked.Name + " on the secrets screen (F4, e)"
+	}
+	items := append(secretRows(a.secrets, a.req), newRow)
+	d := actionsDialog("Auto approve", "", items, func(result string) tea.Cmd {
+		if result == "new" {
+			return m.askRuleNewCredential(a)
+		}
 		return m.chooseSecret(a, strings.TrimPrefix(result, "secret:"))
 	})
 	d.sections = credentialAsk(a.req, m.secrets.now())
@@ -61,7 +77,79 @@ func (m *Model) askRuleSecret(a approval) tea.Cmd {
 	d.keys = []hint{pressing("enter chooses the highlighted secret", "enter"), pressing("esc goes back", "esc")}
 	d.onCancel = m.toRequest(a)
 	m.dialog = d
+	if a.stored != "" {
+		// Back here, the rule that secret was stored for was not made.
+		return m.report(false, "%s", storedNote(a.stored, a.req.WellKnownID))
+	}
 	return nil
+}
+
+// storedNote says a secret stored on the way to a rule stays, what it now
+// answers, and how to remove it: the flow was left without the rule.
+func storedNote(name, wellKnownID string) string {
+	what := "it stays as a project secret"
+	if wellKnownID != "" {
+		what = "it stays, answering every request for " + wellKnownID
+	}
+	return "stored " + name + " with no rule made: " + what + " · d on the secrets table (F4) removes it"
+}
+
+// askRuleNewCredential stores a new credential to make the rule with: the
+// request card's own new-credential form, filled from the request. It is
+// stored when the form is saved, not when the rule is: the steps that follow
+// — the binding question, the grant limit, and the server holding the rule to
+// the secret marked for a well-known ID, which storing one from its kind
+// marks — are then about the secret that will answer, rather than one that
+// does not exist yet. The form says so. Esc is the step before, with nothing
+// stored.
+func (m *Model) askRuleNewCredential(a approval) tea.Cmd {
+	answers := "the rule, and stays a project secret even if you decline the rule"
+	if a.req.WellKnownID != "" {
+		answers = "every request for " + a.req.WellKnownID + " from then on, by a rule or by you — even if you decline the rule"
+	}
+	return m.newCredentialForm(a, section{label: "the rule will answer with it", fields: []field{
+		{label: "credential", value: credentialName(a.req), tone: toneAccent},
+		{label: "stored", value: "when this form is saved — before the rule, which you read before it is made", tone: toneAlert},
+		{label: "it answers", value: answers, tone: toneAlert},
+	}}, "enter stores and goes on", func(_ *form, secret NewSecret) tea.Cmd {
+		m.dialog = statusDialog("Auto approve", "storing "+secret.Name+"…")
+		return func() tea.Msg {
+			stored, err := m.ds.CreateSecret(m.ctx, a.req.Server, secret)
+			return ruleSecretStoredMsg{a: a, secret: stored, asked: secret, err: err}
+		}
+	}, func() tea.Cmd { return m.askRuleSecret(a) })
+}
+
+// ruleSecretStoredMsg carries a secret stored to make a rule with back.
+type ruleSecretStoredMsg struct {
+	a      approval
+	secret Secret
+	asked  NewSecret
+	err    error
+}
+
+// ruleSecretStored goes on with the secret just stored, chosen as though it
+// had been on the list, or says why it was not stored and goes back to the
+// list.
+func (m *Model) ruleSecretStored(msg ruleSecretStoredMsg) tea.Cmd {
+	if msg.err != nil {
+		e := errorDialog("Could not store the credential", fmt.Sprintf("%v", msg.err))
+		e.sections = []section{{lines: []line{{text: "nothing was stored · esc goes back to the secrets, where the request still waits", tone: toneDim}}}}
+		e.onCancel = func() tea.Cmd { return m.askRuleSecret(msg.a) }
+		m.dialog = e
+		return nil
+	}
+	stored := msg.secret
+	if stored.WellKnownID == "" {
+		stored.WellKnownID = msg.asked.WellKnownID
+	}
+	if stored.MaxTTL == 0 {
+		stored.MaxTTL = time.Duration(msg.asked.MaxTTLSeconds) * time.Second
+	}
+	next := msg.a
+	next.secrets = append(slices.Clone(next.secrets), stored)
+	next.stored = stored.Name
+	return tea.Batch(m.loadSecrets(), m.chooseSecret(next, stored.ID))
 }
 
 // proposeRules asks the server what rules could answer the request, and waits
@@ -102,7 +190,7 @@ func (m *Model) ruleProposalsLoaded(msg ruleProposalsMsg) tea.Cmd {
 	}
 	next := msg.a
 	next.proposals = msg.proposals
-	return m.askRuleDiscoboxes(next, msg.back)
+	return m.askAutoDiscoboxes(next, func(approval) tea.Cmd { return msg.back() })
 }
 
 // Content levels, as the server numbers them, and what each is called.
@@ -120,62 +208,144 @@ const ruleByHand = "hand"
 // rule can be made or is read.
 const everyDiscobox = "approves for discoboxes that do not exist yet, including ones a discobox creates"
 
-// The two answers to which discoboxes a rule is for.
+// The answers to which discoboxes a rule is for: the repository offered by
+// name, repositories typed in, or every discobox.
 const (
 	ruleForRepository = "repository"
+	ruleForTyped      = "typed"
 	ruleForEvery      = "every"
 )
 
-// askRuleDiscoboxes is the rule's first half: which discoboxes it answers.
-// There are two answers and no sentence: the repository of the discobox that
-// asked, which the server compares with a discobox's primary source, or every
-// discobox in the project. The narrower is first and is where the cursor
-// starts; a discobox with no repository — a local source with no remote — has
-// only the wider to offer, and the card says why.
-func (m *Model) askRuleDiscoboxes(a approval, back func() tea.Cmd) tea.Cmd {
+// discoboxesAsk is the "which discoboxes" step, as each flow that makes or
+// edits a rule asks it. There is no sentence among its answers: a rule is for
+// repositories the server compares with a discobox's primary source, or for
+// every discobox in the project, which is its own row and its own value.
+type discoboxesAsk struct {
+	title    string
+	sections []section
+	// repository is one offered by name — the asking discobox's, for auto
+	// approve — and noRepository what the card says when there is none to
+	// offer. Empty offers no such row.
+	repository, noRepository string
+	// typed offers naming repositories, a line at a time; named is that list
+	// as it stands — the rule's, or what was typed before going back.
+	typed bool
+	named lineList
+	// was is the answer already given — by the rule being edited, or before
+	// going back — which the cursor opens on.
+	was ApprovalRule
+}
+
+// askDiscoboxes asks which discoboxes a rule is for, and hands chose the
+// answer as a rule naming only that — its repositories, or every discobox —
+// with the typed list as it stands, which the caller keeps. The narrower
+// answers come first and the cursor starts on the first of them, unless an
+// answer was already given. back is the step before, handed the typed list
+// so going back loses none of it.
+func (m *Model) askDiscoboxes(ask discoboxesAsk, chose func(ApprovalRule, lineList) tea.Cmd, back func(lineList) tea.Cmd) tea.Cmd {
 	var items []action
-	repository := a.proposals.Repository
-	if repository != "" {
-		items = append(items, action{key: ruleForRepository, label: "Discoboxes of " + repository,
+	if ask.repository != "" {
+		items = append(items, action{key: ruleForRepository, label: "Discoboxes of " + ask.repository,
 			detail: "any discobox whose primary source is this repository, now or later; its other sources do not count", enabled: true})
+	}
+	typedDetail := "chosen from the repositories this project's discoboxes and rules have, or named: a URL or host/path, such as github.com/org/repo"
+	if named := ask.named.shown(); len(named) > 0 {
+		typedDetail = "now " + strings.Join(named, ", ")
+	}
+	if ask.typed {
+		items = append(items, action{key: ruleForTyped, label: "Discoboxes of repositories you choose or name…", detail: typedDetail, enabled: true})
 	}
 	items = append(items, action{key: ruleForEvery, label: "Every discobox in this project",
 		detail: "whatever its repository: it " + everyDiscobox, enabled: true})
 
-	again := func() tea.Cmd { return m.askRuleDiscoboxes(a, back) }
-	d := actionsDialog("Auto approve: which discoboxes", "", items, func(result string) tea.Cmd {
-		next := a
+	d := actionsDialog(ask.title, "", items, func(result string) tea.Cmd {
 		switch result {
 		case ruleForRepository:
-			next.rule.Repositories, next.rule.EveryDiscobox = []string{repository}, false
+			return chose(ApprovalRule{Repositories: []string{ask.repository}}, ask.named)
+		case ruleForTyped:
+			return m.askLines(linesAsk{
+				title:       ask.title,
+				sections:    ask.sections,
+				answerLabel: "a repository, or several with commas",
+				placeholder: "e.g. github.com/org/repo",
+				written:     "repositories",
+				footer:      "the server reads each, and refuses a bare org/repo",
+				split:       splitRepositories,
+				required:    "choose or name at least one repository, or go back and choose every discobox",
+			}, ask.named, "", func(named lineList) tea.Cmd {
+				return chose(ApprovalRule{Repositories: named.shown()}, named)
+			}, func(named lineList) tea.Cmd {
+				again := ask
+				again.named = named
+				return m.askDiscoboxes(again, chose, back)
+			})
 		case ruleForEvery:
 			// The one place the wider rule is chosen.
-			next.rule.Repositories, next.rule.EveryDiscobox = nil, true
-		default:
-			return nil
+			return chose(ApprovalRule{EveryDiscobox: true}, ask.named)
 		}
-		return m.askRuleContent(next, again)
+		return nil
 	})
-	d.sections = []section{grantSection(a)}
-	if repository == "" {
-		d.sections = append(d.sections, section{label: "why there is no narrower one", lines: []line{
-			{text: "the discobox that asked has no repository a rule could name: its source is a local one with no remote", tone: toneDim},
-		}})
+	switch {
+	case ask.was.EveryDiscobox:
+		d.cursor = len(items) - 1
+	case len(ask.was.Repositories) > 0 && ask.typed && (len(ask.was.Repositories) != 1 || ask.was.Repositories[0] != ask.repository):
+		d.cursor = len(items) - 2
+	}
+	d.sections = ask.sections
+	if ask.repository == "" && ask.noRepository != "" {
+		d.sections = append(d.sections, section{label: "why there is no narrower one", lines: []line{{text: ask.noRepository, tone: toneDim}}})
 	}
 	d.wrapDetails = true
 	d.answerLabel = "which discoboxes is the rule for?"
 	d.footer = "a repository is compared with a discobox's primary source by the server; no model reads it"
 	d.keys = []hint{pressing("enter chooses the highlighted one", "enter"), pressing("esc goes back", "esc")}
-	d.onCancel = back
+	if back != nil {
+		d.onCancel = func() tea.Cmd { return back(ask.named) }
+	}
 	m.dialog = d
 	return nil
+}
+
+// splitRepositories is one typed line as the repositories it names.
+func splitRepositories(typed string) []string {
+	var out []string
+	for _, one := range strings.Split(typed, ",") {
+		if one = strings.TrimSpace(one); one != "" {
+			out = append(out, one)
+		}
+	}
+	return out
+}
+
+// askAutoDiscoboxes is auto approve's first half of the rule: the repository
+// of the discobox that asked, or every discobox. A discobox with no
+// repository — a local source with no remote — has only the wider to offer,
+// and the card says why.
+//
+// Each step after the proposals hands the step before it the approval as it
+// now stands, and that step reopens from it: what was written on a later step
+// — the uses written by hand, half-typed included — rides every step back and
+// forward, as a rule's draft does (ruleStep).
+func (m *Model) askAutoDiscoboxes(a approval, back func(approval) tea.Cmd) tea.Cmd {
+	again := func(now approval) tea.Cmd { return m.askAutoDiscoboxes(now, back) }
+	return m.askDiscoboxes(discoboxesAsk{
+		title:        "Auto approve: which discoboxes",
+		sections:     []section{grantSection(a)},
+		repository:   a.proposals.Repository,
+		noRepository: "the discobox that asked has no repository a rule could name: its source is a local one with no remote",
+		was:          a.rule,
+	}, func(chosen ApprovalRule, _ lineList) tea.Cmd {
+		next := a
+		next.rule.Repositories, next.rule.EveryDiscobox = chosen.Repositories, chosen.EveryDiscobox
+		return m.askRuleContent(next, again)
+	}, func(lineList) tea.Cmd { return back(a) })
 }
 
 // askRuleContent is the rule's second half: the uses it approves. The
 // proposals are listed narrowest first, each row carrying its uses whole and
 // wrapped under it: the sentences are what is being chosen, and a row that
 // cut them off would have a person choose a rule by its label.
-func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
+func (m *Model) askRuleContent(a approval, back func(approval) tea.Cmd) tea.Cmd {
 	items := make([]action, 0, len(a.proposals.Contents)+1)
 	for _, p := range a.proposals.Contents {
 		// One use a line, each wrapped under itself, so where one sentence
@@ -192,16 +362,21 @@ func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
 	items = append(items, action{key: ruleByHand, press: "w", label: "Write the uses by hand…",
 		detail: "one sentence a line; the server judges them before the rule is made", enabled: true})
 
-	again := func() tea.Cmd { return m.askRuleContent(a, back) }
 	d := actionsDialog("Auto approve: what it approves", "", items, func(result string) tea.Cmd {
 		if result == ruleByHand {
-			return m.askRuleUsesByHand(a, again, nil, "")
+			return m.askAutoUses(a, func(held lineList) tea.Cmd {
+				// What was typed is kept for the next time the uses are
+				// written by hand.
+				next := a
+				next.heldUses = held
+				return m.askRuleContent(next, back)
+			})
 		}
 		for _, p := range a.proposals.Contents {
 			if result == fmt.Sprintf("content:%d", p.Level) && p.Covers {
 				next := a
 				next.rule.Uses = p.Uses
-				return m.askLifetime(next, again)
+				return m.askLifetime(next, func() tea.Cmd { return m.askRuleContent(next, back) })
 			}
 		}
 		return nil
@@ -211,46 +386,32 @@ func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
 	d.answerLabel = "what may the rule approve?"
 	d.footer = "a later request is approved only when every use it asks for is within these"
 	d.keys = []hint{pressing("enter chooses the highlighted uses", "enter"), pressing("esc goes back", "esc")}
-	d.onCancel = back
+	d.onCancel = func() tea.Cmd { return back(a) }
 	m.dialog = d
 	return nil
 }
 
-// askRuleUsesByHand takes the uses a line at a time: Enter adds the sentence
-// typed, and Enter on an empty line is the end of them. The card's field is
-// one line, and a use is one sentence, so the list is built above the field
-// rather than typed into it. Esc takes back the last line, as every step here
-// goes back one. refused is what was wrong with the last answer.
-func (m *Model) askRuleUsesByHand(a approval, back func() tea.Cmd, uses []string, refused string) tea.Cmd {
-	again := func() tea.Cmd { return m.askRuleUsesByHand(a, back, uses, "") }
-	d := inputDialog("Auto approve: what it approves", "", "e.g. Comment on any issue in org/repo", "", func(value string) tea.Cmd {
-		if value != "" {
-			// Clipped, so a line added after going back does not write over
-			// the one that was taken back.
-			return m.askRuleUsesByHand(a, again, append(uses[:len(uses):len(uses)], value), "")
-		}
-		if len(uses) == 0 {
-			return m.askRuleUsesByHand(a, back, uses, "a rule says what it approves: write at least one use")
-		}
+// askAutoUses takes auto approve's uses by hand, a line at a time, for the
+// server to judge before it makes the rule. Going back from the lifetime is
+// back to the lines, as they were written; going back from the lines hands
+// back what was typed, half-typed included.
+func (m *Model) askAutoUses(a approval, back func(lineList) tea.Cmd) tea.Cmd {
+	ask := linesAsk{
+		title:       "Auto approve: what it approves",
+		sections:    []section{grantSection(a), ruleDiscoboxesSection(a.rule)},
+		answerLabel: "another use, one sentence",
+		placeholder: "e.g. Comment on any issue in org/repo",
+		written:     "uses written so far",
+		footer:      "keep every \"never …\" the request stated",
+		required:    "a rule says what it approves: write at least one use",
+	}
+	var done func(lineList) tea.Cmd
+	done = func(uses lineList) tea.Cmd {
 		next := a
-		next.rule.Uses = uses
-		return m.askLifetime(next, again)
-	})
-	written := section{label: "uses written so far"}
-	for _, use := range uses {
-		written.lines = append(written.lines, line{text: use, bullet: true})
+		next.rule.Uses = uses.values()
+		return m.askLifetime(next, func() tea.Cmd { return m.askLines(ask, uses, "", done, back) })
 	}
-	if len(uses) == 0 {
-		written.lines = []line{{text: "none yet", tone: toneDim}}
-	}
-	d.sections = []section{grantSection(a), ruleDiscoboxesSection(a.rule), written}
-	d.answerLabel = "another use, one sentence"
-	d.footer = "Enter adds the line; Enter on an empty line finishes · keep every \"never …\" the request stated"
-	d.emphasis = refused
-	d.keys = []hint{pressing("Enter adds it, or finishes", "enter"), pressing("Esc goes back", "esc")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
+	return m.askLines(ask, a.heldUses, "", done, back)
 }
 
 // reviewRule is the last card before the write: the rule's full text. That
@@ -268,10 +429,7 @@ func (m *Model) reviewRule(a approval, back func() tea.Cmd) tea.Cmd {
 	if a.gate {
 		answered = gateAnswers
 	}
-	d.sections = append([]section{ruleFactsSection(rule, a.ruleCredential(), answered, lifetime.Label(a.ttl))}, ruleSections(rule)...)
-	if gives, ok := ruleHandsOut(rule); ok {
-		d.sections = append(d.sections, gives)
-	}
+	d.sections = ruleText(rule, ruleFactsSection(rule, a.ruleCredential(), answered, lifetime.Label(a.ttl)))
 	if len(a.changes) > 0 {
 		with := section{label: "changed with it"}
 		for _, change := range a.changes {
@@ -338,6 +496,18 @@ func ruleFactsSection(rule Rule, credential, answered, lasts string) section {
 		field{label: "each grant lasts", value: lasts, tone: toneAccent},
 	)
 	return sec
+}
+
+// ruleText is a rule's whole text, as every card that shows one draws it — the
+// one before it is made, the one before it is changed, and a stored rule's:
+// facts, then which discoboxes and every use, then what it hands out when
+// that is more than a credential to use.
+func ruleText(rule Rule, facts section) []section {
+	out := append([]section{facts}, ruleSections(rule)...)
+	if gives, ok := ruleHandsOut(rule); ok {
+		out = append(out, gives)
+	}
+	return out
 }
 
 // ruleSections is the half that was chosen, as far as it has been: which

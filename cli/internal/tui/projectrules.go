@@ -18,11 +18,10 @@ import (
 // A rule answers requests nobody is shown, so what a project holds has to be
 // somewhere a person can read it: a row a rule, then one rule whole — in the
 // sections the card that made it was read in (rules.go) — with the grants it
-// minted that still stand. It is disabled, enabled or deleted from its row or
-// its card, and one of its grants revoked from the card. Its repositories and
-// uses are not edited here: the server judges a rule's sentences, and
-// `discobox secret rule update` is where that is asked for. Making one stays with "auto
-// approve" and the CLI.
+// minted that still stand. It is made (n) and edited (e) here, a step at a
+// time (ruleedit.go); disabled, enabled or deleted from its row or its card;
+// and one of its grants revoked from the card. Auto approve on a request and
+// the CLI make the same rule.
 
 // ruleToggleKey disables or enables the rule under the cursor, and the rule a
 // card is of; ruleDeleteKey deletes it, behind a question.
@@ -130,9 +129,9 @@ func (l *ruleList) clamp() {
 	}
 }
 
-// noRules is the table's empty line: that there are none, and the two ways
-// one is made, since neither is a key on this screen.
-const noRules = "  no rules: answer a request with auto approve, or `discobox secret rule create`"
+// noRules is the table's empty line: that there are none, and how one is
+// made. The empty table still takes the cursor, so n reaches it.
+const noRules = "no rules — n makes one; auto approve on a request makes one too"
 
 // view draws the table. credential names a rule's credential, which for a
 // project secret is the secret's name and so the screen's to say.
@@ -153,11 +152,24 @@ func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule
 	case l.failed != "":
 		body = append(body, st.dimText.Render(pad(truncate("  cannot read rules: "+l.failed, l.width), l.width)))
 	case len(l.all) == 0 && l.loaded:
-		body = append(body, st.dimText.Render(pad(truncate(noRules, l.width), l.width)))
+		marker := "  "
+		if focused {
+			marker = st.key.Render("❯") + " "
+		}
+		body = append(body, padANSI(marker+st.dimText.Render(truncate(noRules, max(l.width-2, 0))), l.width))
 	}
+	// The credential and repositories columns are as wide as the widest of
+	// them, within bounds, so the uses line up and get the rest.
+	credW, forW := 0, 0
+	for _, rule := range l.all {
+		credW = max(credW, lipgloss.Width(credential(rule))+2)
+		forW = max(forW, lipgloss.Width(ruleRowDiscoboxes(rule))+2)
+	}
+	credW = min(max(credW, ruleCredentialMin), ruleCredentialWidth)
+	forW = min(max(forW, ruleDiscoboxesMin), ruleDiscoboxesMax)
 	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
-		body = append(body, l.row(st, l.all[i], credential(l.all[i]), i, focused))
+		body = append(body, l.row(st, l.all[i], credential(l.all[i]), credW, forW, i, focused))
 		l.drawn.count++
 	}
 	for len(body) < l.height {
@@ -173,10 +185,9 @@ func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule
 // right end as the terminal narrows, as on the tables above; the credential
 // never goes.
 //
-// The repositories are the one column of no fixed length, so it is the one
-// that takes what the others leave and is cut to it: the row tells two rules
-// apart, and Enter reads them whole.
-func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused bool) string {
+// The uses are the column that takes what the others leave and is cut to
+// it: they are what tells two rules apart, and Enter reads them whole.
+func (l *ruleList) row(st *styles, rule Rule, credential string, credW, forW, i int, focused bool) string {
 	atCursor := i == l.cursor && focused
 	now := l.now()
 
@@ -187,8 +198,7 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused 
 		}
 		tail += padANSI(text, w)
 	}
-	addCol("  "+st.dimText.Render(pad(plural(len(rule.Uses), "use", "uses"), 7)), 10)
-	addCol(st.dimText.Render(pad(ruleRowExpiry(rule, now), 14)), 15)
+	addCol("  "+st.dimText.Render(pad(ruleRowExpiry(rule, now), 14)), 17)
 
 	marker := "  "
 	if atCursor {
@@ -203,15 +213,32 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused 
 	// only while the credential keeps a column of its own; narrower than
 	// that the row is the credential.
 	lead := padANSI(nameStyle.Render(truncate(credential, room)), room)
-	if forW := room - ruleCredentialWidth - ruleStateWidth; forW >= 0 {
+	if rest := room - credW - ruleStateWidth; rest >= 0 {
 		state := ruleState(rule, now)
-		lead = padANSI(nameStyle.Render(truncate(credential, ruleCredentialWidth-1)), ruleCredentialWidth) +
+		lead = padANSI(nameStyle.Render(truncate(credential, credW-2)), credW) +
 			ruleStateTone(state).style(st).Render(pad(state, ruleStateWidth))
+		// What it approves takes what the repositories leave, which is most
+		// of a wide row: the uses are what tells one rule from the next.
+		// Narrower, the repositories give up room to the uses down to two
+		// fifths of what the two share once the uses would have less than
+		// ruleUsesWanted, and only then do the uses go.
+		if rest-forW < ruleUsesWanted {
+			forW = min(forW, max(ruleDiscoboxesMin, rest*2/5))
+		}
+		usesW := 0
+		if rest-forW >= ruleUsesMin {
+			usesW = rest - forW
+		} else {
+			forW = rest
+		}
 		discoboxes := ""
 		if forW >= ruleDiscoboxesMin {
-			discoboxes = truncate(ruleRowDiscoboxes(rule), forW)
+			discoboxes = truncate(ruleRowDiscoboxes(rule), forW-2)
 		}
 		lead += st.name.Render(pad(discoboxes, forW))
+		if usesW > 0 {
+			lead += st.dimText.Render(pad(truncate(ruleRowUses(rule), usesW), usesW))
+		}
 	}
 	line := padANSI(marker+lead+tail, l.width)
 	if atCursor {
@@ -224,8 +251,12 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused 
 // credential, state and repositories before one of them is dropped instead.
 const (
 	ruleCredentialWidth = 24
+	ruleCredentialMin   = 12
 	ruleStateWidth      = 10
 	ruleDiscoboxesMin   = 16
+	ruleDiscoboxesMax   = 36
+	ruleUsesMin         = 12
+	ruleUsesWanted      = 24
 	ruleLeadWidth       = ruleCredentialWidth + ruleStateWidth + ruleDiscoboxesMin + 2
 )
 
@@ -242,6 +273,17 @@ func ruleRowDiscoboxes(rule Rule) string {
 		return "delegates · " + discoboxes
 	}
 	return discoboxes
+}
+
+// ruleRowUses is what a rule approves on one line: its uses in order, each
+// flattened, cut by the column rather than counted, so a row says as much of
+// them as it has room for.
+func ruleRowUses(rule Rule) string {
+	uses := make([]string, 0, len(rule.Uses))
+	for _, use := range rule.Uses {
+		uses = append(uses, strings.Join(strings.Fields(use), " "))
+	}
+	return strings.Join(uses, " · ")
 }
 
 // ruleRowExpiry is the last column: when the rule itself stops answering.
@@ -286,6 +328,12 @@ func (m *Model) updateRuleTable(msg tea.KeyPressMsg) tea.Cmd {
 		if rule := m.rules.current(); rule != nil {
 			return m.openRule(m.configServer(), rule.ID)
 		}
+	case ruleNewKey:
+		return m.newRule()
+	case ruleEditKey:
+		if rule := m.rules.current(); rule != nil {
+			return m.editRule(m.configServer(), *rule, false)
+		}
 	case ruleToggleKey:
 		if rule := m.rules.current(); rule != nil {
 			return m.setRuleEnabled(m.configServer(), *rule, !rule.Enabled, false)
@@ -299,15 +347,22 @@ func (m *Model) updateRuleTable(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 // ruleHints is the bottom line on a rule row: what that rule can take, with
-// the word for what the toggle would do to it.
+// the word for what the toggle would do to it. On the empty table it is only
+// making one.
 func (m *Model) ruleHints(tab hint) []hint {
+	rule := m.rules.current()
+	if rule == nil {
+		return []hint{keyed(ruleNewKey, ruleNewKey, "new rule"), tab, keyed("esc", "esc", "back")}
+	}
 	toggle := "disable"
-	if rule := m.rules.current(); rule != nil && !rule.Enabled {
+	if !rule.Enabled {
 		toggle = "enable"
 	}
 	return []hint{
 		says("↑↓ move"),
+		keyed(ruleNewKey, ruleNewKey, "new"),
 		keyed("enter", "enter", "read it"),
+		keyed(ruleEditKey, ruleEditKey, "edit"),
 		keyed(ruleToggleKey, ruleToggleKey, toggle),
 		keyed(ruleDeleteKey, ruleDeleteKey, "delete"),
 		tab,
@@ -414,8 +469,13 @@ func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 	if !rule.Enabled {
 		toggle.label, toggle.detail = "Enable this rule", "it answers the requests it covers again, without asking"
 	}
-	items := []action{toggle, {key: ruleDeleteItem, press: ruleDeleteKey, label: "Delete this rule…",
-		detail: "the grants it minted stay, and are revoked one by one", enabled: true}}
+	items := []action{
+		{key: ruleEditItem, press: ruleEditKey, label: "Edit this rule…",
+			detail: "which discoboxes, what it approves, its longest grant and when it lapses, read whole before it is saved", enabled: true},
+		toggle,
+		{key: ruleDeleteItem, press: ruleDeleteKey, label: "Delete this rule…",
+			detail: "the grants it minted stay, and are revoked one by one", enabled: true},
+	}
 	standing := map[string]Grant{}
 	for _, g := range grants {
 		standing[g.ID] = g
@@ -432,6 +492,8 @@ func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 
 	d := actionsDialog("Approval rule", "", items, func(result string) tea.Cmd {
 		switch result {
+		case ruleEditItem:
+			return m.editRule(server, rule, true)
 		case ruleToggleItem:
 			return m.setRuleEnabled(server, rule, !rule.Enabled, true)
 		case ruleDeleteItem:
@@ -454,16 +516,13 @@ func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 	if made := ago(rule.Created, now); made != "" {
 		facts.fields = append(facts.fields, field{label: "made", value: made})
 	}
-	d.sections = append([]section{facts}, ruleSections(rule)...)
-	if gives, ok := ruleHandsOut(rule); ok {
-		d.sections = append(d.sections, gives)
-	}
+	d.sections = ruleText(rule, facts)
 
 	d.answerLabel = "no grant it minted still stands"
 	if len(standing) > 0 {
 		d.answerLabel = plural(len(standing), "grant it minted still stands", "grants it minted still stand")
 	}
-	d.footer = "its repositories and uses are changed with `discobox secret rule update " + rule.ID + "`, where the server judges its uses"
+	d.footer = "an edit is read whole before it is saved, and the rule is then tested afresh against what is pending"
 	d.keys = []hint{pressing("enter runs it, or reads a grant", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes a grant"), pressing("esc leaves it alone", "esc")}
 	d.altKey = grantRevokeKey
 	d.alt = func(key string) tea.Cmd {
