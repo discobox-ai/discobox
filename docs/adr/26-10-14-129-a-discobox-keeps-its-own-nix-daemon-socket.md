@@ -1,6 +1,6 @@
 # 26-10-14-129 — A discobox keeps its own Nix daemon socket
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-14
 - **Amends**: [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md)
   §2 (a third path inside `/nix` is per sandbox, on a different ground than
