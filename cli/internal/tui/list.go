@@ -373,7 +373,7 @@ func (l *sandboxList) setListed(listed map[string]time.Time) {
 // listedAgo is how old a server's rows are, said only once they are old
 // enough to be worth saying (listingStaleAfter): "listed 40s ago". Empty
 // otherwise, including for a server with nothing on record — a server that has
-// never answered is the waiting section's to say, not this.
+// never answered is the "still listing" note's to say, not this.
 func (l *sandboxList) listedAgo(server string) string {
 	at, ok := l.listed[server]
 	if !ok || at.IsZero() {
@@ -487,9 +487,13 @@ func (l *sandboxList) behind() []string {
 	if l.oneServer() {
 		return nil
 	}
+	shown := map[string]bool{}
+	for _, s := range l.rows() {
+		shown[s.Server] = true
+	}
 	var names []string
 	for name := range l.listed {
-		if l.listedAgo(name) != "" {
+		if shown[name] && l.listedAgo(name) != "" {
 			names = append(names, name)
 		}
 	}

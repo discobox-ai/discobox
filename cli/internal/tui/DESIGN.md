@@ -954,10 +954,15 @@ a row whose glyph went missing.
 **Servers are not sections.** Which server a discobox is on is answered by
 narrowing the header to that server; a band per server split one repository's
 discoboxes across as many sections as there were servers, which is the
-grouping nobody reads the list for. The one thing still said by server is a
-server whose rows are *missing*: `server <name>` and `not answering` (or
-`still listing`), a band with no rows under it — rows that are missing say why
-rather than vanishing.
+grouping nobody reads the list for. The two things still said by server are
+about its rows as a whole rather than about where they belong. A server whose
+rows are *missing*: `server <name>` and `not answering` (or `still listing`), a
+band with no rows under it — rows that are missing say why rather than
+vanishing. And a server whose rows are here but *old*: `server <name>` and
+`listed 1m ago`, the same band, because its rows are spread through the
+folders above and have no section of their own to say it on (see Many
+servers). Each says what is wrong in its own words, so the one band carries
+both.
 
 **A GitHub repository is one folder** ([ADR 26-10-14-585](../../../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
 `Sandbox.folder`, `Sandbox.RepositoryKey`). A clone in a directory, the
