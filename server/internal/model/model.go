@@ -553,6 +553,25 @@ func (s *GitSource) Root() string {
 	return ""
 }
 
+// Remote is the source's network remote as it was recorded at create: the URL
+// of a remote-URL source, and the remote its client reported for a local
+// checkout. It is empty when there is none.
+func (s *GitSource) Remote() string {
+	if s == nil {
+		return ""
+	}
+	if s.LocalDirectory == nil || strings.TrimSpace(*s.LocalDirectory) == "" {
+		if s.URL != nil {
+			return strings.TrimSpace(*s.URL)
+		}
+		return ""
+	}
+	if s.UpstreamURL != nil {
+		return strings.TrimSpace(*s.UpstreamURL)
+	}
+	return ""
+}
+
 // GitSourceCheckout identifies the immutable checkout and user-facing ref.
 type GitSourceCheckout struct {
 	Commit  *string `json:"commit,omitempty" doc:"Immutable commit SHA to materialize"`

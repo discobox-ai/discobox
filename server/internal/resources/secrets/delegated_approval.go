@@ -256,8 +256,9 @@ func fitTTL(delegation *model.SecretGrant, ttl int64, now time.Time) (int64, err
 // uses, is the refusal given, since that one might have.
 //
 // requestID is the request being approved, empty for a grant given on a
-// create; forSandboxID is the discobox the uses go to either way.
-func (s *Service) judgeDelegations(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, credential string, hosts []string, uses []model.SecretUse, requestID, forSandboxID string) (*model.SecretGrant, error) {
+// create; forSandbox is the discobox the uses go to either way, as it was
+// created — not yet stored, on a create.
+func (s *Service) judgeDelegations(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, credential string, hosts []string, uses []model.SecretUse, requestID string, forSandbox *model.Sandbox) (*model.SecretGrant, error) {
 	if s.judge == nil {
 		return nil, apperrors.NewStatusError(http.StatusForbidden,
 			"no judge can say whether these uses are within what this discobox was delegated, so it hands nothing on; leave it for a person")
@@ -270,7 +271,7 @@ func (s *Service) judgeDelegations(ctx context.Context, projectID, approverID st
 		answer, err := s.judge.JudgeDelegation(ctx, projectID, services.DelegationAsk{
 			ApproverID:        approverID,
 			RequestID:         requestID,
-			ForSandboxID:      forSandboxID,
+			For:               forSandbox,
 			DelegationGrantID: delegation.ID,
 			Delegated:         useDescriptions(delegation.Uses),
 			Uses:              useDescriptions(uses),

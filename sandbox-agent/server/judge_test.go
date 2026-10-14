@@ -4,8 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 )
 
 // Judging is its own authority (ADR 26-09-22-838 §2): a token for a discobox's own
@@ -103,5 +106,20 @@ func TestProposingARuleRequiresTheJudgeScope(t *testing.T) {
 				t.Fatalf("status = %d, body = %s; want the scope accepted and no proposal from a discobox that is not a judge", resp.Code, resp.Body.String())
 			}
 		})
+	}
+}
+
+// The facts the control plane states reach the judge's wrapper as they were
+// sent (ADR 26-10-14-691): a field the wire carries and the job drops is a
+// judge deciding without what it was told.
+func TestTheJudgeIsGivenTheFactsItWasSent(t *testing.T) {
+	t.Parallel()
+	facts := []string{"The discobox asking is sbx_worker.", "It was created with no source."}
+	job := judgeJob(&sandboxapi.JudgeJob{
+		Kind: sandboxapi.JudgeJobKindDelegation, Purpose: "read issues", Host: "api.github.com", Round: 1,
+		Uses: []string{"read issue 1"}, Facts: facts,
+	})
+	if !slices.Equal(job.Facts, facts) {
+		t.Fatalf("facts = %q, want %q", job.Facts, facts)
 	}
 }

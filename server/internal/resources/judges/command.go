@@ -63,6 +63,9 @@ func (s *Service) JudgeCommand(ctx context.Context, poolID string, ask services.
 		Stdin:      ask.Stdin,
 		Reported:   ask.Reported,
 	}
+	if job.Facts, err = s.facts(ctx, project.ID, ask.SandboxID); err != nil {
+		return judge.Answer{}, err
+	}
 	if err := job.Validate(); err != nil {
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, "the command cannot be judged: "+err.Error())
 	}

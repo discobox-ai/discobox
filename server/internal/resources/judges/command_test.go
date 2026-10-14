@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,6 +63,9 @@ func TestACommandIsJudgedAndRecordedAsTheJudges(t *testing.T) {
 	if string(job.Kind) != judge.KindCommand || job.Purpose != "open a pull request in org/repo" || job.Host != "api.github.com" ||
 		len(job.Command) != 5 || stdin.Content != "Fixes the flaky test" || reported.WorkingDirectory.Or("") != "/src/repo" {
 		t.Fatalf("job = %+v, want a command job from the grant carrying the discobox's evidence", job)
+	}
+	if !slices.Equal(job.Facts, workerFacts) {
+		t.Fatalf("facts = %q, want what the control plane recorded about the discobox asking: %q", job.Facts, workerFacts)
 	}
 	// Once to build the question, once after the verdict.
 	if asked != 2 {

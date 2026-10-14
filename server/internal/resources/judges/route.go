@@ -95,7 +95,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	// refuses whatever the use turns out to say. That holds for an allow the
 	// judge let stand as well: a project whose judge is gone or failed has
 	// nobody standing behind it, and refuses the same way.
-	job, use, err := s.job(ctx, poolID, ask)
+	job, use, err := s.job(ctx, project.ID, poolID, ask)
 	if err != nil {
 		return judge.Answer{}, err
 	}
@@ -618,7 +618,7 @@ func covers(granted *model.CredentialVerdict, job judge.Job, use services.Approv
 // discobox and the use; the sentence that use approves, the credential behind
 // it and the host it is approved for are read here, so a pool cannot widen its
 // own question (ADR 26-09-22-838 §4).
-func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Job, services.ApprovedUse, error) {
+func (s *Service) job(ctx context.Context, projectID, poolID string, ask services.JudgeAsk) (judge.Job, services.ApprovedUse, error) {
 	if ask.Request == nil {
 		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")
 	}
@@ -638,6 +638,9 @@ func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk)
 		// from the pool: the words about a protocol or an API are the trusted
 		// side's (ADR 26-09-26-240 §4).
 		Guidance: judge.GuidanceFor(ask.Request),
+	}
+	if job.Facts, err = s.facts(ctx, projectID, ask.SandboxID); err != nil {
+		return judge.Job{}, services.ApprovedUse{}, err
 	}
 	if err := job.Validate(); err != nil {
 		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
@@ -705,6 +708,7 @@ func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 		Round:    int64(job.Round),
 		Command:  job.Command,
 		Guidance: job.Guidance,
+		Facts:    job.Facts,
 		Uses:     job.Uses,
 	}
 	if job.Credential != "" {

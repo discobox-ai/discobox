@@ -225,7 +225,9 @@ covering the host and fitting the lifetime it named (`delegationsOf`,
 `delegationsFitting`), whose uses the judge finds its uses within — chosen as
 an approval's is ([below](#delegation-grants)), every grant at once, once
 every grant has passed what can refuse it without the judge
-(`judgeDelegations`, the new discobox as `ForSandboxID`). A lifetime it did
+(`judgeDelegations`, the new discobox's row as `DelegationAsk.For`: it is not
+stored yet, and the judge is told what it is created with,
+ADR 26-10-14-691 §4). A lifetime it did
 not name is then fitted to the delegation chosen. The create's transaction
 holds each grant to its delegation again (`HoldDelegations`), so a delegation
 revoked in between creates nothing.
@@ -266,7 +268,9 @@ and a discobox that needs both holds two grants.
   time left. Whether the uses handed on — the request's, or the ones the
   approver narrowed them to — fall within a delegation's uses is a reading, so
   it is asked of the project's judge (`judgeDelegations`, through
-  `services.JudgeService.JudgeDelegation`) before the transaction — last,
+  `services.JudgeService.JudgeDelegation`, with the requesting discobox's row,
+  read here, so the judge is told what the discobox receiving the uses was
+  created with — ADR 26-10-14-691 §4) before the transaction — last,
   after every check that can refuse without it — once per candidate, each on
   its own: never against several delegations' uses together, which no one
   delegation the grant is bounded by, held to, and traced to would hold.

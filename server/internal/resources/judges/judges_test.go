@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -108,10 +109,43 @@ func newJudgeTest(t *testing.T) (*Service, *store.Store, *fakeSandboxes) {
 	}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
+	// The discoboxes the tests below ask for: the judge is told about the one
+	// asking from its row (ADR 26-10-14-691). sandbox-1 was created from a
+	// branch of org/repo, and by sbx-lead, which hands credentials on;
+	// sandbox-2 is another discobox, created with nothing.
+	for _, asking := range []*model.Sandbox{
+		{ID: "sbx-lead", ProjectID: "project-1", PoolID: "pool-1", Name: "lead"},
+		{ID: "sandbox-2", ProjectID: "project-1", PoolID: "pool-1", Name: "other"},
+		worker(),
+	} {
+		if err := appStore.CreateSandbox(ctx, asking); err != nil {
+			t.Fatalf("create sandbox %s: %v", asking.ID, err)
+		}
+	}
 	sandboxes := &fakeSandboxes{store: appStore}
 	// Enabled: every test below is about what a server that judges does. The
 	// server that has not opted in is its own test.
 	return New(appStore, sandboxes, nil, Judging{Commands: true, Requests: true}, nil, false), appStore, sandboxes
+}
+
+// worker is sandbox-1 as it was created: from a branch of org/repo, by
+// sbx-lead.
+func worker() *model.Sandbox {
+	return &model.Sandbox{
+		ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", Name: "worker",
+		CreatedBySandboxID: new("sbx-lead"),
+		SandboxManifest: model.SandboxManifest{Source: &model.GitSource{
+			Kind: "git", URL: new("https://github.com/org/repo.git"),
+			Checkout: &model.GitSourceCheckout{RefType: new("branch"), RefName: new("main")},
+		}},
+	}
+}
+
+// workerFacts is what the judge is told about sandbox-1.
+var workerFacts = []string{
+	"The discobox asking is sandbox-1.",
+	"The primary source sandbox-1 was created with is the Git repository github.com/org/repo, checked out from the branch main.",
+	"sandbox-1 was created by the discobox sbx-lead.",
 }
 
 // harness records a configured harness and makes it the project's default.
@@ -171,6 +205,12 @@ func TestAProjectWithAHarnessGetsAJudge(t *testing.T) {
 func TestAJudgeIsNotTheProjectsWork(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, _ := newJudgeTest(t)
+	// Nothing but the judge: the discoboxes other tests ask for are work.
+	for _, asking := range []string{"sandbox-1", "sandbox-2", "sbx-lead"} {
+		if err := appStore.DeleteSandbox(ctx, "project-1", asking); err != nil {
+			t.Fatalf("delete sandbox %s: %v", asking, err)
+		}
+	}
 	defaultHarness(t, appStore, "codex", "sha256:one")
 	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
@@ -742,6 +782,9 @@ func TestTheQuestionIsReadFromTheGrantAndNotFromTheAsk(t *testing.T) {
 	if jobs[0].Credential.Or("") != "GitHub token" {
 		t.Fatalf("job named the credential %q, want the words a person reads", jobs[0].Credential.Or(""))
 	}
+	if got := jobs[0].Facts; !slices.Equal(got, workerFacts) {
+		t.Fatalf("facts = %q, want what the control plane recorded about the discobox asking: %q", got, workerFacts)
+	}
 	// Once to build the question, once after the verdict.
 	if asked != 2 {
 		t.Fatalf("the use was resolved %d times, want it asked again after the verdict", asked)
@@ -1287,7 +1330,7 @@ func TestADelegationIsJudgedAndRecordedAgainstItsGrant(t *testing.T) {
 	service.SetLeases(fake)
 
 	answer, err := service.JudgeDelegation(ctx, "project-1", services.DelegationAsk{
-		ApproverID: "sbx-lead", RequestID: "sreq-worker", DelegationGrantID: "grant-delegated",
+		ApproverID: "sbx-lead", For: worker(), RequestID: "sreq-worker", DelegationGrantID: "grant-delegated",
 		Delegated:  []string{"read issues in org/repo", "read pull requests in org/repo"},
 		Uses:       []string{"push the branch fix-43 to org/repo"},
 		Credential: "github", Hosts: []string{"api.github.com"},
@@ -1306,6 +1349,19 @@ func TestADelegationIsJudgedAndRecordedAgainstItsGrant(t *testing.T) {
 	if string(job.Kind) != judge.KindDelegation || job.Purpose != "read issues in org/repo\nread pull requests in org/repo" ||
 		len(job.Uses) != 1 || job.Uses[0] != "push the branch fix-43 to org/repo" || job.Host != "api.github.com" || job.Round != 1 {
 		t.Fatalf("job = %+v, want a delegation job: the delegated uses as the purpose, the handed-on uses beside them", job)
+	}
+	// The discobox asking is the one handing the credential on, and the one
+	// it would hand it to is stated beside it: "this discobox" in a use means
+	// the other one once it is handed on.
+	want := []string{
+		"The discobox asking, which would hand the credential on, is sbx-lead.",
+		"sbx-lead was created with no source.",
+		"The discobox it would hand the credential to is sandbox-1.",
+		"The primary source sandbox-1 was created with is the Git repository github.com/org/repo, checked out from the branch main.",
+		"sandbox-1 was created by the discobox sbx-lead.",
+	}
+	if !slices.Equal(job.Facts, want) {
+		t.Fatalf("facts =\n%q\nwant the ones about both discoboxes:\n%q", job.Facts, want)
 	}
 	verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
 	if err != nil {

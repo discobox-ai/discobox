@@ -583,7 +583,13 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if req.WellKnownID != "" {
 			credential = req.WellKnownID
 		}
-		if delegation, err = s.judgeDelegations(ctx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, req.SandboxID); err != nil {
+		// The judge is told what the discobox the uses go to was created
+		// with, beside the one handing them on (ADR 26-10-14-691).
+		requester, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
+		if err != nil {
+			return nil, apperrors.NotFound(err, "the discobox that asked was not found")
+		}
+		if delegation, err = s.judgeDelegations(ctx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, requester); err != nil {
 			return nil, err
 		}
 	}
