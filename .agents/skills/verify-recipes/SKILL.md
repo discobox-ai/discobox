@@ -1,11 +1,11 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (from `discobox-ai/skills`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
 
-Read the `test-fix` skill's `driving-task-dev.md` (from `discobox-ai/skills`) first: the dev loop is
+Read `.agents/skills/test-fix/driving-task-dev.md` first: the dev loop is
 already running, and every CLI call needs `--server http://127.0.0.1:8080`.
 Confirm `build/discobox` is newer than your last edit before driving it.
 
@@ -191,7 +191,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
 # Verifying `discobox-access` in a dev box (request, wait, list)
 
 Every command goes to the dev loop through `d()` from
-the `test-fix` skill's `driving-task-dev.md` (from `discobox-ai/skills`)
+`.agents/skills/test-fix/driving-task-dev.md`
 (`d() { ./build/discobox --server http://127.0.0.1:8080 "$@"; }`): a bare
 `discobox` reaches the outer discobox API, where a fake secret and a forever
 grant do not belong.

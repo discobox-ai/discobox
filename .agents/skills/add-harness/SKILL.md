@@ -188,7 +188,7 @@ the CLI audit test, `go tool task build:harness-image HARNESS=<id>`,
 
 ## 6. Prove it end to end
 
-Against the nested `task dev` server (the `test-fix` skill's `driving-task-dev.md`, from `discobox-ai/skills`
+Against the nested `task dev` server (`.agents/skills/test-fix/driving-task-dev.md`
 — it is already running; always `--server http://127.0.0.1:8080`), with a real
 credential the user grants through `discobox-access`. Copilot's run, which
 passed, is the template:
