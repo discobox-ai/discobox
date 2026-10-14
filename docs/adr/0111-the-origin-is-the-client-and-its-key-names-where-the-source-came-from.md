@@ -4,6 +4,7 @@
   by [ADR 26-09-30-188](26-09-30-188-the-consoles-filters-open-on-everything-and-are-kept-per-directory.md);
   §3's header filtering by the origin key, for a source on a GitHub
   repository, superseded by [ADR 26-10-14-585](26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
+  §3's `ls` and picker scope and `--all` superseded by [ADR 26-10-10-954](26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md);
   the rest stands)
 - **Date**: 2026-09-11
 - **Supersedes**: [0001](0001-sandbox-origin-and-remote-source-push.md) §1's
