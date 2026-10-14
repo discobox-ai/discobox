@@ -214,10 +214,27 @@ func applySources(sandbox *apimodel.Sandbox) []applySourceEntry {
 }
 
 // selectSources is the set of sources a command acts on: every source on the
-// sandbox, or only the one named by slug. Shared by the commands that work
-// per-source (apply, diff) so "--source" means the same thing in each.
+// sandbox being worked on, or only the one named by slug. Shared by the
+// commands that work per-source (apply, diff) so "--source" means the same
+// thing in each.
+//
+// A skills source is left out unless it is named: it is checked out for its
+// skills, has no checkout on this machine to apply to, and its edits leave
+// the sandbox by being pushed to its own remote (ADR 26-10-14-294 §2).
 func selectSources(sandbox *apimodel.Sandbox, onlySlug string) ([]applySourceEntry, error) {
 	sources := applySources(sandbox)
+	if onlySlug == "" {
+		worked := sources[:0]
+		for _, s := range sources {
+			if s.source.Purpose.Or("") != apiclientgen.GitSourcePurposeSkills {
+				worked = append(worked, s)
+			}
+		}
+		if len(worked) == 0 && len(sources) > 0 {
+			return nil, fmt.Errorf("discobox's only sources are skills sources; name one with --source")
+		}
+		sources = worked
+	}
 	if onlySlug != "" {
 		filtered := sources[:0]
 		for _, s := range sources {

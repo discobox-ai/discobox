@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 	t.Setenv("SANDBOX_ENV_FROM_SHELL", "from-shell")
-	body, err := createSandboxBody(sandboxCreateOptions{
+	body, err := createSandboxBody(context.Background(), sandboxCreateOptions{
 		name:                 "work",
 		harnessName:          "Codex",
 		model:                "gpt-5.1-codex-max",

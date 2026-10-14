@@ -24,11 +24,12 @@
 # What discobox new, and the console's New Discobox panel, take when the
 # command line does not say.
 #new:
-  # Directories of skills to install in every new discobox, each a
-  # subdirectory holding a SKILL.md, as --skills reads them. A relative
-  # path is relative to this file's directory, and ~ is your home
-  # directory. --skills on the command line replaces this list rather
-  # than adding to it.
+  # Skills to install in every new discobox, as --skills reads them: a
+  # directory whose subdirectories holding a SKILL.md are each a skill,
+  # or a Git URL[@REF][//PATH] whose skills are linked from a checkout of
+  # it. A relative path is relative to this file's directory, and ~ is
+  # your home directory. --skills on the command line replaces this list
+  # rather than adding to it.
   # Example: skills: ["~/team-skills"]
   #skills:
 
