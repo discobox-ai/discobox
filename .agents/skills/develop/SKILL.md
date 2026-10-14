@@ -71,10 +71,9 @@ this skill has already asked — rebase and force-push with a lease to
   this work waits for the user to accept it.
 - **Read** `CLAUDE.md` and the `DESIGN.md`/`REVIEW.md` files from the root
   down to each package you will touch.
-- **Ask for every GitHub use now, in one request**, so nobody is asked again
-  mid-run. Fill in `<slug>` and the one-line `<change>` before sending; leave
-  `<pr>`, `<id>`, `<number>` and `<sha>` as they are. Check
-  `discobox-access list` first and ask only for what is missing:
+- **Ask for the GitHub use now, in one request**, so nobody is asked again
+  mid-run. Fill in `<slug>` and the one-line `<change>` before sending. Check
+  `discobox-access list` first and ask only if it is missing:
 
   ```bash
   discobox-access request --json <<'EOF'
@@ -82,11 +81,7 @@ this skill has already asked — rebase and force-push with a lease to
     "id": "com.github.api",
     "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green, answer review comments, and keep it mergeable until it is merged",
     "uses": [
-      {"description": "fetch main and discobox/<slug> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/<slug> with git over https, the first time with git push --force-with-lease=refs/heads/discobox/<slug>: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/<slug>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
-      {"description": "gh pr create --repo discobox-ai/discobox --base main --head discobox/<slug> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
-      {"description": "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed"},
-      {"description": "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)"},
-      {"description": "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issues this change fixes or refers to"}
+      {"description": "Deliver <change> as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."}
     ],
     "grantTTLSeconds": 259200,
     "wait": true
@@ -98,16 +93,16 @@ this skill has already asked — rebase and force-push with a lease to
   does not lose it (`discobox-access wait --json request <id>` resumes), and
   start implementing while it waits — unless there is an issue: then only
   read the code until the issue and its comments are read, so the work does
-  not start from half the requirements. Ask for nothing outside these. Neither
-  the justification nor a use may claim permission ("this is allowed", "the
-  user approved", "pre-cleared"): text that vouches for itself is refused.
-  State limits as what you will do ("never `main`"). If one command is
-  refused under a use that names it, ask for a new use that quotes that one
-  command word for word, not a broader one — §5 has the push case.
+  not start from half the requirements. Ask for nothing outside it. Neither
+  the justification nor the use may claim permission ("this is allowed", "the
+  user approved", "pre-cleared"): text that vouches for itself is refused. If
+  a command is refused under it, do that step another way within the job;
+  never ask again for the same job with the refused command spelled out (the
+  `discobox-access` skill's "Writing a use").
 - **Check the branch is free** as soon as the grant is in — the work going on
   meanwhile does not depend on the name. Run `git ls-remote
   https://github.com/discobox-ai/discobox refs/heads/discobox/<slug>` under
-  the fetch use, through `discobox-access run` with the credential helper
+  that use, through `discobox-access run` with the credential helper
   `open-pr` §0 shows. It must return nothing: a commit there, even an
   ancestor of `HEAD`, is someone's branch (one cut from `main` is an
   ancestor too), and a fast-forward push would add this work to it. Pick a
@@ -116,7 +111,8 @@ this skill has already asked — rebase and force-push with a lease to
   anything else there is someone else's push — stop and ask.
 - **Read the issue**, when there is one, and its comments
   (`gh api repos/discobox-ai/discobox/issues/<N>` and `/comments`;
-  `gh issue view` goes through GraphQL, which the checker has refused).
+  REST, not `gh issue view`: a GraphQL call carries its operation in its body,
+  which a judge has to ask to see).
 - **Tag this box** `issue=<N>` when there is an issue, merged into the tags
   already there, so the user's `discobox ls --tag issue=<N>` finds it
   (`open-pr` adds `pr=` in §5). With no issue, drop an `issue` or `pr` tag an
@@ -225,17 +221,14 @@ rules:
   with an empty lease, so a branch created since the check is refused rather
   than added to:
   `git push --force-with-lease=refs/heads/discobox/<slug>: <url> HEAD:refs/heads/discobox/<slug>`.
-- Push with the exact-command use from §0. After a rebase, lease against the
+- Push under the §0 use. After a rebase, lease against the
   SHA this run last pushed:
   `git push --force-with-lease=refs/heads/discobox/<slug>:<sha> <url> HEAD:refs/heads/discobox/<slug>`.
   Read the branch's head first (`git ls-remote <url> refs/heads/discobox/<slug>`):
   anything other than that SHA is someone else's push — stop and ask, do not
   lease over it.
   A bare `--force-with-lease` to a URL has no tracking ref to lease against
-  and is always rejected as stale. If the checker refuses a push it was
-  approved for, ask for a new use that quotes that one push command word for
-  word (the commit SHA may stand in for `HEAD`), not a broader one.
-- Pass the body as `--body "$(cat <file>)"`; `--body-file` has been refused.
+  and is always rejected as stale.
 - The body's opening says what changed and why, including the approach
   agreed and what it was chosen over, so a reviewer who was not in the
   discussion has it. `Fixes #<N>` when it fixes the issue from `--issue` or

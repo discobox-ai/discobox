@@ -128,8 +128,8 @@ discobox-access run --use <id> -- git -c credential.helper= \
   push https://github.com/discobox-ai/discobox.git HEAD:main
 ```
 
-The tag goes the same way, with `refs/tags/vX.Y.Z` in place of `HEAD:main` and
-the tag's own use ID.
+The tag goes the same way, under the same use, with `refs/tags/vX.Y.Z` in
+place of `HEAD:main`.
 
 One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads `GITHUB_REPOSITORY` and
 otherwise only `origin`, matching only github.com URLs, so it resolves empty here and
@@ -158,11 +158,7 @@ discobox-access request --json <<'EOF'
   "hosts": ["github.com"],
   "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
   "uses": [
-    {"description": "git push the local main branch to https://github.com/discobox-ai/discobox.git main"},
-    {"description": "git push the annotated release tag vX.Y.Z, created on the main commit CI verified green, to https://github.com/discobox-ai/discobox.git"},
-    {"description": "Read GitHub Actions workflow runs, jobs, and job logs for discobox-ai/discobox with gh run list, gh run view, gh run watch, and gh api repos/discobox-ai/discobox/actions"},
-    {"description": "Read the GitHub release for vX.Y.Z in discobox-ai/discobox with gh release view"},
-    {"description": "Read Formula/discobox-dev.rb from discobox-ai/homebrew-tap with gh api repos/discobox-ai/homebrew-tap/contents"}
+    {"description": "Release vX.Y.Z of discobox-ai/discobox. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag vX.Y.Z, created on the main commit CI verified green. Never force-push, push any other branch or tag, delete or move a tag, or write to discobox-ai/homebrew-tap."}
   ],
   "wait": true,
   "timeoutSeconds": 3600

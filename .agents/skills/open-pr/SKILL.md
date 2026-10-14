@@ -39,9 +39,7 @@ discobox-access request --json <<'EOF'
   "id": "com.github.api",
   "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox and get its CI green",
   "uses": [
-    {"description": "Fetch main from discobox-ai/discobox, and push the branch <branch> to it, with git over https using the token; never main, never --force"},
-    {"description": "Open a draft pull request from <branch> into main in discobox-ai/discobox, and view, list, edit the body of, mark ready, and comment on that pull request, with gh pr create, gh pr view, gh pr list, gh pr edit, gh pr ready, and gh pr comment"},
-    {"description": "Read CI for that pull request with gh pr checks, gh run list, gh run view, and job logs via gh api repos/discobox-ai/discobox/actions/jobs/<id>/logs, and re-run its failed jobs once with gh run rerun --failed"}
+    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green. Read anything in the repository; push that branch, open and update the pull request, comment on it, and re-run its failed CI. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, or start any other workflow."}
   ],
   "grantTTLSeconds": 14400,
   "wait": true
@@ -49,7 +47,8 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-Name the branch in the uses (§1 picks it) — the checker reads them literally.
+Name the branch in the use (§1 picks it): it is the use's target, and a push
+to any other branch is refused.
 Git takes the token through a one-shot credential helper:
 
 ```bash
