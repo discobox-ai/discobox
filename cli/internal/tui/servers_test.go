@@ -1129,9 +1129,14 @@ func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
 		{ID: "sbx_b1", Name: "two", Server: "beta", State: StateRunning},
 	})
 	now := l.now()
-	l.setListed(map[string]time.Time{"alpha": now, "beta": now.Add(-time.Minute)})
+	// gamma is behind too, but has nothing on screen to be old: a note about
+	// rows nobody can see is a note about somewhere else.
+	l.setListed(map[string]time.Time{"alpha": now, "beta": now.Add(-time.Minute), "gamma": now.Add(-time.Minute)})
 
 	out := l.view(newStyles(false), &zones{}, true)
+	if strings.Contains(out, "server gamma") {
+		t.Fatalf("a server with no rows on screen got a note saying they are old:\n%s", out)
+	}
 	var alpha, beta, band string
 	for line := range strings.SplitSeq(out, "\n") {
 		switch {
@@ -1153,7 +1158,7 @@ func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
 		t.Fatalf("the band, which counts both servers' rows, says how old they are: %q", band)
 	}
 	if !slices.Contains(l.drawn.rows, -1) {
-		t.Fatalf("the note was marked as a row: %v", l.drawn.rows)
+		t.Fatalf("no line was marked as a note rather than a row: %v", l.drawn.rows)
 	}
 
 	l.server = "beta"
