@@ -21,10 +21,9 @@ import (
 // write in it would hand the sandbox user the ability to replace any of them,
 // so the writable surface is this one 0700 subdirectory instead.
 //
-// This runs here rather than in the PID-1 boot flow for the same reason
-// boot.WireSecrets does: systemd mounts its own tmpfs over /run after boot has
-// exec'd into it, so a directory created during provisioning would be
-// shadowed. This process is a systemd unit, ordered after that tmpfs is up.
+// This runs here rather than in boot because /run is a tmpfs, emptied on every
+// boot, and boot does not run on every boot of every sandbox: a VM guest is
+// provisioned once (Provision). This runs on every start of the agent.
 //
 // A nil user means the manifest named nobody, so the configure command inherits
 // this process's own identity (ADR 0025 §5) -- root, which already owns the

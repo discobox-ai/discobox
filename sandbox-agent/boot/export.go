@@ -30,7 +30,7 @@ var exportMountPaths = map[string]string{
 // It runs as PID 1 of a one-shot container started from the sandbox's own
 // image and never starts anything else, so nothing the user runs is running
 // while the tree is read. It resolves the sandbox user and the declared volumes
-// exactly as boot does -- only the sandbox can say where a %HOME% path lives
+// exactly as Wire does -- only the sandbox can say where a %HOME% path lives
 // (ADR 0033) -- but wires, chowns and writes nothing: the pool mounts the trees
 // read-only.
 //

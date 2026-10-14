@@ -17,9 +17,10 @@
 #   - There are no labels. Each `io.discobox.*` label the Dockerfile sets is a
 #     file of the same name under /usr/local/share/discobox/labels, holding
 #     the label's value.
-#   - There is no ENTRYPOINT. The image's units are installed and enabled as
-#     they are in the container, but nothing makes discobox-sandbox-agent PID 1:
-#     a machine boots systemd, and the agent's unit starts only once a
+#   - There is no ENTRYPOINT: a machine boots systemd, as the container does.
+#     The image's units are installed and enabled as they are in the
+#     container. discobox-wire.service is skipped, since a machine has no
+#     /.discobox volumes to wire, and the agent's unit starts only once a
 #     /etc/discobox/sandbox.json exists.
 #   - The guest is boxd's Ubuntu 24.04, not Debian 13 (base-image/boxd.yaml
 #     says why), so a few packages come from elsewhere; their steps say which.
@@ -392,6 +393,7 @@ layers:
           file 0644 $s/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
           for unit in \
               discobox-sandbox-agent.service \
+              discobox-wire.service \
               discobox-proxy-bridge.service \
               discobox-buildkit-bridge.service \
               discobox-trust-ca.service \
@@ -486,6 +488,7 @@ layers:
           mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace
           systemctl enable \
               discobox-sandbox-agent.service \
+              discobox-wire.service \
               discobox-proxy-bridge.service \
               discobox-buildkit-bridge.service \
               discobox-trust-ca.service \

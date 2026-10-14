@@ -16,11 +16,11 @@ import (
 	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
-// identity is the resolved sandbox user, sourced from the manifest's user: the
-// DISCOBOX_USER_* env the pool agent injects into a container, or sandbox.json's
-// own `user` where no PID-1 flow ran (Provision). Both are the one user the
-// manifest publishes, so the init flow, the harness, and exec defaults all use
-// one user.
+// identity is the resolved sandbox user, sourced from the manifest's user:
+// sandbox.json's own `user` (Wire and Provision), or the DISCOBOX_USER_* env the
+// pool agent injects into the export container (Export), which has no
+// bootstrap where the agent reads it. Both are the one user the manifest
+// publishes, so boot, the harness, and exec defaults all use one user.
 //
 // configured reports whether the manifest asked for a specific user at all.
 // When it did not, boot provisions no account and the sandbox runs as whatever
@@ -103,7 +103,7 @@ func resolveIdentity(manifest *runuser.User) (identity, error) {
 }
 
 // manifestUser reads the manifest's user out of the environment the pool agent
-// injected into a container. Absent is absent: an unset id stays nil rather than becoming 0 or
+// injected into the export container. Absent is absent: an unset id stays nil rather than becoming 0 or
 // borrowing the other one.
 func manifestUser() (*runuser.User, error) {
 	out := &runuser.User{

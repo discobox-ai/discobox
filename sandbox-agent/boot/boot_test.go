@@ -1,7 +1,6 @@
 package boot
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -119,40 +118,8 @@ func TestResolveIdentityRejectsNonNumeric(t *testing.T) {
 	}
 }
 
-func TestExecPlanInitRunsDirectly(t *testing.T) {
-	argv, _ := execPlan(identity{uid: 1000, name: "dev", home: "/home/dev"}, []string{"/sbin/init"})
-	if !slices.Equal(argv, []string{"/sbin/init"}) {
-		t.Fatalf("argv = %#v, want systemd run directly", argv)
-	}
-}
-
-func TestExecPlanNonRootUsesRunuser(t *testing.T) {
-	argv, _ := execPlan(identity{uid: 1000, name: "dev", home: "/home/dev", configured: true}, []string{"echo", "hi"})
-	want := []string{"runuser", "-u", "dev", "--", "env", "HOME=/home/dev", "USER=dev", "LOGNAME=dev", "echo", "hi"}
-	if !slices.Equal(argv, want) {
-		t.Fatalf("argv = %#v, want %#v", argv, want)
-	}
-}
-
-func TestExecPlanRootKeepsArgvWithUserEnv(t *testing.T) {
-	argv, env := execPlan(identity{uid: 0, name: "root", home: "/root"}, []string{"echo", "hi"})
-	if !slices.Equal(argv, []string{"echo", "hi"}) {
-		t.Fatalf("argv = %#v", argv)
-	}
-	if !slices.Contains(env, "HOME=/root") || !slices.Contains(env, "USER=root") {
-		t.Fatalf("env missing user vars: %#v", env)
-	}
-}
-
-func TestExecPlanEmptyArgsSleeps(t *testing.T) {
-	argv, _ := execPlan(identity{uid: 0, name: "root", home: "/root"}, nil)
-	if !slices.Equal(argv, []string{"sleep", "infinity"}) {
-		t.Fatalf("argv = %#v, want sleep infinity", argv)
-	}
-}
-
-// resolveEnvIdentity is Init's resolution: the manifest's user as the pool
-// agent injected it into the container's environment.
+// resolveEnvIdentity is Export's resolution: the manifest's user as the pool
+// agent injected it into the export container's environment.
 func resolveEnvIdentity() (identity, error) {
 	manifest, err := manifestUser()
 	if err != nil {

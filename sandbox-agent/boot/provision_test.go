@@ -11,7 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
-// A sandbox with no PID-1 flow (a VM guest, ADR 26-10-09-143 §1) is provisioned
+// A sandbox with nothing to wire (a VM guest, ADR 26-10-09-143 §1) is provisioned
 // from its bootstrap alone: the working root, the home skeleton, the git
 // identity and the direnv whitelist are all seeded for its user, and nothing is
 // wired -- it has no primary volumes to wire from, and its sources arrive
@@ -58,25 +58,9 @@ func TestProvisionWithoutWiringSeedsWhatTheBootstrapDeclares(t *testing.T) {
 	}
 }
 
-// With no bootstrap at all -- a bare `docker run ... bash` debug session --
-// only the user and its home are set up: there is no working root, identity
-// or source to seed from.
-func TestProvisionWithoutABootstrapSeedsOnlyTheHome(t *testing.T) {
-	id := selfIdentity(t)
-	b, git := newFakeGitBooter(nil)
-	if err := b.provision(slog.Default(), id, nil, false); err != nil {
-		t.Fatalf("provision: %v", err)
-	}
-	if got := git.configWrites(); len(got) != 0 {
-		t.Fatalf("git config writes = %v, want none without a bootstrap", got)
-	}
-	if _, ok := readDirenvConfig(t, id.home); ok {
-		t.Fatal("direnv.toml was written without a bootstrap")
-	}
-}
-
-// Where no PID-1 flow ran, nothing injected DISCOBOX_USER_*: the user is
-// sandbox.json's own, and a stray environment does not override it.
+// Boot reads no DISCOBOX_USER_*, which a unit does not see and a VM guest is
+// never given: the user is sandbox.json's own, and a stray environment does not
+// override it.
 func TestBootstrapIdentityIsTheBootstrapsUser(t *testing.T) {
 	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
@@ -104,7 +88,7 @@ func TestBootstrapIdentityRejectsGidAndGroupTogether(t *testing.T) {
 // A sandbox is provisioned once: an agent restarted after a crash, or a machine
 // stopped and started, finds the marker naming its own sandbox and runs nothing
 // -- no account changes under the user's running processes, no walk of home.
-func TestProvisionWithoutInitRunsOncePerSandbox(t *testing.T) {
+func TestProvisionRunsOncePerSandbox(t *testing.T) {
 	dir := t.TempDir()
 	saved := provisionedPath
 	provisionedPath = filepath.Join(dir, "provisioned")
@@ -122,7 +106,7 @@ func TestProvisionWithoutInitRunsOncePerSandbox(t *testing.T) {
 			return nil
 		},
 	}
-	if err := b.provisionWithoutInit(slog.Default(), bootstrap); err != nil {
+	if err := b.provisionOnce(slog.Default(), bootstrap); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if got := provisionedFor(provisionedPath); got != "sbx_1" {

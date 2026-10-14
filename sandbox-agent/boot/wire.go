@@ -18,7 +18,7 @@ import (
 // (ADR 26-10-08-127 §1).
 func (b *booter) wireConfig() error {
 	if !dirExists(configMountPath) {
-		// No config volume (e.g. a bare `docker run ... bash` debug session).
+		// No config volume: nothing for the pool agent to have bound.
 		return nil
 	}
 	if err := os.MkdirAll(etcDiscobox, 0o755); err != nil {
@@ -27,21 +27,15 @@ func (b *booter) wireConfig() error {
 	return recursiveBindMount(configMountPath, etcDiscobox)
 }
 
-// WireSecrets rebinds the secrets volume onto /run/discobox/secrets so the
+// wireSecrets rebinds the secrets volume onto /run/discobox/secrets so the
 // running sandbox-agent finds the resolved-secrets file at its documented
-// path. Unlike the rest of this package, it is called from the long-running
-// sandbox-agent server process itself (cmd/discobox-sandbox-agent), not from
-// the PID-1 boot flow: systemd (PID 1) mounts its own tmpfs over /run during
-// its own startup, after the boot flow has already exec'd into it, so a bind
-// mount placed at /run/discobox/secrets during PID-1 provisioning — the way
-// wireConfig places one at /etc/discobox — would be silently shadowed. The
-// server process starts as a systemd-managed unit, ordered after that tmpfs
-// is already in place, so it is the first point at which this bind mount can
-// actually survive. The bind is writable, because the runtime-config intake is
+// path. A Docker bind straight onto that path would be shadowed by the tmpfs
+// systemd mounts over /run as it starts; Wire runs as one of its units, after
+// that tmpfs is up. The bind is writable, because the runtime-config intake is
 // what writes the file (ADR 0126 §3); the pool never does.
-func WireSecrets() error {
+func wireSecrets() error {
 	if !dirExists(secretsMountPath) {
-		// No secrets volume (e.g. a bare `docker run ... bash` debug session).
+		// No secrets volume: a pool that mounts none.
 		return nil
 	}
 	if err := os.MkdirAll(runSecrets, 0o755); err != nil {

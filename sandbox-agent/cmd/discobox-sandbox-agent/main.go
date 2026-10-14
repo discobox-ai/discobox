@@ -63,8 +63,13 @@ func run(args []string) int {
 		}
 		return 0
 	}
-	if len(args) > 0 && args[0] == "init" {
-		return boot.Init(slog.Default(), args[1:])
+	// discobox-wire.service: a pool container's boot (ADR 26-10-10-767).
+	if len(args) > 0 && args[0] == "wire" {
+		if err := boot.Wire(slog.Default()); err != nil {
+			slog.Error("wire sandbox", "error", err)
+			return 1
+		}
+		return 0
 	}
 	if len(args) > 0 && args[0] == "export" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -79,22 +84,13 @@ func run(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// Rebind the secrets volume here, not in the PID-1 boot flow: systemd
-	// mounts its own tmpfs over /run during its own startup, which happens
-	// after boot exec's into it, so a bind placed during PID-1 provisioning
-	// would be shadowed. This process starts as a systemd-managed unit,
-	// ordered after that tmpfs is already up.
-	if err := boot.WireSecrets(); err != nil {
-		slog.Error("wire secrets volume", "error", err)
-		return 1
-	}
 	// The agent is a service of the guest's own init, not necessarily started
-	// after a PID-1 flow that had the bootstrap: a VM's backend places
-	// sandbox.json through the running guest, so the agent may start first, and
-	// it waits rather than exiting (ADR 26-10-09-143 §1). The backend places the
-	// file whole, as a rename, so what appears is what is read. In a container
-	// the PID-1 flow bound it in place before systemd started, and this returns
-	// at once.
+	// after the bootstrap is in place: a VM's backend places sandbox.json
+	// through the running guest, so the agent may start first, and it waits
+	// rather than exiting (ADR 26-10-09-143 §1). The backend places the file
+	// whole, as a rename, so what appears is what is read. In a container
+	// discobox-wire.service bound it in place before local-fs.target, and this
+	// returns at once.
 	if err := sourcesready.Wait(ctx, configPath, slog.Default()); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return 0
@@ -102,7 +98,7 @@ func run(args []string) int {
 		slog.Error("wait for the sandbox bootstrap", "path", configPath, "error", err)
 		return 1
 	}
-	// Where no PID-1 flow ran, its provisioning happens here, before anything
+	// Where nothing was wired, the provisioning happens here, before anything
 	// can launch a process as the sandbox user.
 	if err := boot.Provision(slog.Default(), configPath); err != nil {
 		slog.Error("provision sandbox", "error", err)

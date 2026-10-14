@@ -3,7 +3,7 @@ Description=Xfce desktop session on display :0
 Requires=xvfb.service discobox-session-bus.service
 After=xvfb.service discobox-session-bus.service
 # The session reads the desktop scale from an environment file, and GDK_SCALE is
-# read once per process. The boot flow writes that file before systemd starts;
+# read once per process. Boot writes that file before any session can start;
 # the viewer rewrites it when the scale changes. Ordering after the viewer's
 # Type=notify readiness is a backstop for a viewer run where boot has not
 # written it. Ordering only, not Requires: a boot where the viewer fails still

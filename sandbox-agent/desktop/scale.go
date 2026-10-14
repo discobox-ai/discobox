@@ -202,8 +202,9 @@ func RememberedScale(dir string) (int, bool) {
 // StartingScale is the scale a desktop comes up at: the one the environment
 // file remembers, or DefaultScale when it remembers none.
 //
-// Three things start from it, and they must agree. The boot flow writes it out
-// before systemd starts, so the harness and every login shell source it; the
+// Three things start from it, and they must agree. Boot writes it out before
+// anything runs as the sandbox user, so the harness and every login shell
+// source it; the
 // viewer adopts it when it starts; and the session applies it to the X server
 // before its first program starts. One rule, so none of them can come up at a
 // different scale than the others.

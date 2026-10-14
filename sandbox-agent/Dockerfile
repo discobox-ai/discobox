@@ -504,6 +504,7 @@ COPY sandbox-agent/image/shells/zsh-newuser /usr/share/zsh/scripts/newuser
 COPY sandbox-agent/image/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.path /etc/systemd/system/discobox-sandbox-agent.path
+COPY sandbox-agent/image/systemd/discobox-wire.service /etc/systemd/system/discobox-wire.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
@@ -692,6 +693,7 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
+        discobox-wire.service \
         discobox-sandbox-agent.path \
         discobox-proxy-bridge.service \
         discobox-buildkit-bridge.service \
@@ -728,9 +730,10 @@ LABEL io.discobox.tree-export.v1=tar
 LABEL io.discobox.worktree-git.v1=smart-http
 
 WORKDIR /workspace
-# No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent
-# and cached paths from the primary volumes the pool agent mounts, per ADR 0007.
-# Anonymous volumes here would only shadow those binds.
+# No VOLUME directives: discobox-wire.service wires all persistent and cached
+# paths from the primary volumes the pool agent mounts, per ADR 0007. Anonymous
+# volumes here would only shadow those binds.
 EXPOSE 6080 6900
-ENTRYPOINT ["/usr/local/bin/discobox-sandbox-agent", "init"]
-CMD ["/sbin/init"]
+# systemd is PID 1, as it is on every sandbox (ADR 26-10-10-767). A debug shell
+# overrides the entrypoint: `docker run --entrypoint bash`.
+ENTRYPOINT ["/sbin/init"]

@@ -58,7 +58,7 @@ func writeDesktopDropins(id identity) error {
 	}
 	// The Xfce session also reads the toolkit environment, so the window
 	// manager and the panel are drawn at the same scale as everything launched
-	// from a shell. seedDesktopScale writes it before systemd starts, but a
+	// from a shell. seedDesktopScale writes it before the session can start, but a
 	// failure there is logged rather than fatal, and `-` is what lets the
 	// session start without the file.
 	if fileExists("/etc/systemd/system/xfce4-session@.service") {
@@ -78,7 +78,9 @@ func writeDesktopDropins(id identity) error {
 }
 
 // seedDesktopScale writes the desktop's starting scale into the sandbox user's
-// home before systemd starts, and so before anything in the sandbox runs.
+// home as the sandbox is provisioned, and so before anything in it runs as the
+// sandbox user: in a container before local-fs.target (Wire), in a VM guest
+// before the agent serves (Provision).
 //
 // The file is not only the desktop's. Every login shell sources it through
 // /etc/profile.d, which is how GDK_SCALE reaches a program an agent launches —

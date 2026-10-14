@@ -150,8 +150,8 @@ anyway, so 1.5 would scale text and not widgets.
 (`StartingScale`). 2 because HiDPI is the ordinary screen to watch from, so the
 common case never pays a restart, and because the scale is not only the
 desktop's: every shell the agent starts sources `scale.env`, so the default is
-what the agent's own programs draw at. The boot flow writes it before systemd
-starts (`boot.seedDesktopScale`), keeping whatever value the file already holds
+what the agent's own programs draw at. Boot writes it before anything runs as
+the sandbox user (`boot.seedDesktopScale`), keeping whatever value the file already holds
 — including a 1 an earlier image wrote as its default, which the file cannot tell
 from a settled scale; existing sandboxes are deliberately left where they are.
 The viewer cannot be the first writer: it is

@@ -16,14 +16,14 @@ import (
 // have to be this process's own for the write path to be exercised at all.
 //
 // That premise is POSIX-only: Windows has no uid/gid for Getuid to return, and
-// os.Chown fails outright there. The booter is the sandbox's PID 1 and only
+// os.Chown fails outright there. The booter runs as root and only
 // ever runs in the Linux guest, so every test that seeds a config skips here
 // rather than the package carrying a second, chown-free code path for a
 // platform it never boots on.
 func selfIdentity(t *testing.T) identity {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("seedGitConfig chowns what it writes; the booter only runs as PID 1 in the Linux guest")
+		t.Skip("seedGitConfig chowns what it writes; the booter only runs as root in the Linux guest")
 	}
 	return identity{uid: os.Getuid(), gid: os.Getgid(), name: "dev", home: t.TempDir()}
 }

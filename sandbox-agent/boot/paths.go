@@ -1,9 +1,10 @@
-// Package boot implements the sandbox-agent PID-1 init flow: it sets up the
-// sandbox user, wires the image-declared data/cache volumes and manifest
-// sources from the primary volumes the pool agent mounted, binds the config volume
-// onto /etc/discobox, and then execs the container's real init (systemd). See
-// ADR 0007. Provision is the same provisioning for a sandbox with no PID-1
-// flow, run from the agent's own start (ADR 26-10-09-143 §1).
+// Package boot provisions a sandbox. Wire is a pool container's boot, run by
+// discobox-wire.service before local-fs.target: it sets up the sandbox user,
+// wires the image-declared data/cache volumes and manifest sources from the
+// primary volumes the pool agent mounted, and binds the config and secrets
+// volumes onto /etc/discobox and /run/discobox/secrets (ADR 0007, ADR
+// 26-10-10-767). Provision is the same provisioning for a sandbox with no
+// volumes to wire, run from the agent's own start (ADR 26-10-09-143 §1).
 package boot
 
 import (
@@ -35,9 +36,8 @@ const (
 
 	// runSecrets is where the secrets volume is rebound so the running
 	// sandbox-agent finds it at the documented path. The rebind happens after
-	// systemd (PID 1) has already mounted its own tmpfs over /run — a Docker
-	// bind mounted directly at /run/discobox/secrets would otherwise be
-	// shadowed by that early-boot tmpfs mount.
+	// systemd has mounted its own tmpfs over /run — a Docker bind mounted
+	// directly at /run/discobox/secrets would be shadowed by it.
 	runSecrets = "/run/discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
 
 	// manifestName is the sandbox manifest file inside the config volume.
