@@ -123,18 +123,13 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 // written as; a name that more than one candidate answers to is refused rather
 // than picked between.
 //
-// The asymmetry is deliberate. An ID that names none of sandboxes is still
-// tried project-wide, because a discobox started in another directory or on
-// another machine is still a discobox and an ID says outright which one. A name
-// is not: names are unique within a project only as long as one directory
-// issues them, so two directories can each hold a "docs", and resolving one
-// project-wide would either pick the discobox the user did not mean or fail as
-// ambiguous. A name that matches nothing in sandboxes is therefore an error.
-//
-// That error names `discobox ls`, which is the listing for a caller that passed
-// all of it. A caller that filtered sandboxes first — cp passes the runtime
-// candidates — can have `ls` show a discobox this refused, and says so no
-// better than it did before this was shared.
+// sandboxes is every candidate the caller listed, from whichever directory and
+// machine it was created, so a name is matched across the project. A
+// configured name is unique there; a listed name is a window title, which two
+// discoboxes can share, and one that more than one candidate answers to is
+// refused with the IDs to choose between. A reference that matches no candidate is still tried as an ID:
+// a caller that filtered sandboxes first — cp passes the runtime candidates —
+// can be handed the ID of a discobox its list left out.
 func (a *App) resolveSandboxReference(ctx context.Context, client *apiclientgen.Client, projectID, reference string, sandboxes []apimodel.Sandbox, match nameMatch) (string, error) {
 	sandboxID, ok, err := matchSandboxArg(reference, sandboxes, match)
 	if err != nil {
@@ -154,10 +149,10 @@ func (a *App) resolveSandboxReference(ctx context.Context, client *apiclientgen.
 }
 
 // unmatchedSandboxName is a reference that is no ID and names none of the
-// candidates. It is an error rather than a project-wide lookup for the reason
-// resolveSandboxReference gives.
+// candidates, which are every discobox the caller listed: there is nowhere
+// wider to look.
 func unmatchedSandboxName(reference string) error {
-	return fmt.Errorf("no discobox named %q was started from this directory; run `discobox ls` to see them, `discobox ls --all` to see the ones started elsewhere, or write the discobox ID", reference)
+	return fmt.Errorf("no discobox named %q; run `discobox ls` to see them, or write the discobox ID", reference)
 }
 
 // unmatchedSandboxReference is a reference shaped like a short ID that named
@@ -166,7 +161,7 @@ func unmatchedSandboxName(reference string) error {
 // ruled that out, so both readings are reported: only the ID one sends them
 // looking for an ID problem they do not have.
 func unmatchedSandboxReference(reference string, err error) error {
-	return fmt.Errorf("no discobox for %q: it names none started from this directory, and %w", reference, err)
+	return fmt.Errorf("no discobox for %q: none is named that, and %w", reference, err)
 }
 
 func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {

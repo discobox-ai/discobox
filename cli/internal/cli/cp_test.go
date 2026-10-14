@@ -92,7 +92,7 @@ func TestSplitCPPathFollowsSCPsColonRule(t *testing.T) {
 	}{
 		{operand: "mybox:/tmp/a.txt", reference: "mybox", path: "/tmp/a.txt", remote: true},
 		{operand: "sbx_devbox00000001:notes.md", reference: "sbx_devbox00000001", path: "notes.md", remote: true},
-		// A bare colon is this directory's discobox, the one place this differs
+		// A bare colon is the only discobox or a pick, the one place this differs
 		// from scp — where `:x` is just the local file `./x`.
 		{operand: ":notes.md", reference: "", path: "notes.md", remote: true},
 		// A remote home directory.

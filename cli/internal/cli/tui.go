@@ -397,8 +397,8 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	session.HostID = client.HostId
 	session.Host = strings.TrimSpace(client.Hostname.Or(""))
 	// Where the window's own source files its discoboxes, and where this
-	// machine files the ones with no source: the two keys `discobox ls` lists
-	// here, and the folder the header opens on (ADR 0111).
+	// machine files the ones with no source: together the window's own
+	// folder (ADR 0111).
 	if session.OriginKey, session.HostKey, err = sandboxcreate.OriginKeys(ctx, d.app.source); err != nil {
 		return session, err
 	}

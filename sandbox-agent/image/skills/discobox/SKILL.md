@@ -404,7 +404,7 @@ These are the user's commands, run on their side:
 ```
 discobox            open the console
 discobox new        launch a prompt in a new box
-discobox ls         boxes started from this directory
+discobox ls         every box (--source, --on, --tag narrow it)
 discobox rm         archive boxes (alias: delete)
 discobox start      start boxes
 discobox stop       stop boxes

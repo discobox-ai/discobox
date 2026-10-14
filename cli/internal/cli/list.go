@@ -2,59 +2,80 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 )
 
-// newListCommand lists this machine's discoboxes for -C (the working directory
-// by default): the ones cut from it here, and the ones created here with no
-// source (ADR 0111). It is the project-scoped counterpart to `admin box ls`,
-// which lists every sandbox in the project regardless of where it came from.
+// sandboxFilter is what a listing of discoboxes is narrowed to, each part open
+// when empty.
+type sandboxFilter struct {
+	// server is the one server asked, by the name the SERVER column gives it.
+	server string
+	// source is the SOURCE column's text, matched exactly: the directory or
+	// repository URL a discobox was cut from, or "-" for one with none. It is
+	// `ls --source`, and what the column prints is the whole of its grammar.
+	source string
+	// tags are selectors a discobox's recorded tags must all match (ADR 0136).
+	tags []string
+}
+
+// newListCommand lists every discobox in the project, on every server, from
+// whichever directory and machine it was created — what the console opens on
+// (ADR 26-10-10-954). --on, --source and --tag narrow it by what its own
+// SERVER, SOURCE and TAGS columns print.
 //
-// It filters on the origin key, which is the host as well as where the source
-// came from: a local path identifies a repository only on the machine holding
-// it, so the machine has to be part of the answer once the server is remote.
+// It differs from `admin box ls` in spanning the registered servers and in
+// those filters; that one is the primary's raw listing.
 func (a *App) newListCommand() *cobra.Command {
-	var all bool
-	var tags []string
+	var filter sandboxFilter
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"ps"},
-		Short:   "List this machine's discoboxes for the current directory",
-		Long: `List the discoboxes this machine cut from the current directory.
+		Short:   "List discoboxes",
+		Long: `List every discobox in the project, whichever directory and machine it was
+created from, with what each was cut from in the SOURCE column.
 
-Those are the discoboxes whose source is the Git repository root of the current
-directory (or the directory itself when it is not in a repository), or the
-repository URL -C names, plus this machine's discoboxes with no source.
-Discoboxes cut from anywhere else, or created on another machine, are not
-listed; pass --all (or use "discobox admin box ls") to list every discobox in
-the project.
+Three filters narrow the list, and a discobox is listed when it passes every
+one given:
 
---tag narrows the list to discoboxes carrying a tag: KEY for the tag with any
-value, KEY=VALUE for exactly that value. Repeat it to require several. A
-discobox's tags are its own, in ~/.discobox/meta.json inside it; this filters on
-the copy it last reported, so a stopped discobox is listed by the tags it had.
+--source lists the discoboxes whose SOURCE column is exactly this: the
+directory or repository URL as the column prints it, or "-" for the discoboxes
+with no source.
+
+--on lists one server's discoboxes, by the name the SERVER column gives it.
+
+--tag lists the discoboxes carrying a tag: KEY for the tag with any value,
+KEY=VALUE for exactly that value. Repeat it to require several. A discobox's
+tags are its own, in ~/.discobox/meta.json inside it; this filters on the copy
+it last reported, so a stopped discobox is listed by the tags it had.
 
 Every server is listed: the primary, and the ones "discobox admin remote"
 registered, with a SERVER column once there is more than one. A registered server that does
 not answer is left out, and says so on stderr.`,
 		Example: `  discobox ls
-  discobox ls --all
-  discobox ls --tag wip --tag ticket=ENG-12
+  discobox ls --source ~/src/api
+  discobox ls --source https://github.com/acme/api.git
+  discobox ls --on beta --tag wip --tag ticket=ENG-12
   discobox ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Checked here, so a selector the server would refuse is said once
 			// rather than once per server.
-			if _, err := sandboxmeta.ParseSelectors(tags); err != nil {
+			if _, err := sandboxmeta.ParseSelectors(filter.tags); err != nil {
 				return err
 			}
-			listed, unreachable, err := a.listEveryServer(cmd.Context(), all, tags)
+			// An empty source would read as no filter at all, and list
+			// everything for somebody who asked for one place.
+			if cmd.Flags().Changed("source") && filter.source == "" {
+				return fmt.Errorf("--source needs a value from the SOURCE column, or - for the discoboxes with no source")
+			}
+			listed, unreachable, err := a.listEveryServer(cmd.Context(), filter)
 			if err != nil {
 				return err
 			}
@@ -77,33 +98,26 @@ not answer is left out, and says so on stderr.`,
 					serverOf[row.sandbox.ID] = row.server.name
 				}
 			}
-			return a.writeSandboxes(cmd, sandboxes, all, serverOf)
+			return a.writeSandboxes(cmd, sandboxes, serverOf)
 		},
 	}
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every discobox in the project, whatever it was cut from and on whichever machine, and show a SOURCE column")
-	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Only list discoboxes with this tag: KEY, or KEY=VALUE for that value; repeat to require several")
+	cmd.Flags().StringVar(&filter.source, "source", "", "Only list the discoboxes whose SOURCE column is exactly this; - for the ones with no source")
+	cmd.Flags().StringVar(&filter.server, "on", "", "Only list the discoboxes on this server, by its name in the SERVER column")
+	cmd.Flags().StringArrayVar(&filter.tags, "tag", nil, "Only list discoboxes with this tag: KEY, or KEY=VALUE for that value; repeat to require several")
 	a.addQuietFlag(cmd)
 	return cmd
 }
 
-// listProjectSandboxes lists the project's sandboxes, filtered to this
-// machine's for -C unless all is set: the two origin keys OriginKeys names. It is the
-// listing behind `discobox ls`, shared with the commands that ask the user to pick
-// one of those sandboxes. tags are selectors matched against each sandbox's
-// recorded tags (ADR 0136); none lists them whatever their tags.
-func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, all bool, tags []string) ([]apimodel.Sandbox, error) {
-	selectors, err := sandboxmeta.ParseSelectors(tags)
+// listProjectSandboxes lists one server's sandboxes in the project, narrowed
+// to filter's source and tags; which server is the caller's to choose. It is
+// the listing behind `discobox ls`, shared with the commands that take a
+// discobox by name or offer a pick: they list the same discoboxes it does.
+func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, filter sandboxFilter) ([]apimodel.Sandbox, error) {
+	selectors, err := sandboxmeta.ParseSelectors(filter.tags)
 	if err != nil {
 		return nil, err
 	}
-	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: tags}
-	if !all {
-		sourceKey, hostKey, err := sandboxcreate.OriginKeys(ctx, a.source)
-		if err != nil {
-			return nil, err
-		}
-		params.OriginKey = []string{sourceKey, hostKey}
-	}
+	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: filter.tags}
 	bodyRes, err := client.ListSandboxes(ctx, params)
 	if err != nil {
 		return nil, err
@@ -113,6 +127,13 @@ func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Cli
 		return nil, err
 	}
 	sandboxes := body.GetSandboxes()
+	if filter.source != "" {
+		// Matched here rather than by the server: the filter is the column's
+		// own text, and the column is drawn here (sandboxSource).
+		sandboxes = slices.DeleteFunc(sandboxes, func(sandbox apimodel.Sandbox) bool {
+			return sandboxSource(sandbox) != filter.source
+		})
+	}
 	if len(selectors) == 0 {
 		return sandboxes, nil
 	}

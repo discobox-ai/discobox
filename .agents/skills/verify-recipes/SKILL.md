@@ -313,8 +313,7 @@ in its env file. Then: `new -d -H shell` a lead; inside it,
 `discobox-access request --json` for `ai.discobox.sandbox` with the uses to
 drive (no `wait`); approve it from outside with `discobox secret request
 approve <id>`; read the use IDs with `discobox-access list --json` in the
-lead; and run `discobox-access run --use <id> -- discobox …` there. A worker
-the lead creates with `--no-source` is listed outside only by `ls --all`.
+lead; and run `discobox-access run --use <id> -- discobox …` there.
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 

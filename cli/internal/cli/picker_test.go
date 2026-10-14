@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -355,136 +354,9 @@ func TestDirectoryCopyPromptSaysWhatItWouldCopy(t *testing.T) {
 	}
 }
 
-// pressPickerKey delivers one navigation key and runs whatever command it
-// returned, the way the Bubble Tea runtime would.
-func pressPickerKey(t *testing.T, m *pickerModel, key string) {
-	t.Helper()
-	_, cmd := m.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key})
-	if cmd == nil {
-		return
-	}
-	if msg := cmd(); msg != nil {
-		m.Update(msg)
-	}
-}
-
-// "a" is the picker's `ls --all`: it swaps in every discobox in the project,
-// and swaps back, asking the server only the first time.
-func TestPickerAllKeyWidensToEveryDiscoboxAndBack(t *testing.T) {
-	asked := 0
-	m := newPickerModel("Select a discobox", []pickerItem{
-		{id: "sbx_here", title: "here"},
-		{id: "sbx_also", title: "also"},
-	}, "")
-	m.expand = func() ([]pickerItem, error) {
-		asked++
-		return []pickerItem{
-			{id: "sbx_here", title: "here"},
-			{id: "sbx_also", title: "also"},
-			{id: "sbx_elsewhere", title: "elsewhere", detail: "running · now · /home/ada/other"},
-		}, nil
-	}
-
-	pressPickerKey(t, m, "a")
-	if !m.expanded || len(m.matches) != 3 {
-		t.Fatalf("after a: expanded = %v, matches = %d, want the wider list of 3", m.expanded, len(m.matches))
-	}
-	if m.expanding {
-		t.Fatal("the load is done; the picker still says it is listing")
-	}
-
-	pressPickerKey(t, m, "a")
-	if m.expanded || len(m.matches) != 2 {
-		t.Fatalf("after a again: expanded = %v, matches = %d, want this directory's 2", m.expanded, len(m.matches))
-	}
-
-	pressPickerKey(t, m, "a")
-	if !m.expanded || len(m.matches) != 3 {
-		t.Fatalf("after a a third time: expanded = %v, matches = %d, want the wider list again", m.expanded, len(m.matches))
-	}
-	if asked != 1 {
-		t.Fatalf("expand called %d times, want the answer kept after the first", asked)
-	}
-}
-
-// Widening answers "it is not in here", so what the user already typed keeps
-// filtering — over the wider list.
-func TestPickerKeepsTheQueryAndCursorAcrossWidening(t *testing.T) {
-	m := newPickerModel("Select a discobox", []pickerItem{
-		{id: "sbx_1", title: "api-here"},
-		{id: "sbx_2", title: "docs"},
-	}, "")
-	m.expand = func() ([]pickerItem, error) {
-		return []pickerItem{
-			{id: "sbx_1", title: "api-here"},
-			{id: "sbx_2", title: "docs"},
-			{id: "sbx_3", title: "api-elsewhere"},
-		}, nil
-	}
-	typePickerKeys(t, m, "/", "a", "p", "i", "enter")
-	if len(m.matches) != 1 || m.matches[0].item.id != "sbx_1" {
-		t.Fatalf("matches = %+v, want only the local api", m.matches)
-	}
-
-	pressPickerKey(t, m, "a")
-	if m.query != "api" {
-		t.Fatalf("query = %q, want the query to survive widening", m.query)
-	}
-	if len(m.matches) != 2 {
-		t.Fatalf("matches = %d, want both api discoboxes", len(m.matches))
-	}
-	// The cursor follows the discobox it was on, not the row number it held:
-	// the list underneath it is a different one now.
-	if m.matches[m.cursor].item.id != "sbx_1" {
-		t.Fatalf("cursor on %q, want it still on sbx_1", m.matches[m.cursor].item.id)
-	}
-}
-
-// A listing that fails says so in the card and leaves the usable scoped list up.
-func TestPickerAllKeyReportsAFailedListing(t *testing.T) {
-	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1", title: "one"}, {id: "sbx_2", title: "two"}}, "")
-	m.expand = func() ([]pickerItem, error) { return nil, errors.New("server unreachable") }
-
-	pressPickerKey(t, m, "a")
-	if m.expanded || m.expanding || len(m.matches) != 2 {
-		t.Fatalf("after a failed load: expanded = %v, expanding = %v, matches = %d, want the scoped list", m.expanded, m.expanding, len(m.matches))
-	}
-	if view := m.View().Content; !strings.Contains(view, "server unreachable") {
-		t.Fatalf("view does not report the failure:\n%s", view)
-	}
-	if m.done {
-		t.Fatal("a failed listing took the picker down")
-	}
-}
-
-// The help says what "a" would do next, and offers it only where there is
-// something wider to show.
-func TestPickerHelpOffersAllOnlyWhenThereIsAWiderList(t *testing.T) {
-	plain := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}}, "")
-	if strings.Contains(plain.View().Content, "every discobox") {
-		t.Fatalf("a picker with no wider list offered one:\n%s", plain.View().Content)
-	}
-
-	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}}, "")
-	m.expand = func() ([]pickerItem, error) { return []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}, {id: "sbx_3"}}, nil }
-	if view := m.View().Content; !strings.Contains(view, "a every discobox") {
-		t.Fatalf("help does not offer a:\n%s", view)
-	}
-	pressPickerKey(t, m, "a")
-	view := m.View().Content
-	if !strings.Contains(view, "a this directory") {
-		t.Fatalf("help does not offer the way back:\n%s", view)
-	}
-	if !strings.Contains(view, "every discobox in this project") {
-		t.Fatalf("widened list does not say it is widened:\n%s", view)
-	}
-}
-
-// The widened rows say where each discobox came from — its source — since that
-// is all that tells two identically named discoboxes from different places
-// apart. The current directory's list says nothing, because every row there
-// shares it.
-func TestSandboxPickerItemsSayWhereAWidenedRowCameFrom(t *testing.T) {
+// The rows say where each discobox came from — its source — since that is all
+// that tells two identically named discoboxes from different places apart.
+func TestSandboxPickerItemsSayWhereARowCameFrom(t *testing.T) {
 	cutFrom := func(sb *apimodel.Sandbox, dir string) {
 		sb.Config.SetSource(apiclientgen.NewOptGitSource(apimodel.GitSource{LocalDirectory: apiclientgen.NewOptString(dir)}))
 	}
@@ -500,12 +372,6 @@ func TestSandboxPickerItemsSayWhereAWidenedRowCameFrom(t *testing.T) {
 	nowhere := apimodel.Sandbox{ID: "sbx_nowhere", DisplayName: "nowhere"}
 	empty := apimodel.Sandbox{ID: "sbx_empty", DisplayName: "empty"}
 	empty.Origin = apiclientgen.NewOptOrigin(apimodel.Origin{HostId: "host_local"})
-
-	for _, item := range sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere, empty}, "") {
-		if item.originText() != "" {
-			t.Fatalf("this directory's list carries an origin on %q: %q", item.id, item.originText())
-		}
-	}
 
 	wide := sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere, empty}, "host_local")
 	if wide[0].originText() != "/home/ada/here" {
@@ -610,46 +476,6 @@ func TestPickerOriginColumnFitsTheTerminal(t *testing.T) {
 	}
 }
 
-// The scope line is the one line in the card whose length nothing else bounds:
-// a transport error arrives verbatim and would size the border past the window.
-func TestPickerScopeLineCannotWidenTheCard(t *testing.T) {
-	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1", title: "one"}, {id: "sbx_2", title: "two"}}, "")
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
-	m.expand = func() ([]pickerItem, error) {
-		return nil, errors.New("dial tcp 127.0.0.1:8080: connect: connection refused, after 3 attempts against " + strings.Repeat("host.example.internal/", 4))
-	}
-	pressPickerKey(t, m, "a")
-	view := m.View().Content
-	if !strings.Contains(view, "could not list every discobox") {
-		t.Fatalf("the failure is not reported at all:\n%s", view)
-	}
-	for _, line := range strings.Split(view, "\n") {
-		if got := lipgloss.Width(line); got > 80 {
-			t.Fatalf("a %d-wide line escaped an 80-column terminal: %q", got, line)
-		}
-	}
-}
-
-// A pre-widened picker whose load fails hands the real error back, rather than
-// leaving an empty card whose only exit reads as a cancel.
-func TestPickerPreWidenedReportsALoadFailure(t *testing.T) {
-	m := newPickerModel("Select a discobox", nil, "")
-	m.expandAtOnce = true
-	m.expand = func() ([]pickerItem, error) { return nil, errors.New("server unreachable") }
-	if msg := m.Init()(); msg != nil {
-		m.Update(msg)
-	}
-	if !m.done || m.chosen != -1 {
-		t.Fatalf("done = %v, chosen = %d, want the picker to give up", m.done, m.chosen)
-	}
-	if m.expandErr == nil || m.expandErr.Error() != "server unreachable" {
-		t.Fatalf("expandErr = %v, want the load's own error kept for the caller", m.expandErr)
-	}
-	if m.exhausted {
-		t.Fatal("a failed load was reported as an empty project")
-	}
-}
-
 // The machine name is the whole reason a remote row can be told from a local
 // one, so shortening takes the room out of the path and never out of it.
 func TestShortenPickerOriginKeepsTheMachineName(t *testing.T) {
@@ -683,95 +509,30 @@ func TestShortenPickerOriginKeepsTheMachineName(t *testing.T) {
 	}
 }
 
-// A directory that started nothing opens the picker on the wider list rather
-// than failing: there is no candidate to lose by asking.
-func TestPickOneWithNoCandidatesOpensTheWiderList(t *testing.T) {
-	m := newPickerModel("Select a discobox", nil, "")
-	m.expandAtOnce = true
-	m.expand = func() ([]pickerItem, error) {
-		return []pickerItem{{id: "sbx_elsewhere", title: "elsewhere"}}, nil
-	}
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("a picker opened with nothing to show did not go looking")
-	}
-	if msg := cmd(); msg != nil {
-		m.Update(msg)
-	}
-	if !m.expanded || len(m.matches) != 1 || m.matches[0].item.id != "sbx_elsewhere" {
-		t.Fatalf("expanded = %v, matches = %+v, want the wider list up", m.expanded, m.matches)
-	}
-	if m.done {
-		t.Fatal("the picker closed on a list it had just found")
-	}
-}
-
-// One candidate is still taken without asking, wider list or not: stopping to
-// ask would cost every such run a keystroke to answer a question with one
-// answer.
-func TestPickOneStillTakesASingleCandidateWithoutAsking(t *testing.T) {
+// One candidate is taken without asking: stopping to ask would cost every such
+// run a keystroke to answer a question with one answer.
+func TestPickOneTakesASingleCandidateWithoutAsking(t *testing.T) {
 	cmd := &cobra.Command{}
-	asked := false
 	id, err := pickOne(cmd, "Select a discobox", []pickerItem{{id: "sbx_only"}}, pickerOptions{
 		empty:     "nothing here",
 		ambiguous: "too many",
-		expand:    func() ([]pickerItem, error) { asked = true; return nil, nil },
 	})
 	if err != nil || id != "sbx_only" {
 		t.Fatalf("pickOne = %q, %v, want the one candidate", id, err)
 	}
-	if asked {
-		t.Fatal("pickOne widened the list it did not need to")
-	}
 }
 
-// Without a terminal there is still nobody to ask, so an empty scoped list
-// fails with the caller's wording rather than opening anything.
-func TestPickOneWithNoCandidatesAndNoTerminalStillFails(t *testing.T) {
+// Nothing to choose from fails with the caller's wording rather than opening
+// an empty card.
+func TestPickOneWithNoCandidatesFails(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetErr(&bytes.Buffer{})
 	_, err := pickOne(cmd, "Select a discobox", nil, pickerOptions{
 		empty:     "nothing here",
 		ambiguous: "too many",
-		expand:    func() ([]pickerItem, error) { return []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}}, nil },
 	})
 	if err == nil || err.Error() != "nothing here" {
 		t.Fatalf("pickOne err = %v, want the empty label", err)
-	}
-}
-
-// A pre-widened picker that finds the project empty reports the caller's own
-// wording, not a cancel: the user never chose to back out of anything.
-func TestPickerPreWidenedOnAnEmptyProjectReportsItAsEmpty(t *testing.T) {
-	m := newPickerModel("Select a discobox", nil, "")
-	m.expandAtOnce = true
-	m.expand = func() ([]pickerItem, error) { return nil, nil }
-	if msg := m.Init()(); msg != nil {
-		m.Update(msg)
-	}
-	if !m.exhausted || !m.done {
-		t.Fatalf("exhausted = %v, done = %v, want the picker to give up", m.exhausted, m.done)
-	}
-	if m.chosen != -1 {
-		t.Fatalf("chosen = %d, want nothing chosen", m.chosen)
-	}
-}
-
-// Collapsing back onto a scoped list that was empty to begin with says why the
-// card is bare, instead of showing a "no matches" that reads as a broken filter.
-func TestPickerSaysWhyAnEmptyScopedListIsEmpty(t *testing.T) {
-	m := newPickerModel("Select a discobox", nil, "")
-	m.expandAtOnce = true
-	m.expand = func() ([]pickerItem, error) { return []pickerItem{{id: "sbx_elsewhere", title: "elsewhere"}}, nil }
-	if msg := m.Init()(); msg != nil {
-		m.Update(msg)
-	}
-	pressPickerKey(t, m, "a")
-	if m.expanded {
-		t.Fatal("a did not collapse back")
-	}
-	if view := m.View().Content; !strings.Contains(view, "nothing was started from this directory") {
-		t.Fatalf("view does not explain the empty list:\n%s", view)
 	}
 }

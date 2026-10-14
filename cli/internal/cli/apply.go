@@ -38,9 +38,8 @@ tree they started from, per docs/adr/0014.
 "local" is this machine — the repository you ran discobox from; "discobox" is the
 copy of it the discobox works in. Commits only ever move discobox -> local.
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
-current project directory: the only one when there is one, otherwise you are
-asked to pick.
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+only one when there is one, otherwise you are asked to pick.
 
 Every source on the discobox is applied by default (the primary source plus any
 secondary ones); --source narrows to one, named by its slug.

@@ -11,6 +11,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/internal/hostid"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -36,8 +37,7 @@ ID, a short prefix of it, or the name the discobox was created with. That name
 is the NAME "discobox ls" prints only until the discobox's agent titles its
 terminal and the title takes the column, so the ID is what always resolves; the
 title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
-discobox this directory started, or a prompt to pick one when there is more than
-one. A discobox on another server is written by its address,
+only discobox there is, or a prompt to pick one when there is more than one. A discobox on another server is written by its address,
 DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
 "discobox admin remote" prints in its ADDRESS column: a peer ID, or a host.
 The SERVER column "discobox ls" prints is the name this machine registered that
@@ -92,7 +92,7 @@ func (a *App) runCP(cmd *cobra.Command, args []string) error {
 	// without first starting a server or enrolling a key.
 	operands := parseCPOperands(paths)
 	if !slices.ContainsFunc(operands, func(operand cpOperand) bool { return operand.remote }) {
-		return fmt.Errorf("no discobox was named: write a path as DISCOBOX:PATH, or :PATH for this directory's discobox")
+		return fmt.Errorf("no discobox was named: write a path as DISCOBOX:PATH, or :PATH for the only discobox, or to pick one")
 	}
 	target, err := a.resolveCPTarget(cmd, operands)
 	if err != nil {
@@ -240,7 +240,7 @@ func (a *App) resolveCPTargetOnEveryServer(cmd *cobra.Command, set []*server, op
 		// its discoboxes by full ID asks for them and nothing else.
 		if !listed && !idpkg.IsGenerated(idpkg.Canonical(idpkg.PrefixSandbox, operand.reference)) {
 			var err error
-			if candidates, unreachable, err = a.sandboxCandidates(cmd.Context(), false); err != nil {
+			if candidates, unreachable, err = a.sandboxCandidates(cmd.Context()); err != nil {
 				return cpTarget{}, err
 			}
 			listed = true
@@ -389,23 +389,20 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 // `discobox shell mybox ls`. `selectSandbox` cannot serve — with a non-empty
 // argument it resolves IDs only, and hands a name straight back, which here
 // would become an SSH username no sandbox answers to.
-//
-// A name stays matched per directory even though the picker's "a" *shows*
-// names from the whole project. Picking such a row is still fine — the picker
-// hands back an ID, not the name — so what a widened pick costs is only that
-// the name cannot be retyped later, which is what resolveSandboxReference's
-// error says when someone tries.
 func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, reference string) (string, error) {
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
 		return "", err
 	}
 	if reference == "" {
-		return pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
+		localHostID, err := hostid.Get()
+		if err != nil {
+			return "", err
+		}
+		return pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, localHostID), pickerOptions{
 			empty:     cpPickEmpty,
 			ambiguous: cpPickAmbiguous,
 			recentKey: "sandbox:" + projectID,
-			expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 		})
 	}
 	// configuredName: what cp accepts before a colon is `shell`'s rule, and
@@ -413,11 +410,12 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	return a.resolveSandboxReference(cmd.Context(), client, projectID, reference, sandboxes, configuredName)
 }
 
-// What cp's picker says when a bare :PATH has no discobox, or more than one,
-// to mean: the way out is a reference before the colon.
+// What cp's picker says when a bare :PATH has no discobox to mean, or more
+// than one and nobody to ask: the way out of the second is a reference before
+// the colon.
 const (
-	cpPickEmpty     = "no discoboxes were started from this directory; start one with `discobox new`, or name one before the colon"
-	cpPickAmbiguous = "more than one discobox was started from this directory; name one before the colon"
+	cpPickEmpty     = "there are no discoboxes; start one with `discobox new`"
+	cpPickAmbiguous = "there is more than one discobox; name one before the colon"
 )
 
 // resolveCPSandboxOnEveryServer is resolveCPSandbox across every server, and

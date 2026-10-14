@@ -13,8 +13,7 @@ import (
 //
 // What the root command adds is the reference rule every other everyday
 // command follows (resolveSandboxReference), at its widest setting: an argument
-// is the NAME `discobox ls` prints for the current project directory, or an ID
-// from anywhere in the project. listedName rather than configuredName because
+// is the NAME `discobox ls` prints, or an ID. listedName rather than configuredName because
 // the name a running discobox shows is its terminal's window title, and the
 // configured name it otherwise falls back to is generated — `new` has no
 // --name — so matching only that would mean matching a string the listing had
@@ -37,10 +36,8 @@ func (a *App) newRemoveCommand() *cobra.Command {
 		Short:   "Archive discoboxes",
 		Long: `Archive discoboxes.
 
-Each argument names one of the discoboxes "discobox ls" shows for the current
-project directory: the NAME it is listed under, its ID, or a short prefix of
-that ID. A discobox started from another directory, or on another machine, is
-named by ID.
+Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
+listed under, its ID, or a short prefix of that ID.
 
 A NAME is a discobox's terminal title once its agent has set one, so two
 discoboxes can share it. An argument that names more than one is refused, with
@@ -74,7 +71,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			// is not something a discobox needs a runtime for, and a name the
 			// listing still shows must not come back as no such discobox.
 			// Archiving an already-archived one is the no-op it reads as.
-			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false, nil)
+			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, sandboxFilter{})
 			if err != nil {
 				return err
 			}

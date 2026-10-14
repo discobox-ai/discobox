@@ -30,9 +30,8 @@ func (a *App) newToolsCommand() *cobra.Command {
 		Short:   "Run a development tool against a discobox",
 		Long: `Run a development tool against a discobox.
 
-Without --discobox-id the discobox is taken from the ones "discobox ls" shows for the
-current project directory: the only one when there is one, otherwise you are
-asked to pick.
+Without --discobox-id the discobox is taken from the ones "discobox ls" shows: the
+only one when there is one, otherwise you are asked to pick.
 
 git runs inside the discobox and ssh opens a session to it. Every other tool is
 declared in a file, and "discobox tools ls" lists the ones a discobox offers.
@@ -72,7 +71,7 @@ a tool that runs on this machine.`,
 	// Which sandbox a tool acts on is the one thing every tool has in common,
 	// so it is asked once here and inherited. Everything else, including where
 	// the tool runs, belongs to the subcommand that means it.
-	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox to act on; when omitted, the discobox started from this directory, or a prompt to pick one")
+	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox to act on; when omitted, the only discobox there is, or a prompt to pick one")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 
 	cmd.AddCommand(a.newToolsGitCommand(&sandboxID))
@@ -112,7 +111,7 @@ func (a *App) newToolRunCommand(sandboxID *string, id, short string) *cobra.Comm
 
 Arguments are passed to the tool untouched; only the flags before them are
 consumed here. Use -- when a tool argument would otherwise be read as one of
-them. A leading argument naming one of this directory's discoboxes selects it.`,
+them. A leading argument naming one of the discoboxes "discobox ls" shows selects it.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runTool(cmd, id, *sandboxID, source, program, args)

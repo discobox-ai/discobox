@@ -129,7 +129,7 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 		{
 			name: "sandboxes",
 			write: func(cmd *cobra.Command) error {
-				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}}, false, nil)
+				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}}, nil)
 			},
 			want: "sandbox-full-id\n",
 		},
@@ -990,7 +990,7 @@ func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 		},
 	}
 
-	if err := app.writeSandboxes(cmd, sandboxes, true, nil); err != nil {
+	if err := app.writeSandboxes(cmd, sandboxes, nil); err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
 	output := out.String()
@@ -998,14 +998,6 @@ func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("sandboxes output = %q, want %q", output, want)
 		}
-	}
-
-	out.Reset()
-	if err := app.writeSandboxes(cmd, sandboxes, false, nil); err != nil {
-		t.Fatalf("writeSandboxes: %v", err)
-	}
-	if strings.Contains(out.String(), "SOURCE") {
-		t.Fatalf("sandboxes output = %q, did not want SOURCE column", out.String())
 	}
 }
 
@@ -1027,7 +1019,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 			ErrorMessage: apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
 			Generation:   1,
 		},
-	}}, false, nil)
+	}}, nil)
 	if err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
@@ -1071,7 +1063,7 @@ func TestWriteSandboxesTableShowsARepairAndWhatItAnswers(t *testing.T) {
 				Failure:    apiclientgen.NewOptString("create container: EOF"),
 			}),
 		},
-	}}, false, nil)
+	}}, nil)
 	if err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}

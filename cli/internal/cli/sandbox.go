@@ -108,7 +108,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.writeSandboxes(cmd, body.GetSandboxes(), true, nil)
+			return a.writeSandboxes(cmd, body.GetSandboxes(), nil)
 		},
 	}
 	cmd.Flags().BoolVar(&includeJudge, "include-judge", false,

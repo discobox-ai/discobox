@@ -37,9 +37,8 @@ func (a *App) newProxyCommand() *cobra.Command {
 		Long: `Forward every port a discobox is listening on to a local port — its TCP
 ports, and the UDP ports its processes have bound.
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
-current project directory: the only one when there is one, otherwise you are
-asked to pick.
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+only one when there is one, otherwise you are asked to pick.
 
 The discobox reports what its own processes are serving, and each port is bound
 locally at the same number when it is free and at the nearest one above it when

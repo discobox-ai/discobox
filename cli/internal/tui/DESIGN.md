@@ -881,7 +881,7 @@ choice in its group; Enter marks the row under the cursor too and applies every
 mark at once (`applyFilter`). The tags are the one group that takes several
 marks, drawn as boxes (`□ ■`) rather than dots: Space or a click turns a tag on
 and off (`filterPicker.toggle`), `all tags` clears them, and a discobox is
-listed when it carries every tag marked — `discobox list --tag` repeated. A
+listed when it carries every tag marked — `discobox ls --tag` repeated. A
 discobox holds one value per key, so marking `#ticket=ENG-13` lets go of
 `#ticket=ENG-12` rather than narrowing to what nothing carries. Enter
 only ever turns its row on (`filterPicker.pick`), so the key that applies the
@@ -2562,10 +2562,10 @@ a repository URL — matched by the key the server stored on each row
 directory is. The header opens on the folder the directory's saved view names,
 or on `allFolders` (see "The header's filters are kept per folder"); the window's
 own folder (`Session.RepositoryKey` when its checkout is on GitHub, otherwise
-`Session.OriginKey`, what `discobox ls` lists here) leads the
+`Session.OriginKey`, where a discobox cut here is filed) leads the
 filter card's folders, with every folder something is filed in beside it. A folder of this machine's also holds its
 discoboxes with no source, which are filed under the machine alone
-(`Session.HostKey`) — `ls` sends both keys the same way — so that key is never
+(`Session.HostKey`), so that key is never
 offered as a folder of its own. The choices come from the listing itself, so the
 only folders offered are ones with something in them (plus the window's own,
 always, since that is where a new sandbox would go). Because every row on screen

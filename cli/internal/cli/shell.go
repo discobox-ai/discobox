@@ -9,6 +9,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/internal/hostid"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -24,8 +25,7 @@ func (a *App) newShellCommand() *cobra.Command {
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
 
-When the first argument names one of the discoboxes "discobox ls" shows for the
-current project directory — its ID, a short prefix of it, or a name unique
+When the first argument names one of the discoboxes "discobox ls" shows — its ID, a short prefix of it, or a name unique
 among them — that discobox is used and every argument after it is the command.
 Otherwise there is no DISCOBOX_ID: every argument is the command, and the
 discobox is taken from "discobox ls" instead — the only one when there is one,
@@ -124,8 +124,8 @@ func trimCommandSeparator(args []string) []string {
 
 // resolveShellTarget splits shell's positional arguments into the sandbox and
 // the command, since Cobra sees one flat list and cannot tell them apart on
-// its own. args[0] is tried against the sandboxes "discobox ls" shows for the
-// current project directory (matchSandboxArg); a match consumes it as
+// its own. args[0] is tried against the sandboxes `discobox ls` shows
+// (matchSandboxArg); a match consumes it as
 // DISCOBOX_ID and leaves the rest as the command. No match — including no
 // args at all — means every argument is the command, and the sandbox falls
 // back to the same picker `discobox apply` uses when DISCOBOX_ID is omitted.
@@ -181,7 +181,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, p
 			return a, projectID, id, client, args[1:], nil
 		}
 	}
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
 		return nil, "", "", nil, nil, err
 	}
@@ -196,11 +196,14 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, p
 			return a, projectID, id, client, args[1:], nil
 		}
 	}
-	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
-		empty:     "no discoboxes were started from this directory; start one with `discobox new`, or name the discobox as the first argument",
-		ambiguous: "more than one discobox was started from this directory; name the discobox as the first argument",
+	localHostID, err := hostid.Get()
+	if err != nil {
+		return nil, "", "", nil, nil, err
+	}
+	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, localHostID), pickerOptions{
+		empty:     "there are no discoboxes; start one with `discobox new`",
+		ambiguous: "there is more than one discobox; name the discobox as the first argument",
 		recentKey: "sandbox:" + projectID,
-		expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 	})
 	return a, projectID, sandboxID, client, args, err
 }
@@ -223,7 +226,7 @@ func (a *App) resolveShellTargetOnEveryServer(cmd *cobra.Command, set []*server,
 			return target.app, projectID, sandboxID, client, args[1:], nil
 		}
 	}
-	candidates, unreachable, err := a.sandboxCandidates(ctx, false)
+	candidates, unreachable, err := a.sandboxCandidates(ctx)
 	if err != nil {
 		return nil, "", "", nil, nil, err
 	}
@@ -240,8 +243,8 @@ func (a *App) resolveShellTargetOnEveryServer(cmd *cobra.Command, set []*server,
 	}
 	if target == nil {
 		target, sandboxID, err = a.pickServerSandbox(cmd, set, candidates, unreachable,
-			"no discoboxes were started from this directory; start one with `discobox new`, or name the discobox as the first argument",
-			"more than one discobox was started from this directory; name the discobox as the first argument")
+			"there are no discoboxes; start one with `discobox new`",
+			"there is more than one discobox; name the discobox as the first argument")
 		if err != nil {
 			return nil, "", "", nil, nil, err
 		}
@@ -276,7 +279,7 @@ const (
 )
 
 // matchSandboxArg reports whether arg names one of sandboxes, the same
-// candidates "discobox ls" shows for the current project directory: a full
+// candidates `discobox ls` shows: a full
 // generated ID, an exact sandbox name in the sense match asks for, or a short
 // ID. A full generated ID (id.IsGenerated) is trusted outright: its shape — a
 // resource prefix plus 16 random characters — is unique enough that no shell
@@ -306,7 +309,7 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) 
 	case 1:
 		return named[0], true, nil
 	default:
-		return "", false, fmt.Errorf("%q names more than one discobox from this directory (%s); use the discobox ID", arg, strings.Join(named, ", "))
+		return "", false, fmt.Errorf("%q names more than one discobox (%s); use the discobox ID", arg, strings.Join(named, ", "))
 	}
 	arg = idpkg.Canonical(idpkg.PrefixSandbox, arg)
 	if !isResolvableShortID(arg) {
@@ -322,7 +325,7 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) 
 	case 1:
 		return matches[0], true, nil
 	default:
-		return "", false, fmt.Errorf("%q matches more than one discobox from this directory (%s); use a longer prefix", arg, strings.Join(matches, ", "))
+		return "", false, fmt.Errorf("%q matches more than one discobox (%s); use a longer prefix", arg, strings.Join(matches, ", "))
 	}
 }
 

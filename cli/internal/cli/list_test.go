@@ -2,17 +2,16 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/internal/hostid"
-	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
 // A directory's discoboxes are filed under its repository root, so ls from a
@@ -86,49 +85,130 @@ func TestLocalProjectDirectoryForARemoteSourceIsTheWorkingDirectory(t *testing.T
 	}
 }
 
-// ls sends two origin keys (ADR 0111): the one a discobox cut from -C on this
-// machine is filed under, and the machine's own, which files its discoboxes
-// with no source.
-func TestListCommandFiltersSandboxesByOriginKeys(t *testing.T) {
-	const host = "host_0123456789abcdef"
-	t.Setenv(hostid.EnvVar, host)
-	repo := newRunSourceTestRepo(t)
-	t.Chdir(repo)
-
-	got := listedOriginKeys(t)
-	want := []string{originkey.Of(host, repo), originkey.Host(host)}
-	if !slices.Equal(got, want) {
-		t.Fatalf("originKey query = %q, want %q", got, want)
-	}
-}
-
-// With -C naming a repository URL, ls lists what this machine cut from that
-// URL, wherever it is run from — not what was started in the directory it ran
-// in.
-func TestListCommandForARemoteSourceFiltersByItsURL(t *testing.T) {
-	const host = "host_0123456789abcdef"
-	t.Setenv(hostid.EnvVar, host)
+// ls lists every discobox in the project, whatever it was cut from: no origin
+// key is sent, and -C — which every command the console spawns carries — does
+// not narrow it (ADR 26-10-10-954). The commands that take a discobox by name
+// list the same way, so a name is matched against everything ls shows.
+func TestListingsAreNotScopedToADirectory(t *testing.T) {
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(newRunSourceTestRepo(t))
 
-	got := listedOriginKeys(t, "-C", "https://github.com/acme/api")
-	want := []string{originkey.Of(host, "https://github.com/acme/api"), originkey.Host(host)}
-	if !slices.Equal(got, want) {
-		t.Fatalf("originKey query = %q, want %q", got, want)
+	for _, args := range [][]string{{"ls"}, {"-C", ".", "ls"}, {"ls", "--tag", "wip"}, {"rm", "no-such-name"}, {"stop", "no-such-name"}, {"tag", "no-such-name", "wip"}, {"rename", "no-such-name", "other"}} {
+		if got := listedOriginKeys(t, args...); len(got) != 0 {
+			t.Fatalf("%v: originKey query = %q, want none", args, got)
+		}
 	}
 }
 
-// listedOriginKeys runs ls, with args in front of it, against a server that
-// records the origin keys the listing asked for.
+// --source is the SOURCE column's text matched exactly: a directory, a URL, or
+// "-" for the discoboxes with no source. A prefix, a trailing slash, or the
+// URL without its .git is another string and matches nothing.
+func TestListCommandSourceMatchesTheSourceColumnExactly(t *testing.T) {
+	row := func(id, source string) string {
+		return fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1","displayName":%q,`+
+			`"config":{"name":%q,"image":""%s},"runtime":%s,`+
+			`"createdAt":"2026-08-19T00:00:00Z","updatedAt":"2026-08-19T00:00:01Z"}`, id, id, id, source, runningRuntime)
+	}
+	listing := `{"sandboxes":[` + strings.Join([]string{
+		row("sbx_dir", `,"source":{"kind":"git","localDirectory":"/home/me/src/api"}`),
+		row("sbx_url", `,"source":{"kind":"git","url":"https://github.com/acme/api.git"}`),
+		row("sbx_none", ""),
+	}, ",") + `]}`
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if keys := r.URL.Query()["originKey"]; len(keys) != 0 {
+			t.Errorf("originKey query = %q, want none", keys)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(listing))
+	}))
+	defer server.Close()
+
+	for source, want := range map[string]string{
+		"/home/me/src/api":                "sbx_dir",
+		"https://github.com/acme/api.git": "sbx_url",
+		"-":                               "sbx_none",
+		"/home/me/src/api/":               "",
+		"/home/me/src":                    "",
+		"https://github.com/acme/api":     "",
+	} {
+		cmd := NewRootCommand()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(new(strings.Builder))
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "ls", "-q", "--source", source})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("ls --source %s: %v", source, err)
+		}
+		if got := strings.TrimSpace(out.String()); got != want {
+			t.Fatalf("ls --source %s listed %q, want %q", source, got, want)
+		}
+	}
+}
+
+// A source a discobox wrote is printed escaped, so an escape sequence in it
+// is shown rather than obeyed, and --source matches the escaped text the
+// column shows.
+func TestListCommandEscapesTheSourceColumn(t *testing.T) {
+	listing := `{"sandboxes":[{"id":"sbx_esc","projectId":"project-1","createdByUserId":"user-1","displayName":"esc",` +
+		`"config":{"name":"esc","image":"","source":{"kind":"git","localDirectory":"/home/me/\u001b[2Jx"}},"runtime":` + runningRuntime + `,` +
+		`"createdAt":"2026-08-19T00:00:00Z","updatedAt":"2026-08-19T00:00:01Z"}]}`
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(listing))
+	}))
+	defer server.Close()
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := NewRootCommand()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(new(strings.Builder))
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "ls"}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("ls %v: %v", args, err)
+		}
+		return out.String()
+	}
+	table := run()
+	if strings.Contains(table, "\x1b") {
+		t.Fatalf("ls printed a raw escape:\n%q", table)
+	}
+	if !strings.Contains(table, `/home/me/\x1b[2Jx`) {
+		t.Fatalf("ls = %q, want the escape shown as text", table)
+	}
+	if got := strings.TrimSpace(run("-q", "--source", `/home/me/\x1b[2Jx`)); got != "sbx_esc" {
+		t.Fatalf("ls --source with the printed text listed %q, want sbx_esc", got)
+	}
+}
+
+// An empty --source is refused rather than read as no filter, which would list
+// everything for somebody who asked for one place.
+func TestListCommandRefusesAnEmptySource(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "ls", "--source", ""})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--source") {
+		t.Fatalf("ls --source '' error = %v, want it refused", err)
+	}
+}
+
+// listedOriginKeys runs args, a command and its flags, against a server that
+// records the origin keys its listing asked for. The command may fail: only
+// what it asked is read.
 func listedOriginKeys(t *testing.T, args ...string) []string {
 	t.Helper()
 	var got []string
+	listed := false
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		got = r.URL.Query()["originKey"]
+		listed = true
+		got = append(got, r.URL.Query()["originKey"]...)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"sandboxes":[]}`))
 	}))
@@ -137,9 +217,10 @@ func listedOriginKeys(t *testing.T, args ...string) []string {
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs(append(append([]string{"--server", server.URL, "--project", "project-1"}, args...), "ls"))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute ls: %v", err)
+	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, args...))
+	_ = cmd.Execute()
+	if !listed {
+		t.Fatalf("%v listed nothing", args)
 	}
 	return got
 }
