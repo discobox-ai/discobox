@@ -288,7 +288,10 @@ and a discobox that needs both holds two grants.
   - **The chosen delegation is read again** by its ID in the approval's
     transaction (`delegatedTTL`): still live and covering the host, with the
     uses the judge read, a lifetime nobody named fitted to its remaining time
-    and one the approver named refused if it does not fit.
+    and one the approver named refused if it does not fit. The lifetime is
+    fitted against, and the expiry stamped from, one reading of the clock
+    (`mintGrantAs` takes it): a second, later one would let the grant outlive
+    its delegation by the time between them.
 
   The delegation verdict names the delegation grant
   (`GrantID`) and the request being approved (`SecretRequestID`), and the
