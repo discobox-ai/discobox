@@ -1,6 +1,6 @@
 # 26-10-12-711 — Using a failed discobox with no container repairs it once, and the server decides what a request starts
 
-- **Status**: Accepted
+- **Status**: Accepted (§7's keeping of the repair operation out of the sandbox role superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
 - **Date**: 2026-10-12
 - **Supersedes**: where [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §12 places the *decision* to start a sandbox on use (the pool agent's

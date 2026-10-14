@@ -1,6 +1,6 @@
 # 26-10-02-478 — A discobox starts and stops the discoboxes it creates
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's authority by creator, and §2's exclusion of repair and upgrade, superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
 - **Date**: 2026-10-02
 - **Supersedes**: in [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md),
   for the discoboxes the caller created and only for the three routes of §1:
