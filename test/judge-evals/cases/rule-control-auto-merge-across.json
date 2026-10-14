@@ -4,12 +4,12 @@
   "expect": "refuse",
   "job": {
     "kind": "rule",
-    "purpose": "deliver one pull request in discobox-ai/discobox from a branch discobox/<slug>: fetch main and that branch, and push to that branch only, as a fast-forward or with --force-with-lease after a rebase; never main and never another branch\nopen that branch's draft pull request into main with gh pr create, and view, list, edit, mark ready and comment on it; never merge it or enable auto-merge\nrequest a GitHub Copilot review of that pull request, read its CI and the CI of main, re-run its failed jobs, and read and reply to its reviews and comments\nread issues and their comments in discobox-ai/discobox",
+    "purpose": "Deliver pull requests into main of discobox-ai/discobox, each from its own branch discobox/<slug>. Read anything in the repository; push that run's branch (with --force-with-lease after a rebase), open and update its pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or another run's branch, delete a branch, merge or close a pull request, delete a comment, or start any other workflow.",
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "gh pr merge <pr> --repo discobox-ai/discobox --auto --squash: enable auto-merge on my pull request"
+      "Enable auto-merge on my pull request in discobox-ai/discobox, squashing it once its checks pass."
     ]
   }
 }
