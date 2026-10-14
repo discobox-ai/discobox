@@ -3687,10 +3687,10 @@ components:
                     readOnly: true
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -3783,10 +3783,10 @@ components:
                     description: The proxy rewrite rule that applied
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used

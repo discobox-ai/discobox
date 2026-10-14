@@ -240,7 +240,7 @@ with non-printing characters escaped.`,
 	cmd.Flags().StringVar(&host, "host", "", "Only requests to this host")
 	cmd.Flags().StringVar(&useID, "use-id", "", "Only requests that spent this approved credential use")
 	cmd.Flags().StringVar(&status, "status", "", "Only responses with this status: 404, a class such as 5xx, or a range such as 400-499")
-	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy refused and never sent: by its host policy, the credential judge, or the discobox API's gate")
+	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy refused and never sent: by its host policy, the credential judge, the discobox API's gate, or a credential it could not resolve")
 	cmd.Flags().StringVar(&since, "since", "", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of requests to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing requests as they are recorded")
@@ -313,7 +313,8 @@ func httpAuditStatus(e apimodel.HTTPAuditExchange) string {
 
 // httpAuditRefuser is what refused a request the proxy never sent, read from
 // the start of its reason: the destination policy ("host denied"), the
-// credential judge ("judge: …"), or the discobox API's gate ("gate: …").
+// credential judge ("judge: …"), the discobox API's gate ("gate: …"), or a
+// credential the control plane could not resolve ("credential unavailable: …").
 // Empty for a request the proxy sent.
 func httpAuditRefuser(blocked bool, reason string) string {
 	switch {
@@ -323,6 +324,8 @@ func httpAuditRefuser(blocked bool, reason string) string {
 		return "gate"
 	case strings.HasPrefix(reason, "judge:"):
 		return "judge"
+	case strings.HasPrefix(reason, "credential unavailable:"):
+		return "credential"
 	case strings.HasPrefix(reason, "host"):
 		return "host"
 	}

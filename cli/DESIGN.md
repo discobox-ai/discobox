@@ -1751,8 +1751,8 @@ of how the value was made; the ask and a dismissal are `control-plane`'s.
 `http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
 discobox's calls to the discobox API carry the use they were made under too.
 Its `REFUSED BY` column says what refused a request the proxy never sent — the
-host policy, the credential judge, or the discobox API's gate
-(`httpAuditRefuser`, read from the start of `blockedReason`) — and `list`'s
+host policy, the credential judge, the discobox API's gate, or a credential the
+control plane could not resolve (`httpAuditRefuser`, read from the start of `blockedReason`) — and `list`'s
 line for one says why. `hooks`,
 `execs` and `list` require `--discobox-id`, and a stopped discobox answers 409
 rather than being started to read (ADR 0130 §5). Something that could not be

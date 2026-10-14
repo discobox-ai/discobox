@@ -2681,10 +2681,12 @@ type PoolHTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
+	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
+	// credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
+	// unavailable:" for a credential the control plane could not resolve -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -2916,10 +2918,12 @@ type PoolHTTPAuditExchangeDetail struct {
 	// The proxy rewrite rule that applied.
 	AppliedRuleId OptString `json:"appliedRuleId"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
+	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
+	// credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
+	// unavailable:" for a credential the control plane could not resolve -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
