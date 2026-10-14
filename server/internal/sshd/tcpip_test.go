@@ -1,13 +1,14 @@
 package sshd
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/discobox-ai/discobox/execstream/frame"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -141,8 +142,11 @@ func TestDirectTCPIPRejectionReasonIsText(t *testing.T) {
 	}
 	defer client.Close()
 
+	// The message as sent, not err.Error(): x/crypto's client quotes it there,
+	// which would escape a raw sequence on this side of the wire.
 	_, err = client.Dial("tcp", "example.test:80")
-	if err == nil || !strings.Contains(err.Error(), `the discobox failed (pull \x1b[2Kimage)`) || strings.ContainsRune(err.Error(), '\x1b') {
+	var rejected *ssh.OpenChannelError
+	if !errors.As(err, &rejected) || rejected.Message != `the discobox failed (pull \x1b[2Kimage)` {
 		t.Fatalf("rejection = %v, want the reason on one line with the sequence escaped", err)
 	}
 }
