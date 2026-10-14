@@ -1588,7 +1588,7 @@ func writeRuntimeIfChanged(path string, exec Exec) error {
 	if err != nil {
 		return err
 	}
-	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {
+	if current, err := readRuntimeFile(path); err == nil && bytes.Equal(current, data) {
 		return nil
 	}
 	return writeRuntimeData(path, data)
@@ -1629,15 +1629,41 @@ func marshalRuntime(exec Exec) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// writeRuntimeData replaces the runtime file whole: it stages the record in a
+// temporary file beside it and renames that over the target. The shim and the
+// agent both write this file and share no lock, so a write in place — truncate,
+// then write — lets a reader catch it empty, and two of them racing leave one
+// record followed by the tail of the other. Nothing parses that, so the watcher
+// would drop the shim's exit and the exec would read running (#203). The staged
+// name does not end in ".json", so neither the watcher nor a listing takes it
+// for an exec; the rename reaches the watcher as a Create, which it handles.
 func writeRuntimeData(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) //nolint:errcheck // Gone after a successful rename; only a failed write leaves it.
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return replaceRuntimeFile(tmpPath, path)
 }
 
 func readRuntime(path string) (Exec, error) {
-	data, err := os.ReadFile(path)
+	data, err := readRuntimeFile(path)
 	if err != nil {
 		return Exec{}, err
 	}

@@ -3,6 +3,7 @@ package execs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -408,6 +409,87 @@ func TestRuntimeFileIgnoresLiveShimFields(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || info.ModTime().Equal(stale) {
 		t.Fatalf("a durable change did not rewrite the runtime file (err %v)", err)
+	}
+}
+
+// The shim and the agent write the same runtime file with no lock in common:
+// the shim its exit, the agent "running" from Start or a refresh. A write in
+// place lets a reader catch the file truncated, and two of them racing leave
+// one record followed by the tail of the other — a file nothing can parse, so
+// the watcher drops the shim's exit and the exec reads running (#203). Every
+// read, whatever the ordering, must find one whole record.
+func TestRuntimeFileIsNeverTornByConcurrentWriters(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ex_torn.json")
+	at := time.Now().UTC()
+	code := int64(7)
+	exited := Exec{ID: "ex_torn", Status: StatusExited, ExitCode: &code, Unit: "discobox-exec-ex_torn", CreatedAt: at, StartedAt: &at, ExitedAt: &at}
+	running := Exec{
+		ID: "ex_torn", Status: StatusRunning, Unit: "discobox-exec-ex_torn", CreatedAt: at, StartedAt: &at,
+		Command:  []string{"sh", "-c", "exit 7"},
+		Metadata: map[string]string{"padding": strings.Repeat("x", 4096)},
+	}
+	if err := writeRuntime(path, running); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+
+	const rounds = 300
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	torn := make(chan string, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if exec, err := readRuntime(path); err != nil || exec.ID != "ex_torn" {
+				select {
+				case torn <- fmt.Sprintf("read %q, %v", exec.ID, err):
+				default:
+				}
+			}
+		}
+	}()
+	for range rounds {
+		var writers sync.WaitGroup
+		for _, exec := range []Exec{running, exited} {
+			writers.Add(1)
+			go func() {
+				defer writers.Done()
+				if err := writeRuntime(path, exec); err != nil {
+					t.Errorf("write runtime: %v", err)
+				}
+			}()
+		}
+		writers.Wait()
+		if exec, err := readRuntime(path); err != nil || exec.ID != "ex_torn" {
+			t.Fatalf("after two concurrent writes the runtime file reads %q, %v", exec.ID, err)
+		}
+	}
+	close(done)
+	wg.Wait()
+	select {
+	case got := <-torn:
+		t.Fatalf("a reader caught the runtime file mid-write: %s", got)
+	default:
+	}
+
+	// A write leaves nothing else behind, and nothing it stages is named like
+	// a runtime file the watcher or a listing would take for an exec.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "ex_torn.json" {
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("runtime dir holds %v, want only ex_torn.json", names)
 	}
 }
 
