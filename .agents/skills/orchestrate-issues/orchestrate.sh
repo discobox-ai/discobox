@@ -42,6 +42,15 @@ SUPERVISE='^Supervise the discoboxes I created'
 ANSWER='^Answer pending credential requests'
 TRACK='^Track the work my discoboxes do'
 
+# The checkout the skills are read from: a worker's ask is approved only when it is, word for word,
+# the use its skill asks for (cmd_approve). Without the skills nothing is approved here.
+ROOT=${ORCH_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}
+# skill_use <skill> <prefix>: the use that skill's SKILL.md asks for, whose text starts with prefix.
+skill_use() {
+	[ -n "$ROOT" ] && grep -o "\"description\": \"$2[^\"]*\"" "$ROOT/.agents/skills/$1/SKILL.md" 2>/dev/null |
+		head -1 | sed 's/^"description": "//; s/"$//'
+}
+
 # use <credential-name> <regex>: the live use ID whose description matches.
 # The listing fails now and then for a moment, so an empty answer is asked again before it counts.
 use() {
@@ -138,23 +147,34 @@ cmd_retire() { # retire <issue>|<discobox-id> [merged]: a triage box has no issu
 	echo "#$n $id tagged ${tags[*]} and stopped"
 }
 
+# A worker's ask is approved here only when its one use is the use its own skill asks for, with its
+# issue filled in: deliver-issue §0 for a delivering box, triage-issue §0 for a triaging one. The
+# server's delegation check refuses a use that drops a "Never …" of its line, but a judge can miss
+# one, and nothing here reads the ask; anything else goes to the lead to read, as NEEDS LEAD.
 cmd_approve() { # approve pending com.github.api use requests from workers, once each
 	local u reqs
 	u=$(use ai.discobox.sandbox "$ANSWER"); need "$u" "answering requests" || return 1
 	reqs=$(discobox-access run --use "$u" -- discobox secret request ls -o json </dev/null 2>/dev/null |
-		jq -r '.secretRequests[]? | select(.status=="pending") | "\(.id) \(.sandboxId) \(.purpose) \(.wellKnownId)"')
-	while read -r rid sid purpose wk; do
+		jq -r '.secretRequests[]? | select(.status=="pending")
+			| "\(.id) \(.sandboxId) \(.purpose) \(.wellKnownId) \(.uses // [] | map(.description) | @json | @base64)"')
+	while read -r rid sid purpose wk asked; do
 		[ -z "$rid" ] && continue
 		grep -qx "$rid" "$ORCH_DIR/tried.txt" && continue
 		echo "$rid" >>"$ORCH_DIR/tried.txt"
-		local n; n=$(awk -v s="$sid" '$2==s{print $1}' "$W")
+		local n want; n=$(awk -v s="$sid" '$2==s{print $1}' "$W")
 		[ -z "$n" ] && n=$(awk -v s="$sid" '$1==s{print "t"$2}' "$T")
-		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$wk" = com.github.api ]; then
+		case "$n" in
+		t*) want=$(skill_use triage-issue 'Triage issues') ;;
+		?*) want=$(skill_use deliver-issue 'Deliver issue #<N>'); want=${want//<N>/$n} ;;
+		*) want= ;;
+		esac
+		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$wk" = com.github.api ] && [ -n "$want" ] &&
+			[ "$(echo "$asked" | base64 -d | jq -c .)" = "$(jq -cn --arg w "$want" '[$w]')" ]; then
 			local res; res=$(discobox-access run --use "$u" -- discobox secret request approve "$rid" </dev/null 2>&1 | tail -3 | head -1 | cut -c1-300)
 			echo "$(date -u +%FT%H:%M) approve $rid for #$n: $res" >>"$ORCH_DIR/approvals.log"
 			case "$res" in GRANT*) echo "approved #$n $rid" ;; *) echo "REFUSED #$n $rid: $res" ;; esac
 		else
-			echo "NEEDS LEAD: $rid from $sid ($purpose ${wk:-custom})"
+			echo "NEEDS LEAD: $rid from $sid ($purpose ${wk:-custom}): not its skill's use word for word; read it"
 		fi
 	done <<<"$reqs"
 }

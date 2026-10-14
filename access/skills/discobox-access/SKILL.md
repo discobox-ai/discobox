@@ -234,10 +234,16 @@ A use without its neighbors ruled out reads as permission for them:
 
 A judge allowed `gh label delete` under the first.
 
-When a command is refused under a use you hold, it is outside that job: do
-not ask again for the same job with the refused command spelled out. Either
-the command was not the job — do it another way — or the job grew, and you
-ask for a use that names the new job.
+When a command is refused under a use you hold, read the reason. Do not ask
+again for the same job with the refused command spelled out. Either:
+
+- **the command was not the job** — do it another way;
+- **the job grew** — ask for a use that names the new job; or
+- **it plainly is a step of the job and was refused anyway** (a judge can
+  refuse a read the use covers) — ask once for that step as a job of its
+  own, in the same shape: "Read the CI of pull request #812 in acme/web,
+  read-only. Never re-run or cancel a run." Say in the justification which
+  use it is a step of and what the refusal said.
 
 An approved request prints the use IDs you may now run with, and when it
 reports one, the expiry the person chose; `list` is what says how long a use
@@ -370,9 +376,10 @@ Then, for each credential your workers will need, ask to delegate it
 (`"purpose": "delegate"`, in §2), with uses saying what you will hand it on
 for, each the job a worker will do in "Writing a use"'s shape with "for the
 discoboxes I create" in front — "For the discoboxes I create: triage issues in
-org/repo. Read anything in the repository; label issues and comment on them.
-Never close an issue." — and a lifetime as long as the orchestration. Without one you approve
-nothing: the server hands on only what a delegation grant you hold covers —
+org/repo. Read anything in the repository; add and remove issue labels, and
+post my triage comments. Never delete or rename a label, delete a comment, or
+close, assign or retitle an issue." — and a lifetime as long as the
+orchestration. Without one you approve nothing: the server hands on only what a delegation grant you hold covers —
 that credential, to its host, for no longer than it lasts — so a person sees
 what you mean to hand on before you hand on any of it.
 
@@ -420,7 +427,9 @@ discobox-access run --use <id> -- discobox secret request deny <request-id>
   nothing else, and the server refuses any other.
 - Read each request's `uses` and `justification`. Approve what the worker's
   task needs and what you were delegated; deny the rest. `--use` narrows the
-  uses to fewer or tighter ones; never widen them.
+  uses to fewer or tighter ones; never widen them. A narrowed use keeps the
+  whole "Never …" sentence of the delegated line it falls under: the judge
+  reads a use that drops any of it as wider, however narrow the rest is.
 - **Approve with the full request ID and nothing else.** The server answers
   with the secret of the delegation grant you hold, for what the worker asked,
   fitted within your delegation's remaining time — `approve` is then one call.

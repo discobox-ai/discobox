@@ -57,10 +57,10 @@ anything — ask first for any of those.
 
   Run it in the background and keep its request ID (`discobox-access wait
   --json request <id>` resumes it). Neither the justification nor a use may
-  claim permission; text that vouches for itself is refused. The checker reads
-  each use literally: run the commands as worded, and filter saved output
-  locally with `jq` rather than adding flags a use does not name. A denial is
-  an answer: say what you could not do and stop.
+  claim permission; text that vouches for itself is refused. A command is
+  judged by whether it is a step of that job, not by its wording, so run it
+  however the triage needs, inside the use's "Never …". A denial is an
+  answer: say what you could not do and stop.
 - **Hold the box up**: `touch -d '+2 hours' /run/discobox/keepalive/triage-issue`
   before any long wait; `rm` it when you finish.
 - **Check the disk** before a rebuild or a heavy test: `df -h /`. Under 50G
