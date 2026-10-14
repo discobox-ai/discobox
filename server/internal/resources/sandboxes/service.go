@@ -361,7 +361,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		if s.secrets == nil {
 			return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server cannot give a new discobox grants")
 		}
-		if grants, err = s.secrets.PrepareSandboxGrants(ctx, projectID, sandbox.ID, input.Grants); err != nil {
+		if grants, err = s.secrets.PrepareSandboxGrants(ctx, projectID, sandbox, input.Grants); err != nil {
 			return nil, err
 		}
 	}

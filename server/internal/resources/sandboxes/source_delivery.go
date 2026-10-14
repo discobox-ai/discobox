@@ -113,7 +113,7 @@ func validateSkillsSources(source *model.GitSource, refs model.SourceCodeReferen
 // harmless, because a sandbox reaches nothing in a cache but what it sent
 // (§7), whichever cache it names.
 func sourceCacheKey(sandboxID, slug string, origin *model.Origin, source *model.GitSource) string {
-	if key := sourcecache.RemoteKey(sourceRemote(source)); key != "" {
+	if key := sourcecache.RemoteKey(source.Remote()); key != "" {
 		return key
 	}
 	hostID := ""
@@ -126,24 +126,6 @@ func sourceCacheKey(sandboxID, slug string, origin *model.Origin, source *model.
 		}
 	}
 	return sourcecache.SandboxKey(sandboxID, slug)
-}
-
-// sourceRemote is a source's remote: the URL of a remote-URL source, and the
-// remote its client reported for a local checkout.
-func sourceRemote(source *model.GitSource) string {
-	if source == nil {
-		return ""
-	}
-	if source.LocalDirectory == nil || strings.TrimSpace(*source.LocalDirectory) == "" {
-		if source.URL != nil {
-			return strings.TrimSpace(*source.URL)
-		}
-		return ""
-	}
-	if source.UpstreamURL != nil {
-		return strings.TrimSpace(*source.UpstreamURL)
-	}
-	return ""
 }
 
 // gitSourceEntry is one of a sandbox's sources, addressable for mutation. A

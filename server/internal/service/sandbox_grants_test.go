@@ -185,7 +185,7 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 		t.Fatalf("grant expires %v, want no later than the delegation it was made under", given[0].ExpiresAt)
 	}
 	if len(judging.asked) != 1 || judging.asked[0].DelegationGrantID != delegation.ID ||
-		judging.asked[0].ForSandboxID != created.ID || judging.asked[0].RequestID != "" {
+		judging.asked[0].For == nil || judging.asked[0].For.ID != created.ID || judging.asked[0].RequestID != "" {
 		t.Fatalf("judge asked %+v, want the delegation, for the new discobox, with no request", judging.asked)
 	}
 

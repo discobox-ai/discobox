@@ -152,6 +152,25 @@ func (s *JudgeJob) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if s.Facts == nil {
+			return nil // optional
+		}
+		if err := (validate.Array{
+			MinLength:    0,
+			MinLengthSet: false,
+			MaxLength:    8,
+			MaxLengthSet: true,
+		}).ValidateLength(len(s.Facts)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "facts",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Kind.Validate(); err != nil {
 			return err
 		}

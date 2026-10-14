@@ -50,6 +50,9 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 		Round:      1,
 		Uses:       ask.Uses,
 	}
+	if job.Facts, err = s.delegationFacts(ctx, project.ID, ask); err != nil {
+		return judge.Answer{}, err
+	}
 	if err := job.Validate(); err != nil {
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, "a delegation cannot be judged: "+err.Error())
 	}
@@ -77,7 +80,7 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 		SandboxID:       ask.ApproverID,
 		GrantID:         ask.DelegationGrantID,
 		SecretRequestID: ask.RequestID,
-		ForSandboxID:    ask.ForSandboxID,
+		ForSandboxID:    ask.For.ID,
 		Round:           job.Round,
 		Allow:           decided.Allow,
 		Need:            decided.Need,

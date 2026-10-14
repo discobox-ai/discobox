@@ -591,6 +591,10 @@ type JudgeJob struct {
 	Command []string `json:"command"`
 	// The credential in the words a person reads, never its value.
 	Credential OptString `json:"credential"`
+	// What the control plane recorded about the discoboxes the job concerns when they were created, in
+	// its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what
+	// the purpose refers to; they never authorize.
+	Facts []string `json:"facts"`
 	// What Discobox knows about what the request was recognized as, set by the control plane from the
 	// judge package and never by a pool. It explains; it never authorizes.
 	Guidance []string `json:"guidance"`
@@ -621,6 +625,11 @@ func (s *JudgeJob) GetCommand() []string {
 // GetCredential returns the value of Credential.
 func (s *JudgeJob) GetCredential() OptString {
 	return s.Credential
+}
+
+// GetFacts returns the value of Facts.
+func (s *JudgeJob) GetFacts() []string {
+	return s.Facts
 }
 
 // GetGuidance returns the value of Guidance.
@@ -676,6 +685,11 @@ func (s *JudgeJob) SetCommand(val []string) {
 // SetCredential sets the value of Credential.
 func (s *JudgeJob) SetCredential(val OptString) {
 	s.Credential = val
+}
+
+// SetFacts sets the value of Facts.
+func (s *JudgeJob) SetFacts(val []string) {
+	s.Facts = val
 }
 
 // SetGuidance sets the value of Guidance.

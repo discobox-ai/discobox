@@ -4654,6 +4654,12 @@ components:
                 credential:
                     description: The credential in the words a person reads, never its value.
                     type: string
+                facts:
+                    description: What the control plane recorded about the discoboxes the job concerns when they were created, in its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what the purpose refers to; they never authorize.
+                    items:
+                        type: string
+                    maxItems: 8
+                    type: array
                 guidance:
                     description: What Discobox knows about what the request was recognized as, set by the control plane from the judge package and never by a pool. It explains; it never authorizes.
                     items:

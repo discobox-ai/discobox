@@ -486,7 +486,7 @@ func TestACreatesGrantsAreHeldToTheirDelegationsWhenStored(t *testing.T) {
 	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
 	delegation := delegate(t, st, secret, "github.com", time.Hour)
 
-	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", []apimodel.SandboxGrant{{
+	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
 		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
 		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
 	}})
@@ -526,14 +526,14 @@ func TestACreatesSecretNotDelegatedAnswersAsIfItDidNotExist(t *testing.T) {
 		}}
 	}
 	for _, named := range []string{other.ID, other.ID[:len(other.ID)-3], "sec_doesnotexist"} {
-		_, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", grant(named))
+		_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, grant(named))
 		requireStatus(t, err, http.StatusForbidden)
 	}
 	wellKnown := []apimodel.SandboxGrant{{WellKnownId: serverapi.NewOptString("com.github.api"), Uses: []apimodel.SecretUse{{Description: "read issue 43"}}}}
-	_, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", wellKnown)
+	_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, wellKnown)
 	requireStatus(t, err, http.StatusForbidden)
 
-	if _, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", grant(delegated.ID[:len(delegated.ID)-3])); err != nil {
+	if _, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, grant(delegated.ID[:len(delegated.ID)-3])); err != nil {
 		t.Fatalf("give the delegated secret named by a prefix: %v", err)
 	}
 }
@@ -568,14 +568,14 @@ func TestEachGrantACreateGivesIsJudged(t *testing.T) {
 	}
 	judging := &countingJudge{allow: true}
 	svc.SetJudge(judging)
-	if _, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", grants); err != nil {
+	if _, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, grants); err != nil {
 		t.Fatalf("prepare two grants: %v", err)
 	}
 	if judging.asked.Load() != 2 {
 		t.Fatalf("judge asked %d times, want once per grant", judging.asked.Load())
 	}
 	svc.SetJudge(&countingJudge{allow: false})
-	_, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", grants)
+	_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, grants)
 	requireStatus(t, err, http.StatusForbidden)
 }
 
@@ -780,7 +780,7 @@ func TestACreatesGrantIsMadeUnderADelegationThatHoldsItsUses(t *testing.T) {
 	delegateFor(t, st, secret, "github.com", 3*time.Hour, "request a Copilot review and read it")
 	svc.SetJudge(&delegationJudge{within: func(ask services.DelegationAsk) bool { return ask.DelegationGrantID == holds.ID }})
 
-	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", "sbx-new", []apimodel.SandboxGrant{{
+	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
 		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
 		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
 	}})

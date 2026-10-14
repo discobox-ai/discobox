@@ -48,7 +48,8 @@ type SandboxGrants struct {
 // whose uses the project's judge finds its uses within — the longest-lived
 // that does, asked once every grant has passed what can refuse it without the
 // judge. A lifetime it did not name is then fitted to that delegation.
-func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID string, requested []apimodel.SandboxGrant) (SandboxGrants, error) {
+func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sandbox *model.Sandbox, requested []apimodel.SandboxGrant) (SandboxGrants, error) {
+	sandboxID := sandbox.ID
 	var out SandboxGrants
 	if len(requested) == 0 {
 		return out, nil
@@ -162,7 +163,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 		judging, judgingCtx := errgroup.WithContext(ctx)
 		for i, grant := range out.Grants {
 			judging.Go(func() error {
-				delegation, err := s.judgeDelegations(judgingCtx, projectID, principal.SandboxID, fitting[i], credentials[i], grant.Hosts, grant.Uses, "", sandboxID)
+				delegation, err := s.judgeDelegations(judgingCtx, projectID, principal.SandboxID, fitting[i], credentials[i], grant.Hosts, grant.Uses, "", sandbox)
 				out.Delegations[i] = delegation
 				return err
 			})

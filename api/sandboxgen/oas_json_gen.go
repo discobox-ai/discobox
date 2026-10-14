@@ -1225,6 +1225,16 @@ func (s *JudgeJob) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Facts != nil {
+			e.FieldStart("facts")
+			e.ArrStart()
+			for _, elem := range s.Facts {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Guidance != nil {
 			e.FieldStart("guidance")
 			e.ArrStart()
@@ -1280,18 +1290,19 @@ func (s *JudgeJob) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfJudgeJob = [11]string{
+var jsonFieldsNameOfJudgeJob = [12]string{
 	0:  "command",
 	1:  "credential",
-	2:  "guidance",
-	3:  "host",
-	4:  "kind",
-	5:  "purpose",
-	6:  "reported",
-	7:  "request",
-	8:  "round",
-	9:  "stdin",
-	10: "uses",
+	2:  "facts",
+	3:  "guidance",
+	4:  "host",
+	5:  "kind",
+	6:  "purpose",
+	7:  "reported",
+	8:  "request",
+	9:  "round",
+	10: "stdin",
+	11: "uses",
 }
 
 // Decode decodes JudgeJob from json.
@@ -1332,6 +1343,25 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"credential\"")
 			}
+		case "facts":
+			if err := func() error {
+				s.Facts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Facts = append(s.Facts, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"facts\"")
+			}
 		case "guidance":
 			if err := func() error {
 				s.Guidance = make([]string, 0)
@@ -1352,7 +1382,7 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"guidance\"")
 			}
 		case "host":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Host = string(v)
@@ -1364,7 +1394,7 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"host\"")
 			}
 		case "kind":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.Kind.Decode(d); err != nil {
 					return err
@@ -1374,7 +1404,7 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"kind\"")
 			}
 		case "purpose":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Purpose = string(v)
@@ -1406,7 +1436,7 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"request\"")
 			}
 		case "round":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.Round = int64(v)
@@ -1456,8 +1486,8 @@ func (s *JudgeJob) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00111000,
-		0b00000001,
+		0b01110000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

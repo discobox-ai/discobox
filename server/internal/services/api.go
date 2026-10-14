@@ -683,12 +683,14 @@ const DelegationBound = 100 * time.Second
 // so everything in it is what the server holds rather than what a discobox
 // said.
 type DelegationAsk struct {
-	// ApproverID is the discobox handing the credential on, and ForSandboxID
-	// the discobox it hands it to. RequestID is the request it is approving,
-	// and empty when it gives the uses on a create.
-	ApproverID   string
-	ForSandboxID string
-	RequestID    string
+	// ApproverID is the discobox handing the credential on, and For the
+	// discobox it hands it to: its row, since on a create it is not stored
+	// yet, and the judge is told what it was created with (ADR 26-10-14-691).
+	// RequestID is the request it is approving, and empty when it gives the
+	// uses on a create.
+	ApproverID string
+	For        *model.Sandbox
+	RequestID  string
 	// DelegationGrantID is the delegation grant it approves under, which the
 	// verdict is recorded against.
 	DelegationGrantID string
