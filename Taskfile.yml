@@ -17,6 +17,10 @@ vars:
   ACCESS_BINARY: build/discobox-access{{.EXE}}
   ACCESS_MAIN: ./cmd/discobox-access
   PACKAGES: ./...
+  # Every module go.work uses, as one `go` invocation's packages: one command
+  # over all of them schedules their packages together rather than module by
+  # module. The list is go.work's; a module added there is added here.
+  WORKSPACE_PACKAGES: ./... ./access/... ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
   # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
   # upstream one. Actions knows the owner; elsewhere it comes from the origin
   # remote, and a checkout whose origin is not GitHub leaves this empty rather
@@ -701,7 +705,7 @@ tasks:
       # go test schedules packages from all of them together, so the slowest
       # package of one module runs beside the others' instead of after them, and
       # a failure in one module no longer stops the later ones from running.
-      - go test {{.PACKAGES}} ./access/... ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
+      - go test {{.WORKSPACE_PACKAGES}}
 
   build:lint-tool:
     desc: Build the golangci-lint binary the per-module checks share
@@ -740,7 +744,7 @@ tasks:
       GOARCH: amd64
       CGO_ENABLED: "0"
     cmds:
-      - go vet {{.PACKAGES}} ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
+      - go vet {{.WORKSPACE_PACKAGES}}
 
   # The hooks tool lives in discobox-ai/hooks and is consumed here as a Go
   # tool, so there is nothing to build first and nothing pinned by hand: the
@@ -1015,7 +1019,7 @@ tasks:
       - build:lint-tool
     cmds:
       - scripts/lint-darwin.sh ./build/tools/{{.LINT_BIN}}
-      - go vet {{.PACKAGES}} ./access/... ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
+      - go vet {{.WORKSPACE_PACKAGES}}
 
   ci:darwin:
     desc: "The macOS half of CI: darwin's own static checks plus the native, signed release build"
