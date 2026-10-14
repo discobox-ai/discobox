@@ -5,7 +5,6 @@ package boot
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"syscall"
 )
 
@@ -42,18 +41,6 @@ func overlayMount(target, lower, upper, work string) error {
 		return fmt.Errorf("overlay mount %s (%s): %w", target, opts, err)
 	}
 	return nil
-}
-
-// execInit replaces this process with the container's real init, keeping PID 1.
-func execInit(argv, env []string) error {
-	if len(argv) == 0 {
-		return fmt.Errorf("exec init: empty argv")
-	}
-	path, err := exec.LookPath(argv[0])
-	if err != nil {
-		return fmt.Errorf("resolve init target %q: %w", argv[0], err)
-	}
-	return syscall.Exec(path, argv, env)
 }
 
 // fileDevice reports the number of the device fi lives on, which is what

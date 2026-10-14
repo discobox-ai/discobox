@@ -65,7 +65,7 @@ var (
 
 // currentPOSIX is the image layer where processes run by uid and gid: who
 // this process already is. Inside a Linux sandbox that is the image's own
-// account -- boot runs as PID 1 before anything has called setuid, and the
+// account -- boot runs as root before anything has called setuid, and the
 // agent's unit sets no User=, so the running ids are the ones the Dockerfile's
 // USER directive selected.
 //

@@ -15,7 +15,7 @@ RemainAfterExit=yes
 # nix-daemon.service.d/proxy.conf and the Xfce session in
 # xfce4-session@.service — because they inherit none of the sandbox's proxy
 # env any other way.
-# Run as a unit of its own, rather than folded into the PID-1 boot flow, so it
+# Run as a unit of its own, rather than folded into discobox-wire.service, so it
 # can be re-run (`systemctl restart`) without restarting the sandbox.
 ExecStart=/usr/local/bin/discobox-sandbox-agent render-proxy-env
 

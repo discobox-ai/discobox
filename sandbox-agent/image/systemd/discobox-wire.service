@@ -1,0 +1,41 @@
+# A pool container's boot (ADR 26-10-10-767): provisions the sandbox user from
+# the bootstrap, binds the config and secrets volumes onto /etc/discobox and
+# /run/discobox/secrets, and wires the image-declared volumes and the sources
+# from the primary volumes the pool agent mounted under /.discobox (ADR 0007).
+#
+# Before local-fs.target, so every unit that uses a wired path starts after it:
+# everything with default dependencies (sysinit.target is after local-fs.target)
+# and the early units of this image, which order themselves after
+# local-fs.target. After tmp.mount, so nothing wired under /tmp is covered by
+# it, and after systemd-sysusers.service, so the sandbox user is added to the
+# account files after systemd's own and never alongside them.
+#
+# Only a pool's container has the config volume. A machine, or a container run
+# without its volumes, skips this unit -- a skipped unit is not a failed one --
+# and its agent provisions from its own start instead (ADR 26-10-09-143 §1).
+#
+# A failure ends the container: sysinit.target requires this unit, so nothing
+# behind it starts, and the manager exits with a non-zero status. A sandbox
+# whose wiring failed would otherwise write its state -- the home,
+# /var/lib/docker -- into the image layer, which a rebuild discards. The pool
+# agent reports the exit and the tail of the console, which is why this logs
+# there as well as to the journal: the journal goes with the container.
+[Unit]
+Description=Discobox Wire the Sandbox's Volumes
+Documentation=https://github.com/discobox-ai/discobox
+DefaultDependencies=no
+After=systemd-journald.socket tmp.mount systemd-sysusers.service
+Before=local-fs.target sysinit.target systemd-tmpfiles-setup.service
+ConditionPathExists=/.discobox/config/sandbox.json
+FailureAction=exit-force
+FailureActionExitStatus=1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/discobox-sandbox-agent wire
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+RequiredBy=sysinit.target

@@ -400,8 +400,9 @@ The base, sandbox, and harness images also have boxd machine-image twins: a
 build spec that builds the same chain with the same tools, files, and units on
 boxd's Ubuntu (`build:boxd-images`). A machine is not a container, so each spec
 leaves out what is only true of a container and says why: the container-only
-systemd masks, labels (written as files under
-`/usr/local/share/discobox/labels`), and the agent as PID 1. Docker and
+systemd masks and labels (written as files under
+`/usr/local/share/discobox/labels`); `discobox-wire.service` is installed but
+skipped, as a machine has no volumes to wire. Docker and
 Chromium are optional there: a guest that already ships one keeps it (boxd's
 ships Docker). Nothing releases or runs these images yet.
 
