@@ -1187,10 +1187,10 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 		return highlight(st, line, colSelectedBG), links
 	case atCursor:
 		return highlight(st, line, colHighlightBG), links
-	case s.prStatus() == prBlocked:
-		return highlight(st, line, colPRBlockedBG), links
-	case s.prStatus() == prReady:
-		return highlight(st, line, colPRReadyBG), links
+	case s.standing() == standingBlocked:
+		return highlight(st, line, colBlockedBG), links
+	case s.standing() == standingReady:
+		return highlight(st, line, colReadyBG), links
 	default:
 		return line, links
 	}
@@ -1223,9 +1223,9 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x
 		width := lipgloss.Width(label)
 		switch url := s.tagURL(tag); {
 		case tagKey(tag) == prBlocked:
-			out.WriteString(st.prBlockedTag.Render(label))
+			out.WriteString(st.blockedText.Render(label))
 		case tagKey(tag) == prReady:
-			out.WriteString(st.prReadyTag.Render(label))
+			out.WriteString(st.readyText.Render(label))
 		case url == "":
 			out.WriteString(st.dimText.Render(label))
 		case z.hovering(x, y, width, 1):

@@ -957,6 +957,31 @@ func (s Sandbox) changes() string {
 	}
 }
 
+// standing is what a discobox is lit for, on its row and in the workspace
+// header (Sandbox.standing): nothing, ready for a person, or blocked on one.
+type standing int
+
+const (
+	standingNone standing = iota
+	standingReady
+	standingBlocked
+)
+
+// standing is blocked when the discobox's pull request is (Sandbox.prStatus),
+// or when a credential request on it is waiting on a person — an agent asking
+// for a credential is as stuck as a pull request waiting on somebody — and
+// ready when its pull request is ready for a human merge.
+func (s Sandbox) standing() standing {
+	switch {
+	case s.PendingRequests > 0 || s.prStatus() == prBlocked:
+		return standingBlocked
+	case s.prStatus() == prReady:
+		return standingReady
+	default:
+		return standingNone
+	}
+}
+
 // Exec is one exec session in a sandbox, as the workspace's tab strip needs
 // it: enough to key a tab, title it, order it, and decide whether it should be
 // attached at all.

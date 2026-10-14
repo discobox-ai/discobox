@@ -218,9 +218,9 @@ func TestARowTaggedWithAPullRequestStatusIsLit(t *testing.T) {
 		tags []string
 		bg   string
 	}{
-		{[]string{"ready", "issue=4"}, colPRReadyBG},
-		{[]string{"blocked"}, colPRBlockedBG},
-		{[]string{"blocked", "ready"}, colPRBlockedBG},
+		{[]string{"ready", "issue=4"}, colReadyBG},
+		{[]string{"blocked"}, colBlockedBG},
+		{[]string{"blocked", "ready"}, colBlockedBG},
 	} {
 		for _, width := range []int{160, 40} {
 			if line := row(tc.tags, width, false); !painted(line, tc.bg) {
@@ -233,6 +233,22 @@ func TestARowTaggedWithAPullRequestStatusIsLit(t *testing.T) {
 	}
 	if line := row([]string{"ready"}, 160, true); !painted(line, colHighlightBG) {
 		t.Errorf("row = %q, want the cursor's band over the status's", line)
+	}
+}
+
+// A credential request waiting on a person lights the row blocked too, tag or
+// no tag, and over a ready pull request: the agent is stuck until it is
+// answered.
+func TestARowWaitingOnACredentialRequestIsLitBlocked(t *testing.T) {
+	t.Parallel()
+	for _, tags := range [][]string{nil, {"ready"}} {
+		l := newSandboxList(Session{})
+		l.width = 160
+		box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: tags, PendingRequests: 1}
+		line, _ := l.row(newStyles(true), &zones{}, box, 0, 0, false)
+		if !strings.HasPrefix(line, "\x1b[48;5;"+colBlockedBG+"m") {
+			t.Errorf("tags %v: row = %q, want it painted %s", tags, line, colBlockedBG)
+		}
 	}
 }
 

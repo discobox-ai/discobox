@@ -1192,6 +1192,70 @@ func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
 	}
 }
 
+// The workspace header says a pull request's status through the git word: a
+// blocked one replaces it in red whatever git says, a ready one turns the
+// work's own `ready` green, and a ready one over work in any other state
+// leaves that state's word alone. A credential request waiting is blocked.
+func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
+	t.Parallel()
+	ahead := GitState{Known: true, Branch: "main", Commit: "2222222"}
+	dirty := GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true}
+	st := newStyles(true)
+	for _, tc := range []struct {
+		name string
+		git  GitState
+		tags []string
+		// pending is how many credential requests are waiting on the box.
+		pending int
+		want    string
+		not     string
+	}{
+		{"ready work, ready pr", ahead, []string{"ready"}, 0, st.readyText.Render("ready"), ""},
+		{"ready work, no tag", ahead, nil, 0, st.name.Render("ready"), st.readyText.Render("ready")},
+		{"dirty work, ready pr", dirty, []string{"ready"}, 0, st.statusWA.Render("dirty"), "ready"},
+		{"dirty work, blocked pr", dirty, []string{"blocked"}, 0, st.blockedText.Render("blocked"), "dirty"},
+		{"unknown work, blocked pr", GitState{}, []string{"blocked", "ready"}, 0, st.blockedText.Render("blocked"), "ready"},
+		{"ready work, ready pr, a request waiting", ahead, []string{"ready"}, 1, st.blockedText.Render("blocked"), st.readyText.Render("ready")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newColorModel(t, newFakeSource())
+			m.paneBox = Sandbox{ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Git: tc.git, Tags: tc.tags, PendingRequests: tc.pending}
+			got := m.paneHeaderFields().text()
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("header = %q, want %q in it", got, tc.want)
+			}
+			if tc.not != "" && strings.Contains(got, tc.not) {
+				t.Fatalf("header = %q, want no %q in it", got, tc.not)
+			}
+		})
+	}
+}
+
+// A narrowing header keeps a box's blocked longer than its git summary: the
+// git word goes early because its mark is on the position, and no mark there
+// says blocked.
+func TestANarrowWorkspaceHeaderKeepsBlocked(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	m.paneBox = Sandbox{
+		ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Tags: []string{"blocked"},
+		Git: GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true},
+	}
+	fields := m.paneHeaderFields()
+	full := fields.text()
+	if !strings.Contains(full, "blocked") || strings.Contains(full, "dirty") {
+		t.Fatalf("header = %q, want blocked in place of the git word", full)
+	}
+	// Narrowed until the git position is gone.
+	narrow := fields
+	for room := len(full); strings.Contains(narrow.text(), "main@"); room-- {
+		narrow = fields.fit(room)
+	}
+	if got := narrow.text(); !strings.Contains(got, "blocked") {
+		t.Fatalf("narrowed to %q, want blocked kept after the git position is gone", got)
+	}
+}
+
 // Ctrl-L re-reads the listing, not only the screen: whoever reaches for it is
 // asking whether what is on screen is current. A read already out is not
 // doubled — it is said, once it is late.
