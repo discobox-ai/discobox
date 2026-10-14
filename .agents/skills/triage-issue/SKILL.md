@@ -331,7 +331,7 @@ skill):
 Merge, do not replace: keep every tag that is not a triage label, and drop the
 labels an earlier pass over this issue left (they are all triage labels, so the
 filter below does it) and a `ready`, `blocked` or `merged` tag a delivery left
-(deliver-issue §7):
+(deliver-issue §6):
 
 ```bash
 S=<scratchpad>

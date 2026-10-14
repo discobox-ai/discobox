@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Build the change already discussed and agreed in this session and deliver it as a pull request — restate the agreed plan, implement it, review it with discobox-review, verify it at runtime, commit, open a PR from discobox/<slug>, drive CI green, run GitHub Copilot review passes and answer them, then keep the PR mergeable and answer comments until a human merges it. Use when the approach has been talked through in the session and the user asks for it to be built and delivered as a PR, or invokes `develop`; the result is a PR, never `discobox apply`. Not for a plain "go ahead" that means build it here.
+description: Build the change already discussed and agreed in this session and deliver it as a pull request — restate the agreed plan, implement it, review it with discobox-review, verify it at runtime, commit, open a PR from discobox/<slug>, drive CI green, then keep the PR mergeable and answer comments until a human merges it. Use when the approach has been talked through in the session and the user asks for it to be built and delivered as a PR, or invokes `develop`; the result is a PR, never `discobox apply`. Not for a plain "go ahead" that means build it here.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, SendMessage, Skill, Monitor, AskUserQuestion
 metadata:
   argument-hint: "[branch slug] [--issue N]"
@@ -22,15 +22,15 @@ Invoking this skill is authorization to: push the branch `discobox/<slug>`
 to `discobox-ai/discobox` (create it, fast-forward it, and
 `git push --force-with-lease` it after a rebase onto `main`), open and edit
 one PR from it into `main`, comment on that PR and reply to its review
-comments, request a GitHub Copilot review of it, and re-run its failed CI
-jobs. It is **not** authorization to push `main` or any other branch, merge,
-enable auto-merge, close anything, or force-push without a lease.
+comments, and re-run its failed CI jobs. It is **not** authorization to push
+`main` or any other branch, merge, enable auto-merge, close anything, or
+force-push without a lease.
 
 These widen `open-pr` (and `test-fix`, `commit`) while this skill runs: where
-`open-pr` says invoking it does not authorize force-pushing or requesting
-reviewers, or says a conflict with `main` needs a rebase and to "ask first",
+`open-pr` says invoking it does not authorize force-pushing, or says a
+conflict with `main` needs a rebase and to "ask first",
 this skill has already asked — rebase and force-push with a lease to
-`discobox/<slug>`, and request the Copilot review, without asking again.
+`discobox/<slug>` without asking again.
 
 ## 0. Before anything
 
@@ -80,11 +80,10 @@ this skill has already asked — rebase and force-push with a lease to
   discobox-access request --json <<'EOF'
   {
     "id": "com.github.api",
-    "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green and a GitHub Copilot review, answer review comments, and keep it mergeable until it is merged",
+    "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green, answer review comments, and keep it mergeable until it is merged",
     "uses": [
       {"description": "fetch main and discobox/<slug> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/<slug> with git over https, the first time with git push --force-with-lease=refs/heads/discobox/<slug>: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/<slug>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
       {"description": "gh pr create --repo discobox-ai/discobox --base main --head discobox/<slug> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
-      {"description": "request a GitHub Copilot review of my pull request with gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot or gh api POST repos/discobox-ai/discobox/pulls/<pr>/requested_reviewers"},
       {"description": "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed"},
       {"description": "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)"},
       {"description": "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issues this change fixes or refers to"}
@@ -134,7 +133,7 @@ this skill has already asked — rebase and force-push with a lease to
   ```
 
   A new issue drops the `pr` tag the last one left, and a fresh start drops a
-`ready`, `blocked` or `merged` tag (§7) the last run left. The `jq -e` check proves
+`ready`, `blocked` or `merged` tag (§6) the last run left. The `jq -e` check proves
   the merge produced the tag and at most 64 tags (more makes the whole file
   invalid); when it fails nothing is written: with more than 64 tags merged,
   tell the user the box's tags are full and drop none of theirs to make
@@ -213,7 +212,7 @@ amend or squash a commit you have pushed. Leave the tree clean: a stray
 `.wnb-*.tmp` from the dev loop is deleted, not committed. Before §5,
 `git status --short` shows nothing but the paths the user said in §0 to
 leave alone; those stay as they are — never committed or deleted — and are
-named when `open-pr` §1 asks about uncommitted work (§2 and §7 say how
+named when `open-pr` §1 asks about uncommitted work (§2 and §6 say how
 review and rebase handle them).
 
 ## 5. Open the PR
@@ -250,46 +249,7 @@ rules:
 
 Status line: `PR #<pr> open, CI <state>`.
 
-## 6. Copilot review
-
-Copilot reviews in passes, until it has nothing left worth acting on. Each
-pass:
-
-1. Request it, on the head commit. The same command asks again after a pass
-   (the bot's login in `requested_reviewers` has not worked):
-
-   ```bash
-   gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot
-   ```
-
-2. Poll `pulls/<pr>/reviews` every few minutes (one short `discobox-access
-   run` each — the injected token lives minutes) until a new Copilot review
-   is there whose `commit_id` is the head commit; give it up to 30 minutes.
-   None by then: request once more, and if that too brings nothing, stop
-   the loop with `no review` — never request in a loop.
-3. Read the review's **body** as well as its threads. A later pass reviews
-   the whole PR again, not only the fixes: its body lists the earlier
-   findings it now counts as resolved, and can hold findings with no thread
-   of their own ("previously missed", in code the fixes did not touch).
-4. Answer every finding — each thread on that thread, and the body-only ones
-   together in one PR comment (`gh pr comment`):
-   - right → fix it, and reply with what changed and the commit;
-   - wrong, out of scope, or against what was agreed → reply with why, briefly;
-   - a finding already answered on an earlier pass, raised again → reply
-     with a link to that answer, and do not count it as new;
-   - a judgement for the user → ask with `AskUserQuestion`, then reply.
-5. A fix is new code: `discobox-review` round, re-run `verify` if it changes
-   runtime behavior, commit on top, push (fast-forward), CI green again.
-
-Run another pass after a pass whose fixes were pushed. Stop when a pass
-brings nothing worth fixing — every finding answered as wrong, out of scope
-or already answered — or after the third pass, whichever is first; never
-loop for zero comments, which a fresh read of the whole PR may never give.
-No finding is left without a reply. Status line per pass: `copilot pass <k>:
-<n> findings, <n> fixed, <n> answered`, and at the end `copilot: stopped
-after <k> passes, <nothing new | cap | no review>`.
-
-## 7. Keep it mergeable until merged
+## 6. Keep it mergeable until merged
 
 Arm a Monitor that checks every 5 minutes, one `discobox-access run` per
 read, and keep reacting until the PR is merged or closed. Each poll also
@@ -311,11 +271,19 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
   tests the conflict touched, then push with the lease form from §5 to
   `discobox/<slug>` only. `unknown` just after a merge is GitHub
   recomputing — check again before acting.
-- **A new review, review comment or PR comment** from anyone — answer it
-  with §6's reply rules (steps 3–5). Once §6 has stopped, a new review never
-  starts another pass: request no more Copilot reviews. A review's body can hold findings with no thread of their own (a
-  `CHANGES_REQUESTED` with no inline comment, Copilot's "previously missed");
-  answer those in one PR comment.
+- **A new review, review comment or PR comment** from anyone — read a
+  review's body as well as its threads, and answer every finding, each thread
+  on that thread. A review's body can hold findings with no thread of their
+  own (a `CHANGES_REQUESTED` with no inline comment); answer those together in
+  one PR comment (`gh pr comment`):
+  - right → fix it, and reply with what changed and the commit;
+  - wrong, out of scope, or against what was agreed → reply with why, briefly;
+  - a finding already answered, raised again → reply with a link to that
+    answer;
+  - a judgement for the user → ask with `AskUserQuestion`, then reply.
+
+  A fix is new code: `discobox-review` round, re-run `verify` if it changes
+  runtime behavior, commit on top, push (fast-forward), CI green again.
 - **A failing check on the head commit** — fix it as `open-pr` §4 says.
 - **Merged or closed** — tag the box `merged` or drop its tag (below), stop
   the Monitor, remove the keepalive, and finish.
@@ -332,7 +300,7 @@ them (without `--all`, `ls` skips boxes created from another source, as a
 lead's workers are). Set at most one of them, and move it each time the state
 changes, from §0 until the end:
 
-- **`ready`**: §6 has stopped, every check on the head commit is green, every
+- **`ready`**: every check on the head commit is green, every
   review, thread and comment has a reply, `mergeable_state` is neither `dirty`
   nor `unknown` (still recomputing: check again first), and
   the PR is marked ready. All it needs is a human merge.
@@ -363,6 +331,6 @@ If the check fails, nothing is written, and the rules for §0's tag merge apply.
 ## Done when
 
 The PR is merged or closed. Finish with the PR URL, its final head SHA, the
-review and Copilot rounds, everything `verify` observed or could not run, any
+review rounds, everything `verify` observed or could not run, any
 CI failure left as pre-existing, and anything built differently from the
 plan in §0 and why.
