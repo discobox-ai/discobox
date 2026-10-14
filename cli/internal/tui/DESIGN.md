@@ -596,8 +596,8 @@ repository the tag is plain: `issue=4` alone does not say whose issue 4.
 A discobox tagged `ready` or `blocked` — where its pull request stands, as the
 delivering skills tag it (`deliver-issue` and `develop`, "Ready, blocked,
 merged"): ready for a human merge, or waiting on somebody — is drawn on a band
-of its own, dark green or dark red (`Sandbox.prStatus`, `colPRReadyBG`,
-`colPRBlockedBG`), and the tag is bold in the band's color. This `ready` is
+of its own, dark green or dark red (`Sandbox.standing`, `colReadyBG`,
+`colBlockedBG`), and the tag is bold in the band's color. This `ready` is
 the pull request's, not the work's `ready` to apply that the header and list
 already spell out. They are the tags somebody scans a list of boxes for, so the
 band goes on the row rather than relying on the tag, which a long name can push
@@ -607,6 +607,22 @@ all a plain terminal gets. `blocked` wins over `ready`: it is the one waiting
 on a person. The cursor and selection bands win over both, since they say what
 a key will act on. `merged`, the third of the set, is not lit: the work is done
 and asks nothing of anyone.
+
+A credential request waiting on a person lights the row red too
+(`Sandbox.standing`), tag or no tag: an agent asking for a credential is as
+stuck as a pull request waiting on somebody, and the `!` beside the harness is
+one cell that is easy to look past. Only credential requests count — the
+listing carries them per box (`PendingRequests`).
+
+The workspace header says it in the same colors (`paneHeaderFields`).
+`blocked` — the tag, or a request waiting — takes the git word's place, in
+red, whatever git says, since waiting on a person outranks the work's state. It
+is a field of its own ahead of the git summary rather than the word itself: a
+narrowing header gives the word up early, because its mark is on the git
+position, and no mark there says blocked; and a press on it does not open the
+diff the summary opens. `ready` turns the work's own `ready` green when the two
+agree. A `#ready` box whose work is in some other state keeps that state's
+word: the header does not claim a state the work is not in.
 
 ## The issue tab
 

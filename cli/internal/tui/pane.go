@@ -1981,7 +1981,8 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 // the last field given up: everything after it is read off that listing. The
 // issue and pull request the discobox is tagged with come next, given up just
 // before it: they say what the work in it is for, which is the id's question
-// asked the way a person asks it.
+// asked the way a person asks it. A box blocked on a person says so after them,
+// in place of the git word, and is given up only after the git position.
 func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
@@ -1997,13 +1998,33 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	if work := workField(m.st, box); !work.empty() {
 		fields = append(fields, work)
 	}
+	// A box blocked on a person (Sandbox.standing) says so in place of the
+	// git word, in red, whatever the work's state: waiting on somebody
+	// outranks anything git says. It is a field of its own, ahead of the git
+	// summary rather than in it, so it is given up just after the git
+	// position rather than with the word — whose mark is on the position, a
+	// mark that says nothing about being blocked — and a press on it does
+	// not open the diff the summary opens.
+	blocked := box.standing() == standingBlocked
+	if blocked {
+		fields = append(fields, textField(m.st.blockedText.Render(prBlocked)))
+	}
 	if base := box.base(); base != "" {
 		fields = append(fields, gitField(git.Render(base)))
 	}
 	// The list pads this into a column, so it spells the empty answer as a
 	// dash; here there is no column to fill and nothing to say, so it is left
 	// off entirely.
-	if changes := box.changes(); changes != "-" {
+	//
+	// A ready pull request turns the work's own `ready` green, since the two
+	// agree — committed, and only a merge left — and it does not claim a state
+	// the work is not in.
+	switch changes := box.changes(); {
+	case blocked:
+		// Said ahead of the git summary, in its own field.
+	case changes == "ready" && box.standing() == standingReady:
+		fields = append(fields, gitField(m.st.readyText.Render(changes)))
+	case changes != "-":
 		fields = append(fields, gitField(git.Render(changes)))
 	}
 	if stat := diffText(m.st, box); stat != "" {

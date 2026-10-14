@@ -30,12 +30,12 @@ const (
 	colSelectedBG  = "24"  // a command will act on it
 	colBothBG      = "31"  // under the cursor and selected
 	colInactive    = "236"
-	// The bands behind a row tagged with its pull request's status
-	// (Sandbox.prStatus): the darkest green and red of the cube, dark enough
-	// that the row's own colors stay readable over them. The cursor and selection bands win over
-	// these — they say what a key will act on, and the tag still says the rest.
-	colPRReadyBG   = "22"
-	colPRBlockedBG = "52"
+	// The bands behind a row ready or blocked (Sandbox.standing): the darkest
+	// green and red of the cube, dark enough that the row's own colors stay
+	// readable over them. The cursor and selection bands win over these — they
+	// say what a key will act on, and the tag still says the rest.
+	colReadyBG   = "22"
+	colBlockedBG = "52"
 	// The band behind the credential banner: a dark red the text keeps its own
 	// colors over, rather than the whole bar drawn in reverse video. Reversed
 	// red puts the terminal's background color on a red
@@ -152,11 +152,12 @@ type styles struct {
 	chip    lipgloss.Style
 	chipOn  lipgloss.Style
 	command lipgloss.Style
-	// A pull request status tag on a row, `#ready` or `#blocked`, bold in the
-	// color of its band so it reads as the reason the row is lit. Without
-	// color it is plain, like every other style.
-	prReadyTag   lipgloss.Style
-	prBlockedTag lipgloss.Style
+	// Ready and blocked as words: a pull request status tag on a row, bold in
+	// the color of its band so it reads as the reason the row is lit, and the
+	// workspace header's word for the same (Sandbox.standing). Without color
+	// they are plain, like every other style.
+	readyText   lipgloss.Style
+	blockedText lipgloss.Style
 
 	dialog      lipgloss.Style
 	dialogTitle lipgloss.Style
@@ -229,11 +230,11 @@ func newStyles(color bool) *styles {
 	s.chip = paint(colDim)
 	s.chipOn = paint(colGold)
 	s.command = paint(colGreen)
-	s.prReadyTag = paint(colOK)
-	s.prBlockedTag = paint(colErr)
+	s.readyText = paint(colOK)
+	s.blockedText = paint(colErr)
 	if color {
-		s.prReadyTag = s.prReadyTag.Bold(true)
-		s.prBlockedTag = s.prBlockedTag.Bold(true)
+		s.readyText = s.readyText.Bold(true)
+		s.blockedText = s.blockedText.Bold(true)
 	}
 
 	s.dialog = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
