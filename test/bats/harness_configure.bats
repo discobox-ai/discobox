@@ -139,33 +139,25 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 # because STUB_CONFIGURE_KEEP can only be set at build time: a HarnessConfig
 # carries no env, and `harness update` cannot swap an image.
 #
-# The toggle is declared in image.json's env, which is how a sandbox process gets
-# its environment: the sandbox-agent reads image.json and applies its env when it
-# starts the command (config.ApplyImageEnvDefaults). A Dockerfile ENV is not that
-# path — it belongs to the container, whose PID 1 is systemd, and systemd does
-# not pass its own environment to the services it starts.
+# The toggle is declared in the env of the image's io.discobox.image.v1 label,
+# which is how a sandbox process gets its environment: the label's env is merged
+# into the sandbox's manifest, and the sandbox-agent applies it when it starts
+# the command. A Dockerfile ENV is not that path — it belongs to the container,
+# whose PID 1 is systemd, and systemd does not pass its own environment to the
+# services it starts.
 #
-# Only image.json changes; the harness metadata label lives outside the env block
-# and is inherited. The two images register side by side because `harness create`
-# takes an explicit --slug and --name, both unique per project.
+# Only the label changes: it is rebuilt from the stub's image.json plus the
+# toggle and replaces the one inherited from the stub. The two images register
+# side by side because `harness create` takes an explicit --slug and --name,
+# both unique per project.
 build_keep_stub_image() {
-  local ctx="$DISCOBOX_BATS_TMP/keep-stub"
-  mkdir -p "$ctx"
-  python3 - "$REPO_ROOT/test/harness-stub/image.json" "$ctx/image.json" <<'KEEPIMAGE'
-import json
-import sys
-
-source, target = sys.argv[1:]
-with open(source) as fh:
-    image = json.load(fh)
-image.setdefault("env", {})["STUB_CONFIGURE_KEEP"] = "1"
-with open(target, "w") as fh:
-    json.dump(image, fh)
-KEEPIMAGE
-  docker build -t discobox-harness-stub-keep:local -f - "$ctx" <<'DOCKERFILE'
+  local metadata
+  metadata="$(jq -c '.env.STUB_CONFIGURE_KEEP = "1"' "$REPO_ROOT/test/harness-stub/image.json")"
+  docker build --build-arg HARNESS_METADATA="$metadata" -t discobox-harness-stub-keep:local - <<'DOCKERFILE'
 # syntax=mirror.gcr.io/docker/dockerfile:1.7
 FROM discobox-harness-stub:local
-COPY image.json /usr/share/discobox/image.json
+ARG HARNESS_METADATA
+LABEL io.discobox.image.v1=${HARNESS_METADATA}
 DOCKERFILE
 }
 
@@ -364,6 +356,10 @@ configure_stub() {
   run configure_stub stub-keep
   [ "$status" -eq 0 ]
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is set"* ]]
+  # The image's toggle reached the configure command; without it the stub
+  # returns a fresh value, which also keeps the secret's id since b78e945e, so
+  # the id checks below cannot tell the two paths apart.
+  [[ "$output" == *"stub configure: STUB_CONFIGURE_KEEP=1"* ]]
 
   run cli admin harness get stub-keep
   [ "$status" -eq 0 ]

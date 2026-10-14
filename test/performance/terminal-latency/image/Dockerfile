@@ -10,4 +10,3 @@ RUN install -d -m 0755 /usr/local/libexec/discobox
 
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-terminal-latency
 COPY --chmod=0755 probe.py /usr/local/libexec/discobox/terminal-latency-probe
-COPY image.json /usr/share/discobox/image.json
