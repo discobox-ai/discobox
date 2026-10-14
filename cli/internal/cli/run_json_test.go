@@ -20,6 +20,13 @@ const runJSONSandboxID = "sbx_9qk5n25t2hh2rv00"
 // SSH sync refused by the sandbox role in plain text.
 func runJSONServer(t *testing.T, posted *map[string]any) *httptest.Server {
 	t.Helper()
+	return runJSONServerWithSkills(t, posted, `{"skillsSources":[]}`, nil)
+}
+
+// runJSONServerWithSkills is runJSONServer answering the project's skills
+// sources with skillsJSON, counting each read in asked when it is not nil.
+func runJSONServerWithSkills(t *testing.T, posted *map[string]any, skillsJSON string, asked *int) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/sandboxes":
@@ -33,6 +40,12 @@ func runJSONServer(t *testing.T, posted *map[string]any) *httptest.Server {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_, _ = w.Write([]byte(`{"secrets":[{"id":"sec_npm","projectId":"project-1","name":"npm","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/skills-sources":
+			if asked != nil {
+				*asked++
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(skillsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
 			http.Error(w, "not in the sandbox role", http.StatusForbidden)
 		default:

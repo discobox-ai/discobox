@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,8 +49,13 @@ type sandboxCreateOptions struct {
 	gitUserEmail  string
 	skillDirs     []string
 	userSkills    bool
-	wait          bool
-	waitTimeout   time.Duration
+	// noProjectSkills is --no-project-skills, and projectSkills what it
+	// leaves out: the project's skills sources, read before the body is
+	// built (ADR 26-10-14-894 §2).
+	noProjectSkills bool
+	projectSkills   []sandboxcreate.SkillsRepository
+	wait            bool
+	waitTimeout     time.Duration
 }
 
 type sandboxUpdateOptions struct {
@@ -168,6 +174,11 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 				}
 			}
 			opts.userUIDSet = cmd.Flags().Changed("user-uid")
+			if !opts.noProjectSkills {
+				if opts.projectSkills, err = projectSkills(cmd.Context(), client, projectID); err != nil {
+					return err
+				}
+			}
 			body, err := createSandboxBody(cmd.Context(), opts)
 			if err != nil {
 				return err
@@ -556,6 +567,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")
 	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
 	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a Git URL[@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one")
+	cmd.Flags().BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
 	cmd.Flags().BoolVar(&opts.userSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
@@ -642,7 +654,8 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 		return nil, err
 	}
 	sandboxcreate.SetCreateSandboxSkills(config, skills)
-	if err := sandboxcreate.AddSkillsSources(ctx, config, skillsArgs.Repositories); err != nil {
+	repos := append(slices.Clone(opts.projectSkills), skillsArgs.Repositories...)
+	if err := sandboxcreate.AddSkillsSources(ctx, config, repos); err != nil {
 		return nil, err
 	}
 	return body, nil

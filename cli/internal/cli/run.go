@@ -46,6 +46,9 @@ type runCommandOptions struct {
 	skillDirs      []string
 	userSkills     *bool
 	userSkillsFlag bool
+	// noProjectSkills is --no-project-skills: the project's skills sources
+	// are left out of this create (ADR 26-10-14-894 §2).
+	noProjectSkills bool
 	// json reads the request from stdin instead of the command line, and
 	// prints the created discobox as JSON (runJSONRequest).
 	json bool
@@ -358,6 +361,11 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if parsedOpts.PoolID, parsedOpts.Platform, err = a.newSandboxPlacement(cmd.Context(), client, projectID, opts.pool); err != nil {
 		return err
 	}
+	if !opts.noProjectSkills {
+		if parsedOpts.ProjectSkills, err = projectSkills(cmd.Context(), client, projectID); err != nil {
+			return err
+		}
+	}
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
 	if err != nil {
@@ -409,6 +417,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
 	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a Git URL[@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's new.skills")
+	flags.BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
 	flags.BoolVar(&opts.userSkillsFlag, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's new.userSkills")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
@@ -704,6 +713,7 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Include:             opts.prompt.Include,
 		SkillDirs:           opts.skillDirs,
 		UserSkills:          opts.userSkills,
+		NoProjectSkills:     opts.noProjectSkills,
 		SkipDeclaredSources: !opts.declaredSources,
 		Pool:                opts.pool,
 	}

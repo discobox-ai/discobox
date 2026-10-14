@@ -272,6 +272,7 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newIDCommand())
 	cmd.AddCommand(app.newSecretCommand())
+	cmd.AddCommand(app.newSkillsCommand())
 	cmd.AddCommand(app.newTrustCommand())
 	cmd.AddCommand(app.newConsoleCommand("console", false))
 	// tui is the console's earlier name: it still opens it, and nothing lists

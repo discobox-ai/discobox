@@ -372,6 +372,7 @@ func (m *Model) openSecrets() tea.Cmd {
 	m.secretsOpen = true
 	m.optionsOpen = false
 	m.harnessesOpen = false
+	m.skillsOpen = false
 	m.layout()
 	return m.loadSecrets()
 }

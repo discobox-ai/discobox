@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -54,6 +55,10 @@ type PromptOptions struct {
 	// ~/.agents/skills are read first (ReadSkills).
 	SkillDirs  []string
 	UserSkills bool
+	// ProjectSkills are the project's skills sources, added ahead of the
+	// skills sources of SkillDirs so a person's own win on a skill's name (ADR
+	// 26-10-14-894 §2). The frontend reads them from the server.
+	ProjectSkills []SkillsRepository
 	// Grants are the uses of credentials the new discobox is given, already
 	// resolved to what the server takes: a secret by its ID, or a well-known
 	// credential by its own. ParseGrants reads them from --grant.
@@ -200,7 +205,8 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		}
 		body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	}
-	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions, skillsArgs.Repositories); err != nil {
+	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)
+	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions, skillsRepos); err != nil {
 		local.Close()
 		return nil, nil, err
 	}

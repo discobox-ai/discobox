@@ -205,6 +205,7 @@ const (
 	optEnv
 	optSecret
 	optSource
+	optProjectSkills
 	optUserSkills
 	optSkills
 	optInclude
@@ -257,6 +258,14 @@ func newOptions(session Session) *optionSet {
 			label: "Source", kind: optChoice,
 			hint: sourceHint,
 		},
+		optProjectSkills: {
+			// On is what every create does unless told otherwise: the
+			// project's skills repositories, copied in ahead of any --skills
+			// (ADR 26-10-14-894 §2).
+			label: "Project skills", kind: optChoice,
+			choices: []string{"on", "off"},
+			hint:    "--no-project-skills · the project's skills repositories (" + SkillsKeyName + "), added ahead of any --skills",
+		},
 		optUserSkills: {
 			// Left alone it is client.yaml's new.userSkills, which is what
 			// `discobox new` gives a create that names neither way.
@@ -266,7 +275,7 @@ func newOptions(session Session) *optionSet {
 		},
 		optSkills: {
 			label: "Skills", kind: optMulti,
-			hint:    "--skills · a directory of skills to install, each a subdirectory holding a SKILL.md",
+			hint:    "--skills · a directory of skills, each a subdirectory holding a SKILL.md, or a Git URL[@REF][//PATH]",
 			example: "./team-skills",
 		},
 		optInclude: {
@@ -345,6 +354,9 @@ func (o *optionSet) prefill(req RunRequest) {
 		o.opts[optDirty].idx = 1
 	case "false":
 		o.opts[optDirty].idx = 2
+	}
+	if req.NoProjectSkills {
+		o.opts[optProjectSkills].idx = 1
 	}
 	if req.UserSkills != nil {
 		o.opts[optUserSkills].idx = 2
@@ -810,6 +822,7 @@ func (o *optionSet) request(prompt, source string) RunRequest {
 	case 2:
 		req.IncludeDirty = "false"
 	}
+	req.NoProjectSkills = o.opts[optProjectSkills].changed()
 	req.UserSkills = o.userSkills()
 	req.SkillDirs = append([]string(nil), o.opts[optSkills].items...)
 	req.Include = append([]string(nil), o.opts[optInclude].items...)
@@ -889,6 +902,9 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 
 	// What is brought in beside the source, as counts for the same reason env
 	// and secrets are: the strip says there is something, the panel says what.
+	if o.opts[optProjectSkills].changed() {
+		add("no project skills")
+	}
 	skills := len(o.opts[optSkills].items)
 	user := o.userSkills()
 	switch {
@@ -980,6 +996,9 @@ func (o *optionSet) commandFor(req RunRequest) string {
 	}
 	for _, i := range req.Include {
 		run = append(run, "-i", shellQuote(i))
+	}
+	if req.NoProjectSkills {
+		run = append(run, "--no-project-skills")
 	}
 	if req.UserSkills != nil {
 		if *req.UserSkills {

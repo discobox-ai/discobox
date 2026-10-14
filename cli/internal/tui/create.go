@@ -94,7 +94,7 @@ func (c *createCard) rows() []int {
 	if c.opts.server() != nil {
 		rows = append(rows, optServer)
 	}
-	return append(rows, optUserSkills, optSkills, optInclude)
+	return append(rows, optProjectSkills, optUserSkills, optSkills, optInclude)
 }
 
 // current is the setting the keyboard is on, or nil while it is in the list.

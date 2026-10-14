@@ -46,6 +46,8 @@ func preparePromptCreateSSHSync(t *testing.T) func(http.ResponseWriter, *http.Re
 			_, _ = w.Write([]byte(`{"sshKeys":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/ssh-keys":
 			_, _ = w.Write([]byte(`{"id":"sshkey_1","projectId":"project-1","publicKey":"ssh-ed25519 AAAA","fingerprint":"SHA256:test","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/skills-sources":
+			_, _ = w.Write([]byte(`{"skillsSources":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(`{"sandboxes":[{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
