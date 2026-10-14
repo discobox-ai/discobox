@@ -615,6 +615,14 @@ const refreshEvery = 5 * time.Second
 // which is what a window with one server has instead.
 const listingSlowAfter = refreshEvery
 
+// listingStaleAfter is how old the rows on screen may get before they say how
+// old they are (sandboxList.listedAgo). Three refreshes: an ordinary poll
+// leaves them at most one refresh and a round trip old, and a server that
+// takes a few seconds to list is merely remote — but rows that have missed
+// two refreshes in a row are rows that have stopped following the server,
+// and drawn as though they had not, they are a window that looks stuck.
+const listingStaleAfter = 3 * refreshEvery
+
 // poll is one thing the window re-reads on the beat: when the request still
 // out was sent, and whether another read was asked for while it was out.
 //
@@ -661,6 +669,28 @@ func (p *poll) landed() bool {
 // off, and every coalesced follow-up arms another.
 func (p *poll) late(now time.Time, after time.Duration) bool {
 	return !p.since.IsZero() && now.Sub(p.since) >= after
+}
+
+// reread is the reads the beat makes one at a time (poll), and what Ctrl-L
+// re-reads on the press: pressing it while a read is out asks for another the
+// moment that one lands rather than stacking a second on a server that has not
+// answered the first.
+func (m *Model) reread() tea.Cmd {
+	return tea.Batch(m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadSecretRejections())
+}
+
+// rereadNow is Ctrl-L's re-read. A press is a question — is this current? —
+// so a listing that is already out and late (listingSlowAfter, the same
+// threshold the band says "still listing" at) is answered in words rather than
+// by a read that quietly waits behind it. A read out for less than that is an
+// ordinary poll, which with several servers can spend listPatience waiting.
+func (m *Model) rereadNow() tea.Cmd {
+	out := m.listPoll.since
+	cmd := m.reread()
+	if out.IsZero() || !m.listPoll.late(m.now(), listingSlowAfter) {
+		return cmd
+	}
+	return tea.Batch(cmd, m.report(false, "still listing — the last read went out %s ago", m.now().Sub(out).Round(time.Second)))
 }
 
 func (m *Model) tick() tea.Cmd {
@@ -875,6 +905,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.list.setUnreachable(msg.listing.Unreachable)
 		// And the ones it is still asking, which say so where their rows go.
 		m.list.setWaiting(msg.listing.Waiting)
+		m.list.setListed(msg.listing.Listed)
 		// The rows are replaced wholesale, so the marks are stamped back onto
 		// them: the two reads land independently and either can be the later.
 		m.list.setPending(m.requests)
@@ -958,7 +989,17 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case tickMsg:
-		cmds := []tea.Cmd{m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadSecretRejections(), m.tick()}
+		cmds := []tea.Cmd{m.reread(), m.tick()}
+		// Harnesses change when somebody changes them, which is here — so they are
+		// re-read after every action rather than on a clock. The exception is
+		// the screen itself, where a listing going stale under the cursor is
+		// exactly what a stale listing costs. It is the beat's and not
+		// reread's, because it is not one at a time: on a key, every press
+		// against a server that has stopped answering would be another
+		// request out.
+		if m.harnessesOpen {
+			cmds = append(cmds, m.loadHarnesses())
+		}
 		// The draft is written on the same clock the listing is read on, so a
 		// window killed outright — a closed terminal, a lost ssh session —
 		// loses at most the last few seconds of what was typed. The keys that
@@ -969,13 +1010,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// And the header's filters with it, on the same terms.
 		if cmd := m.saveView(); cmd != nil {
 			cmds = append(cmds, cmd)
-		}
-		// Harnesses change when somebody changes them, which is here — so they are
-		// re-read after every action rather than on a clock. The exception is
-		// the screen itself, where a listing going stale under the cursor is
-		// exactly what a stale listing costs.
-		if m.harnessesOpen {
-			cmds = append(cmds, m.loadHarnesses())
 		}
 		return tea.Batch(cmds...)
 
@@ -1279,9 +1313,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// termpane.Model.Repaint). One press, three repaints where they are all
 		// available: the window's own, the sandbox's picture of the screen, and
 		// the program's own redraw behind it.
+		//
+		// And it re-reads what the beat re-reads (rereadNow). A person who
+		// reaches for a repaint is asking whether what is on screen is
+		// current, and a fresh paint of a five-second-old listing is half an
+		// answer.
 		var repaint tea.Cmd
 		if keyName(msg) == repaintKey {
-			repaint = tea.ClearScreen
+			repaint = tea.Batch(tea.ClearScreen, m.rereadNow())
 		}
 		cmd := m.updateKey(msg)
 		// The composer's height is a function of its contents, so geometry is
@@ -1340,7 +1379,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	return cmd
 }
 
-// repaintKey redraws the window. It is Ctrl-L because that is the repaint on
+// repaintKey redraws the window and re-reads the listing. It is Ctrl-L because that is the repaint on
 // every terminal there has been — readline's, vi's, screen's, tmux's — and a
 // window drawn over by something outside it is exactly the moment a person
 // reaches for it without thinking.
@@ -3916,7 +3955,8 @@ func (m *Model) helpText() string {
 		"Anywhere",
 		"",
 		"    F1             this help (? does the same on the lists)",
-		"    Ctrl-L         repaint; inside a pane, the program in it too",
+		"    Ctrl-L         repaint and re-read the list; inside a pane, the",
+		"                   program in it is repainted too",
 		"    Ctrl-C         quit, from every screen but a pane, where it goes",
 		"                   to the program running there. " + leader + " " + paneQuitKey + " is the quit",
 		"                   inside one",

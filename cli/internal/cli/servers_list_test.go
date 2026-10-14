@@ -914,6 +914,71 @@ func TestTheOnlyServerIsWaitedForHoweverSlowItIs(t *testing.T) {
 	}
 }
 
+// A listing says when each server's rows were answered, so a server that has
+// stopped answering quickly can be seen to have: its rows stay on screen while
+// it is asked again, and how old they are stays what it was.
+func TestAListingSaysWhenEachServerAnswered(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "alpha", sandboxA)
+	other := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	before := time.Now()
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(listing.Listed) != 2 {
+		t.Fatalf("List().Listed = %v, want a time for each server", listing.Listed)
+	}
+	for name, at := range listing.Listed {
+		if at.Before(before) {
+			t.Fatalf("%s answered at %s, before the listing was asked for", name, at)
+		}
+	}
+
+	// beta is being asked again and has not answered: what it said last is
+	// still listed, as old as it is.
+	ds.mu.Lock()
+	var beta *tuiServer
+	for _, s := range ds.servers {
+		if s.name == "beta" {
+			beta = s
+		}
+	}
+	old := time.Now().Add(-time.Minute)
+	beta.listing.asking, beta.listing.answeredAt = true, old
+	ds.mu.Unlock()
+
+	listing, err = ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if !listing.Listed["beta"].Equal(old) {
+		t.Fatalf("beta listed at %s, want the %s it last answered", listing.Listed["beta"], old)
+	}
+	if len(listing.Sandboxes) != 2 {
+		t.Fatalf("List() = %+v, want beta's rows kept while it is asked again", listing.Sandboxes)
+	}
+}
+
+// With one server the listing is answered when it comes back.
+func TestTheOnlyServersListingSaysWhenItAnswered(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	ds := launcherDataSource(t, fakeServer(t, "alpha", sandboxA).URL)
+	before := time.Now()
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if at, ok := listing.Listed[""]; !ok || at.Before(before) {
+		t.Fatalf("List().Listed = %v, want the only server answered now", listing.Listed)
+	}
+}
+
 // The primary is a server like the others here: one that is down is reported
 // as not answering, and the rest of the servers are the listing. A window that
 // blanked every server because one of them went away would be a window that

@@ -1094,6 +1094,11 @@ type Listing struct {
 	// theirs to show meanwhile: they are slow rather than missing, which is a
 	// different thing to say and is said where their rows would be.
 	Waiting []string
+	// Listed is when each server whose rows are here last answered, keyed the
+	// way Sandbox.Server names it — "" for a window with one server. Rows
+	// are kept on screen while their server is slow to answer again, and how
+	// old they have got is what the window says about them.
+	Listed map[string]time.Time
 }
 
 // RunRequest is what Enter in the prompt asks for: `discobox new`'s arguments, and

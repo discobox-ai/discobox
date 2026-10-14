@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,6 +69,13 @@ type sandboxList struct {
 	// instead of the sections above: there is no other server's rows to draw
 	// and no name to put the note under, so the band says it.
 	slow bool
+
+	// listed is when each server's rows on screen were last answered
+	// (Listing.Listed). Rows outlive a server that has stopped answering
+	// quickly, and once they are older than listingStaleAfter they say so
+	// (listedAgo): a row that looks current and is not is a window that
+	// looks stuck.
+	listed map[string]time.Time
 
 	// loaded is whether a listing has ever landed here. Until one has, an
 	// empty list is a question rather than an answer, and the invitation to
@@ -357,6 +365,31 @@ func (l *sandboxList) setUnreachable(servers []string) {
 	l.unreachable = append(l.unreachable[:0], servers...)
 }
 
+// setListed takes when each server on the last listing last answered.
+func (l *sandboxList) setListed(listed map[string]time.Time) {
+	l.listed = listed
+}
+
+// listedAgo is how old a server's rows are, said only once they are old
+// enough to be worth saying (listingStaleAfter): "listed 40s ago". Empty
+// otherwise, including for a server with nothing on record — a server that has
+// never answered is the waiting section's to say, not this.
+func (l *sandboxList) listedAgo(server string) string {
+	at, ok := l.listed[server]
+	if !ok || at.IsZero() {
+		return ""
+	}
+	age := l.now().Sub(at)
+	switch {
+	case age < listingStaleAfter:
+		return ""
+	case age < time.Minute:
+		return fmt.Sprintf("listed %ds ago", int(age.Seconds()))
+	default:
+		return "listed " + ago(at, l.now())
+	}
+}
+
 // setWaiting takes the servers the last listing was still asking.
 func (l *sandboxList) setWaiting(servers []string) {
 	l.waiting = append(l.waiting[:0], servers...)
@@ -433,10 +466,35 @@ func onlyServer(names []string, server string) []string {
 }
 
 // sectioned reports whether the body carries any line that is not a row: the
-// folder headers when it is grouped, and the servers that did not answer
-// whenever there are any.
+// folder headers when it is grouped, and the notes about servers — not
+// answering, still listing, or behind — whenever there are any.
 func (l *sandboxList) sectioned() bool {
-	return l.grouped() || len(l.missing()) > 0 || len(l.waitingOn()) > 0
+	return l.grouped() || len(l.missing()) > 0 || len(l.waitingOn()) > 0 || len(l.behind()) > 0
+}
+
+// oneServer reports whether the rows on screen are one server's: a window with
+// one server, or a list filtered to one. Then how old they are is the band's
+// to say, in place of the count.
+func (l *sandboxList) oneServer() bool {
+	return l.server != "" || len(l.session.Servers) <= 1
+}
+
+// behind is the servers whose rows are on screen but have stopped keeping up
+// (listedAgo), when there is more than one server on screen: each gets a note
+// after the rows, the way a server that did not answer does. One server's
+// rows say it on the band instead.
+func (l *sandboxList) behind() []string {
+	if l.oneServer() {
+		return nil
+	}
+	var names []string
+	for name := range l.listed {
+		if l.listedAgo(name) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // folders are what the header can filter to (ADR 0111): the window's own
@@ -721,6 +779,15 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	if l.slow {
 		right = "still listing"
 	}
+	// Rows that have stopped keeping up say how far behind they are, which
+	// outranks "still listing": it is the same news with the size of it.
+	// With several servers on screen it is one of them that is behind, and
+	// its own note says so instead (behind).
+	if l.oneServer() {
+		if age := l.listedAgo(l.server); age != "" {
+			right = age
+		}
+	}
 	// The marks are worth a press of their own: they are the one thing on the
 	// band that is a state you got into rather than a fact about the project,
 	// and c is how you get out of it.
@@ -776,8 +843,8 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// drawn only while the rows leave room — so exactly the list the launcher
 	// is for, one longer than the window, would never say a server is missing,
 	// and nothing could scroll to it, because offset and cursor walk rows.
-	absent, awaited := l.missing(), l.waitingOn()
-	notes := min(len(absent)+len(awaited), max(rowBudget, 0))
+	absent, awaited, lagging := l.missing(), l.waitingOn(), l.behind()
+	notes := min(len(absent)+len(awaited)+len(lagging), max(rowBudget, 0))
 	rowBudget -= notes
 	bodyBudget := rowBudget + notes
 
@@ -851,6 +918,16 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 			break
 		}
 		body = append(body, l.sectionHeader(st, serverTitle(name), "still listing"))
+		l.drawn.rows = append(l.drawn.rows, -1)
+	}
+	// And the ones whose rows are on screen but have stopped keeping up: the
+	// rows sit among every other server's in their folders, so the note is
+	// what says which of them are old.
+	for _, name := range lagging {
+		if len(body) >= bodyBudget {
+			break
+		}
+		body = append(body, l.sectionHeader(st, serverTitle(name), l.listedAgo(name)))
 		l.drawn.rows = append(l.drawn.rows, -1)
 	}
 	for len(body) < bodyBudget {

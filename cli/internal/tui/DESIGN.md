@@ -840,7 +840,26 @@ different things:
   lands early, so one left over from a refresh that landed in milliseconds
   would otherwise judge whatever is out five seconds later.
 
-Neither of them touches the invitation to create the first discobox. That waits
+**Rows that have stopped keeping up say how old they are.** Both of the above
+are about a read being late; neither covers rows that are kept on screen while
+their server is slow to answer again — a server that answered once and then
+hung, or a window with one server whose last read failed. Those rows look
+current and are not, which is a window that looks stuck. `Listing.Listed` says
+when each server's rows were answered (`""` for a window with one server), and
+once they are older than `listingStaleAfter` (three refreshes, so an ordinary
+poll never trips it) `sandboxList.listedAgo` says so — `listed 40s ago`:
+
+- on the band, in place of the count, when the rows on screen are one
+  server's (`oneServer`: a window with one server, or the header filtered to
+  one); it outranks `still listing`, being the same news with its size;
+- otherwise as a note after the rows, `server beta  listed 1m ago`, beside the
+  ones for a server not answering or still listing (`behind`): the rows sit
+  among every other server's in their folders, so the note is what says which
+  of them are old;
+- in the workspace header, right after the id (`paneHeaderFields`), since
+  everything after the id is read off the same listing.
+
+None of these touch the invitation to create the first discobox. That waits
 on `sandboxList.loaded`: until a listing has landed, "no discoboxes here yet" is
 an answer about the project that nobody has. Once one has, it stays put whether
 or not the next refresh is late — the one screen a new user reads must not blink
@@ -1644,7 +1663,7 @@ transport's status appearing on the right does not shift it, and `spreadCenter`
 silently disappears at some widths is worse than a shortened one. The captions are indented to line up with the
 terminal's own output rather than with the border.
 
-**Where the work sits in git rides in the banner beside the id**
+**Where the work sits in git rides in the banner after the id**
 (`paneHeaderFields`): the position and its mark, the mark spelled out, and
 the diffstat — the list's own git columns, drawn by the list's own `gitStyle`
 and `diffText` in the list's own colors, so the two screens cannot drift apart
@@ -1786,7 +1805,10 @@ Only a middle that still does not fit drops its own fields, whole from the
 right — the ports first, since they are the only field with no bound on their
 width (a compose stack brings up as many as it likes), then, in the list's own
 order, the diffstat, which the apply report gives you anyway, then the word,
-whose mark is on the position regardless. The id never goes. `paneHeaderFields.fit` is the
+whose mark is on the position regardless, then the issue and pull request
+tags. The id never goes, and the age of a listing that has stopped keeping up
+(`listed 40s ago`, right after the id) is the last to: everything after it is
+read off that listing. `paneHeaderFields.fit` is the
 step — `fitFields`' drop-whole-from-the-right rule, over spans — and
 `centerRoom` is what it measures against, the same width
 `spreadCenter` would have cut them to, which is what keeps the two from
@@ -1866,8 +1888,8 @@ second key of a leader pair matches with or without Ctrl held. Typing the
 leader itself takes it twice in full: its bare letter is `a` under the default
 Ctrl-A, and that is attach.
 
-**Ctrl-L repaints, and is not consumed doing it** (`repaintKey`, the
-`tea.KeyPressMsg` case in `update`). The redraw is `tea.ClearScreen`: Bubble
+**Ctrl-L repaints and re-reads, and is not consumed doing it** (`repaintKey`,
+the `tea.KeyPressMsg` case in `update`). The redraw is `tea.ClearScreen`: Bubble
 Tea throws away its picture of the screen and writes every cell again, which is
 what clears clutter written over the window by something that was not the
 window. It cannot clear what a *pane* is showing — that is drawn from the
@@ -1899,6 +1921,14 @@ sends a size only when its own terminal changes and has no repaint to ask with,
 so it cannot take the size back without its user physically resizing the
 window. Giving it the same two frames is what would close that, and is not done
 here.
+
+The re-read (`rereadNow`) is because a person reaching for a repaint is asking
+whether the screen is current, and a fresh paint of an old listing is half an
+answer. It sends the beat's one-at-a-time reads (`reread`: the listing, the
+machine readout, the credential inbox, the refused credentials) and not the
+harnesses, which are not one at a time. A press while the listing is out asks
+for another when that one lands rather than stacking a second, and once it is
+late (`listingSlowAfter`) the status line says how long it has been out.
 
 **F1, `F3`, `F4` and Ctrl-O are the window's own keys** (`updateKey`), answered
 ahead of every screen's dispatch *and* ahead of the run options panel. They are

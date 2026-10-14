@@ -531,7 +531,10 @@ is an error rather than a lost convenience.
     reported in `Listing.Waiting` and the window says `still listing` where its
     rows go, because a request still in flight at the end of a poll has
     already outlasted that poll's patience. A server with rows already on
-    screen says nothing: they are there, and the next poll replaces them.
+    screen keeps them while it is asked again, and `Listing.Listed` says when
+    it last answered (`serverPoll.answeredAt`; with one server, when `List`
+    came back), so the window can say how old those rows have got rather than
+    drawing them as current.
   - **The primary is a server like the others here**
     ([ADR 0122](../docs/adr/0122-a-window-that-polls-lists-the-servers-that-answer.md),
     which supersedes ADR 0116 §4's "the primary not answering fails the
