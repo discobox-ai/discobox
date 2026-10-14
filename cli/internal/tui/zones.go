@@ -71,6 +71,16 @@ const (
 	hitFilter
 	hitFilterRow
 
+	// hitCreateSource is one row of the create card's list, by index;
+	// hitCreateRow is one of the settings under it, by the option it is, and
+	// hitCreateCycle one of the ‹ › arrows on that, with delta saying which.
+	hitCreateSource
+	hitCreateRow
+	hitCreateCycle
+	// hitCreateExpand is the create card's settings folded away, which a
+	// press unfolds.
+	hitCreateExpand
+
 	// hitGit is the workspace header's git position and status. Pressing it
 	// opens the diff tool, the same as the leader's tools, diff chord.
 	hitGit

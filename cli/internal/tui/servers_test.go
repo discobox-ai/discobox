@@ -476,7 +476,7 @@ func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
 
 	send(t, m, keyPress("esc"))
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 	if len(ds.runs) != 1 || ds.runs[0].Server != "beta" {
 		t.Fatalf("runs = %+v, want one on beta", ds.runs)
 	}

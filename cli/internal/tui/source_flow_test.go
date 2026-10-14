@@ -61,6 +61,21 @@ func dialogLabels(d *dialog) []string {
 	return out
 }
 
+// cardSources is what the create card's list offers, row by row, and
+// cardSource the row its cursor is on.
+func cardSources(t *testing.T, d *dialog) []string {
+	t.Helper()
+	if d == nil || d.kind != dlgCreate {
+		t.Fatal("want the create card up")
+	}
+	return append(append([]string(nil), d.create.opts.opts[optSource].choices...), enterSourceChoice)
+}
+
+func cardSource(t *testing.T, d *dialog) string {
+	t.Helper()
+	return cardSources(t, d)[d.create.cursor]
+}
+
 // The dropdown's last row is the one entry that is not a source: it opens the
 // field where a path the listing has never seen is typed, ref and all.
 func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
@@ -113,10 +128,10 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 	}
 }
 
-// "All folders" is the one header choice that is not a place, so Enter has no
-// folder to cut from. It asks rather than falling back to the directory the
-// window happens to be running in, which is a discobox cut from somewhere
-// nobody named.
+// Enter opens the create card rather than creating: "all folders" is the one
+// header choice that is not a place, so there is no folder to cut from, and
+// falling back to the directory the window happens to be running in is a
+// discobox cut from somewhere nobody named.
 func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
@@ -126,13 +141,13 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	send(t, m, typeString("fix the reaper")...)
 	send(t, m, keyPress("enter"))
 
-	if m.dialog == nil || m.dialog.kind != dlgActions {
+	if m.dialog == nil || m.dialog.kind != dlgCreate {
 		t.Fatal("a create with no folder to cut from should ask which source to use")
 	}
 	if len(ds.runs) != 0 {
 		t.Fatalf("runs = %v, want the create held until the question is answered", ds.runs)
 	}
-	body := strings.Join(dialogLabels(m.dialog), "\n")
+	body := strings.Join(cardSources(t, m.dialog), "\n")
 	for _, want := range []string{"/src/disco2", "/src/obot", noSourceChoice, enterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the question is missing %q:\n%s", want, body)
@@ -163,10 +178,10 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 		t.Fatalf("panel folder = %q, want it left on every folder", m.opts.folder)
 	}
 	// It asks again, opening on the last answer, so the same place is one Enter.
-	if !m.askWhereToCutFrom() {
+	if !m.askHowToCreate() {
 		t.Fatal("the next create from every folder should ask again")
 	}
-	if got := dialogLabels(m.dialog)[m.dialog.cursor]; got != "/src/obot" {
+	if got := cardSource(t, m.dialog); got != "/src/obot" {
 		t.Fatalf("question opens on %q, want the last answer", got)
 	}
 	send(t, m, keyPress("enter"))
@@ -175,9 +190,9 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	}
 }
 
-// A header on one folder has named where to cut from, so a create from it asks
-// nothing.
-func TestCreatingWithOneFolderShownAsksNothing(t *testing.T) {
+// A header on one folder has named where to cut from, and the card is put up
+// all the same — opened on that folder, so the create is one more Enter.
+func TestCreatingWithOneFolderShownOpensTheCardOnIt(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
@@ -190,8 +205,15 @@ func TestCreatingWithOneFolderShownAsksNothing(t *testing.T) {
 	send(t, m, typeString("fix the reaper")...)
 	send(t, m, keyPress("enter"))
 
+	if got := cardSource(t, m.dialog); got != "/src/obot" {
+		t.Fatalf("card opens on %q, want the folder the header is on", got)
+	}
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %v, want the create held until the card is answered", ds.runs)
+	}
+	send(t, m, keyPress("enter"))
 	if m.dialog != nil {
-		t.Fatalf("dialog = %q, want no question with one folder shown", m.dialog.title)
+		t.Fatalf("dialog = %q, want the card answered by Enter", m.dialog.title)
 	}
 	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
 		t.Fatalf("runs = %v, want one cut from the folder the header is on", ds.runs)
@@ -207,7 +229,7 @@ func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
 	showAllFolders(t, m)
 	send(t, m, keyPress("esc"), keyPress("enter"))
 
-	labels := dialogLabels(m.dialog)
+	labels := cardSources(t, m.dialog)
 	key := ""
 	for i, label := range labels {
 		if label == noSourceChoice {
@@ -299,10 +321,10 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	}
 	// A path typed by hand is not in the listing, but the next asking still
 	// offers it and opens on it.
-	if !m.askWhereToCutFrom() {
+	if !m.askHowToCreate() {
 		t.Fatal("the next create from every folder should ask again")
 	}
-	if got := dialogLabels(m.dialog)[m.dialog.cursor]; got != "/src/elsewhere" {
+	if got := cardSource(t, m.dialog); got != "/src/elsewhere" {
 		t.Fatalf("question opens on %q, want the typed path", got)
 	}
 }

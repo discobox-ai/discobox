@@ -362,6 +362,40 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		}
 		return nil, true
 
+	case hitCreateSource:
+		// A press says which source; the second is Enter on it. One press
+		// creating would leave no way to point at a source and then change a
+		// setting under it.
+		if d := m.dialog; d != nil && d.kind == dlgCreate {
+			d.create.pressSource(what.idx)
+			if clicks > 1 {
+				return m.updateKey(keyPress("enter")), true
+			}
+		}
+		return nil, true
+
+	case hitCreateRow:
+		if d := m.dialog; d != nil && d.kind == dlgCreate {
+			d.create.pressRow(what.idx)
+		}
+		return nil, true
+
+	case hitCreateExpand:
+		if d := m.dialog; d != nil && d.kind == dlgCreate {
+			d.create.expand()
+		}
+		return nil, true
+
+	case hitCreateCycle:
+		if d := m.dialog; d != nil && d.kind == dlgCreate {
+			d.create.pressRow(what.idx)
+			if what.delta < 0 {
+				return m.updateKey(keyPress("left")), true
+			}
+			return m.updateKey(keyPress("right")), true
+		}
+		return nil, true
+
 	case hitGit:
 		// The git summary is the diff's natural label, so a pointer on it is
 		// already aimed at the diff tool: whichever declaration of
@@ -717,6 +751,10 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 	case hitFilterRow:
 		if d := m.dialog; d != nil && d.kind == dlgFilter {
 			d.filter.move(-sign(lines))
+		}
+	case hitCreateSource:
+		if d := m.dialog; d != nil && d.kind == dlgCreate {
+			d.create.moveSource(-sign(lines))
 		}
 	case hitDialogItem:
 		if d := m.dialog; d != nil {

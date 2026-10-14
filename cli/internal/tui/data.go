@@ -1130,19 +1130,20 @@ type RunRequest struct {
 	NoSource bool
 
 	// Include is `-i`: the extra sources brought into the same discobox beside
-	// the primary one. The window offers no way to name one; it carries them
-	// because `discobox new` opens the window on its own request and that
-	// request is the whole command (WithRun).
+	// the primary one, from the run options' Additional sources row or
+	// `discobox new`'s own request (WithRun).
 	Include []string
 
 	// Grant is `--grant`, as given: the uses of credentials the new discobox
-	// is given. Like Include, only `discobox new`'s own request carries one.
+	// is given. The window offers no way to name one; it carries them because
+	// `discobox new` opens the window on its own request and that request is
+	// the whole command (WithRun).
 	Grant []string
 
-	// SkillDirs and UserSkills are `--skills` and `--user-skills`, nil for one
-	// not given, which the create takes from the client's configuration as
-	// `discobox new` would. Like Include, only `discobox new`'s own request
-	// gives them; the panel's leaves both to the configuration.
+	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
+	// options' rows of those names or `discobox new`'s own request; nil for
+	// one not given, which the create takes from the client's configuration
+	// as `discobox new` would.
 	SkillDirs  []string
 	UserSkills *bool
 
@@ -1152,7 +1153,7 @@ type RunRequest struct {
 	SkipDeclaredSources bool
 
 	// Pool is `--pool`: the pool to create the discobox on, by ID or name.
-	// Empty is the project's default pool. Like Include, only `discobox
+	// Empty is the project's default pool. Like Grant, only `discobox
 	// new`'s own request carries one.
 	Pool string
 

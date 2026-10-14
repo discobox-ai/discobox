@@ -21,7 +21,8 @@ flowchart LR
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
     M --> W["welcome (once per project)"]
     W -->|Enter| MW["DataSource.MarkWelcomed"]
-    P -->|Enter| Run["DataSource.Run → attach"]
+    P -->|Enter| Card["create card (source, harness, server, skills, sources)"]
+    Card -->|Enter| Run["DataSource.Run → attach"]
     L -->|u R t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
@@ -2330,9 +2331,9 @@ window, whose header nobody chose. The folder is carried whole (key, label,
 source) because the window opens on it before any listing has landed to name
 it; a saved server no longer registered opens as every server. A view saved
 when the filter held one tag (`tag` in the state file) opens on that tag and is
-rewritten as `tags` the next time it moves. On `all
-folders` a create asks where to cut from (`askWhereToCutFrom`), and answering
-it leaves the view on every folder.
+rewritten as `tags` the next time it moves. A create's
+card is answered with where that one discobox is cut from (`askHowToCreate`),
+and answering it leaves the view where it was.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, keyed by the session's directory, and
@@ -2685,23 +2686,49 @@ when either reported one (`Source.RepositoryKey`). `no source` and the window's 
 source file under the window's folder, which holds this machine's sourceless
 discoboxes too. A source nothing has reported on is not followed.
 
-**"All folders" is not a place, so a create from it asks** (`askWhereToCutFrom`).
-Every other choice in the header names the directory a new discobox is cut from;
-that one names them all, and the source silently fell back to whichever
-directory the window happened to be running in — a discobox cut from somewhere
-nobody named. Enter opens the Source row's own list instead
-(`sourceDialog(true)`), so the answer is a choice the panel already offers.
-The answer is where this one discobox is cut from, not a filter: `request`
-takes it without the Source row moving, so the header and the row stay on
-every folder, the list still shows them all after the create, and the next
-create asks again — opening on the last answer (`lastCut`), so creating from the
-same place again is one Enter. That answer lives as long as the window, by
-choice: unlike the view and the draft it is not saved, and a new window opens
-the question on its own directory. A header on one folder has named the place,
-so a create from it asks nothing. A window whose session has not landed yet is
-on no folder for a different reason — nothing has told it which, and it has no
-directory or sources to offer — so it is left to `discobox new`'s own
-resolution, the way a prompt submitted before the harnesses land is.
+**Enter opens the create card, every time** (`create.go`, `askHowToCreate`).
+The card is the Source row's own choices as a list, and under it the settings
+worth a second look before a discobox is made: the harness, the server when
+`Session.Servers` has more than one, and what is brought in beside the source —
+`--user-skills`, `--skills` and `-i`. The cursor opens in the list and Enter
+there creates, so a create that changes nothing is Enter twice. The settings
+open folded, as their rule and the chip strip's summary of what they are set to
+(the harness always, anything else only once chosen), with the command preview
+held back with them: most creates choose a source and nothing else. Tab, or a
+press on the folded line, unfolds them for the rest of the card. Tab is the only
+way down into the settings and goes round (list → each setting → list); ↑↓ in
+the list stop at its ends, so they stay on the one thing most creates choose
+between. Enter on a setting creates too, except on a repeated row (skills,
+additional sources), where it asks for another value and the field returns to
+the card.
+
+- **The source answered is this one discobox's, not a filter.** `request` takes
+  it without the Source row or the header moving, so the list shows what it
+  showed once the create is done. A header on one folder opens the card on that
+  folder. "All folders" is not a place — it used to fall back silently to the
+  directory the window was running in — so there the card opens on the last
+  answer (`lastCut`), which lives as long as the window and is not saved.
+- **The settings are the run options' own rows**, not copies: what is changed
+  on the card is what the panel and the chip strip say afterwards, the Server
+  row moves the header as it does from the panel (`followServer`), and a
+  harness listing that lands while the card is up redraws its row. Only the
+  wording differs: an unchosen harness reads `auto (<default>)` on the card.
+- **An additional source is checked like a typed primary** (`askForItem`,
+  `option.checked` → `DataSource.ResolveSource`). A skills directory is not:
+  nothing on the data seam reads one before the create does.
+- A window whose session has not landed yet has no directory or sources to
+  offer, so it is left to `discobox new`'s own resolution, the way a prompt
+  submitted before the harnesses land is. The run a window was opened on
+  (`WithRun`) is a whole command already and skips the card — unless it left
+  its source unsaid (`askSource`), when the card is put up once both the
+  session and the harness listing have landed (`startPendingRun`), with the
+  rows prefilled from the command's flags (`optionSet.prefill`) and what the
+  card has no row for (`--grant`, `--pool`, the prompt's own tokens) carried
+  from the request (`createCard.base`). Its cursor opens on the directory the
+  command ran in, which is what no `-C` meant before it asked. Leaving that
+  card any way — Esc or q, from it or from a field it opened, or Ctrl-C —
+  ends the window with `errNothingCreated` (`Model.createDialog`), and
+  answering it puts the wait screen back for the run (`cutFrom`).
 
 **A path typed by hand is checked before the window takes it**
 (`DataSource.ResolveSource`, `Model.resolveSource`). The list's own choices are
@@ -2900,6 +2927,7 @@ the newest one where the busy line goes.
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
 | `options.go` | `discobox new`'s flags as a panel, the chip strip, the command preview |
+| `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
 | `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |
@@ -2941,4 +2969,4 @@ go test ./internal/tui -run TestFrames -v
 ```
 
 renders every state — prompt, list, multiselect, visual, archived, action menu,
-options, harnesses, the config card, help — to the test log.
+options, the create card, harnesses, the config card, help — to the test log.

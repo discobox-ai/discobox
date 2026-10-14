@@ -160,6 +160,17 @@ transport helpers where OpenAPI does not model the stream.
   started. The flags are still parsed on this side first
   (`sandboxcreate.ParsePromptOptions`): a flag that contradicts itself is the
   command's error to report, on the terminal, before a window opens over it.
+- **A `new` that names no source is asked one** (`tui.WithRun`'s `askSource`:
+  no `-C`, no `--no-source`). The window opens on the create card rather than
+  cutting from the directory the command ran in, holding every flag given;
+  turning it down ends the command with an error, since nothing was made.
+- **`new` asks wherever a person is, and nowhere else** (`canAskInline`, which
+  is `canOpenWindow` plus a terminal stderr for the picker to draw on). One
+  test decides it for every question — the source, uncommitted work, copying a
+  directory — so a run either asks all of them or none: in the window, or
+  inline for `-d` and `--raw` (`askRunSource`, offering what the card offers,
+  via `projectSources`). `new | cat` asks nothing, however much of a terminal
+  its stdin and stderr are.
 - Such a window *is* the attach on what it opened or made, so leaving it leaves
   the window: the leader's `d`, and the primary session ending, close it
   (`Model.exit`) rather than falling back to a list nobody asked for, and an
@@ -391,8 +402,9 @@ path the variable names: that location is the user's own.
   `--json` field present) replaces its setting whole, and one not given — nil
   — takes it. `discobox new` resolves before a window opens, so a file that
   does not parse is reported on the terminal; `RunRequest` carries the flags
-  as given and the console's create resolves again, which is how the panel,
-  which names no skills, gets the configured ones.
+  as given and the console's create resolves again, which is how the create
+  card's skill rows, left alone, get the configured ones (its User skills row
+  says "as configured" until it is set either way).
 - **Paths in the file are the file's.** A relative directory is relative to the
   file's directory and `~` is home, resolved at load.
 - `admin box create` does not read it: that command infers nothing locally.

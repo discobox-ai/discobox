@@ -50,7 +50,7 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(ds.runs))
@@ -103,7 +103,7 @@ func TestARefusedCreateKeepsThePrompt(t *testing.T) {
 	ds.runErr = errors.New("no pool is accepting discoboxes")
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(ds.runs))
@@ -196,7 +196,7 @@ func TestACreateThatFailsAfterTheServerTookItSaysItWasCreated(t *testing.T) {
 	ds.deliverErr = errors.New("push the source: connection reset")
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if got := m.prompt.Value(); got != "" {
 		t.Fatalf("prompt = %q, want it spent once the server took the create", got)
@@ -235,7 +235,7 @@ func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "" {
 		t.Fatalf("runs = %+v, want one empty prompt", ds.runs)
@@ -258,7 +258,7 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		ds := newFakeSource()
 		ds.workspace = SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
 		m := newTestModel(t, ds)
-		send(t, m, keyPress("enter"))
+		send(t, m, keyPress("enter"), keyPress("enter"))
 		if m.dialog == nil {
 			t.Fatalf("%s: a dirty working tree should be asked about", tc.answer)
 		}
@@ -295,7 +295,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		ds := newFakeSource()
 		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 		m := newTestModel(t, ds)
-		send(t, m, keyPress("enter"))
+		send(t, m, keyPress("enter"), keyPress("enter"))
 		if m.dialog == nil {
 			t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
 		}
@@ -330,7 +330,7 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 	if m.dialog.emphasis != "calculating…" {
 		t.Fatalf("emphasis = %q, want the walk to say it has nothing counted yet", m.dialog.emphasis)
 	}
@@ -361,7 +361,7 @@ func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/empty"}
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if m.dialog != nil {
 		t.Fatal("an empty directory should not be asked about")
@@ -379,7 +379,7 @@ func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 	if m.dialog != nil {
 		t.Fatal("a clean working tree should not be asked about")
 	}
@@ -968,7 +968,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	}
 
 	// And it is what Enter actually asks for.
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
 		t.Fatalf("runs = %+v, want the folder the header is on", ds.runs)
 	}

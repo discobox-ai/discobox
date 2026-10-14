@@ -367,6 +367,7 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 		// now was asked for when it moved (configServerChanged).
 		return nil
 	}
+	m.harnessesAnswered = true
 	if msg.err != nil {
 		// A run waiting on this listing goes anyway: what the questions here
 		// would have caught, the server catches, and a run held forever behind

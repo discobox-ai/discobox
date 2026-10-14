@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
+	"time"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
@@ -112,9 +115,20 @@ terminal to draw a window on, new is raw whether or not the flag was given.
 Pass -d to create the discobox and print it without attaching at all; there is
 no window in that either.
 
+Without -C (or --no-source), new first asks where to cut the discobox from. In
+the window that is the same card Enter in the console opens, with every other
+flag given already filled in; with -d or --raw it is an inline picker. This
+directory is the first choice either way, and Esc creates nothing.
+
+new asks only when there is a person to answer: stdin and stdout both a
+terminal, and stderr too for an inline question. Piped or scripted, it asks
+nothing at all: the discobox is cut from this directory, and its uncommitted
+changes (or the whole directory, outside a repository) are carried in unless
+--include-dirty=false says otherwise.
+
 Uncommitted changes in the source directory are carried into the discobox as a
 snapshot on top of the checked-out commit. By default new asks before doing that
-when there is a terminal to ask on; --include-dirty=true|false answers ahead of
+when there is a person to ask (above); --include-dirty=true|false answers ahead of
 time.
 
 The source keeps its own path inside the discobox, so /home/you/src/app is
@@ -302,8 +316,14 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// -d has nothing to open a window for: it prints the discobox and
 	// returns, and printing is stdout, which the window would be
 	// sitting on.
+	//
+	// A run that named no source is asked one wherever there is somebody
+	// to ask: on the window's create card, or — for -d and --raw at a
+	// terminal — inline. Without a person (canAskInline) it is cut from
+	// the directory it ran in, as it always was.
+	askSource := !opts.json && !cmd.Flags().Changed("clone") && !opts.noSource
 	if !opts.detach && !opts.raw && canOpenWindow(cmd) {
-		return a.runConsole(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt)))
+		return a.runConsole(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt), askSource))
 	}
 	projectID, err := a.projectIDValue()
 	if err != nil {
@@ -312,6 +332,16 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	client, err := a.apiClient()
 	if err != nil {
 		return err
+	}
+	if askSource && canAskInline(cmd) {
+		source, noSource, err := askRunSource(cmd, client, projectID, status)
+		if err != nil {
+			return err
+		}
+		opts.prompt.Source, opts.prompt.NoSource = source, noSource
+		if parsedOpts, err = sandboxcreate.ParsePromptOptions(opts.prompt, prompt); err != nil {
+			return err
+		}
 	}
 	if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, opts.grants); err != nil {
 		return err
@@ -393,7 +423,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 // worse than carrying them.
 func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.ConfirmIncludeDirtyFunc {
 	return func(_ context.Context, workspace sandboxcreate.DirtyWorkspace) (bool, error) {
-		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
+		if !canAskInline(cmd) {
 			return true, nil
 		}
 		// The question draws its own screen on the stream the wait is being
@@ -424,6 +454,105 @@ func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.C
 	}
 }
 
+// noSourceChoice is the source picker's id for --no-source. A picker's id is
+// the column it draws beside the title, and each id there is what the command
+// line would say instead — the -C value, or this flag — which no path or URL
+// can collide with.
+const noSourceChoice = "--no-source"
+
+// askRunSource is the create card's question asked inline, for a `new` that
+// named no source and has no window to put the card in (-d, --raw): this
+// directory, every other source the project has been cut from, or none. A
+// place the project has never been cut from is -C's, which the prompt says.
+func askRunSource(cmd *cobra.Command, client *apiclientgen.Client, projectID string, status *statusLine) (string, bool, error) {
+	here, err := filepath.Abs(".")
+	if err != nil {
+		return "", false, err
+	}
+	items := []pickerItem{{id: ".", title: "this directory", detail: here}}
+	sources, err := projectSources(cmd.Context(), client, projectID)
+	if err != nil {
+		return "", false, err
+	}
+	for _, source := range sources {
+		if source.value == here {
+			continue
+		}
+		detail := ""
+		if source.remote {
+			detail = "cloned by the discobox itself"
+		}
+		items = append(items, pickerItem{id: source.value, title: sourceTitle(source), detail: detail})
+	}
+	items = append(items, pickerItem{id: noSourceChoice, title: "no source", detail: "nothing checked out — an empty discobox"})
+	defer status.suspend()()
+	choice, err := pickOne(cmd, "Where should this discobox be cut from? (-C names another)", items, pickerOptions{
+		empty:     "no choice to make",
+		ambiguous: "pass -C or --no-source",
+	})
+	if err != nil {
+		return "", false, err
+	}
+	if choice == noSourceChoice {
+		return "", true, nil
+	}
+	return choice, false, nil
+}
+
+// sourceTitle is what a source is called on the picker, its -C value being in
+// the column beside it: a directory's last element, or a repository URL's
+// owner and name.
+func sourceTitle(source runSource) string {
+	value := strings.TrimSuffix(strings.TrimSuffix(source.value, "/"), ".git")
+	if source.remote {
+		parts := strings.Split(value, "/")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+		}
+		return value
+	}
+	return filepath.Base(value)
+}
+
+// runSource is one place the project's discoboxes were cut from.
+type runSource struct {
+	value  string
+	remote bool
+}
+
+// projectSources is what the project's discoboxes were cut from, newest first, each once, spelled the way -C takes it: the URL a
+// remote source clones, or the client directory a local one was cut from. It
+// is the list the create card offers, read the same way (toTUISandbox).
+func projectSources(ctx context.Context, client *apiclientgen.Client, projectID string) ([]runSource, error) {
+	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSandboxesBody](res)
+	if err != nil {
+		return nil, err
+	}
+	sandboxes := sortedByRecency(body.GetSandboxes(), func(sb apimodel.Sandbox) time.Time { return sb.CreatedAt })
+	seen := map[string]bool{}
+	var out []runSource
+	for _, sb := range sandboxes {
+		source, ok := sb.Config.Source.Get()
+		if !ok {
+			continue
+		}
+		next := runSource{value: strings.TrimSpace(source.LocalDirectory.Or(""))}
+		if url, ok := source.URL.Get(); ok {
+			next = runSource{value: url.String(), remote: true}
+		}
+		if next.value == "" || seen[next.value] {
+			continue
+		}
+		seen[next.value] = true
+		out = append(out, next)
+	}
+	return out, nil
+}
+
 // confirmCopyDirectory asks whether a source directory that is in no Git
 // repository is copied into the sandbox. Everything in such a directory is
 // uncommitted work, so the question is the whole directory — which is why it is
@@ -439,7 +568,7 @@ func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.C
 // discobox that silently came up with nothing in it.
 func confirmCopyDirectory(cmd *cobra.Command, status *statusLine) sandboxcreate.ConfirmCopyDirectoryFunc {
 	return func(_ context.Context, directory sandboxcreate.DirectoryCopy) (bool, error) {
-		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
+		if !canAskInline(cmd) {
 			return true, nil
 		}
 		defer status.suspend()()
