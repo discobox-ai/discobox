@@ -1,6 +1,6 @@
 {
   "name": "propose-triage",
-  "why": "The triage-issue skill's ask from a lead's worker: the wider levels stay on issues, labels and comments and keep never push.",
+  "why": "The triage-issue skill's ask from a lead's worker: the uses written stay on issues, labels and comments and keep never push.",
   "expect": "allow",
   "proposal": {
     "uses": [

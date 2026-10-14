@@ -54,7 +54,7 @@ func (m *Model) startShimmer() tea.Cmd {
 }
 
 func shimmerTick(frame int) tea.Cmd {
-	return tea.Tick(shimmerInterval, func(time.Time) tea.Msg {
+	return tick(shimmerInterval, func(time.Time) tea.Msg {
 		return shimmerTickMsg{frame: frame}
 	})
 }

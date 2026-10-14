@@ -157,9 +157,10 @@ func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 
 	close(ds.runGate)
 	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
-	if got := m.prompt.Value(); got != "" {
-		t.Fatalf("prompt = %q, want it spent once the server took the create", got)
-	}
+	// The fake records the attach from the command's goroutine, which can be
+	// before the create's answer reaches the window: the prompt is spent by
+	// that answer, so it is waited for, and the wait fails if it never is.
+	d.wait("the prompt to be spent once the server took the create", func() bool { return m.prompt.Value() == "" })
 }
 
 // A create that never got as far as the server — the working tree could not be
@@ -363,7 +364,8 @@ func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
-	if m.dialog != nil {
+	// The start's own waiting card is up, its watch not run: no question.
+	if m.dialog != nil && m.dialog.kind != dlgStatus {
 		t.Fatal("an empty directory should not be asked about")
 	}
 	if len(ds.runs) != 1 {
@@ -380,7 +382,8 @@ func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
-	if m.dialog != nil {
+	// The start's own waiting card may be up, its watch not run: no question.
+	if m.dialog != nil && m.dialog.kind != dlgStatus {
 		t.Fatal("a clean working tree should not be asked about")
 	}
 	if len(ds.runs) != 1 {
@@ -1284,7 +1287,7 @@ func TestRepaintWorksOffThePanes(t *testing.T) {
 	send(t, m, typeString("fix the reaper")...)
 
 	_, cmd := m.Update(keyPress("ctrl+l"))
-	if !repaints(cmd) {
+	if !repaints(t, cmd) {
 		t.Fatal("ctrl+l in the prompt should redraw the window")
 	}
 	if got := m.prompt.Value(); got != "fix the reaper" {

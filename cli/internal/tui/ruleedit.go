@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -62,10 +63,41 @@ type ruleDraft struct {
 	// fromCard is an edit begun on the rule's card, which leaving the first
 	// step and saving both go back to.
 	fromCard bool
+	// from is the grant a new rule is being made of, nil for any other.
+	from *ruleFromGrant
+}
+
+// ruleFromGrant is a new rule made of a grant (makeRuleFromGrant): what the
+// server proposed from it, and the grant's card, which leaving the first step
+// goes back to. The rule's credential, hosts and purpose are the grant's, so
+// its credential is not asked.
+type ruleFromGrant struct {
+	grantID, secretID string
+	proposed          RuleProposals
+	card              func() tea.Cmd
+}
+
+// fromGrantSection says what a rule made of a grant is made of, and — when
+// the request asked for a well-known ID and the grant stands on a secret
+// other than the one marked for it — that the rule answers with the marked
+// secret, not the grant's: a rule for an ID is answered by its mark.
+func (m *Model) fromGrantSection(d ruleDraft) []section {
+	if d.from == nil {
+		return nil
+	}
+	sec := section{label: "made of a grant", fields: []field{{label: "grant", value: d.from.grantID + ", which stays as it is"}}}
+	if d.rule.WellKnownID != "" && d.from.secretID != d.rule.SecretID {
+		sec.lines = append(sec.lines, line{
+			text: "the request it answered asked for " + d.rule.WellKnownID + ": the rule is for " + d.rule.WellKnownID +
+				", and answers with the marked secret " + m.secretName(d.rule.SecretID) + ", not " + m.secretName(d.from.secretID),
+			tone: toneAlert,
+		})
+	}
+	return []section{sec}
 }
 
 func (d ruleDraft) first() ruleStep {
-	if d.was != nil {
+	if d.was != nil || d.from != nil {
 		return stepDiscoboxes
 	}
 	return stepCredential
@@ -81,6 +113,92 @@ func (d ruleDraft) title(step string) string {
 // newRule starts a rule on the screen's server.
 func (m *Model) newRule() tea.Cmd {
 	return m.ruleStep(ruleDraft{server: m.configServer(), rule: Rule{MaxGrantTTL: time.Hour}}, stepCredential)
+}
+
+// grantRuleProposedMsg carries what the server proposed from a grant back.
+// wait is the dialog that was up while it was asked, which is how an answer
+// nobody is waiting for any more is told from one somebody is.
+type grantRuleProposedMsg struct {
+	wait      *dialog
+	server    string
+	grant     Grant
+	card      func() tea.Cmd
+	proposals RuleProposals
+	err       error
+}
+
+// proposeGrantRule asks the server for the rule auto approve would have
+// proposed from the request a grant answered, written from the uses the
+// grant approved, and waits where it can be seen: a model writes the uses
+// and the judge reads them. Esc stops the asking and goes back to the grant.
+func (m *Model) proposeGrantRule(server string, grant Grant, card func() tea.Cmd) tea.Cmd {
+	ctx, stop := context.WithCancel(m.ctx)
+	wait := statusDialog("New rule", "asking the judge to write a rule from this grant…")
+	wait.footer = "a model writes its uses from the grant's, and the judge reads them against the request it answered; it can take a minute or two"
+	wait.onCancel = func() tea.Cmd {
+		stop()
+		return card()
+	}
+	m.dialog = wait
+	return func() tea.Msg {
+		defer stop()
+		proposals, err := m.ds.GrantRuleProposals(ctx, server, grant.ID)
+		return grantRuleProposedMsg{wait: wait, server: server, grant: grant, card: card, proposals: proposals, err: err}
+	}
+}
+
+// grantRuleProposed starts the new rule from what was proposed, unless the
+// wait was left: the rule's credential, hosts and purpose are the grant's;
+// its repository the asking discobox's, ticked; its uses the judge's when it
+// found they cover the request the grant answered, and the grant's own when
+// not; and each grant it mints lives as long as this one was given. Every
+// step is the new rule's, and the last reads the rule whole.
+func (m *Model) grantRuleProposed(msg grantRuleProposedMsg) tea.Cmd {
+	if m.dialog != msg.wait {
+		return nil
+	}
+	if msg.err != nil {
+		e := errorDialog("Could not propose a rule", fmt.Sprintf("%v", msg.err))
+		e.sections = []section{{lines: []line{{text: "no rule was made · esc goes back to the grant", tone: toneDim}}}}
+		e.onCancel = msg.card
+		m.dialog = e
+		return nil
+	}
+	grant, proposed := msg.grant, msg.proposals
+	// The rule is for the credential the request asked for, because that is
+	// the rule the server judged: for its well-known ID when it named one,
+	// answered with the secret marked for it — which need not be the secret
+	// this grant stands on — and otherwise for this grant's secret.
+	rule := Rule{SecretID: grant.SecretID, Hosts: proposed.Hosts, Delegate: proposed.Delegate || grant.Delegate}
+	if id := proposed.WellKnownID; id != "" {
+		marked := markedFor(m.secrets.all, id)
+		if marked == nil {
+			e := errorDialog("Could not make a rule from this grant",
+				"the request it answered asked for "+id+", and a rule for "+id+" answers with the secret marked for it: this project has none marked")
+			e.sections = []section{{lines: []line{{text: "a secret is marked for " + id + " by storing it as that credential (n on the secrets screen, its kind " + id + "), or by approving a request for " + id + " by hand while none is marked · esc goes back to the grant", tone: toneDim}}}}
+			e.onCancel = msg.card
+			m.dialog = e
+			return nil
+		}
+		rule.WellKnownID, rule.SecretID = id, marked.ID
+	}
+	if !grant.Granted.IsZero() && grant.Expires.After(grant.Granted) {
+		rule.MaxGrantTTL = grant.Expires.Sub(grant.Granted).Round(time.Minute)
+	}
+	if proposed.Repository != "" {
+		rule.Repositories = []string{proposed.Repository}
+	}
+	asked := make([]string, 0, len(grant.Uses))
+	for _, use := range grant.Uses {
+		asked = append(asked, use.Description)
+	}
+	uses := newLineList(typedLines(asked))
+	if written := proposed.Written; written != nil && written.Covers {
+		uses = newLineList(storedLines(written.Uses, written.Stored))
+	}
+	d := ruleDraft{server: msg.server, rule: rule, uses: uses,
+		from: &ruleFromGrant{grantID: grant.ID, secretID: grant.SecretID, proposed: proposed, card: msg.card}}
+	return m.ruleStep(d, stepDiscoboxes)
 }
 
 // editRule starts an edit of one rule, from its row or its card.
@@ -99,6 +217,8 @@ func (m *Model) ruleStep(d ruleDraft, step ruleStep) tea.Cmd {
 		back = func() tea.Cmd { return m.ruleStep(d, step-1) }
 	case d.fromCard:
 		back = func() tea.Cmd { return m.openRule(d.server, d.was.ID) }
+	case d.from != nil:
+		back = d.from.card
 	}
 	// A list step hands back the list as it was left, which the draft keeps
 	// on the way back.
@@ -111,6 +231,8 @@ func (m *Model) ruleStep(d ruleDraft, step ruleStep) tea.Cmd {
 				return m.ruleStep(kept, step-1)
 			case d.fromCard:
 				return m.openRule(d.server, d.was.ID)
+			case d.from != nil:
+				return d.from.card()
 			}
 			return nil
 		}
@@ -134,6 +256,10 @@ func (m *Model) ruleStep(d ruleDraft, step ruleStep) tea.Cmd {
 			return backWith(func(kept *ruleDraft) { kept.repositories = named })(named)
 		})
 	case stepUses:
+		var judged func(lineList) []section
+		if d.from != nil {
+			judged = func(now lineList) []section { return usesSections(d.from.proposed, grantOrigin, now) }
+		}
 		return m.askLines(linesAsk{
 			title:       d.title("what it approves"),
 			sections:    m.draftSections(d),
@@ -141,7 +267,9 @@ func (m *Model) ruleStep(d ruleDraft, step ruleStep) tea.Cmd {
 			placeholder: "e.g. Comment on any issue in org/repo",
 			written:     "what it approves",
 			footer:      "a request is approved only when every use it asks for is within these",
+			numbered:    true,
 			required:    "a rule says what it approves: write at least one use",
+			sectionsFor: judged,
 		}, d.uses, "", func(uses lineList) tea.Cmd {
 			next := d
 			next.uses, next.rule.Uses = uses, uses.shown()
@@ -205,9 +333,21 @@ func (m *Model) repositoryList(d ruleDraft) lineList {
 		return d.repositories
 	}
 	var own []listLine
-	if d.was != nil && !d.was.EveryDiscobox {
+	switch {
+	case d.was != nil && !d.was.EveryDiscobox:
 		own = storedLines(d.was.Repositories, d.was.Stored.Repositories)
+	case d.from != nil && d.from.proposed.Repository != "":
+		// The repository of the discobox that asked for the grant.
+		own = []listLine{{shown: d.from.proposed.Repository, value: d.from.proposed.RepositoryStored}}
 	}
+	return m.knownRepositories(d.server, own)
+}
+
+// knownRepositories is every repository the console knows for a server's
+// project as picks — own first, chosen, then those of the project's
+// discoboxes and its rules, each once, sorted — above an empty list of
+// repositories to name.
+func (m *Model) knownRepositories(server string, own []listLine) lineList {
 	seen := map[string]bool{}
 	picks := slices.Clone(own)
 	for _, pick := range own {
@@ -231,11 +371,11 @@ func (m *Model) repositoryList(d ruleDraft) lineList {
 		others = append(others, line)
 	}
 	for _, box := range m.list.all {
-		if m.serverName(box.Server) == m.serverName(d.server) && box.RepositoryIdentity != "" {
+		if m.serverName(box.Server) == m.serverName(server) && box.RepositoryIdentity != "" {
 			offer(listLine{shown: box.RepositoryShown, value: box.RepositoryIdentity})
 		}
 	}
-	if m.serverName(d.server) == m.configServer() {
+	if m.serverName(server) == m.configServer() {
 		for _, rule := range m.rules.all {
 			for _, line := range storedLines(rule.Repositories, rule.Stored.Repositories) {
 				offer(line)
@@ -371,10 +511,11 @@ func (m *Model) draftSections(d ruleDraft) []section {
 	if len(d.rule.Uses) > 0 {
 		sec.fields = append(sec.fields, field{label: "approves", value: plural(len(d.rule.Uses), "use", "uses")})
 	}
-	if len(sec.fields) == 0 {
-		return nil
+	out := m.fromGrantSection(d)
+	if len(sec.fields) > 0 {
+		out = append(out, sec)
 	}
-	return []section{sec}
+	return out
 }
 
 // readRuleDraft is the last card before the write: the rule's whole text, as
@@ -396,6 +537,7 @@ func (m *Model) readRuleDraft(d ruleDraft, back func() tea.Cmd) tea.Cmd {
 		sections = append(sections, m.ruleChangeSections(*d.was, d.rule, change, now)...)
 	}
 	sections = append(sections, ruleText(d.rule, facts)...)
+	sections = append(sections, m.fromGrantSection(d)...)
 
 	dlg := confirmDialog(d.title("the rule"), "", func(string) tea.Cmd {
 		if d.was != nil && change.Empty() {
@@ -515,7 +657,7 @@ func (m *Model) writeRuleDraft(d ruleDraft) tea.Cmd {
 			secretID = ""
 		}
 		made := NewRule{
-			WellKnownID: d.rule.WellKnownID, SecretID: secretID, Hosts: d.rule.Hosts,
+			WellKnownID: d.rule.WellKnownID, SecretID: secretID, Hosts: d.rule.Hosts, Delegate: d.rule.Delegate,
 			ApprovalRule: ApprovalRule{EveryDiscobox: d.rule.EveryDiscobox, Uses: d.uses.values()},
 			MaxGrantTTL:  d.rule.MaxGrantTTL, Expires: d.rule.Expires,
 		}

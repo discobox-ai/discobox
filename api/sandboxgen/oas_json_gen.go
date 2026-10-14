@@ -1670,14 +1670,6 @@ func (s *JudgeProposal) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("usesAcrossResource")
-		e.ArrStart()
-		for _, elem := range s.UsesAcrossResource {
-			e.Str(elem)
-		}
-		e.ArrEnd()
-	}
-	{
 		e.FieldStart("usesAnyTarget")
 		e.ArrStart()
 		for _, elem := range s.UsesAnyTarget {
@@ -1687,9 +1679,8 @@ func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfJudgeProposal = [2]string{
-	0: "usesAcrossResource",
-	1: "usesAnyTarget",
+var jsonFieldsNameOfJudgeProposal = [1]string{
+	0: "usesAnyTarget",
 }
 
 // Decode decodes JudgeProposal from json.
@@ -1701,28 +1692,8 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "usesAcrossResource":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				s.UsesAcrossResource = make([]string, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem string
-					v, err := d.Str()
-					elem = string(v)
-					if err != nil {
-						return err
-					}
-					s.UsesAcrossResource = append(s.UsesAcrossResource, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"usesAcrossResource\"")
-			}
 		case "usesAnyTarget":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				s.UsesAnyTarget = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -1751,7 +1722,7 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000011,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

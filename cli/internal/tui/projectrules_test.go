@@ -425,7 +425,7 @@ func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 
 	// Enter on a grant reads it, and leaving it comes back to the rule.
 	drain(t, m, m.dialog.action("grant_r1"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgText || !strings.Contains(dialogText(m), "approval rule rule_1") {
+	if m.dialog == nil || m.dialog.title != "Grant" || !strings.Contains(dialogText(m), "approval rule rule_1") {
 		t.Fatalf("dialog = %s, want the grant read, naming the rule that minted it:\n%s", describe(m.dialog), dialogText(m))
 	}
 	send(t, m, keyPress("esc"))

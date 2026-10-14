@@ -3877,11 +3877,11 @@ func (s *Server) handleListSandboxToolsRequest(args [2]string, argsEscaped bool,
 
 // handleProposeSandboxRuleRequest handles propose-sandbox-rule operation.
 //
-// Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR
-// 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask.
-// The caller supplies the uses a request asked for; the prompt, the schema, the model role and the
-// tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes
-// nothing.
+// Has this discobox's harness write the uses a person starts an approval rule from (ADR
+// 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a
+// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
+// the uses a request asked for; the prompt, the schema, the model role and the tools restriction are
+// the judge runtime's own, as for a judging job. What comes back authorizes nothing.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 func (s *Server) handleProposeSandboxRuleRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {

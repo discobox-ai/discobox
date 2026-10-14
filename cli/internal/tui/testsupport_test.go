@@ -7,6 +7,8 @@ import (
 	"io"
 	"maps"
 	"os"
+	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -29,7 +31,24 @@ import (
 // A test that wants the colored frame builds its styles directly — newColorModel.
 func TestMain(m *testing.M) {
 	os.Setenv("NO_COLOR", "1")
+	// A timer is told from work by what it returns: drain waits for work,
+	// and leaves a timer unfired, as one set for later than the test looks.
+	// Set once, before any test runs, so no test races another for it.
+	tick = func(d time.Duration, fn func(time.Time) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return timerMsg{after: d, fire: fn} }
+	}
+	// A listener likewise: drain does not run one, and the driver does.
+	listen = func(cmd tea.Cmd) tea.Cmd {
+		return func() tea.Msg { return listenerMsg{run: cmd} }
+	}
 	os.Exit(m.Run())
+}
+
+// timerMsg is a timer the window set, unfired: drain does not deliver it.
+// A test that wants what a timer carries calls fire.
+type timerMsg struct {
+	after time.Duration
+	fire  func(time.Time) tea.Msg
 }
 
 // fakeSource stands in for the server. Every method records what it was asked
@@ -108,9 +127,11 @@ type fakeSource struct {
 	approveErr     error
 	// proposals is what "auto approve" is offered; proposed is each request it
 	// was asked about.
-	proposals       RuleProposals
-	proposalsErr    error
-	proposed        []string
+	proposals    RuleProposals
+	proposalsErr error
+	proposed     []string
+	// grantProposed are the grants a rule was proposed from.
+	grantProposed   []string
 	createSecretErr error
 	unbound         []string
 	bound           []string
@@ -1448,13 +1469,19 @@ func send(t *testing.T, m *Model, msgs ...tea.Msg) *Model {
 // batch and every message it produces deeper still.
 const drainDepth = 8
 
+// drain runs a command and every command its messages lead to, delivering
+// each message to the model. A timer is left unfired (timerMsg) and a
+// listener unrun (listenerMsg): both wait for what no step of a test brings.
+// A test that has queued what a listener waits for drains its run, which is
+// then work like any; the tests that follow a listener drive the window
+// instead (driver_test.go), which runs it as the runtime does.
 func drain(t *testing.T, m *Model, cmd tea.Cmd, depth int) {
 	t.Helper()
 	if cmd == nil || depth > drainDepth {
 		return
 	}
-	msg, ok := runQuickly(cmd)
-	if !ok || msg == nil {
+	msg := run(t, cmd)
+	if msg == nil {
 		return
 	}
 	// A batch arrives as one message holding the commands it batched.
@@ -1467,19 +1494,92 @@ func drain(t *testing.T, m *Model, cmd tea.Cmd, depth int) {
 	if _, quit := msg.(interface{ isQuit() }); quit {
 		return
 	}
+	if _, timer := msg.(timerMsg); timer {
+		return
+	}
+	if _, waits := asListener(msg); waits {
+		return
+	}
 	_, next := m.Update(msg)
 	drain(t, m, next, depth+1)
 }
 
-func runQuickly(cmd tea.Cmd) (tea.Msg, bool) {
+// listenerMsg is a listener the window started, not run: what listen
+// returns in a test, as tick returns a timerMsg.
+type listenerMsg struct{ run tea.Cmd }
+
+// asListener reads a listener out of a message: one the window started, or
+// one a pane started, which arrives wrapped as the pane's (fromPane). Run,
+// the second answers as the pane's.
+func asListener(msg tea.Msg) (listenerMsg, bool) {
+	switch msg := msg.(type) {
+	case listenerMsg:
+		return msg, true
+	case paneMsg:
+		inner, ok := msg.msg.(listenerMsg)
+		if !ok {
+			return listenerMsg{}, false
+		}
+		return listenerMsg{run: func() tea.Msg {
+			got := inner.run()
+			if got == nil {
+				return nil
+			}
+			return paneMsg{id: msg.id, msg: got}
+		}}, true
+	}
+	return listenerMsg{}, false
+}
+
+// commandWait is how long a command is given to finish. Every command a
+// test runs answers from a fake, so a working one never reaches it, however
+// loaded the machine: it is long so a slow run is not mistaken for a broken
+// one, and a command that reaches it fails the test, named — a wait nobody
+// wrapped in listen, or a fake that never answers.
+const commandWait = 10 * time.Second
+
+// run runs one command to its end and returns its message.
+func run(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
+	msg, err := runFor(cmd, commandWait)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+// runFor runs one command, waiting up to wait for it, and says which
+// command did not finish. The goroutine it leaves is the bug the error
+// names.
+func runFor(cmd tea.Cmd, wait time.Duration) (tea.Msg, error) {
+	if libraryTimers[commandName(cmd)] {
+		// Not run at all: a timer fires later than a test looks, and this
+		// one, the library's own, touches nothing a test holds.
+		return nil, nil
+	}
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
 	select {
 	case msg := <-done:
-		return msg, true
-	case <-time.After(20 * time.Millisecond):
-		return nil, false
+		return msg, nil
+	case <-time.After(wait):
+		return nil, fmt.Errorf("command %s did not finish in %s: a command that waits by design goes through listen, a timer through tick", commandName(cmd), wait)
 	}
+}
+
+// libraryTimers are the timers the window's widgets set themselves, which do
+// not go through tick: told apart by what they are, as tick's are by what
+// they return. A cursor's blink is one per focused field.
+var libraryTimers = map[string]bool{
+	"charm.land/bubbles/v2/cursor.(*Model).Blink.func1": true,
+}
+
+// commandName is the function a command is, which names where it was made.
+func commandName(cmd tea.Cmd) string {
+	if fn := runtime.FuncForPC(reflect.ValueOf(cmd).Pointer()); fn != nil {
+		return fn.Name()
+	}
+	return "an unnamed command"
 }
 
 // repaints reports whether a command carries Bubble Tea's whole-screen redraw.
@@ -1487,17 +1587,18 @@ func runQuickly(cmd tea.Cmd) (tea.Msg, bool) {
 // The message is unexported, so it is matched against the one tea.ClearScreen
 // itself produces rather than by name; both are empty structs, and comparing
 // them is the only handle a test has on it.
-func repaints(cmd tea.Cmd) bool {
+func repaints(t *testing.T, cmd tea.Cmd) bool {
+	t.Helper()
 	if cmd == nil {
 		return false
 	}
-	msg, ok := runQuickly(cmd)
-	if !ok || msg == nil {
+	msg := run(t, cmd)
+	if msg == nil {
 		return false
 	}
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		for _, sub := range batch {
-			if repaints(sub) {
+			if repaints(t, sub) {
 				return true
 			}
 		}
@@ -1722,6 +1823,14 @@ func (f *fakeSource) RuleProposals(_ context.Context, server, requestID string) 
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "RuleProposals@"+server)
 	f.proposed = append(f.proposed, requestID)
+	return f.proposals, f.proposalsErr
+}
+
+func (f *fakeSource) GrantRuleProposals(_ context.Context, server, grantID string) (RuleProposals, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "GrantRuleProposals@"+server)
+	f.grantProposed = append(f.grantProposed, grantID)
 	return f.proposals, f.proposalsErr
 }
 
@@ -2003,4 +2112,31 @@ func (f *fakeSource) calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.onServer...)
+}
+
+// A command that blocks and was not wrapped as a listener or a timer fails
+// the test that ran it, by name, rather than hanging it: a wait added
+// without listen is found the first time a test runs it.
+func TestABlockingCommandIsNamed(t *testing.T) {
+	t.Parallel()
+	block := make(chan struct{})
+	defer close(block)
+	_, err := runFor(waitsUnwrapped(block), 50*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "waitsUnwrapped") {
+		t.Fatalf("err = %v, want the blocking command named", err)
+	}
+	if msg, err := runFor(listen(waitsUnwrapped(block)), 50*time.Millisecond); err != nil {
+		t.Fatalf("a listener was run: %v", err)
+	} else if _, ok := msg.(listenerMsg); !ok {
+		t.Fatalf("msg = %#v, want the listener handed back unrun", msg)
+	}
+}
+
+// waitsUnwrapped is a command that waits on block, as a listener nobody
+// marked would.
+func waitsUnwrapped(block chan struct{}) tea.Cmd {
+	return func() tea.Msg {
+		<-block
+		return nil
+	}
 }

@@ -275,7 +275,7 @@ func TestAutoApproveSaysWhatItStoredWhenNoRuleIsMade(t *testing.T) {
 	ds.mu.Unlock()
 	drain(t, m, m.dialog.action("secret:sec_new"), 0)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	send(t, m, keyPress("y"))
 	if m.dialog == nil || !m.dialog.err || !strings.Contains(cardWords(m), want) {

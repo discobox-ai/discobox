@@ -261,6 +261,9 @@ func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
 	d.key("ctrl+a")
 	d.key("d")
 	d.wait("the workspace to close", func() bool { return !m.inPanes() })
+	// What detaching says is its own message, which may land after the
+	// workspace has closed.
+	d.wait("the detach to be reported", func() bool { return m.status != "" })
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
@@ -310,6 +313,9 @@ func TestEndedPrimaryClosesTheWorkspace(t *testing.T) {
 
 	term.Close()
 	d.wait("the workspace to close", func() bool { return !m.inPanes() })
+	// What detaching says is its own message, which may land after the
+	// workspace has closed.
+	d.wait("the detach to be reported", func() bool { return m.status != "" })
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
@@ -2302,6 +2308,9 @@ func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
 	d.key("ctrl+a")
 	d.key("d")
 	d.wait("the workspace to close", func() bool { return !m.inPanes() })
+	// What detaching says is its own message, which may land after the
+	// workspace has closed.
+	d.wait("the detach to be reported", func() bool { return m.status != "" })
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
@@ -2490,7 +2499,7 @@ func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
 	cols, rows := m.focusedPane().term.Size()
 
 	_, cmd := m.Update(keyPress("ctrl+l"))
-	if !repaints(cmd) {
+	if !repaints(t, cmd) {
 		t.Fatal("ctrl+l in a pane should redraw the window")
 	}
 	asked, size := term.asked()

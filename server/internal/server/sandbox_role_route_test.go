@@ -68,6 +68,7 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		{http.MethodPatch, project + "/approval-rules/rule_1", http.StatusForbidden},
 		{http.MethodDelete, project + "/approval-rules/rule_1", http.StatusForbidden},
 		{http.MethodPost, project + "/secret-requests/sreq_1/rule-proposals", http.StatusForbidden},
+		{http.MethodPost, project + "/secret-grants/grant_1/rule-proposals", http.StatusForbidden},
 		{http.MethodGet, project + "/pools", http.StatusForbidden},
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},

@@ -618,9 +618,6 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 	return tw.Flush()
 }
 
-// The three levels a proposal's uses come at.
-var contentLevels = map[int64]string{1: "as asked", 2: "the same work on any target of its kind", 3: "the same kind of work across the resource"}
-
 // writeRuleProposals prints what auto approve offers. A proposal is a
 // sentence a model wrote from an agent's ask, so every one is shown whole,
 // escaped, with what the judge made of it: the text is what would be approved.
@@ -632,16 +629,6 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 		return writeJSON(cmd.OutOrStdout(), proposals)
 	}
 	out := cmd.OutOrStdout()
-	verdict := func(covers bool, reason string) string {
-		word := "covers this request"
-		if !covers {
-			word = "FAILED: does not cover this request, and cannot be chosen as written"
-		}
-		if reason = terminalSafe(reason); reason != "" {
-			word += " — " + reason
-		}
-		return word
-	}
 	fmt.Fprintf(out, "A rule made from %s approves %s at %s, to %s.\n", requestID,
 		terminalSafe(proposals.Credential.Or("the credential it asks for")), terminalSafe(strings.Join(proposals.Hosts, ", ")), proposals.Purpose)
 	// What only a person otherwise approves, said before the sentences: a
@@ -664,13 +651,26 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 	}
 	fmt.Fprintf(out, "  every discobox in the project, including ones that do not exist yet and ones a discobox creates\n     --rule-every-discobox\n")
 	fmt.Fprintln(out, "\nUSES — what the rule approves")
-	for _, content := range proposals.Contents {
-		fmt.Fprintf(out, "  %d. %s\n", content.Level, contentLevels[content.Level])
-		for _, use := range content.Uses {
+	if written, ok := proposals.Uses.Get(); ok {
+		fmt.Fprintln(out, "  written by the project's judge: the same work on any target of its kind")
+		for _, use := range written.Uses {
 			fmt.Fprintf(out, "     --rule-use %q\n", terminalSafe(use))
 		}
-		fmt.Fprintf(out, "     %s\n", verdict(content.Covers, content.Reason.Or("")))
+		said := "the judge found these cover this request"
+		switch refused := terminalSafe(written.Refused.Or("")); {
+		case refused != "":
+			said = "FAILED: these could not be a rule's, so the judge was not asked — " + refused
+		case !written.Covers:
+			said = "FAILED: the judge found these do not cover this request; a rule with them as written would be refused"
+		}
+		if reason := terminalSafe(written.Reason.Or("")); reason != "" {
+			said += " — " + reason
+		}
+		fmt.Fprintf(out, "     %s\n", said)
+	} else {
+		fmt.Fprintln(out, "  no model wrote any")
 	}
+	fmt.Fprintln(out, "  with no --rule-use, the rule approves the uses as asked; edited uses are judged when the rule is made")
 	fmt.Fprintf(out, "\nTo make a rule: discobox secret request approve %s --auto [--rule-repo ... | --rule-every-discobox] [--rule-use ...]\n", requestID)
 	return nil
 }

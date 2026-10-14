@@ -70,6 +70,14 @@ func (h *Handler) ProposeApprovalRules(ctx context.Context, params serverapi.Pro
 	return proposals, nil
 }
 
+func (h *Handler) ProposeApprovalRuleFromGrant(ctx context.Context, params serverapi.ProposeApprovalRuleFromGrantParams) (serverapi.ProposeApprovalRuleFromGrantRes, error) {
+	proposals, err := h.services.Secrets.ProposeApprovalRuleFromGrant(ctx, params.ProjectId, params.GrantId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	return proposals, nil
+}
+
 // approvalRuleBody is a rule as the API says it. The hosts and uses are
 // required arrays, and a rule always has some of each.
 func approvalRuleBody(rule *model.ApprovalRule) (*apimodel.ApprovalRule, error) {

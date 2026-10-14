@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // newRuleFixture is the secrets screen with the GitHub secret marked as what
@@ -166,8 +167,8 @@ func TestAnEditSendsOnlyWhatChanged(t *testing.T) {
 	// ↑ puts the last use in the field, and Enter puts it back as edited, in
 	// its place; Enter on the new line, empty, finishes.
 	send(t, m, keyPress("up"))
-	if m.dialog.input.Value() != "Read any issue in org/repo" {
-		t.Fatalf("field = %q, want the last use to edit", m.dialog.input.Value())
+	if m.dialog.typed() != "Read any issue in org/repo" {
+		t.Fatalf("field = %q, want the last use to edit", m.dialog.typed())
 	}
 	typeLines(t, m, "Read and label any issue in org/repo")
 	// The longest grant and the expiry open on the rule's own, and are kept.
@@ -334,44 +335,44 @@ func TestTheLinesAreEditedInPlace(t *testing.T) {
 	drain(t, m, m.dialog.action("one"), 0)
 	drain(t, m, m.dialog.action("two"), 0)
 	drain(t, m, m.dialog.action("three"), 0)
-	m.dialog.input.SetValue("four, half")
+	setField(m, "four, half")
 
 	frame := plainFrame(m)
 	if !strings.Contains(frame, "↑ edit a line") || !strings.Contains(frame, "Enter adds; empty, finishes") {
 		t.Fatalf("key line on the new line:\n%s", frame)
 	}
 	send(t, m, keyPress("up"), keyPress("up"))
-	if m.dialog.input.Value() != "two" || !strings.Contains(cardWords(m), "❯ · two ← in the field below") ||
-		!strings.Contains(m.dialog.answerLabel, "line 2 of 3") {
-		t.Fatalf("field = %q, card = %q; want line 2 up for editing", m.dialog.input.Value(), wholeCard(m))
+	if m.dialog.typed() != "two" || m.dialog.editAt != 1 || !strings.Contains(cardWords(m), "1. one ❯ 2. two") ||
+		strings.Count(cardWords(m), "two") != 1 || m.dialog.answerLabel != "what it approves" {
+		t.Fatalf("field = %q, card = %q; want line 2 up for editing", m.dialog.typed(), wholeCard(m))
 	}
 	if frame := plainFrame(m); !strings.Contains(frame, "Enter keeps; emptied, removes") || !strings.Contains(frame, "Esc back, kept") {
 		t.Fatalf("key line on a line:\n%s", frame)
 	}
 	// Edited, and left unconfirmed by Esc: kept, field and all.
-	m.dialog.input.SetValue("TWO")
+	setField(m, "TWO")
 	send(t, m, keyPress("esc"))
 	mustBeOn(t, m, "New rule: which discoboxes")
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
-	if m.dialog.input.Value() != "TWO" || !strings.Contains(m.dialog.answerLabel, "line 2 of 3") {
-		t.Fatalf("field = %q at %q, want the unconfirmed edit kept", m.dialog.input.Value(), m.dialog.answerLabel)
+	if m.dialog.typed() != "TWO" || m.dialog.editAt != 1 {
+		t.Fatalf("field = %q at %q, want the unconfirmed edit kept", m.dialog.typed(), m.dialog.answerLabel)
 	}
 	drain(t, m, m.dialog.action("TWO"), 0)
 	// Back on the new line, with what was half-typed there.
-	if m.dialog.input.Value() != "four, half" {
-		t.Fatalf("field = %q, want the new line as it was left", m.dialog.input.Value())
+	if m.dialog.typed() != "four, half" {
+		t.Fatalf("field = %q, want the new line as it was left", m.dialog.typed())
 	}
 	// A line emptied and moved off is left as it was; emptied and Entered,
 	// it goes.
 	send(t, m, keyPress("up"))
-	m.dialog.input.SetValue("")
+	setField(m, "")
 	send(t, m, keyPress("down"))
 	if !strings.Contains(wholeCard(m), "three") {
 		t.Fatalf("card = %q, want a line moved off kept", wholeCard(m))
 	}
 	send(t, m, keyPress("up"), keyPress("up"), keyPress("up"))
 	drain(t, m, m.dialog.action(""), 0)
-	m.dialog.input.SetValue("")
+	setField(m, "")
 	drain(t, m, m.dialog.action(""), 0)
 	mustBeOn(t, m, "New rule: longest grant")
 	drain(t, m, m.dialog.action("3600"), 0)
@@ -524,7 +525,7 @@ func TestTheRepositoriesStepOffersWhatItKnows(t *testing.T) {
 	if got := pickLabels(m); got[2] != "[x] github.com/org/tools" {
 		t.Fatalf("picks = %q, want the typed one chosen as its pick", got)
 	}
-	if card := wholeCard(m); strings.Count(card, "github.com/org/tools") != 1 || !strings.Contains(card, "· github.com/new/thing") {
+	if card := wholeCard(m); strings.Count(card, "github.com/org/tools") != 1 || !strings.Contains(card, "github.com/new/thing") {
 		t.Fatalf("card = %q, want the known one once and the new one written", card)
 	}
 	drain(t, m, m.dialog.action(""), 0)
@@ -583,37 +584,33 @@ func TestAnEditOpensOnTheRulesRepositoriesChosen(t *testing.T) {
 	}
 }
 
-// Auto approve's hand-written uses ride every step back and forward: Esc to
-// the menu of uses, Esc again to which discoboxes, and forward again, and
-// writing by hand opens on them as they were, half-typed line included.
-func TestAutoApprovesHandWrittenUsesSurviveStepsBack(t *testing.T) {
+// Auto approve's uses ride every step back and forward: Esc to which
+// discoboxes, Esc again to the secrets, forward again, and the uses open as
+// they were left, half-typed line included — and the same back from the
+// lifetime.
+func TestAutoApprovesUsesSurviveStepsBack(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithProposals(t)
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
-	drain(t, m, m.dialog.action("Open pull requests against acme/pool"), 0)
 	drain(t, m, m.dialog.action("Never push to main"), 0)
-	m.dialog.input.SetValue("Comment on th")
-	send(t, m, keyPress("esc"), keyPress("esc"))
-	if !onRuleStep(m, "which discoboxes") {
-		t.Fatalf("dialog = %s, want which discoboxes after Esc twice", describe(m.dialog))
-	}
-	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
-	if card := cardWords(m); !strings.Contains(card, "Open pull requests against acme/pool") || !strings.Contains(card, "Never push to main") ||
-		m.dialog.input.Value() != "Comment on th" {
-		t.Fatalf("card = %q, field = %q; want every line and the half-typed one", card, m.dialog.input.Value())
-	}
-	// And back from the lifetime, then the uses menu, the same.
-	drain(t, m, m.dialog.action("Comment on the issue"), 0)
-	drain(t, m, m.dialog.action(""), 0)
-	send(t, m, keyPress("esc"), keyPress("esc"), keyPress("esc"))
+	setField(m, "Comment on th")
+	send(t, m, keyPress("esc"))
 	if !onRuleStep(m, "which discoboxes") {
 		t.Fatalf("dialog = %s, want which discoboxes", describe(m.dialog))
 	}
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
+	if card := cardWords(m); !strings.Contains(card, "from any discobox/<slug> branch") || !strings.Contains(card, "Never push to main") ||
+		m.dialog.typed() != "Comment on th" {
+		t.Fatalf("card = %q, field = %q; want every line and the half-typed one", card, m.dialog.typed())
+	}
+	drain(t, m, m.dialog.action("Comment on the issue"), 0)
+	drain(t, m, m.dialog.action(""), 0)
+	send(t, m, keyPress("esc"), keyPress("esc"))
+	if !onRuleStep(m, "which discoboxes") {
+		t.Fatalf("dialog = %s, want which discoboxes", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action(ruleForRepository), 0)
 	if card := cardWords(m); !strings.Contains(card, "Comment on the issue") {
 		t.Fatalf("card = %q, want the uses finished before kept", card)
 	}
@@ -683,7 +680,14 @@ func TestTheListsRowsAnswerThePointer(t *testing.T) {
 		if marked == 0 {
 			t.Fatalf("height %d: no row is marked:\n%s", height, strings.Join(lines, "\n"))
 		}
-		// A press on a pick drawn ticks it.
+		// A press on a pick drawn ticks it: in a short card the list is
+		// windowed on the cursor, so it is walked up to the picks first.
+		for range 12 {
+			if strings.Contains(plainFrame(m), "[ ] github.com/acme/pool") {
+				break
+			}
+			send(t, m, keyPress("up"))
+		}
 		x, y := at(t, m, "[ ] github.com/acme/pool")
 		tap(t, m, x, y)
 		if got := pickLabels(m); got[0] != "[x] github.com/acme/pool" {
@@ -692,18 +696,24 @@ func TestTheListsRowsAnswerThePointer(t *testing.T) {
 		// A press on a line drawn puts it in the field, keeping what the
 		// new line held. The press on the pick put the cursor there, so the
 		// field is reached first.
-		for m.dialog.cursor >= 0 {
+		for m.dialog.editAt != len(m.dialog.items)-1 {
 			send(t, m, keyPress("down"))
 		}
-		m.dialog.input.SetValue("half")
-		x, y = at(t, m, "· github.com/new/thing")
+		setField(m, "half")
+		for range 12 {
+			if strings.Contains(plainFrame(m), "github.com/new/thing0") {
+				break
+			}
+			send(t, m, keyPress("up"))
+		}
+		x, y = at(t, m, "github.com/new/thing0")
 		tap(t, m, x, y)
-		if v := m.dialog.input.Value(); !strings.HasPrefix(v, "github.com/new/thing") || !strings.Contains(m.dialog.answerLabel, "being edited") {
+		if v := m.dialog.typed(); !strings.HasPrefix(v, "github.com/new/thing") || m.dialog.editAt == len(m.dialog.items)-1 {
 			t.Fatalf("height %d: field = %q at %q, want the pressed line to edit", height, v, m.dialog.answerLabel)
 		}
 		send(t, m, keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"))
-		if m.dialog.input.Value() != "half" {
-			t.Fatalf("height %d: field = %q, want the new line as it was left", height, m.dialog.input.Value())
+		if m.dialog.typed() != "half" {
+			t.Fatalf("height %d: field = %q, want the new line as it was left", height, m.dialog.typed())
 		}
 	}
 }
@@ -723,8 +733,8 @@ func TestADiscoboxsRepositoryIsDrawnSafe(t *testing.T) {
 	send(t, m, keyPress("up"), keyPress("up"), keyPress("up"), keyPress("up"))
 	send(t, m, keyPress(" "))
 	send(t, m, tea.PasteMsg{Content: "github.com/pasted/repo"})
-	if !strings.Contains(m.dialog.emphasis, "a paste goes in the field") || m.dialog.input.Value() != "" {
-		t.Fatalf("emphasis = %q, field = %q; want the paste refused where it landed", m.dialog.emphasis, m.dialog.input.Value())
+	if !strings.Contains(m.dialog.emphasis, "a paste goes in a line") || m.dialog.typed() != "" {
+		t.Fatalf("emphasis = %q, field = %q; want the paste refused where it landed", m.dialog.emphasis, m.dialog.typed())
 	}
 	send(t, m, keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"))
 	drain(t, m, m.dialog.action(""), 0)
@@ -735,4 +745,261 @@ func TestADiscoboxsRepositoryIsDrawnSafe(t *testing.T) {
 	if len(ds.madeRules) != 1 || !slices.Contains(ds.madeRules[0].Repositories, "github.com/acme/\x1b[2Jpool") {
 		t.Fatalf("made = %+v, want the identity sent as the discobox has it", ds.madeRules)
 	}
+}
+
+// setField types into the field a card's keys are in: the row being edited
+// in place, or the field under the card.
+func setField(m *Model, value string) {
+	if m.dialog.editor != nil {
+		m.dialog.editor.SetValue(value)
+		return
+	}
+	m.dialog.input.SetValue(value)
+}
+
+// The uses are a numbered list, right-aligned past nine, the new line the
+// next number; the line being edited is its own editor in place, wrapped
+// whole with its start in view, and drawn once.
+func TestTheUsesAreNumberedAndEditedInPlace(t *testing.T) {
+	t.Parallel()
+	m, _ := newRuleFixture(t)
+	send(t, m, keyPress(ruleNewKey))
+	drain(t, m, m.dialog.action("wk:sec_gh"), 0)
+	drain(t, m, m.dialog.action(ruleForEvery), 0)
+	long := "Open, update, comment on and close pull requests against org/repo from any branch named discobox/<slug>, and never push to main, delete a branch or change the repository's settings"
+	drain(t, m, m.dialog.action(long), 0)
+	for i := range 9 {
+		drain(t, m, m.dialog.action("use "+itoa(i+2)), 0)
+	}
+	card := wholeCard(m)
+	for _, want := range []string{" 1.  Open, update", " 9.  use 9", "10.  use 10", "11."} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("card = %q, want %q", card, want)
+		}
+	}
+	// Walk up to the long line: it is the editor, drawn whole, wrapped
+	// under its text, its start and its end both on the card, once.
+	for range 10 {
+		send(t, m, keyPress("up"))
+	}
+	if m.dialog.editAt != 0 || m.dialog.typed() != long {
+		t.Fatalf("editing %d %q, want the first use", m.dialog.editAt, m.dialog.typed())
+	}
+	words := cardWords(m)
+	if !strings.Contains(words, "❯ 1. Open, update, comment") || !strings.Contains(words, "repository's settings") || strings.Count(words, "Open, update") != 1 {
+		t.Fatalf("card = %q, want the line edited in place, whole, once", words)
+	}
+}
+
+// A grant read on its card is made into a rule the way auto approve would
+// have made one from the request it answered: the server proposes it from the
+// grant, the new rule's steps open on that — its credential the grant's and
+// not asked, the asking discobox's repository ticked, the judge's uses, each
+// grant as long as this one — and Esc on the first step is the grant again.
+func TestAGrantIsMadeIntoARule(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+	ds.mu.Lock()
+	ds.projectGrants[0].Expires = ds.projectGrants[0].Granted.Add(2 * time.Hour)
+	ds.proposals = RuleProposals{
+		Credential: "gh", Hosts: []string{"api.github.com"},
+		Repository: "github.com/org/repo", RepositoryStored: "github.com/org/repo",
+		Written: &WrittenUses{Uses: []string{"Open a PR against org/repo"}, Stored: []string{"Open a PR against org/repo"},
+			Covers: true, Reason: "opening this one is within it"},
+	}
+	ds.mu.Unlock()
+	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
+	send(t, m, keyPress("enter"))
+	drain(t, m, m.dialog.action("grant_1"), 0)
+	mustBeOn(t, m, "Grant")
+	if row := m.dialog.items[0]; row.key != grantRuleItem || !row.enabled {
+		t.Fatalf("row = %+v, want making a rule offered", row)
+	}
+
+	send(t, m, keyPress(ruleNewKey))
+	mustBeOn(t, m, "New rule: which discoboxes")
+	if !slices.Equal(ds.grantProposed, []string{"grant_1"}) || !strings.Contains(dialogText(m), "grant_1, which stays") {
+		t.Fatalf("proposed from %q, card %q; want the grant asked about and named", ds.grantProposed, dialogText(m))
+	}
+	send(t, m, keyPress("esc"))
+	mustBeOn(t, m, "Grant")
+
+	send(t, m, keyPress(ruleNewKey))
+	drain(t, m, m.dialog.action(ruleForTyped), 0)
+	typeLines(t, m)
+	mustBeOn(t, m, "New rule: what it approves")
+	for _, want := range []string{"Open a PR against org/repo", "the judge found they cover the request this grant answered"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("uses step = %q, want %q", dialogText(m), want)
+		}
+	}
+	typeLines(t, m)
+	drain(t, m, m.dialog.action("7200"), 0)
+	drain(t, m, m.dialog.action("0"), 0)
+	send(t, m, keyPress("y"))
+	if len(ds.madeRules) != 1 {
+		t.Fatalf("made = %+v, want one rule", ds.madeRules)
+	}
+	made := ds.madeRules[0]
+	if made.SecretID != "sec_gh" || !slices.Equal(made.Hosts, []string{"api.github.com"}) || made.Delegate ||
+		!slices.Equal(made.Repositories, []string{"github.com/org/repo"}) || !slices.Equal(made.Uses, []string{"Open a PR against org/repo"}) ||
+		made.MaxGrantTTL != 2*time.Hour {
+		t.Fatalf("made = %+v, want the grant's credential and hosts, its discobox's repository, the judge's uses, and its lifetime", made)
+	}
+}
+
+// A grant that names no uses has nothing a rule could approve, and its card
+// says so rather than offering it.
+func TestAGrantWithNoUsesIsNotMadeIntoARule(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+	send(t, m, keyPress("enter"))
+	drain(t, m, m.dialog.action("grant_2"), 0)
+	mustBeOn(t, m, "Grant")
+	if row := m.dialog.items[0]; row.enabled || !strings.Contains(row.why, "names none") {
+		t.Fatalf("row = %+v, want it refused for a grant with no uses", row)
+	}
+	send(t, m, keyPress(ruleNewKey))
+	if len(ds.grantProposed) != 0 {
+		t.Fatalf("proposed from %q, want nothing asked", ds.grantProposed)
+	}
+}
+
+// grantRuleFixture is the secrets screen with grant_1 standing on the second
+// GitHub token, sec_loose, from a request that asked for com.github.api, and
+// a proposal from it that covers; mark says whether sec_gh is marked for the
+// ID.
+func grantRuleFixture(t *testing.T, mark bool) (*Model, *fakeSource) {
+	t.Helper()
+	m, ds := secretsFixture(t)
+	ds.mu.Lock()
+	if mark {
+		ds.projectSecrets[0].WellKnownID = "com.github.api"
+	}
+	ds.projectGrants[0].SecretID = "sec_loose"
+	asked := "com.github.api"
+	ds.proposals = RuleProposals{
+		Credential: asked, WellKnownID: asked, Hosts: []string{"api.github.com"},
+		Written: &WrittenUses{Uses: []string{"Open a PR against org/repo"}, Stored: []string{"Open a PR against org/repo"}, Covers: true},
+	}
+	ds.mu.Unlock()
+	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
+	send(t, m, keyPress("enter"))
+	drain(t, m, m.dialog.action("grant_1"), 0)
+	mustBeOn(t, m, "Grant")
+	send(t, m, keyPress(ruleNewKey))
+	return m, ds
+}
+
+// A grant for a request that asked for a well-known ID makes a rule for the
+// ID — the rule the judge read — even when the grant stands on another
+// secret than the one marked for it, and every card says the rule answers
+// with the marked secret.
+func TestAGrantOnAnUnmarkedSecretMakesARuleForTheID(t *testing.T) {
+	t.Parallel()
+	m, ds := grantRuleFixture(t, true)
+	mustBeOn(t, m, "New rule: which discoboxes")
+	says := "answers with the marked secret gh, not OpenAI key"
+	if !strings.Contains(dialogText(m), says) {
+		t.Fatalf("card = %q, want %q", dialogText(m), says)
+	}
+	drain(t, m, m.dialog.action(ruleForEvery), 0)
+	typeLines(t, m)
+	drain(t, m, m.dialog.action("3600"), 0)
+	drain(t, m, m.dialog.action("0"), 0)
+	mustBeOn(t, m, "New rule: the rule")
+	if !strings.Contains(dialogText(m), says) {
+		t.Fatalf("last card = %q, want %q", dialogText(m), says)
+	}
+	send(t, m, keyPress("y"))
+	if len(ds.madeRules) != 1 || ds.madeRules[0].WellKnownID != "com.github.api" || ds.madeRules[0].SecretID != "" {
+		t.Fatalf("made = %+v, want a rule for the ID alone", ds.madeRules)
+	}
+}
+
+// With no secret marked for the ID the request asked for, no rule could
+// answer like it, and none is started: the card says why, and Esc is the
+// grant.
+func TestAGrantForAnIDNothingIsMarkedForMakesNoRule(t *testing.T) {
+	t.Parallel()
+	m, ds := grantRuleFixture(t, false)
+	if m.dialog == nil || m.dialog.title != "Could not make a rule from this grant" || !strings.Contains(dialogText(m), "none marked") {
+		t.Fatalf("dialog = %s %q, want the refusal", describe(m.dialog), dialogText(m))
+	}
+	send(t, m, keyPress("esc"))
+	mustBeOn(t, m, "Grant")
+	if len(ds.madeRules) != 0 {
+		t.Fatalf("made = %+v, want nothing", ds.madeRules)
+	}
+}
+
+// A use breaks at the same places whether it is the line being edited or
+// not: the editor's wrapping is the list's, the column it keeps for the
+// cursor included. Every card width in a range is drawn both ways, which
+// takes in rows whose last word ends exactly where the editor's text ends.
+func TestALineWrapsTheSameEditedOrNot(t *testing.T) {
+	t.Parallel()
+	m, _ := newRuleFixture(t)
+	send(t, m, keyPress(ruleNewKey))
+	drain(t, m, m.dialog.action("wk:sec_gh"), 0)
+	drain(t, m, m.dialog.action(ruleForEvery), 0)
+	long := `gh pr create --repo discobox-ai/discobox --base main --head discobox/<slug> --draft --title <title> --body "$(cat <file>)", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge`
+	drain(t, m, m.dialog.action(long), 0)
+	drain(t, m, m.dialog.action("use 2"), 0)
+
+	full := false
+	for width := 60; width <= 130; width++ {
+		// On the second line, the first is drawn as text.
+		for m.dialog.editAt > 1 {
+			send(t, m, keyPress("up"))
+		}
+		for m.dialog.editAt < 1 {
+			send(t, m, keyPress("down"))
+		}
+		plain := lineRows(t, m, width)
+		send(t, m, keyPress("up"))
+		if m.dialog.editAt != 0 {
+			t.Fatalf("editing %d, want the long use", m.dialog.editAt)
+		}
+		edited := lineRows(t, m, width)
+		if !slices.Equal(plain, edited) {
+			t.Fatalf("at width %d the use breaks\n%q\nwhen not edited, and\n%q\nwhen edited", width, plain, edited)
+		}
+		room := m.dialog.editor.Width()
+		for _, row := range plain[:len(plain)-1] {
+			if len([]rune(row)) == room-1 {
+				full = true
+			}
+		}
+	}
+	if !full {
+		t.Fatal("no width drew a row whose last word ends where the editor's text does")
+	}
+}
+
+// lineRows are the rows the first use is drawn on in a card width cells
+// wide, its number and chevron taken off: the rows from "1." to "2.".
+func lineRows(t *testing.T, m *Model, width int) []string {
+	t.Helper()
+	card := strings.Split(ansi.Strip(m.dialog.view(m.st, &m.zones, width, 60)), "\n")
+	var rows []string
+	in := false
+	for _, row := range card {
+		row = strings.Trim(row, "│ ")
+		row = strings.TrimPrefix(row, "❯ ")
+		switch {
+		case strings.HasPrefix(row, "1.  "):
+			in = true
+			row = strings.TrimPrefix(row, "1.  ")
+		case strings.HasPrefix(row, "2.  ") || strings.HasPrefix(row, "2."):
+			in = false
+		}
+		if in {
+			rows = append(rows, strings.TrimSpace(row))
+		}
+	}
+	if len(rows) < 2 {
+		t.Fatalf("at width %d the use is not drawn wrapped:\n%s", width, strings.Join(card, "\n"))
+	}
+	return rows
 }

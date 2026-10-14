@@ -208,17 +208,6 @@ func (s *JudgeProposal) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.UsesAcrossResource == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "usesAcrossResource",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if s.UsesAnyTarget == nil {
 			return errors.New("nil is invalid value")
 		}

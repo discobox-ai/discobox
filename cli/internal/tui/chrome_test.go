@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -29,6 +30,11 @@ func TestDoubleClickTheHeaderIdCopiesIt(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 
 	col := headerCol(t, m, "sbx_one") + 2
+	// Two presses are a double press by the window's clock, which on a
+	// loaded machine can tick past the gesture between them: held still,
+	// the two are one gesture however long the machine takes.
+	still := time.Now()
+	m.now = func() time.Time { return still }
 	for range 2 {
 		d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: col, Y: 0, Button: tea.MouseLeft})
@@ -85,6 +91,11 @@ func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
 
 	col := headerCol(t, m, "sbx_one") + 2
+	// Two presses are a double press by the window's clock, which on a
+	// loaded machine can tick past the gesture between them: held still,
+	// the two are one gesture however long the machine takes.
+	still := time.Now()
+	m.now = func() time.Time { return still }
 	for range 2 {
 		d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: col, Y: 0, Button: tea.MouseLeft})
@@ -346,6 +357,11 @@ func TestCopyChordOverAChromeSelection(t *testing.T) {
 	d, m, term := openWorkspace(t, ds, "enter")
 
 	col := headerCol(t, m, "sbx_one") + 2
+	// Two presses are a double press by the window's clock, which on a
+	// loaded machine can tick past the gesture between them: held still,
+	// the two are one gesture however long the machine takes.
+	still := time.Now()
+	m.now = func() time.Time { return still }
 	for range 2 {
 		d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: col, Y: 0, Button: tea.MouseLeft})
@@ -373,6 +389,11 @@ func TestRightClickOverAChromeSelection(t *testing.T) {
 	m.copyOS = func(text string) error { copies <- text; return nil }
 
 	col := headerCol(t, m, "sbx_one") + 2
+	// Two presses are a double press by the window's clock, which on a
+	// loaded machine can tick past the gesture between them: held still,
+	// the two are one gesture however long the machine takes.
+	still := time.Now()
+	m.now = func() time.Time { return still }
 	for range 2 {
 		d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: col, Y: 0, Button: tea.MouseLeft})

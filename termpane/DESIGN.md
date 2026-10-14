@@ -468,6 +468,13 @@ output is a few MB instead of hundreds. `View` draws those strings as they are
 (`RenderedLine`); only the selection grid reads cells, which the emulator
 decodes from the string and caches a screen's worth of.
 
+### The wait for output is the host's to mark
+
+The command that waits for the stream's next output is the only one a pane
+returns that waits rather than works. `WithListen` hands it to the host
+wrapped, so a host that runs commands to their end in its tests can tell it
+apart and leave it unrun; with no option it is returned as it is.
+
 ## Not here
 
 There is no keyboard copy mode — no movable cursor, no vim motions, no search.

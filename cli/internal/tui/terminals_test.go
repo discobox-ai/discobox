@@ -115,9 +115,8 @@ func TestDigitsCountAcrossBothColumns(t *testing.T) {
 	// And past the end it says so rather than moving anything.
 	d.key("ctrl+a")
 	d.key("3")
-	if !strings.Contains(m.status, "no pane 3") {
-		t.Fatalf("status = %q, want it to say the pane is not there", m.status)
-	}
+	// What it says is a message of its own, which may land after the key.
+	d.wait("it to say the pane is not there", func() bool { return strings.Contains(m.status, "no pane 3") })
 }
 
 // The arrows walk the terminals and the shells as one strip, left to right,
@@ -159,7 +158,8 @@ func TestATerminalThatEndsIsHeldAndDismissed(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key(paneTerminalKey)
-	d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+	// Open, and the pane keys go to: the press that dismisses it is its own.
+	d.wait("the terminal", func() bool { return m.terminals.len() == 2 && m.terminals.active == 1 })
 
 	ds.execTerm("exec_term1").Close()
 	d.wait("the held screen", func() bool { return m.terminals.len() == 2 && m.terminals.panes[1].exited })

@@ -615,6 +615,20 @@ func (m *Model) exit(err error) tea.Cmd {
 // ---------------------------------------------------------------------------
 // commands
 
+// tick is how the window sets every timer it sets. It is tea.Tick; it is
+// named here so a timer is one thing a test can tell from a command doing
+// work: a test waits for work to finish, and a timer, which by design fires
+// later than anything a test waits for, it does not (testsupport_test.go).
+var tick = tea.Tick
+
+// listen wraps every command that waits by design for something to happen —
+// a terminal's next output or event, an audit or narration feed's next line,
+// a follow — rather than doing work and returning. It is the command itself;
+// it is named here so a test can tell a listener from work, as tick tells it
+// a timer: a test waits for work to finish, and runs a listener only when it
+// has queued what the listener waits for (testsupport_test.go).
+var listen = func(cmd tea.Cmd) tea.Cmd { return cmd }
+
 // refreshEvery is how often the listing is re-read. A sandbox's state changes
 // without anything here asking it to — it starts, it stops, an upgrade appears
 // — so the window follows the server rather than waiting to be told.
@@ -712,7 +726,7 @@ func (m *Model) rereadNow() tea.Cmd {
 }
 
 func (m *Model) tick() tea.Cmd {
-	return tea.Tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+	return tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 func (m *Model) loadSession() tea.Cmd {
@@ -738,7 +752,7 @@ func (m *Model) refresh() tea.Cmd {
 			listing, err := m.ds.List(m.ctx)
 			return listLoadedMsg{listing: listing, err: err}
 		},
-		tea.Tick(listingSlowAfter, func(time.Time) tea.Msg { return listingSlowMsg{} }),
+		tick(listingSlowAfter, func(time.Time) tea.Msg { return listingSlowMsg{} }),
 	)
 }
 
@@ -1008,6 +1022,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case ruleProposalsMsg:
 		return m.ruleProposalsLoaded(msg)
+	case grantRuleProposedMsg:
+		return m.grantRuleProposed(msg)
 
 	case ruleCardMsg:
 		return m.ruleCardLoaded(msg)
@@ -1072,7 +1088,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		expires := m.statusGen
-		return tea.Tick(statusHolds, func(time.Time) tea.Msg {
+		return tick(statusHolds, func(time.Time) tea.Msg {
 			return statusExpiredMsg{generation: expires}
 		})
 
@@ -2897,7 +2913,7 @@ func (m *Model) directorySized() tea.Cmd {
 }
 
 func (m *Model) pollDirectorySize() tea.Cmd {
-	return tea.Tick(directorySizeInterval, func(time.Time) tea.Msg { return directorySizeMsg{} })
+	return tick(directorySizeInterval, func(time.Time) tea.Msg { return directorySizeMsg{} })
 }
 
 // endDirectorySize stops the walk and forgets it. It is safe on a question that
@@ -4435,7 +4451,9 @@ func (m *Model) helpText() string {
 		"    d              delete it",
 		"    Enter          what stands on it. There, Enter reads a grant,",
 		"                   " + grantRevokeKey + " withdraws one, and the first row grants the",
-		"                   secret. On a request, Enter answers it",
+		"                   secret. On a grant, " + ruleNewKey + " makes a rule of it, as",
+		"                   auto approve would have. On a request, Enter",
+		"                   answers it",
 		"                   Under the requests, the approval rules: what",
 		"                   answers a request without asking. On a rule,",
 		"                   Enter reads it whole, with the grants it minted,",

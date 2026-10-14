@@ -218,13 +218,8 @@ components:
             type: object
         JudgeProposal:
             additionalProperties: false
-            description: The wider uses a model wrote for an approval rule, narrower first. They authorize nothing; each list is judged, and read by a person, before it becomes a rule.
+            description: The uses a model wrote for an approval rule from the uses a request asked for, as the same work on any target of its kind. They authorize nothing; they are judged, and read and edited by a person, before they become a rule.
             properties:
-                usesAcrossResource:
-                    description: The same kind of work across the resource.
-                    items:
-                        type: string
-                    type: array
                 usesAnyTarget:
                     description: The same work on any target of its kind.
                     items:
@@ -232,7 +227,6 @@ components:
                     type: array
             required:
                 - usesAnyTarget
-                - usesAcrossResource
             type: object
         JudgeProposalJob:
             additionalProperties: false
@@ -2445,7 +2439,7 @@ paths:
                 - Sandbox Judge
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
         post:
-            description: Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            description: Has this discobox's harness write the uses a person starts an approval rule from (ADR 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
             operationId: propose-sandbox-rule
             parameters:
                 - description: Project that owns the sandbox.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/judge"
@@ -14,21 +13,21 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// "Auto approve" proposes a rule's uses at three levels, narrowest first
-// (ADR 26-10-12-330 §7). The narrowest needs no model: the request's uses as
-// asked. The wider two are written by the project's judge as a typed proposal
-// job, from the request's uses, which are data.
+// "Auto approve" proposes one set of uses (ADR 26-10-12-330 §7): the
+// request's own, written by the project's judge as the same work on any
+// target of its kind — a typed proposal job, from the request's uses, which
+// are data. A person reads it, and edits it, before it is a rule.
 //
 // Which discoboxes the rule is for is not proposed, because nothing about it
 // is written: it is the repository of the discobox that asked, which the
-// answer names, or every discobox in the project.
+// answer names, repositories the person names, or every discobox.
 //
-// A proposal is offered only once the judge has found it covers the request
-// (§8). Each candidate is put to the judge as the exact job a rule would
-// later ask, on the path that job takes, and its verdict is recorded — so
-// choosing a candidate approves the request under the verdict already on
-// record. The credential, hosts and purpose are copied from the request by
-// code, never generated.
+// What was written is put to the judge as the exact job a rule would later
+// ask (§8), on the path that job takes, and its verdict is recorded and
+// shown — so uses chosen as written approve the request under the verdict
+// already on record, and edited ones are judged again on the approve. The
+// credential, hosts and purpose are copied from the request by code, never
+// generated.
 
 // ProposeApprovalRules is what a person choosing "auto approve" on a request
 // is shown to choose from.
@@ -50,22 +49,75 @@ func (s *Service) ProposeApprovalRules(ctx context.Context, projectID, requestID
 	if !found {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "the discobox that filed the request was not found")
 	}
-	purpose, err := grantPurpose(req.Purpose)
+	return s.proposeRule(ctx, projectID, req, ruleSource{
+		uses: useDescriptions(req.Uses), hosts: req.Hosts, purpose: req.Purpose, repository: repository,
+	})
+}
+
+// ProposeApprovalRuleFromGrant is what a person reading a grant is shown to
+// make a rule of it: the same proposal auto approve makes, from the request
+// the grant answered — but written from the uses the grant approved, which
+// approving may have changed, and for the grant's hosts and purpose. The
+// written uses are judged against that request, as auto approve's are, so
+// what the judge says is whether the rule would have approved this grant.
+// The rule is made the way any is, and approves nothing already answered.
+func (s *Service) ProposeApprovalRuleFromGrant(ctx context.Context, projectID, grantID string) (*services.RuleProposals, error) {
+	if _, err := onlyAPerson(ctx); err != nil {
+		return nil, err
+	}
+	grant, err := s.store.GetSecretGrant(ctx, projectID, grantID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "secret grant not found")
+	}
+	if len(grant.Uses) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"a rule approves uses, and this grant names none: a standing grant authorizes the credential without saying what for")
+	}
+	req, err := s.store.GetSecretRequestByGrant(ctx, projectID, grant.ID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "the request this grant answered is not on record, and a rule is proposed from one: make the rule by hand")
+	}
+	// The discobox that asked may be gone, and nobody is waiting on this
+	// request: there is then no repository to offer, and the person names one.
+	repository, _, err := s.requesterRepository(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	asked := useDescriptions(req.Uses)
+	return s.proposeRule(ctx, projectID, req, ruleSource{
+		uses: useDescriptions(grant.Uses), hosts: grant.Hosts, purpose: grant.Purpose, repository: repository,
+	})
+}
 
-	out := &services.RuleProposals{
-		Hosts:    req.Hosts,
-		Purpose:  apigen.RuleProposalsBodyPurpose(purpose),
-		Contents: []apigen.RuleContentProposal{{Level: 1, Uses: asked}},
+// ruleSource is what a proposal is written from and judged against: the uses
+// a rule must cover, and the facts the rule copies — from a pending request,
+// or from a grant that answered one.
+type ruleSource struct {
+	uses       []string
+	hosts      []string
+	purpose    string
+	repository string
+}
+
+// proposeRule writes a rule's uses from source's and puts them to the judge
+// as the question a rule would ask of req. The credential is the request's,
+// copied by code; the uses are a model's to write.
+func (s *Service) proposeRule(ctx context.Context, projectID string, req *model.SecretRequest, source ruleSource) (*services.RuleProposals, error) {
+	purpose, err := grantPurpose(source.purpose)
+	if err != nil {
+		return nil, err
 	}
-	if repository != "" {
-		out.Repository = apigen.NewOptString(repository)
+	out := &services.RuleProposals{
+		Hosts:   source.hosts,
+		Purpose: apigen.RuleProposalsBodyPurpose(purpose),
+	}
+	if source.repository != "" {
+		out.Repository = apigen.NewOptString(source.repository)
 	}
 	if credential := ruleCredential(&model.ApprovalRule{WellKnownID: req.WellKnownID}); credential != "" {
 		out.Credential = apigen.NewOptString(credential)
+		// Said apart from the name: a rule for the ID is the rule judged
+		// below, and one for the secret that happened to answer it is not.
+		out.WellKnownId = apigen.NewOptString(req.WellKnownID)
 	} else if req.Name != "" {
 		out.Credential = apigen.NewOptString(req.Name)
 	}
@@ -74,45 +126,33 @@ func (s *Service) ProposeApprovalRules(ctx context.Context, projectID, requestID
 		// Nothing could read a rule either, so none could ever approve.
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "no judge can read an approval rule on this server")
 	}
-	// The wider levels are a model's to write. Where none can — Jev with
-	// jevUnsure: refuse, no judge yet on a server that judges nothing else, a
-	// judge that did not answer — the uses as asked are offered alone, and
-	// wider ones can be written by hand.
+	// The uses are a model's to write. Where none can — Jev with jevUnsure:
+	// refuse, no judge yet on a server that judges nothing else, a judge that
+	// did not answer — there are none, and the note says why: the person
+	// starts from the uses as asked, which the client already has.
 	proposal, err := s.judge.ProposeRule(ctx, projectID, judge.ProposalJob{
-		Uses:       asked,
+		Uses:       source.uses,
 		Credential: out.Credential.Or(""),
-		Hosts:      req.Hosts,
+		Hosts:      source.hosts,
 	})
 	if err != nil {
-		out.Note = apigen.NewOptString(fmt.Sprintf("only the uses as asked are offered, because no model wrote wider ones: %s. Wider uses can be written by hand.", errorSentence(err)))
+		out.Note = apigen.NewOptString(fmt.Sprintf("no model wrote the uses: %s. Start from the uses as asked.", errorSentence(err)))
+		return out, nil
+	}
+	written := apigen.RuleUsesProposal{Uses: proposal.UsesAnyTarget}
+	// Held to what a rule may be before it is judged: nothing is shown as
+	// covering that making the rule would then refuse. That is the server's
+	// refusal, not the judge's reading, and is said as one.
+	if problem := ruleUsesProblem(written.Uses); problem != "" {
+		written.Refused = apigen.NewOptString(problem)
 	} else {
-		out.Contents = append(out.Contents,
-			apigen.RuleContentProposal{Level: 2, Uses: proposal.UsesAnyTarget},
-			apigen.RuleContentProposal{Level: 3, Uses: proposal.UsesAcrossResource})
+		rule := &model.ApprovalRule{ProjectID: projectID, WellKnownID: req.WellKnownID, Hosts: source.hosts, Uses: written.Uses}
+		ask := ruleAsk(rule, req)
+		ask.Uses = source.uses
+		answer, err := s.judge.JudgeRule(ctx, projectID, ask)
+		written.Covers, written.Reason = err == nil && answer.Allow, apigen.NewOptString(verdictSentence(answer, err))
 	}
-
-	// Every candidate is tested, the narrowest included: a judge that will
-	// not find sentences within themselves is a rule that will never approve
-	// a repeat ask, and that is worth knowing before it is made (§8). They
-	// are independent questions, so they are asked together.
-	var asks sync.WaitGroup
-	for i := range out.Contents {
-		candidate := &out.Contents[i]
-		// Held to what a rule may be before it is judged: nothing is offered
-		// as covering that making the rule would then refuse.
-		if problem := ruleUsesProblem(candidate.Uses); problem != "" {
-			candidate.Reason = apigen.NewOptString(problem)
-			continue
-		}
-		asks.Add(1)
-		go func() {
-			defer asks.Done()
-			rule := &model.ApprovalRule{ProjectID: projectID, WellKnownID: req.WellKnownID, Hosts: req.Hosts, Uses: candidate.Uses}
-			answer, err := s.judge.JudgeRule(ctx, projectID, ruleAsk(rule, req))
-			candidate.Covers, candidate.Reason = err == nil && answer.Allow, apigen.NewOptString(verdictSentence(answer, err))
-		}()
-	}
-	asks.Wait()
+	out.Uses = apigen.NewOptRuleUsesProposal(written)
 	return out, nil
 }
 

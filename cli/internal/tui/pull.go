@@ -224,7 +224,7 @@ func (m *Model) pullSettle(p *pane) tea.Cmd {
 	}
 	v.settles++
 	id := p.id
-	return tea.Tick(pullSettleAfter, func(time.Time) tea.Msg { return pullSettleMsg{id: id} })
+	return tick(pullSettleAfter, func(time.Time) tea.Msg { return pullSettleMsg{id: id} })
 }
 
 // pullSettleMsg is time to ask again whether a pull request can merge.

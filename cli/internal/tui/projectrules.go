@@ -499,7 +499,7 @@ func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 		case ruleDeleteItem:
 			return m.confirmDeleteRule(server, rule, len(standing), again)
 		}
-		return m.reviewGrant(named(standing[result]), standing[result], again)
+		return m.reviewGrant(server, named(standing[result]), standing[result], again)
 	})
 	d.titleRight = rule.ID
 	// What turning it off and deleting it do not do is the reason to read

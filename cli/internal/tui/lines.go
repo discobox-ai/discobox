@@ -3,9 +3,13 @@ package tui
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // A list typed a line at a time — a rule's uses, its repositories. The card's
@@ -221,8 +225,15 @@ type linesAsk struct {
 	written  string
 	// split turns one typed line into its entries; nil keeps it whole.
 	split func(string) []string
+	// sectionsFor are drawn after sections, from the list as it stands: what
+	// changes as it is written, such as whether it is still what a model
+	// wrote.
+	sectionsFor func(lineList) []section
 	// required is said when the list is finished empty; empty lets it be.
 	required string
+	// numbered heads each line with its number: a rule's uses, read as a
+	// list of what it approves.
+	numbered bool
 }
 
 func (ask linesAsk) entries(typed string) []string {
@@ -310,9 +321,13 @@ func (m *Model) askLines(ask linesAsk, list lineList, refused string, done func(
 		return back(kept)
 	}
 
-	// The picks and the lines are the card's rows, drawn and marked as a
-	// menu's are, so the pointer answers them as the keys do: a press on a
-	// pick chooses or clears it, on a line puts it in the field.
+	// The picks, the lines and the new line are the card's rows, drawn and
+	// marked as a menu's are, so the pointer answers them as the keys do: a
+	// press on a pick ticks or clears it, on a line takes it up to edit. The
+	// line being edited is its own editor, in its place (dialog.editor): every
+	// row of it wrapped and the cursor in it, so a sentence is never seen
+	// twice or cut. Every line reads as text; only the chevron and the cursor
+	// say which is being edited.
 	for i, pick := range list.picks {
 		box := "[ ] "
 		if list.chosen[i] {
@@ -320,41 +335,54 @@ func (m *Model) askLines(ask linesAsk, list lineList, refused string, done func(
 		}
 		d.items = append(d.items, action{key: fmt.Sprintf("pick:%d", i), label: box + pick.shown, enabled: true})
 	}
-	for i, entry := range list.lines {
-		row := action{key: fmt.Sprintf("line:%d", i), label: "· " + entry.shown, enabled: true}
-		if list.pick < 0 && i == list.at {
-			row.detail, row.emphasis = "← in the field below", "← in the field below"
+	// A numbered list's lines are headed 1., 2., 3. — right-aligned, and the
+	// new line the next — with a wrapped line set in under its text.
+	number := func(n int) string {
+		if !ask.numbered {
+			return ""
 		}
-		d.items = append(d.items, row)
+		return fmt.Sprintf("%*d.", len(strconv.Itoa(len(list.lines)+1)), n)
 	}
-	d.cursor = -1
-	switch {
-	case list.pick >= 0:
-		d.cursor = list.pick
-	case list.editing():
+	for i, entry := range list.lines {
+		d.items = append(d.items, action{key: fmt.Sprintf("line:%d", i), press: number(i + 1), label: entry.shown, enabled: true})
+	}
+	// The new line: what was half-typed there, or nothing, which the editor
+	// shows as its placeholder when it is up.
+	d.items = append(d.items, action{key: "line:new", press: number(len(list.lines) + 1), label: list.fresh, enabled: true})
+	newLine := len(d.items) - 1
+	d.inlineRows, d.editAt = true, -1
+	d.cursor = list.pick
+	if list.pick < 0 {
 		d.cursor = len(list.picks) + list.at
+		d.editAt = d.cursor
+		editor := rowEditor(m.st, list.text, ask.placeholder)
+		d.editor = &editor
 	}
 	d.itemPress = func(idx int, typed string) tea.Cmd {
 		next := list.left(ask, typed)
-		if idx < len(next.picks) {
+		switch line := idx - len(next.picks); {
+		case idx < len(next.picks):
 			next.chosen = slices.Clone(next.chosen)
 			next.chosen[idx] = !next.chosen[idx]
 			next.pick = idx
 			next.text = next.fresh
-			return again(next, "")
-		}
-		if line := idx - len(next.picks); line < len(next.lines) {
+		case idx == newLine:
+			next.pick, next.at, next.text = -1, len(next.lines), next.fresh
+		case line < len(next.lines):
 			next.pick, next.at = -1, line
 			next.text = next.lines[line].shown
 		}
 		return again(next, "")
 	}
 
+	d.wrapDetails = true
 	d.sections = slices.Clone(ask.sections)
-	if len(list.picks)+len(list.lines) == 0 {
-		d.sections = append(d.sections, section{label: ask.written, lines: []line{{text: "none yet", tone: toneDim}}})
+	if ask.sectionsFor != nil {
+		d.sections = append(d.sections, ask.sectionsFor(list)...)
 	}
-	d.answerLabel = ask.answerLabel
+	// A title that holds still: which row is being edited is the chevron's
+	// to say, not a header that changes under it.
+	d.answerLabel = ask.written
 	d.footer = ask.footer
 	// Esc is second on every line, after the one key the position needs
 	// most: a key line is cut from its tail, and the way out of a card is
@@ -362,12 +390,9 @@ func (m *Model) askLines(ask linesAsk, list lineList, refused string, done func(
 	keep := pressing("Esc back, kept", "esc")
 	switch {
 	case list.pick >= 0:
-		d.input.Blur()
-		d.pasteRefused = "a paste goes in the field: ↓ to it first"
-		d.answerLabel = fmt.Sprintf("%d of %d it knows: tick it or not", list.pick+1, len(list.picks))
+		d.pasteRefused = "a paste goes in a line: ↓ to one first"
 		d.keys = []hint{pressing("Space ticks", " "), keep, pressing("↑↓ move", "up", "down")}
 	case list.editing():
-		d.answerLabel = fmt.Sprintf("line %d of %d, being edited", list.at+1, len(list.lines))
 		d.keys = []hint{pressing("Enter keeps; emptied, removes", "enter"), keep, pressing("↑↓ line", "up", "down")}
 	default:
 		d.keys = []hint{pressing("Enter adds; empty, finishes", "enter"), keep}
@@ -381,4 +406,64 @@ func (m *Model) askLines(ask linesAsk, list lineList, refused string, done func(
 	d.emphasis = refused
 	m.dialog = d
 	return nil
+}
+
+// bareEditor is a textarea as a list's rows use one: no prompt, no line
+// numbers, no limit, as tall as its text wraps to. It is the one wrapping
+// rule for a list's lines, edited (rowEditor) or not (editorLines).
+func bareEditor() textarea.Model {
+	ta := textarea.New()
+	ta.ShowLineNumbers = false
+	ta.CharLimit = 0
+	ta.Prompt = ""
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
+	return ta
+}
+
+// editorLines is a line of a list as the row editor would wrap it at width:
+// the editor's own wrapping — which keeps the last column of a row for the
+// cursor — so selecting a line to edit it never moves where it breaks.
+func editorLines(text string, width int) []string {
+	if text == "" {
+		return []string{""}
+	}
+	ta := bareEditor()
+	ta.SetStyles(textarea.Styles{})
+	// As tall as the line wraps to, with no limit: this measures, and never
+	// scrolls.
+	ta.MaxHeight = 0
+	ta.SetWidth(width)
+	ta.SetValue(text)
+	rows := strings.Split(ansi.Strip(ta.View()), "\n")
+	out := rows[:0]
+	for _, row := range rows {
+		out = append(out, strings.TrimRight(row, " "))
+	}
+	for len(out) > 1 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+// rowEditor is the editor a list draws in place of the line being edited:
+// the composer's look with no chevron of its own (the row's is the card's),
+// wrapping its text across as many rows as it takes, with the cursor at the
+// end of what is there. Enter, ↑ and ↓ are the list's, taken before it.
+func rowEditor(st *styles, text, placeholder string) textarea.Model {
+	ta := bareEditor()
+	ta.Placeholder = placeholder
+	ta.MaxHeight = editorMaxRows
+	styles := textarea.Styles{}
+	if st.color {
+		styles = textarea.DefaultDarkStyles()
+	}
+	styles.Focused.CursorLine = lipgloss.NewStyle()
+	styles.Focused.Text = st.name
+	styles.Cursor.Blink = false
+	ta.SetStyles(styles)
+	ta.SetValue(text)
+	ta.MoveToEnd()
+	ta.Focus()
+	return ta
 }

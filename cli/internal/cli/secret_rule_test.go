@@ -52,8 +52,7 @@ func ruleServer(t *testing.T, sent map[string]map[string]any) *httptest.Server {
 		case "POST /projects/project-1/secret-requests/request-1/rule-proposals":
 			_, _ = w.Write([]byte(`{"credential":"com.github.api","hosts":["github.com"],"purpose":"use",` +
 				`"repository":"github.com/org/repo\u001b[2J",` +
-				`"contents":[{"level":1,"uses":["gh api GET repos/org/repo/issues/43"],"covers":true,"reason":"within"},` +
-				`{"level":2,"uses":["read any issue <number> in org/repo\u001b[2J"],"covers":false,"reason":"Refused: Jev could not tell (0.41)."}]}`))
+				`"uses":{"uses":["read any issue <number> in org/repo\u001b[2J"],"covers":false,"reason":"Refused: Jev could not tell (0.41)."}}`))
 		default:
 			t.Errorf("unexpected request = %s", key)
 			http.NotFound(w, r)
@@ -263,8 +262,9 @@ func TestSecretRequestProposeShowsEveryProposalAndItsVerdict(t *testing.T) {
 		"com.github.api", "discoboxes of github.com/org/repo",
 		"--rule-repo github.com/org/repo", "--rule-every-discobox",
 		"FAILED", "Jev could not tell (0.41)",
-		`--rule-use "gh api GET repos/org/repo/issues/43"`,
+		`--rule-use "read any issue <number> in org/repo`,
 		"the same work on any target of its kind",
+		"with no --rule-use, the rule approves the uses as asked",
 		"approve request-1 --auto",
 	} {
 		if !strings.Contains(out, want) {
@@ -273,6 +273,9 @@ func TestSecretRequestProposeShowsEveryProposalAndItsVerdict(t *testing.T) {
 	}
 	if strings.Contains(out, "\x1b") {
 		t.Fatalf("propose = %q, want a proposal's escape sequence shown as data", out)
+	}
+	if strings.Contains(out, "could not be a rule's") {
+		t.Fatalf("propose = %q, want the judge's refusal said as the judge's", out)
 	}
 }
 
@@ -307,18 +310,22 @@ func TestRuleProposalsReachTheConsoleSafeToDraw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuleProposals() error = %v", err)
 	}
-	if proposals.Credential != "com.github.api" || proposals.Delegate || len(proposals.Contents) != 2 {
+	if proposals.Credential != "com.github.api" || proposals.Delegate || proposals.Written == nil {
 		t.Fatalf("proposals = %+v", proposals)
 	}
 	if strings.ContainsRune(proposals.Repository, '\x1b') || !strings.HasPrefix(proposals.Repository, "github.com/org/repo") {
 		t.Fatalf("repository = %q, want the asking discobox's, safe to draw", proposals.Repository)
 	}
-	if failed := proposals.Contents[1]; failed.Covers || !strings.Contains(failed.Reason, "0.41") {
-		t.Fatalf("level 2 content = %+v, want it failed, with the judge's reason", failed)
+	if failed := proposals.Written; failed.Covers || !strings.Contains(failed.Reason, "0.41") {
+		t.Fatalf("written = %+v, want it failed, with the judge's reason", failed)
 	}
-	written := proposals.Contents[1].Uses[0]
+	written := proposals.Written.Uses[0]
 	if strings.ContainsRune(written, '\x1b') || !strings.Contains(written, "read any issue <number> in org/repo") {
 		t.Fatalf("use = %q, want its escape sequence shown as data", written)
+	}
+	// The server's own text is kept beside it, for a use left as written.
+	if !strings.ContainsRune(proposals.Written.Stored[0], '\x1b') || proposals.RepositoryStored == proposals.Repository {
+		t.Fatalf("stored = %q / %q, want the server's text kept", proposals.Written.Stored, proposals.RepositoryStored)
 	}
 }
 
@@ -354,5 +361,28 @@ func TestSecretRuleCreateCoversTheWholeBody(t *testing.T) {
 	if body["secretId"] != "secret_0123456789abcdef" || body["wellKnownId"] != nil || body["everyDiscobox"] != true ||
 		len(hosts) != 1 || body["purpose"] != "delegate" || expires == "" || body["enabled"] != false {
 		t.Fatalf("create body = %#v, want every field given", body)
+	}
+}
+
+// Uses the server refused for their shape are said as that, never as the
+// judge's reading: the judge was not asked.
+func TestSecretRequestProposeSaysAShapeRefusalIsNotTheJudges(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /projects/project-1/secret-requests/request-1":
+			_, _ = w.Write([]byte(pendingAskJSON))
+		case "POST /projects/project-1/secret-requests/request-1/rule-proposals":
+			_, _ = w.Write([]byte(`{"credential":"com.github.api","hosts":["github.com"],"purpose":"use",` +
+				`"uses":{"uses":["read issues\\nand merge"],"covers":false,"refused":"each of a rule's uses is one sentence, on one line"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	out := runCLI(t, server.URL, "secret", "request", "propose", "request-1")
+	if !strings.Contains(out, "these could not be a rule's, so the judge was not asked — each of a rule's uses is one sentence, on one line") ||
+		strings.Contains(out, "the judge found these do not cover") {
+		t.Fatalf("propose = %q, want the server's refusal said as its own", out)
 	}
 }

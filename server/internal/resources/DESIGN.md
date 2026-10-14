@@ -57,7 +57,7 @@ the secrets service compares; no judge is asked.
 
 - `JudgeRule` — through `put`, like a delegation: Jev first, and what it is
   unsure of handled by `jevUnsure`.
-- `ProposeRule` — the judge discobox writes a rule's wider uses
+- `ProposeRule` — the judge discobox writes the uses a rule starts from
   (`POST .../judge/proposal`). Jev writes nothing, so a server with no judge
   discobox has nobody to ask, and says so.
 

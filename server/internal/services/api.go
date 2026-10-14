@@ -449,6 +449,7 @@ type SecretService interface {
 	UpdateApprovalRule(ctx context.Context, projectID, ruleID string, input UpdateApprovalRuleBody) (*model.ApprovalRule, error)
 	DeleteApprovalRule(ctx context.Context, projectID, ruleID string) error
 	ProposeApprovalRules(ctx context.Context, projectID, requestID string) (*RuleProposals, error)
+	ProposeApprovalRuleFromGrant(ctx context.Context, projectID, grantID string) (*RuleProposals, error)
 	CreateSecretGrant(ctx context.Context, projectID string, input CreateSecretGrantBody) (*model.SecretGrant, error)
 	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
 

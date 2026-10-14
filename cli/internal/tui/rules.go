@@ -193,16 +193,6 @@ func (m *Model) ruleProposalsLoaded(msg ruleProposalsMsg) tea.Cmd {
 	return m.askAutoDiscoboxes(next, func(approval) tea.Cmd { return msg.back() })
 }
 
-// Content levels, as the server numbers them, and what each is called.
-var ruleContentLabels = map[int]string{
-	1: "As asked",
-	2: "The same work on any target of its kind",
-	3: "The same kind of work across the resource",
-}
-
-// ruleByHand is the row that leaves the proposed uses for sentences typed in.
-const ruleByHand = "hand"
-
 // everyDiscobox is what a rule that names no repository does, in the words
 // the decision to allow one was recorded in. They are said wherever such a
 // rule can be made or is read.
@@ -318,100 +308,161 @@ func splitRepositories(typed string) []string {
 }
 
 // askAutoDiscoboxes is auto approve's first half of the rule: the repository
-// of the discobox that asked, or every discobox. A discobox with no
-// repository — a local source with no remote — has only the wider to offer,
-// and the card says why.
+// of the discobox that asked, repositories the person chooses or names — the
+// asker's ticked to start with — or every discobox. A discobox with no
+// repository has the other two to offer, and the card says why.
 //
 // Each step after the proposals hands the step before it the approval as it
 // now stands, and that step reopens from it: what was written on a later step
-// — the uses written by hand, half-typed included — rides every step back and
-// forward, as a rule's draft does (ruleStep).
+// — the uses, half-typed included — rides every step back and forward, as a
+// rule's draft does (ruleStep).
 func (m *Model) askAutoDiscoboxes(a approval, back func(approval) tea.Cmd) tea.Cmd {
 	again := func(now approval) tea.Cmd { return m.askAutoDiscoboxes(now, back) }
+	named := a.heldRepositories
+	if !named.held {
+		var own []listLine
+		if a.proposals.Repository != "" {
+			own = []listLine{{shown: a.proposals.Repository, value: a.proposals.RepositoryStored}}
+		}
+		named = m.knownRepositories(a.req.Server, own)
+	}
 	return m.askDiscoboxes(discoboxesAsk{
 		title:        "Auto approve: which discoboxes",
 		sections:     []section{grantSection(a)},
 		repository:   a.proposals.Repository,
 		noRepository: "the discobox that asked has no repository a rule could name: its source is a local one with no remote",
+		typed:        true,
+		named:        named,
 		was:          a.rule,
-	}, func(chosen ApprovalRule, _ lineList) tea.Cmd {
+	}, func(chosen ApprovalRule, named lineList) tea.Cmd {
 		next := a
-		next.rule.Repositories, next.rule.EveryDiscobox = chosen.Repositories, chosen.EveryDiscobox
+		next.heldRepositories = named
+		next.rule.EveryDiscobox = chosen.EveryDiscobox
+		next.rule.Repositories, next.repositoriesShown = nil, nil
+		switch {
+		case chosen.EveryDiscobox:
+		case len(chosen.Repositories) == 1 && chosen.Repositories[0] == a.proposals.Repository:
+			// The asker's alone: sent in the server's text.
+			next.rule.Repositories, next.repositoriesShown = []string{a.proposals.RepositoryStored}, chosen.Repositories
+		default:
+			next.rule.Repositories, next.repositoriesShown = named.values(), named.shown()
+		}
 		return m.askRuleContent(next, again)
-	}, func(lineList) tea.Cmd { return back(a) })
-}
-
-// askRuleContent is the rule's second half: the uses it approves. The
-// proposals are listed narrowest first, each row carrying its uses whole and
-// wrapped under it: the sentences are what is being chosen, and a row that
-// cut them off would have a person choose a rule by its label.
-func (m *Model) askRuleContent(a approval, back func(approval) tea.Cmd) tea.Cmd {
-	items := make([]action, 0, len(a.proposals.Contents)+1)
-	for _, p := range a.proposals.Contents {
-		// One use a line, each wrapped under itself, so where one sentence
-		// ends and the next begins is not a matter of reading for it.
-		uses := "· " + strings.Join(p.Uses, "\n· ")
-		items = append(items, action{
-			key:     fmt.Sprintf("content:%d", p.Level),
-			label:   ruleLevelLabel(ruleContentLabels, p.Level),
-			detail:  uses,
-			enabled: p.Covers,
-			why:     failedProposal(uses, "what was asked", p.Reason),
-		})
-	}
-	items = append(items, action{key: ruleByHand, press: "w", label: "Write the uses by hand…",
-		detail: "one sentence a line; the server judges them before the rule is made", enabled: true})
-
-	d := actionsDialog("Auto approve: what it approves", "", items, func(result string) tea.Cmd {
-		if result == ruleByHand {
-			return m.askAutoUses(a, func(held lineList) tea.Cmd {
-				// What was typed is kept for the next time the uses are
-				// written by hand.
-				next := a
-				next.heldUses = held
-				return m.askRuleContent(next, back)
-			})
-		}
-		for _, p := range a.proposals.Contents {
-			if result == fmt.Sprintf("content:%d", p.Level) && p.Covers {
-				next := a
-				next.rule.Uses = p.Uses
-				return m.askLifetime(next, func() tea.Cmd { return m.askRuleContent(next, back) })
-			}
-		}
-		return nil
+	}, func(named lineList) tea.Cmd {
+		kept := a
+		kept.heldRepositories = named
+		return back(kept)
 	})
-	d.sections = append([]section{grantSection(a), ruleDiscoboxesSection(a.rule)}, ruleNote(a)...)
-	d.wrapDetails = true
-	d.answerLabel = "what may the rule approve?"
-	d.footer = "a later request is approved only when every use it asks for is within these"
-	d.keys = []hint{pressing("enter chooses the highlighted uses", "enter"), pressing("esc goes back", "esc")}
-	d.onCancel = func() tea.Cmd { return back(a) }
-	m.dialog = d
-	return nil
 }
 
-// askAutoUses takes auto approve's uses by hand, a line at a time, for the
-// server to judge before it makes the rule. Going back from the lifetime is
-// back to the lines, as they were written; going back from the lines hands
-// back what was typed, half-typed included.
-func (m *Model) askAutoUses(a approval, back func(lineList) tea.Cmd) tea.Cmd {
+// askRuleContent is the rule's second half: the uses it approves, as a list
+// written a line at a time (askLines). It opens on the uses the project's
+// judge wrote — the same work on any target of its kind — when the judge
+// found them to cover this request, and otherwise on the uses as asked, so
+// there is always something to edit; the card says which, and why. Each
+// sentence is the person's to change, and one changed is no longer what the
+// judge's verdict was about: the server judges the rule's uses again when it
+// is made.
+func (m *Model) askRuleContent(a approval, back func(approval) tea.Cmd) tea.Cmd {
+	written := a.proposals.Written
+	list := a.heldUses
+	if !list.held {
+		switch {
+		case written != nil && written.Covers:
+			list = newLineList(storedLines(written.Uses, written.Stored))
+		default:
+			list = newLineList(typedLines(a.req.Uses))
+		}
+	}
 	ask := linesAsk{
 		title:       "Auto approve: what it approves",
-		sections:    []section{grantSection(a), ruleDiscoboxesSection(a.rule)},
+		sections:    []section{grantSection(a), ruleDiscoboxesSection(a.asRule().ApprovalRule)},
 		answerLabel: "another use, one sentence",
 		placeholder: "e.g. Comment on any issue in org/repo",
-		written:     "uses written so far",
+		written:     "uses",
 		footer:      "keep every \"never …\" the request stated",
+		numbered:    true,
 		required:    "a rule says what it approves: write at least one use",
+		sectionsFor: func(now lineList) []section { return usesSections(a.proposals, requestOrigin, now) },
 	}
-	var done func(lineList) tea.Cmd
-	done = func(uses lineList) tea.Cmd {
+	done := func(uses lineList) tea.Cmd {
 		next := a
+		next.heldUses = uses
 		next.rule.Uses = uses.values()
-		return m.askLifetime(next, func() tea.Cmd { return m.askLines(ask, uses, "", done, back) })
+		return m.askLifetime(next, func() tea.Cmd { return m.askRuleContent(next, back) })
 	}
-	return m.askLines(ask, a.heldUses, "", done, back)
+	return m.askLines(ask, list, "", done, func(held lineList) tea.Cmd {
+		kept := a
+		kept.heldUses = held
+		return back(kept)
+	})
+}
+
+// usesOrigin is what a proposal's uses were written from and judged against,
+// as usesSections says it.
+type usesOrigin struct {
+	// from is what the judge wrote them from, and asked what the list
+	// starts from when they are not used.
+	from, asked string
+	// against is what the judge read them against.
+	against string
+	// judged is when uses nobody has judged yet will be.
+	judged string
+}
+
+// requestOrigin is auto approve's proposal: written from a pending request's
+// uses, and judged against it again when the rule approves it.
+var requestOrigin = usesOrigin{
+	from: "the request's uses", asked: "the uses as asked", against: "this request",
+	judged: "the server judges these when the rule is made",
+}
+
+// grantOrigin is a proposal made from a grant: written from the uses it
+// approved, judged against the request it answered, and once made tested on
+// requests to come.
+var grantOrigin = usesOrigin{
+	from: "the uses this grant approved", asked: "the uses this grant approved", against: "the request this grant answered",
+	judged: "the judge reads them against each request the rule is tested on",
+}
+
+// usesSections say where the uses on the card came from and what the judge
+// made of them: the model's, found to cover what they were judged against —
+// until a line is changed, when the verdict is no longer about the text — or
+// the uses they were written from, because the model's did not cover it or
+// no model wrote any.
+func usesSections(proposals RuleProposals, origin usesOrigin, now lineList) []section {
+	written := proposals.Written
+	sec := section{label: "where these come from"}
+	switch {
+	case written != nil && written.Covers && slices.Equal(now.values(), written.Stored):
+		sec.lines = []line{
+			{text: "written by the project's judge from " + origin.from + ": the same work on any target of its kind"},
+			{text: "the judge found they cover " + origin.against + ": " + reasonOr(written.Reason, "no reason given"), tone: toneOK},
+		}
+	case written != nil && written.Covers:
+		sec.lines = []line{
+			{text: "started from the uses the project's judge wrote, and changed"},
+			{text: "the judge's verdict was on the uses as written, not these: " + origin.judged, tone: toneAlert},
+		}
+	case written != nil && written.Refused != "":
+		sec.lines = []line{
+			{text: "started from " + origin.asked + ": the model's uses could not be a rule's — " + written.Refused + " — so the judge was not asked", tone: toneAlert},
+		}
+	case written != nil:
+		sec.lines = []line{
+			{text: "started from " + origin.asked + ": the project's judge wrote these, and the judge found they do not cover " + origin.against + " — " + reasonOr(written.Reason, "no reason given"), tone: toneAlert},
+		}
+		for _, use := range written.Uses {
+			sec.lines = append(sec.lines, line{text: use, bullet: true, tone: toneDim})
+		}
+		sec.lines = append(sec.lines, line{text: origin.judged, tone: toneDim})
+	default:
+		sec.lines = []line{
+			{text: "started from " + origin.asked + ": " + reasonOr(proposals.Note, "no model wrote any"), tone: toneAlert},
+			{text: origin.judged, tone: toneDim},
+		}
+	}
+	return []section{sec}
 }
 
 // reviewRule is the last card before the write: the rule's full text. That
@@ -455,8 +506,13 @@ func (a approval) asRule() Rule {
 	if len(hosts) == 0 {
 		hosts = a.req.hosts()
 	}
+	rule := a.rule
+	if a.repositoriesShown != nil {
+		// Drawn as made safe; the rule sent names them in the server's text.
+		rule.Repositories = a.repositoriesShown
+	}
 	return Rule{
-		ApprovalRule: a.rule,
+		ApprovalRule: rule,
 		WellKnownID:  a.req.WellKnownID,
 		Hosts:        hosts,
 		Delegate:     a.proposals.Delegate || a.req.Delegate,
@@ -565,37 +621,11 @@ func ruleHandsOut(rule Rule) (section, bool) {
 	return sec, len(sec.lines) > 0
 }
 
-// failedProposal is what the row of a proposal the judge did not find to
-// cover says: the proposal still whole, and under it that it failed and why —
-// covering names what it was read against — since why it failed is what says
-// which way to write one by hand.
-func failedProposal(text, covering, reason string) string {
-	return text + "\nfailed, and cannot be chosen: " + reasonOr(reason, "the judge did not find it covers "+covering)
-}
-
 func reasonOr(reason, otherwise string) string {
 	if reason = strings.TrimSpace(reason); reason != "" {
 		return reason
 	}
 	return otherwise
-}
-
-// ruleLevelLabel names a proposal's level, and still names one the server
-// numbered past the ones known here.
-func ruleLevelLabel(labels map[int]string, level int) string {
-	if label, ok := labels[level]; ok {
-		return label
-	}
-	return fmt.Sprintf("Level %d", level)
-}
-
-// ruleNote is the server saying why only the uses as asked are offered: it is
-// the answer to "where are the others".
-func ruleNote(a approval) []section {
-	if a.proposals.Note == "" {
-		return nil
-	}
-	return []section{{label: "why there are no wider ones", lines: []line{{text: a.proposals.Note, tone: toneDim}}}}
 }
 
 // ruleTestsSection lists the approval rules already tested against a request

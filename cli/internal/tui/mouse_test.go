@@ -61,6 +61,12 @@ func tap(t *testing.T, m *Model, x, y int) *Model {
 // clock the model counts against is for.
 func doublePress(t *testing.T, m *Model, x, y int) *Model {
 	t.Helper()
+	// Two presses are one gesture by the window's clock, which a loaded
+	// machine can tick past between them: it is held still across the two,
+	// and given back after.
+	clock, still := m.now, time.Now()
+	m.now = func() time.Time { return still }
+	defer func() { m.now = clock }()
 	tap(t, m, x, y)
 	return tap(t, m, x, y)
 }
@@ -70,7 +76,7 @@ func doublePress(t *testing.T, m *Model, x, y int) *Model {
 // (Model.now), so an hour a call also makes every read the window has out late
 // the instant it goes: a test that installs this and then hands the model a
 // listingSlowMsg gets "still listing" on the band. drain will not hand it one
-// — its 20ms budget (runQuickly) drops the five-second timer that carries it —
+// — it leaves the five-second timer that carries it unfired (timerMsg) —
 // so it takes delivering the message, the way servers_test.go does.
 func slowClock(m *Model) {
 	now := time.Now()

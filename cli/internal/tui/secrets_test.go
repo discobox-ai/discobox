@@ -98,7 +98,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 
 	// Enter reads; x withdraws.
 	drain(t, m, m.dialog.action("grant_1"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgText {
+	if m.dialog == nil || m.dialog.title != "Grant" {
 		t.Fatalf("enter did not read the grant: %s", describe(m.dialog))
 	}
 	for _, want := range []string{"api.github.com", "sandbox", "Open a PR", "use_7f3c", "discobox-access run --use"} {
@@ -784,7 +784,7 @@ func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
 		t.Fatalf("dialog = %s, want the grants", describe(m.dialog))
 	}
 	drain(t, m, m.dialog.action("grant_1"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgText {
+	if m.dialog == nil || m.dialog.title != "Grant" {
 		t.Fatalf("dialog = %s, want the grant being read", describe(m.dialog))
 	}
 

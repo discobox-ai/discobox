@@ -568,6 +568,8 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		// program and its own interrupt. The way out is behind the leader, and
 		// it is the same one in every pane. See detachHint.
 		termpane.WithPrefix(m.leader(), ""),
+		// Waiting on the stream is a listener, as every wait in the window is.
+		termpane.WithListen(listen),
 		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
 		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
 		termpane.WithPrefixBinding(paneQuitKey, quitPaneMsg{}),
@@ -649,7 +651,7 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 // or not at all.
 func (m *Model) paneEvents(term Terminal) tea.Cmd {
 	ctx := m.ctx
-	return func() tea.Msg {
+	return listen(func() tea.Msg {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -659,7 +661,7 @@ func (m *Model) paneEvents(term Terminal) tea.Cmd {
 			}
 			return paneEventMsg{event: event}
 		}
-	}
+	})
 }
 
 // closeOverlay ends the command that had the screen and gives it back to what
