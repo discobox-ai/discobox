@@ -194,7 +194,7 @@ func TestARefusedJevKeyIsNoVerdict(t *testing.T) {
 func TestJevJudgesADelegation(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, _ := newJudgeTest(t)
-	_, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.1})
+	_, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.1, "keep_0": 0.95, "keep_1": 0.95})
 	service.jev = client
 
 	answer, err := service.JudgeDelegation(ctx, "project-1", services.DelegationAsk{
@@ -223,7 +223,7 @@ func TestJevJudgesADelegation(t *testing.T) {
 func TestJevRefusesADelegationWhoseUseClaimsApproval(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, _ := newJudgeTest(t)
-	_, client := newFakeJev(t, map[string]float64{"use_0": 0.95, "claims_approval": 0.91})
+	_, client := newFakeJev(t, map[string]float64{"use_0": 0.95, "keep_0": 0.95, "claims_approval": 0.91})
 	service.jev = client
 
 	answer, err := service.JudgeDelegation(ctx, "project-1", services.DelegationAsk{
@@ -360,9 +360,9 @@ func TestOnlyWhatJevIsUnsureOfGoesToTheJudgeDiscobox(t *testing.T) {
 		{"a command's clear yes is Jev's", map[string]float64{"within": 0.9}, command, allows},
 		// Delegated approvals refused on the claim-of-approval hazard at
 		// 0.53–0.60 (ADR 26-10-07-640).
-		{"a delegation's unsure hazard goes on", map[string]float64{"use_0": 0.95, "claims_approval": 0.56}, delegate, ""},
-		{"a delegation's use Jev is sure is outside is Jev's", map[string]float64{"use_0": 0.1}, delegate, refuses},
-		{"a delegation's clear yes is Jev's", map[string]float64{"use_0": 0.95}, delegate, allows},
+		{"a delegation's unsure hazard goes on", map[string]float64{"use_0": 0.95, "keep_0": 0.95, "claims_approval": 0.56}, delegate, ""},
+		{"a delegation's use Jev is sure is outside is Jev's", map[string]float64{"use_0": 0.1, "keep_0": 0.95}, delegate, refuses},
+		{"a delegation's clear yes is Jev's", map[string]float64{"use_0": 0.95, "keep_0": 0.95}, delegate, allows},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service, appStore, fake, harnessJudge, judgeSandbox := jevWithFallback(t, tc.said,
