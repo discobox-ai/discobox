@@ -5,7 +5,9 @@
 - **Supersedes**: [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)
   §3's `discobox ls` and `selectSandbox` candidates sending the two origin
   keys for `-C`, and `ls --all`; and [26-09-30-188](26-09-30-188-the-consoles-filters-open-on-everything-and-are-kept-per-directory.md)'s
-  "`ls` is unchanged". The origin key and what the console's folder is stand.
+  "`ls` is unchanged"; and [26-10-14-585](26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md)'s "`discobox ls` …
+  stand" and "`ls` and `apply` … keep the key", for `ls`. The origin key,
+  `apply`, and what the console's folder is stand.
 
 ## Context
 
