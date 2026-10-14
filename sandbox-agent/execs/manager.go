@@ -300,15 +300,6 @@ type ManagerConfig struct {
 	Logs         LogSink
 }
 
-func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRecorder) (*Manager, error) {
-	return NewManagerWithConfig(ManagerConfig{
-		WorkingRoot: workingRoot,
-		RuntimeDir:  runtimeDir,
-		Units:       units,
-		Audit:       audit,
-	})
-}
-
 func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	workingRoot := cfg.WorkingRoot
 	runtimeDir := cfg.RuntimeDir

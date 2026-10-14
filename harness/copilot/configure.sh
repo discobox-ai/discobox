@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs as the configure sandbox's primary terminal (see harness.Configure on the
-# copilot Definition). Signs Copilot in, opens it so the user can set it up the
+# Runs as the configure sandbox's primary terminal (see "Configure flows"
+# in harness/DESIGN.md). Signs Copilot in, opens it so the user can set it up the
 # way they normally would, then reads back what Copilot itself stored to capture
 # the result. Writes it to /run/discobox/configure/harness-configure.json for
 # discobox to apply to the HarnessConfig.

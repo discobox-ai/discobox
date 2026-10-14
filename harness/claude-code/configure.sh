@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs as the configure sandbox's primary terminal (see harness.Configure on the
-# claude-code Definition). Launches Claude Code interactively, lets the user
+# Runs as the configure sandbox's primary terminal (see "Configure flows"
+# in harness/DESIGN.md). Launches Claude Code interactively, lets the user
 # configure and log in to it however they normally would, then inspects what
 # claude itself wrote to capture the result. Writes it to
 # /run/discobox/configure/harness-configure.json for discobox to apply to the

@@ -37,14 +37,6 @@ func OptStringPtr(value OptString) *string {
 	return nil
 }
 
-func OptURIStringPtr(value OptURI) *string {
-	if v, ok := value.Get(); ok {
-		s := v.String()
-		return &s
-	}
-	return nil
-}
-
 func OptIntPtr(value OptInt64) *int {
 	if v, ok := value.Get(); ok {
 		i := int(v)
@@ -65,26 +57,6 @@ func HarnessConfigFilesToModel(files []apimodel.HarnessConfigFile) []model.Harne
 }
 
 var HarnessConfigEnvVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-func HarnessConfigSecretsToModel(secrets []apimodel.HarnessConfigSecret) ([]model.HarnessConfigSecret, error) {
-	if len(secrets) == 0 {
-		return nil, nil
-	}
-	out := make([]model.HarnessConfigSecret, 0, len(secrets))
-	seen := make(map[string]struct{}, len(secrets))
-	for _, secret := range secrets {
-		name := strings.TrimSpace(secret.Name)
-		if !HarnessConfigEnvVarNamePattern.MatchString(name) {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret name %q must be a valid environment variable name", secret.Name))
-		}
-		if _, duplicate := seen[name]; duplicate {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret %q is declared more than once", name))
-		}
-		seen[name] = struct{}{}
-		out = append(out, model.HarnessConfigSecret{Name: name, Required: secret.Required.Or(false), OneOfGroup: strings.TrimSpace(secret.OneOfGroup.Or(""))})
-	}
-	return out, nil
-}
 
 // SandboxUserFields is the sandbox user as the model stores it. Every field is
 // optional and stays nil when the request omitted it: the control plane cannot
@@ -814,10 +786,6 @@ func trimSlugBase(value string, maxLen int) string {
 		return value
 	}
 	return strings.Trim(value[:maxLen], "-")
-}
-
-func OptStringValue(value OptString) (string, bool) {
-	return value.Get()
 }
 
 func RawMessage(raw []byte) json.RawMessage {

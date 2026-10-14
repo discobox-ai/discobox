@@ -32,8 +32,8 @@
 - Policy and audit behavior must remain client-scoped. Destination rules,
   header injection rules, upgraded-stream metadata, and audit query surfaces
   must preserve the authenticated client ID.
-- Runtime policy changes should use `ApplyConfig` or the config file watcher;
-  do not add an HTTP config API to the proxy without revisiting the design.
+- Runtime policy changes go through `ApplyConfig` only; do not add an HTTP
+  config API to the proxy without revisiting the design.
 - The control API is read-only. Keep audit and stream retrieval scoped by the
   authenticated client/sandbox ID, and do not serve arbitrary spool paths.
 - If `Control.TrustPublicKey` is configured, do not bypass PASETO auth on

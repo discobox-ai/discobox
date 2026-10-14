@@ -35,7 +35,6 @@ type Service struct {
 	store              *store.Store
 	engine             *reconcile.Engine
 	sandboxProviders   *sandbox.ProviderManager
-	providerStore      any
 	sandboxAuth        *sandboxauth.Manager
 	defaultUserID      string
 	defaultImage       string
@@ -53,16 +52,13 @@ type Service struct {
 	secrets *resourcesecrets.Service
 }
 
-func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
+func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine) *Service {
 	svc := &Service{
 		store:            store,
 		engine:           engine,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
 		defaultImage:     sandbox.DefaultSandboxImageName,
-	}
-	if len(providerStore) > 0 {
-		svc.providerStore = providerStore[0]
 	}
 	return svc
 }

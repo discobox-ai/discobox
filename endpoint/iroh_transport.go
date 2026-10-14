@@ -393,8 +393,7 @@ func (e *IrohEndpoint) close() {
 }
 
 // Relay is the relay this endpoint is reachable through, waiting until ctx
-// expires for it to come online. See [LocalIrohRelay], which is this for the
-// process default.
+// expires for it to come online.
 func (e *IrohEndpoint) Relay(ctx context.Context) (string, error) {
 	if e.cfg.DisableRelay {
 		// Online never returns on its own with relays off, so waiting on it
@@ -520,14 +519,6 @@ func configureIroh(cfg IrohConfig) error {
 	}
 	defaultIroh = created
 	return nil
-}
-
-func localIrohID() (IrohID, error) {
-	configured, err := defaultIrohEndpoint()
-	if err != nil {
-		return IrohID{}, err
-	}
-	return configured.ID()
 }
 
 // errIrohEndpointClosed is returned by an endpoint that has been closed. An

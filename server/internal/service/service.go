@@ -120,7 +120,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		ServerDefaults:       options.ServerDefaults,
 		WSLCCommand:          options.WSLCCommand,
 	})
-	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
+	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
 	poolService := pools.NewService(store, manager, poolControlPlane)
 	poolService.SetSandboxStateReporter(sandboxService)

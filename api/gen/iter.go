@@ -14,16 +14,3 @@ func Projects(body *ListProjectsBody) iter.Seq[Project] {
 		}
 	}
 }
-
-func Sandboxes(body *ListSandboxesBody) iter.Seq[Sandbox] {
-	return func(yield func(Sandbox) bool) {
-		if body == nil {
-			return
-		}
-		for _, sandbox := range body.Sandboxes {
-			if !yield(sandbox) {
-				return
-			}
-		}
-	}
-}

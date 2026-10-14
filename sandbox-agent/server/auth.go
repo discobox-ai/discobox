@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
@@ -57,8 +56,6 @@ const (
 // poolOnlyScopes are the scopes a "*" token does not carry.
 var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true}
 
-type signedTokenClaimsContextKey struct{}
-
 type SignedTokenClaims struct {
 	ProjectID string
 	SandboxID string
@@ -98,15 +95,6 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 		}
 	}
 	return false
-}
-
-func SignedTokenClaimsFromContext(ctx context.Context) (SignedTokenClaims, bool) {
-	claims, ok := ctx.Value(signedTokenClaimsContextKey{}).(SignedTokenClaims)
-	return claims, ok
-}
-
-func withSignedTokenClaims(ctx context.Context, claims SignedTokenClaims) context.Context {
-	return context.WithValue(ctx, signedTokenClaimsContextKey{}, claims)
 }
 
 // SignedTokenAuthenticator verifies the tokens the sandbox agent is called
@@ -179,7 +167,7 @@ func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
+		next.ServeHTTP(w, r)
 	})
 }
 

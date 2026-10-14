@@ -115,24 +115,6 @@ func WithHTTPClient(client *http.Client) HTTPClientOption {
 	}
 }
 
-// WithRegisterPath overrides the pool registration path.
-func WithRegisterPath(path string) HTTPClientOption {
-	return func(c *HTTPClient) {
-		if strings.TrimSpace(path) != "" {
-			c.registerPath = path
-		}
-	}
-}
-
-// WithStatusPath overrides the pool status update path.
-func WithStatusPath(path string) HTTPClientOption {
-	return func(c *HTTPClient) {
-		if strings.TrimSpace(path) != "" {
-			c.statusPath = path
-		}
-	}
-}
-
 func (c *HTTPClient) RegisterPool(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
 	baseURL := strings.TrimRight(firstNonEmpty(req.ControlPlaneURL, c.baseURL), "/")
 	if baseURL == "" {

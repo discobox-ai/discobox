@@ -3,50 +3,8 @@ package store
 import (
 	"context"
 
-	"gorm.io/gorm"
-
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
-
-type SandboxProviderInstanceID struct {
-	ProjectID  string
-	ProviderID string
-}
-
-type SandboxProviderInstanceStore struct {
-	*Store
-	reload *Store
-}
-
-func (s *Store) SandboxProviderInstances() *SandboxProviderInstanceStore {
-	return &SandboxProviderInstanceStore{Store: s, reload: s}
-}
-
-func (s *SandboxProviderInstanceStore) Transaction(ctx context.Context, fn func(context.Context, *SandboxProviderInstanceStore) error) error {
-	return s.Store.Transaction(ctx, func(txStore *Store, _ *gorm.DB) error {
-		return fn(ctx, &SandboxProviderInstanceStore{Store: txStore, reload: s.reload})
-	})
-}
-
-func (s *SandboxProviderInstanceStore) Get(ctx context.Context, id SandboxProviderInstanceID) (*model.SandboxProviderInstance, error) {
-	return s.GetSandboxProviderInstance(ctx, id.ProjectID, id.ProviderID)
-}
-
-func (s *SandboxProviderInstanceStore) Create(ctx context.Context, provider *model.SandboxProviderInstance) error {
-	return s.CreateSandboxProviderInstance(ctx, provider)
-}
-
-func (s *SandboxProviderInstanceStore) Update(ctx context.Context, provider *model.SandboxProviderInstance) error {
-	return s.UpdateSandboxProviderInstance(ctx, provider)
-}
-
-func (s *SandboxProviderInstanceStore) ID(provider *model.SandboxProviderInstance) SandboxProviderInstanceID {
-	return SandboxProviderInstanceID{ProjectID: provider.ProjectID, ProviderID: provider.ID}
-}
-
-func (s *SandboxProviderInstanceStore) Reload(ctx context.Context, id SandboxProviderInstanceID) (*model.SandboxProviderInstance, error) {
-	return s.reload.GetSandboxProviderInstance(ctx, id.ProjectID, id.ProviderID)
-}
 
 func (s *Store) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
 	read, err := s.getRead(ctx)

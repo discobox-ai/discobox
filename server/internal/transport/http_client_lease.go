@@ -42,19 +42,6 @@ func NewHTTPClientLeaseWithBaseURLAndAuthProvider(client *http.Client, baseURL s
 	return &HTTPClientLease{Client: client, BaseURL: baseURL, AuthTokenProvider: authTokenProvider, release: release}
 }
 
-// NewHTTPClientLeaseWithAuth creates an authenticated lease for a client that
-// handles the logical URL itself, for example by dialing a socket or tunnel from
-// a custom RoundTripper.
-func NewHTTPClientLeaseWithAuth(client *http.Client, authToken string, release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, AuthToken: authToken, release: release}
-}
-
-// NewHTTPClientLeaseWithAuthProvider creates an authenticated lease for a client
-// whose transport handles the logical URL itself.
-func NewHTTPClientLeaseWithAuthProvider(client *http.Client, authTokenProvider func(context.Context) (string, error), release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, AuthTokenProvider: authTokenProvider, release: release}
-}
-
 func (l *HTTPClientLease) AuthorizationToken(ctx context.Context) (string, error) {
 	if l == nil {
 		return "", nil

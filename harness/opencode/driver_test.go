@@ -18,10 +18,6 @@ import (
 )
 
 func TestDefinitionConfigure(t *testing.T) {
-	def := Driver{}.Definition()
-	if def.Configure == nil {
-		t.Fatal("Configure = nil, want a configure spec")
-	}
 	scriptBytes, err := os.ReadFile("configure.sh")
 	if err != nil {
 		t.Fatal(err)

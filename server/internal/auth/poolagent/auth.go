@@ -199,10 +199,6 @@ func DecodePrivateKey(value string) (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(raw), nil
 }
 
-func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl, clockSkew time.Duration) (string, error) {
-	return CreateTokenForAudience(privateKey, Audience, claims, ttl, clockSkew)
-}
-
 func CreateTokenForAudience(privateKey ed25519.PrivateKey, audience string, claims TokenClaims, ttl, clockSkew time.Duration) (string, error) {
 	if audience == "" {
 		return "", fmt.Errorf("audience is required")
