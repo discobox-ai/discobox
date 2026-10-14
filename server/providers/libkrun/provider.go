@@ -170,7 +170,7 @@ func Validate(data json.RawMessage) error {
 			return fmt.Errorf("libkrun %s must be an absolute path", field)
 		}
 	}
-	socket := effectiveControlPlaneSocket(cfg.ControlPlaneSocket)
+	socket := controlPlaneSocket(cfg.ControlPlaneSocket, nil)
 	parsed, err := endpoint.Parse(socket)
 	if err != nil {
 		return fmt.Errorf("libkrun controlPlaneSocket: %w", err)
@@ -196,13 +196,17 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
+// FactoryWithPoolManager builds libkrun providers. listenEndpoints are the
+// endpoints the server listens on: an instance that names no control-plane
+// socket terminates its guests' control-plane port at the server's own, as
+// Docker's pools reach the socket the server actually serves.
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults)
+		return newFromInstance(ctx, instance, poolManager, imageSync, listenEndpoints, serverDefaults)
 	}
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -216,7 +220,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		return nil, err
 	}
 	progress := sandbox.PoolProgressReporterFor(poolManager)
-	driver, err := NewDriver(driverConfig(cfg, image, progress))
+	driver, err := NewDriver(driverConfig(cfg, image, listenEndpoints, progress))
 	if err != nil {
 		return nil, err
 	}
@@ -250,8 +254,8 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 	}
 }
 
-func driverConfig(cfg Config, image *guestimage.Resolver, progress sandbox.PoolProgressReporter) DriverConfig {
-	parsed, _ := endpoint.Parse(effectiveControlPlaneSocket(cfg.ControlPlaneSocket))
+func driverConfig(cfg Config, image *guestimage.Resolver, listenEndpoints []string, progress sandbox.PoolProgressReporter) DriverConfig {
+	parsed, _ := endpoint.Parse(controlPlaneSocket(cfg.ControlPlaneSocket, listenEndpoints))
 	return DriverConfig{
 		Image:              image,
 		StateDir:           effectiveStateDir(cfg.StateDir),
@@ -296,11 +300,22 @@ func imageResolver(cfg Config, defaults dockerworker.ServerDefaults) (*guestimag
 	})
 }
 
-func effectiveControlPlaneSocket(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return endpoint.DefaultEndpoint()
+// controlPlaneSocket is where an instance's guests reach the control plane:
+// the socket it names, else the first Unix socket the server listens on, else
+// the default endpoint. The built-in instance a first start installs names
+// none (ADR 26-09-23-473 §5), so a server listening somewhere other than the
+// default — a CLI's --server, a `listen:` setting — still gets pools that dial
+// it rather than whichever server holds the default socket.
+func controlPlaneSocket(configured string, listenEndpoints []string) string {
+	if value := strings.TrimSpace(configured); value != "" {
+		return value
 	}
-	return strings.TrimSpace(value)
+	for _, raw := range listenEndpoints {
+		if parsed, err := endpoint.Parse(raw); err == nil && parsed.Scheme == "unix" {
+			return raw
+		}
+	}
+	return endpoint.DefaultEndpoint()
 }
 
 func defaultString(value, fallback string) string {

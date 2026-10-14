@@ -215,12 +215,23 @@ func TestValidateRejectsInvalidSizing(t *testing.T) {
 }
 
 func TestDriverConfigUsesVSOCKAndHostSizingDefaults(t *testing.T) {
-	cfg := driverConfig(Config{}, nil, nil)
+	cfg := driverConfig(Config{}, nil, nil, nil)
 	if cfg.ControlPlaneSocket == "" {
 		t.Fatal("control plane socket default is empty")
 	}
 	if parsed, err := endpoint.Parse(endpoint.DefaultEndpoint()); err != nil || cfg.ControlPlaneSocket != parsed.Value {
 		t.Fatalf("control plane socket = %q, parsed default = %#v, err = %v", cfg.ControlPlaneSocket, parsed, err)
+	}
+	// The server's own socket, when it listens on one: a server started with
+	// --server or a listen setting is the one its pools must dial, not
+	// whichever server holds the default socket.
+	listen := []string{"http://127.0.0.1:8080", "unix:///run/custom/server.sock"}
+	if got := driverConfig(Config{}, nil, listen, nil).ControlPlaneSocket; got != "/run/custom/server.sock" {
+		t.Fatalf("control plane socket with listen %v = %q, want the server's own socket", listen, got)
+	}
+	named := Config{ControlPlaneSocket: "unix:///run/named.sock"}
+	if got := driverConfig(named, nil, listen, nil).ControlPlaneSocket; got != "/run/named.sock" {
+		t.Fatalf("control plane socket the instance names = %q, want /run/named.sock", got)
 	}
 	// Sizing is left unset here and resolved by NewDriver from the host, the
 	// same way vz does it: a pool VM is the machine's, not a fixed guess.

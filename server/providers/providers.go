@@ -47,7 +47,7 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(execvm.ProviderType, execvm.Validate)
 	manager.RegisterProviderDefinition(libkrun.ProviderType, libkrun.Definition())
-	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
+	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(libkrun.ProviderType, libkrun.Validate)
 	registerPlatformProviderFactories(manager, poolManager, options)
 }
