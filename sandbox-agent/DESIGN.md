@@ -405,6 +405,9 @@ flowchart LR
   writing its own exit — and when systemd reports a change to its unit, which is
   the only way to see an end the shim did not survive. It sweeps once at
   startup, and on an interval only when no subscription could be established.
+  The shim and the agent both write that file and share no lock, so every
+  write replaces it whole — staged beside it, then renamed over it — and a
+  reader never meets one truncated or one record spliced with another's tail.
   The shim's write is the sole accurate source of an **exit status**: a
   transient unit is collected as it dies, so its `ExecMainStatus` reads zero by
   the time anything can query it. What systemd is authoritative for is whether

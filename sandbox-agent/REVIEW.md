@@ -101,6 +101,15 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
 - **A lock that cannot be waited on is not a shim that ended.** Reading an
   error as "gone" demotes the exec to lost, and the terminal layer relaunches
   a lost terminal over the shim still running.
+- **Write a runtime file only through `writeRuntime`/`writeRuntimeIfChanged`,
+  and read it only through `readRuntime`/`readRuntimeFile`, never
+  `os.ReadFile`.** The shim and the agent write it without a common lock;
+  anything that writes it in place (`os.WriteFile`, `O_TRUNC`) can leave it
+  torn, and a torn file silently loses the shim's exit (#203). On Windows a
+  plain read racing the replace can fail for an instant too, which loses the
+  exit the same way; `readRuntimeFile` waits it out. Anything staged in the
+  runtime directory must not end in `.json`, or the watcher takes it for an
+  exec.
 - **A unit manager is required and complete.** Add behavior to `UnitManager`
   and to every implementation, including the test fakes; run the shared
   contract (`testUnitManagerContract`) against each.
