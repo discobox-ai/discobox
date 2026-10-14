@@ -315,6 +315,18 @@ drive (no `wait`); approve it from outside with `discobox secret request
 approve <id>`; read the use IDs with `discobox-access list --json` in the
 lead; and run `discobox-access run --use <id> -- discobox …` there.
 
+- Ask for `ai.discobox.sandbox` with `--json` (`{"id":"ai.discobox.sandbox",
+  "justification":…,"uses":[…]}`): by flags it is refused for want of an env
+  var and a host.
+- A lead answers only the requests of discoboxes it created (`403 … only the
+  requests of discoboxes it created`): have it `discobox new` the worker, then
+  approve the worker's request under a `secret grant create --delegate` grant
+  given to the lead. Approving under a delegation needs a judge: the stub
+  judge below, whose image also serves as the boxes' harness when
+  `harness-shell:local` is not built yet. Full-precision expiries are in the
+  isolated server's `data/discobox.db` (`secret_grants.expires_at`); the API
+  prints whole seconds.
+
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
 The pool delivers a runtime-config document at every boot (next section), but
