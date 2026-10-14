@@ -1,17 +1,16 @@
 {
   "name": "rule-lead-delegation-as-asked",
-  "why": "orchestrate-issues' ask to delegate, which a rule may hand on because a rule is a person's: the uses name the discoboxes the lead creates.",
+  "why": "orchestrate-issues' ask to delegate, which a rule may hand on because a rule is a person's: the uses name the discoboxes it creates.",
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "for the discoboxes I create, each on its own issue n: fetch main and discobox/issue-<n> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/issue-<n> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/issue-<n>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch\nfor the discoboxes I create: gh pr create --repo discobox-ai/discobox --base main --head discobox/issue-<n> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge\nfor the discoboxes I create: gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issue they implement and the issues it names",
+    "purpose": "For the discoboxes I create, each on its own issue n: deliver issue #n as a pull request from branch discobox/issue-<n> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow.\nFor the discoboxes I create: triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push.",
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "for the discoboxes I create, each on its own issue n: fetch main and discobox/issue-<n> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/issue-<n> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/issue-<n>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch",
-      "for the discoboxes I create: gh pr create --repo discobox-ai/discobox --base main --head discobox/issue-<n> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge",
-      "for the discoboxes I create: gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issue they implement and the issues it names"
+      "For the discoboxes I create, each on its own issue n: deliver issue #n as a pull request from branch discobox/issue-<n> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow.",
+      "For the discoboxes I create: triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push."
     ]
   }
 }

@@ -1,20 +1,15 @@
 {
   "name": "rule-develop-across-the-repository",
-  "why": "The same kind of work across the resource: delivering one pull request from a discobox/<slug> branch, in a few sentences, against one run's six uses.",
+  "why": "Delivering one pull request from its own discobox/<slug> branch, in a person's words, against the develop skill's ask.",
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "deliver one pull request in discobox-ai/discobox from a branch discobox/<slug>: fetch main and that branch, and push to that branch only, as a fast-forward or with --force-with-lease after a rebase; never main and never another branch\nopen that branch's draft pull request into main with gh pr create, and view, list, edit, mark ready and comment on it; never merge it or enable auto-merge\nrequest a GitHub Copilot review of that pull request, read its CI and the CI of main, re-run its failed jobs, and read and reply to its reviews and comments\nread issues and their comments in discobox-ai/discobox",
+    "purpose": "Deliver pull requests into main of discobox-ai/discobox, each from its own branch discobox/<slug>. Read anything in the repository; push that run's branch (with --force-with-lease after a rebase), open and update its pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or another run's branch, delete a branch, merge or close a pull request, delete a comment, or start any other workflow.",
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "fetch main and discobox/26-10-12-330 from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/26-10-12-330 with git over https, the first time with git push --force-with-lease=refs/heads/discobox/26-10-12-330: (empty: only if the branch does not exist), then as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/26-10-12-330:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch",
-      "gh pr create --repo discobox-ai/discobox --base main --head discobox/26-10-12-330 --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge",
-      "request a GitHub Copilot review of my pull request with gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot or gh api POST repos/discobox-ai/discobox/pulls/<pr>/requested_reviewers",
-      "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed",
-      "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)",
-      "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issues this change fixes or refers to"
+      "Deliver ADR 26-10-12-330 as a pull request from branch discobox/26-10-12-330 into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."
     ]
   }
 }
