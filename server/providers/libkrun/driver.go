@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -501,7 +502,18 @@ func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error)
 
 // completeGuestBuild copies the runtime the current image carries beside a
 // freshly built guest, before it is published.
+//
+// The guest was built inside the pool VM, so what BuildKit exported here is
+// the VM's word, and the VM is the boundary this provider exists to keep. A
+// symlink in it would have the server write the runtime through it — to any
+// path the server can write — and, published as the local image, have the
+// launcher load and run whatever it pointed at. So the tree is refused unless
+// every entry is a plain file or directory, and each runtime file is created
+// fresh rather than written through whatever had its name.
 func (d *Driver) completeGuestBuild(ctx context.Context, dir string) error {
+	if err := refuseNonRegular(dir); err != nil {
+		return err
+	}
 	current, err := d.image.Resolve(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("a built guest boots only with the kernel and libkrun of a libkrun image, and none resolved: %w (build a whole one with `task build:vm-krun`)", err)
@@ -514,9 +526,28 @@ func (d *Driver) completeGuestBuild(ctx context.Context, dir string) error {
 	return nil
 }
 
+// refuseNonRegular fails when anything under dir is neither a regular file nor
+// a directory: a symlink, a device, a socket, a FIFO.
+func refuseNonRegular(dir string) error {
+	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() || entry.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("the built guest image holds %s, which is not a regular file; refusing to publish it", path)
+	})
+}
+
 // copyArtifact copies one file with its permissions, which for passt is the
-// executable bit the launcher runs it by.
+// executable bit the launcher runs it by. The destination is created, never
+// opened: whatever already had its name is removed first, and O_EXCL refuses
+// to create through a symlink planted in its place in between.
 func copyArtifact(source, destination string) error {
+	if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	in, err := os.Open(source) //nolint:gosec // A path the resolver produced.
 	if err != nil {
 		return err
@@ -526,7 +557,7 @@ func copyArtifact(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	out, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm()) //nolint:gosec // Inside the build's staging directory.
+	out, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm()) //nolint:gosec // Inside the build's staging directory.
 	if err != nil {
 		return err
 	}
