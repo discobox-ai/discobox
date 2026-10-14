@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -17,10 +18,16 @@ import (
 var ErrSkillsSourceConflict = errors.New("skills source conflicts with the project's list")
 
 // CreateProjectSkillsSource appends a skills source to its project's list.
-// The check against the list and the insert share a transaction, so two adds
-// at once cannot both pass it.
+// The check against the list and the insert share a transaction that holds
+// the project's row for update first, so two adds at once take turns: on a
+// database with more than one writer the second sees the first's row, and
+// the unique index alone would not refuse one repository at two refs.
 func (s *Store) CreateProjectSkillsSource(ctx context.Context, source *model.ProjectSkillsSource) error {
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, "id = ?", source.ProjectID).Error; err != nil {
+			return err
+		}
 		var existing []model.ProjectSkillsSource
 		if err := tx.Where("project_id = ? AND url = ?", source.ProjectID, source.URL).Find(&existing).Error; err != nil {
 			return err

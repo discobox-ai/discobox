@@ -39,6 +39,15 @@ entry already there, or that names a repository the list already names at a
 different ref: a discobox checks out one ref of a repository (ADR 26-10-14-294
 §1), so such a list would fail every create.
 
+An entry is written by one member and run by every other member's client, so
+the `url` carries no credential — every client and every discobox of the
+project reads it, and an http(s) URL takes no user, since a token is as often
+the user as the password — and neither it nor the `ref` may start with `-`,
+which Git would read as an option. The `ref` is a name Git takes for a ref.
+These rules are `sandboxconfig.ValidateSkillsRepository`, and a client that
+copies an entry into a create holds it to them again before Git runs on it,
+since what it reads is only what the server answered.
+
 Only repositories. A directory is on someone's machine, and is not the
 project's to name.
 

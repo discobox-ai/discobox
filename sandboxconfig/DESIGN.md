@@ -26,7 +26,9 @@ control plane's resolved harness config.
   once), the create-time `SkillsSources` (each a skills source's checkout and a
   directory in it, in the order a later one wins in; `ValidateSkillsDirectory`
   is the rule the CLI, the server, the pool and the sandbox hold; ADR
-  26-10-14-294), the create-time `Description` (only a seed for the
+  26-10-14-294; `ValidateSkillsRepository` is what a project's skills source
+  may name, held by the server on add and by every client before Git runs on
+  one, ADR 26-10-14-894), the create-time `Description` (only a seed for the
   sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
   sandbox-agent's runc wrapper. `Files` is the harness config's configured-file
