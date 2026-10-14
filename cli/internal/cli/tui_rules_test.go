@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,8 +14,9 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// A stored rule's scope and uses may be a model's sentences written from an
-// agent's ask, and the console draws them on the card a person manages the
+// A stored rule's uses may be a model's sentences written from an agent's ask,
+// and its repositories are whatever the server holds, and the console draws
+// them on the card a person manages the
 // rule from: they arrive with an escape sequence shown rather than obeyed,
 // and with the rest of the rule as the server holds it.
 func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
@@ -25,7 +28,7 @@ func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"approvalRules":[{"id":"rule_1","projectId":"project-1","wellKnownId":"com.github.api","secretId":"secret-1",` +
-			`"scope":"discoboxes triaging org/repo\u001b[2J","hosts":["github.com"],"purpose":"delegate",` +
+			`"repositories":["github.com/org/repo\u001b[2J","github.com/org/other"],"hosts":["github.com"],"purpose":"delegate",` +
 			`"uses":["read any issue in org/repo\u001b]0;approved\u0007","comment on it"],"maxGrantTTLSeconds":3600,` +
 			`"expiresAt":"2026-11-01T00:00:00Z","createdBy":"user:darren","enabled":false,` +
 			`"createdAt":"2026-10-12T00:00:00Z","updatedAt":"2026-10-12T00:00:01Z"}]}`))
@@ -44,13 +47,13 @@ func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 		t.Fatalf("rules = %+v, want the one the server holds", rules)
 	}
 	rule := rules[0]
-	for _, text := range append([]string{rule.Scope}, rule.Uses...) {
+	for _, text := range append(slices.Clone(rule.Repositories), rule.Uses...) {
 		if strings.ContainsAny(text, "\x1b\x07") {
 			t.Fatalf("%q reached the console with a control character in it", text)
 		}
 	}
-	if !strings.HasPrefix(rule.Scope, "discoboxes triaging org/repo") || len(rule.Uses) != 2 || !strings.HasPrefix(rule.Uses[0], "read any issue in org/repo") {
-		t.Fatalf("scope = %q, uses = %q; want the sentences kept, with what was escaped shown", rule.Scope, rule.Uses)
+	if len(rule.Repositories) != 2 || !strings.HasPrefix(rule.Repositories[0], "github.com/org/repo") || len(rule.Uses) != 2 || !strings.HasPrefix(rule.Uses[0], "read any issue in org/repo") {
+		t.Fatalf("repositories = %q, uses = %q; want both kept, with what was escaped shown", rule.Repositories, rule.Uses)
 	}
 	if rule.ID != "rule_1" || rule.WellKnownID != "com.github.api" || rule.SecretID != "secret-1" || !rule.Delegate || rule.Enabled ||
 		rule.MaxGrantTTL != time.Hour || rule.Expires.IsZero() || rule.CreatedBy != "user:darren" || rule.Created.IsZero() {
@@ -91,5 +94,39 @@ func TestTheConsoleChangesARuleByItsIDAndSendsOnlyWhatChanges(t *testing.T) {
 
 	if err := ds.DeleteRule(context.Background(), "", "rule_1"); err != nil {
 		t.Fatalf("DeleteRule() error = %v", err)
+	}
+}
+
+// The console passes on which discoboxes a rule is for as the person said it.
+// Every discobox reaches the server only as that answer: a rule that names no
+// repository and did not say it is sent saying neither, which the server
+// answers with the asking discobox's repository or a refusal, never with the
+// wider rule.
+func TestTheConsoleSaysEveryDiscoboxOnlyWhenThePersonDid(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rule tui.ApprovalRule
+		want map[string]any
+	}{
+		"a repository":   {tui.ApprovalRule{Repositories: []string{"github.com/org/repo"}}, map[string]any{"repositories": []any{"github.com/org/repo"}}},
+		"every discobox": {tui.ApprovalRule{EveryDiscobox: true}, map[string]any{"everyDiscobox": true}},
+		"neither said":   {tui.ApprovalRule{}, map[string]any{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sent := map[string]map[string]any{}
+			server := ruleServer(t, sent)
+			client, err := apiclientgen.NewClient(server.URL)
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
+			rule := tc.rule
+			if err := ds.ApproveCredentialRequest(context.Background(), "", tui.Approval{RequestID: "request-1", SecretID: "secret-1", TTLSeconds: 3600, Rule: &rule}); err != nil {
+				t.Fatalf("ApproveCredentialRequest() error = %v", err)
+			}
+			got, _ := sent["POST /projects/project-1/secret-requests/request-1/approve"]["rule"].(map[string]any)
+			if got == nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("rule sent = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }

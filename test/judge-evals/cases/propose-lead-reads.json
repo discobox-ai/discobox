@@ -15,29 +15,7 @@
     "credential": "com.github.api",
     "hosts": [
       "github.com"
-    ],
-    "discobox": {
-      "repository": "https://github.com/discobox-ai/discobox",
-      "ref": "main",
-      "createdBy": "a person",
-      "prompt": {
-        "content": "/orchestrate-issues 151 152 153 158 162"
-      },
-      "promptWrittenBy": "a person",
-      "skills": [
-        "commit",
-        "deliver-issue",
-        "develop",
-        "open-pr",
-        "orchestrate-issues",
-        "test-fix",
-        "triage-issue",
-        "verify",
-        "verify-recipes"
-      ],
-      "harness": "claude-code",
-      "platform": "linux/amd64"
-    }
+    ]
   },
   "controls": {
     "uses": [
@@ -47,30 +25,6 @@
       [
         "git push HEAD to refs/heads/main of https://github.com/discobox-ai/discobox"
       ]
-    ],
-    "discoboxes": [
-      {
-        "repository": "https://github.com/discobox-ai/hooks",
-        "ref": "main",
-        "createdBy": "a person",
-        "prompt": {
-          "content": "/deliver-issue 12"
-        },
-        "promptWrittenBy": "a person",
-        "skills": [
-          "commit",
-          "deliver-issue",
-          "develop",
-          "open-pr",
-          "orchestrate-issues",
-          "test-fix",
-          "triage-issue",
-          "verify",
-          "verify-recipes"
-        ],
-        "harness": "claude-code",
-        "platform": "linux/amd64"
-      }
     ]
   }
 }

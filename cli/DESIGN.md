@@ -1691,8 +1691,8 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 `creds` lists the judge's verdicts, `--kind` picks one: `command`, a command
 `discobox-access run` declared, judged before its value was minted;
 `request`, a request the proxy observed; `delegation`, a discobox handing a
-credential on; and `scope` and `rule`, an approval rule's two readings (below),
-which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
+credential on; and `rule`, an approval rule's uses read against a request's
+(below), which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
 `command` row of origin `sandbox` predates that: a discobox's own judge's word.
 `RTT` is the round trip each asker timed. `--prompt` prints each verdict in
 full; `--jev-input` does too, with exactly what Jev was sent on a server that
@@ -2730,30 +2730,45 @@ project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
 credential request, and the CLI is the two ways a person makes one:
 
 - **Directly**: `secret rule create|ls|get|update|delete`, as
-  `secret grant create` makes a pre-approval. `update` sends only the flags
-  given; `--enable`/`--disable` are edits. A rule's credential, purpose and pin
-  are not edited.
+  `secret grant create` makes a pre-approval. `create` takes `--repo`
+  (repeatable, or comma-separated) or `--every-discobox`, and refuses a rule
+  that says neither. `update` sends only the flags given; `--enable`/
+  `--disable` are edits, `--repo` replaces the repositories and
+  `--every-discobox` sends `everyDiscobox`, which removes them. A rule's credential and purpose are
+  not edited.
 - **From a request**: `secret request approve --auto` sends a `rule` on the
   approve body, so the rule and the approval are one write. With nothing else
-  said it is the narrowest rule, which needs no model: pinned to the discobox
-  that asked (read from the request), the uses as asked. `--rule-scope`,
-  `--rule-every-discobox` and `--rule-use` say otherwise, and are refused
-  without `--auto` rather than dropped. The rule made is read back whole.
+  said it is the narrowest rule: the uses as asked, for the repository of the
+  discobox that asked, which the server names — the CLI reads nothing first.
+  `--rule-repo`, `--rule-every-discobox` and `--rule-use` say otherwise, and
+  are refused without `--auto` rather than dropped. The rule made is read
+  back whole.
 
-`secret request propose` prints what auto approve offers — three scopes and
-three lists of uses, each with what the judge made of it — and makes nothing.
-The CLI never chooses a level for the person: a sentence becomes a rule only
-by being passed to `--rule-scope` or `--rule-use`, so the text approved is
-text they handled.
+A repository is sent as typed: a URL, git's scp-like form, or `host/path`. The
+server reads it, stores it as `host/path`, and refuses a bare `org/repo`.
+
+`secret request propose` prints what auto approve offers — the repository of
+the discobox that asked, and three lists of uses, each with what the judge
+made of it — and makes nothing. The CLI never chooses a level for the person:
+a sentence becomes a rule only by being passed to `--rule-use`, so the text
+approved is text they handled.
 
 - A proposal is a model's sentence written from an agent's ask, and a rule's
-  uses may be one too: both are shown whole and through `terminalSafe`.
-- A rule with neither a scope nor a pin is said in the ADR's words wherever
-  it is shown (`everyDiscoboxScope`): it approves for discoboxes that do not
-  exist yet.
+  uses may be one too: both are shown whole and through `terminalSafe`, as a
+  rule's repositories are.
+- **A rule for every discobox is never what saying nothing makes.** It takes
+  its flag on `create`, `update` and `approve --auto`, each refused beside
+  repositories, and each sends `everyDiscobox: true` — never an empty or
+  missing list, which the server refuses on create and update and reads as
+  the asking discobox's repository on an approve. It is said
+  in the ADR's words wherever it is shown (`everyDiscobox`): it approves for
+  discoboxes that do not exist yet.
+- `secret rule ls|get` show the repositories (`FOR`), or that it is for every
+  discobox.
 - `secret request get` lists each rule tested against a pending request and
-  why it did not cover it; `secret grant ls --rule` lists what a rule minted,
-  by its full ID, since the rule may be gone.
+  why it did not cover it — a rule for other repositories says so as a fact;
+  `secret grant ls --rule` lists what a rule minted, by its full ID, since the
+  rule may be gone.
 
 ## The Two IDs an Enrollment Is Made Of (`discobox id`)
 

@@ -79,8 +79,6 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
 	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
 	"JudgeJob.kind":                      "what a judge is asked about, owned by the root judge package and never stored (ADR 26-09-22-838)",
-	"JudgeDiscobox.createdBy":            "who a fact sheet says created a discobox, owned by the root judge package (CreatedByPerson, CreatedByDiscobox) and never stored (ADR 26-10-12-330)",
-	"JudgeDiscobox.promptWrittenBy":      "who a fact sheet says wrote a discobox's prompt, the same vocabulary as JudgeDiscobox.createdBy",
 	"SandboxTool.runs":                   "a declaration's vocabulary, owned by the root tools package and listed by the sandbox agent; no model stores it (ADR 0125)",
 	"SandboxTool.layer":                  "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",

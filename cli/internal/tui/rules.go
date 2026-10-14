@@ -16,12 +16,13 @@ import (
 // (ADR 26-10-12-330 §§7–9).
 //
 // A rule replaces the person who reads a card, so its text is the
-// authorization — and most of that text is written by a model from the agent's
+// authorization — and most of its uses are written by a model from the agent's
 // own ask. What keeps a generated sentence from becoming authority nobody read
-// is the shape of this flow: one scope and one set of uses are each chosen
-// from proposals shown whole, a proposal the judge did not find to cover this
-// very request cannot be chosen, and the last card before the write is the
-// rule in full.
+// is the shape of this flow: one set of uses is chosen from proposals shown
+// whole, a proposal the judge did not find to cover this very request cannot
+// be chosen, and the last card before the write is the rule in full. Which
+// discoboxes the rule is for is no sentence at all: the repository of the
+// discobox that asked, which the server compares, or every discobox.
 //
 // The steps run: request → what answers it, and its binding question, as for
 // any approval → the proposals are fetched → which discoboxes → which uses →
@@ -101,100 +102,79 @@ func (m *Model) ruleProposalsLoaded(msg ruleProposalsMsg) tea.Cmd {
 	}
 	next := msg.a
 	next.proposals = msg.proposals
-	return m.askRuleScope(next, msg.back)
+	return m.askRuleDiscoboxes(next, msg.back)
 }
 
-// Scope levels, as the server numbers them, and what each is called.
-var ruleScopeLabels = map[int]string{
-	1: "This discobox",
-	2: "Discoboxes doing this work on this repository",
-	3: "Any discobox on this repository",
-}
-
-// Content levels, the same way.
+// Content levels, as the server numbers them, and what each is called.
 var ruleContentLabels = map[int]string{
 	1: "As asked",
 	2: "The same work on any target of its kind",
 	3: "The same kind of work across the resource",
 }
 
-// ruleByHand is the row, on either choice, that leaves the proposals for a
-// sentence typed in.
+// ruleByHand is the row that leaves the proposed uses for sentences typed in.
 const ruleByHand = "hand"
 
-// everyDiscobox is what a rule with no scope and no pin does, in the words
+// everyDiscobox is what a rule that names no repository does, in the words
 // the decision to allow one was recorded in. They are said wherever such a
 // rule can be made or is read.
 const everyDiscobox = "approves for discoboxes that do not exist yet, including ones a discobox creates"
 
-// askRuleScope is the rule's first half: which discoboxes it is tested for.
-// The proposals are listed narrowest first, each row carrying its sentence
-// whole and wrapped under it: the sentence is what is being chosen, and a row
-// that cut it off would have a person choose a rule by its label.
-func (m *Model) askRuleScope(a approval, back func() tea.Cmd) tea.Cmd {
-	items := make([]action, 0, len(a.proposals.Scopes)+1)
-	for _, p := range a.proposals.Scopes {
-		text := p.Scope
-		if p.SandboxID != "" {
-			text = pinnedScope(p.SandboxID)
-		}
-		items = append(items, action{
-			key:     fmt.Sprintf("scope:%d", p.Level),
-			label:   ruleLevelLabel(ruleScopeLabels, p.Level),
-			detail:  text,
-			enabled: p.Covers,
-			why:     failedProposal(text, "this discobox", p.Reason),
-		})
+// The two answers to which discoboxes a rule is for.
+const (
+	ruleForRepository = "repository"
+	ruleForEvery      = "every"
+)
+
+// askRuleDiscoboxes is the rule's first half: which discoboxes it answers.
+// There are two answers and no sentence: the repository of the discobox that
+// asked, which the server compares with a discobox's primary source, or every
+// discobox in the project. The narrower is first and is where the cursor
+// starts; a discobox with no repository — a local source with no remote — has
+// only the wider to offer, and the card says why.
+func (m *Model) askRuleDiscoboxes(a approval, back func() tea.Cmd) tea.Cmd {
+	var items []action
+	repository := a.proposals.Repository
+	if repository != "" {
+		items = append(items, action{key: ruleForRepository, label: "Discoboxes of " + repository,
+			detail: "any discobox whose primary source is this repository, now or later; its other sources do not count", enabled: true})
 	}
-	items = append(items, action{key: ruleByHand, press: "w", label: "Write the scope by hand…",
-		detail: "a sentence the judge reads; the server judges it before the rule is made", enabled: true})
+	items = append(items, action{key: ruleForEvery, label: "Every discobox in this project",
+		detail: "whatever its repository: it " + everyDiscobox, enabled: true})
 
-	again := func() tea.Cmd { return m.askRuleScope(a, back) }
+	again := func() tea.Cmd { return m.askRuleDiscoboxes(a, back) }
 	d := actionsDialog("Auto approve: which discoboxes", "", items, func(result string) tea.Cmd {
-		if result == ruleByHand {
-			return m.askRuleScopeByHand(a, again)
-		}
-		for _, p := range a.proposals.Scopes {
-			if result == fmt.Sprintf("scope:%d", p.Level) && p.Covers {
-				next := a
-				next.rule.Scope, next.rule.SandboxID = p.Scope, p.SandboxID
-				return m.askRuleContent(next, again)
-			}
-		}
-		return nil
-	})
-	d.sections = append([]section{grantSection(a)}, ruleNote(a)...)
-	d.wrapDetails = true
-	d.answerLabel = "which discoboxes is the rule for?"
-	d.footer = "a discobox is read by what was recorded when it was created, never by what it says of itself"
-	d.keys = []hint{pressing("enter chooses the highlighted scope", "enter"), pressing("esc goes back", "esc")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
-// askRuleScopeByHand takes a scope nobody proposed. It is sent as written and
-// the server puts it to the judge before it makes the rule. Left empty it is
-// no scope at all, which is every discobox in the project — the one width no
-// proposal offers, reachable only by asking for it here, under the sentence
-// saying what it does.
-func (m *Model) askRuleScopeByHand(a approval, back func() tea.Cmd) tea.Cmd {
-	d := inputDialog("Auto approve: which discoboxes", "", "e.g. discoboxes started to triage an issue", a.rule.Scope, func(value string) tea.Cmd {
 		next := a
-		next.rule.Scope, next.rule.SandboxID = value, ""
-		return m.askRuleContent(next, func() tea.Cmd { return m.askRuleScopeByHand(next, back) })
+		switch result {
+		case ruleForRepository:
+			next.rule.Repositories, next.rule.EveryDiscobox = []string{repository}, false
+		case ruleForEvery:
+			// The one place the wider rule is chosen.
+			next.rule.Repositories, next.rule.EveryDiscobox = nil, true
+		default:
+			return nil
+		}
+		return m.askRuleContent(next, again)
 	})
 	d.sections = []section{grantSection(a)}
-	d.answerLabel = "the rule is for"
-	d.footer = "left empty it is for every discobox in this project: it " + everyDiscobox
-	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc goes back", "esc")}
+	if repository == "" {
+		d.sections = append(d.sections, section{label: "why there is no narrower one", lines: []line{
+			{text: "the discobox that asked has no repository a rule could name: its source is a local one with no remote", tone: toneDim},
+		}})
+	}
+	d.wrapDetails = true
+	d.answerLabel = "which discoboxes is the rule for?"
+	d.footer = "a repository is compared with a discobox's primary source by the server; no model reads it"
+	d.keys = []hint{pressing("enter chooses the highlighted one", "enter"), pressing("esc goes back", "esc")}
 	d.onCancel = back
 	m.dialog = d
 	return nil
 }
 
-// askRuleContent is the rule's second half: the uses it approves, chosen the
-// way the scope was, each row carrying its uses whole.
+// askRuleContent is the rule's second half: the uses it approves. The
+// proposals are listed narrowest first, each row carrying its uses whole and
+// wrapped under it: the sentences are what is being chosen, and a row that
+// cut them off would have a person choose a rule by its label.
 func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
 	items := make([]action, 0, len(a.proposals.Contents)+1)
 	for _, p := range a.proposals.Contents {
@@ -226,7 +206,7 @@ func (m *Model) askRuleContent(a approval, back func() tea.Cmd) tea.Cmd {
 		}
 		return nil
 	})
-	d.sections = append([]section{grantSection(a), ruleScopeSection(a.rule)}, ruleNote(a)...)
+	d.sections = append([]section{grantSection(a), ruleDiscoboxesSection(a.rule)}, ruleNote(a)...)
 	d.wrapDetails = true
 	d.answerLabel = "what may the rule approve?"
 	d.footer = "a later request is approved only when every use it asks for is within these"
@@ -263,7 +243,7 @@ func (m *Model) askRuleUsesByHand(a approval, back func() tea.Cmd, uses []string
 	if len(uses) == 0 {
 		written.lines = []line{{text: "none yet", tone: toneDim}}
 	}
-	d.sections = []section{grantSection(a), ruleScopeSection(a.rule), written}
+	d.sections = []section{grantSection(a), ruleDiscoboxesSection(a.rule), written}
 	d.answerLabel = "another use, one sentence"
 	d.footer = "Enter adds the line; Enter on an empty line finishes · keep every \"never …\" the request stated"
 	d.emphasis = refused
@@ -308,7 +288,8 @@ func (m *Model) reviewRule(a approval, back func() tea.Cmd) tea.Cmd {
 }
 
 // asRule is the rule this approval would make, as far as it has been chosen:
-// the scope and uses picked, around what the server copies from the request.
+// the repository and uses picked, around what the server copies from the
+// request.
 // It is the value the review card and a stored rule's card are both drawn
 // from, so a rule reads the same before it is made and after.
 func (a approval) asRule() Rule {
@@ -369,39 +350,35 @@ func ruleSections(rule Rule) []section {
 	for _, use := range rule.Uses {
 		uses.lines = append(uses.lines, line{text: use, bullet: true})
 	}
-	return []section{ruleScopeSection(rule.ApprovalRule), uses}
+	return []section{ruleDiscoboxesSection(rule.ApprovalRule), uses}
 }
 
-// ruleScopeSection says which discoboxes a rule is for: the one it is pinned
-// to, the sentence the judge will read, or — with neither — all of them, in
-// the words that say what that means.
-func ruleScopeSection(rule ApprovalRule) section {
+// ruleDiscoboxesSection says which discoboxes a rule is for: those of the
+// repositories it names, one a line, or every one of them, in the words that
+// say what that means. A rule that says neither has not been given an answer,
+// and is not drawn as the wider one.
+func ruleDiscoboxesSection(rule ApprovalRule) section {
 	sec := section{label: "the discoboxes it is for"}
 	switch {
-	case rule.SandboxID != "" && rule.Scope != "":
-		// Both, which only the CLI makes: the one discobox, and it still has
-		// to read as the sentence says.
-		sec.lines = []line{{text: rule.Scope}, {text: "and only " + rule.SandboxID + ", by its ID"}}
-	case rule.SandboxID != "":
-		sec.lines = []line{{text: pinnedScope(rule.SandboxID)}}
-	case rule.Scope != "":
-		sec.lines = []line{{text: rule.Scope}}
-	default:
+	case rule.EveryDiscobox:
 		sec.lines = []line{
-			{text: everyDiscoboxScope},
+			{text: everyDiscoboxName},
 			{text: everyDiscobox, tone: toneAlert},
 		}
+	case len(rule.Repositories) == 0:
+		sec.lines = []line{{text: ruleForNothingYet, tone: toneDim}}
+	}
+	for _, repository := range rule.Repositories {
+		sec.lines = append(sec.lines, line{text: "discoboxes of " + repository, bullet: len(rule.Repositories) > 1})
 	}
 	return sec
 }
 
-// everyDiscoboxScope names the scope that is neither a sentence nor a pin.
-const everyDiscoboxScope = "every discobox in this project"
+// ruleForNothingYet is a rule nobody has said the discoboxes of.
+const ruleForNothingYet = "not chosen"
 
-// pinnedScope is the scope that is no sentence.
-func pinnedScope(sandboxID string) string {
-	return "pinned to " + sandboxID + " by its ID; nothing is read"
-}
+// everyDiscoboxName names what a rule with no repository is for.
+const everyDiscoboxName = "every discobox in this project"
 
 // ruleHandsOut says what a rule gives away when what it approves is more than
 // one credential to use: a gate, or a delegation. Either was a person's alone
@@ -442,8 +419,8 @@ func ruleLevelLabel(labels map[int]string, level int) string {
 	return fmt.Sprintf("Level %d", level)
 }
 
-// ruleNote is the server saying why only the narrowest of each is offered,
-// on both choices: it is the answer to "where are the others".
+// ruleNote is the server saying why only the uses as asked are offered: it is
+// the answer to "where are the others".
 func ruleNote(a approval) []section {
 	if a.proposals.Note == "" {
 		return nil

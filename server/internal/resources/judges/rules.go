@@ -20,46 +20,28 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// An approval rule's two readings, and the wording a person chooses one from
-// (ADR 26-10-12-330).
+// An approval rule's one reading, and the wording a person chooses one from
+// (ADR 26-10-12-330). Which discoboxes a rule is for is a list of repositories
+// the secrets service compares; only its uses are read here.
 //
 // Rule jobs hang on neither judgeCommands nor judgeCredentials (§6): a rule is
 // its own opt-in, and a job is refused only when there is nothing to ask. A
 // project keeps a judge discobox while it has a rule switched on (wanted).
 //
 // Each question is answered once. The verdict records the digest of the job
-// that was judged, and the same job asked again — another request from a
-// discobox whose scope is already decided, the candidate a person chose from a
-// proposal — is answered from the record. An edited rule is a different job.
+// that was judged, and the same job asked again — the candidate a person chose
+// from a proposal, a reconcile run after one that already asked — is answered
+// from the record. An edited rule is a different job.
 
-// JudgeScope asks whether one discobox is among those a rule is for.
+// JudgeRule asks whether the uses a request asked for fall within a rule's:
+// from the record when the same job was already judged, and otherwise by
+// asking and recording. It goes the way every job does: Jev first when the
+// server has a key, what Jev is unsure of handled by jevUnsure, and the judge
+// discobox otherwise (§5).
 //
-// With Jev, Jev's yes is a match and anything else is not — unsure included —
-// and nothing is put to the judge discobox (§2): most discoboxes do not match most rules, and a
-// wrong "no match" costs only a person being asked, which is what happens
-// today. A server with no Jev key asks its judge discobox.
-func (s *Service) JudgeScope(ctx context.Context, projectID string, ask services.ScopeAsk) (judge.Answer, error) {
-	row := &model.CredentialVerdict{
-		Kind:            model.CredentialVerdictKindScope,
-		SandboxID:       ask.SandboxID,
-		RuleID:          ask.RuleID,
-		SecretRequestID: ask.RequestID,
-	}
-	// A scope is decided once for a discobox, whatever it asks for.
-	return s.judgeRuleJob(ctx, projectID, ask.Job(), row, "", func(ctx context.Context, project *model.Project, job judge.Job, bound time.Duration) (answered, error) {
-		if s.jev != nil {
-			return s.putJev(ctx, job, bound)
-		}
-		return s.putJudgeDiscobox(ctx, project, job, bound)
-	})
-}
-
-// JudgeRule asks whether the uses a request asked for fall within a rule's.
-// It goes the way every job does: Jev first when the server has a key, what
-// Jev is unsure of handled by jevUnsure, and the judge discobox otherwise
-// (§5). The fallback is kept here and not for a scope because of how often
-// each is asked: this runs only for a discobox already in scope, about a
-// request somebody would otherwise have to read.
+// Every way of not answering is no verdict, and nothing is recorded for it,
+// so the question is asked again later: an answer on record is never asked
+// about again, and a judge that did not decide must not become one.
 func (s *Service) JudgeRule(ctx context.Context, projectID string, ask services.RuleAsk) (judge.Answer, error) {
 	row := &model.CredentialVerdict{
 		Kind:            model.CredentialVerdictKindRule,
@@ -67,28 +49,7 @@ func (s *Service) JudgeRule(ctx context.Context, projectID string, ask services.
 		RuleID:          ask.RuleID,
 		SecretRequestID: ask.RequestID,
 	}
-	return s.judgeRuleJob(ctx, projectID, ask.Job(), row, ask.RequestID, func(ctx context.Context, project *model.Project, job judge.Job, bound time.Duration) (answered, error) {
-		var judgeSandbox *model.Sandbox
-		if s.jev == nil {
-			var err error
-			if judgeSandbox, err = s.readyJudge(ctx, project); err != nil {
-				return answered{}, err
-			}
-		}
-		return s.put(ctx, project, judgeSandbox, job, bound)
-	})
-}
-
-// judgeRuleJob answers one of a rule's questions: from the record when the
-// same job was already judged, and otherwise by asking and recording. row
-// says what the verdict is about; requestID narrows the record to one
-// request's, for a question asked per request.
-//
-// Every way of not answering is no verdict, and nothing is recorded for it,
-// so the question is asked again later: an answer on record is never asked
-// about again, and a judge that did not decide must not become one.
-func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.Job, row *model.CredentialVerdict, requestID string,
-	ask func(context.Context, *model.Project, judge.Job, time.Duration) (answered, error)) (judge.Answer, error) {
+	job := ask.Job()
 	if err := job.Validate(); err != nil {
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, "a rule cannot be judged: "+err.Error())
 	}
@@ -100,10 +61,10 @@ func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.
 	if err != nil {
 		return judge.Answer{}, err
 	}
-	recorded, err := s.store.AnsweredQuestion(ctx, projectID, row.Kind, row.SandboxID, requestID, digest, true)
+	recorded, err := s.store.AnsweredQuestion(ctx, projectID, row.SandboxID, row.SecretRequestID, digest, true)
 	switch {
 	case err == nil:
-		return s.reuse(ctx, recorded, row, requestID)
+		return s.reuse(ctx, recorded, row)
 	case !errors.Is(err, store.ErrNotFound):
 		return judge.Answer{}, err
 	}
@@ -117,12 +78,18 @@ func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.
 	bound := min(s.judgeBound(), services.DelegationBound)
 	judgeCtx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	decided, err := ask(judgeCtx, project, job, bound)
+	var judgeSandbox *model.Sandbox
+	if s.jev == nil {
+		if judgeSandbox, err = s.readyJudge(judgeCtx, project); err != nil {
+			return judge.Answer{}, err
+		}
+	}
+	decided, err := s.put(judgeCtx, project, judgeSandbox, job, bound)
 	if err != nil {
 		return judge.Answer{}, err
 	}
 	// An answer on record is reused for good, so only a decision is recorded.
-	// Neither job has a body to be shown, so an ask for one decides nothing.
+	// The job has no body to be shown, so an ask for one decides nothing.
 	// And where what Jev is unsure of goes on to the judge discobox
 	// (ADR 26-10-12-669), an unsure refusal that comes back as Jev's alone is
 	// one the discobox did not answer — not up yet, or out of time — so the
@@ -132,11 +99,11 @@ func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.
 	case !decided.Decided():
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadGateway,
 			"the judge asked to be shown something a rule's question does not have, which decides nothing")
-	case row.Kind == model.CredentialVerdictKindRule && s.jevFallback && s.leases != nil && decided.unsure && decided.sandbox == nil:
+	case s.jevFallback && s.leases != nil && decided.unsure && decided.sandbox == nil:
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusServiceUnavailable,
 			"Jev could not tell and the project's judge discobox, which decides what Jev is unsure of, did not answer")
 	}
-	// Nothing stands for either job: each is its own question.
+	// Nothing stands for a rule job: each is its own question.
 	decided.Standing = nil
 
 	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
@@ -168,12 +135,12 @@ func (s *Service) judgeRuleJob(ctx context.Context, projectID string, job judge.
 // another rule that asks the same question, so the rule's own row is looked
 // for rather than read off that one: two rules with one sentence would
 // otherwise copy a row for each other on every run.
-func (s *Service) reuse(ctx context.Context, recorded *model.CredentialVerdict, row *model.CredentialVerdict, requestID string) (judge.Answer, error) {
+func (s *Service) reuse(ctx context.Context, recorded *model.CredentialVerdict, row *model.CredentialVerdict) (judge.Answer, error) {
 	answer := judge.Answer{Allow: recorded.Allow, Reason: recorded.Reason}
 	if row.RuleID == "" || recorded.RuleID == row.RuleID {
 		return answer, nil
 	}
-	named, err := s.store.QuestionRecordedUnder(ctx, recorded.ProjectID, recorded.Kind, recorded.SandboxID, requestID, recorded.QuestionDigest, row.RuleID)
+	named, err := s.store.QuestionRecordedUnder(ctx, recorded.ProjectID, recorded.SandboxID, row.SecretRequestID, recorded.QuestionDigest, row.RuleID)
 	if err != nil || named {
 		return answer, err
 	}
@@ -187,8 +154,8 @@ func (s *Service) reuse(ctx context.Context, recorded *model.CredentialVerdict, 
 	return answer, nil
 }
 
-// ProposeRule has the project's judge discobox write the wider scopes and uses
-// of a rule from one request (§7). Jev writes nothing, so only a judge
+// ProposeRule has the project's judge discobox write the wider uses of a rule
+// from one request (§7). Jev writes nothing, so only a judge
 // discobox can: a server that judges with Jev and lets its refusals stand has
 // none, and neither has a project whose judge is not up yet. Each is an error
 // saying so, and the caller then offers the narrowest level alone.
@@ -221,7 +188,7 @@ func (s *Service) ProposeRule(ctx context.Context, projectID string, job judge.P
 	if err != nil {
 		return judge.Proposal{}, err
 	}
-	jobBody := sandboxapi.JudgeProposalJob{Uses: job.Uses, Hosts: job.Hosts, Credential: optString(job.Credential), Discobox: factSheetBody(job.Discobox)}
+	jobBody := sandboxapi.JudgeProposalJob{Uses: job.Uses, Hosts: job.Hosts, Credential: optString(job.Credential)}
 	// Through the pointer, for the reason putSandbox marshals its job so.
 	body, err := json.Marshal(&jobBody)
 	if err != nil {
@@ -259,26 +226,4 @@ func (s *Service) ProposeRule(ctx context.Context, projectID string, job judge.P
 			fmt.Sprintf("the project's judge answered with something that is not a proposal: %v", err))
 	}
 	return proposal, nil
-}
-
-// factSheetBody is a fact sheet on the wire to the judge's agent.
-func factSheetBody(sheet judge.Discobox) sandboxapi.JudgeDiscobox {
-	body := sandboxapi.JudgeDiscobox{
-		CreatedBy:    sandboxapi.JudgeDiscoboxCreatedBy(sheet.CreatedBy),
-		Creator:      optString(sheet.Creator),
-		Repository:   optString(sheet.Repository),
-		Ref:          optString(sheet.Ref),
-		OtherSources: sheet.OtherSources,
-		Skills:       sheet.Skills,
-		Harness:      optString(sheet.Harness),
-		Platform:     optString(sheet.Platform),
-	}
-	if sheet.Prompt != nil {
-		prompt := sandboxapi.JudgeInput{Content: sheet.Prompt.Content, Missing: optString(sheet.Prompt.Missing)}
-		body.Prompt = sandboxapi.NewOptJudgeInput(prompt)
-	}
-	if sheet.PromptWrittenBy != "" {
-		body.PromptWrittenBy = sandboxapi.NewOptJudgeDiscoboxPromptWrittenBy(sandboxapi.JudgeDiscoboxPromptWrittenBy(sheet.PromptWrittenBy))
-	}
-	return body
 }

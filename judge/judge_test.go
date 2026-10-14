@@ -53,26 +53,6 @@ func withRule(change func(*judge.Job)) judge.Job {
 	return job
 }
 
-// scopeJob is a rule's scope read against what was recorded about a discobox.
-func scopeJob() judge.Job {
-	return judge.Job{
-		Kind: judge.KindScope, Purpose: "discoboxes started by a person to deliver an issue in org/repo", Round: 1,
-		Discobox: &judge.Discobox{
-			Repository: "https://github.com/org/repo", Ref: "main",
-			CreatedBy:       judge.CreatedByPerson,
-			Prompt:          &judge.Input{Content: "/deliver-issue 43"},
-			PromptWrittenBy: judge.CreatedByPerson,
-			Skills:          []string{"deliver-issue"}, Harness: "claude", Platform: "linux/amd64",
-		},
-	}
-}
-
-func withScope(change func(*judge.Job)) judge.Job {
-	job := scopeJob()
-	change(&job)
-	return job
-}
-
 func commandJob() judge.Job {
 	return judge.Job{
 		Kind: judge.KindCommand, Purpose: "open a pull request in org/repo",
@@ -110,26 +90,6 @@ func TestAJobIsJudgeableOrRefusedBeforeAModelReadsIt(t *testing.T) {
 		{"a rule asked about a blank use", withRule(func(j *judge.Job) { j.Uses = []string{" "} }), false},
 		{"a rule with no host", withRule(func(j *judge.Job) { j.Host = "" }), false},
 		{"a rule asked twice", withRule(func(j *judge.Job) { j.Round = 2 }), false},
-		{"a rule carrying a fact sheet", withRule(func(j *judge.Job) { j.Discobox = scopeJob().Discobox }), false},
-		{"a scope", scopeJob(), true},
-		{"a scope read against a discobox a discobox created", withScope(func(j *judge.Job) {
-			j.Discobox.CreatedBy, j.Discobox.Creator, j.Discobox.PromptWrittenBy = judge.CreatedByDiscobox, "sbx_lead", judge.CreatedByDiscobox
-		}), true},
-		{"a scope read against a discobox with no prompt", withScope(func(j *judge.Job) {
-			j.Discobox.Prompt, j.Discobox.PromptWrittenBy = nil, ""
-		}), true},
-		{"a scope with no fact sheet", withScope(func(j *judge.Job) { j.Discobox = nil }), false},
-		{"a scope with a host", withScope(func(j *judge.Job) { j.Host = "github.com" }), false},
-		{"a scope carrying uses", withScope(func(j *judge.Job) { j.Uses = []string{"read"} }), false},
-		{"a scope naming a credential", withScope(func(j *judge.Job) { j.Credential = "github" }), false},
-		{"a fact sheet that does not say who created the discobox", withScope(func(j *judge.Job) { j.Discobox.CreatedBy = "" }), false},
-		{"a fact sheet naming a creating discobox for a person's", withScope(func(j *judge.Job) { j.Discobox.Creator = "sbx_lead" }), false},
-		{"a prompt labeled as somebody else's than the creator's", withScope(func(j *judge.Job) { j.Discobox.PromptWrittenBy = judge.CreatedByDiscobox }), false},
-		{"a prompt with no label", withScope(func(j *judge.Job) { j.Discobox.PromptWrittenBy = "" }), false},
-		{"a prompt longer than may be shown", withScope(func(j *judge.Job) {
-			j.Discobox.Prompt = &judge.Input{Content: strings.Repeat("x", judge.MaxBodyBytes+1)}
-		}), false},
-		{"a prompt not shown that does not say why", withScope(func(j *judge.Job) { j.Discobox.Prompt = &judge.Input{} }), false},
 		{"a request whose body was asked for", withRequest(func(j *judge.Job) {
 			j.Round = 2
 			j.Request.Body.Content = shown(`{"query":"mutation{...}"}`)

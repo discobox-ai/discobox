@@ -645,21 +645,8 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
 		}
 		// --auto makes an approval rule from the request and approves it
-		// under that rule, in one write (ADR 26-10-12-330). The request is
-		// read only to pin the rule to the discobox that asked.
-		if auto.auto {
-			pending, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
-			if err != nil {
-				return err
-			}
-			asked, err := expectResponse[apimodel.SecretRequest](pending)
-			if err != nil {
-				return err
-			}
-			if body.Rule, err = auto.rule(cmd, asked); err != nil {
-				return err
-			}
-		} else if _, err := auto.rule(cmd, nil); err != nil {
+		// under that rule, in one write (ADR 26-10-12-330).
+		if body.Rule, err = auto.rule(cmd); err != nil {
 			return err
 		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})

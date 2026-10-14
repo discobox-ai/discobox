@@ -622,36 +622,14 @@ type JudgeService interface {
 	Judge(ctx context.Context, poolID string, ask JudgeAsk) (judge.Answer, error)
 	JudgeCommand(ctx context.Context, poolID string, ask CommandAsk) (judge.Answer, error)
 	JudgeDelegation(ctx context.Context, projectID string, ask DelegationAsk) (judge.Answer, error)
-	// JudgeScope and JudgeRule are an approval rule's two readings
-	// (ADR 26-10-12-330 §§2, 5): whether a discobox is one the rule is for,
-	// and whether what it asked for is within the rule's uses. Each answers
-	// from a verdict on record for the same question before asking anybody.
-	JudgeScope(ctx context.Context, projectID string, ask ScopeAsk) (judge.Answer, error)
+	// JudgeRule is an approval rule's reading (ADR 26-10-12-330 §5): whether
+	// what a discobox asked for is within the rule's uses. It answers from a
+	// verdict on record for the same question before asking anybody.
 	JudgeRule(ctx context.Context, projectID string, ask RuleAsk) (judge.Answer, error)
-	// ProposeRule has the project's judge discobox write the wider scopes and
-	// uses of a rule from one request (§7). An error is no proposal: no model
-	// that can write, or one that did not.
+	// ProposeRule has the project's judge discobox write the wider uses of a
+	// rule from one request (§7). An error is no proposal: no model that can
+	// write, or one that did not.
 	ProposeRule(ctx context.Context, projectID string, job judge.ProposalJob) (judge.Proposal, error)
-}
-
-// ScopeAsk is whether one discobox is among those an approval rule is for:
-// the rule's scope sentence against the fact sheet the server composed from
-// the discobox's own record (ADR 26-10-12-330 §2).
-type ScopeAsk struct {
-	// RuleID is the rule being tested, empty while it is still a proposal;
-	// RequestID is then the request being answered.
-	RuleID    string
-	RequestID string
-	// SandboxID is the discobox the sheet describes.
-	SandboxID string
-	Scope     string
-	Discobox  judge.Discobox
-}
-
-// Job is the question as the judge is put it.
-func (a ScopeAsk) Job() judge.Job {
-	sheet := a.Discobox
-	return judge.Job{Kind: judge.KindScope, Purpose: a.Scope, Round: 1, Discobox: &sheet}
 }
 
 // RuleAsk is whether the uses a request asked for fall within an approval

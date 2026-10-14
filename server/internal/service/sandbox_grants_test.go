@@ -95,10 +95,6 @@ func (j *grantJudge) JudgeDelegation(_ context.Context, _ string, ask services.D
 	return judge.Answer{Allow: j.allow, Reason: "decided"}, nil
 }
 
-func (j *grantJudge) JudgeScope(context.Context, string, services.ScopeAsk) (judge.Answer, error) {
-	return judge.Answer{}, errors.New("not a rule judge")
-}
-
 func (j *grantJudge) JudgeRule(context.Context, string, services.RuleAsk) (judge.Answer, error) {
 	return judge.Answer{}, errors.New("not a rule judge")
 }

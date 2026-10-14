@@ -535,16 +535,15 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	}
 	// "Auto approve": the rule is made and the request approved under it in
 	// this one write. Its lifetime cap and expiry are left unsaid, so the
-	// server caps it at the lifetime this approval grants. An empty scope with
-	// no pin is said by leaving both out, which is how the server reads "every
-	// discobox in the project".
+	// server caps it at the lifetime this approval grants. Every discobox is
+	// passed on only as the answer a person gave, never worked out from a
+	// rule that names no repository: one that says neither is sent saying
+	// neither, and the server names the asking discobox's repository or
+	// refuses, and never assumes the wider rule.
 	if rule := approval.Rule; rule != nil {
-		with := apimodel.ApproveWithRule{Uses: rule.Uses}
-		if scope := strings.TrimSpace(rule.Scope); scope != "" {
-			with.SetScope(apiclientgen.NewOptString(scope))
-		}
-		if pinned := strings.TrimSpace(rule.SandboxID); pinned != "" {
-			with.SetSandboxId(apiclientgen.NewOptString(pinned))
+		with := apimodel.ApproveWithRule{Uses: rule.Uses, Repositories: rule.Repositories}
+		if rule.EveryDiscobox {
+			with.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 		}
 		body.SetRule(apiclientgen.NewOptApproveWithRule(with))
 	}
@@ -563,7 +562,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 }
 
 // RuleProposals asks the request's server for the rules "auto approve" may
-// choose between (ADR 26-10-12-330 §7). The server writes the wider ones with
+// choose between (ADR 26-10-12-330 §7). The server writes the wider uses with
 // a model and puts every one to the judge before answering, so this is on no
 // leash of its own: the window shows that it is waiting, and its context ends
 // the call when the person stops.
@@ -598,15 +597,9 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 		Hosts:      hosts,
 		Delegate:   body.Purpose == apiclientgen.RuleProposalsBodyPurposeDelegate,
 		Note:       terminalSafe(strings.TrimSpace(body.Note.Or(""))),
-	}
-	for _, scope := range body.Scopes {
-		out.Scopes = append(out.Scopes, tui.RuleScopeProposal{
-			Level:     int(scope.Level),
-			SandboxID: strings.TrimSpace(scope.SandboxId.Or("")),
-			Scope:     terminalSafe(strings.TrimSpace(scope.Scope.Or(""))),
-			Covers:    scope.Covers,
-			Reason:    terminalSafe(strings.TrimSpace(scope.Reason.Or(""))),
-		})
+		// Derived from a source URL a client reported when the discobox was
+		// created, so it is drawn as text like the rest.
+		Repository: terminalSafe(strings.TrimSpace(body.Repository.Or(""))),
 	}
 	for _, content := range body.Contents {
 		uses := make([]string, 0, len(content.Uses))
@@ -624,9 +617,9 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 }
 
 // Rules lists the project's approval rules, newest first (ADR 26-10-12-330
-// §1). A rule's scope and uses may be a model's sentences written from an
-// agent's ask, and who made it is whatever the server recorded, so each is
-// made safe to draw on the way, as a proposal is.
+// §1). A rule's uses may be a model's sentences written from an agent's ask,
+// and its repositories and who made it are whatever the server recorded, so
+// each is made safe to draw on the way, as a proposal is.
 func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
@@ -644,11 +637,7 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 	out := make([]tui.Rule, 0, len(rules))
 	for _, r := range rules {
 		rule := tui.Rule{
-			ID: r.ID,
-			ApprovalRule: tui.ApprovalRule{
-				Scope:     terminalSafe(strings.TrimSpace(r.Scope.Or(""))),
-				SandboxID: terminalSafe(strings.TrimSpace(r.SandboxId.Or(""))),
-			},
+			ID:          r.ID,
 			WellKnownID: terminalSafe(strings.TrimSpace(r.WellKnownId.Or(""))),
 			SecretID:    strings.TrimSpace(r.SecretId.Or("")),
 			Delegate:    r.Purpose == apiclientgen.ApprovalRulePurposeDelegate,
@@ -657,6 +646,12 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 			Created:     r.CreatedAt,
 			Enabled:     r.Enabled,
 		}
+		for _, repository := range r.Repositories {
+			rule.Repositories = append(rule.Repositories, terminalSafe(strings.TrimSpace(repository)))
+		}
+		// A rule the server holds with no repository is one somebody made
+		// for every discobox: no route stores one any other way.
+		rule.EveryDiscobox = len(r.Repositories) == 0
 		for _, host := range r.Hosts {
 			rule.Hosts = append(rule.Hosts, terminalSafe(host))
 		}

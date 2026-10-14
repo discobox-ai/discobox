@@ -1453,7 +1453,8 @@ type RuleTest struct {
 	// Pending is a rule the judge has still to be asked about.
 	Pending bool
 	// Stage is what decided, as the server names it: "facts" the server
-	// checked, the rule's "scope", or its "content".
+	// checked, the rule's repositories among them, or its "content", which
+	// the judge read.
 	Stage  string
 	Reason string
 }
@@ -1463,12 +1464,16 @@ type RuleTest struct {
 // it approves for them. Its credential, hosts and purpose are the request's,
 // copied by the server.
 type ApprovalRule struct {
-	// Scope is a sentence the judge reads against what was recorded about a
-	// discobox when it was created, and SandboxID pins the rule to one
-	// discobox, compared rather than read. Both empty is every discobox in the
-	// project, including ones that do not exist yet.
-	Scope     string
-	SandboxID string
+	// Repositories are the repositories the rule is for, each as host/path:
+	// it answers a discobox whose primary source is one of them, compared by
+	// the server.
+	Repositories []string
+	// EveryDiscobox is a rule for every discobox in the project, including
+	// ones that do not exist yet. It is its own answer, set only by the row
+	// that says so or read off a rule the server holds, and never inferred
+	// from Repositories being empty: a rule with neither has not been said
+	// to be for anything, and a data source sends it as that.
+	EveryDiscobox bool
 	// Uses are sentences saying what the rule approves.
 	Uses []string
 }
@@ -1502,34 +1507,24 @@ type Rule struct {
 }
 
 // RuleProposals is what a person who chose "auto approve" picks a rule from:
-// scopes and contents, each narrowest first, each already put to the judge as
-// the question the rule would later ask about this request (ADR 26-10-12-330
-// §§7–8).
+// the repository of the discobox that asked, and contents, narrowest first,
+// each already put to the judge as the question the rule would later ask
+// about this request (ADR 26-10-12-330 §§7–8).
 type RuleProposals struct {
-	Scopes   []RuleScopeProposal
-	Contents []RuleContentProposal
+	// Repository is the asking discobox's, as host/path: what a rule for
+	// "discoboxes of this repository" names. Empty when it has none — a local
+	// source with no remote — and then only a rule for every discobox answers
+	// it.
+	Repository string
+	Contents   []RuleContentProposal
 	// Credential, Hosts and Delegate are what a rule made from the request
 	// will say, as the server copies them from it.
 	Credential string
 	Hosts      []string
 	Delegate   bool
-	// Note says why only the narrowest of each is offered, when no model could
+	// Note says why only the uses as asked are offered, when no model could
 	// write the wider ones.
 	Note string
-}
-
-// RuleScopeProposal is one scope a rule may have. Level is how wide: 1 this
-// discobox (SandboxID, no sentence), 2 discoboxes doing this work on this
-// repository, 3 any discobox on this repository.
-type RuleScopeProposal struct {
-	Level     int
-	SandboxID string
-	Scope     string
-	// Covers is the judge finding the asking discobox to be one the scope
-	// describes; only such a scope may be chosen as written. Reason is what
-	// the judge said either way.
-	Covers bool
-	Reason string
 }
 
 // RuleContentProposal is one set of uses a rule may approve. Level is how

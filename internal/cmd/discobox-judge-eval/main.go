@@ -77,8 +77,7 @@ const (
 // Case is one recorded job and what a correct judge does with it.
 //
 // A proposer case has a proposal job in place of a judge job (ADR 26-10-12-330
-// §8): the wrapper writes an approval rule's wider scopes and uses from one
-// request, and the same judge then scores what it wrote, as the control plane
+// §8): the wrapper writes an approval rule's wider uses from one request, and the same judge then scores what it wrote, as the control plane
 // puts every candidate to the judge before a person may choose it.
 type Case struct {
 	Name   string      `json:"name"`
@@ -93,13 +92,11 @@ type Case struct {
 }
 
 // Controls are what a proposed rule must not cover: asks that are not the
-// request's kind of work, and discoboxes that are not the asking one's kind.
+// request's kind of work.
 type Controls struct {
 	// Uses are asks, each a list of uses, none of which any level of the
 	// proposed uses may cover: a push to main, a merge, another repository.
 	Uses [][]string `json:"uses,omitempty"`
-	// Discoboxes are fact sheets neither proposed scope may match.
-	Discoboxes []judge.Discobox `json:"discoboxes,omitempty"`
 }
 
 // Run is one answer to one case.
@@ -397,15 +394,14 @@ func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeou
 	return v
 }
 
-// propose has the wrapper write a rule's wider scopes and uses from a proposer
-// case's request, and then scores what it wrote with the judge, as the control
-// plane does before a person may choose any of it (ADR 26-10-12-330 §8):
+// propose has the wrapper write a rule's wider uses from a proposer case's
+// request, and then scores what it wrote with the judge, as the control plane
+// does before a person may choose any of it (ADR 26-10-12-330 §8):
 //
-//   - each level covers its request: both scopes match the asking discobox,
-//     and the uses at every level — as asked included — hold the uses asked for;
+//   - each level covers its request: the uses at every level — as asked
+//     included — hold the uses asked for;
 //   - each wider level covers the narrower: the widest uses hold the middle ones;
-//   - no level covers a control: no scope matches a control discobox, and no
-//     level's uses hold a control ask.
+//   - no level covers a control: no level's uses hold a control ask.
 //
 // The run allows when every check held, refuses when one did not, and is
 // invalid when the wrapper did not write a proposal at all. Its answer is the
@@ -435,9 +431,6 @@ func propose(ctx context.Context, command []string, model string, judging func(c
 		want Outcome
 	}
 	var checks []check
-	scopeJob := func(sentence string, sheet judge.Discobox) judge.Job {
-		return judge.Job{Kind: judge.KindScope, Purpose: sentence, Round: 1, Discobox: &sheet}
-	}
 	ruleJob := func(rule, uses []string) judge.Job {
 		return judge.Job{
 			Kind: judge.KindRule, Purpose: strings.Join(rule, "\n"), Host: strings.Join(c.Proposal.Hosts, ", "),
@@ -447,12 +440,6 @@ func propose(ctx context.Context, command []string, model string, judging func(c
 	var controls Controls
 	if c.Controls != nil {
 		controls = *c.Controls
-	}
-	for _, scope := range []struct{ level, sentence string }{{"scopeWork", proposal.ScopeWork}, {"scopeRepository", proposal.ScopeRepository}} {
-		checks = append(checks, check{scope.level + " matches the asking discobox", scopeJob(scope.sentence, c.Proposal.Discobox), OutcomeAllow})
-		for i, sheet := range controls.Discoboxes {
-			checks = append(checks, check{fmt.Sprintf("%s does not match control discobox %d", scope.level, i), scopeJob(scope.sentence, sheet), OutcomeRefuse})
-		}
 	}
 	levels := []struct {
 		level string

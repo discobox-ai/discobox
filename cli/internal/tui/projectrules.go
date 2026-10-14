@@ -19,9 +19,9 @@ import (
 // somewhere a person can read it: a row a rule, then one rule whole — in the
 // sections the card that made it was read in (rules.go) — with the grants it
 // minted that still stand. It is disabled, enabled or deleted from its row or
-// its card, and one of its grants revoked from the card. Its scope and uses
-// are not edited here: the server judges a rule's sentences, and `discobox
-// secret rule update` is where that is asked for. Making one stays with "auto
+// its card, and one of its grants revoked from the card. Its repositories and
+// uses are not edited here: the server judges a rule's sentences, and
+// `discobox secret rule update` is where that is asked for. Making one stays with "auto
 // approve" and the CLI.
 
 // ruleToggleKey disables or enables the rule under the cursor, and the rule a
@@ -173,9 +173,9 @@ func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule
 // right end as the terminal narrows, as on the tables above; the credential
 // never goes.
 //
-// The scope is the one column that is a sentence, so it is the one that takes
-// what the others leave and is cut to it: the row tells two rules apart, and
-// Enter reads the sentence whole.
+// The repositories are the one column of no fixed length, so it is the one
+// that takes what the others leave and is cut to it: the row tells two rules
+// apart, and Enter reads them whole.
 func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused bool) string {
 	atCursor := i == l.cursor && focused
 	now := l.now()
@@ -199,19 +199,19 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused 
 		nameStyle = st.cursorName
 	}
 	room := max(l.width-lipgloss.Width(marker)-lipgloss.Width(tail), 4)
-	// The state and then the scope come out of the credential's room, each
+	// The state and then the repositories come out of the credential's room, each
 	// only while the credential keeps a column of its own; narrower than
 	// that the row is the credential.
 	lead := padANSI(nameStyle.Render(truncate(credential, room)), room)
-	if scopeW := room - ruleCredentialWidth - ruleStateWidth; scopeW >= 0 {
+	if forW := room - ruleCredentialWidth - ruleStateWidth; forW >= 0 {
 		state := ruleState(rule, now)
 		lead = padANSI(nameStyle.Render(truncate(credential, ruleCredentialWidth-1)), ruleCredentialWidth) +
 			ruleStateTone(state).style(st).Render(pad(state, ruleStateWidth))
-		scope := ""
-		if scopeW >= ruleScopeMin {
-			scope = truncate(ruleRowScope(rule), scopeW)
+		discoboxes := ""
+		if forW >= ruleDiscoboxesMin {
+			discoboxes = truncate(ruleRowDiscoboxes(rule), forW)
 		}
-		lead += st.name.Render(pad(scope, scopeW))
+		lead += st.name.Render(pad(discoboxes, forW))
 	}
 	line := padANSI(marker+lead+tail, l.width)
 	if atCursor {
@@ -221,30 +221,27 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, i int, focused 
 }
 
 // A rule row's columns. ruleLeadWidth is what the tail columns leave the
-// credential, state and scope before one of them is dropped instead.
+// credential, state and repositories before one of them is dropped instead.
 const (
 	ruleCredentialWidth = 24
 	ruleStateWidth      = 10
-	ruleScopeMin        = 16
-	ruleLeadWidth       = ruleCredentialWidth + ruleStateWidth + ruleScopeMin + 2
+	ruleDiscoboxesMin   = 16
+	ruleLeadWidth       = ruleCredentialWidth + ruleStateWidth + ruleDiscoboxesMin + 2
 )
 
-// ruleRowScope is a rule's scope at the width of a column: the sentence, the
-// pin, or — with neither — that it is for every discobox, which the card says
-// the meaning of. A rule to delegate says so first, as a grant's row does: one
-// to use the same credential is a different rule.
-func ruleRowScope(rule Rule) string {
-	scope := "every discobox"
-	switch {
-	case rule.Scope != "":
-		scope = rule.Scope
-	case rule.SandboxID != "":
-		scope = "pinned to " + rule.SandboxID
+// ruleRowDiscoboxes is which discoboxes a rule is for at the width of a column:
+// its repositories, or — with none — that it is for every discobox, which the
+// card says the meaning of. A rule to delegate says so first, as a grant's row
+// does: one to use the same credential is a different rule.
+func ruleRowDiscoboxes(rule Rule) string {
+	discoboxes := strings.Join(rule.Repositories, ", ")
+	if rule.EveryDiscobox {
+		discoboxes = "every discobox"
 	}
 	if rule.Delegate {
-		return "delegates · " + scope
+		return "delegates · " + discoboxes
 	}
-	return scope
+	return discoboxes
 }
 
 // ruleRowExpiry is the last column: when the rule itself stops answering.
@@ -466,7 +463,7 @@ func (m *Model) showRule(server string, rule Rule, grants []Grant) tea.Cmd {
 	if len(standing) > 0 {
 		d.answerLabel = plural(len(standing), "grant it minted still stands", "grants it minted still stand")
 	}
-	d.footer = "its scope and uses are changed with `discobox secret rule update " + rule.ID + "`, where the server judges them"
+	d.footer = "its repositories and uses are changed with `discobox secret rule update " + rule.ID + "`, where the server judges its uses"
 	d.keys = []hint{pressing("enter runs it, or reads a grant", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes a grant"), pressing("esc leaves it alone", "esc")}
 	d.altKey = grantRevokeKey
 	d.alt = func(key string) tea.Cmd {
@@ -518,7 +515,7 @@ func (m *Model) confirmDeleteRule(server string, rule Rule, standing int, back f
 	}
 	goes := section{label: "what goes", fields: []field{
 		{label: "credential", value: credential, tone: toneAccent},
-		{label: "for", value: ruleScopeText(rule)},
+		{label: "for", value: ruleDiscoboxesText(rule)},
 		{label: "approves", value: plural(len(rule.Uses), "use", "uses")},
 	}, lines: []line{
 		{text: "requests it would have answered wait for a person again"},
@@ -597,10 +594,10 @@ func (m *Model) grantHolder(g Grant) string {
 	return who
 }
 
-// ruleScopeText is a rule's scope on one line, for the question before it is
-// deleted: ruleScopeSection's lines, joined.
-func ruleScopeText(rule Rule) string {
-	lines := ruleScopeSection(rule.ApprovalRule).lines
+// ruleDiscoboxesText is which discoboxes a rule is for on one line, for the
+// question before it is deleted: ruleDiscoboxesSection's lines, joined.
+func ruleDiscoboxesText(rule Rule) string {
+	lines := ruleDiscoboxesSection(rule.ApprovalRule).lines
 	text := make([]string, 0, len(lines))
 	for _, l := range lines {
 		text = append(text, l.text)

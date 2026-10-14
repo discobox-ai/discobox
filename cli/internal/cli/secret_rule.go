@@ -25,11 +25,12 @@ func (a *App) newSecretRuleCommand() *cobra.Command {
 		Use:     "rule",
 		Aliases: []string{"rules"},
 		Short:   "Manage approval rules: standing answers to credential requests",
-		Long: `An approval rule says a credential request like this, from a discobox like
-that, is approved without asking. Its credential, hosts and purpose are facts
-the server checks. Its scope and its uses are sentences the judge reads: the
-scope against what was recorded about the asking discobox when it was created,
-the uses against the uses the request asks for.
+		Long: `An approval rule says a credential request like this, from a discobox of
+these repositories, is approved without asking. Its repositories, credential,
+hosts and purpose are facts the server checks: a rule answers a discobox whose
+primary source is one of its repositories, compared exactly, or every discobox
+in the project when it names none. Its uses are sentences the judge reads
+against the uses the request asks for.
 
 A rule approves or says nothing. A request no rule covers waits for a person,
 as it does with no rules, and "discobox secret request get" says why each rule
@@ -95,19 +96,23 @@ func (a *App) newSecretRuleGetCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRuleCreateCommand() *cobra.Command {
-	var wellKnown, secretRef, scope, discobox, maxTTL, expiresIn string
-	var uses, hosts []string
-	var delegate, disabled bool
+	var wellKnown, secretRef, maxTTL, expiresIn string
+	var uses, hosts, repositories []string
+	var delegate, disabled, everyDiscobox bool
 	cmd := &cobra.Command{
-		Use:   "create (--well-known ID | --secret SECRET) --use SENTENCE...",
+		Use:   "create (--well-known ID | --secret SECRET) (--repo REPOSITORY... | --every-discobox) --use SENTENCE...",
 		Short: "Create an approval rule",
 		Long: `Creates an approval rule directly, as "discobox secret grant create" makes a
 pre-approval. The rule is then tested against every request pending in the
 project.
 
-With neither --scope nor --discobox the rule is for every discobox in the
-project: it approves for discoboxes that do not exist yet, including ones a
-discobox creates.`,
+A rule says which discoboxes it is for. --repo names a repository, as a URL
+or as host/path (github.com/org/repo): the rule answers a discobox whose
+primary source is that repository, however its remote is spelled. A discobox
+started from a local directory is of the remote its checkout tracks, and of
+none when it tracks none. --every-discobox makes the rule for every discobox
+in the project instead: it approves for discoboxes that do not exist yet,
+including ones a discobox creates, and is never the default.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := a.apiClient()
@@ -122,6 +127,17 @@ discobox creates.`,
 			if len(body.Uses) == 0 {
 				return errors.New("a rule says what may be approved: give at least one --use")
 			}
+			if body.Repositories, err = ruleRepositories(repositories, everyDiscobox, "--repo", "--every-discobox"); err != nil {
+				return err
+			}
+			switch {
+			case everyDiscobox:
+				// Said, not left out: the server never reads a rule that
+				// names no repository as one for every discobox.
+				body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+			case len(body.Repositories) == 0:
+				return errors.New("a rule says which discoboxes it is for: --repo github.com/org/repo for the discoboxes of a repository, or --every-discobox for every discobox in the project")
+			}
 			switch wellKnown, secretRef = strings.TrimSpace(wellKnown), strings.TrimSpace(secretRef); {
 			case (wellKnown == "") == (secretRef == ""):
 				return errors.New("a rule names one credential: --well-known ID, or --secret SECRET")
@@ -133,16 +149,6 @@ discobox creates.`,
 					return err
 				}
 				body.SetSecretId(apiclientgen.NewOptString(secretID))
-			}
-			if scope = strings.TrimSpace(scope); scope != "" {
-				body.SetScope(apiclientgen.NewOptString(scope))
-			}
-			if strings.TrimSpace(discobox) != "" {
-				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, discobox)
-				if err != nil {
-					return err
-				}
-				body.SetSandboxId(apiclientgen.NewOptString(sandboxID))
 			}
 			if delegate {
 				body.SetPurpose(apiclientgen.NewOptCreateApprovalRuleBodyPurpose(apiclientgen.CreateApprovalRuleBodyPurposeDelegate))
@@ -177,8 +183,8 @@ discobox creates.`,
 	}
 	cmd.Flags().StringVar(&wellKnown, "well-known", "", "The well-known credential the rule approves, by ID (e.g. com.github.api)")
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The project secret the rule approves, by name or ID; it answers an ask that names no well-known credential by the host it is bound to")
-	cmd.Flags().StringVar(&scope, "scope", "", "Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a discobox when it was created (its repository, who created it, the prompt it was created with)")
-	cmd.Flags().StringVar(&discobox, "discobox", "", "Pin the rule to this one discobox, by name or ID")
+	cmd.Flags().StringSliceVar(&repositories, "repo", nil, "A repository the rule is for, as a URL or host/path (github.com/org/repo), comma-separated or repeated: it answers a discobox whose primary source is one of them")
+	cmd.Flags().BoolVar(&everyDiscobox, "every-discobox", false, "The rule is for every discobox in the project. It approves for discoboxes that do not exist yet, including ones a discobox creates")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "What may be approved, as a sentence the judge reads the uses a request asks for against (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts a grant minted under the rule may name, comma-separated or repeated; defaults to the well-known credential's host, or the host the secret is bound to")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Approve asks to delegate the credential to other discoboxes, rather than asks to use it")
@@ -189,18 +195,22 @@ discobox creates.`,
 }
 
 func (a *App) newSecretRuleUpdateCommand() *cobra.Command {
-	var scope, maxTTL, expiresIn string
-	var uses, hosts []string
-	var enable, disable, neverExpires bool
+	var maxTTL, expiresIn string
+	var uses, hosts, repositories []string
+	var enable, disable, neverExpires, everyDiscobox bool
 	cmd := &cobra.Command{
 		Use:   "update RULE_ID",
 		Short: "Edit, enable or disable an approval rule",
-		Long: `Edits an approval rule. Only what is given changes. A rule whose scope or
-uses changed is tested afresh against what is pending; the grants it already
-minted are untouched, and disabling it revokes nothing.
+		Long: `Edits an approval rule. Only what is given changes. A rule whose
+repositories or uses changed is tested afresh against what is pending; the
+grants it already minted are untouched, and disabling it revokes nothing.
 
-A rule's credential, purpose and pinned discobox are what it is, and are not
-edited: make another rule.`,
+--repo replaces the repositories the rule is for. --every-discobox removes
+them all, which makes it a rule for every discobox in the project, including
+ones that do not exist yet; nothing else does.
+
+A rule's credential and purpose are what it is, and are not edited: make
+another rule.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if enable && disable {
@@ -220,8 +230,18 @@ edited: make another rule.`,
 			}
 			body := &apimodel.UpdateApprovalRuleBody{}
 			flags := cmd.Flags()
-			if flags.Changed("scope") {
-				body.SetScope(apiclientgen.NewOptString(strings.TrimSpace(scope)))
+			if flags.Changed("repo") || everyDiscobox {
+				if body.Repositories, err = ruleRepositories(repositories, everyDiscobox, "--repo", "--every-discobox"); err != nil {
+					return err
+				}
+				switch {
+				case everyDiscobox:
+					// Said in so many words: the server refuses an empty
+					// list rather than read it as every discobox.
+					body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+				case len(body.Repositories) == 0:
+					return errors.New("--repo names a repository; to make this a rule for every discobox say --every-discobox")
+				}
 			}
 			if flags.Changed("use") {
 				if body.Uses = ruleSentences(uses); len(body.Uses) == 0 {
@@ -265,7 +285,8 @@ edited: make another rule.`,
 			return a.writeApprovalRule(cmd, rule)
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", `Which discoboxes the rule is for; "" removes the sentence`)
+	cmd.Flags().StringSliceVar(&repositories, "repo", nil, "Replace the repositories the rule is for with these, each a URL or host/path (github.com/org/repo), comma-separated or repeated")
+	cmd.Flags().BoolVar(&everyDiscobox, "every-discobox", false, "Make this a rule for every discobox in the project, removing its repositories")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace what may be approved with these sentences (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Replace the hosts a grant minted under the rule may name")
 	cmd.Flags().StringVar(&maxTTL, "max-grant-ttl", "", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit")
@@ -309,16 +330,18 @@ func (a *App) newSecretRuleDeleteCommand() *cobra.Command {
 }
 
 // newSecretRequestProposeCommand shows what "auto approve" would offer for a
-// request: three scopes and three lists of uses, each already put to the judge.
+// request: the repository its rule would be for, and three lists of uses, each
+// already put to the judge.
 func (a *App) newSecretRequestProposeCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "propose REQUEST_ID",
 		Short: "Propose approval rules for a request, each already judged against it",
-		Long: `Proposes approval rules for a pending agent credential request: three scopes
-and three lists of uses, each narrowest first. The narrowest of each needs no
-model. The wider ones are written by the project's judge, and each is then put
-to the judge as the question a rule would later ask, so a proposal that does
-not cover this request is shown as failed, with why.
+		Long: `Proposes approval rules for a pending agent credential request: the
+repository of the discobox that asked, which the rule would be for, and three
+lists of uses, narrowest first. The uses as asked need no model. The wider
+ones are written by the project's judge, and each is then put to the judge as
+the question a rule would later ask, so a proposal that does not cover this
+request is shown as failed, with why.
 
 This can take a minute or two. Nothing is made: pass the sentences you choose
 to "discobox secret request approve --auto".`,
@@ -352,50 +375,59 @@ to "discobox secret request approve --auto".`,
 // autoApproval is the --auto flags of "secret request approve".
 type autoApproval struct {
 	auto          bool
-	scope         string
+	repositories  []string
 	everyDiscobox bool
 	uses          []string
 }
 
 func (o *autoApproval) addFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&o.auto, "auto", false, "Auto approve: make an approval rule from this request and approve the request under it. Without --rule-scope or --rule-every-discobox the rule is pinned to the discobox that asked; without --rule-use it approves the uses as asked")
-	cmd.Flags().StringVar(&o.scope, "rule-scope", "", "With --auto: which discoboxes the rule is for, as a sentence the judge reads (see `discobox secret request propose`)")
+	cmd.Flags().BoolVar(&o.auto, "auto", false, "Auto approve: make an approval rule from this request and approve the request under it. Without --rule-repo or --rule-every-discobox the rule is for the repository of the discobox that asked; without --rule-use it approves the uses as asked")
+	cmd.Flags().StringSliceVar(&o.repositories, "rule-repo", nil, "With --auto: a repository the rule is for, as a URL or host/path (github.com/org/repo), comma-separated or repeated; the discobox that asked must be of one of them")
 	cmd.Flags().BoolVar(&o.everyDiscobox, "rule-every-discobox", false, "With --auto: the rule is for every discobox in the project. It approves for discoboxes that do not exist yet, including ones a discobox creates")
 	cmd.Flags().StringArrayVar(&o.uses, "rule-use", nil, "With --auto: what the rule approves, as a sentence the judge reads (repeatable); omit for the uses as asked")
 }
 
 // rule is the rule the flags ask for, or nothing without --auto. The server
-// copies the rule's credential, hosts and purpose from the request and holds
-// the scope and uses to the judge before it makes anything.
-func (o *autoApproval) rule(cmd *cobra.Command, request *apimodel.SecretRequest) (apiclientgen.OptApproveWithRule, error) {
+// copies the rule's credential, hosts and purpose from the request, names the
+// asking discobox's repository when none is given here, and holds the uses to
+// the judge before it makes anything. A rule for every discobox is only ever
+// asked for by its flag: the server refuses to assume one.
+func (o *autoApproval) rule(cmd *cobra.Command) (apiclientgen.OptApproveWithRule, error) {
 	flags := cmd.Flags()
-	given := flags.Changed("rule-scope") || o.everyDiscobox || flags.Changed("rule-use")
+	none := apiclientgen.OptApproveWithRule{}
+	given := flags.Changed("rule-repo") || o.everyDiscobox || flags.Changed("rule-use")
 	if !o.auto {
 		if given {
-			return apiclientgen.OptApproveWithRule{}, errors.New("--rule-scope, --rule-every-discobox and --rule-use say what an auto approval's rule is: add --auto")
+			return none, errors.New("--rule-repo, --rule-every-discobox and --rule-use say what an auto approval's rule is: add --auto")
 		}
-		return apiclientgen.OptApproveWithRule{}, nil
+		return none, nil
 	}
-	scope := strings.TrimSpace(o.scope)
-	rule := apiclientgen.ApproveWithRule{Uses: ruleSentences(o.uses)}
+	repositories, err := ruleRepositories(o.repositories, o.everyDiscobox, "--rule-repo", "--rule-every-discobox")
+	if err != nil {
+		return none, err
+	}
+	rule := apiclientgen.ApproveWithRule{Uses: ruleSentences(o.uses), Repositories: repositories}
 	switch {
-	case o.everyDiscobox && scope != "":
-		return apiclientgen.OptApproveWithRule{}, errors.New("--rule-scope and --rule-every-discobox cannot be used together")
-	case flags.Changed("rule-scope") && scope == "":
-		return apiclientgen.OptApproveWithRule{}, errors.New("--rule-scope is a sentence; for a rule with no scope say --rule-every-discobox")
+	case flags.Changed("rule-repo") && len(repositories) == 0:
+		return none, errors.New("--rule-repo names a repository; for a rule for every discobox say --rule-every-discobox")
 	case flags.Changed("rule-use") && len(rule.Uses) == 0:
-		return apiclientgen.OptApproveWithRule{}, errors.New("--rule-use is a sentence; omit it to approve the uses as asked")
-	case scope != "":
-		rule.SetScope(apiclientgen.NewOptString(scope))
-	case !o.everyDiscobox:
-		// The narrowest scope, which needs no model: this discobox, by its ID.
-		sandboxID := request.SandboxId.Or("")
-		if sandboxID == "" {
-			return apiclientgen.OptApproveWithRule{}, errors.New("this request was filed by no discobox, so there is none to pin a rule to; give --rule-scope")
-		}
-		rule.SetSandboxId(apiclientgen.NewOptString(sandboxID))
+		return none, errors.New("--rule-use is a sentence; omit it to approve the uses as asked")
+	case o.everyDiscobox:
+		rule.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 	}
 	return apiclientgen.NewOptApproveWithRule(rule), nil
+}
+
+// ruleRepositories are a repository flag's values as a rule takes them:
+// trimmed, with empty ones dropped. The server reads each and stores it as
+// host/path. Naming repositories and asking for every discobox are two
+// answers to one question, so both at once is refused.
+func ruleRepositories(values []string, everyDiscobox bool, repoFlag, everyFlag string) ([]string, error) {
+	repositories := ruleSentences(values)
+	if everyDiscobox && len(repositories) > 0 {
+		return nil, fmt.Errorf("%s and %s cannot be used together: a rule is for the repositories it names, or for every discobox", repoFlag, everyFlag)
+	}
+	return repositories, nil
 }
 
 // ruleSentences are --use values as a rule takes them: trimmed, with empty
@@ -455,22 +487,28 @@ func (a *App) resolveApprovalRuleID(ctx context.Context, client *apiclientgen.Cl
 	return resolveShortID(id, "approval rule ID", ids)
 }
 
-// everyDiscoboxScope is what a rule with neither a sentence nor a pin covers,
-// in the words the ADR has the card name it in.
-const everyDiscoboxScope = "every discobox in the project: approves for discoboxes that do not exist yet, including ones a discobox creates"
+// everyDiscobox is what a rule that names no repository is for, in the words
+// the ADR has the card name it in.
+const everyDiscobox = "every discobox in the project: approves for discoboxes that do not exist yet, including ones a discobox creates"
 
-// ruleScopeText says which discoboxes a rule is for.
-func ruleScopeText(rule *apimodel.ApprovalRule) string {
-	scope, pin := terminalSafe(rule.Scope.Or("")), rule.SandboxId.Or("")
-	switch {
-	case scope != "" && pin != "":
-		return fmt.Sprintf("%s; pinned to %s", scope, pin)
-	case pin != "":
-		return "pinned to " + pin
-	case scope != "":
-		return scope
+// ruleRepositoriesText says which discoboxes a rule is for.
+func ruleRepositoriesText(rule *apimodel.ApprovalRule) string {
+	if len(rule.Repositories) == 0 {
+		return everyDiscobox
 	}
-	return everyDiscoboxScope
+	repositories := make([]string, 0, len(rule.Repositories))
+	for _, repository := range rule.Repositories {
+		repositories = append(repositories, terminalSafe(repository))
+	}
+	return "discoboxes of " + strings.Join(repositories, ", ")
+}
+
+// ruleRepositoriesColumn is ruleRepositoriesText for one cell of a listing.
+func ruleRepositoriesColumn(rule *apimodel.ApprovalRule) string {
+	if len(rule.Repositories) == 0 {
+		return "every discobox"
+	}
+	return terminalSafe(strings.Join(rule.Repositories, ","))
 }
 
 func ruleCredentialText(rule *apimodel.ApprovalRule) string {
@@ -530,9 +568,9 @@ func (a *App) writeApprovalRule(cmd *cobra.Command, rule *apimodel.ApprovalRule)
 	fmt.Fprintf(tw, "CREDENTIAL\t%s\n", ruleCredentialText(rule))
 	fmt.Fprintf(tw, "HOSTS\t%s\n", strings.Join(rule.Hosts, ", "))
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", rulePurposeText(rule.Purpose))
+	fmt.Fprintf(tw, "FOR\t%s\n", ruleRepositoriesText(rule))
 	// The rule's sentences are what is approved; a person wrote or chose
 	// them, and they are shown whole.
-	fmt.Fprintf(tw, "SCOPE\t%s\n", ruleScopeText(rule))
 	for i, use := range rule.Uses {
 		label := "USES"
 		if i > 0 {
@@ -559,7 +597,7 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"approvalRules": rules})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSTATE\tCREDENTIAL\tHOSTS\tPURPOSE\tSCOPE\tUSES\tEXPIRES")
+	fmt.Fprintln(tw, "ID\tSTATE\tCREDENTIAL\tHOSTS\tPURPOSE\tFOR\tUSES\tEXPIRES")
 	for i := range rules {
 		rule := &rules[i]
 		uses := terminalSafe(rule.Uses[0])
@@ -572,7 +610,7 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 			ruleCredentialText(rule),
 			strings.Join(rule.Hosts, ","),
 			rule.Purpose,
-			ruleScopeText(rule),
+			ruleRepositoriesColumn(rule),
 			uses,
 			ruleExpiryText(rule),
 		)
@@ -580,11 +618,8 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 	return tw.Flush()
 }
 
-// The three levels a proposal comes at, for scope and for content.
-var (
-	scopeLevels   = map[int64]string{1: "this discobox", 2: "discoboxes doing this work on this repository", 3: "any discobox on this repository"}
-	contentLevels = map[int64]string{1: "as asked", 2: "the same work on any target of its kind", 3: "the same kind of work across the resource"}
-)
+// The three levels a proposal's uses come at.
+var contentLevels = map[int64]string{1: "as asked", 2: "the same work on any target of its kind", 3: "the same kind of work across the resource"}
 
 // writeRuleProposals prints what auto approve offers. A proposal is a
 // sentence a model wrote from an agent's ask, so every one is shown whole,
@@ -620,16 +655,14 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 	if note := proposals.Note.Or(""); note != "" {
 		fmt.Fprintf(out, "\nNote: %s\n", terminalSafe(note))
 	}
-	fmt.Fprintln(out, "\nSCOPE — which discoboxes the rule is for")
-	for _, scope := range proposals.Scopes {
-		fmt.Fprintf(out, "  %d. %s\n", scope.Level, scopeLevels[scope.Level])
-		if sentence := scope.Scope.Or(""); sentence != "" {
-			fmt.Fprintf(out, "     --rule-scope %q\n", terminalSafe(sentence))
-		} else {
-			fmt.Fprintf(out, "     pinned to %s (the default with --auto)\n", scope.SandboxId.Or(""))
-		}
-		fmt.Fprintf(out, "     %s\n", verdict(scope.Covers, scope.Reason.Or("")))
+	fmt.Fprintln(out, "\nFOR — which discoboxes the rule is for")
+	if repository := terminalSafe(proposals.Repository.Or("")); repository != "" {
+		fmt.Fprintf(out, "  discoboxes of %s, the repository of the discobox that asked (the default with --auto)\n", repository)
+		fmt.Fprintf(out, "     --rule-repo %s\n", repository)
+	} else {
+		fmt.Fprintln(out, "  the discobox that asked has no repository a rule could name: its source is a local one with no remote")
 	}
+	fmt.Fprintf(out, "  every discobox in the project, including ones that do not exist yet and ones a discobox creates\n     --rule-every-discobox\n")
 	fmt.Fprintln(out, "\nUSES — what the rule approves")
 	for _, content := range proposals.Contents {
 		fmt.Fprintf(out, "  %d. %s\n", content.Level, contentLevels[content.Level])
@@ -638,7 +671,7 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 		}
 		fmt.Fprintf(out, "     %s\n", verdict(content.Covers, content.Reason.Or("")))
 	}
-	fmt.Fprintf(out, "\nTo make a rule: discobox secret request approve %s --auto [--rule-scope ...] [--rule-use ...]\n", requestID)
+	fmt.Fprintf(out, "\nTo make a rule: discobox secret request approve %s --auto [--rule-repo ... | --rule-every-discobox] [--rule-use ...]\n", requestID)
 	return nil
 }
 

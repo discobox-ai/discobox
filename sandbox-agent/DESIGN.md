@@ -748,8 +748,8 @@ development images without a registry.
   §7). It is a run like a judging one — the same wrapper, role, `--no-tools`,
   scope and bound on runs — with `judge.ProposalSystem` and
   `judge.ProposalSchema` in place of the judging pair, decoded with
-  `judge.DecodeProposal`. The caller supplies the uses a request asked for and
-  the asking discobox's fact sheet, and nothing else.
+  `judge.DecodeProposal`. The caller supplies the uses a request asked for, with
+  the credential and hosts they are about, and nothing else.
 - **The sandbox serves its own repositories** (`server/git.go`,
   [ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)).
   `.../git-repositories/{slug}.git` runs `git http-backend` through the shared

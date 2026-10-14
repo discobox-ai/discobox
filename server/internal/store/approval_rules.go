@@ -3,13 +3,16 @@ package store
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // Approval rules (ADR 26-10-12-330). Grants a rule minted name it and outlive
-// it. A rule goes with its project, with the secret it names (DeleteSecret),
-// and with the discobox it is pinned to (DeleteSandbox): one that could never
-// approve again would still count as a reason to keep a judge.
+// it. A rule goes with its project and with the secret it names (DeleteSecret):
+// one that could never approve again would still count as a reason to keep a
+// judge. It names repositories, never a discobox, so it outlives every
+// discobox it answered.
 
 func (s *Store) CreateApprovalRule(ctx context.Context, rule *model.ApprovalRule) error {
 	write, err := s.getWrite(ctx)
@@ -118,34 +121,27 @@ func (s *Store) GetSecretRequestByID(ctx context.Context, requestID string) (*mo
 
 // QuestionRecordedUnder reports whether a rule already has a verdict of its
 // own for a question, so an answer reused for it is recorded under it once.
-func (s *Store) QuestionRecordedUnder(ctx context.Context, projectID, kind, sandboxID, requestID, digest, ruleID string) (bool, error) {
+func (s *Store) QuestionRecordedUnder(ctx context.Context, projectID, sandboxID, requestID, digest, ruleID string) (bool, error) {
 	db, err := s.getWrite(ctx)
 	if err != nil {
 		return false, err
 	}
-	query := db.Model(&model.CredentialVerdict{}).
-		Where("project_id = ? AND kind = ? AND origin = ? AND sandbox_id = ? AND question_digest = ? AND rule_id = ?",
-			projectID, kind, model.CredentialVerdictOriginJudge, sandboxID, digest, ruleID)
-	if requestID != "" {
-		query = query.Where("secret_request_id = ?", requestID)
-	}
 	var count int64
-	err = query.Limit(1).Count(&count).Error
+	err = answeredRuleQuestions(db, projectID, sandboxID, requestID, digest).
+		Where("rule_id = ?", ruleID).Limit(1).Count(&count).Error
 	return count > 0, err
 }
 
-// AnsweredQuestion returns the newest verdict on record for one question an
-// approval rule asks — a scope read against one discobox, or a rule's uses
-// read against one request — or ErrNotFound when it was never answered
-// (ADR 26-10-12-330 §§2, 4). digest is the question's; a rule edited since is
-// a different question. requestID is empty for a scope, which is decided once
-// for a discobox whatever it asks.
+// AnsweredQuestion returns the newest verdict on record for the question an
+// approval rule asks — its uses read against the uses one request asked for —
+// or ErrNotFound when it was never answered (ADR 26-10-12-330 §4). digest is
+// the question's; a rule edited since is a different question.
 //
 // fresh reads the primary, for whoever would otherwise ask the judge: the row
 // may have been written moments ago by the proposal a person is now choosing
 // from, and a replica that has not caught up would have the judge asked again.
 // A reader that only reports what is on record takes a replica.
-func (s *Store) AnsweredQuestion(ctx context.Context, projectID, kind, sandboxID, requestID, digest string, fresh bool) (*model.CredentialVerdict, error) {
+func (s *Store) AnsweredQuestion(ctx context.Context, projectID, sandboxID, requestID, digest string, fresh bool) (*model.CredentialVerdict, error) {
 	db, err := s.getRead(ctx)
 	if fresh {
 		db, err = s.getWrite(ctx)
@@ -153,17 +149,21 @@ func (s *Store) AnsweredQuestion(ctx context.Context, projectID, kind, sandboxID
 	if err != nil {
 		return nil, err
 	}
-	query := db.Where("project_id = ? AND kind = ? AND origin = ? AND sandbox_id = ? AND question_digest = ?",
-		projectID, kind, model.CredentialVerdictOriginJudge, sandboxID, digest)
-	if requestID != "" {
-		query = query.Where("secret_request_id = ?", requestID)
-	}
 	var out []model.CredentialVerdict
-	if err := query.Order("created_at DESC").Order("id DESC").Limit(1).Find(&out).Error; err != nil {
+	if err := answeredRuleQuestions(db, projectID, sandboxID, requestID, digest).
+		Order("created_at DESC").Order("id DESC").Limit(1).Find(&out).Error; err != nil {
 		return nil, err
 	}
 	if len(out) == 0 {
 		return nil, ErrNotFound
 	}
 	return &out[0], nil
+}
+
+// answeredRuleQuestions are the project's judge's verdicts on one rule
+// question about one request. A discobox's own judge's word is never one.
+func answeredRuleQuestions(db *gorm.DB, projectID, sandboxID, requestID, digest string) *gorm.DB {
+	return db.Model(&model.CredentialVerdict{}).
+		Where("project_id = ? AND kind = ? AND origin = ? AND sandbox_id = ? AND secret_request_id = ? AND question_digest = ?",
+			projectID, model.CredentialVerdictKindRule, model.CredentialVerdictOriginJudge, sandboxID, requestID, digest)
 }

@@ -3573,19 +3573,18 @@ components:
                     description: The project's judge that answered, on a request verdict. It may no longer exist.
                     type: string
                 kind:
-                    description: 'What was judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or an approval rule being tested: its scope against the asking discobox, or its uses against what the request asked for (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
+                    description: 'What was judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or an approval rule''s uses being read against what a request asked for (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
                     enum:
                         - command
                         - request
                         - delegation
-                        - scope
                         - rule
                     type: string
                 ruleId:
-                    description: On a scope or rule verdict, the approval rule tested. Absent on one recorded while the rule was still a proposal, which names its request instead.
+                    description: On a rule verdict, the approval rule tested. Absent on one recorded while the rule was still a proposal, which names its request instead.
                     type: string
                 questionDigest:
-                    description: On a scope or rule verdict, the SHA-256 of the question judged, by which an answer on record is reused rather than asked again.
+                    description: On a rule verdict, the SHA-256 of the question judged, by which an answer on record is reused rather than asked again.
                     type: string
                 latencyMs:
                     description: 'Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked: discobox-access around its wrapper for a command verdict, the control plane around the call to the judge for a request verdict.'
@@ -4652,8 +4651,6 @@ components:
                     items:
                         type: string
                     type: array
-                discobox:
-                    $ref: '#/components/schemas/JudgeDiscobox'
                 credential:
                     description: The credential in the words a person reads, never its value.
                     type: string
@@ -4663,15 +4660,14 @@ components:
                         type: string
                     type: array
                 host:
-                    description: The host the use was approved for. Empty on a scope job, which has none.
+                    description: The host the use was approved for.
                     type: string
                 kind:
-                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, whether a discobox is one an approval rule''s scope describes, or whether what a discobox asked for is within an approval rule''s uses.'
+                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether what a discobox asked for is within an approval rule''s uses.'
                     enum:
                         - command
                         - request
                         - delegation
-                        - scope
                         - rule
                     type: string
                 purpose:
@@ -4754,62 +4750,13 @@ components:
                 - useId
                 - command
             type: object
-        JudgeDiscobox:
-            additionalProperties: false
-            description: What the control plane recorded about a discobox when it was created, which an approval rule's scope is read against (ADR 26-10-12-330). Nothing a discobox writes about itself is here.
-            properties:
-                createdBy:
-                    description: Who created it, a person or a discobox.
-                    enum:
-                        - a person
-                        - a discobox
-                    type: string
-                creator:
-                    description: The discobox that created it, when one did.
-                    type: string
-                harness:
-                    description: The harness it runs.
-                    type: string
-                otherSources:
-                    description: The repositories beside its primary source, each with its ref when it names one.
-                    items:
-                        type: string
-                    type: array
-                platform:
-                    description: Its pool's platform.
-                    type: string
-                prompt:
-                    $ref: '#/components/schemas/JudgeInput'
-                promptWrittenBy:
-                    description: Who wrote the prompt, which is who created the discobox.
-                    enum:
-                        - a person
-                        - a discobox
-                    type: string
-                ref:
-                    description: The ref of its primary source.
-                    type: string
-                repository:
-                    description: The repository of its primary source.
-                    type: string
-                skills:
-                    description: The names of the skills it was created with.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - createdBy
-            type: object
-            x-sandbox-agent-component: true
         JudgeProposalJob:
             additionalProperties: false
-            description: What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox asked for and what was recorded about it; both are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
+            description: What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox asked for, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
             properties:
                 credential:
                     description: The credential asked for, in the words a person reads, never its value.
                     type: string
-                discobox:
-                    $ref: '#/components/schemas/JudgeDiscobox'
                 hosts:
                     description: The hosts the request asked to send the credential to.
                     items:
@@ -4822,18 +4769,11 @@ components:
                     type: array
             required:
                 - uses
-                - discobox
             type: object
         JudgeProposal:
             additionalProperties: false
-            description: The wider scopes and uses a model wrote for an approval rule, narrower first. They authorize nothing; each is judged, and read by a person, before it becomes a rule.
+            description: The wider uses a model wrote for an approval rule, narrower first. They authorize nothing; each list is judged, and read by a person, before it becomes a rule.
             properties:
-                scopeRepository:
-                    description: Any discobox on the asking discobox's repository.
-                    type: string
-                scopeWork:
-                    description: Discoboxes doing the asking discobox's kind of work on its repository.
-                    type: string
                 usesAcrossResource:
                     description: The same kind of work across the resource.
                     items:
@@ -4845,8 +4785,6 @@ components:
                         type: string
                     type: array
             required:
-                - scopeWork
-                - scopeRepository
                 - usesAnyTarget
                 - usesAcrossResource
             type: object
@@ -5000,7 +4938,7 @@ components:
             x-sandbox-agent-component: true
         ApproveWithRule:
             additionalProperties: false
-            description: Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the request and the request is approved under it, in one write. The rule's credential, hosts and purpose are the request's, copied by the server and never taken from here. Its scope and uses are what a person chose or wrote, and are held to the judge's word before anything is made, so a rule that would not cover this request is refused. Only a person approves this way.
+            description: Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the request and the request is approved under it, in one write. The rule's credential, hosts and purpose are the request's, copied by the server and never taken from here. Which discoboxes it is for is a list of repositories, or every discobox in the project, which is said and never defaulted. Its uses are what a person chose or wrote, and are held to the judge's word before anything is made, so a rule that would not cover this request is refused. Only a person approves this way.
             properties:
                 expiresAt:
                     description: When the rule stops approving. Left out, it does not lapse.
@@ -5010,12 +4948,14 @@ components:
                     description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit. Left out, the lifetime this approval grants.
                     format: int64
                     type: integer
-                sandboxId:
-                    description: Pins the rule to one discobox, which must be the one that filed the request. A pin is compared, not read.
-                    type: string
-                scope:
-                    description: Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a discobox when it was created. Left out, with no pinned discobox, the rule is for every discobox in the project, including ones that do not exist yet.
-                    type: string
+                everyDiscobox:
+                    description: True makes the rule for every discobox in the project, including ones that do not exist yet and ones a discobox creates. It is never the default, and cannot be said together with repositories.
+                    type: boolean
+                repositories:
+                    description: The repositories the rule is for. It answers a discobox whose primary source is one of them, compared exactly by the server. Each is a URL, git's scp-like form, or host/path such as github.com/org/repo, and is stored as host/path. Left out, the repository of the discobox that filed the request; one with no repository (a local source with no remote) is answered only by a rule for every discobox, which everyDiscobox says.
+                    items:
+                        type: string
+                    type: array
                 uses:
                     description: What the rule approves, as sentences the judge reads the uses a request asks for against. Left out, the request's uses as asked.
                     items:
@@ -5066,12 +5006,11 @@ components:
                         - use
                         - delegate
                     type: string
-                sandboxId:
-                    description: The one discobox the rule is pinned to, when it is pinned
-                    type: string
-                scope:
-                    description: Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a discobox when it was created. Empty, with no pinned discobox, is every discobox in the project.
-                    type: string
+                repositories:
+                    description: The repositories the rule is for, each as host/path such as github.com/org/repo. The rule answers a discobox whose primary source is one of them, compared exactly by the server; a discobox's other sources never count. Absent on a rule for every discobox in the project, including ones that do not exist yet, which is a rule somebody made by saying so.
+                    items:
+                        type: string
+                    type: array
                 secretId:
                     description: The project secret the rule approves, when it names one
                     type: string
@@ -5145,12 +5084,14 @@ components:
                         - use
                         - delegate
                     type: string
-                sandboxId:
-                    description: Pins the rule to one discobox
-                    type: string
-                scope:
-                    description: Which discoboxes the rule is for, as a sentence the judge reads. Left out, with no pinned discobox, the rule is for every discobox in the project, including ones that do not exist yet.
-                    type: string
+                everyDiscobox:
+                    description: True makes the rule for every discobox in the project, including ones that do not exist yet and ones a discobox creates. It is never the default. A rule says which discoboxes it is for -- this, or repositories, and never both.
+                    type: boolean
+                repositories:
+                    description: The repositories the rule is for. Each is a URL, git's scp-like form, or host/path such as github.com/org/repo, and is stored as host/path; a bare org/repo names no host and is refused. A rule names at least one, or says everyDiscobox. Naming none and saying nothing is refused, never read as every discobox.
+                    items:
+                        type: string
+                    type: array
                 secretId:
                     description: The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
                     type: string
@@ -5190,12 +5131,17 @@ components:
                     description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit
                     format: int64
                     type: integer
+                everyDiscobox:
+                    description: True removes the rule's repositories, making it a rule for every discobox in the project, including ones that do not exist yet. It cannot be said together with repositories.
+                    type: boolean
                 neverExpires:
                     description: True clears the rule's expiry, so it does not lapse
                     type: boolean
-                scope:
-                    description: Which discoboxes the rule is for. An edited rule is tested afresh against what is pending.
-                    type: string
+                repositories:
+                    description: Replaces the repositories the rule is for with these, at least one. An empty list is refused -- a rule for every discobox is said with everyDiscobox, never by naming nothing. Left out, they stay as they are. An edited rule is tested afresh against what is pending.
+                    items:
+                        type: string
+                    type: array
                 uses:
                     description: What may be approved. An edited rule is tested afresh against what is pending.
                     items:
@@ -5219,39 +5165,14 @@ components:
                     description: The rule tested
                     type: string
                 stage:
-                    description: 'The stage that decided: facts the server checked, the rule''s scope, or its content'
+                    description: 'The stage that decided: facts the server checked, the rule''s repositories among them, or its content, which the judge read'
                     enum:
                         - facts
-                        - scope
                         - content
                     type: string
             required:
                 - ruleId
                 - covered
-            type: object
-        RuleScopeProposal:
-            additionalProperties: false
-            description: One scope a person may choose for an approval rule, already tested against the discobox that asked.
-            properties:
-                covers:
-                    description: Whether the judge found the asking discobox to be one this scope describes. Only a scope that covers may be chosen as written.
-                    type: boolean
-                level:
-                    description: 'How wide: 1 this discobox, 2 discoboxes doing this work on this repository, 3 any discobox on this repository'
-                    format: int64
-                    type: integer
-                reason:
-                    description: What the judge said, or why no judge was asked
-                    type: string
-                sandboxId:
-                    description: The discobox a level 1 scope is pinned to
-                    type: string
-                scope:
-                    description: The scope sentence; empty at level 1, which is a pin
-                    type: string
-            required:
-                - level
-                - covers
             type: object
         RuleContentProposal:
             additionalProperties: false
@@ -5300,7 +5221,7 @@ components:
                         type: string
                     type: array
                 note:
-                    description: Why only the narrowest level of each is offered, when no model could write the wider ones
+                    description: Why only the uses as asked are offered, when no model could write the wider ones
                     type: string
                 purpose:
                     description: What a rule made from this request would approve the credential for, copied from the request
@@ -5308,13 +5229,10 @@ components:
                         - use
                         - delegate
                     type: string
-                scopes:
-                    description: Scopes the rule may have, narrowest first
-                    items:
-                        $ref: '#/components/schemas/RuleScopeProposal'
-                    type: array
+                repository:
+                    description: The repository of the discobox that filed the request, as host/path, which a rule made from this request may be for. Absent when it has none (a local source with no remote), and then only a rule for every discobox answers it.
+                    type: string
             required:
-                - scopes
                 - contents
                 - hosts
                 - purpose
@@ -10388,7 +10306,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
         post:
-            description: Has this discobox's harness write the wider scopes and uses a person may choose for an approval rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for and what was recorded about the asking discobox; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            description: Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
             operationId: propose-sandbox-rule
             parameters:
                 - description: Project that owns the sandbox.
@@ -12025,7 +11943,7 @@ paths:
             tags:
                 - Secrets
         patch:
-            description: Edits an approval rule. Only the fields sent change. A rule whose scope or uses changed is tested afresh against what is pending; grants it already minted are untouched.
+            description: Edits an approval rule. Only the fields sent change. A rule whose repositories or uses changed is tested afresh against what is pending; grants it already minted are untouched.
             operationId: update-approval-rule
             parameters:
                 - description: Project ID
@@ -12067,7 +11985,7 @@ paths:
                 - Secrets
     /projects/{projectId}/secret-requests/{requestId}/rule-proposals:
         post:
-            description: Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), three scopes and three lists of uses, each narrowest first. The narrowest of each needs no model. The wider ones are written by the project's judge and each is then put to the judge as the question a rule would later ask, so only a candidate found to cover this request may be chosen. Where no model can write, the narrowest of each is offered alone. Only a person may ask.
+            description: Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), as three lists of uses, narrowest first, and the repository of the discobox that asked, which the rule may be for. The narrowest uses, as asked, need no model. The wider ones are written by the project's judge and each is then put to the judge as the question a rule would later ask, so only a candidate found to cover this request may be chosen. Where no model can write, the uses as asked are offered alone. Only a person may ask.
             operationId: propose-approval-rules
             parameters:
                 - description: Project ID
@@ -12478,7 +12396,6 @@ paths:
                         - command
                         - request
                         - delegation
-                        - scope
                         - rule
                     type: string
                 - description: Only verdicts recorded while testing this approval rule

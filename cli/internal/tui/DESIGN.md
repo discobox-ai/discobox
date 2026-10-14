@@ -133,9 +133,10 @@ and taking no cursor until the next load reads them.
   press says which table it landed in (`hitRuleRow`). An empty table is a line
   and takes no cursor.
 - **a row**: credential (a secret by name), state (`enabled`/`disabled`/
-  `lapsed`), scope — the sentence cut to the column, `pinned to <id>`, or
+  `lapsed`), which discoboxes — its repositories cut to the column, or
   `every discobox`, led by `delegates` for a rule to delegate — use count, and
-  expiry. Uses and expiry drop first as the window narrows, then the scope;
+  expiry. Uses and expiry drop first as the window narrows, then the
+  repositories;
   the credential and state stay. No rules is a line naming auto approve and
   `discobox secret rule create`.
 - **height** (`layout`): the rules take their rows up to a quarter of the
@@ -153,9 +154,9 @@ and taking no cursor until the next load reads them.
   `d`, and the grants still standing, named by their discobox: Enter reads one
   and `x` revokes it, through the secret's own cards (`reviewGrant`,
   `confirmRevokeGrant`). Esc is back on the rule's row.
-- **what it does not do**: a rule's scope and uses are sentences the server
-  judges, so they are changed with `discobox secret rule update`, which the
-  card names; making one is auto approve's and the CLI's.
+- **what it does not do**: a rule's repositories and uses are changed with
+  `discobox secret rule update`, where the server reads and judges them, and
+  which the card names; making one is auto approve's and the CLI's.
 
 Disabling sends only `enabled` (`DataSource.SetRuleEnabled`) and asks nothing:
 it mints nothing more and revokes nothing, and the same key undoes it. Deleting
@@ -482,22 +483,30 @@ proxy opened, a refresh, and a trust stay a person's each time. It is the same
   two, so a status card is up; Esc cancels the call and goes back, and an
   answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
   raising a dialog on its own.
-- **which discoboxes, then which uses** (`askRuleScope`, `askRuleContent`): the
-  proposals narrowest first, each a menu row with its sentences whole and
-  wrapped under its label (`dialog.wrapDetails`): the sentence is what is
-  chosen, and a row cut to "…" would have a rule chosen by its label. A menu
-  that wraps is drawn so only while all of it fits the window; one that does
-  not goes back to a row an item, windowed on the cursor. One that does not
-  cover this request keeps its text, says it failed and why, and its row is
-  disabled. `w` writes either by hand, sent as written for the server to judge:
-  the scope as one sentence, the uses a line at a time (Enter adds, an empty
-  line finishes, Esc takes one back). An empty hand-written scope is the only
-  way to a rule for every discobox, and the field says what that does. The
-  server's `Note` — why only the narrowest is offered — is on both.
+- **which discoboxes** (`askRuleDiscoboxes`): two rows and no sentence.
+  "Discoboxes of `<repository>`" — the asking discobox's
+  (`RuleProposals.Repository`), first and under the cursor — and "Every
+  discobox in this project", whose detail says what that does. A discobox with
+  no repository (a local source with no remote) gets the second row alone and
+  a section saying why. Nothing is written by hand and no model wrote
+  anything: the server compares repositories. Every discobox is its own
+  value (`ApprovalRule.EveryDiscobox`), set by that row alone and passed on
+  by the data source only from it; a rule with no repository that did not say
+  it is drawn as `not chosen` and sent saying neither.
+- **which uses** (`askRuleContent`): the proposals narrowest first, each a
+  menu row with its sentences whole and wrapped under its label
+  (`dialog.wrapDetails`): the sentence is what is chosen, and a row cut to "…"
+  would have a rule chosen by its label. A menu that wraps is drawn so only
+  while all of it fits the window; one that does not goes back to a row an
+  item, windowed on the cursor. One that does not cover this request keeps its
+  text, says it failed and why, and its row is disabled. `w` writes the uses
+  by hand, sent as written for the server to judge, a line at a time (Enter
+  adds, an empty line finishes, Esc takes one back). The server's `Note` —
+  why only the uses as asked are offered — is here.
 - **the rule** (`reviewRule`), after the lifetime and its limit question: the
-  full text — credential, hosts, purpose, what answers it, the pin or the scope
-  sentence, every use, the lifetime, and any change to the secret — as a y/n
-  defaulting to No. A rule with neither scope nor pin says it `approves for
+  full text — credential, hosts, purpose, what answers it, the repositories it
+  is for, every use, the lifetime, and any change to the secret — as a y/n
+  defaulting to No. A rule that names no repository says it `approves for
   discoboxes that do not exist yet, including ones a discobox creates`
   (`everyDiscobox`); one for a gate or a delegation says what it hands out in
   the request card's own words (`gateGives`, `delegationPurpose`).
@@ -506,7 +515,7 @@ The rule rides on the approval (`Approval.Rule`), one write; its cap is left
 for the server, which takes the lifetime chosen. A refusal — the server judges
 hand-written text and makes no rule that would not cover its own request —
 keeps the server's sentence on the failure card, and Esc there goes back to the
-rule so another scope or other uses can be chosen
+rule so other discoboxes or other uses can be chosen
 (`credentialAnsweredMsg.again`).
 
 **The request card lists the rules that were tried** (`ruleTestsSection`,

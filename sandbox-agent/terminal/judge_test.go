@@ -134,43 +134,12 @@ func TestJudgeAsksWithTheContractsOwnPrompt(t *testing.T) {
 	}
 }
 
-// A scope job reaches the wrapper with the fact sheet as part of the job's
-// JSON: what was recorded about a discobox is data the judge weighs.
-func TestJudgeIsPutAScopeWithItsFactSheet(t *testing.T) {
-	dir := t.TempDir()
-	args := filepath.Join(dir, "args")
-	svc := newJudgeService(t, config.HarnessModeJudge,
-		"#!/bin/sh\nprintf '%s\\n' \"$@\" > "+args+"\nprintf '{\"allow\":true,\"reason\":\"the repository matches\"}\\n'\n")
-	job := judge.Job{
-		Kind: judge.KindScope, Purpose: "any discobox on org/repo", Round: 1,
-		Discobox: &judge.Discobox{
-			Repository: "https://github.com/org/repo", CreatedBy: judge.CreatedByPerson,
-			Prompt: &judge.Input{Content: "/deliver-issue 43"}, PromptWrittenBy: judge.CreatedByPerson,
-		},
-	}
-	answer, err := svc.Judge(context.Background(), job)
-	if err != nil || !answer.Allow {
-		t.Fatalf("Judge() = %+v, %v", answer, err)
-	}
-	asked, err := os.ReadFile(args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"kind":"scope"`, `"repository":"https://github.com/org/repo"`, `"promptWrittenBy":"a person"`, judge.System} {
-		if !strings.Contains(string(asked), want) {
-			t.Fatalf("the wrapper was asked:\n%s\nwant it to carry %q", asked, want)
-		}
-	}
-}
-
-const writtenProposal = `{"scopeWork":"discoboxes started to deliver an issue in org/repo","scopeRepository":"any discobox on org/repo",` +
-	`"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
+const writtenProposal = `{"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
 
 func proposalJob() judge.ProposalJob {
 	return judge.ProposalJob{
-		Uses:     []string{"gh api GET repos/org/repo/issues/43"},
-		Hosts:    []string{"github.com"},
-		Discobox: judge.Discobox{Repository: "https://github.com/org/repo", CreatedBy: judge.CreatedByPerson},
+		Uses:  []string{"gh api GET repos/org/repo/issues/43"},
+		Hosts: []string{"github.com"},
 	}
 }
 
@@ -187,7 +156,7 @@ func TestProposeAsksWithTheProposalsOwnPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Propose() error = %v", err)
 	}
-	if proposal.ScopeRepository != "any discobox on org/repo" || len(proposal.UsesAnyTarget) != 1 || len(proposal.UsesAcrossResource) != 1 {
+	if len(proposal.UsesAnyTarget) != 1 || len(proposal.UsesAcrossResource) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	asked, err := os.ReadFile(args)

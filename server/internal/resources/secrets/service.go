@@ -640,11 +640,9 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		// answers from the record and records the answer under the rule, so
 		// the grant just minted is traced to verdicts that name it (§5).
 		// Nobody is asked again, and a failure here changes nothing made.
-		if sandbox, err := s.store.GetSandbox(ctx, projectID, req.SandboxID); err == nil {
-			if _, _, _, err := s.ruleReadings(ctx, rule, req, s.factSheet(ctx, sandbox)); err != nil {
-				slog.WarnContext(ctx, "a new approval rule's verdicts could not be recorded under it",
-					"projectId", projectID, "ruleId", rule.ID, "error", err)
-			}
+		if _, _, err := s.ruleUsesCover(ctx, rule, req); err != nil {
+			slog.WarnContext(ctx, "a new approval rule's verdict could not be recorded under it",
+				"projectId", projectID, "ruleId", rule.ID, "error", err)
 		}
 		// The rule answers what else is pending, and is a reason for the
 		// project to keep a judge. After the mark: a rule for a well-known
@@ -805,13 +803,18 @@ func heldRule(ctx context.Context, txStore *store.Store, a *approvalWrite, secre
 // ruleFromApproval is the approval rule a person answering a request with
 // "auto approve" makes (ADR 26-10-12-330 §§1, 7–8), checked and not yet
 // stored. Its credential, hosts and purpose are the approval's own — copied
-// here by code, never taken from what was proposed — and its scope and uses
-// are what the person chose or wrote.
+// here by code, never taken from what was proposed — and its repositories and
+// uses are what the person chose or wrote.
+//
+// Which discoboxes it is for is said, never defaulted wide: the repositories
+// named, else the repository of the discobox that asked, and every discobox
+// only when the approval says so in those words.
 //
 // The rule must cover the request it is made from. The facts are held here,
-// and the scope and the uses are put to the judge as the jobs the rule would
-// later ask: a candidate chosen from a proposal is answered from the verdict
-// already on record, and edited text is judged again before it is accepted.
+// the asking discobox's repository among them, and the uses are put to the
+// judge as the job the rule would later ask: a candidate chosen from a
+// proposal is answered from the verdict already on record, and edited text is
+// judged again before it is accepted.
 func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest, chosen apigen.ApproveWithRule, secret *model.Secret,
 	bindTo *string, limit *int64, hosts []string, purpose string, namedTTL apigen.OptInt64, principal auth.Principal) (*model.ApprovalRule, error) {
 	if principal.Type == auth.PrincipalTypeSandbox {
@@ -830,16 +833,34 @@ func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest
 	if limit != nil {
 		answering.MaxGrantTTL = *limit
 	}
+	repository, found, err := s.requesterRepository(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "the discobox that filed the request was not found")
+	}
+	repositories := chosen.Repositories
+	switch every := chosen.EveryDiscobox.Or(false); {
+	case every && len(repositories) > 0:
+		return nil, errRepositoriesAndEvery
+	case every:
+	case len(repositories) > 0:
+	case repository == "":
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"the discobox that asked has no repository a rule could name: its source is a local one with no remote. Only a rule for every discobox in the project answers it, and that is said (everyDiscobox), never assumed")
+	default:
+		repositories = []string{repository}
+	}
 	rule := &model.ApprovalRule{
-		ProjectID:   req.ProjectID,
-		Scope:       chosen.Scope.Or(""),
-		SandboxID:   chosen.SandboxId.Or(""),
-		WellKnownID: req.WellKnownID,
-		Hosts:       hosts,
-		Purpose:     purpose,
-		Uses:        chosen.Uses,
-		CreatedBy:   grantedByOf(principal),
-		Enabled:     true,
+		ProjectID:    req.ProjectID,
+		Repositories: repositories,
+		WellKnownID:  req.WellKnownID,
+		Hosts:        hosts,
+		Purpose:      purpose,
+		Uses:         chosen.Uses,
+		CreatedBy:    grantedByOf(principal),
+		Enabled:      true,
 	}
 	if rule.WellKnownID == "" {
 		rule.SecretID = secret.ID
@@ -877,32 +898,20 @@ func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest
 	if _, err := s.checkRule(ctx, rule, true); err != nil {
 		return nil, err
 	}
-	if rule.SandboxID != "" && rule.SandboxID != req.SandboxID {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			"a rule made from a request is pinned to the discobox that filed it, or to none")
-	}
-	if _, _, reason, err := s.ruleFacts(ctx, rule, req, &answering, false); err != nil {
+	if _, _, reason, err := s.ruleFacts(ctx, rule, req, repository, &answering, false); err != nil {
 		return nil, err
 	} else if reason != "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
 			"this rule would not cover the request it is made from: %s", plainSentence(reason)))
 	}
-	sandbox, err := s.store.GetSandbox(ctx, req.ProjectID, req.SandboxID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "the discobox that filed the request was not found")
-	}
-	covered, stage, reason, err := s.ruleReadings(ctx, rule, req, s.factSheet(ctx, sandbox))
+	covered, reason, err := s.ruleUsesCover(ctx, rule, req)
 	if err != nil {
 		return nil, err
 	}
 	if !covered {
-		what := "its uses do not hold what the request asked for"
-		if stage == model.RuleTestStageScope {
-			what = "its scope does not describe the discobox that asked"
-		}
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"this rule would not cover the request it is made from, so it is not made: %s (%s); choose a proposal the judge found to cover it, or approve without a rule",
-			what, plainSentence(reason)))
+			"this rule would not cover the request it is made from, so it is not made: its uses do not hold what the request asked for (%s); choose a proposal the judge found to cover it, or approve without a rule",
+			plainSentence(reason)))
 	}
 	return rule, nil
 }

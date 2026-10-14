@@ -25,7 +25,7 @@ const (
 	Role = "judge"
 	// PromptVersion changes whenever System changes. A stored verdict names
 	// it, so a decision can be read against the words that produced it.
-	PromptVersion = "9"
+	PromptVersion = "10"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
 	//
@@ -97,12 +97,6 @@ const (
 	// delegated (ADR 26-09-30-782 §3). Both are authorization, and there is no
 	// request evidence.
 	KindDelegation = "delegation"
-	// KindScope is whether a discobox is one an approval rule is for, judged
-	// before the rule is tested against what it asked: the rule's scope
-	// sentence against what the control plane recorded about the discobox
-	// (ADR 26-10-12-330 §2). The sentence is the authorization, and the fact
-	// sheet is what is judged.
-	KindScope = "scope"
 	// KindRule is whether what a discobox asked a credential for falls within
 	// the uses of an approval rule, judged before the rule approves the
 	// request (ADR 26-10-12-330 §3). It is a delegation job's shape with its
@@ -153,10 +147,6 @@ type Job struct {
 	// delegated. For a rule job they are the uses a discobox asked for, judged
 	// against Purpose, which is the rule's uses.
 	Uses []string `json:"uses,omitempty"`
-	// Discobox is what the control plane recorded about the discobox asking,
-	// for a scope job: what Purpose, the rule's scope sentence, is read
-	// against.
-	Discobox *Discobox `json:"discobox,omitempty"`
 	// Guidance is what Discobox knows about what the request was recognized
 	// as (GuidanceFor), set by the trusted side that builds the job and never
 	// by whoever observed the request (ADR 26-09-26-240 §4). It explains; it
@@ -169,75 +159,6 @@ type Job struct {
 	// facts rather than authority: a fact explains a target, and never
 	// widens Purpose.
 	Facts []string `json:"facts,omitempty"`
-}
-
-// Discobox is the fact sheet a rule's scope is read against (ADR 26-10-12-330
-// §2): what the control plane recorded about a discobox when it was created.
-// Nothing a discobox writes about itself is on it — not its tags, its
-// description, or anything it asked for — so a discobox cannot write its way
-// into a rule's scope.
-type Discobox struct {
-	// Repository and Ref are its primary source.
-	Repository string `json:"repository,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-	// OtherSources are the repositories beside the primary one, each with its
-	// ref when it names one.
-	OtherSources []string `json:"otherSources,omitempty"`
-	// CreatedBy says who created it: CreatedByPerson or CreatedByDiscobox.
-	CreatedBy string `json:"createdBy"`
-	// Creator is the discobox that created it, when one did.
-	Creator string `json:"creator,omitempty"`
-	// Prompt is the prompt it was created with: its creator's words, never
-	// its own, and data all the same. Missing says what of it is not shown.
-	Prompt *Input `json:"prompt,omitempty"`
-	// PromptWrittenBy labels the prompt with who wrote it, which is who
-	// created the discobox: a rule that wants only a person's word says so,
-	// and this is what it is held to.
-	PromptWrittenBy string `json:"promptWrittenBy,omitempty"`
-	// Skills are the names of the skills it was created with.
-	Skills []string `json:"skills,omitempty"`
-	// Harness is the harness it runs, and Platform its pool's platform.
-	Harness  string `json:"harness,omitempty"`
-	Platform string `json:"platform,omitempty"`
-}
-
-// Who a fact sheet says created a discobox, and so who wrote its prompt.
-const (
-	CreatedByPerson   = "a person"
-	CreatedByDiscobox = "a discobox"
-)
-
-// MaxSheetList is the most sources or skills a fact sheet names. A sheet is
-// read in every scope job, so it stays what a discobox is, not a listing.
-const MaxSheetList = 32
-
-func (d *Discobox) validate() error {
-	if d == nil {
-		return errors.New("a scope job requires what was recorded about the discobox")
-	}
-	if d.CreatedBy != CreatedByPerson && d.CreatedBy != CreatedByDiscobox {
-		return errors.New("a fact sheet says whether a person or a discobox created the discobox")
-	}
-	if (d.CreatedBy == CreatedByDiscobox) != (strings.TrimSpace(d.Creator) != "") {
-		return errors.New("a fact sheet names the creating discobox exactly when one created it")
-	}
-	if len(d.OtherSources) > MaxSheetList || len(d.Skills) > MaxSheetList {
-		return fmt.Errorf("a fact sheet names at most %d sources and %d skills", MaxSheetList, MaxSheetList)
-	}
-	if p := d.Prompt; p != nil {
-		if len(p.Content) > MaxBodyBytes {
-			return errors.New("the prompt shown exceeds what a judge may be shown")
-		}
-		if p.Content == "" && strings.TrimSpace(p.Missing) == "" {
-			return errors.New("a prompt with nothing shown says why")
-		}
-		if d.PromptWrittenBy != d.CreatedBy {
-			return errors.New("a prompt is labeled with who wrote it, which is who created the discobox")
-		}
-	} else if d.PromptWrittenBy != "" {
-		return errors.New("only a prompt is labeled with who wrote it")
-	}
-	return nil
 }
 
 // Input is what a command will read on standard input, as the discobox
@@ -387,9 +308,7 @@ func (b *Body) Answers(need Need) bool {
 // read it. Everything it checks is the trusted side's own doing: a caller
 // supplies evidence, and the shape of a job is not a caller's to get wrong.
 func (j Job) Validate() error {
-	// A scope job has no host: a rule's scope says which discoboxes it is
-	// for, and where the credential goes is a fact the server checked.
-	if strings.TrimSpace(j.Purpose) == "" || (strings.TrimSpace(j.Host) == "") != (j.Kind == KindScope) {
+	if strings.TrimSpace(j.Purpose) == "" || strings.TrimSpace(j.Host) == "" {
 		return errors.New("a job is judged against an approved use and its host")
 	}
 	if j.Round < 1 || j.Round > MaxRounds {
@@ -469,24 +388,11 @@ func (j Job) Validate() error {
 		if j.Round != 1 {
 			return errors.New("a rule job is asked once: there is nothing further to show")
 		}
-	case KindScope:
-		if j.Request != nil || len(j.Command) > 0 || len(j.Uses) > 0 || j.Credential != "" {
-			return errors.New("a scope job carries a discobox's fact sheet and nothing else")
-		}
-		if err := j.Discobox.validate(); err != nil {
-			return err
-		}
-		if j.Round != 1 {
-			return errors.New("a scope job is asked once: there is nothing further to show")
-		}
 	default:
 		return fmt.Errorf("unknown judge job kind %q", j.Kind)
 	}
 	if j.Kind != KindCommand && (j.Stdin != nil || j.Reported != nil) {
 		return errors.New("only a command job reads standard input or runs somewhere")
-	}
-	if j.Kind != KindScope && j.Discobox != nil {
-		return errors.New("only a scope job carries a discobox's fact sheet")
 	}
 	if len(j.Facts) > MaxFacts {
 		return fmt.Errorf("a job carries at most %d facts", MaxFacts)
