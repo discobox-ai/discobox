@@ -233,7 +233,7 @@ Three layers, and the top one holds no logic (ADR 0066):
 ```mermaid
 flowchart TD
     workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix, restore caches, run one target"]
+    action[".github/actions/task<br/>checkout done, install Nix (Go on Windows),<br/>restore caches, run one target, save caches on main"]
     taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
     flake["flake.nix<br/>system tools and environment"]
 
@@ -252,9 +252,10 @@ flowchart TD
   `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
   by Nix.
 - `.github/workflows/` decides only *when* a target runs and on which runner.
-  Every job body is `nix develop -c go tool task <target>`, carried by the
-  `.github/actions/task` composite action. Its Go and golangci-lint caches are
-  keyed by commit and saved only from `main`, so every run starts from the
+  Every job body is one Taskfile target, run by the `.github/actions/task`
+  composite action as `nix develop -c go tool task <target>`, or as plain
+  `go tool task <target>` on Windows. Its Go and golangci-lint caches are keyed
+  by commit and saved only by runs on `main`, so every run starts from the
   newest `main` rather than from whenever `go.sum` last changed.
 
 Release binaries are built on the platform they target — darwin has to be, since

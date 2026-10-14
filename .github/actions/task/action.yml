@@ -9,7 +9,9 @@ description: Run one Taskfile target in the repository's Nix devShell (plain Go 
 # repository: a local composite action is only resolvable once the repository is
 # already on disk, so every job runs actions/checkout first. A job that needs a
 # second target adds a plain `run: nix develop -c go tool task <target>` step —
-# Nix is already installed by then.
+# Nix is already installed by then, though not on Windows. The caches are saved
+# by this action's last step, not when the job ends, so what such a step builds
+# is not kept for the next run.
 
 inputs:
   target:
@@ -44,8 +46,10 @@ runs:
     # Keyed by commit and saved only from main, so a run starts from the newest
     # main that saved one. A key that stays put until go.sum changes is a hit
     # forever and therefore never saved again, and the build cache falls a
-    # commit further behind main with every push. Pull requests only restore:
-    # what one saves is scoped to its own ref, where nothing else can read it.
+    # commit further behind main with every push. A run on main saves, whether
+    # a push, a schedule, or a dispatch; pull requests and tags only restore:
+    # what they would save is scoped to their own ref, where nothing else reads
+    # it.
     #
     # Deliberately actions/cache and not a vendor-specific one: Depot's runners
     # back the GitHub Actions cache API with Depot Cache, so this is already the
@@ -81,7 +85,7 @@ runs:
     # Saved whether or not the target passed: a failing test still leaves the
     # build it compiled behind, and the next push needs it as much.
     - name: Save the Go caches
-      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
       uses: actions/cache/save@v6.1.0
       with:
         path: |
