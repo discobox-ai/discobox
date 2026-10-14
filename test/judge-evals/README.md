@@ -66,3 +66,11 @@ about it. A case names what its request was recognized as
 it, as the control plane does. Real refusals come from the proxy's audit
 record and the verdict a judge gave; controls are requests that must stay
 refused whatever a prompt change does.
+
+## Use-case evals
+
+`use-cases/` asks a different question of the same runner: whether a use
+written as a job holds the judge as well as one written as a list of
+commands. It writes its cases from `use-cases/scenarios.mjs`, one directory
+per style, and scores friction against leaks. See
+[`use-cases/README.md`](use-cases/README.md).

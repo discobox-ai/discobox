@@ -111,6 +111,10 @@ type Run struct {
 	// what a server with jevUnsure: harness puts to its judge discobox. A
 	// refusal without it is one Jev decided, which nothing reads again.
 	Unsure bool `json:"unsure,omitempty"`
+	// Input is the body of the request a -jev run sent Jev
+	// (jev.Verdict.Input), as a server records it on a verdict: what to read
+	// when a question is answered wrongly.
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 func main() {
@@ -313,11 +317,13 @@ type verdict struct {
 	elapsed time.Duration
 	// unsure is a Jev refusal because Jev could not tell (Run.Unsure).
 	unsure bool
+	// input is what Jev was sent (Run.Input).
+	input json.RawMessage
 }
 
 // scored is a verdict as the run of the case it answers.
 func scored(c Case, v verdict) Run {
-	return Run{Case: c.Name, Outcome: v.outcome, Pass: v.err == "" && c.Expect.accepts(v.outcome), Answer: v.answer, Error: v.err, Elapsed: v.elapsed, Unsure: v.unsure}
+	return Run{Case: c.Name, Outcome: v.outcome, Pass: v.err == "" && c.Expect.accepts(v.outcome), Answer: v.answer, Error: v.err, Elapsed: v.elapsed, Unsure: v.unsure, Input: v.input}
 }
 
 // runWrapper invokes the wrapper as the judge runtime does, with the system
@@ -390,6 +396,7 @@ func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeou
 	}
 	v.answer = string(said)
 	v.unsure = decided.Unsure
+	v.input = decided.Input
 	v.outcome = outcomeOfAnswer(job, decided.Answer)
 	return v
 }

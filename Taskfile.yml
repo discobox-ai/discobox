@@ -659,6 +659,29 @@ tasks:
       # default rather than the five a sampled LLM needs.
       - go run ./internal/cmd/discobox-judge-eval -jev -runs {{.RUNS | default "1"}} {{.CLI_ARGS}} test/judge-evals/cases
 
+  eval:judge:use-cases:
+    desc: "Judge the same work under command-list uses and use-case uses, and compare friction and leaks (WRAPPER=, RUNS=3, OUT=build/use-case-evals; extra flags after --)"
+    vars:
+      OUT: '{{.OUT | default "build/use-case-evals"}}'
+    cmds:
+      # Like eval:judge it calls a real model. A style's cases failing is the
+      # measurement, not an error, so each run is let fail and score.mjs says
+      # what it cost.
+      - node test/judge-evals/use-cases/generate.mjs {{.OUT}}
+      - for: [command, use-case, no-never]
+        cmd: go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "3"}} -json {{.OUT}}/{{.ITEM}}.report.json {{.CLI_ARGS}} {{.OUT}}/{{.ITEM}} > {{.OUT}}/{{.ITEM}}.txt || true
+      - node test/judge-evals/use-cases/score.mjs {{.OUT}}
+
+  eval:judge:use-cases:authored:
+    desc: "Have a headless Claude Code write the uses for each use-case scenario's task with the discobox-access skill, then judge the scenario's work under them (AUTHOR_MODEL=sonnet, RUNS=3, OUT=build/use-case-evals)"
+    vars:
+      OUT: '{{.OUT | default "build/use-case-evals"}}'
+    cmds:
+      - test/judge-evals/use-cases/author.sh {{.OUT}}
+      - node test/judge-evals/use-cases/generate.mjs {{.OUT}} --uses {{.OUT}}/authored-uses.json
+      - go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "3"}} -json {{.OUT}}/authored.report.json {{.CLI_ARGS}} {{.OUT}}/authored > {{.OUT}}/authored.txt || true
+      - node test/judge-evals/use-cases/score.mjs {{.OUT}}
+
   test:e2e:wslc:
     desc: "Run the wslc (Windows) provider e2e tests. Requires: Windows with WSL Containers"
     cmds:
