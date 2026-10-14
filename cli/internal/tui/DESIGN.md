@@ -35,6 +35,8 @@ flowchart LR
     M --> S["secretList (F4)"]
     S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
+    M --> K["skillsList (F5)"]
+    K -->|n d| KVerb["Skills / AddSkills / RemoveSkills"]
     WS -->|leader g| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
@@ -67,6 +69,21 @@ sandbox listens on later, so only the command can say it was taken. On a row too
 reminder — the reminder says how the flow goes, the warning says why it will
 not.
 
+
+## The skills screen
+
+`skills.go`, on `F5`: the skills every new discobox gets, wherever each is kept
+(ADR 26-10-14-894). The project's skills sources on the header's server come
+first, in the order a create adds them, then client.yaml's `new.skills`, which
+are this machine's whichever server the header is on. Each row says where it
+is kept. It is `discobox skills` folded into the window, and the harnesses
+screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
+what it is, read as `--skills` reads it — a Git `URL[@REF][//PATH]` with the
+project, a directory in client.yaml — so there is one thing to type rather
+than a list to choose; `d` asks before `RemoveSkills` takes the row out of
+where it is kept, and says that discoboxes already made keep theirs. ←→ move
+the server as on the other two screens, and a listing read for a server the
+header has since left is dropped (`skillsLoaded`).
 
 ## The secrets screen
 
@@ -2212,16 +2229,16 @@ harnesses, which are not one at a time. A press while the listing is out asks
 for another when that one lands rather than stacking a second, and once it is
 late (`listingSlowAfter`) the status line says how long it has been out.
 
-**F1, `F3`, `F4` and Ctrl-O are the window's own keys** (`updateKey`), answered
+**F1, `F3`, `F4`, `F5` and Ctrl-O are the window's own keys** (`updateKey`), answered
 ahead of every screen's dispatch *and* ahead of the run options panel. They are
-the way between screens as much as the way into one: the header offers `F3` and
-`F4` from everywhere and the panel's harness row names `F3` in its hint, so a
+the way between screens as much as the way into one: the header offers `F3`,
+`F4` and `F5` from everywhere and the panel's harness row names `F3` in its hint, so a
 surface that swallowed the key to its neighbour would make those offers a lie
 for exactly as long as somebody was reading them. All but F1 are guarded by
 `!m.inPanes()` — inside a pane every key is the sandbox's. Each is a toggle,
-and the three surfaces are peers: the harnesses, the secrets and the run
-options each put the other two away on their way in — `openHarnesses`,
-`openSecrets`, and the `optionsKey` branch of `updateKey` — so Esc from any of
+and the four surfaces are peers: the harnesses, the secrets, the skills and
+the run options each put the others away on their way in — `openHarnesses`,
+`openSecrets`, `openSkills`, and the `optionsKey` branch of `updateKey` — so Esc from any of
 them goes back to the console rather than to a surface left standing
 underneath. That is not tidiness. A surface left open under another still
 answers its own key from the dispatch above, so the key would close something
@@ -2962,7 +2979,9 @@ discoboxes too. A source nothing has reported on is not followed.
 The card is the Source row's own choices as a list, and under it the settings
 worth a second look before a discobox is made: the harness, the server when
 `Session.Servers` has more than one, and what is brought in beside the source —
-`--user-skills`, `--skills` and `-i`. The cursor opens in the list and Enter
+`--no-project-skills` (Project skills, on unless turned off: the project's
+skills repositories, which the create copies in ahead of the rest, ADR
+26-10-14-894 §2), `--user-skills`, `--skills` and `-i`. The cursor opens in the list and Enter
 there creates, so a create that changes nothing is Enter twice. The settings
 open folded, as their rule and the chip strip's summary of what they are set to
 (the harness always, anything else only once chosen), with the command preview
@@ -3242,6 +3261,7 @@ the newest one where the busy line goes.
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
 | `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and grants, the secret and grant forms |
+| `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `new.skills`, added to and removed from by what a value is |
 | `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per folder and restored |

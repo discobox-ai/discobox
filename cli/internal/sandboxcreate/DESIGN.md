@@ -43,6 +43,11 @@ sandbox create requests.
   Both `discobox new` and `admin box create` take the flags; the frontend
   resolves `discobox new`'s against `client.yaml` before they reach here
   (ADR 26-10-09-389).
+  The project's skills sources arrive as `PromptOptions.ProjectSkills`
+  (`ProjectSkillsRepository`), read from the server by the frontend, and are
+  filed ahead of the `--skills` repositories, so a person's own are the later
+  ones; a refusal names a project entry as the project's (ADR 26-10-14-894
+  §2).
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`

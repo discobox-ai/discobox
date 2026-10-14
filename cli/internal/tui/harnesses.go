@@ -390,6 +390,7 @@ func (m *Model) openHarnesses() tea.Cmd {
 	// them is the window while it is up, and leaving it goes back to the
 	// launcher rather than to the other one still standing behind it.
 	m.secretsOpen = false
+	m.skillsOpen = false
 	m.layout()
 	return m.loadHarnesses()
 }

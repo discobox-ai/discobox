@@ -7,6 +7,7 @@
 package clientconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,7 +52,7 @@ type Config struct {
 
 // New is what a create takes by default.
 type New struct {
-	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it." example:"[\"~/team-skills\"]"`
+	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it. The project's skills repositories (discobox skills) are added ahead of these either way. discobox skills add DIR and rm DIR edit this list in place." example:"[\"~/team-skills\"]"`
 	UserSkills bool     `yaml:"userSkills" doc:"Install your own skills from ~/.claude/skills and ~/.agents/skills in every new discobox, as --user-skills does. --user-skills=false on the command line turns it off for one discobox."`
 }
 
@@ -106,29 +107,38 @@ func Load() (*Config, error) {
 // where whoever wrote it was looking — not wherever the command later runs.
 func (cfg *Config) resolvePaths() error {
 	base := filepath.Dir(cfg.Path)
-	for i, dir := range cfg.New.Skills {
-		dir = strings.TrimSpace(dir)
-		if dir == "" {
-			return fmt.Errorf("%s: new.skills[%d] is empty; name a directory or a Git URL", cfg.Path, i)
+	for i, entry := range cfg.New.Skills {
+		resolved, err := resolveSkill(base, entry)
+		if err != nil {
+			return fmt.Errorf("%s: new.skills[%d]: %w", cfg.Path, i, err)
 		}
-		// A Git URL names a skills source, which is not on this machine.
-		if sandboxcreate.IsSkillsRepository(dir) {
-			cfg.New.Skills[i] = dir
-			continue
-		}
-		if dir == "~" || strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, "~"+string(filepath.Separator)) {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("%s: new.skills[%d]: %w", cfg.Path, i, err)
-			}
-			dir = filepath.Join(home, dir[1:])
-		}
-		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(base, dir)
-		}
-		cfg.New.Skills[i] = filepath.Clean(dir)
+		cfg.New.Skills[i] = resolved
 	}
 	return nil
+}
+
+// resolveSkill is one new.skills entry as a create reads it: a Git URL as
+// written, and a directory made absolute against base, the file's directory.
+func resolveSkill(base, entry string) (string, error) {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return "", errors.New("is empty; name a directory or a Git URL")
+	}
+	// A Git URL names a skills source, which is not on this machine.
+	if sandboxcreate.IsSkillsRepository(entry) {
+		return entry, nil
+	}
+	if entry == "~" || strings.HasPrefix(entry, "~/") || strings.HasPrefix(entry, "~"+string(filepath.Separator)) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		entry = filepath.Join(home, entry[1:])
+	}
+	if !filepath.IsAbs(entry) {
+		entry = filepath.Join(base, entry)
+	}
+	return filepath.Clean(entry), nil
 }
 
 // exampleHeader introduces the generated reference file.

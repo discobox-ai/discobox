@@ -137,6 +137,10 @@ type Model struct {
 	// inbox. See secrets.go.
 	secrets *secretList
 
+	// skills is the skills every new discobox gets: the project's skills
+	// repositories and client.yaml's directories. See skills.go.
+	skills *skillsList
+
 	// requestRows is the credential requests waiting on a person, drawn under
 	// the secrets on that screen: what the project holds, and what is waiting
 	// on it, and rules the project's approval rules under those. table is
@@ -342,6 +346,9 @@ type Model struct {
 	// secretsOpen is whether the secrets screen has the window, on the same
 	// terms the harnesses screen has it.
 	secretsOpen bool
+	// skillsOpen is whether the skills screen has the window, on the same
+	// terms again.
+	skillsOpen bool
 
 	// audit is the audit screen, drawn over the workspace while it is up, and
 	// auditGen counts its openings. See audit.go.
@@ -506,6 +513,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		list:        newSandboxList(session),
 		harnesses:   newHarnessList(),
 		secrets:     newSecretList(),
+		skills:      newSkillsList(),
 		requestRows: newRequestList(),
 		rules:       newRuleList(),
 		prompt:      ta,
@@ -971,6 +979,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case secretActionMsg:
 		return m.secretActed(msg)
+
+	case skillsLoadedMsg:
+		return m.skillsLoaded(msg)
+
+	case skillsActionMsg:
+		return m.skillsActed(msg)
 
 	case credentialsLoadedMsg:
 		// An approval or a denial re-reads the inbox itself, to take the
@@ -1454,7 +1468,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	// drawn over it and owns every key, paste included. See updateKey.
 	case m.inPanes():
 		return m.updatePane(msg)
-	case m.harnessesOpen, m.secretsOpen, m.submitting:
+	case m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.submitting:
 		return nil
 	}
 	before := m.promptState()
@@ -1676,6 +1690,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.openSecrets()
 	}
+	// The skills screen, on the next key again.
+	if keyName(msg) == skillsKey && !m.inPanes() {
+		if m.skillsOpen {
+			m.closeSkills()
+			return nil
+		}
+		return m.openSkills()
+	}
 	// The run options on the same terms again: one key that opens the panel and
 	// closes it, from every screen the window has of its own.
 	//
@@ -1689,7 +1711,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if keyName(msg) == optionsKey && !m.inPanes() {
 		m.optionsOpen = !m.optionsOpen
 		if m.optionsOpen {
-			m.harnessesOpen, m.secretsOpen = false, false
+			m.harnessesOpen, m.secretsOpen, m.skillsOpen = false, false, false
 		}
 		m.layout()
 		return nil
@@ -1712,6 +1734,9 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.secretsOpen {
 			return m.updateSecrets(msg)
 		}
+		if m.skillsOpen {
+			return m.updateSkills(msg)
+		}
 	}
 
 	switch m.focus {
@@ -1731,7 +1756,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 // motion, a chord, a key some other screen takes first — counts as doing
 // something.
 func (m *Model) typingIntoPrompt(msg tea.KeyPressMsg) bool {
-	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen {
+	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen || m.skillsOpen {
 		return false
 	}
 	switch keyName(msg) {
@@ -3213,6 +3238,8 @@ func (m *Model) layout() {
 	// list sized on the frame after that would open with no rows in it.
 	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.height-harnessesChrome, 0)
 	m.harnesses.clamp()
+	m.skills.width, m.skills.height = m.bodyWidth(), max(m.height-skillsChrome, 0)
+	m.skills.clamp()
 	// The lower table takes what its rows need, up to a third of the screen:
 	// what is waiting is usually a line or two, and a fixed split would spend
 	// half the screen on "nothing is waiting".
@@ -3354,6 +3381,8 @@ func (m *Model) view() tea.View {
 		content = m.viewHarnesses()
 	case m.secretsOpen:
 		content = m.viewSecrets()
+	case m.skillsOpen:
+		content = m.viewSkills()
 	default:
 		// The header spans the window; under it the mark stands beside the
 		// list, and the composer spans both again. Each block is drawn with
@@ -3597,6 +3626,7 @@ func (m *Model) headerHints() []hint {
 		keyed("F1", "f1", "help"),
 		keyed(HarnessesKeyName, harnessesKey, "harnesses"),
 		keyed(SecretsKeyName, secretsKey, "secrets"),
+		keyed(SkillsKeyName, skillsKey, "skills"),
 		quit,
 	}
 }
@@ -3931,6 +3961,9 @@ func (m *Model) hints() []hint {
 		if m.secretsOpen {
 			return m.secretHints()
 		}
+		if m.skillsOpen {
+			return m.skillsHints()
+		}
 	}
 	if m.audit != nil && m.inPanes() {
 		return m.auditHints()
@@ -4181,6 +4214,7 @@ func (m *Model) helpText() string {
 		"",
 		"    " + HarnessesKeyName + "             the harnesses",
 		"    " + SecretsKeyName + "             the project's secrets",
+		"    " + SkillsKeyName + "             the skills every new discobox gets",
 		"    Ctrl-O         run options",
 		"",
 		"───────────────────────────────────────────────────────────────",

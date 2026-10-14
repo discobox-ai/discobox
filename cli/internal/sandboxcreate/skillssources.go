@@ -35,6 +35,42 @@ type SkillsRepository struct {
 	// Directory is the skills directory inside it, RootSkillsDirectory for the
 	// root.
 	Directory string
+	// Project marks an entry of the project's skills sources, which the
+	// create copies in ahead of its own --skills (ADR 26-10-14-894 §2).
+	Project bool
+}
+
+// ProjectSkillsRepository is one entry of the project's skills sources as the
+// --skills URL[@REF][//PATH] it stands for.
+func ProjectSkillsRepository(url, ref, directory string) SkillsRepository {
+	source := url
+	if ref != "" {
+		source += "@" + ref
+	}
+	if directory == "" {
+		directory = sandboxconfig.RootSkillsDirectory
+	}
+	arg := source
+	if directory != sandboxconfig.RootSkillsDirectory {
+		arg += "//" + directory
+	}
+	return SkillsRepository{Arg: arg, Source: source, Directory: directory, Project: true}
+}
+
+// URLAndRef are the repository's URL and the ref named after its @, empty
+// for none.
+func (r SkillsRepository) URLAndRef() (string, string) {
+	url, ref, _ := splitRunSourceRef(r.Source)
+	return url, ref
+}
+
+// String names the repository the way the person creating the discobox named
+// it: by its --skills value, or as the project's.
+func (r SkillsRepository) String() string {
+	if r.Project {
+		return "the project's skills source " + r.Arg
+	}
+	return "--skills " + r.Arg
 }
 
 // SplitSkills splits --skills values into directories and skills sources. A
@@ -106,29 +142,33 @@ func setSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig,
 	paths := sandboxpath.For(sourceOptions.Platform)
 	placement := referencePlacement{Root: paths.Join(paths.WorkingRoot(), skillsSourcesDirectory)}
 	keys := map[string]string{}
-	refs := map[string]string{}
+	refs := map[string]SkillsRepository{}
 	var skillsSources []apiclientgen.SandboxSkillsSource
 	for _, repo := range repos {
 		base, _, _ := splitRunSourceRef(repo.Source)
 		key, resolved := keys[repo.Source]
 		if !resolved {
 			if other, ok := refs[base]; ok {
-				return fmt.Errorf("--skills %s and %s name one repository at two refs; a discobox checks out one", other, repo.Arg)
+				err := fmt.Errorf("%s and %s name one repository at two refs; a discobox checks out one", other, repo)
+				if other.Project || repo.Project {
+					err = fmt.Errorf("%w (--no-project-skills leaves the project's out)", err)
+				}
+				return err
 			}
 			reference, err := resolveNamedReference(ctx, repo.Source, placement, sourceOptions, used)
 			if err != nil {
-				return fmt.Errorf("--skills %s: %w", repo.Arg, err)
+				return fmt.Errorf("%s: %w", repo, err)
 			}
 			if occupied(reference.Key) {
 				reference.Resolved.close()
-				return fmt.Errorf("--skills %s lands at %s, where another source already is", repo.Arg, reference.Key)
+				return fmt.Errorf("%s lands at %s, where another source already is", repo, reference.Key)
 			}
 			reference.APISource.SetPurpose(apiclientgen.NewOptGitSourcePurpose(apiclientgen.GitSourcePurposeSkills))
 			local.add(reference.Key, reference.Resolved)
 			references[reference.Key] = *reference.APISource
 			key = reference.Key
 			keys[repo.Source] = key
-			refs[base] = repo.Arg
+			refs[base] = repo
 		}
 		skillsSources = append(skillsSources, apiclientgen.SandboxSkillsSource{Source: key, Directory: repo.Directory})
 	}

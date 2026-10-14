@@ -165,3 +165,73 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 		t.Fatal("add skills sources onto an occupied directory: nil, want a refusal")
 	}
 }
+
+// The project's skills sources go ahead of the create's own --skills, so a
+// person's own directory is the later one and wins on a skill's name (ADR
+// 26-10-14-894 §2).
+func TestBuildPromptSandboxBodyFilesProjectSkillsFirst(t *testing.T) {
+	tools := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "tools"))
+	shared := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "shared"))
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+		Platform:      linuxSandbox,
+		NoSource:      true,
+		IncludeDirty:  IncludeDirtyNever,
+		ProjectSkills: []SkillsRepository{ProjectSkillsRepository(shared, "", "skills")},
+		SkillDirs:     []string{tools},
+	})
+	if err != nil {
+		t.Fatalf("build prompt sandbox body: %v", err)
+	}
+	defer local.Close()
+	want := []apimodel.SandboxSkillsSource{
+		{Source: "/workspace/skill-sources/shared", Directory: "skills"},
+		{Source: "/workspace/skill-sources/tools", Directory: "."},
+	}
+	if !reflect.DeepEqual(body.Config.SkillsSources, want) {
+		t.Fatalf("skills sources = %+v, want %+v", body.Config.SkillsSources, want)
+	}
+}
+
+// A --skills naming a repository the project names at another ref is refused
+// as two --skills are, and the refusal says how to leave the project's out.
+func TestBuildPromptSandboxBodyRefusesAProjectRepositoryAtAnotherRef(t *testing.T) {
+	tools := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "tools"))
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+		Platform:      linuxSandbox,
+		NoSource:      true,
+		IncludeDirty:  IncludeDirtyNever,
+		ProjectSkills: []SkillsRepository{ProjectSkillsRepository(tools, "main", ".")},
+		SkillDirs:     []string{tools + "//b"},
+	})
+	if local != nil {
+		local.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "the project's skills source "+tools+"@main") || !strings.Contains(err.Error(), "--no-project-skills") {
+		t.Fatalf("build prompt sandbox body = %v, want a refusal naming the project's and --no-project-skills", err)
+	}
+}
+
+// A project entry is the --skills value it stands for.
+func TestProjectSkillsRepositoryIsItsSkillsValue(t *testing.T) {
+	for _, tc := range []struct {
+		url, ref, dir string
+		arg           string
+	}{
+		{url: "https://github.com/acme/tools", dir: ".", arg: "https://github.com/acme/tools"},
+		{url: "https://github.com/acme/tools", ref: "v2", dir: "agents/skills", arg: "https://github.com/acme/tools@v2//agents/skills"},
+		{url: "git@github.com:acme/tools", dir: "", arg: "git@github.com:acme/tools"},
+	} {
+		repo := ProjectSkillsRepository(tc.url, tc.ref, tc.dir)
+		split, err := SplitSkills([]string{repo.Arg})
+		if err != nil || repo.Arg != tc.arg || len(split.Repositories) != 1 {
+			t.Fatalf("%+v: arg %q (%v), want %q", tc, repo.Arg, err, tc.arg)
+		}
+		if got := split.Repositories[0]; got.Source != repo.Source || got.Directory != repo.Directory {
+			t.Fatalf("%q reads back as %+v, want %+v", repo.Arg, got, repo)
+		}
+		if url, ref := repo.URLAndRef(); url != tc.url || ref != tc.ref {
+			t.Fatalf("%q: url, ref = %q, %q", repo.Arg, url, ref)
+		}
+	}
+}

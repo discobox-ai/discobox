@@ -1200,8 +1200,8 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
 	}
-	// The panel names no skills, so what client.yaml says stands; `discobox
-	// new`'s own request replaces it with whichever flags it was given.
+	// A Skills or User skills row left alone is nil, so what client.yaml says
+	// stands; one that was set, or `discobox new`'s own flags, replace it.
 	var err error
 	if opts.SkillDirs, opts.UserSkills, err = newSkills(req.SkillDirs, req.UserSkills); err != nil {
 		return tui.Sandbox{}, err
@@ -1242,6 +1242,11 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	}
 	if opts.PoolID, opts.Platform, err = d.app.newSandboxPlacement(ctx, d.client, d.projectID, req.Pool); err != nil {
 		return tui.Sandbox{}, err
+	}
+	if !req.NoProjectSkills {
+		if opts.ProjectSkills, err = projectSkills(ctx, d.client, d.projectID); err != nil {
+			return tui.Sandbox{}, err
+		}
 	}
 
 	step := func(step sandboxcreate.Step) {
