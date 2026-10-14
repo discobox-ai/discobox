@@ -1,0 +1,30 @@
+# The pool agent as a unit of a machine's own systemd. Only a machine's image
+# installs this (pool-agent/boxd.yaml); in a pool container the same binary is
+# the entrypoint and PID 1, and no unit runs it. discobox-pool-agent.path
+# starts it when its bootstrap arrives.
+[Unit]
+Description=Discobox Pool Agent
+Documentation=https://github.com/discobox-ai/discobox
+After=network-online.target
+# The proxy starts with the agent and after it; its drop-in holds that order.
+Wants=network-online.target discobox-proxy.service
+# A control plane that cannot be reached yet is waited for, not given up on:
+# nothing else would start the agent again.
+StartLimitIntervalSec=0
+
+[Service]
+# Ready is the agent saying it has written what the units after it read
+# (proxy.env, the proxy's CA bundle and its control key), the point at which a
+# container's agent starts systemd.
+Type=notify
+NotifyAccess=main
+# The image's service port (pool-agent/boxd.yaml), unless the bootstrap names
+# another listener.
+Environment=DISCOBOX_AGENT_LISTEN_URL=http://0.0.0.0:3002
+# The bootstrap: the DISCOBOX_* variables a container is started with, one
+# NAME=value to a line. Read again on every start.
+EnvironmentFile=/etc/discobox/pool-agent.env
+ExecStart=/usr/local/bin/discobox-pool-agent
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed

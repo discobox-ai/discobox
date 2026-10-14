@@ -133,7 +133,8 @@ func TestMergeImageMetadataPlatformAccountShellFeatures(t *testing.T) {
 			Features: Features{Docker: true},
 		},
 		ImageMetadata{Account: "leaf", ImageKind: platform.DiscoVM("boxd"), Features: Features{Desktop: true}},
-		ImageMetadata{Shell: "  ", Features: Features{}},
+		ImageMetadata{Shell: "  ", Features: Features{PoolBuild: true}},
+		ImageMetadata{Features: Features{}},
 	)
 	if merged.Platform != (platform.Platform{OS: "darwin", Arch: "arm64"}) {
 		t.Errorf("platform = %v, want the base's, which nothing overrode", merged.Platform)
@@ -144,8 +145,8 @@ func TestMergeImageMetadataPlatformAccountShellFeatures(t *testing.T) {
 	if merged.Account != "leaf" || merged.Shell != "/bin/sh" {
 		t.Errorf("account, shell = %q, %q; want the leaf's account and the base's shell", merged.Account, merged.Shell)
 	}
-	if !merged.Features.Docker || !merged.Features.Desktop {
-		t.Errorf("features = %+v, want both: no layer takes a feature away", merged.Features)
+	if !merged.Features.Docker || !merged.Features.Desktop || !merged.Features.PoolBuild {
+		t.Errorf("features = %+v, want all three: no layer takes a feature away", merged.Features)
 	}
 }
 
@@ -153,7 +154,7 @@ func TestValidateForLinux(t *testing.T) {
 	linux := ImageMetadata{
 		Volumes:          []Volume{{Path: "%HOME%", Volume: VolumeData}},
 		AdditionalGroups: []string{"docker"},
-		Features:         Features{Desktop: true, Docker: true},
+		Features:         Features{Desktop: true, Docker: true, PoolBuild: true},
 	}
 	if err := linux.ValidateFor("linux"); err != nil {
 		t.Fatalf("a Linux manifest with volumes, groups and features: %v", err)
@@ -203,6 +204,7 @@ func TestValidateForNonLinux(t *testing.T) {
 		"groups":            {"darwin", func(m *ImageMetadata) { m.AdditionalGroups = []string{"staff"} }, "declares no additionalGroups"},
 		"a desktop":         {"darwin", func(m *ImageMetadata) { m.Features.Desktop = true }, "declares no desktop"},
 		"nested docker":     {"windows", func(m *ImageMetadata) { m.Features.Docker = true }, "declares no nested Docker"},
+		"a pool build":      {"darwin", func(m *ImageMetadata) { m.Features.PoolBuild = true }, "declares no pool build"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := valid[tc.goos]

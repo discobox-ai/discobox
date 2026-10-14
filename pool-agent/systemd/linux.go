@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +15,10 @@ import (
 
 const defaultSystemdPath = "/sbin/init"
 const systemdChildEnv = "DISCOBOX_SYSTEMD_CHILD"
+
+// notifySocketEnv names the socket a systemd gives a Type=notify unit to
+// report on (sd_notify(3)).
+const notifySocketEnv = "NOTIFY_SOCKET"
 
 func ExecSystemdChildIfRequested() error {
 	if os.Getenv(systemdChildEnv) != "1" {
@@ -64,6 +69,28 @@ func StartNamespace(ctx context.Context, logger *slog.Logger) (*exec.Cmd, error)
 	}
 	logger.Info("started systemd in child pid namespace", "pid", cmd.Process.Pid)
 	return cmd, nil
+}
+
+// NotifyReady tells the systemd this process is a unit of that it has started:
+// what it writes for the units ordered after it is in place. It is the
+// machine's counterpart of StartNamespace. A pool container's agent is PID 1
+// and starts systemd itself once those files exist; a machine's systemd is
+// already running and started the agent, so it is told instead
+// (ADR 26-10-09-106 §1). Under no such systemd, a container's agent included,
+// there is no one to tell and it does nothing.
+func NotifyReady() error {
+	socket := os.Getenv(notifySocketEnv)
+	if socket == "" {
+		return nil
+	}
+	// A leading "@" names an abstract socket, which net spells the same way.
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	_, err = conn.Write([]byte("READY=1"))
+	return err
 }
 
 // ManagedChildProcesses names the children this process starts and never waits

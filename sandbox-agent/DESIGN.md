@@ -632,6 +632,13 @@ The sandbox's own dockerd still runs builds for anything not rewritten — a
 direct `docker buildx` — so `runcca`'s handling of BuildKit's `runc run` path
 below remains load-bearing.
 
+All of this is the manifest's `poolBuild` feature, which the base layer
+declares (`image.json`). The image's boxd twin (`boxd.yaml`) leaves it out: a
+machine sandbox's pool runs no builder (ADR 26-10-09-106 §5), so no mediator is
+ever delivered, `dockercache` passes every build through, and the machine's
+own dockerd builds it. The runc and docker wrappers ship there all the same
+(ADR 0020).
+
 ## Trust Store on the Boot Path
 
 `discobox-trust-ca.service` is ordered `Before=discobox-sandbox-agent.service`,

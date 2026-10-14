@@ -1,7 +1,7 @@
 # The shared base (Dockerfile beside this file) as a boxd machine image, for
 # disco-vm (github.com/discobox-ai/vm). Each layer is a boxd snapshot. Built
-# FROM by sandbox-agent/boxd.yaml, the way the Dockerfile is built FROM by
-# sandbox-agent/Dockerfile:
+# FROM by pool-agent/boxd.yaml and sandbox-agent/boxd.yaml, the way the
+# Dockerfile is built FROM by pool-agent/Dockerfile and sandbox-agent/Dockerfile:
 #
 #   disco-vm --driver boxd build -t discobox/base -f base-image/boxd.yaml base-image
 #
@@ -58,9 +58,11 @@ layers:
   # that containerd. The repository's URL names the distribution, so that is
   # read from the guest rather than written down.
   #
-  # Unlike the Dockerfile, the units are left as the packages install them:
-  # the sandbox half (sandbox-agent/boxd.yaml) re-declares the socket
-  # activation it wants, and no pool agent ever runs on this image.
+  # Unlike the Dockerfile, the units are left as the packages install them,
+  # and each image built FROM this one says what it wants of them: the sandbox
+  # half (sandbox-agent/boxd.yaml) re-declares its socket activation, and the
+  # pool half (pool-agent/boxd.yaml), whose agent runs no Docker, disables
+  # them.
   - name: docker
     steps:
       - run: |

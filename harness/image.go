@@ -76,6 +76,14 @@ type Features struct {
 	// Docker is the nested Docker daemon, with the runc wrapper that injects
 	// the pool's trust into its containers (ADR 0020).
 	Docker bool `json:"docker,omitempty"`
+	// PoolBuild is the pool-shared build path: `docker build` run on the
+	// pool's BuildKit through the docker wrapper and the bridge to the pool's
+	// mediator (ADR 0044). Unlike the two above it is not only the image's
+	// files: it is there when the pool the image is built for has a builder.
+	// An image for sandboxes that are machines of their own declares Docker
+	// without it (ADR 26-10-09-106 §5), though it ships the same wrapper and
+	// bridge unit, which do nothing where no builder is delivered.
+	PoolBuild bool `json:"poolBuild,omitempty"`
 }
 
 // ValidateFor reports whether a resolved manifest describes something a
@@ -86,8 +94,8 @@ type Features struct {
 // database, so it names neither an account nor a shell. Every other platform
 // is a VM template (ADR 0145): it names its one account and its shell, and
 // declares none of the Linux container mechanisms — volumes, supplementary
-// groups, the desktop, nested Docker — because a VM has nothing to bind them
-// to and no group to put an account in. Each is refused rather than ignored,
+// groups, the desktop, nested Docker, the pool-shared build path — because a
+// VM has nothing to bind them to and no group to put an account in. Each is refused rather than ignored,
 // so a manifest never claims something its sandbox will not have.
 func (m ImageMetadata) ValidateFor(goos string) error {
 	account, shell := strings.TrimSpace(m.Account), strings.TrimSpace(m.Shell)
@@ -124,6 +132,9 @@ func (m ImageMetadata) ValidateFor(goos string) error {
 	}
 	if m.Features.Docker {
 		return fmt.Errorf("a %s manifest declares no nested Docker: it is a Linux container mechanism", goos)
+	}
+	if m.Features.PoolBuild {
+		return fmt.Errorf("a %s manifest declares no pool build: the pool-shared builder is a Linux container pool's", goos)
 	}
 	return nil
 }

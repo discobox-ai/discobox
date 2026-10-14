@@ -414,7 +414,7 @@ tasks:
         exec "$@" -t {{.HARNESS_IMAGE}} harness/{{.HARNESS_DIR}}
 
   build:boxd-images:
-    desc: Build the base, sandbox base, and harness images as boxd machine images with disco-vm (DISCO_VM defaults to disco-vm on PATH; it reads BOXD_API_KEY or BOXD_TOKEN)
+    desc: Build the base, pool-agent, sandbox base, and harness images as boxd machine images with disco-vm (DISCO_VM defaults to disco-vm on PATH; it reads BOXD_API_KEY or BOXD_TOKEN)
     vars:
       DISCO_VM: '{{default "disco-vm" .DISCO_VM}}'
     cmds:
@@ -422,6 +422,7 @@ tasks:
       # by the tag given here, from the same build context. The shell harness
       # is the sandbox base itself, so it has no spec.
       - '{{.DISCO_VM}} --driver boxd build -t discobox/base -f base-image/boxd.yaml base-image'
+      - '{{.DISCO_VM}} --driver boxd build -t discobox/pool-agent -f pool-agent/boxd.yaml .'
       - '{{.DISCO_VM}} --driver boxd build -t discobox/sandbox-agent -f sandbox-agent/boxd.yaml .'
       - '{{.DISCO_VM}} --driver boxd build -t discobox/claude-code -f harness/claude-code/boxd.yaml harness/claude-code'
       - '{{.DISCO_VM}} --driver boxd build -t discobox/codex -f harness/codex-cli/boxd.yaml harness/codex-cli'

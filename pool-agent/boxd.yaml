@@ -1,0 +1,124 @@
+# The pool agent (Dockerfile beside this file) as a boxd machine image, for
+# disco-vm (github.com/discobox-ai/vm), built FROM base-image/boxd.yaml. It is
+# the machine a `discovm` boxd pool's agent runs in (ADR 26-10-09-106 §1); each
+# of that pool's sandboxes is a machine of its own. The build context is the
+# repository root, as it is for the Dockerfile:
+#
+#   disco-vm --driver boxd build -t discobox/pool-agent -f pool-agent/boxd.yaml .
+#
+# or `go tool task build:boxd-images` for the whole chain.
+#
+# It is the Dockerfile's twin: the same discobox-pool-agent binary at the same
+# path, run as root on the same state root (/var/lib/discobox), with the same
+# proxy unit. Change the two together. Where a machine differs from a
+# container, the step says so. The differences in general:
+#
+#   - There are no build stages. The binary is built in the guest from the
+#     directories the builder stage COPYs, with a Go that is fetched for the
+#     build and removed with the source and caches.
+#   - There is no ENTRYPOINT. A machine boots its own systemd, so the agent is
+#     a unit of it rather than PID 1, and has no bootstrap in its environment:
+#     discobox-pool-agent.path starts it once a provider has placed
+#     /etc/discobox/pool-agent.env (poolagent.BootstrapFile), the same
+#     DISCOBOX_* variables as a file.
+#   - The proxy is not started at boot. A container's agent writes the proxy's
+#     environment, CA bundle and control key before systemd exists; here the
+#     agent's unit starts the proxy's, ordered after the agent says it has
+#     written them.
+#   - There is no BuildKit, mediator, pool registry or discobox-pool-runc, and
+#     none of their units: no sandbox is a container here and no sandbox's
+#     build reaches this machine. Nothing runs Docker either, so the units of
+#     the Docker the base ships are disabled.
+#   - There are no VOLUMEs, EXPOSE or HEALTHCHECK. The machine's disk is the
+#     pool's durable state; `service` is the one port it serves.
+#
+# No args, and versions inside the steps that use them; see
+# base-image/boxd.yaml.
+from:
+  image: discobox/base
+shell: ["/bin/bash", "-o", "pipefail", "-c"]
+env:
+  DEBIAN_FRONTEND: noninteractive
+resources:
+  cpus: 4
+  memory: 16GiB
+# The agent's API, the Dockerfile's EXPOSE 3002 and DISCOBOX_AGENT_PORT: the
+# port a driver leases the agent on, and the one discobox-pool-agent.service
+# listens on.
+service: {port: 3002}
+layers:
+  # The image's own files, from this repository, at the paths the Dockerfile
+  # COPYs them to. Before the binary, which every source change rebuilds.
+  - name: image-files
+    steps:
+      - copy: {src: pool-agent/image/systemd, dst: /var/tmp/discobox-build/systemd}
+      - run: |
+          set -eux
+          s=/var/tmp/discobox-build/systemd
+          install -D -m 0644 $s/discobox-proxy.service /etc/systemd/system/discobox-proxy.service
+          # The machine's alone: the agent as a unit, the path unit that starts
+          # it, and the proxy's place after it.
+          install -D -m 0644 $s/discobox-pool-agent.service /etc/systemd/system/discobox-pool-agent.service
+          install -D -m 0644 $s/discobox-pool-agent.path /etc/systemd/system/discobox-pool-agent.path
+          install -D -m 0644 $s/discobox-proxy.service.d/after-agent.conf /etc/systemd/system/discobox-proxy.service.d/after-agent.conf
+          rm -rf /var/tmp/discobox-build
+          # The Dockerfile's directories, less Docker's and the runc wrapper's.
+          mkdir -p /var/lib/discobox /var/lib/discobox/proxy /etc/discobox
+          # The Dockerfile enables docker.service and the builder's units; this
+          # image runs neither. The base leaves Docker's units as its packages
+          # installed them, which on boxd's Ubuntu is enabled.
+          systemctl disable docker.service docker.socket containerd.service
+          # Only the path unit: it starts the agent, and the agent's unit
+          # starts the proxy. The Dockerfile enables discobox-proxy.service
+          # itself, because there systemd starts after the agent has run.
+          systemctl enable discobox-pool-agent.path
+
+  # This repository's binary: the Dockerfile's builder stage, built in the
+  # guest from the directories that stage COPYs. Last, because every source
+  # change rebuilds it.
+  - name: binaries
+    steps:
+      - copy: {src: go.mod, dst: /var/tmp/discobox-src}
+      - copy: {src: go.sum, dst: /var/tmp/discobox-src}
+      - copy: {src: agentcreds, dst: /var/tmp/discobox-src/agentcreds}
+      - copy: {src: api, dst: /var/tmp/discobox-src/api}
+      - copy: {src: auditid, dst: /var/tmp/discobox-src/auditid}
+      - copy: {src: controlplane, dst: /var/tmp/discobox-src/controlplane}
+      - copy: {src: fsdurable, dst: /var/tmp/discobox-src/fsdurable}
+      - copy: {src: gitbackend, dst: /var/tmp/discobox-src/gitbackend}
+      - copy: {src: harness, dst: /var/tmp/discobox-src/harness}
+      - copy: {src: hostscope, dst: /var/tmp/discobox-src/hostscope}
+      - copy: {src: judge, dst: /var/tmp/discobox-src/judge}
+      - copy: {src: layout, dst: /var/tmp/discobox-src/layout}
+      - copy: {src: platform, dst: /var/tmp/discobox-src/platform}
+      - copy: {src: proxy, dst: /var/tmp/discobox-src/proxy}
+      - copy: {src: runcca, dst: /var/tmp/discobox-src/runcca}
+      - copy: {src: sandboxconfig, dst: /var/tmp/discobox-src/sandboxconfig}
+      - copy: {src: sandboxpath, dst: /var/tmp/discobox-src/sandboxpath}
+      - copy: {src: sandboxtree, dst: /var/tmp/discobox-src/sandboxtree}
+      - copy: {src: sandboxuser, dst: /var/tmp/discobox-src/sandboxuser}
+      - copy: {src: secretformat, dst: /var/tmp/discobox-src/secretformat}
+      - copy: {src: sourcecache, dst: /var/tmp/discobox-src/sourcecache}
+      - copy: {src: tarsums, dst: /var/tmp/discobox-src/tarsums}
+      - copy: {src: vsock, dst: /var/tmp/discobox-src/vsock}
+      - copy: {src: wellknown, dst: /var/tmp/discobox-src/wellknown}
+      - copy: {src: wire, dst: /var/tmp/discobox-src/wire}
+      - copy: {src: pool-agent, dst: /var/tmp/discobox-src/pool-agent}
+      # The builder stage's Go is an image of its own; a machine has none, and
+      # the pool image keeps none, so the current release is fetched for this
+      # step and removed with the source. discobox-pool-runc, the stage's
+      # second binary, is the pool builder's and is not built.
+      - run: |
+          set -eux
+          go_root=/var/tmp/discobox-go
+          mkdir -p "$go_root"
+          GO_VERSION="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)"
+          curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" | tar -C "$go_root" -xz
+          export PATH="$go_root/go/bin:$PATH" GOPATH="$go_root/path" GOCACHE="$go_root/cache" GOFLAGS=-trimpath CGO_ENABLED=0
+          cd /var/tmp/discobox-src
+          go -C pool-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-pool-agent ./cmd/discobox-pool-agent
+          cd /
+          rm -rf /var/tmp/discobox-src "$go_root"
+          # The units' ExecStart, and the proof that the build produced it.
+          test -x /usr/local/bin/discobox-pool-agent
+          systemd-analyze verify /etc/systemd/system/discobox-pool-agent.service /etc/systemd/system/discobox-pool-agent.path /etc/systemd/system/discobox-proxy.service

@@ -1,0 +1,15 @@
+# Starts the pool agent once its bootstrap is in place, and not before. Only a
+# machine's image installs this (pool-agent/boxd.yaml): a pool container is
+# started with its bootstrap in its environment and its agent as PID 1, and a
+# machine is already running when its provider places one in it
+# (ADR 26-10-09-106 §1). The path is poolagent.BootstrapFile.
+[Unit]
+Description=Discobox Pool Agent bootstrap
+Documentation=https://github.com/discobox-ai/discobox
+
+[Path]
+PathExists=/etc/discobox/pool-agent.env
+Unit=discobox-pool-agent.service
+
+[Install]
+WantedBy=paths.target

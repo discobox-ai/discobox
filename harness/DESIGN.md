@@ -37,14 +37,22 @@ launchers, and configure scripts.
   neither, because both come from the account the sandbox resolves from its
   own passwd database (ADR 0025). `features` says what the filesystem ships
   beyond running commands — `desktop`, `docker` (nested Docker and its runc
-  wrapper) — and the Linux base layer declares both. A feature merges like a
+  wrapper), `poolBuild` (`docker build` on the pool's shared builder,
+  ADR 0044) — and the Linux base layer declares all three. `poolBuild` is
+  the one that is not the filesystem's alone: it also says the pool the image
+  is built for has a builder. The base image's boxd twin declares the first
+  two only: a machine sandbox's pool has none (ADR 26-10-09-106 §5), so its
+  Docker builds on the machine itself. That twin still ships the docker
+  wrapper and the bridge unit, both inert with no builder delivered, because
+  the sandbox agent's intake names the unit whatever the manifest says.
+  A feature merges like a
   group: any layer adds one, none removes one. `ImageMetadata.ValidateFor`
   judges the merged manifest by its platform's OS: a non-Linux one with
-  volumes, `additionalGroups`, a desktop or nested Docker is refused, each a
-  Linux container mechanism its VM has nothing to do with. An image built on a
-  base layer from before `features` existed declares none though it ships
-  both; nothing reads `features` yet, and the first thing that does has to
-  read such a Linux image as the base it is.
+  volumes, `additionalGroups`, a desktop, nested Docker or a pool build is
+  refused, each a Linux container mechanism its VM has nothing to do with. An
+  image built on a base layer from before a feature existed does not declare
+  it though it ships it; nothing reads `features` yet, and the first thing
+  that does has to read such a Linux image as the base it is.
 - **A manifest is a stack of layers** (ADR 0086 §2). An image's effective
   manifest is `harness.ResolveImageLabels`: every
   `io.discobox.image.v1.<NN>-<name>` label in ascending order of that suffix,
@@ -195,8 +203,9 @@ launchers, and configure scripts.
     the nested daemon's images, containers and volumes are rebuildable, and
     its snapshot store cannot be carried faithfully by a plain tar.
     `/var/lib/discobox` travels — it is the sandbox agent's own state.
-  - `features`: `desktop` and `docker`, because the base image's filesystem
-    ships both, and a manifest that leaves a feature out has not got it.
+  - `features`: `desktop`, `docker` and `poolBuild`, because the base image
+    ships all three and its pool has a builder, and a manifest that leaves a
+    feature out has not got it.
   - The rest of the persistent and cached paths, the `brew`, `docker`, and
     `kvm` supplementary groups, the `NIX_*`/`HOMEBREW_*`/`PATH`/
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.

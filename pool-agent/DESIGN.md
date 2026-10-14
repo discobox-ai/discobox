@@ -27,13 +27,13 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It never fetches. See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
-| `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
+| `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. Also the units only the machine image installs (`boxd.yaml`): the agent's own unit, the `.path` unit that starts it, and the proxy's drop-in; see [In a machine](#in-a-machine). |
 | `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), the origins host the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
-| `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
+| `systemd` | The agent's two relations to a systemd, with non-Linux stubs: starting and stopping one in a child pid namespace when the agent is PID 1, and telling the one it is a unit of that it is ready (`NotifyReady`, sd_notify) when it is not. |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
@@ -65,6 +65,36 @@ from the in-sandbox `sandbox-agent` API.
 8. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
    reclaim loop, and finally the pool-local HTTP server.
+
+### In a machine
+
+The pool image has a boxd machine twin, `boxd.yaml`, the image
+ADR 26-10-09-106 §1 gives a boxd pool's machine. Nothing creates a machine
+from it yet, and the agent in it is this agent unchanged: it still composes
+the Docker runtime and registers as an OCI pool. What exists is how the agent
+starts there. A machine boots its own systemd, so three things differ from the
+flow above, and each is the image's units, with one call in the agent:
+
+- **The bootstrap is a file.** A provider places `poolagent.BootstrapFile`
+  (`/etc/discobox/pool-agent.env`) in the running machine: the same
+  `DISCOBOX_*` variables, one `NAME=value` to a line. `discobox-pool-agent.path`
+  starts `discobox-pool-agent.service` when it exists, and the service loads
+  it as its `EnvironmentFile`, so `FromEnv` reads what it reads in a
+  container. The file is placed by a rename and is root's alone.
+- **The agent is a unit, not PID 1.** `StartNamespace` starts nothing when the
+  agent is not PID 1. At the same point the agent tells systemd it is ready
+  (`systemd.NotifyReady`; the unit is `Type=notify`).
+- **The proxy is ordered after that.** `discobox-proxy.service` is not enabled
+  at boot: the agent's unit wants it, and its drop-in orders it after the
+  agent and makes the agent its requisite, so it starts once `proxy.env`, the
+  CA bundle and the control key are written, does not start when the agent's
+  start fails, and is stopped or restarted with the agent's unit. It is not
+  `Requires=` or `BindsTo=`: those start the agent from the proxy, which
+  defeats the agent's `RestartSec` when it fails before it is ready.
+
+The image has no BuildKit, mediator, registry or `discobox-pool-runc`, and
+the units of the Docker its base ships are disabled; its `service` port is the
+agent's API.
 
 ### State Root
 

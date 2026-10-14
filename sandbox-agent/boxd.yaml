@@ -19,8 +19,17 @@
 #     the label's value.
 #   - There is no ENTRYPOINT. The image's units are installed and enabled as
 #     they are in the container, but nothing makes discobox-sandbox-agent PID 1:
-#     a machine boots systemd, and the agent's unit starts only once a
-#     /etc/discobox/sandbox.json exists.
+#     a machine boots systemd, and discobox-sandbox-agent.path starts the
+#     agent's unit once a backend has placed /etc/discobox/sandbox.json
+#     (ADR 26-10-09-143 §1).
+#   - There is no pool-shared builder. A machine sandbox's pool runs none
+#     (ADR 26-10-09-106 §5), so `docker build` runs on the machine's own
+#     Docker, and the manifest written here leaves the `poolBuild` feature
+#     out. The runc and docker wrappers stay (ADR 0020): they need no pool
+#     service, and the docker wrapper builds locally where no builder is
+#     delivered. discobox-buildkit-bridge.service stays too, never started:
+#     the agent's intake stops it by name on a delivery that brings no
+#     builder, and a unit that is not there would fail that delivery.
 #   - The guest is boxd's Ubuntu 24.04, not Debian 13 (base-image/boxd.yaml
 #     says why), so a few packages come from elsewhere; their steps say which.
 #   - Docker (in base-image/boxd.yaml) and Chromium are optional: a guest that
@@ -392,6 +401,7 @@ layers:
           file 0644 $s/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
           for unit in \
               discobox-sandbox-agent.service \
+              discobox-sandbox-agent.path \
               discobox-proxy-bridge.service \
               discobox-buildkit-bridge.service \
               discobox-trust-ca.service \
@@ -485,7 +495,7 @@ layers:
           printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc
           mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace
           systemctl enable \
-              discobox-sandbox-agent.service \
+              discobox-sandbox-agent.path \
               discobox-proxy-bridge.service \
               discobox-buildkit-bridge.service \
               discobox-trust-ca.service \
@@ -571,8 +581,11 @@ layers:
           go -C cli build -ldflags="-s -w" -o /usr/local/bin/discobox ./cmd/discobox
           ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish
           # The base layer's manifest, the Dockerfile's
-          # io.discobox.image.v1.10-sandbox-base label (see image-files).
+          # io.discobox.image.v1.10-sandbox-base label (see image-files), less
+          # the one feature this image does not have: the pool-shared build
+          # path, which a manifest declares absent by leaving it out.
           install -d /usr/local/share/discobox/labels
-          jq -c . sandbox-agent/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1.10-sandbox-base
+          jq -c 'del(.features.poolBuild)' sandbox-agent/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1.10-sandbox-base
+          jq -e '.features.docker and (.features | has("poolBuild") | not)' /usr/local/share/discobox/labels/io.discobox.image.v1.10-sandbox-base
           cd /
           rm -rf /var/tmp/discobox-src /var/tmp/discobox-go

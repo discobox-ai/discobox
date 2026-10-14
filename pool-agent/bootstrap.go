@@ -39,6 +39,27 @@ const (
 	EnvHostStateRoot = "DISCOBOX_POOL_HOST_STATE_ROOT"
 )
 
+// BootstrapFile is where a machine's provider places the bootstrap of a pool
+// agent that runs as a unit of the machine's own systemd (pool-agent/boxd.yaml,
+// ADR 26-10-09-106 §1). A container is started with the contract in its
+// environment; a machine is already running when it gets one, so the same
+// variables arrive as this file, one NAME=value to a line, and the agent's unit
+// (image/systemd/discobox-pool-agent.path) starts when it exists and loads it
+// as its environment, which FromEnv reads as it does a container's.
+//
+// It is a systemd EnvironmentFile, and systemd does not hand a value on as it
+// is written: outside quotes it drops every backslash and quote character and
+// trims the whitespace around the value (systemd.exec(5)). No value of the
+// contract holds any of those (they are URLs, ids, a base64url token and a
+// base64 key), so each is written as it is, unquoted; a writer with a value
+// that did would have to quote it by those rules, not Go's.
+//
+// What writes the file owes it two things, which nothing here can check. It
+// holds the bootstrap token, so it is written for root alone (0600). And it
+// is placed by a rename: the unit starts as soon as the path exists, and a
+// file still being written would be read short.
+const BootstrapFile = "/etc/discobox/pool-agent.env"
+
 // Bootstrap is the VM boot contract used by the control plane and pool agent.
 //
 // Both directions are addressed by a single URL each, and the scheme alone

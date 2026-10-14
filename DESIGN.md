@@ -389,15 +389,22 @@ build or publication work stays pending and retries without requiring another
 file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
 image builds is watched without restarting the loop.
-The base, sandbox, and harness images also have boxd machine-image twins: a
-`boxd.yaml` beside each Dockerfile, a [disco-vm](https://github.com/discobox-ai/vm)
+The base, pool-agent, sandbox, and harness images also have boxd machine-image
+twins: a `boxd.yaml` beside each Dockerfile, a [disco-vm](https://github.com/discobox-ai/vm)
 build spec that builds the same chain with the same tools, files, and units on
 boxd's Ubuntu (`build:boxd-images`). A machine is not a container, so each spec
 leaves out what is only true of a container and says why: the container-only
 systemd masks, labels (written as files under
-`/usr/local/share/discobox/labels`), and the agent as PID 1. Docker and
-Chromium are optional there: a guest that already ships one keeps it (boxd's
-ships Docker). Nothing releases or runs these images yet.
+`/usr/local/share/discobox/labels`), and the agent as PID 1. Each agent is a
+unit of the machine's systemd instead, started by a `.path` unit when its
+bootstrap file is placed in the running machine: `sandbox.json` for a
+sandbox's, and the pool agent's environment as a file for a pool's
+([`pool-agent`](pool-agent/DESIGN.md#in-a-machine)). The pool twin carries no
+builder, registry, or running Docker, because each sandbox of its pool is a
+machine of its own (ADR 26-10-09-106 §1), and the sandbox twin's manifest
+leaves out the `poolBuild` feature for the same reason. Docker and Chromium are
+optional there: a guest that already ships one keeps it (boxd's ships Docker).
+Nothing releases or runs these images yet.
 
 Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath

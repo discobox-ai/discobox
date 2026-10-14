@@ -12,6 +12,10 @@ func StartNamespace(context.Context, *slog.Logger) (*exec.Cmd, error) {
 	return nil, nil
 }
 
+func NotifyReady() error {
+	return nil
+}
+
 func ManagedChildProcesses(*exec.Cmd) map[int]string {
 	return nil
 }

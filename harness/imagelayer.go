@@ -201,6 +201,7 @@ func MergeImageMetadata(layers ...ImageMetadata) ImageMetadata {
 		out.AdditionalGroups = mergeGroups(out.AdditionalGroups, layer.AdditionalGroups)
 		out.Features.Desktop = out.Features.Desktop || layer.Features.Desktop
 		out.Features.Docker = out.Features.Docker || layer.Features.Docker
+		out.Features.PoolBuild = out.Features.PoolBuild || layer.Features.PoolBuild
 		out.Harness = mergeHarness(out.Harness, layer.Harness)
 	}
 	return out

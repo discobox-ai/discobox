@@ -70,6 +70,12 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// A machine's systemd is already running and this agent is one of its
+	// units, so the same point is announced to it instead: the proxy's unit is
+	// ordered after this one and starts only now (ADR 26-10-09-106 §1).
+	if err := agentsystemd.NotifyReady(); err != nil {
+		return fmt.Errorf("tell systemd the pool's units may start: %w", err)
+	}
 	stopReaper := childproc.StartReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
