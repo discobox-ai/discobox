@@ -1,5 +1,5 @@
 name: Task
-description: Run one Taskfile target in the repository's Nix devShell.
+description: Run one Taskfile target in the repository's Nix devShell (plain Go on Windows).
 
 # The whole GitHub Actions layer, in one place (ADR 0066 §2). A job that needs a
 # new check gets a Taskfile target and four lines of YAML; nothing about *what*
@@ -20,32 +20,75 @@ runs:
   using: composite
   steps:
     - name: Install Nix
+      if: runner.os != 'Windows'
       uses: cachix/install-nix-action@v31.11.1
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
 
+    # Nix does not run on Windows (ADR 0066 §4), so there the bootstrap Go comes
+    # from setup-go instead, and GOTOOLCHAIN=auto fetches go.mod's from there as
+    # it does in the devShell. Its own cache stays off: the step below is the
+    # one cache, for every runner.
+    - name: Install Go
+      if: runner.os == 'Windows'
+      uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+
     # The devShell itself comes from cache.nixos.org. This is the Go build and
-    # module cache, which is what actually dominates a check or test job.
+    # module cache, plus golangci-lint's analysis cache, which is what actually
+    # dominates a check or test job.
+    #
+    # Keyed by commit and saved only from main, so a run starts from the newest
+    # main that saved one. A key that stays put until go.sum changes is a hit
+    # forever and therefore never saved again, and the build cache falls a
+    # commit further behind main with every push. Pull requests only restore:
+    # what one saves is scoped to its own ref, where nothing else can read it.
     #
     # Deliberately actions/cache and not a vendor-specific one: Depot's runners
     # back the GitHub Actions cache API with Depot Cache, so this is already the
     # fast path there, and it still works on a GitHub-hosted runner.
     - name: Restore the Go caches
-      uses: actions/cache@v6.1.0
+      uses: actions/cache/restore@v6.1.0
       with:
         path: |
           ~/.cache/go-build
           ~/Library/Caches/go-build
+          ~/AppData/Local/go-build
           ~/go/pkg/mod
+          ~/.cache/golangci-lint
+          ~/Library/Caches/golangci-lint
         # Keyed by job, not by target: a target name carries a colon, and the
         # jobs are already one-to-one with targets. Separate keys because a
         # cross-compiling job's cache has nothing in common with a native one's.
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('go.work.sum', '**/go.sum') }}
+        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.sha }}
         restore-keys: |
           go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
           go-${{ runner.os }}-${{ runner.arch }}-
 
     - name: go tool task ${{ inputs.target }}
+      if: runner.os != 'Windows'
       shell: bash
       run: nix develop -c go tool task ${{ inputs.target }}
+
+    - name: go tool task ${{ inputs.target }}
+      if: runner.os == 'Windows'
+      shell: bash
+      run: go tool task ${{ inputs.target }}
+
+    # Saved whether or not the target passed: a failing test still leaves the
+    # build it compiled behind, and the next push needs it as much.
+    - name: Save the Go caches
+      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      uses: actions/cache/save@v6.1.0
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/Library/Caches/go-build
+          ~/AppData/Local/go-build
+          ~/go/pkg/mod
+          ~/.cache/golangci-lint
+          ~/Library/Caches/golangci-lint
+        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.sha }}

@@ -75,17 +75,15 @@ jobs:
         with:
           target: ci:darwin
 
-  # Nix does not run on Windows, so this is the "do whatever works" lane
-  # (ADR 0066 §4). Compiling for Windows is covered by the cross type-check in
-  # ci:check; this job exists because the named-pipe transport, wslc's process
-  # handling, and ConPTY are code paths no other runner executes.
+  # Nix does not run on Windows, so the task action sets up plain Go here
+  # instead (ADR 0066 §4). Compiling for Windows is covered by the cross
+  # type-check in ci:check; this job exists because the named-pipe transport,
+  # wslc's process handling, and ConPTY are code paths no other runner executes.
   windows:
     runs-on: depot-windows-2025-4
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: actions/setup-go@v7.0.0
+      - uses: ./.github/actions/task
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
-      - run: go tool task ci:test
+          target: ci:test

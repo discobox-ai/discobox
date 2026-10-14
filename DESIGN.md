@@ -253,14 +253,17 @@ flowchart TD
   by Nix.
 - `.github/workflows/` decides only *when* a target runs and on which runner.
   Every job body is `nix develop -c go tool task <target>`, carried by the
-  `.github/actions/task` composite action.
+  `.github/actions/task` composite action. Its Go and golangci-lint caches are
+  keyed by commit and saved only from `main`, so every run starts from the
+  newest `main` rather than from whenever `go.sum` last changed.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
 `codesign` at build time (see
 [`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)). Windows is the
-exception in both directions: no Nix, so its tests run under `actions/setup-go`,
-and no cgo, so its binary is cross-compiled from the Linux job. Agent images are
+exception in both directions: no Nix, so the same action sets up plain Go there
+with `actions/setup-go`, and no cgo, so its binary is cross-compiled from the
+Linux job. Agent images are
 built once for both architectures by `depot build`, falling back to emulated
 `docker buildx`.
 
