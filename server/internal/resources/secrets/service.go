@@ -726,6 +726,10 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		if !a.ttlNamed {
 			ttl = defaultApprovalTTL(req, secret)
 		}
+		// One reading of the clock is what the grant's lifetime is both
+		// fitted against and stamped from, so a grant fitted to a delegation
+		// ends no later than it does.
+		now := time.Now().UTC()
 		// A discobox's grant is always made under a delegation: it is refused
 		// rather than minted unbounded if none was chosen.
 		if a.delegated {
@@ -733,7 +737,7 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 				return apperrors.NewStatusError(http.StatusForbidden,
 					"a discobox hands on only what a delegation grant it holds covers, and this approval was made under none")
 			}
-			if ttl, err = delegatedTTL(ctx, txStore, projectID, a.approverID, a.delegation, secret.ID, a.hosts, ttl, a.ttlNamed); err != nil {
+			if ttl, err = delegatedTTL(ctx, txStore, projectID, a.approverID, a.delegation, secret.ID, a.hosts, ttl, a.ttlNamed, now); err != nil {
 				return err
 			}
 		}
@@ -744,7 +748,7 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			}
 			ruleID = a.rule.ID
 		}
-		grant, err := tx.mintGrantAs(ctx, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.purpose, ruleID)
+		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.purpose, ruleID)
 		if err != nil {
 			return err
 		}
@@ -1115,7 +1119,7 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 	if err != nil {
 		return nil, err
 	}
-	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, purpose, "")
+	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, purpose, "")
 	if err != nil {
 		return nil, err
 	}
@@ -1281,7 +1285,11 @@ func formatTTL(seconds int64) string {
 // purpose is what the grant authorizes — using the credential, or delegating
 // it — and is checked here with the rest. ruleID is the approval rule the
 // grant is minted under, empty unless a rule approved the request.
-func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, purpose, ruleID string) (*model.SecretGrant, error) {
+//
+// now is the instant the grant's lifetime runs from: its expiry is now plus
+// ttlSeconds, and never a later reading of the clock, so a lifetime a caller
+// fitted at now ends where it was fitted to.
+func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, purpose, ruleID string) (*model.SecretGrant, error) {
 	hosts = hostscope.List(hosts...)
 	if err := guardGrantHosts(secret, hosts); err != nil {
 		return nil, err
@@ -1307,7 +1315,7 @@ func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *mod
 		RuleID:    ruleID,
 	}
 	if ttlSeconds > 0 {
-		exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
+		exp := now.Add(time.Duration(ttlSeconds) * time.Second)
 		grant.ExpiresAt = &exp
 	}
 	if err := s.store.CreateSecretGrant(ctx, grant); err != nil {

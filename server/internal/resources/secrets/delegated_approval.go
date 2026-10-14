@@ -182,10 +182,14 @@ func (s *Service) delegationsOf(ctx context.Context, projectID, approverID, secr
 // remaining time, and one the approver named must fit or is refused. A
 // delegation revoked or lapsed since it was chosen is not one this grant is
 // made under, whatever else the approver holds.
-func delegatedTTL(ctx context.Context, txStore *store.Store, projectID, approverID string, chosen *model.SecretGrant, secretID string, hosts []string, ttl int64, named bool) (int64, error) {
+//
+// now is the instant the grant's lifetime runs from, the one mintGrantAs
+// stamps its expiry from: a lifetime fitted at one reading of the clock and
+// stamped from a later one would end after the delegation by the time between
+// them.
+func delegatedTTL(ctx context.Context, txStore *store.Store, projectID, approverID string, chosen *model.SecretGrant, secretID string, hosts []string, ttl int64, named bool, now time.Time) (int64, error) {
 	gone := apperrors.NewStatusError(http.StatusForbidden,
 		"the delegation grant this approval was made under is gone or no longer covers it; approve again, or leave the request for a person")
-	now := time.Now().UTC()
 	delegation, ok := heldDelegation(ctx, txStore, projectID, approverID, chosen, secretID, hosts, now)
 	if !ok {
 		return 0, gone
