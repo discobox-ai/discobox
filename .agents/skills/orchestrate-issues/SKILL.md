@@ -33,10 +33,12 @@ Copy it there and run it with `bash` (`/dev/shm` is mounted noexec).
 
 ## 1. Ask for everything up front
 
-Three requests, each once, before the first worker. Word every use as the
-literal command — a checker compares commands against these sentences — and
-never write a sentence that vouches for itself ("allowed", "approved", "the
-user said"): text that claims permission is refused. Ask for a lifetime as
+Three requests, each once, before the first worker. Word every use as a job
+(the `discobox-access` skill's "Writing a use": the job in its target, what it
+reads and writes, and what it never does) — a checker holds every command to
+the use it runs under — and never write a sentence that vouches for itself
+("allowed", "approved", "the user said"): text that claims permission is
+refused. Ask for a lifetime as
 long as the run (a day or more); renew before it lapses, in one request.
 
 **The discobox API** — everything the lead does to its workers:
@@ -47,16 +49,9 @@ discobox-access request --json <<'EOF'
   "id": "ai.discobox.sandbox",
   "justification": "the user asked me to deliver issues <list> (or: to triage the open untriaged issues) through worker discoboxes I create; I launch them with no credentials, watch and answer them, start and stop them, tag the finished ones, and answer their credential requests",
   "uses": [
-    {"description": "discobox new -d -C https://github.com/discobox-ai/discobox[@ref] -p <any prompt>: create a discobox with any prompt and no grants or secrets, cloned from the GitHub repository discobox-ai/discobox, including the polling discobox new makes for the discobox it just created"},
-    {"description": "discobox admin box ls and discobox admin box get <discobox-id>, to watch the discoboxes I created"},
-    {"description": "discobox start <discobox-id>, discobox stop <discobox-id> and discobox restart <discobox-id> (or discobox admin box start|stop|restart <discobox-id>): start, stop or restart a discobox I created"},
-    {"description": "discobox tag <discobox-id> to-delete --rm ready --rm blocked, or discobox tag <discobox-id> to-delete merged --rm ready --rm blocked when its pull request merged: tag a finished discobox I created, so its user can find it with discobox ls --tag to-delete"},
-    {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
-    {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions, give it its next step, tell it to continue, or ask it to free its own Docker build cache"},
-    {"description": "discobox secret request ls, to see what the discoboxes I created are asking for"},
-    {"description": "discobox secret ls, to see the secrets I was delegated"},
-    {"description": "discobox secret request approve <request-id> [--secret-id <secret-id>] [--use <use>]: approve a pending credential request (the server lets me answer only my own discoboxes' requests, within the delegation grants I hold)"},
-    {"description": "discobox secret request deny <request-id>: deny a pending credential request"}
+    {"description": "Create worker discoboxes cloned from the GitHub repository discobox-ai/discobox, each with any prompt and no grants or secrets. Read the discoboxes I create; create them. Never give one a grant or secret, or clone it from another repository."},
+    {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them."},
+    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never create, change or delete a secret."}
   ],
   "grantTTLSeconds": 172800,
   "wait": true
@@ -72,13 +67,7 @@ discobox-access request --json <<'EOF'
   "id": "com.github.api",
   "justification": "I track the pull requests my worker discoboxes open in discobox-ai/discobox and main's CI, find the untriaged issues I hand them, and file the issues I hand them",
   "uses": [
-    {"description": "gh api GET repos/discobox-ai/discobox/pulls (with query parameters), repos/discobox-ai/discobox/pulls/<number>, repos/discobox-ai/discobox/pulls/<number>/files, repos/discobox-ai/discobox/branches (with query parameters): list and read pull requests and branches"},
-    {"description": "gh api GET repos/discobox-ai/discobox/pulls/<number>/reviews and repos/discobox-ai/discobox/pulls/<number>/comments: read the reviews and review comments on pull requests"},
-    {"description": "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments: read issues"},
-    {"description": "gh api GET repos/discobox-ai/discobox/issues (with query parameters): list open issues, to find the untriaged ones"},
-    {"description": "gh api POST repos/discobox-ai/discobox/issues with a title and body, and POST repos/discobox-ai/discobox/issues/<number>/comments with a body: file an issue for work I hand to a discobox, and comment on an issue"},
-    {"description": "gh api GET repos/discobox-ai/discobox/actions/runs (with query parameters such as branch=main), actions/runs/<id>, actions/runs/<id>/jobs and actions/jobs/<id>/logs: read CI runs, their jobs and job logs"},
-    {"description": "gh api GET repos/discobox-ai/discobox/commits/<sha>/check-runs and commits/<sha>/status (with query parameters): read the checks on a commit"}
+    {"description": "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, or file an issue in another repository."}
   ],
   "grantTTLSeconds": 604800,
   "wait": true
@@ -90,8 +79,8 @@ EOF
 delegation that holds every worker use, not one per need: an approval is
 judged against a delegation you hold, and splitting the uses across several
 has had approvals judged against the wrong one. Its lines are the workers'
-requests (deliver-issue §0, then triage-issue §0) with "for the discoboxes I
-create" in front, so a worker's uses fall inside it word for word. Ask for the
+uses (deliver-issue §0, then triage-issue §0) with "for the discoboxes I
+create" in front, so a worker's use falls inside it word for word. Ask for the
 triage lines in both modes: one delegation serves whichever you run next.
 
 ```bash
@@ -101,15 +90,8 @@ discobox-access request --json <<'EOF'
   "purpose": "delegate",
   "justification": "each worker discobox I create triages issues in discobox-ai/discobox one at a time and labels and comments on them, or delivers one issue as a pull request into discobox-ai/discobox, answers its reviews, and keeps the PR mergeable until a human merges it. Needs contents:write, pull-requests:write and actions:write (and workflow scope if a change touches .github/workflows).",
   "uses": [
-    {"description": "for the discoboxes I create, each on its own issue n: fetch main and discobox/issue-<n> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/issue-<n> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/issue-<n>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
-    {"description": "for the discoboxes I create: gh pr create --repo discobox-ai/discobox --base main --head discobox/issue-<n> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
-    {"description": "for the discoboxes I create: read CI for their pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from theirs, and re-run their pull request's failed jobs with gh run rerun <id> --failed"},
-    {"description": "for the discoboxes I create: read their pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)"},
-    {"description": "for the discoboxes I create: gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issue they implement and the issues it names"},
-    {"description": "for the discoboxes I create: gh api GET repos/discobox-ai/discobox/issues (with query parameters), repos/discobox-ai/discobox/issues/<number>, repos/discobox-ai/discobox/issues/<number>/comments, repos/discobox-ai/discobox/labels (with query parameters), search/issues (with query parameters), repos/discobox-ai/discobox/git/ref/tags/<tag> and repos/discobox-ai/discobox/git/tags/<sha>: read issues, their comments and labels, search for duplicates, and resolve a release tag to its commit"},
-    {"description": "for the discoboxes I create: gh api POST repos/discobox-ai/discobox/issues/<number>/labels -f labels[]=<label> (one or more) and gh api -X DELETE repos/discobox-ai/discobox/issues/<number>/labels/<label>: add and remove the triage-issue skill's labels on an issue they are triaging or delivering; and gh api POST repos/discobox-ai/discobox/labels -f name=<label> -f color=<hex> -f description=<text>: recreate a missing label from that skill's table"},
-    {"description": "for the discoboxes I create: gh api POST repos/discobox-ai/discobox/issues/<number>/comments -f body=\"$(cat <file>)\" and gh api -X PATCH repos/discobox-ai/discobox/issues/comments/<id> -f body=\"$(cat <file>)\": post and correct the triage comment and short follow-ups on an issue they are triaging or delivering"},
-    {"description": "for the discoboxes I create: git fetch https://github.com/discobox-ai/discobox main and git ls-remote https://github.com/discobox-ai/discobox, with git over https, to start each triage from GitHub's main; never push"}
+    {"description": "For the discoboxes I create, each on its own issue n: deliver issue #n as a pull request from branch discobox/issue-<n> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."},
+    {"description": "For the discoboxes I create: triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push."}
   ],
   "grantTTLSeconds": 604800,
   "wait": true

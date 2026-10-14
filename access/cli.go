@@ -146,6 +146,15 @@ func usage(w io.Writer) {
       Ask a human for a credential. Returns a request id immediately unless
       you wait for an answer.
 
+      Each use is one job, not one command: the job and its target, what it
+      reads and each kind of write it makes, and what it will never do. "Fix
+      issue #43 in acme/web as a pull request from branch fix-43 into main.
+      Read anything in the repository; push that branch, open and update the
+      pull request, and comment on it. Never push main or any other branch,
+      delete a branch, or merge or close the pull request." Rule out the
+      dangerous neighbor of each write: the same action wider, harsher, or
+      on the target beside yours.
+
       ID names a well-known credential (com.github.api), which says its own
       name, variable, and host; give only --use and --why. --hosts may still
       name the hosts beneath the ID's you will reach: com.github.api for
@@ -164,7 +173,7 @@ func usage(w io.Writer) {
           "envVar": "GITHUB_TOKEN",
           "hosts": ["api.github.com"],
           "justification": "the user's task asks me to open a PR",
-          "uses": [{"description": "Open a PR against the current repo"}],
+          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, never merge."}],
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
@@ -198,7 +207,8 @@ func usage(w io.Writer) {
 
       The trust is this sandbox's alone, for exactly HOST:PORT, and every
       request you then send there is judged against the uses you name —
-      write them as what you will actually send. --json reads the same
+      write each as the job and its target, what it reads and writes, and
+      what it will never do. --json reads the same
       fields from stdin: host, justification, uses, suppliedCA,
       grantTTLSeconds, wait, timeoutSeconds.
 

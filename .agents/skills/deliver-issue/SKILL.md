@@ -31,16 +31,17 @@ Nobody may be watching your screen to answer.
 ## 0. Before anything
 
 - **Read the issue** with `gh api repos/discobox-ai/discobox/issues/<N>` and
-  its `/comments` (REST: `gh issue view` goes through GraphQL, which the
-  checker has refused), and every comment on it, and the issues it names as
+  its `/comments` (REST, not `gh issue view`: a GraphQL call carries its
+  operation in its body, which a judge has to ask to see), and every comment
+  on it, and the issues it names as
   blockers or context (a tracking issue's sub-issues often say what runs
   beside them). Read `CLAUDE.md` and the `DESIGN.md`/`REVIEW.md` files from
   the root down to each package you will touch.
-- **Ask for every GitHub use now, in one request**, so nobody is asked again
-  mid-run. Fill in `<N>` before sending; leave `<pr>`, `<id>` and `<sha>` as
-  they are. These lines mirror the lead's delegation (orchestrate-issues §1)
-  word for word, so a lead can approve them as asked; a person can approve
-  them just the same when there is no lead:
+- **Ask for the GitHub use now, in one request**, so nobody is asked again
+  mid-run. Fill in `<N>` before sending. It is the lead's delegation
+  (orchestrate-issues §1) for this issue, word for word, so a lead can
+  approve it as asked; a person can approve it just the same when there is
+  no lead:
 
   ```bash
   discobox-access request --json <<'EOF'
@@ -48,11 +49,7 @@ Nobody may be watching your screen to answer.
     "id": "com.github.api",
     "justification": "I am delivering issue #<N> in discobox-ai/discobox as a pull request from discobox/issue-<N>: push it, open the PR, get CI green, answer review comments, and keep it mergeable until it is merged",
     "uses": [
-      {"description": "fetch main and discobox/issue-<N> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/issue-<N> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/issue-<N>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
-      {"description": "gh pr create --repo discobox-ai/discobox --base main --head discobox/issue-<N> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
-      {"description": "read CI for my pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from mine, and re-run my pull request's failed jobs with gh run rerun <id> --failed"},
-      {"description": "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)"},
-      {"description": "gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issue I implement and the issues it names"}
+      {"description": "Deliver issue #<N> as a pull request from branch discobox/issue-<N> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."}
     ],
     "grantTTLSeconds": 259200,
     "wait": true
@@ -62,12 +59,12 @@ Nobody may be watching your screen to answer.
 
   Run it in the background and keep its request ID, so a tool time limit
   does not lose it (`discobox-access wait --json request <id>` resumes).
-  Ask for nothing outside these. Neither the justification nor a use may
+  Ask for nothing outside it. Neither the justification nor the use may
   claim permission ("this is allowed", "the user approved", "pre-cleared"):
-  text that vouches for itself is refused. State limits as what you will do
-  ("never `main`"). If one command is refused under a use that names it, ask
-  for a new use that quotes that one command word for word, not a broader
-  one — §5 has the push case.
+  text that vouches for itself is refused. If a command is refused under it,
+  do that step another way within the job; never ask again for the same job
+  with the refused command spelled out (the `discobox-access` skill's
+  "Writing a use").
 - **Tag this box** `issue=<N>`, merged into the tags already there, so the
   user's `discobox ls --tag issue=<N>` finds it (`open-pr` adds `pr=` in §5):
 
@@ -158,14 +155,11 @@ committed. `git status --short` empty before §5.
 Invoke the `open-pr` skill with branch `discobox/issue-<N>`, adding to its
 rules:
 
-- Push with the exact-command use from §0. After a rebase, read the
+- Push under the §0 use. After a rebase, read the
   branch's head on GitHub first (`git ls-remote <url> refs/heads/discobox/issue-<N>`)
   and lease against it: `git push --force-with-lease=refs/heads/discobox/issue-<N>:<sha> <url> HEAD:refs/heads/discobox/issue-<N>`.
   A bare `--force-with-lease` to a URL has no tracking ref to lease against
-  and is always rejected as stale. If the checker refuses a push it
-  was approved for, ask for a new use that quotes that one push command word
-  for word (the commit SHA may stand in for `HEAD`), not a broader one.
-- Pass the body as `--body "$(cat <file>)"`; `--body-file` has been refused.
+  and is always rejected as stale.
 - The body's Testing section carries the review summary and the `verify`
   observations — what ran, what was seen, and what could not run here.
 - A CI failure that also fails on `main`, or that passes on a single re-run

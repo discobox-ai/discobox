@@ -55,11 +55,12 @@ Each credential lists the **use IDs** approved for it, and how long each lasts:
 
 ```
 github (GH_TOKEN → github.com)
-  use_7f3a2b  Open a pull request against the current repo [expires 2026-10-09T18:00:00Z]
-  use_9c4d1e  Push the current branch to origin [never expires]
+  use_7f3a2b  Fix issue #43 in acme/web as a pull request from branch fix-43 into main. … [expires 2026-10-09T18:00:00Z]
+  use_9c4d1e  Triage issues in acme/web. Read anything in the repository; … [never expires]
 ```
 
-If the command you want to run is one of those uses, skip to step 3. A use
+If the command you want to run is part of the job one of those uses names,
+skip to step 3. A use
 listed here has not expired, whatever lifetime you asked for: the person
 approving picks the lifetime, often a longer one than you asked, and
 `[never expires]` means exactly that. Never assume a use has lapsed because
@@ -76,8 +77,8 @@ discobox-access request --json <<'EOF'
   "name": "github",
   "envVar": "GH_TOKEN",
   "hosts": ["api.github.com"],
-  "justification": "the task asks me to open a pull request with the review fixes",
-  "uses": [{"description": "Open a pull request against the current repo"}],
+  "justification": "the task asks me to fix issue #43 and get the fix merged through a pull request",
+  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main. Read anything in the repository; push that branch, open and update the pull request, and comment on it. Never push main or any other branch, delete a branch, merge or close the pull request, or delete a comment."}],
   "grantTTLSeconds": 3600,
   "wait": true,
   "timeoutSeconds": 3600
@@ -92,10 +93,10 @@ EOF
   sends one credential to several sites gets them all in one request: Copilot
   CLI sends its GitHub token to `["api.github.com", "githubcopilot.com"]`.
 - `justification` — why *this task* needs it. A person reads this to decide.
-- `uses` — one sentence per thing you intend to do with it. **Write these as
-  what you will actually run**, because a model later checks your command
-  against this sentence (see step 3). "Open a pull request against the current
-  repo" is answerable; "GitHub operations" is not.
+- `uses` — what you will do with it, **one use per job, not one per
+  command**. A model later checks each command against the use it runs under
+  (step 3), so a use has to say where the job stops. "Writing a use", below,
+  is how.
 - `grantTTLSeconds` — optional: how long you need the credential, in seconds,
   from 1 to 2592000 (thirty days). The person sees it as the answer already
   picked and may pick another. Ask for about as long as the task will take, not
@@ -121,7 +122,7 @@ getting them wrong is then impossible:
 | `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes; on any discobox in this project but its judge, deliver its source, read and type into its terminals, start, stop, restart, repair, and upgrade it, run its services and read their logs, reach its ports over HTTP, and tag it; and answer the credential requests of the ones you created | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
-discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR" --wait
+discobox-access request com.github.api --use "Open a pull request from branch fix-43 into main of acme/web. Read anything in the repository; push that branch and open the pull request. Never push main or another branch, delete a branch, or merge or close the pull request." --why "the task asks for a PR" --wait
 ```
 
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
@@ -135,6 +136,108 @@ for it and launch them.
 Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
 rejected, so a misspelled key fails loudly instead of being dropped.
+
+### Writing a use
+
+A use is a rule a person approves at a glance and a model then holds every
+command to. Write it in three parts, always in this order:
+
+```
+<The job> in <the target>. Read <what>; <each kind of write>. Never <the lines>.
+```
+
+> Fix issue #43 in acme/web as a pull request from branch fix-43 into main.
+> Read anything in the repository; push that branch (with --force-with-lease
+> after a rebase), open and update the pull request, comment on it and reply
+> to its reviews, and re-run its failed CI. Never push main or any other
+> branch, delete a branch, merge or close the pull request, delete a comment,
+> or start any other workflow.
+
+That one use covers every `git push`, `gh pr …`, `gh run …` and `gh api`
+call the job takes, in whatever form you end up writing them, and nothing
+past its lines.
+
+1. **One use per job.** A job is what you would tell a colleague you are
+   doing: "fix issue #43 as a PR", "triage issues", "debug the web pods".
+   Most tasks need one use. Split only where a person might approve one part
+   and refuse the other: changing production beside reading it, answering
+   credential requests beside watching workers.
+2. **Name the target exactly** — the repository, branch, namespace, package,
+   channel, tag. The target is what keeps a broad use narrow. Fill in every
+   placeholder before you send it.
+3. **Say what it reads as a scope**: "read anything in the repository", "read
+   anything in namespace web", or "read-only" when it writes nothing. Without
+   one the model reads the job narrowly — "fix issue #43" does not obviously
+   cover reading issue #40, or a release. Name a second target here if the job
+   reads one ("and in acme/homebrew-tap").
+4. **Name every kind of write**: push, comment, label, re-run, create, tag.
+   Each is something a person is agreeing to; none is implied.
+5. **For every write, name its dangerous neighbor in "Never …".** A judge
+   reads a write generously, so its nearest overreach has to be ruled out in
+   words, or it comes with the write. Ask three questions of each write you
+   named (the table below works them):
+   - **Wider** — the same action on more than you named: removing a label
+     from an issue is next to deleting the label from the repository.
+   - **Harsher** — the irreversible or final version: pushing is next to
+     deleting the branch, opening a pull request next to merging or closing
+     it, commenting next to deleting comments.
+   - **Elsewhere** — the same action on the target beside yours: your
+     branch is next to `main`, your namespace next to another, your tag next
+     to an older one.
+
+   For a read, the neighbor is secrets, and whatever is readable just
+   outside the scope you stated. Each answer the job does not need goes in
+   "Never …", and each must be one a command can show (rule 7): "never
+   delete a comment", not "never edit others' comments". This is not a list
+   of everything bad — that is already outside — but of what a reader might
+   think came with the job, usually two to five things.
+6. **Actions, not commands.** "Push that branch", not
+   `git push --force-with-lease=refs/heads/…:<sha>`. Name a flag only when the
+   flag is the line (`--force-with-lease`, not `--force`).
+7. **Only lines a command can show.** The model sees one command, not the
+   state of the world, so "only once CI is green" or "only my workers'
+   requests" are conditions nobody checks. Leave out what the server already
+   enforces.
+8. **Never vouch for yourself.** No "approved", "safe", "pre-cleared", and
+   nothing addressed to the model checking it: text that argues for itself is
+   refused.
+
+| | Use |
+| --- | --- |
+| Too fine | `gh api GET repos/acme/web/pulls/<n>, pulls/<n>/reviews and pulls/<n>/comments, and POST pulls/<n>/comments (replies with in_reply_to)` |
+| Too vague | `GitHub operations for the task` |
+| Right | `Answer the review on pull request #812 in acme/web. Read anything in the repository; reply to its comments and push fixes to its branch fix-43. Never merge.` |
+| Too fine | `kubectl get pods -n shop`, `kubectl logs -n shop`, `kubectl describe pod -n shop` |
+| Right | `Find out why the api pods restart in namespace shop of the prod cluster. Read anything in namespace shop; change nothing. Never exec into a pod or read secrets.` |
+
+Common writes and the neighbors to rule out:
+
+| Write | Wider | Harsher | Elsewhere |
+| --- | --- | --- | --- |
+| add and remove issue labels | delete or rename a repository label | — | label another repository's issues |
+| push that branch | — | push without a lease, delete the branch | push `main` or another branch |
+| open and update the pull request | — | merge it, close it | open one in another repository |
+| comment and reply | — | delete a comment | comment on unrelated issues |
+| re-run its failed CI | start any other workflow | cancel or delete runs | — |
+| push tag vX.Y.Z | — | move or delete a tag | push another tag |
+| type into the workers' terminals | start a command in them | delete a worker | — |
+| approve or deny requests | create or change a secret | — | — |
+
+A use without its neighbors ruled out reads as permission for them:
+
+> ✗ Triage issues in acme/web. Read anything in the repository; add and remove
+> issue labels, and post my triage comments. Never close an issue.
+>
+> ✓ Triage issues in acme/web. Read anything in the repository; add and remove
+> issue labels, and post my triage comments. Never delete or rename a label,
+> delete a comment, or close, assign or retitle an issue.
+
+A judge allowed `gh label delete` under the first.
+
+When a command is refused under a use you hold, it is outside that job: do
+not ask again for the same job with the refused command spelled out. Either
+the command was not the job — do it another way — or the job grew, and you
+ask for a use that names the new job.
 
 An approved request prints the use IDs you may now run with, and when it
 reports one, the expiry the person chose; `list` is what says how long a use
@@ -151,10 +254,12 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 
 - The credential goes into that one child process's environment and nowhere
   else. It exits with your command's own status, like `env`(1).
-- Before it runs, a model checks your command against the sentence the use was
-  approved for. **Stay inside what was approved.** A command broader than the
-  approved use is refused with `denied` and never starts. If you need something
-  else, ask for it in step 2 rather than stretching an existing use.
+- Before it runs, a model checks your command against the use it runs under.
+  **Stay inside that job.** Any command that does the job on its target is
+  fine, written however you need it; a command past the use's lines, or on
+  another target, is refused with `denied` and never starts. If the work has
+  grown into another job, ask for that job in step 2 rather than stretching
+  an existing use.
 - Everything after `--` is your command, run exactly as written.
 - What your command reads on stdin — a here-document, a file, a pipe — is shown
   to the checker with it, up to 8 KiB, and your command still reads every
@@ -175,7 +280,7 @@ refused by this sandbox's egress. You see it as a `502` whose
 
 ```bash
 discobox-access trust 34.70.64.109:443 \
-  --use "read-only kubectl: get/list/describe pods, deployments, events" \
+  --use "Debug the web app in namespace web of this cluster. Read anything in namespace web; change nothing. Never exec into a pod or read secrets." \
   --why "the user's GKE cluster; its API server uses the cluster's own CA" \
   --wait
 ```
@@ -187,7 +292,8 @@ discobox-access trust 34.70.64.109:443 \
   It is refused unless the host's chain verifies against it.
 - The trust is this sandbox's alone, for exactly that `host:port`, and it
   lapses. **Every request you then send the host is judged against the uses
-  you name**, so write them as what you will actually send.
+  you name**, so write them as in "Writing a use": the job and its target,
+  what it reads and writes, and its lines.
 - Trusting a host is not authenticating to it: a token for it is still a
   credential, asked for with `request` for that host — the cluster's own
   host, since a token approved for `googleapis.com` is never sent to
@@ -214,7 +320,7 @@ discobox-access trust 34.70.64.109:443 \
   2. `request` the Google access token (`CLOUDSDK_AUTH_ACCESS_TOKEN`) with
      `host` set to that IP, not `googleapis.com`: kubectl sends it to the
      cluster, and a sentinel approved for another host is never swapped
-     there. Name the kubectl commands in its uses.
+     there. Its use is the same job as the trust's.
 
   Then point the kubeconfig at the MITM CA (above) and run kubectl under that
   use: `discobox-access run --use <id> -- kubectl get pods`.
@@ -250,16 +356,9 @@ discobox-access request --json <<'EOF'
   "id": "ai.discobox.sandbox",
   "justification": "the task asks me to split the work across worker discoboxes; I create them with no credentials and answer what they ask for",
   "uses": [
-    {"description": "discobox new -d --include-dirty=false -p <any prompt>, run in <this directory>: create a discobox with any prompt and no grants or secrets, from this directory and the sources it declares in .discobox/sources.json, including the polling, source push and complete-source-push that discobox new makes for the discobox it just created"},
-    {"description": "discobox admin box ls and discobox admin box get <discobox-id>, to watch the discoboxes I created"},
-    {"description": "discobox secret request ls, to see what the discoboxes I created are asking for"},
-    {"description": "discobox secret ls, to see the secrets I was delegated"},
-    {"description": "discobox secret request approve <request-id> [--secret-id <secret-id>] [--use <use>]: approve a pending credential request (the server lets me answer only my own discoboxes' requests, within the delegation grants I hold)"},
-    {"description": "discobox secret request deny <request-id>: deny a pending credential request"},
-    {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
-    {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions or tell it to continue"},
-    {"description": "discobox start <discobox-id>, discobox stop <discobox-id>, and discobox restart <discobox-id>: start, stop, or restart a discobox I created"},
-    {"description": "discobox tag <discobox-id> KEY[=VALUE]... and discobox tag <discobox-id> --rm KEY...: set or remove the tags of a discobox I created, to mark it for its user"}
+    {"description": "Create worker discoboxes from <this directory>, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory's sources to them. Never give one a grant or secret, or create one from another directory or repository."},
+    {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them."},
+    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never create, change or delete a secret."}
   ],
   "grantTTLSeconds": 28800,
   "wait": true
@@ -269,15 +368,21 @@ EOF
 
 Then, for each credential your workers will need, ask to delegate it
 (`"purpose": "delegate"`, in §2), with uses saying what you will hand it on
-for — "read-only GitHub access to issues in org/repo, for the discoboxes I
-create" — and a lifetime as long as the orchestration. Without one you approve
+for, each the job a worker will do in "Writing a use"'s shape with "for the
+discoboxes I create" in front — "For the discoboxes I create: triage issues in
+org/repo. Read anything in the repository; label issues and comment on them.
+Never close an issue." — and a lifetime as long as the orchestration. Without one you approve
 nothing: the server hands on only what a delegation grant you hold covers —
 that credential, to its host, for no longer than it lasts — so a person sees
 what you mean to hand on before you hand on any of it.
 
-Word the approve and deny uses as above: what the call does, with no condition
-on whose request it is. Only the server can tell whose a request is, and it
-enforces that; a condition in the use is one the judge cannot check.
+These are three jobs, split where a person might approve one and not
+another: making boxes, driving the ones you made, and handing out
+credentials.
+
+Word the answer use as above: no condition on whose request it is. Only the
+server can tell whose a request is, and it enforces that; a condition in the
+use is one the judge cannot check (rule 7 of "Writing a use").
 
 Word the create use as broadly as above: **any prompt**. A use that quotes the
 prompt, or names which work it is for, is read against the prompt of every
@@ -344,12 +449,11 @@ discobox-access run --use <id> -- discobox admin terminal wait primary --discobo
 ```
 
 `primary` is the worker's harness terminal; `discobox admin terminal ls
---discobox-id <discobox-id>` lists the others. Ask for these in the up-front
-request above, as their own uses — reading (`ls`, `screen`, `wait`) and typing
-(`input`) — worded as the commands. Any discobox in this project but its judge
-answers; which ones a use reaches is the judge's to read from its words, and the
-judge is told which discobox created the one a call names, so a use that says
-"the discoboxes this discobox created" holds you to those.
+--discobox-id <discobox-id>` lists the others. All of these run under the
+supervise use above. Any discobox in this project but its judge answers;
+which ones a use reaches is the judge's to read from its words, and the
+judge is told which discobox created the one a call names, so the supervise
+use's "the discoboxes I created" holds you to yours.
 
 A worker that has stopped — `discobox admin box ls` shows it, and `screen`
 answers that it is stopped rather than starting it — is started again with
