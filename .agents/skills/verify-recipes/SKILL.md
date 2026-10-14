@@ -340,6 +340,14 @@ reads `sandbox.json`'s source spec), then `curl` it on
   `http://172.17.0.1:<port>` through its proxy.
 - `systemctl restart discobox-sandbox-agent` in the box ends the `d shell`
   it was run from (shells are the agent's execs): background it and reconnect.
+- **The auth middleware, from outside.** The agent also listens on the
+  container's own address: `curl http://<ip>:3003/execs` from this box (`ip`
+  from `docker inspect` of `discobox-sandbox-<pool>-<sbx>`) with no token, or
+  a garbage `Bearer`, must answer `401`.
+- **SSH direct-tcpip.** `d new` writes the ssh config, so `ssh -W
+  127.0.0.1:<port> <box-name>` forwards through the server's sshd and the
+  agent's `/tcp/attach`; a closed port shows the rejection reason the client
+  prints (`channel 0: open failed: connect failed: ...`).
 
 # Verifying the runtime-config intake (pool → sandbox delivery)
 
