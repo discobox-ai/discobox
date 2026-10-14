@@ -135,7 +135,7 @@ func TestListEveryServerListsEachServerOnce(t *testing.T) {
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
-	listed, unreachable, err := app.listEveryServer(context.Background(), true, nil)
+	listed, unreachable, err := app.listEveryServer(context.Background(), sandboxFilter{})
 	if err != nil {
 		t.Fatalf("listEveryServer() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestListEveryServerLeavesOutARegisteredServerThatDoesNotAnswer(t *testing.T
 	registerForTest(t, registeredServer{Name: "gone", Address: deadServer(t)})
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
-	listed, unreachable, err := app.listEveryServer(context.Background(), true, nil)
+	listed, unreachable, err := app.listEveryServer(context.Background(), sandboxFilter{})
 	if err != nil {
 		t.Fatalf("listEveryServer() error = %v", err)
 	}
@@ -174,8 +174,52 @@ func TestListEveryServerLeavesOutARegisteredServerThatDoesNotAnswer(t *testing.T
 	}
 
 	app = &App{serverURL: deadServer(t), projectID: "project-1"}
-	if _, _, err := app.listEveryServer(context.Background(), true, nil); err == nil {
+	if _, _, err := app.listEveryServer(context.Background(), sandboxFilter{}); err == nil {
 		t.Fatal("listEveryServer() succeeded with the primary down")
+	}
+}
+
+// A listing narrowed to a server is that server's alone, by the name it is
+// listed under — a registered server's, or the one a primary nobody registered
+// offers. The others are not asked, so one that is down goes unremarked; the
+// named one being down, or naming nothing, fails the listing.
+func TestListEveryServerNarrowedToOneServerAsksItAlone(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "Alpha", sandboxA)
+	other := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL}, registeredServer{Name: "gone", Address: deadServer(t)})
+
+	for name, want := range map[string]string{"beta": sandboxB, "Alpha": sandboxA} {
+		app := &App{serverURL: primary.URL, projectID: "project-1"}
+		listed, unreachable, err := app.listEveryServer(context.Background(), sandboxFilter{server: name})
+		if err != nil {
+			t.Fatalf("server %s: listEveryServer() error = %v", name, err)
+		}
+		if len(listed) != 1 || listed[0].sandbox.ID != want || listed[0].server.name != name {
+			t.Fatalf("server %s: listed = %+v, want %s alone", name, listed, want)
+		}
+		if len(unreachable) != 0 {
+			t.Fatalf("server %s: unreachable = %+v, want the other servers left unasked", name, unreachable)
+		}
+	}
+
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	if _, _, err := app.listEveryServer(context.Background(), sandboxFilter{server: "gone"}); err == nil {
+		t.Fatal("listEveryServer() succeeded narrowed to a server that is down")
+	}
+	// A registered primary's name is known, so an unknown name is refused
+	// without asking it — down or not.
+	down := deadServer(t)
+	registerForTest(t, registeredServer{Name: "alpha", Address: down}, registeredServer{Name: "beta", Address: other.URL})
+	app = &App{serverURL: down, projectID: "project-1"}
+	if _, _, err := app.listEveryServer(context.Background(), sandboxFilter{server: "nope"}); err == nil || !strings.Contains(err.Error(), `no server named "nope"`) {
+		t.Fatalf("error = %v, want nope refused by name with the primary down", err)
+	}
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL}, registeredServer{Name: "gone", Address: deadServer(t)})
+	app = &App{serverURL: primary.URL, projectID: "project-1"}
+	_, _, err := app.listEveryServer(context.Background(), sandboxFilter{server: "nope"})
+	if err == nil || !strings.Contains(err.Error(), `"nope"`) || !strings.Contains(err.Error(), "beta") {
+		t.Fatalf("error = %v, want it to refuse nope and name the servers there are", err)
 	}
 }
 
@@ -200,7 +244,7 @@ func TestLsNamesEachDiscoboxesServer(t *testing.T) {
 		return out.String()
 	}
 
-	table := run("ls", "--all")
+	table := run("ls")
 	header := strings.Fields(strings.SplitN(table, "\n", 2)[0])
 	if len(header) < 3 || header[2] != "SERVER" {
 		t.Fatalf("header = %v, want a SERVER column after NAME", header)
@@ -211,13 +255,17 @@ func TestLsNamesEachDiscoboxesServer(t *testing.T) {
 		}
 	}
 
+	if only := run("ls", "--on", "beta", "-q"); strings.TrimSpace(only) != sandboxB {
+		t.Fatalf("ls --on beta -q = %q, want %s alone", only, sandboxB)
+	}
+
 	var body struct {
 		Sandboxes []struct {
 			Server string `json:"server"`
 			ID     string `json:"id"`
 		} `json:"sandboxes"`
 	}
-	if err := json.Unmarshal([]byte(run("ls", "--all", "-o", "json")), &body); err != nil {
+	if err := json.Unmarshal([]byte(run("ls", "-o", "json")), &body); err != nil {
 		t.Fatalf("ls -o json: %v", err)
 	}
 	got := map[string]string{}
@@ -1316,23 +1364,13 @@ func TestCPFindsADiscoboxOnARegisteredServer(t *testing.T) {
 }
 
 // A full ID in the discobox's hostname spelling ("sbx-…", id.Hostname) is
-// asked of every server even when this directory's listing does not show it:
-// a discobox started elsewhere is found on the registered server it is on, by
-// shell and by cp, rather than taken for the command or an unknown name.
-func TestHostnameSpelledIDFindsAnUnlistedDiscoboxOnARegisteredServer(t *testing.T) {
+// asked of every server as the ID it is: the discobox is found on the
+// registered server it is on, by shell and by cp, rather than taken for the
+// command or an unknown name.
+func TestHostnameSpelledIDFindsADiscoboxOnARegisteredServer(t *testing.T) {
 	useTempServersFile(t)
 	primary := fakeServer(t, "alpha", sandboxA)
-	beta := fakeServerHandler("beta", sandboxB)
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Started from another directory: absent from the listing by origin,
-		// found by its ID.
-		if strings.HasSuffix(r.URL.Path, "/sandboxes") && r.URL.Query().Has("originKey") {
-			_, _ = w.Write([]byte(`{"sandboxes":[]}`))
-			return
-		}
-		beta.ServeHTTP(w, r)
-	}))
-	t.Cleanup(other.Close)
+	other := fakeServer(t, "beta", sandboxB)
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
@@ -1559,14 +1597,14 @@ func TestListEveryServerFiltersTagsAServerIgnored(t *testing.T) {
 	primary := fakeServer(t, "Alpha", sandboxA, sandboxB)
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
 
-	listed, _, err := app.listEveryServer(context.Background(), true, []string{"wip"})
+	listed, _, err := app.listEveryServer(context.Background(), sandboxFilter{tags: []string{"wip"}})
 	if err != nil {
 		t.Fatalf("listEveryServer() error = %v", err)
 	}
 	if len(listed) != 0 {
 		t.Fatalf("listed %d discoboxes, want none: none of them is tagged", len(listed))
 	}
-	if listed, _, _ := app.listEveryServer(context.Background(), true, nil); len(listed) != 2 {
+	if listed, _, _ := app.listEveryServer(context.Background(), sandboxFilter{}); len(listed) != 2 {
 		t.Fatalf("listed %d without a filter, want both", len(listed))
 	}
 }

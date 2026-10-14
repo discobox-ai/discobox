@@ -238,7 +238,7 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	// the -C every ADR does spell is unchanged, so nothing copied out of one
 	// breaks. --project above is the other answer to the same question — it
 	// stays because the launcher and scripts pass it.
-	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what new cuts a discobox from, and what ls lists this machine's discoboxes for")
+	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what new cuts a discobox from")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")

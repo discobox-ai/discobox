@@ -492,7 +492,8 @@ is an error rather than a lost convenience.
   note on stderr. A discobox two servers both list is one server registered
   under two addresses, and is listed once. `ls` gains a SERVER column, and
   each `-o json` object a `server` field, only when there is more than one
-  server.
+  server. A listing narrowed to one server (`sandboxFilter.server`, `ls --on`)
+  asks that server alone, and its failure fails the command.
 - **The console's listing is a snapshot, not a round trip.** A command asks
   once and exits; the window polls every five seconds for as long as it is
   open, so each server keeps what it last said to each poll (`serverPoll`:
@@ -870,8 +871,7 @@ same DELETE — which archives rather than destroys
 — and both report each argument independently through `runActionMany`, so one
 failure neither stops nor hides the rest. What the root command adds is the
 reference rule (`resolveSandboxReference`): an argument is a name from the
-listing `discobox ls` shows for the current project directory, or an ID from
-anywhere in the project. Its candidates are that whole listing, archived
+listing `discobox ls` shows, or an ID. Its candidates are that whole listing, archived
 discoboxes included, rather than the runtime candidates a picker offers —
 archiving needs no runtime, and a name the listing still shows must not come
 back as no such discobox. Purging has no root spelling: destroying data now is
@@ -948,7 +948,7 @@ and the command as one positional list rather than a `--discobox-id` flag, since
 which sandbox to run in is picked as often by ID as left to the picker. Cobra
 sees one flat `[]string` and cannot tell DISCOBOX_ID from CMD apart, so
 `resolveShellTarget` decides: `args[0]` is tried against the sandboxes
-`discobox ls` shows for the current project directory (`matchSandboxArg`) —
+`discobox ls` shows (`matchSandboxArg`) —
 
 - A full generated ID (`id.IsGenerated`) is trusted outright: a resource prefix
   plus 16 random characters cannot collide with a real command word by
@@ -1207,13 +1207,8 @@ one changes no directory at all.
 commands (`tools.go:70`, `122`, `216`) set `SetInterspersed(false)` rather than
 disabling flag parsing, so a shorthand written before their positionals is this
 CLI's, and `discobox shell -c 'go test ./...'` is a plausible thing to type. A
-`-c` that meant `--clone` would take that command as a source path — and
-`internal/origin` falls back to the absolute path rather than failing on one
-that does not exist — hash it into an origin key nothing was ever filed under,
-and find no discobox. In a script that is `no discoboxes were started from this
-directory` (`picker.go:83`), naming a directory nobody typed; at a terminal it is
-the picker offering every discobox on every server, and a login shell in
-whichever one is chosen. Unclaimed, it says `unknown shorthand flag: 'c'`
+`-c` that meant `--clone` would take that command as a source path and run a
+login shell with the command dropped. Unclaimed, it says `unknown shorthand flag: 'c'`
 instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
 `admin provider create|update`) are unaffected either way: a `-c` after those
 belongs to scp, to ssh, or to the provider catalog, and never reaches this flag
@@ -1259,35 +1254,21 @@ positional argument shared with the command itself (`shell`, resolved by
 `resolveShellTarget` rather than `selectSandbox`) — and fall back to
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
 
-- Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
-  to this machine's origin keys for `-C`, on every server (see
-  [Many Servers](#many-servers-adr-0116)) — so the command and the listing can
-  never disagree.
-- One candidate is used. Several with a terminal on stdin and stderr open the
-  inline Bubble Tea picker; several without one is an error, since there is
-  nobody to ask. None is an error too, unless a wider list exists and there is
-  a terminal — see the widening bullet below.
-- `a` in the picker widens the list to `discobox ls --all`: every discobox in
-  the project, whatever directory or machine started it
-  (`pickerOptions.expand`, built by `sandboxPickerExpansion`). It is the same
-  `listProjectSandboxCandidates` call with `all` set, so the widened list is
-  `ls --all` minus the archived discoboxes — dropped for the reason the scoped
-  list drops them, that they have no runtime to act on. The load happens on the
-  first press and its answer is kept, `a` toggles back, the typed query survives
-  the swap, and a failed load is reported in the card with the scoped list left
-  up. Widened rows carry where each discobox came from — its source, or `no source`,
+- Candidates are what `discobox ls` shows, less the archived discoboxes, which
+  have no runtime to act on (`listProjectSandboxCandidates`,
+  `sandboxCandidates` across servers — see
+  [Many Servers](#many-servers-adr-0116)): every discobox in the project,
+  whichever directory and machine created it
+  ([ADR 26-10-10-954](../docs/adr/26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md) §3).
+  Nothing a command acts on is scoped to the directory it is run in.
+- One candidate is used without asking. Several with a terminal on stdin and
+  stderr open the inline Bubble Tea picker; several without one is an error,
+  since there is nobody to ask. None is an error too.
+- Every row carries where its discobox came from — its source, or `no source`,
   and the machine when `Origin.hostId` is not this host's — because across
   folders that is the only thing telling two identically named discoboxes
-  apart. The scoped list omits it, since every row there shares one origin.
-  Names stay resolved per directory even so (`matchSandboxArg`): a name is
-  unique only within the directory that issued it. Picking a widened row is
-  unaffected, since the picker returns an ID.
-- A directory that started nothing opens the picker already widened rather than
-  failing, because there is no candidate to lose by asking; a directory that
-  started exactly one still takes it without asking, because stopping to ask
-  would cost every such run a keystroke to answer a question with one answer.
-  A pre-widened picker that finds the project empty, or cannot load it, reports
-  the caller's own wording rather than a cancel.
+  apart. A name is matched across the same candidates (`matchSandboxArg`), and
+  one that more than one answers to is refused with the IDs to choose between.
 - The origin is its own column, budgeted against the terminal width
   (`columnBudgets`) and dropped entirely when there is too little left to read
   — the picker is an inline program, so a card wider than the window does not
@@ -1317,8 +1298,8 @@ positional argument shared with the command itself (`shell`, resolved by
   contiguous, word-start, and early matches, with title weighted over ID over
   detail. Matched runes are highlighted; the list scrolls in a 20-row window.
   Enter closes the search line and leaves its filter applied; Escape abandons
-  it. Outside search, arrows, `j`/`k`, and `ctrl+p`/`ctrl+n` navigate, `a`
-  widens the list, Enter selects, and Escape cancels.
+  it. Outside search, arrows, `j`/`k`, and `ctrl+p`/`ctrl+n` navigate, Enter
+  selects, and Escape cancels.
 - Ordering with no query is the last sandbox picked for this project (marked
   `last used`), then most recently updated; the tie-break between equally scored
   matches is most recently updated. Typing hands ranking entirely to the query:
@@ -2095,11 +2076,25 @@ about a directory. Where a discobox belongs on its client is its **origin key**
 ([ADR 0111](../docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)):
 the host and where the primary source came from — a local source's repository
 root, or a remote URL in the form the request carries it — or the host alone for
-a discobox with no source. The server derives it at create. `discobox ls` sends
-the key `-C` names and the host's own (`sandboxcreate.OriginKeys`), so it lists
-this machine's discoboxes cut from there and its sourceless ones, and never
-another machine's: a local path identifies a repository only on the machine
-holding it, and collides across hosts and users.
+a discobox with no source. The server derives it at create.
+
+`discobox ls` lists every discobox in the project, on every server
+([ADR 26-10-10-954](../docs/adr/26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md),
+`sandboxFilter`), and narrows by `--on` a server, `--source` the SOURCE column's
+text matched exactly, and `--tag` a tag selector, repeated. `--source` is
+matched here against what the column prints (`sandboxSource`), so it reads the
+same on every machine and takes no origin key. `-C` is not a filter there: the
+console passes it to every command it spawns.
+
+The commands that take a discobox by name or offer a pick — the pickers
+behind `attach`, `apply`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
+`start`/`stop`/`restart`, `tag`, `rename` — list with no filter: the runtime
+ones less the archived, the lifecycle and meta ones with them. Which servers
+they ask is 0116 §4's and unchanged: the pickers, `shell`, `cp` and `tools`
+every server; `rm`, the lifecycle commands, `tag` and `rename` the primary. The
+origin key narrows nothing in the CLI; it is the console's folder
+(`tui/folder.go`). `apply` finds the checkout a discobox came from by its
+`Origin.HostId` and the source's `LocalDirectory`, not by the key.
 
 Host identity comes from `internal/hostid` in the root module. The server does
 not compare it with anything of its own: it files a discobox under its client,
@@ -2670,8 +2665,7 @@ way is left out of the discobox rather than brought in empty.
 
 `-C` still applies, for the Git authorship the discobox commits under, read
 from the client's disk. It does not file the discobox: with no source there is
-no place it came from, so it is filed under this machine alone (ADR 0111) and
-`discobox ls` lists it from any directory here. Only what would have been
+no place it came from, so it is filed under this machine alone (ADR 0111). Only what would have been
 checked out is left out. `-i` is unaffected:
 `--no-source -i ../foo` is a discobox holding `foo` and nothing else.
 

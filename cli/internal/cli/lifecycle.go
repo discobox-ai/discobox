@@ -59,8 +59,7 @@ its workspace, and the work in it, is kept.`,
 
 // newLifecycleCommand builds one of sandboxLifecycles. An argument is resolved
 // the way `discobox rm` resolves one (resolveSandboxReference, listedName): the
-// NAME `discobox ls` prints for the current project directory, or an ID from
-// anywhere in the project. Its candidates are that whole listing, so a stopped
+// NAME `discobox ls` prints, or an ID. Its candidates are that whole listing, so a stopped
 // discobox answers to the name it is listed under.
 //
 // A discobox driving the ones it created can run these: the sandbox role allows
@@ -75,10 +74,8 @@ func (a *App) newLifecycleCommand(action sandboxLifecycle) *cobra.Command {
 		Short: action.short,
 		Long: action.long + `
 
-Each argument names one of the discoboxes "discobox ls" shows for the current
-project directory: the NAME it is listed under, its ID, or a short prefix of
-that ID. A discobox started from another directory, or on another machine, is
-named by ID. An argument that names more than one discobox is refused, with the
+Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
+listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
 fails does not hide the rest.`,
 		Example:           fmt.Sprintf("  discobox %[1]s mybox\n  discobox %[1]s sbx_9qk5 sbx_2f7p", action.verb),
@@ -95,7 +92,7 @@ fails does not hide the rest.`,
 			}
 			var sandboxes []apimodel.Sandbox
 			if !allFullSandboxIDs(args) {
-				sandboxes, err = a.listProjectSandboxes(cmd.Context(), client, projectID, false, nil)
+				sandboxes, err = a.listProjectSandboxes(cmd.Context(), client, projectID, sandboxFilter{})
 				if err != nil {
 					return err
 				}

@@ -40,8 +40,7 @@ is written there, and a stopped discobox is started to take it. "discobox ls
 --tag KEY" lists by them. The tags the discobox holds afterwards are printed,
 one per line.
 
-DISCOBOX is the NAME "discobox ls" shows for the current project directory, its
-ID, or a short prefix of that ID.`,
+DISCOBOX is the NAME "discobox ls" shows, its ID, or a short prefix of that ID.`,
 		Example: `  discobox tag mybox to-delete
   discobox tag sbx_9qk5 ticket=ENG-12 wip
   discobox tag mybox --rm wip --rm to-delete
@@ -89,7 +88,7 @@ func (a *App) changeSandboxMeta(cmd *cobra.Command, reference string, body *apim
 	}
 	var sandboxes []apimodel.Sandbox
 	if !allFullSandboxIDs([]string{reference}) {
-		sandboxes, err = a.listProjectSandboxes(cmd.Context(), client, projectID, false, nil)
+		sandboxes, err = a.listProjectSandboxes(cmd.Context(), client, projectID, sandboxFilter{})
 		if err != nil {
 			return nil, err
 		}

@@ -213,8 +213,8 @@ type toolTarget struct {
 // arguments left over for the tool.
 //
 // The discobox is --discobox-id when that was given, and otherwise whatever
-// `discobox shell` would have resolved from this directory — a leading
-// argument naming one of its discoboxes, or a pick — which is also what decides
+// `discobox shell` would have resolved — a leading argument naming a
+// discobox, or a pick — which is also what decides
 // where the tool's own arguments begin.
 func (a *App) resolveToolTarget(cmd *cobra.Command, sandboxArg, source string, args []string) (toolTarget, []string, error) {
 	target := toolTarget{source: source}

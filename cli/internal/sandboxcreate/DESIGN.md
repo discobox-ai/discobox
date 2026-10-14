@@ -5,7 +5,7 @@ sandbox create requests.
 
 - Frontends provide typed options; this package resolves source refs, snapshots
   dirty local workspaces, captures local user identity, captures the local Git
-  authorship, derives the origin keys `discobox ls` filters on (`OriginKeys`,
+  authorship, derives the origin keys a folder is listed by (`OriginKeys`,
   over the root a create records for its source, `SourceRoot`), classifies
   environment and secret inputs, parses `--grant` (`ParseGrants`), builds the API body, and submits prompt sandbox
   creates.

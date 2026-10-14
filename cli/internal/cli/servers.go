@@ -496,17 +496,59 @@ type unansweredServer struct {
 
 // listEveryServer is `discobox ls` across every server: the primary's
 // discoboxes in --project, each registered server's in its default project,
-// asked concurrently; all is `ls --all`. The primary failing fails the
+// asked concurrently and narrowed to filter. The primary failing fails the
 // listing, as it always did. A registered server failing is returned as
 // unreachable beside everything the others listed.
+//
+// A filter naming a server asks that one alone, and its failing fails the
+// listing: there is nothing else to list beside it. A registered server is
+// known by its name before anything is asked; any other name can only be the
+// primary's, which a primary nobody registered says once it answers, so the
+// name is held against what it answered. A primary that offers the name a
+// registered server already has is two rows the SERVER column cannot tell
+// apart: the name goes to the registered one, and the primary's address still
+// names the primary.
 //
 // A discobox listed by two servers is one server registered under two
 // addresses — IDs are random, so it cannot be two discoboxes — and is listed
 // once, from whichever comes first: the primary, or the one registered first.
-func (a *App) listEveryServer(ctx context.Context, all bool, tags []string) ([]serverSandbox, []unansweredServer, error) {
+func (a *App) listEveryServer(ctx context.Context, filter sandboxFilter) ([]serverSandbox, []unansweredServer, error) {
 	set, err := a.servers()
 	if err != nil {
 		return nil, nil, err
+	}
+	if filter.server != "" {
+		unknown := func() error {
+			names := make([]string, len(set))
+			for i, s := range set {
+				names[i] = s.name
+			}
+			return fmt.Errorf("no server named %q; the servers are %s", filter.server, strings.Join(names, ", "))
+		}
+		asked := set[0]
+		if s, ok := serverNamed(set[1:], filter.server); ok {
+			asked = s
+		}
+		// A primary nobody registered is listed under the name it offers,
+		// and its address until it has: either names it. A registered one
+		// has its name already, so a name that is not it is refused before
+		// anything is asked — and whether or not the primary is up.
+		address := asked.name
+		if asked.primary && asked.registered && filter.server != address {
+			return nil, nil, unknown()
+		}
+		sandboxes, err := asked.listSandboxes(ctx, filter, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		if filter.server != asked.name && filter.server != address {
+			return nil, nil, unknown()
+		}
+		listed := make([]serverSandbox, 0, len(sandboxes))
+		for _, sandbox := range sandboxes {
+			listed = append(listed, serverSandbox{server: asked, sandbox: sandbox})
+		}
+		return listed, nil, nil
 	}
 	type result struct {
 		sandboxes []apimodel.Sandbox
@@ -518,7 +560,7 @@ func (a *App) listEveryServer(ctx context.Context, all bool, tags []string) ([]s
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i].sandboxes, results[i].err = s.listSandboxes(ctx, all, tags, len(set) > 1)
+			results[i].sandboxes, results[i].err = s.listSandboxes(ctx, filter, len(set) > 1)
 		}()
 	}
 	wg.Wait()
@@ -548,14 +590,14 @@ func (a *App) listEveryServer(ctx context.Context, all bool, tags []string) ([]s
 // listSandboxes is one server's part of a listing. named asks a primary
 // nobody registered what it is called, which is only worth a round trip once
 // there is more than one server to tell apart.
-func (s *server) listSandboxes(ctx context.Context, all bool, tags []string, named bool) ([]apimodel.Sandbox, error) {
+func (s *server) listSandboxes(ctx context.Context, filter sandboxFilter, named bool) ([]apimodel.Sandbox, error) {
 	ctx, cancel := s.bounded(ctx)
 	defer cancel()
 	projectID, client, err := s.projectClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sandboxes, err := s.app.listProjectSandboxes(ctx, client, projectID, all, tags)
+	sandboxes, err := s.app.listProjectSandboxes(ctx, client, projectID, filter)
 	if err != nil {
 		return nil, err
 	}

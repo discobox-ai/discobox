@@ -336,7 +336,7 @@ func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
 	if err == nil {
 		t.Fatal("execute shell error = nil")
 	}
-	if !strings.Contains(err.Error(), "no discoboxes were started from this directory") {
+	if !strings.Contains(err.Error(), "there are no discoboxes") {
 		t.Fatalf("execute shell error = %q, want the empty candidate message", err)
 	}
 }

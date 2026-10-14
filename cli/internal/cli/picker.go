@@ -31,10 +31,8 @@ var errPickCanceled = errors.New("canceled")
 // server first reached through one is registered (ADR 0116 §6). A bare ID or
 // prefix is looked for on the primary and then on the registered servers, so
 // an ID copied from `discobox ls` works whichever server listed it. With
-// neither, the candidates are what `discobox ls` shows for the current project
-// directory, across every server, and the user picks one when there is more
-// than one; "a" in that picker widens the list to `discobox ls --all`, for the
-// discobox that is in this project but was started somewhere else.
+// neither, the candidates are what `discobox ls` shows, across every server,
+// and the user picks one when there is more than one.
 //
 // app is this invocation aimed at the discobox's server. The caller carries on
 // with it in place of the App it called this on: everything after — the
@@ -71,13 +69,13 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 		return a, projectID, sandboxID, client, err
 	}
 
-	candidates, unreachable, err := a.sandboxCandidates(cmd.Context(), false)
+	candidates, unreachable, err := a.sandboxCandidates(cmd.Context())
 	if err != nil {
 		return nil, "", "", nil, err
 	}
 	target, sandboxID, err := a.pickServerSandbox(cmd, set, candidates, unreachable,
-		"no discoboxes were started from this directory; start one with `discobox new`, or name one with --discobox-id",
-		"more than one discobox was started from this directory; pass --discobox-id")
+		"there are no discoboxes; start one with `discobox new`",
+		"there is more than one discobox; pass --discobox-id")
 	if err != nil {
 		return nil, "", "", nil, err
 	}
@@ -106,19 +104,22 @@ func (a *App) pickServerSandbox(cmd *cobra.Command, set []*server, candidates []
 	if err != nil {
 		return nil, "", err
 	}
-	picked, err := pickOne(cmd, "Select a discobox", serverSandboxPickerItems(candidates, "", several), pickerOptions{
+	localHostID, err := hostid.Get()
+	if err != nil {
+		return nil, "", err
+	}
+	picked, err := pickOne(cmd, "Select a discobox", serverSandboxPickerItems(candidates, localHostID, several), pickerOptions{
 		empty:     empty,
 		ambiguous: ambiguous,
 		// The remembered pick is per project, because the candidate list is.
 		recentKey: "sandbox:" + projectID,
-		expand:    a.everyServerExpansion(cmd.Context(), several),
 	})
 	if err != nil {
 		return nil, "", err
 	}
 	// A row from a registered server is keyed by the server's name as well as
 	// the discobox's ID (serverSandboxPickerItems), which is what says where to
-	// go from here whichever of the two lists it was picked from.
+	// go from here.
 	target, sandboxID := set[0], picked
 	if name, id, ok := strings.Cut(picked, "/"); ok {
 		if target, ok = serverNamed(set[1:], name); !ok {
@@ -136,8 +137,8 @@ func (a *App) pickServerSandbox(cmd *cobra.Command, set []*server, candidates []
 //
 // A full generated ID is not looked for here. matchSandboxArg trusts one by its
 // shape alone, and which server holds it is a question for findOnEveryServer,
-// which asks every server rather than this directory's listing; callers send it
-// there first.
+// which asks every server rather than the candidates, so an archived one is
+// found too; callers send it there first.
 func matchServerSandboxArg(arg string, candidates []serverSandbox, match nameMatch) (*server, string, bool, error) {
 	sandboxes := make([]apimodel.Sandbox, 0, len(candidates))
 	for _, row := range candidates {
@@ -156,10 +157,9 @@ func matchServerSandboxArg(arg string, candidates []serverSandbox, match nameMat
 }
 
 // sandboxCandidates is the picker's list across every server: what `discobox
-// ls` shows, or with all `discobox ls --all`, less the archived discoboxes,
-// which have no runtime to act on.
-func (a *App) sandboxCandidates(ctx context.Context, all bool) ([]serverSandbox, []unansweredServer, error) {
-	listed, unreachable, err := a.listEveryServer(ctx, all, nil)
+// ls` shows, less the archived discoboxes, which have no runtime to act on.
+func (a *App) sandboxCandidates(ctx context.Context) ([]serverSandbox, []unansweredServer, error) {
+	listed, unreachable, err := a.listEveryServer(ctx, sandboxFilter{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -170,22 +170,6 @@ func (a *App) sandboxCandidates(ctx context.Context, all bool) ([]serverSandbox,
 		}
 	}
 	return candidates, unreachable, nil
-}
-
-// everyServerExpansion is selectSandbox's "a": every discobox in the project on
-// every server, whatever directory or machine started it.
-func (a *App) everyServerExpansion(ctx context.Context, several bool) func() ([]pickerItem, error) {
-	return func() ([]pickerItem, error) {
-		localHostID, err := hostid.Get()
-		if err != nil {
-			return nil, err
-		}
-		candidates, _, err := a.sandboxCandidates(ctx, true)
-		if err != nil {
-			return nil, err
-		}
-		return serverSandboxPickerItems(candidates, localHostID, several), nil
-	}
 }
 
 // serverSandboxPickerItems is sandboxPickerItems for a list that may span
@@ -207,14 +191,13 @@ func serverSandboxPickerItems(rows []serverSandbox, localHostID string, several 
 	return items
 }
 
-// listProjectSandboxCandidates is the shared candidate list for commands that
-// infer a sandbox from the current directory, or, with all, for every discobox
-// in the project the way `discobox ls --all` lists them. Archived sandboxes
-// remain in `discobox ls` and explicit resource completion so they can be
-// inspected and unarchived, but they have no runtime and cannot be selected
-// for an operation.
-func (a *App) listProjectSandboxCandidates(ctx context.Context, client *apiclientgen.Client, projectID string, all bool) ([]apimodel.Sandbox, error) {
-	sandboxes, err := a.listProjectSandboxes(ctx, client, projectID, all, nil)
+// listProjectSandboxCandidates is the candidate list of the commands that take
+// a discobox by name or offer a pick, on one server: what `discobox ls` lists,
+// less the archived discoboxes. Those remain in `discobox ls` and explicit
+// resource completion so they can be inspected and unarchived, but they have
+// no runtime and cannot be selected for an operation.
+func (a *App) listProjectSandboxCandidates(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.Sandbox, error) {
+	sandboxes, err := a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{})
 	if err != nil {
 		return nil, err
 	}
@@ -227,25 +210,6 @@ func (a *App) listProjectSandboxCandidates(ctx context.Context, client *apiclien
 	return candidates, nil
 }
 
-// sandboxPickerExpansion is the wider list a sandbox picker offers behind "a":
-// every discobox in the project, whatever directory or machine it was started
-// from, which is exactly what `discobox ls --all` lists. Its rows carry where
-// each discobox came from, because once the list crosses directories that is
-// the only thing telling two identically named discoboxes apart.
-func (a *App) sandboxPickerExpansion(ctx context.Context, client *apiclientgen.Client, projectID string) func() ([]pickerItem, error) {
-	return func() ([]pickerItem, error) {
-		localHostID, err := hostid.Get()
-		if err != nil {
-			return nil, err
-		}
-		sandboxes, err := a.listProjectSandboxCandidates(ctx, client, projectID, true)
-		if err != nil {
-			return nil, err
-		}
-		return sandboxPickerItems(sandboxes, localHostID), nil
-	}
-}
-
 // sandboxPickerItems renders the picker rows for sandboxes. A row's detail is
 // `discobox ls`'s answer in the same words: the runtime state, then whether the
 // working tree holds work — dirty, ready, applied, clean — then when it was
@@ -253,10 +217,10 @@ func (a *App) sandboxPickerExpansion(ctx context.Context, client *apiclientgen.C
 // has reported: an empty column reads as a column in a table, but as noise in a
 // sentence.
 //
-// localHostID is empty for the current directory's list, where every row
-// shares one origin and repeating it on each of them says nothing. The
-// expanded list passes this machine's host ID instead, so each row can say
-// where its discobox came from and name the machine when that is not this one.
+// localHostID is this machine's host ID, so each row can say where its
+// discobox came from and name the machine when that is not this one: the list
+// crosses directories and machines, and that is the only thing telling two
+// identically named discoboxes apart.
 func sandboxPickerItems(sandboxes []apimodel.Sandbox, localHostID string) []pickerItem {
 	items := make([]pickerItem, 0, len(sandboxes))
 	for _, sandbox := range sandboxes {
@@ -286,16 +250,14 @@ func sandboxPickerItem(sandbox apimodel.Sandbox, localHostID string) pickerItem 
 		detail:    strings.Join(detail, " · "),
 		updatedAt: updatedAt,
 	}
-	if localHostID != "" {
-		item.origin, item.originHost = sandboxPickerOrigin(sandbox, localHostID)
-	}
+	item.origin, item.originHost = sandboxPickerOrigin(sandbox, localHostID)
 	return item
 }
 
 // sandboxPickerOrigin says where a discobox came from: its source — the
 // directory or repository URL it was cut from, or that it had none — and the
 // machine when that machine is not this one. It is the picker's reading of the
-// SOURCE column `discobox ls --all` adds for the same reason. The two are kept
+// SOURCE column `discobox ls` carries for the same reason. The two are kept
 // apart rather than pasted together because only the path may be shortened —
 // and because a Windows path carries a colon of its own, so nothing downstream
 // could take them back apart.
@@ -311,7 +273,8 @@ func sandboxPickerOrigin(sandbox apimodel.Sandbox, localHostID string) (path, ho
 	if origin.HostId == localHostID {
 		return path, ""
 	}
-	host = strings.TrimSpace(origin.Hostname.Or(""))
+	// The hostname is the creator's claim, as the source is (sandboxSource).
+	host = terminalSafe(strings.TrimSpace(origin.Hostname.Or("")))
 	if host == "" {
 		host = "another machine"
 	}
@@ -465,12 +428,6 @@ type pickerOptions struct {
 	ambiguous string
 	// recentKey namespaces the remembered last pick. Empty disables the memory.
 	recentKey string
-	// expand is the wider list the picker offers behind "a", the picker's
-	// equivalent of `discobox ls --all`: every discobox in the project rather
-	// than only the ones started from this directory on this machine. It is
-	// called the first time the user asks for it and its answer kept for the
-	// rest of the picker's life. Nil is a picker with nothing wider to show.
-	expand func() ([]pickerItem, error)
 	// live rewrites the prompt line while the picker is up, for a question
 	// whose subject is still being worked out behind it — the size of a
 	// directory being measured while it is asked about. It returns the line and
@@ -482,27 +439,18 @@ type pickerOptions struct {
 // pickOne returns the single item's ID when there is exactly one, and otherwise
 // asks the user to choose. It prompts on stderr so a chosen-then-streamed
 // command keeps stdout clean.
-//
-// The one candidate is still taken without asking even when a wider list
-// exists: the command was run somewhere that started exactly one, and stopping
-// to ask about it would cost every such run a keystroke to answer a question
-// with one answer. Nothing at all is different — there is no candidate to take
-// and nothing to lose by asking — so a wider list is opened straight onto
-// rather than reported as a dead end.
 func pickOne(cmd *cobra.Command, prompt string, items []pickerItem, opts pickerOptions) (string, error) {
 	askable := isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.ErrOrStderr())
 	switch {
 	case len(items) == 1:
 		return items[0].id, nil
-	case len(items) == 0 && (opts.expand == nil || !askable):
+	case len(items) == 0:
 		return "", errors.New(opts.empty)
 	case len(items) > 1 && !askable:
 		return "", errors.New(opts.ambiguous)
 	}
 	model := newPickerModel(prompt, items, lastSelection(opts.recentKey))
 	model.live = opts.live
-	model.expand = opts.expand
-	model.expandAtOnce = len(items) == 0
 	final, err := tea.NewProgram(model,
 		tea.WithContext(cmd.Context()),
 		tea.WithInput(cmd.InOrStdin()),
@@ -519,12 +467,6 @@ func pickOne(cmd *cobra.Command, prompt string, items []pickerItem, opts pickerO
 		return "", errPickCanceled
 	}
 	if picked.chosen < 0 {
-		switch {
-		case picked.expandAtOnce && picked.expandErr != nil:
-			return "", picked.expandErr
-		case picked.exhausted:
-			return "", errors.New(opts.empty)
-		}
 		return "", errPickCanceled
 	}
 	id := picked.items[picked.chosen].id
@@ -579,35 +521,9 @@ type pickerModel struct {
 	// live is pickerOptions.live, polled on pickerLiveInterval until it reports
 	// the prompt is final.
 	live func() (string, bool)
-	// expand is pickerOptions.expand. scoped is the list the picker opened on,
-	// kept so "a" can switch back; wide is what expand answered, kept so
-	// switching back and forth asks the server once. expanded says which of the
-	// two items currently holds.
-	expand   func() ([]pickerItem, error)
-	scoped   []pickerItem
-	wide     []pickerItem
-	expanded bool
-	// expanding is a load in flight; expandErr is the last one that failed,
-	// reported in the card rather than taking the picker down — the scoped list
-	// on screen is still a usable answer.
-	expanding bool
-	expandErr error
-	// expandAtOnce opens the picker already widened, for a command whose own
-	// directory started nothing: there is no scoped list to show, and the wider
-	// one is the only answer that could exist.
-	expandAtOnce bool
-	// exhausted marks a pre-widened picker that found nothing anywhere, so the
-	// caller reports its own "there are none" wording rather than a cancel.
-	exhausted bool
 	// width is the terminal's, from the runtime. Zero until it has said, which
 	// is only ever before the first frame.
 	width int
-}
-
-// pickerExpandedMsg carries the wider list back from the load "a" started.
-type pickerExpandedMsg struct {
-	items []pickerItem
-	err   error
 }
 
 // pickerLiveInterval is how often a live prompt is re-read. It is a number
@@ -618,15 +534,12 @@ const pickerLiveInterval = 150 * time.Millisecond
 type pickerLiveMsg struct{}
 
 func newPickerModel(prompt string, items []pickerItem, recentID string) *pickerModel {
-	m := &pickerModel{prompt: prompt, items: items, scoped: items, recentID: recentID, chosen: -1}
+	m := &pickerModel{prompt: prompt, items: items, recentID: recentID, chosen: -1}
 	m.refilter()
 	return m
 }
 
 func (m *pickerModel) Init() tea.Cmd {
-	if m.expandAtOnce {
-		return tea.Batch(m.pollLive(), m.toggleScope())
-	}
 	return m.pollLive()
 }
 
@@ -639,34 +552,6 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.pollLive()
-	case pickerExpandedMsg:
-		m.expanding = false
-		if msg.err != nil {
-			m.expandErr = msg.err
-			if m.expandAtOnce {
-				// The wider list was the whole picker; failing to load it
-				// leaves an empty card with nothing to pick.
-				m.done = true
-				return m, tea.Quit
-			}
-			return m, nil
-		}
-		// Normalized so an empty project reads as loaded rather than as never
-		// asked, and "a" does not re-ask on every press.
-		m.wide = msg.items
-		if m.wide == nil {
-			m.wide = []pickerItem{}
-		}
-		m.showScope(true)
-		if m.expandAtOnce && len(m.wide) == 0 {
-			// Opened because this directory had none, and the project has none
-			// either. There is nothing here to choose from and nothing to go
-			// back to, so let the caller say so in its own words.
-			m.exhausted = true
-			m.done = true
-			return m, tea.Quit
-		}
-		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		return m, nil
@@ -674,43 +559,6 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.updateKey(msg)
 	}
 	return m, nil
-}
-
-// toggleScope is the "a" key: the wider list when the scoped one is up, and
-// back to the scoped one when it is not. The first widening has to ask the
-// server, so it runs as a command and lands as a pickerExpandedMsg.
-func (m *pickerModel) toggleScope() tea.Cmd {
-	if m.expand == nil || m.expanding {
-		return nil
-	}
-	if m.expanded {
-		m.showScope(false)
-		return nil
-	}
-	if m.wide != nil {
-		m.showScope(true)
-		return nil
-	}
-	m.expanding = true
-	m.expandErr = nil
-	expand := m.expand
-	return func() tea.Msg {
-		items, err := expand()
-		return pickerExpandedMsg{items: items, err: err}
-	}
-}
-
-// showScope swaps which list is on screen. The query survives it: widening is
-// an answer to "it is not in here", not a reason to retype what is being
-// looked for.
-func (m *pickerModel) showScope(expanded bool) {
-	m.expanded = expanded
-	if expanded {
-		m.items = m.wide
-	} else {
-		m.items = m.scoped
-	}
-	m.refilter()
 }
 
 // pollLive schedules the next read of a live prompt, and is nothing at all for
@@ -772,8 +620,6 @@ func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
 		m.typing = true
 		m.query = ""
 		m.refilter()
-	case "a":
-		return m.toggleScope()
 	case "up", "ctrl+p", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -903,26 +749,6 @@ var (
 	pickerNoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 )
 
-// scopeLine says which list is on screen whenever that is not the plain
-// answer the command asked for: a widened list looks arbitrarily longer
-// otherwise, and a load that failed would silently look like it did nothing.
-func (m *pickerModel) scopeLine() string {
-	switch {
-	case m.expanding:
-		return "listing every discobox…"
-	case m.expandErr != nil:
-		return "could not list every discobox: " + m.expandErr.Error()
-	case m.expanded:
-		return "every discobox in this project"
-	case len(m.scoped) == 0:
-		// Collapsed back onto the list that was empty to begin with. Without
-		// this the card is a bare "no matches" that looks like a broken filter.
-		return "nothing was started from this directory"
-	default:
-		return ""
-	}
-}
-
 // pickerRowFixed is the row's fixed head — cursor, title column, id column, and
 // the gaps between them — and pickerCardChrome the bordered card's own width, a
 // border column and two of padding a side. What the terminal has past those is
@@ -977,15 +803,6 @@ func (m *pickerModel) View() tea.View {
 	if hasNote {
 		fmt.Fprintf(&b, "%s\n", pickerNoteStyle.Render(note))
 	}
-	if scope := m.scopeLine(); scope != "" {
-		if m.width > 0 {
-			// The one line here whose length nothing else bounds — a transport
-			// error arrives verbatim and is easily wider than the window, and
-			// it would size the card's border past everything just budgeted.
-			scope, _ = truncatePickerText(scope, m.width-pickerCardChrome)
-		}
-		fmt.Fprintf(&b, "%s\n", pickerDetailStyle.Render(scope))
-	}
 	if m.typing || m.query != "" {
 		fmt.Fprintf(&b, "%s%s%s\n\n", pickerQueryStyle.Render("/"), m.query, pickerQueryStyle.Render("▏"))
 	}
@@ -1039,15 +856,6 @@ func (m *pickerModel) View() tea.View {
 		fmt.Fprintf(&b, "%s\n", pickerDetailStyle.Render(fmt.Sprintf("  … %d more", hidden)))
 	}
 	help := "/ search · ↑↓ moves · Enter selects · Esc cancels"
-	if m.expand != nil {
-		// Say what the key does next, not what is on screen now, so the list
-		// and the key never look like they claim different things.
-		if m.expanded {
-			help += " · a this directory"
-		} else {
-			help += " · a every discobox"
-		}
-	}
 	if m.typing {
 		help = "type to search · Enter finishes · Esc clears"
 	}

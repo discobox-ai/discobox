@@ -72,7 +72,10 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 // serverOf names the server each sandbox is on, by ID, when there is more than
 // one (ADR 0116 §4): the table gains a SERVER column and each JSON object a
 // "server" field. Nil is one server, which there is no point naming.
-func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showSource bool, serverOf map[string]string) error {
+//
+// SOURCE is where each was cut from, the one column telling two discoboxes of
+// a name apart in a list that crosses directories.
+func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, serverOf map[string]string) error {
 	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
@@ -96,10 +99,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	if serverOf != nil {
 		header = append(header, "SERVER")
 	}
-	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED")
-	if showSource {
-		header = append(header, "SOURCE")
-	}
+	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
@@ -107,7 +107,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if serverOf != nil {
 			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandboxDisplayState(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
@@ -117,11 +117,8 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			truncateTableValue(sandboxTagsColumn(sandbox), 40),
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.CreatedAt),
+			sandboxSource(sandbox),
 		)
-		if showSource {
-			fmt.Fprintf(tw, "\t%s", sandboxSource(sandbox))
-		}
-		fmt.Fprintln(tw)
 	}
 	return tw.Flush()
 }
@@ -212,19 +209,25 @@ func sandboxGitColumn(sandbox apimodel.Sandbox) string {
 	return out
 }
 
-// sandboxSource is where a sandbox's primary source came from — the local
-// directory it was cut from, or the repository URL — which is where its origin
-// key files it (ADR 0111). "-" for a sandbox with no source.
+// sandboxSource is where a sandbox's primary source came from, as it is
+// printed — the local directory it was cut from, or the repository URL — which
+// is where its origin key files it (ADR 0111). "-" for a sandbox with no
+// source.
+//
+// It is whatever the create request said, and a discobox may create one
+// (ADR 26-10-08-447), so it is text a discobox wrote: escaped before it
+// reaches a terminal, in the table and in every picker row. `ls --source`
+// matches this same escaped text, which is what the column shows.
 func sandboxSource(sandbox apimodel.Sandbox) string {
 	source, ok := sandbox.Config.Source.Get()
 	if !ok {
 		return "-"
 	}
 	if u, ok := source.URL.Get(); ok {
-		return u.String()
+		return terminalSafe(u.String())
 	}
 	if dir := strings.TrimSpace(source.LocalDirectory.Or("")); dir != "" {
-		return dir
+		return terminalSafe(dir)
 	}
 	return "-"
 }

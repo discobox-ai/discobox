@@ -42,9 +42,8 @@ The discobox's origin is the source's own remote, and a push here does not
 touch it. (In a discobox created before 26-10-10-545 the pool is origin, and
 the remote is upstream; push prints the command for the discobox it pushed to.)
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
-current project directory: the only one when there is one, otherwise you are
-asked to pick.
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+only one when there is one, otherwise you are asked to pick.
 
 This applies to each source that came from a directory on a machine. Every
 such source of the discobox is pushed; --source narrows to one, named by its

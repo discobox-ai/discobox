@@ -36,8 +36,7 @@ written there, and a stopped discobox is started to take it. The agent in the
 discobox may set it too, by writing "name" into that file. The name the
 discobox is then listed as is printed.
 
-DISCOBOX is the NAME "discobox ls" shows for the current project directory, its
-ID, or a short prefix of that ID.`,
+DISCOBOX is the NAME "discobox ls" shows, its ID, or a short prefix of that ID.`,
 		Example: `  discobox rename sbx_9qk5 "Daily GH check-in"
   discobox rename "Commit files" "Daily GH check-in"
   discobox rename mybox`,

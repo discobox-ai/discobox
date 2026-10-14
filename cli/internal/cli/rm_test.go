@@ -16,7 +16,7 @@ const (
 	rmArchivedID = "sbx_4w8xn25t2hh2rv00"
 )
 
-// rmTestServer serves this directory's listing -- a titled discobox, an
+// rmTestServer serves the project's listing -- a titled discobox, an
 // untitled one, and an archived one -- and records what was archived.
 func rmTestServer(t *testing.T, archived *[]string) *httptest.Server {
 	t.Helper()

@@ -21,7 +21,7 @@ ssh_config. The key is the one exception — it is
 enrolled in the project, and reused rather than replaced on later runs.
 
 Every argument is passed to ssh untouched, including flags. A leading argument
-that names one of this directory's discoboxes selects it; anything else, and
+that names one of the discoboxes "discobox ls" shows selects it; anything else, and
 everything after it, belongs to ssh.`,
 		Example: `  discobox tools ssh
   discobox tools ssh mybox
@@ -70,8 +70,8 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 // The difference from `shell` is that flag parsing is off here, so args[0] may
 // be an ssh flag — `discobox tools ssh -L 8080:localhost:3000` is the ordinary
 // case. A leading `-` is never a sandbox reference, and matchSandboxArg
-// (inside resolveShellTarget) rejects anything that does not name one of this
-// directory's sandboxes, so everything else reaches ssh untouched.
+// (inside resolveShellTarget) rejects anything that does not name one of the
+// sandboxes `discobox ls` shows, so everything else reaches ssh untouched.
 //
 // --discobox-id wins outright when given: it was said explicitly, and then no
 // argument is consumed as a sandbox at all.

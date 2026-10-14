@@ -19,8 +19,7 @@ package tui
 // folder is one of the filter's choices: the key of the discoboxes in it, what
 // it reads as, the source a create from it cuts from,
 // and whether it is this machine's — in which case this machine's discoboxes
-// with no source are in it too, the way `discobox ls` lists them beside the
-// directory's own.
+// with no source are in it too, beside the directory's own.
 type folder struct {
 	key    string
 	label  string

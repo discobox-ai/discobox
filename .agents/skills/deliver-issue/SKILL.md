@@ -253,9 +253,8 @@ every change: `PR #<pr>: <what happened, what you did>`.
 
 Three plain tags on the box tell the user where its PR stands: `ready`,
 `blocked` and `merged`, each with an empty value. The console shows them as
-`#ready`, `#blocked` and `#merged`, and `discobox ls --all --tag ready` lists
-them (without `--all`, `ls` skips boxes created from another source, as a
-lead's workers are). Set at most one of them, and move it each time the state
+`#ready`, `#blocked` and `#merged`, and `discobox ls --tag ready` lists
+them. Set at most one of them, and move it each time the state
 changes, from §0 until the end:
 
 - **`ready`**: §6 has stopped, every check on the head commit is green, every
