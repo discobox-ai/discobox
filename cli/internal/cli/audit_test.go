@@ -554,6 +554,7 @@ func TestHTTPAuditRefuserReadsTheReason(t *testing.T) {
 		{true, "host denied", "host"},
 		{true, "judge: not what the use was for", "judge"},
 		{true, "gate: no live use", "gate"},
+		{true, "credential unavailable: control plane unreachable", "credential"},
 		{true, "", "policy"},
 	} {
 		if got := httpAuditRefuser(tc.blocked, tc.reason); got != tc.want {
