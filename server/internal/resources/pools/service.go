@@ -198,7 +198,7 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 	if s.pools == nil {
 		return fmt.Errorf("pool control plane is required")
 	}
-	if _, err := s.pools.SubmitPoolDelete(ctx, projectID, pool.ID); err != nil {
+	if err := s.pools.SubmitPoolDelete(ctx, projectID, pool.ID); err != nil {
 		return apperrors.NotFound(err, "pool not found")
 	}
 	return nil

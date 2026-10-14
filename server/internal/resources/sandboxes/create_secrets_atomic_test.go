@@ -16,7 +16,7 @@ import (
 // them is permanent (assignments are excluded from the spec fingerprint, so
 // late rows never read as drift). These tests pin the atomicity.
 
-func createIntentFixture(t *testing.T) (context.Context, *Service, *store.Store) {
+func createIntentFixture(t *testing.T) (context.Context, *Service, *store.Store, *database.DB) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -45,11 +45,11 @@ func createIntentFixture(t *testing.T) (context.Context, *Service, *store.Store)
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	return ctx, NewService(appStore, nil, "user-1", engine), appStore
+	return ctx, NewService(appStore, nil, "user-1", engine), appStore, db
 }
 
 func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
-	ctx, svc, st := createIntentFixture(t)
+	ctx, svc, st, _ := createIntentFixture(t)
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
 	created, err := svc.createSandboxIntent(ctx, sandbox, []*model.SandboxSecret{
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
@@ -70,7 +70,7 @@ func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
 }
 
 func TestCreateSandboxIntentRollsBackSandboxOnSecretFailure(t *testing.T) {
-	ctx, svc, st := createIntentFixture(t)
+	ctx, svc, st, _ := createIntentFixture(t)
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
 	// Two assignments for the same env name violate idx_sandbox_secret_env,
 	// failing the second insert inside the transaction.
