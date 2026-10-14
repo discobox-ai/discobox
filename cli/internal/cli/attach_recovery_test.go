@@ -191,3 +191,40 @@ func TestSandboxExecAttachDoneRetriesTransientReadFailure(t *testing.T) {
 		t.Fatal("err = nil, want the read failure surfaced for retry")
 	}
 }
+
+// A pool agent refuses an attach in plain text, which the transport turns into
+// an error before the websocket dialer sees a response. It is still the
+// refusal: the attach reports the agent's sentence rather than the dialer's
+// account of a failed handshake.
+func TestAttachReportsAPlainTextRefusal(t *testing.T) {
+	const sandboxID = "sbx_9qk5n25t2hh2rv00"
+	const refusal = "discobox sbx_9qk5n25t2hh2rv00 is stopped: what is read here is inside it, and reading it does not start it"
+	app := attachRefusedApp(t, func(w http.ResponseWriter) {
+		http.Error(w, refusal, http.StatusConflict)
+	})
+	_, err := app.openSandboxExecAttach(t.Context(), "project-1", sandboxID, primaryExecID, true)
+	if err == nil {
+		t.Fatal("attach to a refused discobox succeeded")
+	}
+	err = app.execAttachError(t.Context(), "project-1", sandboxID, primaryExecID, err)
+	if want := "attach exec: " + refusal; err.Error() != want {
+		t.Fatalf("attach error =\n%s\nwant\n%s", err, want)
+	}
+}
+
+// attachRefusedApp is an App whose server refuses every attach with refuse,
+// and fails the test on any other request: a refusal that explains itself is
+// reported without asking the server anything more.
+func attachRefusedApp(t *testing.T, refuse func(http.ResponseWriter)) *App {
+	t.Helper()
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/execs/primary/attach") {
+			refuse(w)
+			return
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+	return &App{serverURL: server.URL, autoStart: autoStartServerFalse}
+}

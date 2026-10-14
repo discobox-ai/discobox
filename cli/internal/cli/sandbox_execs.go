@@ -612,6 +612,15 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			return nil, attachRejectedError{status: resp.StatusCode, statusText: resp.Status, message: attachErrorMessage(body)}
 		}
+		// A refusal in plain text never reaches the dialer as a response: the
+		// transport has already turned it into an error (textPlainErrorTransport),
+		// which is what a pool agent's own refusal is. It is the same rejection,
+		// and reported as a failed dial it buried the one sentence that mattered
+		// under the websocket's account of a handshake and a URL.
+		var plain *plainStatusError
+		if errors.As(err, &plain) {
+			return nil, attachRejectedError{status: plain.code, statusText: plain.status, message: plain.body}
+		}
 		return nil, fmt.Errorf("attach exec: %w", err)
 	}
 	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
