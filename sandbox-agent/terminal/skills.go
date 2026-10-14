@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ var skillDirectories = []string{
 
 // installSkills copies the image's skills, the primary source's declared
 // skills, and the skills the sandbox was created with into the run user's
-// skill directories.
+// skill directories, then links in the skills of its skills sources.
 //
 // It runs on the primary terminal's first launch only, and from there rather
 // than from the installer that runs before every terminal: the copies are the
@@ -67,7 +68,9 @@ var skillDirectories = []string{
 //
 // The image's go first, the repository's second and the sandbox's own last,
 // so each wins over the one before on a name they share: each is the more
-// specific declaration (ADR 26-10-09-395 §3).
+// specific declaration (ADR 26-10-09-395 §3). The skills sources' are linked
+// last, and replace a copied skill of the same name whole (ADR 26-10-14-294
+// §4).
 func (s *Service) installSkills() error {
 	// The control plane refused what it would not carry; this is the line
 	// held again where it matters, before anything is written under home.
@@ -102,7 +105,7 @@ func (s *Service) installSkills() error {
 	if err != nil {
 		return err
 	}
-	if len(builtin) == 0 && len(project) == 0 && len(s.skills) == 0 {
+	if len(builtin) == 0 && len(project) == 0 && len(s.skills) == 0 && len(s.skillsSources) == 0 {
 		return nil
 	}
 	// HOME as the exec that will read these files resolves it, which is what
@@ -118,7 +121,121 @@ func (s *Service) installSkills() error {
 	if err := copySkills(declared, project, home, s.defaultUser); err != nil {
 		return err
 	}
-	return writeSkills(s.skills, home, s.defaultUser)
+	if err := writeSkills(s.skills, home, s.defaultUser); err != nil {
+		return err
+	}
+	return linkSkillsSources(s.skillsSources, home, s.defaultUser)
+}
+
+// linkSkillsSources links every skill of each skills source directory into
+// every skill directory under home, in order, so a later directory wins on a
+// name (ADR 26-10-14-294 §3). A link, not a copy, is the point: a harness that
+// edits the skill edits the checkout, where the edit can be committed and
+// pushed back to the skills repository.
+//
+// The directory is read at the commit the source was checked out at, which
+// the client could not see when it named it; one that is not there fails the
+// install, naming the source and the directory, as an unreadable skills
+// directory does.
+func linkSkillsSources(sources []sandboxconfig.SkillsSource, home string, user *execs.User) error {
+	uid, gid := userIDs(user)
+	for _, source := range sources {
+		if err := sandboxconfig.ValidateSkillsDirectory(source.Directory); err != nil {
+			return fmt.Errorf("install the skills of %s: %w", source.Target, err)
+		}
+		from := filepath.Join(source.Target, filepath.FromSlash(source.Directory))
+		names, err := sourceSkillNames(from)
+		if err != nil {
+			return fmt.Errorf("install the skills of %s from %s: %w", source.Target, source.Directory, err)
+		}
+		for _, dir := range skillDirectories {
+			for _, name := range names {
+				if err := linkSkill(filepath.Join(from, name), filepath.Join(home, dir, name), uid, gid); err != nil {
+					return fmt.Errorf("install skill %s from %s into %s: %w", name, source.Target, dir, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// sourceSkillNames is the skills in a skills source directory: each immediate
+// subdirectory holding a SKILL.md whose name is one a skill may have, so
+// `.git` and its like are never linked.
+func sourceSkillNames(from string) ([]string, error) {
+	info, err := os.Stat(from)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", from)
+	}
+	entries, err := os.ReadDir(from)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if sandboxconfig.ValidateSkillName(entry.Name()) != nil {
+			continue
+		}
+		// Stat rather than the entry's own type: a skill directory may itself
+		// be a link inside the repository.
+		skill, err := os.Stat(filepath.Join(from, entry.Name(), sandboxconfig.SkillFileName))
+		if err != nil || !skill.Mode().IsRegular() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
+
+// unlinkSkill removes a skills source's link where a skill is about to be
+// copied, so the copy lands in a directory of its own. The install runs
+// again when a first launch fails after it, and the link from that run would
+// otherwise carry the copy into the skills source's checkout, as edits to
+// commit; the linking that follows every copy puts the link back.
+func unlinkSkill(root string) error {
+	info, err := os.Lstat(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode().IsDir() {
+		return nil
+	}
+	return os.Remove(root)
+}
+
+// linkSkill points link at target, replacing whatever an earlier layer put
+// there: a copied skill cannot be overlaid by a link, and the skills source is
+// the later declaration (ADR 26-10-14-294 §4).
+func linkSkill(target, link string, uid, gid *int64) error {
+	created, err := mkdirAllTracked(filepath.Dir(link), 0o755)
+	if err != nil {
+		return err
+	}
+	if err := chownAll(created, uid, gid); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(link); err == nil {
+		slog.Info("a skills source's skill replaces one installed before it", "skill", filepath.Base(link), "path", link, "source", target)
+		// A link from an earlier skills source is removed as a link: walking
+		// into it, as RemoveAll may on a Windows junction, would delete the
+		// skill from that source's checkout.
+		remove := os.RemoveAll
+		if !info.Mode().IsDir() {
+			remove = os.Remove
+		}
+		if err := remove(link); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return linkSkillDirectory(target, link, uid, gid)
 }
 
 // writeSkills writes skills, which the caller has validated, into every skill
@@ -130,6 +247,9 @@ func writeSkills(skills sandboxconfig.Skills, home string, user *execs.User) err
 		for _, name := range skills.Names() {
 			skill := skills[name]
 			root := filepath.Join(home, dir, name)
+			if err := unlinkSkill(root); err != nil {
+				return fmt.Errorf("install skill %s into %s: %w", name, dir, err)
+			}
 			if err := writeSkillFile(filepath.Join(root, sandboxconfig.SkillFileName), strings.NewReader(skill.Skill), false, uid, gid); err != nil {
 				return fmt.Errorf("install skill %s into %s: %w", name, dir, err)
 			}
@@ -187,6 +307,11 @@ func copySkillTree(from, to string, uid, gid *int64) error {
 			return err
 		}
 		target := filepath.Join(to, rel)
+		if entry.IsDir() && rel != "." && !strings.ContainsRune(rel, filepath.Separator) {
+			if err := unlinkSkill(target); err != nil {
+				return err
+			}
+		}
 		switch {
 		case entry.IsDir():
 			created, err := mkdirAllTracked(target, 0o755)

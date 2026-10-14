@@ -190,6 +190,18 @@ func SandboxGitToModel(value OptSandboxGitIdentity) SandboxGitFields {
 	}
 }
 
+// SandboxSkillsSourcesToModel is the request's skills sources, in order.
+func SandboxSkillsSourcesToModel(in []serverapi.SandboxSkillsSource) []model.SkillsSource {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.SkillsSource, 0, len(in))
+	for _, source := range in {
+		out = append(out, model.SkillsSource{Source: source.Source, Directory: source.Directory})
+	}
+	return out
+}
+
 // SandboxSkillsToModel is the request's skills as the sandbox keeps them, or
 // the refusal they earn: a name that is not one directory, a file that leaves
 // its skill, or more content than a bootstrap carries (ADR 26-10-09-395 §1).
@@ -278,6 +290,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	// skill of every sandbox in it (ADR 26-10-09-395 §2).
 	if len(sandbox.SkillNames) > 0 {
 		config["skillNames"] = sandbox.SkillNames
+	}
+	if len(sandbox.SkillsSources) > 0 {
+		config["skillsSources"] = sandbox.SkillsSources
 	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,
@@ -710,6 +725,9 @@ func GitSourceToModel(input serverapi.GitSource) model.GitSource {
 		if value, ok := destination.WorkingDirectory.Get(); ok {
 			out.Destination.WorkingDirectory = &value
 		}
+	}
+	if value, ok := input.Purpose.Get(); ok {
+		out.Purpose = string(value)
 	}
 	return out
 }

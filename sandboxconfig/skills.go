@@ -250,3 +250,46 @@ func portableSegment(segment string) error {
 	}
 	return nil
 }
+
+// RootSkillsDirectory is the skills directory that is a skills source's root.
+const RootSkillsDirectory = "."
+
+// ValidateSkillsDirectory refuses a skills source's directory that is not a
+// clean relative path inside its repository (ADR 26-10-14-294 §1):
+// slash-separated whatever the platform, with no `..` segment, and
+// RootSkillsDirectory for the root.
+func ValidateSkillsDirectory(dir string) error {
+	switch {
+	case dir == "":
+		return errors.New("a skills directory needs a path; the repository root is \".\"")
+	case dir == RootSkillsDirectory:
+		return nil
+	case len(dir) > MaxSkillPathBytes:
+		return fmt.Errorf("skills directory %q... is %d bytes; it holds at most %d", dir[:32], len(dir), MaxSkillPathBytes)
+	case strings.Contains(dir, `\`):
+		return fmt.Errorf("skills directory %q is not slash-separated", dir)
+	case path.IsAbs(dir), path.Clean(dir) != dir, dir == "..", strings.HasPrefix(dir, "../"):
+		return fmt.Errorf("skills directory %q is not a clean path inside the repository", dir)
+	}
+	// It names a directory the checkout already has, not one the sandbox
+	// writes, so it is held to no platform's file names: only a control
+	// character, which no path should carry, is refused.
+	for _, r := range dir {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("skills directory %q holds the control character %q", dir, r)
+		}
+	}
+	return nil
+}
+
+// SkillsSource is one directory of a skills source's checkout whose skills
+// the first launch links into the harness's skill directories (ADR
+// 26-10-14-294 §3). A sandbox's skills sources are a list in the order the
+// client named them, so a later one wins on a skill's name.
+type SkillsSource struct {
+	// Target is the checkout's directory in the sandbox: its source's Target.
+	Target string `json:"target"`
+	// Directory is where the skills are inside the checkout, slash-separated,
+	// RootSkillsDirectory for its root (ValidateSkillsDirectory).
+	Directory string `json:"directory"`
+}

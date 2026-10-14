@@ -134,6 +134,10 @@ var (
 		GitSourceDeliveryPush,
 		GitSourceDeliveryCache,
 	}
+	GitSourcePurposes = []string{
+		GitSourcePurposeWork,
+		GitSourcePurposeSkills,
+	}
 	SandboxUpgradePolicies = []string{
 		SandboxUpgradePolicyAutomatic,
 		SandboxUpgradePolicyManual,
@@ -508,6 +512,25 @@ type GitSource struct {
 	Checkout    *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
 	Workspace   *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
 	Destination *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+	// Purpose is what the source is in the sandbox for (ADR 26-10-14-294 §2).
+	// Empty is GitSourcePurposeWork, which is every source created before it,
+	// so their manifests fingerprint as they did.
+	Purpose string `json:"purpose,omitempty" doc:"What the source is in the sandbox for. work, the default, is a source being worked on. skills is a repository whose skills the sandbox links into the harness's skill directories on its first launch, from the directories skillsSources names; it is never the primary source." enum:"work,skills"`
+}
+
+// GitSourcePurposeWork and GitSourcePurposeSkills are GitSource.Purpose's
+// values (ADR 26-10-14-294 §2). Work is every source a sandbox is worked on
+// in, and what an absent purpose means. Skills is a repository whose skills
+// the sandbox links into the harness's skill directories, and that is never
+// the primary source.
+const (
+	GitSourcePurposeWork   = "work"
+	GitSourcePurposeSkills = "skills"
+)
+
+// IsSkills reports whether the source is a skills source.
+func (s *GitSource) IsSkills() bool {
+	return s != nil && s.Purpose == GitSourcePurposeSkills
 }
 
 // Root returns the normalized identity of the source repository, independent of
@@ -552,6 +575,15 @@ type GitSourceDestination struct {
 
 // SourceCodeReferences maps sandbox destination directories to Git sources.
 type SourceCodeReferences map[string]GitSource
+
+// SkillsSource is one directory of a skills source whose skills the sandbox
+// links in (ADR 26-10-14-294 §3). Source is the SourceCodeReferences key, and
+// a sandbox's skills sources are a list because the references are a map: the
+// list is what carries the order the client named them in.
+type SkillsSource struct {
+	Source    string `json:"source" doc:"The sourceCodeReferences key of the skills source"`
+	Directory string `json:"directory" doc:"The directory inside the source's repository that holds the skills, or . for the root"`
+}
 
 // AppliedSourceCommit records one successful `discobox apply` of a source's
 // commits into a host working tree (ADR 0014). Client-declared provenance,
@@ -757,6 +789,9 @@ type SandboxManifest struct {
 	// fingerprint of every sandbox created without them what it was before
 	// they existed (ADR 26-10-09-395 §2).
 	Skills sandboxconfig.Skills `gorm:"column:skills;type:text;serializer:json" json:"skills,omitempty" doc:"Skills installed into the harness's skill directories on the sandbox's first launch"`
+	// SkillsSources are spec for the same reason, and omitted when empty for
+	// the same reason (ADR 26-10-14-294 §2).
+	SkillsSources []SkillsSource `gorm:"column:skills_sources;type:text;serializer:json" json:"skillsSources,omitempty" doc:"Directories of skills sources whose skills are linked into the harness's skill directories on the sandbox's first launch, in order"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against

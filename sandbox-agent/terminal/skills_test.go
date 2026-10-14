@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -400,5 +401,137 @@ func TestASkillLeavingItsDirectoryIsRefusedAndWritesNothing(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("home holds %v, want nothing written", entries)
+	}
+}
+
+// A skills source's skills are links into its checkout, from the directory
+// it names: an edit through one lands in the checkout, where it can be
+// committed, and nothing but a directory holding a SKILL.md is linked.
+func TestASkillsSourcesSkillsAreLinkedIntoItsCheckout(t *testing.T) {
+	checkout, home := t.TempDir(), t.TempDir()
+	writeTreeFile(t, checkout, "agents/skills/deploy/SKILL.md", "# deploy\n", 0o644)
+	writeTreeFile(t, checkout, "agents/skills/notes/README.md", "not a skill\n", 0o644)
+	writeTreeFile(t, checkout, "agents/skills/.hidden/SKILL.md", "hidden\n", 0o644)
+	writeTreeFile(t, checkout, "deploy/SKILL.md", "outside the directory\n", 0o644)
+
+	sources := []sandboxconfig.SkillsSource{{Target: checkout, Directory: "agents/skills"}}
+	if err := linkSkillsSources(sources, home, nil); err != nil {
+		t.Fatalf("link skills sources: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		root := filepath.Join(home, dir)
+		if got := readFile(t, filepath.Join(root, "deploy", "SKILL.md")); got != "# deploy\n" {
+			t.Fatalf("%s: deploy = %q", dir, got)
+		}
+		for _, name := range []string{"notes", ".hidden"} {
+			if _, err := os.Lstat(filepath.Join(root, name)); !os.IsNotExist(err) {
+				t.Fatalf("%s: %s linked (%v), want it left out", dir, name, err)
+			}
+		}
+	}
+	edited := filepath.Join(home, skillDirectories[0], "deploy", "SKILL.md")
+	if err := os.WriteFile(edited, []byte("# deploy, improved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(checkout, "agents", "skills", "deploy", "SKILL.md")); got != "# deploy, improved\n" {
+		t.Fatalf("checkout's deploy = %q, want the edit made through the link", got)
+	}
+}
+
+// A linked skill replaces a copied one of its name whole, and a later skills
+// directory replaces an earlier one's link without touching that checkout.
+func TestALaterSkillsSourceWinsAndALinkReplacesACopy(t *testing.T) {
+	first, second, home := t.TempDir(), t.TempDir(), t.TempDir()
+	writeTreeFile(t, first, "review/SKILL.md", "first\n", 0o644)
+	writeTreeFile(t, first, "lint/SKILL.md", "first's lint\n", 0o644)
+	writeTreeFile(t, second, "skills/review/SKILL.md", "second\n", 0o644)
+	copied := sandboxconfig.Skills{"lint": {Skill: "copied\n", Files: []sandboxconfig.SkillFile{{Path: "extra.md", Content: []byte("x")}}}}
+
+	if err := writeSkills(copied, home, nil); err != nil {
+		t.Fatalf("write skills: %v", err)
+	}
+	sources := []sandboxconfig.SkillsSource{
+		{Target: first, Directory: sandboxconfig.RootSkillsDirectory},
+		{Target: second, Directory: "skills"},
+	}
+	if err := linkSkillsSources(sources, home, nil); err != nil {
+		t.Fatalf("link skills sources: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		root := filepath.Join(home, dir)
+		if got := readFile(t, filepath.Join(root, "review", "SKILL.md")); got != "second\n" {
+			t.Fatalf("%s: review = %q, want the later source's", dir, got)
+		}
+		if got := readFile(t, filepath.Join(root, "lint", "SKILL.md")); got != "first's lint\n" {
+			t.Fatalf("%s: lint = %q, want the link's", dir, got)
+		}
+		if _, err := os.Stat(filepath.Join(root, "lint", "extra.md")); !os.IsNotExist(err) {
+			t.Fatalf("%s: the copy's extra.md survived (%v), want the copy replaced whole", dir, err)
+		}
+	}
+	if got := readFile(t, filepath.Join(first, "review", "SKILL.md")); got != "first\n" {
+		t.Fatalf("first checkout's review = %q, want it untouched by being replaced", got)
+	}
+}
+
+// A directory the checkout does not hold fails the install, naming it.
+func TestASkillsDirectoryTheCheckoutLacksFailsTheInstall(t *testing.T) {
+	checkout, home := t.TempDir(), t.TempDir()
+	sources := []sandboxconfig.SkillsSource{{Target: checkout, Directory: "agents/skills"}}
+	err := linkSkillsSources(sources, home, nil)
+	if err == nil || !strings.Contains(err.Error(), "agents/skills") {
+		t.Fatalf("link skills sources = %v, want a failure naming the directory", err)
+	}
+}
+
+// A sandbox whose only skills come from a skills source still has them
+// installed on its first launch.
+func TestASkillsSourceIsInstalledWithNothingElseToCopy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("guest path resolution")
+	}
+	source, checkout, home := t.TempDir(), t.TempDir(), t.TempDir()
+	writeTreeFile(t, checkout, "mine/SKILL.md", "# mine\n", 0o644)
+	svc := newSkillsTestService(t, source, home, nil)
+	svc.skillsSources = []sandboxconfig.SkillsSource{{Target: checkout, Directory: sandboxconfig.RootSkillsDirectory}}
+
+	if err := svc.installSkills(); err != nil {
+		t.Fatalf("install skills: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		if got := readFile(t, filepath.Join(home, dir, "mine", "SKILL.md")); got != "# mine\n" {
+			t.Fatalf("%s: mine = %q", dir, got)
+		}
+	}
+}
+
+// The install runs again when a first launch fails after it. The second run
+// copies over the first run's links, and must not write the copy through them
+// into the skills source's checkout.
+func TestASecondInstallLeavesTheSkillsSourcesCheckoutAlone(t *testing.T) {
+	source, checkout, home := t.TempDir(), t.TempDir(), t.TempDir()
+	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "the repository's\n", 0o644)
+	writeTreeFile(t, checkout, "review/SKILL.md", "the skills source's\n", 0o644)
+	skills := sandboxconfig.Skills{"review": {Skill: "the sandbox's\n"}}
+	sources := []sandboxconfig.SkillsSource{{Target: checkout, Directory: sandboxconfig.RootSkillsDirectory}}
+
+	for run := 0; run < 2; run++ {
+		if err := installDeclaredSkills(source, home); err != nil {
+			t.Fatalf("run %d: install declared skills: %v", run, err)
+		}
+		if err := writeSkills(skills, home, nil); err != nil {
+			t.Fatalf("run %d: write skills: %v", run, err)
+		}
+		if err := linkSkillsSources(sources, home, nil); err != nil {
+			t.Fatalf("run %d: link skills sources: %v", run, err)
+		}
+	}
+	if got := readFile(t, filepath.Join(checkout, "review", "SKILL.md")); got != "the skills source's\n" {
+		t.Fatalf("checkout's review = %q, want it untouched by the second run", got)
+	}
+	for _, dir := range skillDirectories {
+		if got := readFile(t, filepath.Join(home, dir, "review", "SKILL.md")); got != "the skills source's\n" {
+			t.Fatalf("%s: review = %q, want the link's", dir, got)
+		}
 	}
 }

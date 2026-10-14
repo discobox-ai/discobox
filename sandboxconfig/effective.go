@@ -42,6 +42,10 @@ type Config struct {
 	// primary terminal's first launch, after the image's and the repository's
 	// (ADR 26-10-09-395 §3).
 	Skills Skills `json:"skills,omitempty"`
+
+	// SkillsSources are linked into the same directories after Skills, in
+	// order, each replacing a skill of its name (ADR 26-10-14-294 §§3–4).
+	SkillsSources []SkillsSource `json:"skillsSources,omitempty"`
 }
 
 // Harness is the effective, fully-resolved harness contract: exactly one
@@ -88,6 +92,7 @@ func Effective(doc Document) (Config, Provenance) {
 		User:                doc.Runtime.User,
 		Git:                 doc.Runtime.Git,
 		Skills:              doc.Runtime.Skills.clone(),
+		SkillsSources:       append([]SkillsSource(nil), doc.Runtime.SkillsSources...),
 
 		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),

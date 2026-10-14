@@ -185,6 +185,7 @@ type SandboxService = apigen.SandboxService
 type SandboxServicesResponse = apigen.SandboxServicesResponse
 type SandboxSkill = apigen.SandboxSkill
 type SandboxSkillFile = apigen.SandboxSkillFile
+type SandboxSkillsSource = apigen.SandboxSkillsSource
 type SandboxSourceProjectLayer = apigen.SandboxSourceProjectLayer
 type SandboxSourceStates = apigen.SandboxSourceStates
 type SandboxStorageUsage = apigen.SandboxStorageUsage

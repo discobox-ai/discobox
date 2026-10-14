@@ -211,7 +211,10 @@ type CreateOptions struct {
 	GitUserEmail                *string
 	// Skills are the skills the sandbox was created with, forwarded into its
 	// bootstrap (ADR 26-10-09-395 §2).
-	Skills                sandboxconfig.Skills
+	Skills sandboxconfig.Skills
+	// SkillsSources are the directories of its skills sources, in order
+	// (ADR 26-10-14-294 §2).
+	SkillsSources         []model.SkillsSource
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string

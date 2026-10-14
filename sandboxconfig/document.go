@@ -72,6 +72,10 @@ type RuntimeLayer struct {
 	// Single-writer: neither the image nor the project contributes any; theirs
 	// are installed from their own directories.
 	Skills Skills `json:"skills,omitempty"`
+
+	// SkillsSources are the directories of skills sources whose skills are
+	// linked in after Skills are written, in order (ADR 26-10-14-294 §3).
+	SkillsSources []SkillsSource `json:"skillsSources,omitempty"`
 }
 
 // Provider is non-secret provider context for the sandbox runtime.

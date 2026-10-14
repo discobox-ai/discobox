@@ -1321,7 +1321,8 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 		// The sandbox-agent bind-mounts each source's directory from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR
 		// 0007), and clones the source into it (ADR 0126 §4).
-		for _, source := range sandboxSources(paths, req) {
+		sources := sandboxSources(paths, req)
+		for _, source := range sources {
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
@@ -1350,6 +1351,7 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 				AwaitsDelivery: gitSourceClientDelivers(source.git),
 			})
 		}
+		doc.Runtime.SkillsSources = sandboxSkillsSources(sources, req.Config.SkillsSources)
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
 			doc.Image = sandboxconfig.ImageLayer{
 				HarnessID:          resolved.ID,
@@ -3048,6 +3050,9 @@ type sandboxSource struct {
 	// directories to the real slug rather than leaving the work behind them
 	// unreachable. Empty when it is the slug already.
 	keySlug string
+	// key is the source's SourceCodeReferences key, which a skills source
+	// directory names it by; empty for the primary source.
+	key string
 }
 
 func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
@@ -3071,7 +3076,9 @@ func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCrea
 			if defaultTarget == "" {
 				defaultTarget = paths.Join(paths.WorkingRoot(), defaultSourceSlug(source, key))
 			}
-			out = append(out, sandboxSourceFor(paths, key, source, defaultTarget, used))
+			resolved := sandboxSourceFor(paths, key, source, defaultTarget, used)
+			resolved.key = key
+			out = append(out, resolved)
 		}
 	}
 	return out
@@ -3232,6 +3239,29 @@ func gitSourceHasOwnOrigin(source workerapimodel.GitSource) bool {
 // poolRemoteName is the remote a cache-delivered source's checkout knows this
 // pool by. Its origin is the source's own remote (ADR 26-10-10-545 §6).
 const poolRemoteName = "discobox"
+
+// sandboxSkillsSources resolves each skills source directory to the checkout
+// it is in, keeping their order: the sandbox links them in it, so a later one
+// wins on a skill's name (ADR 26-10-14-294 §§3–4). validateCreateRequest has
+// refused one that names no source.
+func sandboxSkillsSources(sources []sandboxSource, in []workerapimodel.SandboxSkillsSource) []sandboxconfig.SkillsSource {
+	if len(in) == 0 {
+		return nil
+	}
+	targets := make(map[string]string, len(sources))
+	for _, source := range sources {
+		if source.key != "" {
+			targets[source.key] = source.target
+		}
+	}
+	out := make([]sandboxconfig.SkillsSource, 0, len(in))
+	for _, skills := range in {
+		if target, ok := targets[skills.Source]; ok {
+			out = append(out, sandboxconfig.SkillsSource{Target: target, Directory: skills.Directory})
+		}
+	}
+	return out
+}
 
 // sourcePoolRemote is the name of the remote the sandbox's checkout of a
 // source reaches this pool through: poolRemoteName for a cache-delivered
@@ -3556,6 +3586,15 @@ func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCrea
 	}
 	if _, ok := req.ResolvedHarnessConfig.Get(); !ok {
 		return fmt.Errorf("sandbox %s: create request has no resolved harness config", sandboxID)
+	}
+	refs, _ := req.Config.SourceCodeReferences.Get()
+	for _, skills := range req.Config.SkillsSources {
+		if _, ok := refs[skills.Source]; !ok {
+			return fmt.Errorf("sandbox %s: skills source %q names no source code reference", sandboxID, skills.Source)
+		}
+		if err := sandboxconfig.ValidateSkillsDirectory(skills.Directory); err != nil {
+			return fmt.Errorf("sandbox %s: skills source %q: %w", sandboxID, skills.Source, err)
+		}
 	}
 	return nil
 }

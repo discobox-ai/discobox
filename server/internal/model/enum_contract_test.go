@@ -44,6 +44,7 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		// also accepts "" to restore the server default, which is an input
 		// affordance rather than a value a project is ever served as.
 		{"sandbox upgrade policy", model.SandboxUpgradePolicies, values(apigen.ProjectSandboxUpgradePolicy("").AllValues())},
+		{"git source purpose", model.GitSourcePurposes, values(apigen.GitSourcePurpose("").AllValues())},
 	}
 
 	for _, tc := range cases {

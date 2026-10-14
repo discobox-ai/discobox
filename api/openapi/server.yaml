@@ -2300,6 +2300,12 @@ components:
                 noLocalRepository:
                     description: Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from.
                     type: boolean
+                purpose:
+                    description: What the source is in the sandbox for. work, the default, is a source being worked on. skills is a repository whose skills the sandbox links into the harness's skill directories on its first launch, from the directories skillsSources names; it is never the primary source.
+                    enum:
+                        - work
+                        - skills
+                    type: string
                 slug:
                     description: Stable URL-safe source slug used to address the source as a sandbox Git repository
                     maxLength: 63
@@ -3180,6 +3186,11 @@ components:
                     items:
                         type: string
                     type: array
+                skillsSources:
+                    description: The directories of skills sources whose skills the sandbox links into the harness's skill directories on its first launch, in order.
+                    items:
+                        $ref: '#/components/schemas/SandboxSkillsSource'
+                    type: array
                 image:
                     description: Sandbox base image
                     type: string
@@ -3248,6 +3259,11 @@ components:
                         $ref: '#/components/schemas/SandboxSkill'
                     description: Skills to install into the harness's skill directories on the sandbox's first launch, by name, after the image's and the repository's and winning on a name they share. Fixed at create; at most 1 MiB in all, counting every file's path as well as its content, in at most 1000 files, each skill's SKILL.md among them.
                     type: object
+                skillsSources:
+                    description: The directories of skills sources whose skills the sandbox links into the harness's skill directories on its first launch, in the order given, after the skills given as content. A later directory wins over an earlier one, and any linked skill over a copied skill, on a skill's name. Each names a sourceCodeReferences entry whose purpose is skills, and each such entry is named at least once.
+                    items:
+                        $ref: '#/components/schemas/SandboxSkillsSource'
+                    type: array
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -4457,6 +4473,23 @@ components:
                 userName:
                     description: Value for git's user.name inside the sandbox.
                     type: string
+            type: object
+        SandboxSkillsSource:
+            additionalProperties: false
+            description: One directory of a skills source whose skills are linked into the harness's skill directories.
+            properties:
+                directory:
+                    description: The directory inside the source's repository that holds the skills, relative and slash-separated, or . for the root. Each immediate subdirectory holding a SKILL.md is one skill.
+                    maxLength: 1024
+                    minLength: 1
+                    type: string
+                source:
+                    description: The sourceCodeReferences key of the skills source.
+                    minLength: 1
+                    type: string
+            required:
+                - source
+                - directory
             type: object
         SandboxSkill:
             additionalProperties: false

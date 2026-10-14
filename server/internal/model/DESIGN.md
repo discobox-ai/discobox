@@ -13,7 +13,7 @@ Public REST API schema types live under the root `api/model` package.
 | `Project` | Group for sandboxes, provider configuration, harness configuration, and pools. Carries the `default` project flag, default pool/harness config, archive retention, and sandbox upgrade policy. |
 | `ProjectMember` | Grants a user a role on a project. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
-| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user, and the skills it was created with, content and all; reads return only their names, from `SkillNames` beside the manifest, which the insert writes and listings read instead of loading the skills) and carries its platform (its pool's, set when it is placed, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, and resources. |
+| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user, and the skills it was created with, content and all; reads return only their names, from `SkillNames` beside the manifest, which the insert writes and listings read instead of loading the skills; and `SkillsSources`, the directories of its skills sources in the order a later one wins in, each naming a `SourceCodeReferences` key whose `GitSource.Purpose` is `skills`, a list because the references are a map, ADR 26-10-14-294) and carries its platform (its pool's, set when it is placed, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, and resources. |
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records the platforms its image is published for (ADR 0145 §1). The included harnesses are seeded as `builtIn` configs; a config is selectable only once `configured`. |
 | `HarnessConfigSecretBinding` | Binds a harness config env var to a project secret; materialized into `SandboxSecret` rows per sandbox. |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
@@ -44,7 +44,7 @@ include `user_id`. Do not add cross-database routing fields.
 ## Enums
 
 String-typed state fields use package consts plus a registry slice
-(`PoolStates`, `SandboxStates`, `SandboxRuntimeStates`, `GitSourceDeliveries`,
+(`PoolStates`, `SandboxStates`, `SandboxRuntimeStates`, `GitSourceDeliveries`, `GitSourcePurposes`,
 `SandboxUpgradePolicies`, `SandboxDesiredStates`, `PoolDesiredStates`). Field
 `enum:"..."` tags and the slices must match `api/openapi/server.yaml`;
 `enum_contract_test.go` and `enumsync_test.go` enforce it. An empty value that
