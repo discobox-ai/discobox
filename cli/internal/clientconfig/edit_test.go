@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -36,7 +37,8 @@ new:
 			t.Fatalf("edited file lacks %q:\n%s", want, got)
 		}
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	// Windows keeps no such mode to keep.
+	if info, err := os.Stat(path); runtime.GOOS != "windows" && (err != nil || info.Mode().Perm() != 0o600) {
 		t.Fatalf("mode = %v, %v; want 0600 kept", info.Mode(), err)
 	}
 	cfg, err := Load()
@@ -73,14 +75,15 @@ func TestAddSkillCreatesTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "discobox", "client.yaml")
 	t.Setenv(FileVar, path)
 	// Load refuses a named path that is not there; the edit is what makes it.
-	if _, err := AddSkill("/srv/skills"); err != nil {
+	skills := filepath.Join(t.TempDir(), "skills")
+	if _, err := AddSkill(skills); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != filepath.Clean("/srv/skills") {
+	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != skills {
 		t.Fatalf("skills = %q", cfg.New.Skills)
 	}
 }
@@ -115,7 +118,8 @@ func TestAddSkillKeepsAFileOfCommentsAlone(t *testing.T) {
 	if err := os.WriteFile(path, example, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AddSkill("/srv/skills"); err != nil {
+	skills := filepath.Join(t.TempDir(), "skills")
+	if _, err := AddSkill(skills); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -129,7 +133,7 @@ func TestAddSkillKeepsAFileOfCommentsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != filepath.Clean("/srv/skills") {
+	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != skills {
 		t.Fatalf("skills = %q", cfg.New.Skills)
 	}
 }

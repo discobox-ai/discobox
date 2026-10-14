@@ -169,7 +169,7 @@ Keep files split by resource area:
 | `approval_rules.go` | Approval rules (ADR 26-10-12-330), a project's pending requests a rule could answer (`ListRuleTestableRequests`), and `AnsweredQuestion`: the verdict on record for a rule's question about one request, from the primary for whoever would otherwise ask the judge. A rule is deleted with its project and the secret it names; it names repositories, never a discobox, so it outlives the discoboxes it answered, and its grants outlive it. |
 | `sandbox_secrets.go` | Sandbox secret assignments and agent credentials. |
 | `credential_verdicts.go` | Recorded credential verdicts of every kind: written per decision, read per project through `CredentialVerdictFilter`; the judge reads its standing allows (`StandingVerdicts`) and a round's asks for a body (`BodyAsks`, from the primary: a read-after-write that decides who answers the next round) directly. |
-| `project_skills_sources.go` | A project's skills sources, in the order added; an add refuses a repeat or a second ref of one repository in the same transaction (ADR 26-10-14-894). |
+| `project_skills_sources.go` | A project's skills sources, in the order added (`position`, one past the last, not the creation time, which a coarse clock shares between two adds); an add holds the project's row for update and refuses a repeat or a second ref of one repository in the same transaction (ADR 26-10-14-894). |
 | `ssh_keys.go` | Project SSH keys. |
 | `peers.go` | Enrolled peers, looked up by ID or validated prefix. |
 | `server_state.go` | Server-wide key/value markers (e.g. one-time seeding). |

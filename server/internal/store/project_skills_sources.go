@@ -32,6 +32,14 @@ func (s *Store) CreateProjectSkillsSource(ctx context.Context, source *model.Pro
 		if err := tx.Where("project_id = ? AND url = ?", source.ProjectID, source.URL).Find(&existing).Error; err != nil {
 			return err
 		}
+		var last struct{ Position *int64 }
+		if err := tx.Model(&model.ProjectSkillsSource{}).Select("MAX(position) AS position").Where("project_id = ?", source.ProjectID).Scan(&last).Error; err != nil {
+			return err
+		}
+		source.Position = 1
+		if last.Position != nil {
+			source.Position = *last.Position + 1
+		}
 		for _, other := range existing {
 			if other.Ref != source.Ref {
 				return fmt.Errorf("%w: the project names %s at %s", ErrSkillsSourceConflict, other.URL, refOrDefault(other.Ref))
@@ -67,7 +75,7 @@ func (s *Store) ListProjectSkillsSources(ctx context.Context, projectID string) 
 		return nil, err
 	}
 	var out []model.ProjectSkillsSource
-	err = read.Where("project_id = ?", projectID).Order("created_at ASC, id ASC").Find(&out).Error
+	err = read.Where("project_id = ?", projectID).Order("position ASC").Find(&out).Error
 	return out, err
 }
 

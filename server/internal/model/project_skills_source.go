@@ -26,7 +26,11 @@ type ProjectSkillsSource struct {
 	Ref string `gorm:"column:ref;not null;type:text;default:'';uniqueIndex:idx_project_skills_source,priority:3" json:"ref,omitempty" doc:"The branch, tag or commit to check out"`
 	// Directory is sandboxconfig.RootSkillsDirectory for the repository's
 	// root, never empty.
-	Directory string    `gorm:"column:directory;not null;type:text;uniqueIndex:idx_project_skills_source,priority:4" json:"directory" doc:"The directory inside the repository that holds the skills"`
+	Directory string `gorm:"column:directory;not null;type:text;uniqueIndex:idx_project_skills_source,priority:4" json:"directory" doc:"The directory inside the repository that holds the skills"`
+	// Position is where the entry is in its project's list: one past the
+	// last when it is added. It is what the list is ordered by, since two
+	// entries can share a creation time on a coarse clock.
+	Position  int64     `gorm:"column:position;not null;default:0" json:"-"`
 	CreatedBy string    `gorm:"column:created_by;not null;type:text;default:''" json:"createdBy,omitempty" doc:"Principal ID that added the entry"`
 	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 
