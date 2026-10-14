@@ -169,12 +169,16 @@ func TestAHeldStartCanBeShutDown(t *testing.T) {
 	handler := newStartupHandler("starting services")
 	stopped := make(chan struct{}, 1)
 	handler.stop = func() { stopped <- struct{}{} }
-	shutdown := func() int {
+	shutdown := func(local bool) int {
+		ctx := t.Context()
+		if local {
+			ctx = context.WithValue(ctx, localIPCKey{}, true)
+		}
 		resp := httptest.NewRecorder()
-		handler.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/shutdown", nil))
+		handler.ServeHTTP(resp, httptest.NewRequestWithContext(ctx, http.MethodPost, "/shutdown", nil))
 		return resp.Code
 	}
-	if code := shutdown(); code != http.StatusServiceUnavailable {
+	if code := shutdown(true); code != http.StatusServiceUnavailable {
 		t.Fatalf("/shutdown during an ordinary start answered %d, want 503", code)
 	}
 	go func() {
@@ -186,7 +190,15 @@ func TestAHeldStartCanBeShutDown(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if code := shutdown(); code != http.StatusAccepted {
+	// Not from off the local endpoint: a held start authenticates nobody, so a
+	// caller on TCP must not be able to stop it.
+	if code := shutdown(false); code != http.StatusServiceUnavailable {
+		t.Fatalf("/shutdown from off the local endpoint while held answered %d, want 503", code)
+	}
+	if handler.stopRequested() {
+		t.Fatal("a stop from off the local endpoint was recorded")
+	}
+	if code := shutdown(true); code != http.StatusAccepted {
 		t.Fatalf("/shutdown while held answered %d, want 202", code)
 	}
 	select {

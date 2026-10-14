@@ -161,7 +161,10 @@ func (h *startupHandler) serveChoice(w http.ResponseWriter, r *http.Request) {
 // answered no — could be stopped only by killing it, and a newer server could
 // not reclaim its socket (listenWithReclaim asks the incumbent to shut down).
 // A start that is merely slow is not stopped this way: it is going somewhere,
-// and the router's /shutdown will be there when it arrives.
+// and the router's /shutdown will be there when it arrives. Only over the local
+// IPC endpoint, as the answer is: the router's /shutdown authenticates its
+// caller, and a held start has no authenticator yet, so on TCP or iroh this is
+// one more path a starting server has no handler for.
 //
 // It answers before it stops, as the router's /shutdown does: stopping first
 // can take the connection down before the 202 is written, and a caller told
@@ -213,7 +216,7 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveChoice(w, r)
 		return
 	}
-	if r.URL.Path == "/shutdown" && r.Method == http.MethodPost && h.holding() {
+	if r.URL.Path == "/shutdown" && r.Method == http.MethodPost && h.holding() && localIPCRequest(r) {
 		h.serveShutdown(w)
 		return
 	}
