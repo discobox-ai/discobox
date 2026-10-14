@@ -94,13 +94,13 @@ func TestAnAttachThatFailsOnAMissingImageEndsInTheOffer(t *testing.T) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
+	// The window opens on the first discobox once the listing is in.
+	d.wait("the list", func() bool { return m.focus == focusList })
 
 	ds.mu.Lock()
 	ds.openExecErr = errors.New("sandbox failed")
 	ds.failedExecSandboxes = imageGoneSandboxes(true)
 	ds.mu.Unlock()
-	d.key("tab")
 	d.key("a")
 
 	d.wait("the upgrade offer", func() bool { return m.dialog != nil && m.dialog.title == "Upgrade" })

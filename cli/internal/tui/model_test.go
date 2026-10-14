@@ -1140,8 +1140,8 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
-	d.key("tab")
+	// The window opens on the first discobox once the listing is in.
+	d.wait("the list", func() bool { return m.focus == focusList })
 	d.key("enter")
 	d.wait("the pane", func() bool { return m.focus == focusPane })
 
@@ -1347,5 +1347,201 @@ func TestAnErrorClearsOnAListKey(t *testing.T) {
 	press(t, m, "j")
 	if m.statusE {
 		t.Fatalf("status = %q (error %v), want a key on the list to clear it", m.status, m.statusE)
+	}
+}
+
+// The window opens on the discoboxes when there are any: the cursor is on the
+// first row, and the keys are the list's.
+func TestTheWindowOpensOnTheFirstDiscobox(t *testing.T) {
+	t.Parallel()
+	m := newOpeningModel(t, newFakeSource(testSandboxes()...))
+
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list", m.focus)
+	}
+	if m.list.cursor != 0 {
+		t.Fatalf("cursor = %d, want the first row", m.list.cursor)
+	}
+	if m.prompt.Focused() {
+		t.Fatal("the composer kept its caret with the keys on the list")
+	}
+}
+
+// With nothing to pick, the window opens in the composer — and stays there
+// when a discobox turns up later, since by then it is somebody's to move.
+func TestTheWindowOpensInThePromptWithNoDiscoboxes(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	m := newOpeningModel(t, ds)
+
+	if m.focus != focusPrompt || !m.prompt.Focused() {
+		t.Fatalf("focus = %v, want the prompt", m.focus)
+	}
+
+	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v after a later listing, want the prompt still", m.focus)
+	}
+}
+
+// A key that beats the first listing has said where the keys go, and the
+// listing arriving does not take them away mid-word.
+func TestTypingBeforeTheListingKeepsThePrompt(t *testing.T) {
+	t.Parallel()
+	m := New(t.Context(), newFakeSource(testSandboxes()...))
+	m.logo = logo{}
+	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	send(t, m, tea.KeyPressMsg{Code: 'f', Text: "f"})
+	drain(t, m, m.Init(), 0)
+
+	if len(m.list.rows()) == 0 {
+		t.Fatal("the listing did not land")
+	}
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v, want the prompt it was typed into", m.focus)
+	}
+	if got := m.prompt.Value(); got != "f" {
+		t.Fatalf("prompt = %q, want what was typed", got)
+	}
+}
+
+// unloadedModel is a window with neither the session nor a listing in yet, so
+// a test can land them in the order it is about.
+func unloadedModel(t *testing.T) *Model {
+	t.Helper()
+	m := New(t.Context(), newFakeSource())
+	m.logo = logo{}
+	return send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+}
+
+// The listing landing first decides nothing: the rows that count are the ones
+// the session's filters leave, and those are not known until it lands.
+func TestTheOpeningWaitsForTheSession(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v before the session, want it undecided in the prompt", m.focus)
+	}
+	send(t, m, sessionLoadedMsg{session: Session{DefaultProject: "default"}})
+	if m.focus != focusList || m.list.cursor != 0 {
+		t.Fatalf("focus = %v cursor = %d, want the first discobox", m.focus, m.list.cursor)
+	}
+}
+
+// Discoboxes the saved filters hide are not something to open on.
+func TestTheOpeningCountsOnlyTheRowsTheFiltersLeave(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	send(t, m,
+		sessionLoadedMsg{session: Session{DefaultProject: "default", View: ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
+		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+	)
+	if len(m.list.rows()) != 0 {
+		t.Fatalf("rows = %d, want the filter to leave none", len(m.list.rows()))
+	}
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v, want the prompt", m.focus)
+	}
+
+	// The other order: the listing first, then the session whose filter
+	// hides every row. Deciding before the filter is restored would land on
+	// a row the window is about to hide.
+	m = unloadedModel(t)
+	send(t, m,
+		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+		sessionLoadedMsg{session: Session{DefaultProject: "default", View: ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
+	)
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v with the session landing last, want the prompt", m.focus)
+	}
+}
+
+// An empty listing that is still waiting on a server is not an answer: the
+// discoboxes may all be on the slow one.
+func TestTheOpeningWaitsOutASlowServer(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	send(t, m,
+		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
+		listLoadedMsg{listing: Listing{Waiting: []string{"beta"}}},
+	)
+	if m.opened {
+		t.Fatal("an empty listing still waiting on a server decided the opening")
+	}
+	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	if m.focus != focusList {
+		t.Fatalf("focus = %v once the slow server answered, want the list", m.focus)
+	}
+}
+
+// A paste into the composer before the listing keeps it there, as a key does;
+// the pointer only moving over the window does not.
+func TestAPasteDecidesTheOpeningAndAMotionDoesNot(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	send(t, m, tea.MouseMotionMsg{X: 3, Y: 3})
+	if m.opened {
+		t.Fatal("pointer motion decided the opening")
+	}
+	send(t, m, tea.PasteMsg{Content: "fix it"})
+	send(t, m,
+		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
+		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+	)
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v after a paste, want the prompt", m.focus)
+	}
+}
+
+// The introduction's Enter goes to the introduction, not the prompt, so it
+// leaves where the window opens to the listing.
+func TestDismissingTheWelcomeDoesNotDecideTheOpening(t *testing.T) {
+	t.Parallel()
+	m := New(t.Context(), newFakeSource(), WithWelcome())
+	m.logo = logo{}
+	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !m.welcoming {
+		t.Fatal("the introduction is not up")
+	}
+	send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.welcoming || m.opened {
+		t.Fatalf("welcoming = %v opened = %v, want the introduction gone and the opening undecided", m.welcoming, m.opened)
+	}
+	send(t, m,
+		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
+		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+	)
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the first discobox", m.focus)
+	}
+}
+
+// A key on the harnesses screen goes to that screen, not the prompt, so it
+// leaves where the window opens to the listing.
+func TestAKeyOnTheHarnessesScreenDoesNotDecideTheOpening(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	m.harnessesOpen = true
+	send(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if m.opened {
+		t.Fatal("a key on the harnesses screen decided the opening")
+	}
+}
+
+// A draft put back in the composer does not hold the window there: it waits
+// in the prompt, one Esc away.
+func TestARestoredDraftStillOpensOnTheList(t *testing.T) {
+	t.Parallel()
+	m := unloadedModel(t)
+	send(t, m,
+		sessionLoadedMsg{session: Session{DefaultProject: "default", Draft: "half a thought"}},
+		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+	)
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list", m.focus)
+	}
+	if got := m.prompt.Value(); got != "half a thought" {
+		t.Fatalf("prompt = %q, want the draft", got)
 	}
 }

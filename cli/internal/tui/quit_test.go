@@ -65,7 +65,9 @@ func TestTheLeaderDoesNotArmInThePrompt(t *testing.T) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
+	// The window opens on the first discobox; Esc is the way to the prompt.
+	d.wait("the list", func() bool { return m.focus == focusList })
+	d.key("esc")
 
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v, want the prompt", m.focus)
@@ -84,15 +86,15 @@ func TestTheHeaderOffersTheQuitThatWorksHere(t *testing.T) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
-
-	if got := plainFrame(m); !strings.Contains(got, "Ctrl-C quit") {
-		t.Errorf("the prompt should offer Ctrl-C:\n%s", got)
-	}
-	d.key("tab")
+	// The window opens on the first discobox once the listing is in.
 	d.wait("the list", func() bool { return m.focus == focusList })
 	if got := plainFrame(m); !strings.Contains(got, "ctrl+a q quit") {
 		t.Errorf("the list should offer the leader:\n%s", got)
+	}
+	d.key("esc")
+	d.wait("the prompt", func() bool { return m.focus == focusPrompt })
+	if got := plainFrame(m); !strings.Contains(got, "Ctrl-C quit") {
+		t.Errorf("the prompt should offer Ctrl-C:\n%s", got)
 	}
 }
 
@@ -103,8 +105,7 @@ func openList(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
-	d.key("tab")
+	// The window opens on the first discobox once the listing is in.
 	d.wait("the list", func() bool { return m.focus == focusList })
 	return d, m
 }

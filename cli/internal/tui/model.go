@@ -1,6 +1,6 @@
-// Package tui is the `discobox console` window: it opens with the
-// cursor already in a prompt for a new sandbox, and the sandboxes you already
-// have one press of Tab away.
+// Package tui is the `discobox console` window: it opens on the sandboxes you
+// already have, with a prompt for a new one a press of Esc away — and in that
+// prompt when there are none.
 //
 // It runs on the alternate screen: it takes the whole terminal while it is up,
 // and leaves what was on screen before exactly as it was when it exits. Actions
@@ -355,6 +355,12 @@ type Model struct {
 	dialog        *dialog
 
 	session Session
+	// sessionRead is whether the session has come back, read or not: the
+	// filters the list is drawn through are as settled as they will get.
+	sessionRead bool
+	// opened is whether the window has decided where it opens — on the first
+	// discobox, or in the composer when there is none. See openOnList.
+	opened  bool
 	status  string
 	statusE bool
 	quit    bool
@@ -884,6 +890,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case sessionLoadedMsg:
 		if msg.err != nil {
+			m.sessionRead = true
+			m.openOnList()
 			// The card has nothing to offer without the session, so a run
 			// waiting to ask goes on without asking, from where the command
 			// was run.
@@ -892,6 +900,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		m.session = msg.session
 		m.list.session = msg.session
+		m.sessionRead = true
 		cmd := m.restoreDraft(msg.session.Draft)
 		// The window opens on the filters the last window in this folder was
 		// left on, and on every server, folder and tag in a folder that has
@@ -907,6 +916,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
+		m.openOnList()
 		return tea.Batch(cmd, m.startPendingRun())
 
 	case resourcesLoadedMsg:
@@ -952,6 +962,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// filter's folders are, for the same reason: the sources worth offering
 		// are exactly the ones something is already sitting in.
 		m.opts.setSources(m.list.sources())
+		m.openOnList()
 		m.layout()
 		return tea.Batch(again, m.reportUnreachable(msg.listing.Unreachable))
 
@@ -1359,17 +1370,24 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.advanceBannerPulse(msg)
 
 	case tea.PasteMsg:
+		m.touched()
 		return m.updatePaste(msg)
 
 	case tea.MouseMsg:
 		// The layout the press was aimed at is the one the last frame left
 		// behind, and the composer's height can change under a click, so
 		// geometry is recomputed after one exactly as it is after a key.
+		if _, ok := msg.(tea.MouseClickMsg); ok {
+			m.touched()
+		}
 		cmd := m.updateMouse(msg)
 		m.layout()
 		return cmd
 
 	case tea.KeyPressMsg:
+		if keyName(msg) != repaintKey {
+			m.touched()
+		}
 		// Ctrl-L repaints, and is not consumed doing it. The redraw here is
 		// the window's own — Bubble Tea throws its picture of the screen away
 		// and draws every cell again, which is what clears clutter written
@@ -1966,6 +1984,43 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// openOnList decides where the window opens: on the first discobox when there
+// is one, and in the composer only when there is nothing to pick.
+//
+// It is decided once, on the first listing rather than in New, because until
+// then nobody knows which of the two it is — and the rows that count are the
+// ones the session's saved filters leave, so it waits for the session as well.
+// The two loads race; whichever lands second decides. A listing still waiting
+// on a server with nothing from the others is not an answer yet: the rows may
+// all be on the slow one. Anything typed, pasted or clicked into the window
+// before that has already said where the keys should go (touched), and a
+// listing that arrived a moment later must not take them somewhere else.
+func (m *Model) openOnList() {
+	if m.opened || !m.sessionRead || !m.list.loaded {
+		return
+	}
+	if len(m.list.rows()) == 0 && len(m.list.waiting) > 0 {
+		return
+	}
+	m.opened = true
+	if m.oneShot() || m.focus != focusPrompt || len(m.list.rows()) == 0 {
+		return
+	}
+	m.leavePrompt(landFirst)
+}
+
+// touched settles where the window opens as wherever it is now: a key, paste
+// or press has reached the prompt or the list. One a modal takes — the
+// introduction's Enter, a dialog's answer — or a screen over both — the
+// harnesses, the secrets, a workspace or its audit — went to that, not to
+// either, and leaves the decision to the listing.
+func (m *Model) touched() {
+	if m.modalUp() || m.onConfigScreen() || m.inPanes() || m.audit != nil {
+		return
+	}
+	m.opened = true
 }
 
 func (m *Model) backToPrompt() {
@@ -4104,9 +4159,9 @@ func (m *Model) helpDialog() *dialog { return m.readableDialog("Keys", m.helpTex
 func (m *Model) helpText() string {
 	leader := m.leader()
 	return strings.Join([]string{
-		"The window opens in the prompt. Tab cycles through the prompt, the",
-		"discobox list, and the filter above it, and ↑ climbs them in the same",
-		"order.",
+		"The window opens on the first discobox, or in the prompt when there",
+		"are none. Tab cycles through the prompt, the discobox list, and the",
+		"filter above it, and ↑ climbs them in the same order.",
 		"",
 		"  This help scrolls. / searches it, Enter keeps the matches, n and N",
 		"  walk them, c copies the whole of it to the clipboard, and Esc",

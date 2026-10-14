@@ -1428,6 +1428,22 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 			return done(c.Run())
 		}
 	}
+	// A test starts in the composer whatever the listing holds, which is where
+	// a window is when a key beat the first listing to it (openOnList). Nearly
+	// every test here is about something a few keys in from there, and says
+	// which keys; where a window opens untouched is newOpeningModel's.
+	m.opened = true
+	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	drain(t, m, m.Init(), 0)
+	return m
+}
+
+// newOpeningModel builds a window nobody has touched yet and loads it, so a
+// test can look at where it opened.
+func newOpeningModel(t *testing.T, ds DataSource) *Model {
+	t.Helper()
+	m := New(t.Context(), ds)
+	m.logo = logo{}
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	drain(t, m, m.Init(), 0)
 	return m

@@ -1,7 +1,8 @@
 # tui
 
-The `discobox console` window: it opens with the cursor in a prompt for
-a new sandbox, with the project's sandboxes a press of Tab away.
+The `discobox console` window: it opens on the project's sandboxes, with a
+prompt for a new one a press of Esc away — and in that prompt when there are
+none.
 
 ## Shape
 
@@ -3099,6 +3100,22 @@ instead — that is exactly when it is the control you want, and refusing to
 move would leave no way to reach it. Down from there passes straight through
 the empty list to the prompt: there is nothing to move through, and the empty
 list's own line says to type a prompt.
+
+**The window opens on the first discobox, and in the prompt only when there
+is none** (`openOnList`). Somebody with discoboxes is far more often coming
+back to one than starting another. It is decided once, when the first listing
+and the session have both landed — the rows that count are the ones the saved
+filters leave — and not at all once a key, a paste or a click has got there
+first: that has already said where the keys go, and a listing arriving a
+moment later must not take them out of a half-typed word. Only one that
+reached the prompt or the list counts (`touched`): the introduction's Enter, a
+dialog's answer, or a key on the harnesses or secrets screen or a workspace
+went to that, and Ctrl-L to nobody. A listing with no rows that is still
+waiting on a server does not decide either — the rows may all be on the slow
+one. A window that opened in the prompt stays there when a discobox turns up
+later. A restored draft does not change it: the draft is in the composer
+either way, and Esc reaches it. A one-command window (`oneShot`) opens on its
+workspace and is not asked.
 
 **A prompt with text in it keeps Up.** Up leaves the composer only while the
 composer is empty; with anything typed it is a cursor key in the text, and

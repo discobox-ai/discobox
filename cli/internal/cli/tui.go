@@ -28,9 +28,9 @@ import (
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// newConsoleCommand opens the console: one full-screen window that opens with
-// the cursor in a prompt for a new sandbox, with the project's sandboxes a
-// press of Tab away.
+// newConsoleCommand opens the console: one full-screen window that opens on
+// the project's sandboxes, with a prompt for a new one a press of Esc away —
+// and in that prompt when there are none yet.
 //
 // name is what it is registered under. It is "console", and also "tui", its
 // earlier name, hidden so it keeps working without being offered.
@@ -42,11 +42,12 @@ func (a *App) newConsoleCommand(name string, hidden bool) *cobra.Command {
 		Short:  "Open the discobox console",
 		Long: `Open the console.
 
-The window opens with the cursor in a prompt: type what the discobox should do
-and press Enter to run it in a new one, or press Enter on an empty prompt to
-create one with nothing given to the harness. Tab moves to the list of
-discoboxes you already have, where every action is a single letter — Enter
-attaches, s opens a shell, y applies, x archives — and Shift-Tab opens
+The window opens on the list of discoboxes you already have, the first one
+picked out, where every action is a single letter — Enter attaches, s opens a
+shell, y applies, x archives. Esc moves to the prompt, which is where the
+window opens when there are no discoboxes yet: type what the discobox
+should do and press Enter to run it in a new one, or press Enter on an empty
+prompt to create one with nothing given to the harness. Shift-Tab there opens
 "discobox new"'s options.
 
 Attaching or opening a shell draws the discobox's terminal in the window itself.

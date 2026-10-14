@@ -36,9 +36,9 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
+	// The window opens on the first discobox once the listing is in.
+	d.wait("the list", func() bool { return m.focus == focusList })
 
-	d.key("tab")
 	d.key(act)
 	d.wait("the workspace", func() bool { return m.focus == focusPane })
 	d.wait("the primary terminal", func() bool { return m.primary() != nil })
@@ -527,8 +527,8 @@ func TestFailedOpenIsReported(t *testing.T) {
 	m.logo = logo{}
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
-	d.key("tab")
+	// The window opens on the first discobox once the listing is in.
+	d.wait("the list", func() bool { return m.focus == focusList })
 	d.key("enter")
 	d.wait("the failure", func() bool { return m.statusE })
 
