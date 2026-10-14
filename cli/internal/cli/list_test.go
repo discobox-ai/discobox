@@ -152,7 +152,7 @@ func TestListCommandEscapesTheSourceColumn(t *testing.T) {
 	listing := `{"sandboxes":[{"id":"sbx_esc","projectId":"project-1","createdByUserId":"user-1","displayName":"esc",` +
 		`"config":{"name":"esc","image":"","source":{"kind":"git","localDirectory":"/home/me/\u001b[2Jx"}},"runtime":` + runningRuntime + `,` +
 		`"createdAt":"2026-08-19T00:00:00Z","updatedAt":"2026-08-19T00:00:01Z"}]}`
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(listing))
 	}))
