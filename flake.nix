@@ -39,8 +39,12 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          libkrun-runtime = pkgs.buildEnv {
-            name = "discobox-libkrun-runtime";
+          # Not the libkrun runtime a release ships — that is the
+          # discobox-libkrun-runtime image built by Docker in vm-image/libkrun,
+          # which a Nix store path could never be — but its developer
+          # override, for libkrunPath and passtPath.
+          libkrun-nix = pkgs.buildEnv {
+            name = "discobox-libkrun-nix";
             paths = [
               (overriddenLibkrun pkgs)
               pkgs.passt
@@ -48,13 +52,13 @@
           };
         in
         {
-          inherit libkrun-runtime;
-          default = libkrun-runtime;
+          inherit libkrun-nix;
+          default = libkrun-nix;
         }
       );
 
       checks = forBuildSystems (system: {
-        inherit (self.packages.${system}) libkrun-runtime;
+        inherit (self.packages.${system}) libkrun-nix;
       });
 
       devShells = forDevSystems (

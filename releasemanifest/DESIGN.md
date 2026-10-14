@@ -9,9 +9,11 @@ release pins; container image tags name the Discobox release. Windows supplies
 its own guest through WSL Containers.
 
 This is format 2. Format 1 named the guest and libkrun's kernel as two images;
-it is still read — a published release's manifest is durable — with its kernel
-checked and dropped, and never written back. Under one, a libkrun pool boots
-the image its own build pins.
+it is still read — a published release's manifest is durable — with a kernel it
+names checked and then dropped. Written back, it stays format 1 without the
+kernel, which still reads: `discobox admin server manifest` prints a format-1
+manifest it was given that way. Under one, a libkrun pool boots the image its
+own build pins.
 
 `clients` and `servers` carry verified binary descriptors per platform: version,
 OS, architecture, command, download URLs, byte size, SHA-256, and execute bit.

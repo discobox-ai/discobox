@@ -112,9 +112,13 @@ libkrunfw patches are what that libkrun version expects of its kernel
 (ADR 26-09-23-473 §5). What it builds is what ships inside a release, onto hosts this
 repository knows nothing about:
 
-- **Debian's toolchain, not Nix's.** Built on the guest's Debian, nothing needs
-  a newer glibc than the guest's userland, and nothing names a `/nix/store`
-  RUNPATH or interpreter that exists only where it was built.
+- **Debian's toolchain, not Nix's.** libkrun and passt run on the host, not in
+  the guest, so what they need of a host is the whole of what a libkrun pool
+  asks of one beyond KVM: passt is static, and `libkrun.so.1` needs glibc 2.34
+  or newer (Ubuntu 22.04, Debian 12, RHEL 9) and nothing else — a host older
+  than that is reported as a runtime that will not load. Nothing names a
+  `/nix/store` RUNPATH or interpreter that exists only where it was built.
+  `vm:verify-libkrun-runtime` holds all three lines.
 - **Upstream libkrun, without libkrunfw.** The provider hands libkrun its own
   kernel, and upstream opens libkrunfw lazily and only when it is not given
   one, so its 21 MB copy of a kernel is never shipped.

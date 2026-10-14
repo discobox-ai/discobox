@@ -6,7 +6,8 @@ Docker behavior, while this package owns one local libkrun microVM per pool.
 
 ## The invariant
 
-A linux/amd64 machine needs `discobox-server` and KVM. Nothing else: the root
+A linux/amd64 machine needs `discobox-server`, KVM, and glibc 2.34 or newer,
+which the image's `libkrun.so.1` links against on the host. Nothing else: the root
 filesystem, the kernel, libkrun, and passt all arrive in one image, fetched by
 digest through the server's image store — staged by a release CLI before the
 server starts, otherwise from a registry on first use (ADR 26-09-23-473 §5–§6). Nothing
