@@ -316,7 +316,7 @@ when you take one — a box held up keeps its share of the pool while it waits.
 | home, the source trees, `/var/lib/docker`, `/var/lib/containerd`, `/var/lib/discobox` | this box's own; survives stop/start, dies with the box |
 | `~/.cache`, `~/go/pkg/mod`, `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup`, `~/.vscode-server`, `~/.local/share/pnpm` | pool cache, partitioned by the uid you run as: shared with pool boxes running the same uid, invisible to the rest |
 | `/nix` (the store) | pool cache, shared with every box in the pool whoever it runs as — the one path that declares that |
-| `/nix/var/nix/profiles`, `/nix/var/nix/gcroots` | carved back out of the shared store; this box's own |
+| `/nix/var/nix/profiles`, `/nix/var/nix/gcroots`, `/nix/var/nix/daemon-socket` | carved back out of the shared store; this box's own — your profile and roots, and the socket of this box's own `nix-daemon` |
 | `/home/linuxbrew/.linuxbrew` (what `brew install` puts there) | this box's own; the image's own tree shows through underneath it |
 
 None of your *work* outlives the box except the commits the user applies —

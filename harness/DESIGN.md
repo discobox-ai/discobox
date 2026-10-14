@@ -158,15 +158,21 @@ launchers, and configure scripts.
     `xvfb.service` is `static`, pulled up on demand by the proxy service
     `x11-display.socket` activates — so
     an unused `DISPLAY` starts no X server.
-  - The three `/nix` volumes: `/nix` on `cache` with `scope: shared`, with
-    `/nix/var/nix/profiles` and `/nix/var/nix/gcroots` carved back onto
-    `data`. The store is pool-shared, so a closure one sandbox realizes is
-    free for the next; the
+  - The four `/nix` volumes: `/nix` on `cache` with `scope: shared`, with
+    `/nix/var/nix/profiles`, `/nix/var/nix/gcroots` and
+    `/nix/var/nix/daemon-socket` carved back onto `data`. The store is
+    pool-shared, so a closure one sandbox realizes is free for the next; the
     per-user profile state is not, because both are keyed by username and every
     sandbox in a pool runs the same user. The base image ships its own store
     aside and leaves `/nix` empty precisely so this cache bind hides nothing — a
-    cache path is always a plain bind. See ADR 0075. `profiles` and `gcroots`
-    are `excludeFromExport`: they point into `/nix`, which never travels.
+    cache path is always a plain bind. See ADR 0075. `daemon-socket` is
+    per-sandbox for a different reason: it holds the address each sandbox's
+    own `nix-daemon.socket` listens on, and a socket path on a shared
+    directory names one listener for the whole pool. Nothing else the image
+    listens on lives under `/nix` (ADR 26-10-14-129; the wiring is in
+    [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)). All three
+    carve-outs are `excludeFromExport`: `profiles` and `gcroots` point into
+    `/nix`, which never travels, and a socket file is nothing to carry.
     `nix-seed`'s per-sandbox stamp lives inside `profiles`
     (`.discobox-seeded`), so a restore that left the profiles behind re-seeds
     them rather than trusting a stamp that travelled without them.
