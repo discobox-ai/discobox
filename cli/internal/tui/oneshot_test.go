@@ -133,7 +133,14 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 // types.
 func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
 	t.Helper()
-	m := New(t.Context(), ds, WithRun(req))
+	return openRunWith(t, ds, req, false)
+}
+
+// openRunWith is that window for a command that may have left its source
+// unsaid, which the window then asks.
+func openRunWith(t *testing.T, ds *fakeSource, req RunRequest, askSource bool) (*driver, *Model) {
+	t.Helper()
+	m := New(t.Context(), ds, WithRun(req, askSource))
 	m.logo = logo{}
 	m.copyOS = func(string) error { return nil }
 	d := newDriver(t, m)
@@ -309,7 +316,7 @@ func TestTheLaunchersWaitOnlyStopsWatching(t *testing.T) {
 func TestARunWindowStillShowsTheIntroductionWhenUnwelcomed(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	m := New(t.Context(), ds, WithRun(RunRequest{Prompt: []string{"fix", "the", "tests"}}), WithWelcome())
+	m := New(t.Context(), ds, WithRun(RunRequest{Prompt: []string{"fix", "the", "tests"}}, false), WithWelcome())
 	m.logo = logo{}
 	m.copyOS = func(string) error { return nil }
 	d := newDriver(t, m)
@@ -341,5 +348,127 @@ func TestAnAttachNeverShowsTheIntroduction(t *testing.T) {
 	m := New(t.Context(), ds, WithAttach(box), WithWelcome())
 	if m.welcoming {
 		t.Fatal("the introduction should not be showing over an attach")
+	}
+}
+
+// `discobox new` with no -C asks where to cut from rather than taking the
+// directory it ran in: the window opens on the create card, holding every flag
+// the command was given, and creating from it carries the ones the card has no
+// row for as well.
+func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := RunRequest{
+		Prompt:     []string{"fix", "the", "tests"},
+		Harness:    "codex",
+		UserSkills: new(true),
+		SkillDirs:  []string{"./team-skills"},
+		Include:    []string{"/src/obot"},
+		Env:        []string{"A=1"},
+		Grant:      []string{"github"},
+		Pool:       "pool-a",
+	}
+	d, m := openRunWith(t, ds, req, true)
+	d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
+	if len(ds.runRequests()) != 0 {
+		t.Fatalf("runs = %+v, want nothing created before the card is answered", ds.runRequests())
+	}
+	opts := m.opts.opts
+	if got := opts[optHarness].selected(); got != "codex" {
+		t.Fatalf("harness = %q, want the one the command named", got)
+	}
+	if !opts[optUserSkills].changed() || !slices.Equal(opts[optSkills].items, req.SkillDirs) || !slices.Equal(opts[optInclude].items, req.Include) {
+		t.Fatal("the card should open holding the command's skills and sources")
+	}
+
+	// The sources come off the listing, which may land after the card.
+	d.wait("the listing's sources", func() bool {
+		return slices.Contains(m.opts.opts[optSource].values, "/src/obot")
+	})
+	d.key(itoa(slices.Index(m.opts.opts[optSource].values, "/src/obot") + 1))
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+	run := ds.runRequests()[0]
+	if run.Source != "/src/obot" {
+		t.Fatalf("source = %q, want the one chosen on the card", run.Source)
+	}
+	if run.Harness != "codex" || run.UserSkills == nil || !*run.UserSkills || !slices.Equal(run.Include, req.Include) || !slices.Equal(run.Env, req.Env) {
+		t.Fatalf("run = %+v, want the command's flags carried", run)
+	}
+	if !slices.Equal(run.Prompt, req.Prompt) || !slices.Equal(run.Grant, req.Grant) || run.Pool != "pool-a" {
+		t.Fatalf("run = %+v, want the prompt, grant and pool as given", run)
+	}
+}
+
+// Turning the card down is turning the command down: the window closes and
+// says nothing was made, rather than leaving a list nobody opened.
+func TestEscOnARunsCreateCardEndsTheCommand(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+	d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
+	d.key("esc")
+	d.wait("the window to close", func() bool { return m.quit })
+	if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+		t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
+	}
+}
+
+// The card is the command's question however it is left: Esc from a field it
+// opened lands back on it still meaning that, q closes it as it closes the
+// other cards, and Ctrl-C is leaving before anything was asked for.
+func TestARunsCreateCardEndsTheCommandHoweverItIsLeft(t *testing.T) {
+	t.Parallel()
+	for name, keys := range map[string][]string{
+		"esc from the source field": {"e", "esc", "esc"},
+		"q":                         {"q"},
+		"ctrl+c":                    {"ctrl+c"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ds := newFakeSource(testSandboxes()...)
+			d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+			d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
+			for _, key := range keys {
+				d.key(key)
+			}
+			d.wait("the window to close", func() bool { return m.quit })
+			if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+				t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
+			}
+		})
+	}
+}
+
+// `discobox new` without -C used to be the directory it ran in, and Enter on
+// its card still is, whatever folder the last window here was left on.
+func TestARunsCreateCardOpensOnTheDirectoryItRanIn(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.session.View = ListView{FolderKey: testKey("/src/obot"), FolderLabel: "/src/obot", FolderSource: "/src/obot"}
+	d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+	d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
+	d.key("enter")
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+	// The directory the window runs in goes as no -C at all, as it always has.
+	if got := ds.runRequests()[0].Source; got != "" {
+		t.Fatalf("source = %q, want the directory the command ran in", got)
+	}
+	if m.exitErr != nil {
+		t.Fatalf("exitErr = %v, want none once something was asked for", m.exitErr)
+	}
+}
+
+// Answering the card puts the window's wait screen back while the working tree
+// is checked, rather than the list nobody opened the window for.
+func TestAnsweringARunsCreateCardGoesBackToTheWaitScreen(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.workspaceGate = make(chan struct{})
+	defer close(ds.workspaceGate)
+	d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+	d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
+	d.key("enter")
+	if m.dialog == nil || m.dialog.title != creatingTitle {
+		t.Fatalf("dialog = %v, want the wait screen while the working tree is checked", m.dialog)
 	}
 }

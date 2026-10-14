@@ -59,6 +59,9 @@ type fakeSource struct {
 	// that returns at once, which is what every test that is not about the
 	// wait wants.
 	runGate chan struct{}
+	// workspaceGate holds the check of the working tree open until the test
+	// closes it, for a test about what the window shows meanwhile.
+	workspaceGate chan struct{}
 	// deliverGate holds a create open after the server has taken it, which is
 	// where a real one delivers the source and syncs SSH config.
 	deliverGate chan struct{}
@@ -507,6 +510,9 @@ func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report f
 }
 
 func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error) {
+	if f.workspaceGate != nil {
+		<-f.workspaceGate
+	}
 	return f.workspace, nil
 }
 

@@ -11,6 +11,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -205,6 +206,14 @@ type Model struct {
 	// been set up) are asked off that listing, and a run started before it
 	// arrived would meet the server's refusal instead of the question.
 	pendingRun *RunRequest
+	// askSource is whether that run left its source unsaid (`discobox new`
+	// with no -C), so the create card asks it before anything is made. The
+	// card waits for the session as well as the harnesses: it is the session
+	// that says what there is to cut from.
+	askSource bool
+	// harnessesAnswered is whether the first harness listing has come back,
+	// listed or refused: the moment a pending run may go. See pendingRun.
+	harnessesAnswered bool
 	// oneRun is whether the window was opened to make one discobox and show
 	// it. It is what the window is for, so the window ends with it: the
 	// workspace it opens on the discobox it made closes the window when it is
@@ -435,8 +444,12 @@ func WithAttach(sandbox Sandbox) Option {
 // opens over the wait for the discobox this run is making, the run proceeds
 // behind it exactly as everything else loads behind it, and Enter uncovers
 // however far that has gotten.
-func WithRun(req RunRequest) Option {
-	return func(m *Model) { m.oneRun, m.pendingRun = true, &req }
+//
+// askSource is a run whose source the command left unsaid: rather than cutting
+// it from the directory the command ran in, the window puts the create card up
+// first, holding every other flag the command was given.
+func WithRun(req RunRequest, askSource bool) Option {
+	return func(m *Model) { m.oneRun, m.pendingRun, m.askSource = true, &req, askSource }
 }
 
 func New(ctx context.Context, ds DataSource, options ...Option) *Model {
@@ -852,7 +865,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case sessionLoadedMsg:
 		if msg.err != nil {
-			return m.report(true, "cannot read the session: %v", msg.err)
+			// The card has nothing to offer without the session, so a run
+			// waiting to ask goes on without asking, from where the command
+			// was run.
+			m.askSource = false
+			return tea.Batch(m.report(true, "cannot read the session: %v", msg.err), m.startPendingRun())
 		}
 		m.session = msg.session
 		m.list.session = msg.session
@@ -865,10 +882,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.opts = newOptions(msg.session)
 		m.opts.setFolder(m.list.folder.source)
 		m.opts.setServer(m.list.server)
+		// The listing can land first, and what it says the project was cut
+		// from is what the Source row and the create card offer.
+		m.opts.setSources(m.list.sources())
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
-		return cmd
+		return tea.Batch(cmd, m.startPendingRun())
 
 	case resourcesLoadedMsg:
 		// The follow-up a skipped read earns is not taken here; see the fields.
@@ -1127,14 +1147,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case sourceChosenMsg:
 		if msg.enter {
-			m.askForSource(m.opts.typedSource(), "", msg.run)
+			m.askForSource(m.opts.typedSource(), "", msg.card)
 			return nil
 		}
 		if msg.typed {
 			return m.resolveSource(msg)
 		}
-		if msg.run {
-			return m.cutFrom(msg.source)
+		if msg.card != nil {
+			return m.cutFrom(msg.card, msg.source)
 		}
 		m.opts.chooseSource(msg.source)
 		return m.followSource()
@@ -1144,15 +1164,30 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			// Back into the field, holding what was typed and saying what is
 			// wrong with it: a path off by one character is corrected there,
 			// where a dismissed dialog would mean typing the whole of it again.
-			m.askForSource(msg.typed, msg.err.Error(), msg.run)
+			m.askForSource(msg.typed, msg.err.Error(), msg.card)
 			return nil
 		}
-		if msg.run {
+		if msg.card != nil {
 			m.opts.named = msg.source
-			return m.cutFrom(msg.source.Value)
+			return m.cutFrom(msg.card, msg.source.Value)
 		}
 		m.opts.nameSource(msg.source)
 		return m.followSource()
+
+	case createServerMsg:
+		return m.followServer()
+
+	case createItemMsg:
+		m.askForItem(msg.opt, "", "", msg.card)
+		return nil
+
+	case itemResolvedMsg:
+		if msg.err != nil {
+			m.askForItem(msg.opt, msg.typed, msg.err.Error(), msg.card)
+			return nil
+		}
+		msg.opt.items = append(msg.opt.items, msg.source.Value)
+		return nil
 
 	case paneOpenedMsg:
 		return m.paneOpened(msg)
@@ -2003,17 +2038,12 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 			// The whole list: left and right are for the two or three you
 			// switch between, and everything else — including a path the
 			// listing has never seen — is behind Enter.
-			m.dialog = m.opts.sourceDialog(false)
+			m.dialog = m.opts.sourceDialog()
 			return nil
 		}
 		switch opt.kind {
 		case optMulti:
-			m.dialog = inputDialog("Add "+opt.label, opt.hint, "KEY=VALUE", "", func(v string) tea.Cmd {
-				if v != "" {
-					opt.items = append(opt.items, v)
-				}
-				return nil
-			})
+			m.askForItem(opt, "", "", nil)
 		default:
 			opt.cycle(1)
 			if m.opts.cursor == optServer {
@@ -2396,40 +2426,44 @@ func (m *Model) run() tea.Cmd {
 		m.prompt.Reset()
 		return m.closeWindow()
 	}
-	if m.askWhereToCutFrom() {
+	if m.askHowToCreate() {
 		return nil
 	}
 	return m.runRequest(m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected()))
 }
 
-// askWhereToCutFrom stops a create the window has no folder for and asks what
-// it should be cut from. It reports whether the run was stopped.
+// askHowToCreate stops a create and puts the create card up: where this
+// discobox is cut from, and under that the harness, the server and what is
+// brought in beside the source. It reports whether the run was stopped.
 //
-// "All folders" is the one filter that is not a place. Every other choice in
-// the header names the directory a new discobox is cut from, and this one names
-// them all — so the source fell back to whatever directory the window happens
-// to be running in, and Enter cut from somewhere nobody had named. The question
-// is the Source row's own list (sourceDialog), so the answer is a choice the
-// panel already offers. Answering it cuts this one discobox from there and
-// leaves the header on every folder (cutFrom): the list was showing them all,
-// and still does once the create is done. The next asking opens on that answer.
+// It is asked of every create, whatever the header says. A header on one
+// folder has named a place, and the card opens with its cursor there, so that
+// create is one more Enter; the header on "all folders" has named none, and
+// the card opens on the last one's answer (optionSet.lastCut). Asking only in
+// the second case was a card that sometimes appeared, and the one place to
+// look at the harness before a create was a panel that had to be remembered.
 //
-// A window whose session has not landed yet is on no folder for a different
-// reason — nothing has told it which — and has no directory or sources to
+// The source answered is where this one discobox is cut from, not a filter:
+// the Source row and the header stay where they were (cutFrom), so the list
+// shows what it showed once the create is done. The settings under it are the
+// run options' own rows, and stay as they are left.
+//
+// A window whose session has not landed yet has no directory or sources to
 // offer. It is left to `discobox new`'s own resolution, the way a prompt
 // submitted before the harnesses land is.
-func (m *Model) askWhereToCutFrom() bool {
-	if m.opts.folder != "" || m.session.Directory == "" {
+func (m *Model) askHowToCreate() bool {
+	if m.session.Directory == "" {
 		return false
 	}
-	m.dialog = m.opts.sourceDialog(true)
+	m.dialog = m.createDialog(m.opts.newCreateCard(m.prompt.Value(), nil))
 	return true
 }
 
 // askForSource opens the field a source is typed into. problem is what was
 // wrong with the last thing typed, which the field opens holding: a path that
-// is not there is corrected in place rather than retyped from memory.
-func (m *Model) askForSource(value, problem string, run bool) {
+// is not there is corrected in place rather than retyped from memory. A field
+// opened off the create card goes back to it when it is left unanswered.
+func (m *Model) askForSource(value, problem string, card *createCard) {
 	body := sourceHint
 	if problem != "" {
 		body = problem
@@ -2437,10 +2471,16 @@ func (m *Model) askForSource(value, problem string, run bool) {
 	d := inputDialog("Source", body, m.opts.sourceLabel(), value,
 		func(v string) tea.Cmd {
 			return func() tea.Msg {
-				return sourceChosenMsg{source: strings.TrimSpace(v), typed: true, run: run}
+				return sourceChosenMsg{source: strings.TrimSpace(v), typed: true, card: card}
 			}
 		})
 	d.err = problem != ""
+	if card != nil {
+		d.onCancel = func() tea.Cmd {
+			m.dialog = m.createDialog(card)
+			return nil
+		}
+	}
 	m.dialog = d
 }
 
@@ -2453,15 +2493,15 @@ func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
 	if msg.source == "" {
 		// Nothing typed is the folder the field offered as its placeholder,
 		// which is where the window was cutting from already.
-		if msg.run {
-			return m.cutFrom(m.opts.sourceDir())
+		if msg.card != nil {
+			return m.cutFrom(msg.card, m.opts.sourceDir())
 		}
 		m.opts.chooseSource("")
 		return m.followSource()
 	}
 	return func() tea.Msg {
 		resolved, err := m.ds.ResolveSource(m.ctx, msg.source)
-		return sourceResolvedMsg{typed: msg.source, source: resolved, run: msg.run, err: err}
+		return sourceResolvedMsg{typed: msg.source, source: resolved, card: msg.card, err: err}
 	}
 }
 
@@ -2471,20 +2511,68 @@ type sourceResolvedMsg struct {
 	// typed is what was in the field, which a refusal puts back into it.
 	typed  string
 	source Source
-	run    bool
+	card   *createCard
 	err    error
 }
 
-// cutFrom carries on the create whose own question a source answered. The
-// question is only asked with the header on every folder, and its answer is
-// where this one discobox comes from, not a filter: the Source row and the
-// header are not moved, so the list still shows every folder once the create
-// is done. The next create asks again, opening on this answer so that the same
-// place is one Enter away.
-func (m *Model) cutFrom(source string) tea.Cmd {
+// askForItem opens the field one more value of a repeated flag is typed into:
+// an env, a secret, a skills directory, another source. problem is what was
+// wrong with the last thing typed, which the field opens holding. card is the
+// create card the row was on, which the field goes back to however it closes;
+// nil is the run options panel, which is still up underneath.
+//
+// A row whose values name sources has each one checked before it takes it
+// (option.checked), for the reason a source typed by hand is: a directory that
+// is not there fails the create seconds later, with the field gone.
+func (m *Model) askForItem(opt *option, value, problem string, card *createCard) {
+	body := opt.hint
+	if problem != "" {
+		body = problem
+	}
+	d := inputDialog("Add "+opt.label, body, opt.example, value, func(v string) tea.Cmd {
+		switch {
+		case v == "":
+			return nil
+		case !opt.checked:
+			opt.items = append(opt.items, v)
+			return nil
+		}
+		return func() tea.Msg {
+			resolved, err := m.ds.ResolveSource(m.ctx, v)
+			return itemResolvedMsg{opt: opt, typed: v, source: resolved, card: card, err: err}
+		}
+	})
+	d.err = problem != ""
+	if card != nil {
+		d.back = m.createDialog(card)
+	}
+	m.dialog = d
+}
+
+// itemResolvedMsg is what the check of a repeated row's source came back with.
+type itemResolvedMsg struct {
+	opt    *option
+	typed  string
+	source Source
+	card   *createCard
+	err    error
+}
+
+// cutFrom carries on the create a card was answered for. Its answer is where
+// this one discobox comes from, not a filter: the Source row and the header
+// are not moved, so the list still shows what it showed once the create is
+// done. With the header on every folder the next card opens on this answer,
+// so that the same place is one Enter away.
+func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
 	m.opts.lastCut = source
 	m.opts.rebuildSources()
-	return m.runRequest(m.opts.request(m.prompt.Value(), source))
+	if card.base != nil {
+		// The card stood in for the window's wait screen (startPendingRun),
+		// and the run it answered goes back to it rather than to the list.
+		m.exitErr = nil
+		m.dialog = m.waitDialog(creatingTitle, "starting")
+	}
+	return m.runRequest(card.requestFrom(source))
 }
 
 // runRequest is a run past the questions about the harness it lands on, from
@@ -2505,13 +2593,31 @@ func (m *Model) runRequest(req RunRequest) tea.Cmd {
 // harness listing to ask its questions against. It is a no-op for every window
 // that was not opened on one, and for the second listing of one that was.
 func (m *Model) startPendingRun() tea.Cmd {
-	if m.pendingRun == nil {
+	if m.pendingRun == nil || !m.harnessesAnswered {
 		return nil
 	}
 	req := *m.pendingRun
+	if m.askSource {
+		if m.session.Directory == "" {
+			// The session is still out, and it is what the card offers.
+			return nil
+		}
+		m.pendingRun, m.askSource = nil, false
+		m.opts.prefill(req)
+		m.dialog = m.createDialog(m.opts.newCreateCard("", &req))
+		// The window is this run, so leaving it any way at all before the
+		// card is answered — Ctrl-C included — is leaving with nothing made.
+		m.exitErr = errNothingCreated
+		return nil
+	}
 	m.pendingRun = nil
 	return m.runRequest(req)
 }
+
+// errNothingCreated is how `discobox new` ends when its create card is turned
+// down: an error, because a command that made nothing should not say it
+// succeeded.
+var errNothingCreated = errors.New("no discobox was created")
 
 // startRun is the run itself, past the questions about which harness it lands
 // on. A run those questions interrupted resumes here rather than at run(): they
@@ -3971,7 +4077,11 @@ func (m *Model) helpText() string {
 		"The prompt",
 		"",
 		"    Enter          run the prompt in a new discobox. Empty, it just",
-		"                   creates one and attaches to it",
+		"                   creates one and attaches to it. It first asks",
+		"                   where to cut it from, and Enter there creates.",
+		"                   Tab on that card shows its options: the harness,",
+		"                   the server where there are several, skills, and",
+		"                   additional sources",
 		"    Shift-Enter    newline. Ctrl-Enter, Alt-Enter and Ctrl-J too",
 		"    Alt-E or F2    edit the prompt in $EDITOR",
 		"    Tab            to the discobox list",

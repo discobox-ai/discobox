@@ -39,6 +39,13 @@ type option struct {
 	value     string
 	items     []string
 	hint      string
+	// example is what the field a repeated flag's value is typed into shows
+	// while it is empty.
+	example string
+	// checked marks a repeated flag whose values name sources, which are
+	// checked the way a source typed by hand is before the row takes them.
+	// See Model.askForItem.
+	checked bool
 }
 
 // changed reports whether the option differs from the CLI's own default, which
@@ -138,10 +145,11 @@ type optionSet struct {
 	// The listing does not hold it, so where a discobox cut from it is filed
 	// is kept here for the list to follow it there.
 	named Source
-	// lastCut is the answer the last create's own question took
-	// (askWhereToCutFrom). It is not the row's setting — that answer is not a
-	// filter — but it is what the next asking opens on, so creating again from
-	// the same place is one Enter. Empty until the question has been answered.
+	// lastCut is the source the last create card was answered with
+	// (askHowToCreate). It is not the row's setting — that answer is not a
+	// filter — but with the header on every folder it is what the next card
+	// opens on, so creating again from the same place is one Enter. Empty
+	// until a card has been answered.
 	lastCut string
 }
 
@@ -182,9 +190,10 @@ const enterSourceChoice = "enter a directory, URL, or DIR@REF…"
 // here is only the order they are shown in.
 //
 // These are `discobox new`'s flags and nothing else: --harness, --include-dirty,
-// --detach, -e and -s, plus -C, the source the sandbox is cut from. A launcher
-// that offers options the command does not have is a launcher you cannot
-// reproduce from a shell.
+// --detach, -e and -s, -C, the source the sandbox is cut from, and what is
+// brought in beside it — --user-skills, --skills and -i. A launcher that offers
+// options the command does not have is a launcher you cannot reproduce from a
+// shell.
 //
 // The project is not among them. It is set once for the session, the way
 // DISCOBOX_PROJECT sets it for a shell, so it belongs in the header rather than
@@ -196,6 +205,9 @@ const (
 	optEnv
 	optSecret
 	optSource
+	optUserSkills
+	optSkills
+	optInclude
 	// optServer is last because it is the one row that is not always there:
 	// it exists only when there is a server to choose (ADR 0116 §5), and the
 	// rows before it keep their places either way. See optionSet.server.
@@ -233,15 +245,34 @@ func newOptions(session Session) *optionSet {
 		},
 		optEnv: {
 			label: "Env", kind: optMulti,
-			hint: "-e · KEY=VALUE, or KEY to pass through from this shell",
+			hint:    "-e · KEY=VALUE, or KEY to pass through from this shell",
+			example: "KEY=VALUE",
 		},
 		optSecret: {
 			label: "Secrets", kind: optMulti,
-			hint: "-s · KEY=VALUE, or KEY=<sec_id> to reference an existing secret",
+			hint:    "-s · KEY=VALUE, or KEY=<sec_id> to reference an existing secret",
+			example: "KEY=VALUE",
 		},
 		optSource: {
 			label: "Source", kind: optChoice,
 			hint: sourceHint,
+		},
+		optUserSkills: {
+			// Left alone it is client.yaml's new.userSkills, which is what
+			// `discobox new` gives a create that names neither way.
+			label: "User skills", kind: optChoice,
+			choices: []string{userSkillsConfigured, "on", "off"},
+			hint:    "--user-skills · install your own ~/.claude/skills and ~/.agents/skills in the discobox",
+		},
+		optSkills: {
+			label: "Skills", kind: optMulti,
+			hint:    "--skills · a directory of skills to install, each a subdirectory holding a SKILL.md",
+			example: "./team-skills",
+		},
+		optInclude: {
+			label: "Additional sources", kind: optMulti,
+			hint:    "-i · another directory, URL, or DIR@REF brought into the same discobox",
+			example: "../other-repo", checked: true,
 		},
 	}}
 	if len(session.Servers) > 1 {
@@ -292,6 +323,39 @@ func (o *optionSet) setServer(name string) {
 			return
 		}
 	}
+}
+
+// prefill sets the rows to what a request already says, for the card
+// `discobox new` asks its source on: a flag given on the command line is an
+// answer, and the card opens holding it rather than asking it again. A harness
+// the listing does not offer is added to the row rather than dropped, so the
+// create meets the server's answer about it rather than a different harness.
+func (o *optionSet) prefill(req RunRequest) {
+	if req.Harness != "" {
+		harness := o.opts[optHarness]
+		i := slices.Index(harness.choices, req.Harness)
+		if i < 0 {
+			harness.choices = append(harness.choices, req.Harness)
+			i = len(harness.choices) - 1
+		}
+		harness.idx = i
+	}
+	switch req.IncludeDirty {
+	case "true":
+		o.opts[optDirty].idx = 1
+	case "false":
+		o.opts[optDirty].idx = 2
+	}
+	if req.UserSkills != nil {
+		o.opts[optUserSkills].idx = 2
+		if *req.UserSkills {
+			o.opts[optUserSkills].idx = 1
+		}
+	}
+	o.opts[optEnv].items = append([]string(nil), req.Env...)
+	o.opts[optSecret].items = append([]string(nil), req.Secret...)
+	o.opts[optSkills].items = append([]string(nil), req.SkillDirs...)
+	o.opts[optInclude].items = append([]string(nil), req.Include...)
 }
 
 // sourceHint is what the Source row says: what it sets, and the one thing about
@@ -578,21 +642,19 @@ type sourceChosenMsg struct {
 	// list, so it names a place nothing has vouched for and is checked before
 	// it is taken. See Model.resolveSource.
 	typed bool
-	// run says the question was the one a create asked, so answering it
-	// carries that create on rather than only setting the row. See
-	// Model.askWhereToCutFrom.
-	run bool
+	// card is the create card the answer came off, so answering it carries
+	// that create on rather than only setting the row. Nil is the Source row's
+	// own list. See Model.askHowToCreate.
+	card *createCard
 }
 
 // sourceDialog is the Source row opened out: every source the project has been
 // cut from, "no source", and the way to name one the listing has never seen.
-//
-// run titles it as the question a create asked, when the header is on every
-// folder at once and there is no one folder the create could be cut from. It is
-// the same list either way: the answer that settles the row is the answer that
-// settles the create, and offering a different set of choices depending on
-// which of the two asked would be two controls wearing one name.
-func (o *optionSet) sourceDialog(run bool) *dialog {
+// The create card's list is the same choices (createCard.view): the answer
+// that settles the row is the answer that settles a create, and offering a
+// different set depending on which of the two asked would be two controls
+// wearing one name.
+func (o *optionSet) sourceDialog() *dialog {
 	opt := o.opts[optSource]
 	items := make([]action, 0, len(opt.choices)+1)
 	for i, choice := range opt.choices {
@@ -608,33 +670,19 @@ func (o *optionSet) sourceDialog(run bool) *dialog {
 		})
 	}
 	items = append(items, action{key: "e", press: "e", label: enterSourceChoice, enabled: true})
-	title, body := "Cut the discobox from", ""
-	if run {
-		title = "Where should this discobox be cut from?"
-		body = "The list is showing every folder, so there is no one folder for this discobox to be cut from."
-	}
-	menu := actionsDialog(title, body, items, func(key string) tea.Cmd {
+	menu := actionsDialog("Cut the discobox from", "", items, func(key string) tea.Cmd {
 		if key == "e" {
-			return func() tea.Msg { return sourceChosenMsg{enter: true, run: run} }
+			return func() tea.Msg { return sourceChosenMsg{enter: true} }
 		}
 		for i, value := range opt.values {
 			if itoa(i+1) == key {
-				return func() tea.Msg { return sourceChosenMsg{source: value, run: run} }
+				return func() tea.Msg { return sourceChosenMsg{source: value} }
 			}
 		}
 		return nil
 	})
 	menu.cursor = opt.idx
-	if run && o.lastCut != "" {
-		if i := slices.Index(opt.values, o.lastCut); i >= 0 {
-			menu.cursor = i
-		}
-	}
-	answer := "Enter cuts the next discobox from that"
-	if run {
-		answer = "Enter creates the discobox from that"
-	}
-	menu.keys = []hint{pressing(answer, "enter"), pressing("Esc cancels", "esc")}
+	menu.keys = []hint{pressing("Enter cuts the next discobox from that", "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 
@@ -727,7 +775,7 @@ func (o *optionSet) moveTo(i int) {
 // request is what Enter actually asks for: the options as `discobox new`'s
 // arguments, with the prompt from the composer. The source is passed rather
 // than read off the row, because the answer to a create's own question is cut
-// from without moving the row (askWhereToCutFrom); everything else passes what
+// from without moving the row (askHowToCreate); everything else passes what
 // the row has selected.
 func (o *optionSet) request(prompt, source string) RunRequest {
 	req := RunRequest{
@@ -762,6 +810,9 @@ func (o *optionSet) request(prompt, source string) RunRequest {
 	case 2:
 		req.IncludeDirty = "false"
 	}
+	req.UserSkills = o.userSkills()
+	req.SkillDirs = append([]string(nil), o.opts[optSkills].items...)
+	req.Include = append([]string(nil), o.opts[optInclude].items...)
 	if server := o.server(); server != nil && server.changed() {
 		req.Server = server.selected()
 	}
@@ -836,6 +887,25 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 		add(source.display())
 	}
 
+	// What is brought in beside the source, as counts for the same reason env
+	// and secrets are: the strip says there is something, the panel says what.
+	skills := len(o.opts[optSkills].items)
+	user := o.userSkills()
+	switch {
+	case user != nil && *user && skills > 0:
+		add("your skills +" + itoa(skills))
+	case user != nil && *user:
+		add("your skills")
+	case user != nil:
+		add("not your skills")
+	}
+	if skills > 0 && (user == nil || !*user) {
+		add(plural(skills, "skill dir", "skill dirs"))
+	}
+	if n := len(o.opts[optInclude].items); n > 0 {
+		add("+" + plural(n, "source", "sources"))
+	}
+
 	// The primary is where a run goes unless somebody said otherwise, which is
 	// the only case worth a word.
 	if server := o.server(); server != nil && server.changed() {
@@ -864,7 +934,13 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 // argument, which is exactly what -p is. Trailing words would be inventing a
 // tokenization the user did not type.
 func (o *optionSet) command(prompt string) string {
-	req := o.request(prompt, o.opts[optSource].selected())
+	return o.commandFor(o.request(prompt, o.opts[optSource].selected()))
+}
+
+// commandFor is that invocation for a request already made: the create card
+// previews one whose source is the row under its cursor rather than the one
+// the Source row is set to.
+func (o *optionSet) commandFor(req RunRequest) string {
 	args := []string{"discobox"}
 	if req.Server != "" {
 		args = append(args, "--server", req.Server)
@@ -902,6 +978,19 @@ func (o *optionSet) command(prompt string) string {
 	for _, s := range req.Secret {
 		run = append(run, "-s", shellQuote(s))
 	}
+	for _, i := range req.Include {
+		run = append(run, "-i", shellQuote(i))
+	}
+	if req.UserSkills != nil {
+		if *req.UserSkills {
+			run = append(run, "--user-skills")
+		} else {
+			run = append(run, "--user-skills=false")
+		}
+	}
+	for _, dir := range req.SkillDirs {
+		run = append(run, "--skills", shellQuote(dir))
+	}
 	return strings.Join(append(args, run...), " ")
 }
 
@@ -933,63 +1022,12 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	// with it.
 	rowsTop := strings.Count(b.String(), "\n") + dialogPadTop
 
-	labelW := 21
 	for i, opt := range o.opts {
-		// The row, and then the arrows over the top of it: they are drawn on
-		// the cursor row alone, and each is a press that changes the value the
-		// way the arrow key does.
-		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner+2*dialogPadLeft)
-
-		hovered := z.hovering(0, rowsTop+i, inner, 1)
-
-		bar := " "
-		label := st.dimText.Render(pad(opt.label, labelW))
-		switch {
-		case i == o.cursor:
-			bar = st.key.Render("❯")
-			label = st.cursorName.Render(pad(opt.label, labelW))
-		case hovered:
-			// Under the pointer: the label says so, and the chevron stays the
-			// cursor's, exactly as it does on a menu's rows.
-			label = st.hover.Render(pad(opt.label, labelW))
-		}
-		value := opt.display()
-		valueStyle := st.dimText
-		switch {
-		case opt.changed():
-			valueStyle = st.chipOn
-		case i == o.cursor:
-			valueStyle = st.name
-		}
-		// A row whose value can be stepped keeps the two columns its arrows
-		// need, whether or not they are lit: the arrows are the one affordance
-		// the panel depends on, and a value that jumped two cells sideways as
-		// the pointer crossed it would be a panel that fidgets. They light on
-		// the cursor row, which is what says left and right will work, and on
-		// the row under the pointer, which is what says a press will — without
-		// that, changing a value with the mouse is click the row, watch
-		// nothing happen, then click the arrow that has appeared.
-		steps := opt.kind == optChoice || opt.kind == optToggle
-		if steps {
-			left, right := st.dimText.Render("  "), st.dimText.Render("  ")
-			if i == o.cursor || hovered {
-				left, right = st.key.Render("‹ "), st.key.Render(" ›")
-			}
-			value = left + valueStyle.Render(truncate(value, max(inner-labelW-7, 6))) + right
-		} else {
-			value = valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
-		}
-		row := bar + " " + label + " " + value
-		if steps {
-			// Both arrow columns are marked on every stepping row, lit or not:
-			// the press that lights them is the same press that would use
-			// them, and a target that only exists after the pointer has
-			// already stopped is one the first click misses.
-			valueX := dialogPadLeft + labelW + 3
-			z.mark(hit{kind: hitOptionCycle, idx: i, delta: -1}, valueX, rowsTop+i, 2, 1)
-			z.mark(hit{kind: hitOptionCycle, idx: i, delta: 1}, valueX+lipgloss.Width(value)-2, rowsTop+i, 2, 1)
-		}
-		b.WriteString(padANSI(row, inner))
+		b.WriteString(opt.viewRow(st, z, optionRow{
+			value: opt.display(), y: rowsTop + i, inner: inner, cursor: i == o.cursor,
+			row:   hit{kind: hitOptionRow, idx: i},
+			cycle: hit{kind: hitOptionCycle, idx: i},
+		}))
 		b.WriteString("\n")
 	}
 
@@ -1004,4 +1042,96 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	}
 
 	return st.dialog.Width(boxWidth).Render(b.String())
+}
+
+// optionLabelW is the label column of an option row, in the panel and on the
+// create card both.
+const optionLabelW = 21
+
+// optionRow is where one option row is drawn and what a press on it is: the
+// panel and the create card draw the same rows, each with marks of its own.
+type optionRow struct {
+	// value is what the row reads as, which is the option's own display
+	// except where the card says the same thing in other words.
+	value string
+	y     int
+	inner int
+	// cursor is whether the keyboard is on this row.
+	cursor bool
+	// row is the press on the row, and cycle the one on its arrows, which is
+	// marked once for each direction.
+	row, cycle hit
+}
+
+// viewRow draws one option row and marks it.
+func (o *option) viewRow(st *styles, z *zones, at optionRow) string {
+	// The row, and then the arrows over the top of it: they are drawn on
+	// the cursor row alone, and each is a press that changes the value the
+	// way the arrow key does.
+	z.markRow(at.row, at.y, at.inner+2*dialogPadLeft)
+
+	hovered := z.hovering(0, at.y, at.inner, 1)
+
+	bar := " "
+	label := st.dimText.Render(pad(o.label, optionLabelW))
+	switch {
+	case at.cursor:
+		bar = st.key.Render("❯")
+		label = st.cursorName.Render(pad(o.label, optionLabelW))
+	case hovered:
+		// Under the pointer: the label says so, and the chevron stays the
+		// cursor's, exactly as it does on a menu's rows.
+		label = st.hover.Render(pad(o.label, optionLabelW))
+	}
+	value := at.value
+	valueStyle := st.dimText
+	switch {
+	case o.changed():
+		valueStyle = st.chipOn
+	case at.cursor:
+		valueStyle = st.name
+	}
+	// A row whose value can be stepped keeps the two columns its arrows
+	// need, whether or not they are lit: the arrows are the one affordance
+	// the panel depends on, and a value that jumped two cells sideways as
+	// the pointer crossed it would be a panel that fidgets. They light on
+	// the cursor row, which is what says left and right will work, and on
+	// the row under the pointer, which is what says a press will — without
+	// that, changing a value with the mouse is click the row, watch
+	// nothing happen, then click the arrow that has appeared.
+	if o.kind != optChoice && o.kind != optToggle {
+		value = valueStyle.Render(truncate(value, max(at.inner-optionLabelW-3, 6)))
+		return padANSI(bar+" "+label+" "+value, at.inner)
+	}
+	left, right := st.dimText.Render("  "), st.dimText.Render("  ")
+	if at.cursor || hovered {
+		left, right = st.key.Render("‹ "), st.key.Render(" ›")
+	}
+	value = left + valueStyle.Render(truncate(value, max(at.inner-optionLabelW-7, 6))) + right
+	// Both arrow columns are marked on every stepping row, lit or not: the
+	// press that lights them is the same press that would use them, and a
+	// target that only exists after the pointer has already stopped is one
+	// the first click misses.
+	valueX := dialogPadLeft + optionLabelW + 3
+	back, forward := at.cycle, at.cycle
+	back.delta, forward.delta = -1, 1
+	z.mark(back, valueX, at.y, 2, 1)
+	z.mark(forward, valueX+lipgloss.Width(value)-2, at.y, 2, 1)
+	return padANSI(bar+" "+label+" "+value, at.inner)
+}
+
+// userSkillsConfigured is the User skills row left to the client's
+// configuration, which the request carries as no answer at all.
+const userSkillsConfigured = "as configured"
+
+// userSkills is the User skills row as RunRequest.UserSkills: nil while it is
+// left to the configuration.
+func (o *optionSet) userSkills() *bool {
+	switch o.opts[optUserSkills].idx {
+	case 1:
+		return new(true)
+	case 2:
+		return new(false)
+	}
+	return nil
 }

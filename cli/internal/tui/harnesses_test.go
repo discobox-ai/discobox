@@ -515,7 +515,7 @@ func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
 		}
 	}
 	send(t, m, typeString("do the thing")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("running an unconfigured harness should ask before failing at create")
@@ -550,7 +550,7 @@ func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
 			harness.idx = i
 		}
 	}
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgConfirm {
 		t.Fatal("a harness with no setup should not be offered one")
@@ -579,7 +579,7 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("do the thing")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatal("a prompt with no harness and no default should ask for one")
@@ -601,7 +601,7 @@ func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
 	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	// Claude is the first candidate and is enabled.
 	send(t, m, keyPress("1"))
@@ -621,7 +621,7 @@ func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
 	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	// Custom is registered and disabled.
 	var chose bool
@@ -655,7 +655,7 @@ func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 		BuiltIn: true, Shell: true,
 	}}
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgActions {
 		t.Fatal("there is nothing to choose between, so no menu should open")
@@ -707,7 +707,7 @@ func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("1"))
+	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("1"))
 
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %v, want the interrupted run submitted once its harness was chosen", ds.runs)
@@ -724,7 +724,7 @@ func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	for i, item := range m.dialog.items {
 		if item.label == "Custom" {
@@ -755,7 +755,7 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 		}
 	}
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("y"))
+	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("y"))
 
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
 		t.Fatalf("configured = %v, want the named harness set up", ds.configured)

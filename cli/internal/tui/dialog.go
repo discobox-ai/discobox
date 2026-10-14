@@ -28,6 +28,9 @@ const (
 	// dlgFilter is the header's filter opened: every server, folder and tag
 	// on one card, marked and then applied together. See filterPicker.
 	dlgFilter
+	// dlgCreate is what Enter in the prompt opens: where the discobox is cut
+	// from, with the settings worth a second look under it. See createCard.
+	dlgCreate
 )
 
 // dialog is the single modal layer. Everything that is not the list or the
@@ -82,6 +85,9 @@ type dialog struct {
 	// filter is the choices of a dlgFilter, which answers with what they
 	// have marked.
 	filter *filterPicker
+
+	// create is the card of a dlgCreate.
+	create *createCard
 
 	// answerLabel is the question, drawn as a rule immediately above whatever
 	// answers it: the menu rows, the input line, or the y/n pair. It is the one
@@ -468,6 +474,14 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case dlgFilter:
 		return d.filter.update(msg)
+
+	case dlgCreate:
+		// q closes it as it closes the other cards, and closing is turning it
+		// down: `discobox new`'s card ends the command on it (createDialog).
+		if keyName(msg) == "q" {
+			return d.cancel(), true
+		}
+		return d.create.update(msg)
 
 	case dlgInput:
 		if keyName(msg) == "enter" {
@@ -923,6 +937,12 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		listRoom := max(avail-3, dialogMinRows)
 		b.WriteString(d.filter.view(st, z, row(), inner, listRoom))
 		keys(says("↑↓ moves"), pressing("Space marks", " "), pressing("Enter picks it and shows", "enter"), pressing("Esc cancels", "esc"))
+
+	case dlgCreate:
+		// Like the filter picker, the card windows its own list in what is
+		// left above its key line.
+		b.WriteString(d.create.view(st, z, row(), inner, max(avail-3, dialogMinRows)))
+		drawHints(d.create.hints())
 
 	case dlgInput:
 		answer()

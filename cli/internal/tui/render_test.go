@@ -27,6 +27,19 @@ func TestFrames(t *testing.T) {
 		{"archived", func(m *Model) { showAllFolders(t, m); send(t, m, keyPress("A"), keyPress("G")) }},
 		{"actions", func(m *Model) { send(t, m, keyPress("tab"), keyPress(".")) }},
 		{"options", func(m *Model) { send(t, m, keyPress("shift+tab")) }},
+		{"create", func(m *Model) {
+			send(t, m, typeString("make the pool reaper stop leaking volumes")...)
+			send(t, m, keyPress("enter"))
+		}},
+		{"create-options", func(m *Model) {
+			send(t, m, typeString("make the pool reaper stop leaking volumes")...)
+			send(t, m, keyPress("enter"), keyPress("tab"), keyPress("right"), keyPress("tab"), keyPress(" "))
+		}},
+		{"create-chosen", func(m *Model) {
+			send(t, m, typeString("make the pool reaper stop leaking volumes")...)
+			send(t, m, keyPress("enter"), keyPress("tab"), keyPress("right"), keyPress("tab"), keyPress(" "))
+			send(t, m, keyPress("esc"), keyPress("enter"))
+		}},
 		{"harnesses", func(m *Model) { send(t, m, keyPress("f3")) }},
 		// The second row is the one every action applies to, so it is the frame
 		// that shows the whole hint line — s included.

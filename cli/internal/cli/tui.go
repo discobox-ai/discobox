@@ -152,6 +152,16 @@ func canOpenWindow(cmd *cobra.Command) bool {
 	return isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout())
 }
 
+// canAskInline reports whether `discobox new` may ask its questions on the
+// terminal without a window: where to cut from, whether to carry uncommitted
+// work, whether to copy a directory that is no repository. It is the window's
+// own test, so a run either has a person to ask or has not — `new | cat` is
+// not one, however much of a terminal its stdin and stderr are — and stderr
+// besides, which is where the picker draws.
+func canAskInline(cmd *cobra.Command) bool {
+	return canOpenWindow(cmd) && isTerminalStream(cmd.ErrOrStderr())
+}
+
 // projectWelcomed reports whether this project has already shown its
 // introduction. A project the server cannot describe is an error worth stopping
 // on: everything the window does needs the project, and a launcher that opened
