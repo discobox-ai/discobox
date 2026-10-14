@@ -497,6 +497,13 @@ e admin harness configure judgestub && e admin harness set-default judgestub
 docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 ```
 
+- The judge discobox comes up on the judges' scan, up to a minute after
+  `set-default`; its ID is `projects.judge_sandbox_id` in
+  `$S/data/discobox.db` (the API does not show it, and `admin box ls` hides it).
+- A lead's calls to the discobox API (the gate) are request jobs, judged only
+  with `DISCOBOX_JUDGE_CREDENTIALS=true` in the env file; with the stub judge
+  as the default harness, commands can stay judged too. The job's `facts` name
+  the discobox a call targets (ADR 26-10-14-320 §5).
 - `discobox-access run` in a box triggers a command job. Have a box create a
   child with `--grant` under a `purpose: delegate` grant to trigger a
   delegation job.
