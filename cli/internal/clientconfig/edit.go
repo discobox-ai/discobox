@@ -27,12 +27,12 @@ var ErrNoFile = fmt.Errorf("%s is set empty, so no client.yaml is read or writte
 // relative one in the file is relative to the file.
 func AddSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
-		resolved, err := resolveSkill(filepath.Dir(path), entry)
+		resolved, err := ResolveSkill(filepath.Dir(path), entry)
 		if err != nil {
 			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
 		}
 		for _, existing := range skills {
-			if same, err := resolveSkill(filepath.Dir(path), existing); err == nil && same == resolved {
+			if same, err := ResolveSkill(filepath.Dir(path), existing); err == nil && same == resolved {
 				return nil, fmt.Errorf("%s already names %s in new.skills", path, entry)
 			}
 		}
@@ -45,12 +45,12 @@ func AddSkill(entry string) (string, error) {
 // nothing there is refused.
 func RemoveSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
-		resolved, err := resolveSkill(filepath.Dir(path), entry)
+		resolved, err := ResolveSkill(filepath.Dir(path), entry)
 		if err != nil {
 			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
 		}
 		kept := slices.DeleteFunc(slices.Clone(skills), func(existing string) bool {
-			same, err := resolveSkill(filepath.Dir(path), existing)
+			same, err := ResolveSkill(filepath.Dir(path), existing)
 			return err == nil && same == resolved
 		})
 		if len(kept) == len(skills) {
@@ -88,8 +88,15 @@ func editSkills(edit func(path string, skills []string) ([]string, error)) (stri
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
 	}
+	// A file of comments alone — client.example.yaml copied into place — is
+	// no document to the parser, and its comments are in no node. They are
+	// kept by writing them back ahead of the settings this edit adds.
+	var kept []byte
 	if doc.Kind == 0 {
 		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}}
+		if len(bytes.TrimSpace(data)) > 0 {
+			kept = append(bytes.TrimRight(data, "\n"), '\n')
+		}
 	}
 	root := doc.Content[0]
 	if root.Kind == yaml.ScalarNode && root.Tag == "!!null" {
@@ -132,8 +139,8 @@ func editSkills(edit func(path string, skills []string) ([]string, error)) (stri
 	if len(content) == 0 {
 		skillsNode.Style = yaml.FlowStyle
 	}
-	var out bytes.Buffer
-	encoder := yaml.NewEncoder(&out)
+	out := bytes.NewBuffer(kept)
+	encoder := yaml.NewEncoder(out)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&doc); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)

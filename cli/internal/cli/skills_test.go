@@ -13,8 +13,11 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/clientconfig"
 )
 
-// A create copies the project's skills sources in ahead of its own, and
-// --no-project-skills does not read them at all (ADR 26-10-14-894 §2).
+// A create reads the project's skills sources and checks each again before
+// Git runs on it, and --no-project-skills does not read them at all (ADR
+// 26-10-14-894 §2). The entry here is one the server refuses — a file URL,
+// as a test repository has to be — so it stands for one a server let through:
+// the create is refused, naming it and the way out.
 func TestRunCopiesInTheProjectsSkillsSources(t *testing.T) {
 	tools := "file://" + filepath.ToSlash(newRunSourceTestRepo(t))
 	listing := `{"skillsSources":[{"id":"skills_1","projectId":"project-1","url":"` + tools + `","directory":".","createdAt":"2026-10-14T00:00:00Z"}]}`
@@ -23,9 +26,9 @@ func TestRunCopiesInTheProjectsSkillsSources(t *testing.T) {
 		args      []string
 		json      map[string]any
 		wantAsked int
-		want      int
+		wantErr   string
 	}{
-		{name: "by default", args: []string{"new", "-d", "--no-source", "-p", "go"}, wantAsked: 1, want: 1},
+		{name: "by default", args: []string{"new", "-d", "--no-source", "-p", "go"}, wantAsked: 1, wantErr: "the project's skills source " + tools},
 		{name: "--no-project-skills", args: []string{"new", "-d", "--no-source", "--no-project-skills", "-p", "go"}},
 		{name: "json noProjectSkills", args: []string{"new", "--json"}, json: map[string]any{"noSource": true, "noProjectSkills": true}},
 	} {
@@ -44,17 +47,58 @@ func TestRunCopiesInTheProjectsSkillsSources(t *testing.T) {
 			cmd.SetErr(&bytes.Buffer{})
 			cmd.SetIn(bytes.NewReader(request))
 			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
-			if err := cmd.Execute(); err != nil {
-				t.Fatalf("execute: %v", err)
-			}
+			err := cmd.Execute()
 			if asked != tc.wantAsked {
 				t.Fatalf("the project's skills sources were read %d times, want %d", asked, tc.wantAsked)
 			}
-			sources, _ := posted["config"].(map[string]any)["skillsSources"].([]any)
-			if len(sources) != tc.want {
-				t.Fatalf("skillsSources = %#v, want %d", sources, tc.want)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "--no-project-skills") {
+					t.Fatalf("execute = %v, want a refusal naming %q and --no-project-skills", err, tc.wantErr)
+				}
+				if posted != nil {
+					t.Fatalf("a create was posted: %#v", posted)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if sources, _ := posted["config"].(map[string]any)["skillsSources"].([]any); len(sources) != 0 {
+				t.Fatalf("skillsSources = %#v, want none", sources)
 			}
 		})
+	}
+}
+
+// client.yaml is asked first on rm, so a Git URL kept there, and a directory
+// whatever its name, come out of the file and never reach the project.
+func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	configFile := filepath.Join(t.TempDir(), "client.yaml")
+	t.Setenv(clientconfig.FileVar, configFile)
+	dir := filepath.Join(home, "skills_shared")
+	if err := os.WriteFile(configFile, []byte("new:\n  skills:\n    - https://github.com/acme/tools//skills\n    - "+dir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		http.Error(w, "no", http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+	t.Chdir(home)
+
+	var errOut bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "skills", "rm", "https://github.com/acme/tools//skills", "skills_shared"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("rm: %v\n%s", err, errOut.String())
+	}
+	cfg, err := clientconfig.Load()
+	if err != nil || len(cfg.New.Skills) != 0 {
+		t.Fatalf("client.yaml skills = %q (%v), want none", cfg.New.Skills, err)
 	}
 }
 

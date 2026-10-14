@@ -420,6 +420,7 @@ path the variable names: that location is the user's own.
   since one relative in the file is relative to the file. An entry is matched
   as a create reads it, so `./team` in the file is the absolute directory it
   names.
+- `admin box create` does not read it: that command infers nothing locally.
 
 ## Project Skills (ADR 26-10-14-894)
 
@@ -436,15 +437,22 @@ the list is then not read. A server that predates the route is a project with
 none: it answers a person with net/http's plain 404 and a discobox with its
 sandbox role's refusal. A repository the project names at one ref and a
 `--skills` at another is refused as two `--skills` are, naming
-`--no-project-skills`.
+`--no-project-skills`. Each entry is checked again on the client
+(`sandboxcreate.ProjectSkillsRepository`, `sandboxconfig.ValidateSkillsRepository`)
+before Git runs on it, since another member wrote it and the server is only
+what answered: a URL or ref Git would read as an option, a credential in the
+URL, or a directory outside the repository refuses the create, naming the
+entry, rather than reaching `git ls-remote`.
 
 `discobox skills` (`skills.go`) manages what every new discobox gets: `ls`
 lists the project's and client.yaml's, and `add`/`rm` file a value by what it
 is, read as `--skills` reads it — a Git URL with the project, a directory in
-`new.skills`. `rm` takes a project entry by its ID (`skills_…`) or its
-`URL[@REF][//PATH]`. The console's skills screen (`F5`) does the same through
-`apiDataSource.Skills`, `AddSkills` and `RemoveSkills` (`tui_skills.go`).
-- `admin box create` does not read it: that command infers nothing locally.
+`new.skills`. `rm` asks client.yaml first, for the value as a create reads it,
+so an entry there of any form or name comes out of the file; anything else is
+the project's, by its ID, a unique prefix of one, or its `URL[@REF][//PATH]`.
+The console's skills screen (`F5`) does the same through `apiDataSource.Skills`,
+`AddSkills` and `RemoveSkills` (`tui_skills.go`), except that a row already
+says which list it is in, so `RemoveSkills` takes it out of that one.
 
 ## Uninstall (`discobox admin uninstall`)
 

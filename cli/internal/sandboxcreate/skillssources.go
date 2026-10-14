@@ -41,8 +41,12 @@ type SkillsRepository struct {
 }
 
 // ProjectSkillsRepository is one entry of the project's skills sources as the
-// --skills URL[@REF][//PATH] it stands for.
-func ProjectSkillsRepository(url, ref, directory string) SkillsRepository {
+// --skills URL[@REF][//PATH] it stands for, and the refusal the entry earns
+// (sandboxconfig.ValidateSkillsRepository, ValidateSkillsDirectory). The entry
+// is what the server answered, and another member wrote it: it is checked
+// here again, before Git runs on it. The repository comes back either way,
+// for a listing to show what the project names.
+func ProjectSkillsRepository(url, ref, directory string) (SkillsRepository, error) {
 	source := url
 	if ref != "" {
 		source += "@" + ref
@@ -54,7 +58,14 @@ func ProjectSkillsRepository(url, ref, directory string) SkillsRepository {
 	if directory != sandboxconfig.RootSkillsDirectory {
 		arg += "//" + directory
 	}
-	return SkillsRepository{Arg: arg, Source: source, Directory: directory, Project: true}
+	repo := SkillsRepository{Arg: arg, Source: source, Directory: directory, Project: true}
+	if err := sandboxconfig.ValidateSkillsRepository(url, ref); err != nil {
+		return repo, fmt.Errorf("%s: %w", repo, err)
+	}
+	if err := sandboxconfig.ValidateSkillsDirectory(directory); err != nil {
+		return repo, fmt.Errorf("%s: %w", repo, err)
+	}
+	return repo, nil
 }
 
 // URLAndRef are the repository's URL and the ref named after its @, empty

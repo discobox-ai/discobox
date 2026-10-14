@@ -103,3 +103,33 @@ func TestAddSkillRefusesWhatItCannotWrite(t *testing.T) {
 		t.Fatalf("file changed: %q", data)
 	}
 }
+
+// A file of comments alone, the reference copied into place, keeps them.
+func TestAddSkillKeepsAFileOfCommentsAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "client.yaml")
+	t.Setenv(FileVar, path)
+	example, err := ExampleYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, example, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddSkill("/srv/skills"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(data), string(example)) {
+		t.Fatalf("the reference's comments did not survive the edit:\n%s", data)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != filepath.Clean("/srv/skills") {
+		t.Fatalf("skills = %q", cfg.New.Skills)
+	}
+}

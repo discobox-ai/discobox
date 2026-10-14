@@ -915,7 +915,7 @@ func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bo
 	if explicitRef {
 		refs = append(refs, "refs/heads/"+ref, "refs/tags/"+ref)
 	}
-	out, err := gitutil.Output(ctx, "", nil, nil, append([]string{"ls-remote", "--symref", source}, refs...)...)
+	out, err := gitutil.Output(ctx, "", nil, nil, append([]string{"ls-remote", "--symref", "--", source}, refs...)...)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve remote git ref %q: %w", ref, err)
 	}
