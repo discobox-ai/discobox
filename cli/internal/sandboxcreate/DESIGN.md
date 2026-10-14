@@ -33,6 +33,13 @@ sandbox create requests.
   at the first file that takes the whole request past its byte or file limit
   (a skill this one replaces left out of the count), before reading it, and
   the refusal names the largest skills read before it.
+  A `--skills` Git URL is not read: `SplitSkills` takes `URL[@REF][//PATH]`
+  (the path from the first `//` after the scheme) as a skills source, resolved
+  like a remote `-i` but placed under `<working root>/skill-sources`, marked
+  `purpose: skills`, and its paths filed in `skillsSources` in the order given;
+  one repository at one ref is one reference whatever its paths, and at two
+  refs is refused. A directory is content whether or not it is a checkout
+  (ADR 26-10-14-294 §1).
   Both `discobox new` and `admin box create` take the flags; the frontend
   resolves `discobox new`'s against `client.yaml` before they reach here
   (ADR 26-10-09-389).

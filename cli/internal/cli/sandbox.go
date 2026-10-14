@@ -168,7 +168,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 				}
 			}
 			opts.userUIDSet = cmd.Flags().Changed("user-uid")
-			body, err := createSandboxBody(opts)
+			body, err := createSandboxBody(cmd.Context(), opts)
 			if err != nil {
 				return err
 			}
@@ -555,7 +555,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
 	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")
 	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
-	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Directory of skills to install in the discobox, each a subdirectory holding a SKILL.md; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills")
+	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a Git URL[@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one")
 	cmd.Flags().BoolVar(&opts.userSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
@@ -584,7 +584,7 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 }
 
-func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
+func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
 	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: opts.name}}
 	config := &body.Config
 	config.SetDescription(optString(opts.description))
@@ -633,11 +633,18 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if git, ok := sandboxGitFromCreateOptions(opts); ok {
 		config.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
 	}
-	skills, err := sandboxcreate.ReadSkills(opts.skillDirs, opts.userSkills)
+	skillsArgs, err := sandboxcreate.SplitSkills(opts.skillDirs)
+	if err != nil {
+		return nil, err
+	}
+	skills, err := sandboxcreate.ReadSkills(skillsArgs.Directories, opts.userSkills)
 	if err != nil {
 		return nil, err
 	}
 	sandboxcreate.SetCreateSandboxSkills(config, skills)
+	if err := sandboxcreate.AddSkillsSources(ctx, config, skillsArgs.Repositories); err != nil {
+		return nil, err
+	}
 	return body, nil
 }
 

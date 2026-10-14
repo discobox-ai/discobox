@@ -141,7 +141,11 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		body.Config.SetSecrets(secrets)
 	}
 	body.Grants = opts.Grants
-	skills, err := ReadSkills(opts.SkillDirs, opts.UserSkills)
+	skillsArgs, err := SplitSkills(opts.SkillDirs)
+	if err != nil {
+		return nil, nil, err
+	}
+	skills, err := ReadSkills(skillsArgs.Directories, opts.UserSkills)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -196,7 +200,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		}
 		body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	}
-	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions); err != nil {
+	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions, skillsArgs.Repositories); err != nil {
 		local.Close()
 		return nil, nil, err
 	}
@@ -231,12 +235,15 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 // sources that would land on top of each other are refused rather than silently
 // collapsed into one — including a reference that resolves to the primary
 // source's own directory.
-func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary resolvedRunSource, sourceOptions runSourceOptions) error {
+//
+// The skills repositories of --skills come last, each a reference marked for
+// its skills (setSkillsSources).
+func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary resolvedRunSource, sourceOptions runSourceOptions, skillsRepos []SkillsRepository) error {
 	declared, err := declaredPromptSources(ctx, opts, primary)
 	if err != nil {
 		return err
 	}
-	if len(opts.Include) == 0 && len(declared) == 0 {
+	if len(opts.Include) == 0 && len(declared) == 0 && len(skillsRepos) == 0 {
 		return nil
 	}
 	references := make(apiclientgen.SandboxCreateConfigSourceCodeReferences, len(opts.Include)+len(declared))
@@ -303,7 +310,9 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	if len(references) > 0 {
 		body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
 	}
-	return nil
+	return setSkillsSources(ctx, &body.Config, references, local, skillsRepos, sourceOptions, used, func(key string) bool {
+		return taken(references, primary, key)
+	})
 }
 
 // resolveNamedReference resolves one extra source and builds its API shape, so

@@ -15,6 +15,7 @@ import (
 
 	"github.com/adrg/xdg"
 
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/configfile"
 )
 
@@ -50,7 +51,7 @@ type Config struct {
 
 // New is what a create takes by default.
 type New struct {
-	Skills     []string `yaml:"skills" doc:"Directories of skills to install in every new discobox, each a subdirectory holding a SKILL.md, as --skills reads them. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it." example:"[\"~/team-skills\"]"`
+	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it." example:"[\"~/team-skills\"]"`
 	UserSkills bool     `yaml:"userSkills" doc:"Install your own skills from ~/.claude/skills and ~/.agents/skills in every new discobox, as --user-skills does. --user-skills=false on the command line turns it off for one discobox."`
 }
 
@@ -108,7 +109,12 @@ func (cfg *Config) resolvePaths() error {
 	for i, dir := range cfg.New.Skills {
 		dir = strings.TrimSpace(dir)
 		if dir == "" {
-			return fmt.Errorf("%s: new.skills[%d] is empty; name a directory", cfg.Path, i)
+			return fmt.Errorf("%s: new.skills[%d] is empty; name a directory or a Git URL", cfg.Path, i)
+		}
+		// A Git URL names a skills source, which is not on this machine.
+		if sandboxcreate.IsSkillsRepository(dir) {
+			cfg.New.Skills[i] = dir
+			continue
 		}
 		if dir == "~" || strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, "~"+string(filepath.Separator)) {
 			home, err := os.UserHomeDir()

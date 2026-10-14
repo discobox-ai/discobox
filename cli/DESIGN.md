@@ -394,7 +394,11 @@ path the variable names: that location is the user's own.
   as given and the console's create resolves again, which is how the panel,
   which names no skills, gets the configured ones.
 - **Paths in the file are the file's.** A relative directory is relative to the
-  file's directory and `~` is home, resolved at load.
+  file's directory and `~` is home, resolved at load. A `new.skills` entry that
+  is a Git URL (`sandboxcreate.IsSkillsRepository`, the same reading `--skills`
+  gets) names a skills source, not a path, and is kept as written; one whose
+  `//PATH` is refused is still kept, so the refusal names the PATH (ADR
+  26-10-14-294 §1).
 - `admin box create` does not read it: that command infers nothing locally.
 
 ## Uninstall (`discobox admin uninstall`)

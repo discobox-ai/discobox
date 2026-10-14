@@ -47,6 +47,20 @@ func TestLoadRefusesAKeyNothingDefines(t *testing.T) {
 	}
 }
 
+// A Git URL in new.skills names a skills source, not a path, and is kept as
+// written: one with a PATH --skills refuses too, so the refusal names it.
+func TestLoadKeepsSkillsRepositoriesAsWritten(t *testing.T) {
+	repos := []string{"https://github.com/acme/tools@main//agents/skills", "git@github.com:acme/tools//../up"}
+	writeConfig(t, "new:\n  skills: [\""+repos[0]+"\", \""+repos[1]+"\"]\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !slices.Equal(cfg.New.Skills, repos) {
+		t.Fatalf("skills = %v, want %v as written", cfg.New.Skills, repos)
+	}
+}
+
 func TestLoadRefusesAnEmptySkillsDirectory(t *testing.T) {
 	writeConfig(t, "new:\n  skills: [\"\"]\n")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "new.skills[0]") {
