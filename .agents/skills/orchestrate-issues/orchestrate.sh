@@ -121,7 +121,7 @@ running() {
 # retire <issue>|<discobox-id> [merged]: mark a finished box for the human to delete, then stop it.
 # "discobox tag" writes the tag through the server, which the sandbox role allows only on a box this
 # lead created (ADR 26-10-08-447). The lead cannot delete a box. A stopped worker cannot move its own
-# state tag (deliver-issue §7), so retire drops ready/blocked and, for a merged PR, sets merged.
+# state tag (deliver-issue §6), so retire drops ready/blocked and, for a merged PR, sets merged.
 cmd_retire() { # retire <issue>|<discobox-id> [merged]: a triage box has no issue in workers.tsv, so take its ID
 	local n=$1 id u out tags=(to-delete)
 	[ "${2:-}" = merged ] && tags+=(merged)

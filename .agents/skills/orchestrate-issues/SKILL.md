@@ -99,11 +99,10 @@ discobox-access request --json <<'EOF'
 {
   "id": "com.github.api",
   "purpose": "delegate",
-  "justification": "each worker discobox I create triages issues in discobox-ai/discobox one at a time and labels and comments on them, or delivers one issue as a pull request into discobox-ai/discobox, gets a GitHub Copilot review and answers it, and keeps the PR mergeable until a human merges it. Needs contents:write, pull-requests:write and actions:write (and workflow scope if a change touches .github/workflows).",
+  "justification": "each worker discobox I create triages issues in discobox-ai/discobox one at a time and labels and comments on them, or delivers one issue as a pull request into discobox-ai/discobox, answers its reviews, and keeps the PR mergeable until a human merges it. Needs contents:write, pull-requests:write and actions:write (and workflow scope if a change touches .github/workflows).",
   "uses": [
     {"description": "for the discoboxes I create, each on its own issue n: fetch main and discobox/issue-<n> from https://github.com/discobox-ai/discobox, git ls-remote it, and push HEAD or a commit to refs/heads/discobox/issue-<n> with git over https, as a fast-forward or, after a rebase onto main, with git push --force-with-lease=refs/heads/discobox/issue-<n>:<sha> where <sha> is the branch's current head on GitHub; never main and never another branch"},
     {"description": "for the discoboxes I create: gh pr create --repo discobox-ai/discobox --base main --head discobox/issue-<n> --draft --title <title> --body \"$(cat <file>)\", and gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on that pull request; never merge it or enable auto-merge"},
-    {"description": "for the discoboxes I create: request a GitHub Copilot review of their own pull request with gh pr edit <pr> --repo discobox-ai/discobox --add-reviewer @copilot or gh api POST repos/discobox-ai/discobox/pulls/<pr>/requested_reviewers"},
     {"description": "for the discoboxes I create: read CI for their pull request with gh pr checks, gh run list, gh run view, and gh api GET on repos/discobox-ai/discobox/actions/runs (with query parameters), actions/runs/<id>, actions/runs/<id>/jobs, actions/jobs/<id>/logs, commits/<sha>/check-runs and commits/<sha>/status, the same reads for main's latest runs (actions/runs?branch=main) to tell a pre-existing failure from theirs, and re-run their pull request's failed jobs with gh run rerun <id> --failed"},
     {"description": "for the discoboxes I create: read their pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/discobox/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/discobox/pulls/<number>/comments (replies with in_reply_to)"},
     {"description": "for the discoboxes I create: gh api GET repos/discobox-ai/discobox/issues/<number> and repos/discobox-ai/discobox/issues/<number>/comments, to read the issue they implement and the issues it names"},
@@ -225,7 +224,7 @@ in the table are plain text; under the table, list each one's GitHub URL, one
 per line, because a link inside a table cell renders with its URL in a
 terminal.
 Rank by what unblocks the most, then by how hard a decision is to reverse.
-A worker's `ready`, `blocked` or `merged` tag (deliver-issue §7) is its own
+A worker's `ready`, `blocked` or `merged` tag (deliver-issue §6) is its own
 verdict; `status` prints it as `#ready`, `#blocked` or `#merged`. Read it
 before its screen. The user finds them with `discobox ls --all --tag ready`
 (or `--tag blocked`, `--tag merged`).
