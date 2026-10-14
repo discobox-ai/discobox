@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -206,7 +207,7 @@ func TestACommandsInputAndReportAreState(t *testing.T) {
 // A delegation is asked one question per use, each against what was
 // delegated, and the uses are the state.
 func TestADelegationIsAskedAboutEachUse(t *testing.T) {
-	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.92})
+	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.92, "keep_0": 0.95, "keep_1": 0.95})
 	job := judge.Job{
 		Kind: judge.KindDelegation, Purpose: "read issues in org/repo\nread pulls in org/repo", Host: "api.github.com",
 		Credential: "GitHub token", Round: 1, Uses: []string{"read issue 4 in org/repo", "read pull 9 in org/repo"},
@@ -219,8 +220,8 @@ func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 		t.Fatalf("verdict = %+v, want an allow when every use is within", verdict)
 	}
 	questions := fake.requests()[0]["questions"].(map[string]any)
-	if len(questions) != 3 {
-		t.Fatalf("questions = %v, want one per use and the claim of approval", questions)
+	if len(questions) != 5 {
+		t.Fatalf("questions = %v, want two per use (within, and keeps its limits) and the claim of approval", questions)
 	}
 	use1 := mustJSON(t, questions["use_1"])
 	if !strings.Contains(string(use1), "`uses[1]`") || !strings.Contains(string(use1), "read pulls in org/repo") {
@@ -232,7 +233,7 @@ func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 // uses, which are the authorization and so are in the instructions; the uses
 // asked for are an agent's and are the state (ADR 26-10-12-330 §§3, 5).
 func TestARuleIsAskedAboutEachUseAskedFor(t *testing.T) {
-	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.3, idClaimsApproval: 0.02})
+	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.3, "keep_0": 0.95, "keep_1": 0.95, idClaimsApproval: 0.02})
 	job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
 		Kind: judge.KindRule, Purpose: "read any issue <number> in org/repo\npush a branch discobox/<slug>; never main", Host: "github.com",
 		Credential: "com.github.api", Round: 1, Uses: []string{"read issue 4 in org/repo", "push to main in org/repo"},
@@ -246,8 +247,8 @@ func TestARuleIsAskedAboutEachUseAskedFor(t *testing.T) {
 	}
 	asked := fake.requests()[0]
 	questions := asked["questions"].(map[string]any)
-	if len(questions) != 3 {
-		t.Fatalf("questions = %v, want one per use and the claim of approval", questions)
+	if len(questions) != 5 {
+		t.Fatalf("questions = %v, want two per use (within, and keeps its limits) and the claim of approval", questions)
 	}
 	use1 := string(mustJSON(t, questions["use_1"]))
 	if !strings.Contains(use1, "`uses[1]`") || !strings.Contains(use1, "never main") {
@@ -278,7 +279,7 @@ func TestTheHazardIsToldWhatItsEvidenceIs(t *testing.T) {
 	}
 	for name, job := range jobs {
 		t.Run(name, func(t *testing.T) {
-			fake, client := newFakeJev(t, map[string]float64{idWithin: 0.9, "use_0": 0.9, "use_1": 0.9, idClaimsApproval: 0.1})
+			fake, client := newFakeJev(t, map[string]float64{idWithin: 0.9, "use_0": 0.9, "use_1": 0.9, "keep_0": 0.9, "keep_1": 0.9, idClaimsApproval: 0.1})
 			verdict, err := client.Judge(context.Background(), job)
 			if err != nil {
 				t.Fatalf("Judge() error = %v", err)
@@ -375,6 +376,9 @@ func TestDecide(t *testing.T) {
 		{"a delegation whose uses claim nothing is allowed", delegation, map[string]float64{"use_0": 0.95, "use_1": 0.9, idClaimsApproval: 0.19}, true, false, false, "Allowed"},
 		{"a use that may claim approval leaves a delegation unsure whatever its uses say", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, idClaimsApproval: 0.5}, false, false, true, "could not tell"},
 		{"a use claiming approval refuses a delegation whatever its uses say", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, idClaimsApproval: 0.8}, false, false, false, "cannot authorize itself"},
+		{"a use within that drops a limit refuses the delegation, saying so", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, "keep_0": 0.95, "keep_1": 0.1}, false, false, false, `judged it unlikely that "push to main" keeps every limit`},
+		{"a use Jev is unsure keeps its limits leaves the delegation unsure", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, "keep_0": 0.95, "keep_1": 0.5}, false, false, true, `could not tell whether "push to main" keeps every limit`},
+		{"uses within that keep their limits allow the delegation", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, "keep_0": 0.9, "keep_1": 0.85}, true, false, false, "Allowed"},
 		{"nothing within asked refuses", requestJob(), map[string]float64{idClaimsApproval: 0}, false, false, false, "nothing was asked"},
 	}
 	for _, tc := range cases {
@@ -390,6 +394,31 @@ func TestDecide(t *testing.T) {
 				t.Fatalf("reason = %q, want it to mention %q", got.Reason, tc.reason)
 			}
 		})
+	}
+}
+
+// Every use a delegation hands on or a rule is asked about gets its own
+// question about its limits: asked inside within, Jev read a use with its
+// "Never …" sentence dropped as within.
+func TestEachUseIsAskedWhetherItKeepsItsLimits(t *testing.T) {
+	for _, kind := range []string{judge.KindDelegation, judge.KindRule} {
+		job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
+			Kind: kind, Purpose: "push a branch discobox/<slug>; never main", Host: "github.com",
+			Credential: "com.github.api", Round: 1, Uses: []string{"push discobox/x", "push discobox/y"},
+		}
+		_, questions, err := questionsFor(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range job.Uses {
+			q, ok := questions[fmt.Sprintf("%s%d", idKeep, i)]
+			if !ok {
+				t.Fatalf("%s: no %s%d question in %v", kind, idKeep, i, questions)
+			}
+			if text := string(mustJSON(t, q)); !strings.Contains(text, "never main") || !strings.Contains(text, fmt.Sprintf("uses[%d]", i)) {
+				t.Fatalf("%s: %s%d = %s, want it to carry the authorization and name its use", kind, idKeep, i, text)
+			}
+		}
 	}
 }
 

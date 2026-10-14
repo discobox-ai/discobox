@@ -72,6 +72,17 @@ server is upgraded, and a judge is replaced when its image changes, so that is
 a window; a custom harness built FROM an older sandbox-agent image is judged
 by nothing until it is rebuilt.
 
+**A use that drops a limit is wider** (ADR 26-10-14-223). A delegation or
+rule job's purpose
+sets limits — "never main", a closing "Never …" sentence — and once granted a
+use is all its commands are held to. So `System` tells the judge that a use
+keeps every limit of the line it falls under, in the same or stricter words,
+or it is not within, however narrow it is otherwise; Jev asks it as a
+question of its own (below). Without that, a use asked with its limits left
+out read as within (measured in `test/judge-evals/use-cases`, the
+`*-without-its-lines` controls), and a rule would mint it with nobody
+looking.
+
 **A rule's uses are read as a job with its own words** (`rule`,
 ADR 26-10-12-330). An approval rule approves a credential request without
 asking, so its text is the authorization and the ask is what is measured
@@ -168,6 +179,13 @@ answers typed questions with probabilities and writes no text, so `System`,
 - **A rule's job.** A `rule` job is one `use_N` question per use asked for,
   with the rule's uses in the instructions and the uses asked for as the
   state, and the claim-of-approval hazard, told what its evidence is.
+- **A use keeps its limits.** A delegation or rule job also asks one
+  `keep_N` question per use: does it keep every limit of the line it falls
+  under? It is held to within's bar. Asked inside `use_N`, Jev read a use
+  with its "Never …" sentence dropped as within (0.90–0.96), since such a use
+  names nothing the limits forbid; asked alone, it separates them (stripped
+  0.11–0.43, honest 0.49–0.96). At within's bar many honest asks are unsure
+  of it, and go to the judge discobox or are refused.
 - **Questions.** A job becomes yes/no questions. The approved purpose, host,
   credential and guidance go in each question's instructions; only the
   evidence goes in the state. The claim-of-approval hazard is told what its

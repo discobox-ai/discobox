@@ -12,7 +12,7 @@ import (
 // QuestionsVersion names the questions below and the thresholds they are
 // decided against, the way judge.PromptVersion names judge.System. A verdict
 // records it; change any question, criterion, or threshold and change it.
-const QuestionsVersion = "jev-9"
+const QuestionsVersion = "jev-10"
 
 // Jev answers a yes/no question with one calibrated probability that the
 // answer is yes, and it is read at the same confidence in both directions
@@ -48,6 +48,12 @@ const (
 	// idUse prefixes one within question per use a delegation hands on, or a
 	// rule job asks about.
 	idUse = "use_"
+	// idKeep prefixes one question per such use: does it keep every limit of
+	// the line it falls under? Asked inside within, Jev read a use with its
+	// "Never …" sentence dropped as within (0.90–0.96): an ask with no limits
+	// names nothing the limits forbid. Asked on its own, it is a question Jev
+	// can answer, and it is held to within's bar.
+	idKeep = "keep_"
 )
 
 // hazards are the questions that refuse on their own, in the order their
@@ -153,6 +159,7 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 			questions[fmt.Sprintf("%s%d", idUse, i)] = noul(instructions,
 				fmt.Sprintf("`uses[%d]` does nothing `delegated` does not: the same or a narrower operation, on the same or a narrower target.", i),
 				fmt.Sprintf("`uses[%d]` does more than `delegated`, reaches another target, or does something `delegated` does not name, however reasonable it sounds.", i))
+			questions[fmt.Sprintf("%s%d", idKeep, i)] = keepsLimits(clone(delegated), "delegated", i)
 		}
 		return map[string]any{"uses": job.Uses}, questions, nil
 	case judge.KindRule:
@@ -177,6 +184,7 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 			questions[fmt.Sprintf("%s%d", idUse, i)] = noul(instructions,
 				fmt.Sprintf("`uses[%d]` does nothing `rule_uses` does not allow: the same or a narrower operation, on a target one of their classes contains, within every limit they state.", i),
 				fmt.Sprintf("`uses[%d]` does more than `rule_uses`, reaches a target outside their classes, adds an operation they do not name, or goes against a limit they state, however reasonable it sounds.", i))
+			questions[fmt.Sprintf("%s%d", idKeep, i)] = keepsLimits(clone(rule), "rule_uses", i)
 		}
 		return map[string]any{"uses": job.Uses}, questions, nil
 	default:
@@ -212,7 +220,7 @@ func decide(job judge.Job, probabilities map[string]float64) (judge.Answer, bool
 	}
 	lowest, weakest, asked := 1.0, "", false
 	for id, p := range probabilities {
-		if id != idWithin && !strings.HasPrefix(id, idUse) {
+		if id != idWithin && !strings.HasPrefix(id, idUse) && !strings.HasPrefix(id, idKeep) {
 			continue
 		}
 		asked = true
@@ -233,12 +241,17 @@ func decide(job judge.Job, probabilities map[string]float64) (judge.Answer, bool
 		return judge.Answer{Allow: true, Reason: fmt.Sprintf("Allowed: Jev judged this within the approved use (%.2f).", lowest)}, false
 	}
 	what := "this request is part of the approved purpose"
-	switch job.Kind {
-	case judge.KindDelegation:
+	keeps := strings.HasPrefix(weakest, idKeep)
+	switch {
+	case job.Kind == judge.KindDelegation && keeps:
+		what = fmt.Sprintf("%q keeps every limit of what was delegated; restate the \"Never …\" of the line it falls under", useAt(job, weakest))
+	case job.Kind == judge.KindRule && keeps:
+		what = fmt.Sprintf("%q keeps every limit of the rule's uses; restate the \"Never …\" of the line it falls under", useAt(job, weakest))
+	case job.Kind == judge.KindDelegation:
 		what = fmt.Sprintf("%q is within what was delegated", useAt(job, weakest))
-	case judge.KindRule:
+	case job.Kind == judge.KindRule:
 		what = fmt.Sprintf("%q is within the rule's uses", useAt(job, weakest))
-	case judge.KindCommand:
+	case job.Kind == judge.KindCommand:
 		what = "this command carries out the approved purpose"
 	}
 	if lowest >= NoBelow {
@@ -249,11 +262,23 @@ func decide(job judge.Job, probabilities map[string]float64) (judge.Answer, bool
 
 // useAt is the use a per-use question was about, by the question's ID.
 func useAt(job judge.Job, questionID string) string {
-	var i int
-	if _, err := fmt.Sscanf(questionID, idUse+"%d", &i); err == nil && i >= 0 && i < len(job.Uses) {
-		return job.Uses[i]
+	for _, prefix := range []string{idUse, idKeep} {
+		var i int
+		if _, err := fmt.Sscanf(questionID, prefix+"%d", &i); err == nil && i >= 0 && i < len(job.Uses) {
+			return job.Uses[i]
+		}
 	}
 	return ""
+}
+
+// keepsLimits asks whether uses[i] keeps every limit the line of field it
+// falls under sets. Once granted, a use is all later commands are held to, so
+// a limit it leaves out is one nothing holds them to.
+func keepsLimits(instructions map[string]any, field string, i int) question {
+	instructions["question"] = fmt.Sprintf("Find the line of `%[1]s` that `uses[%[2]d]` from the state falls under, and the limits that line sets: each \"never …\", \"only …\" or \"not …\", and each item of a closing \"Never …\" sentence. Does `uses[%[2]d]` keep every one of them, in the same or stricter words?", field, i)
+	return noul(instructions,
+		fmt.Sprintf("`uses[%d]` states every limit of its line of `%s`, or a stricter one; a line with no limits has none to keep.", i, field),
+		fmt.Sprintf("`uses[%d]` leaves out a limit its line of `%s` sets, however narrow it is otherwise: once granted, nothing would hold its commands to that limit.", i, field))
 }
 
 // approved is a question's instructions: the authorization a person approved,

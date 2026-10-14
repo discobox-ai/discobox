@@ -115,7 +115,7 @@ func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 func TestARuleJobFallsBackLikeAnyOther(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, jevFake, harnessJudge, judgeSandbox := jevWithFallback(t,
-		map[string]float64{"use_0": 0.55, "claims_approval": 0.02},
+		map[string]float64{"use_0": 0.55, "keep_0": 0.95, "claims_approval": 0.02},
 		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "reading issue 43 is reading an issue in org/repo"})
 
 	answer, err := service.JudgeRule(ctx, "project-1", ruleAsk())
@@ -332,7 +332,7 @@ func TestAConfidentJevRefusalOfARuleIsFinal(t *testing.T) {
 func TestAJevRefusalTheDiscoboxNeverSawIsNoVerdict(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, jevFake, _, _ := jevWithFallback(t,
-		map[string]float64{"use_0": 0.55, "claims_approval": 0.02},
+		map[string]float64{"use_0": 0.55, "keep_0": 0.95, "claims_approval": 0.02},
 		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "within"})
 	service.SetLeases(refusingLeases{})
 
