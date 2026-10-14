@@ -343,10 +343,9 @@ launchers, and configure scripts.
   a pool of another is refused with that as the reason. See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
 - Whether a harness has an interactive configure flow is the image's
-  declaration (`config.command`), snapshotted as the config's config command;
-  a `Definition`'s `Configure` field (set by `claude-code`, `codex-cli`, `opencode`, and `copilot`, nil
-  for `shell`) is read by nothing. The configure process writes files and
-  collected secret values to `ConfigureOutputPath`. Configure files use the
+  declaration (`config.command`), snapshotted as the config's config command.
+  The configure process writes files and collected secret values to
+  `ConfigureOutputPath`. Configure files use the
   same home-relative contract as all harness files; configure commands run from
   the sandbox workdir and must use `$HOME` when invoking one of those files.
   Every included coding harness supports config mode — see

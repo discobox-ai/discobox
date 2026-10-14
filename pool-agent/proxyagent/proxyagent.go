@@ -109,12 +109,6 @@ func PoolsRoot(root layout.Root, projectID string) string {
 	return root.ProxyProjectPools(projectID)
 }
 
-// PoolProxyRoot is one pool's entire proxy subtree (material for all its
-// sandboxes). Reaping it removes that pool's proxy footprint in one shot.
-func PoolProxyRoot(root layout.Root, projectID, poolID string) string {
-	return root.ProxyPool(projectID, poolID)
-}
-
 // PoolSandboxMaterialRoot is the per-pool root under which each sandbox's
 // bind-mounted proxy material is staged. It is project- and pool-scoped so
 // that, on a host daemon shared by multiple pools, a pool's orphan scan only

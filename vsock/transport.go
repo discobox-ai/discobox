@@ -9,8 +9,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"time"
 
 	mdvsock "github.com/mdlayher/vsock"
 )
@@ -33,13 +31,6 @@ func Listen(port uint32) (net.Listener, error) {
 	return mdvsock.ListenContextID(AnyCID, port, nil)
 }
 
-// DialHostContext dials a fixed host VSOCK port. The network and address
-// arguments are intentionally ignored so it can be installed directly as an
-// HTTP Transport DialContext.
-func DialHostContext(port uint32) func(context.Context, string, string) (net.Conn, error) {
-	return DialContextCID(HostCID, port)
-}
-
 // DialContextCID dials a fixed VSOCK context ID and port. The network and
 // address arguments are intentionally ignored so it can be installed directly
 // as an HTTP Transport DialContext.
@@ -60,13 +51,5 @@ func DialContextCID(cid, port uint32) func(context.Context, string, string) (net
 			return nil, err
 		}
 		return conn, nil
-	}
-}
-
-// HTTPClient returns an HTTP client whose every connection crosses VSOCK.
-func HTTPClient(port uint32, timeout time.Duration) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{DialContext: DialHostContext(port)},
-		Timeout:   timeout,
 	}
 }

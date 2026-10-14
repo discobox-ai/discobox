@@ -130,13 +130,6 @@ Do not add database-routing or request-context identity assumptions to store
 methods. Pass the resource boundary explicitly through method parameters or use
 IDs already carried by persisted rows.
 
-Typed resource views — `Store.Sandboxes()` (`SandboxStore`) and
-`Store.SandboxProviderInstances()` (`SandboxProviderInstanceStore`) — expose
-`Get`, `Create`, `Update`, `ID`, `Reload`, and `Transaction` (sandboxes add
-`UpdateWithGeneration` and `Generation`), delegating to the `Store` methods. They
-embed the store, and their `Transaction` rebinds it to the transaction, so their
-writes stay atomic with anything else written in it.
-
 ## Secret Sealing
 
 With `WithSealer`, the store encrypts secret material on write and decrypts it
@@ -168,9 +161,9 @@ Keep files split by resource area:
 | `id_lookup.go` | `firstByID`: exact or unique-prefix ID lookup. |
 | `projects.go`, `users.go` | Projects, members, per-user defaults, users, project user keys. |
 | `harness_configs.go`, `harness_config_secret_bindings.go` | Harness configs and their secret env bindings. |
-| `sandboxes.go` | Sandbox desired-state persistence, `SandboxStore`, reconcile scans, archive expiry, agent-status/resource telemetry. |
+| `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
-| `providers.go` | Provider instance persistence and `SandboxProviderInstanceStore`. |
+| `providers.go` | Provider instance persistence. |
 | `pools.go` | Pool persistence: CRUD, agent registration and heartbeats, bootstrap tokens, telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go`, `secret_grants.go` | Secrets (sealed values), secret requests, and host-scoped grants. |
 | `approval_rules.go` | Approval rules (ADR 26-10-12-330), a project's pending requests a rule could answer (`ListRuleTestableRequests`), and `AnsweredQuestion`: the verdict on record for a rule's question about one request, from the primary for whoever would otherwise ask the judge. A rule is deleted with its project and the secret it names; it names repositories, never a discobox, so it outlives the discoboxes it answered, and its grants outlive it. |

@@ -8,13 +8,7 @@ import (
 )
 
 type SandboxRuntime = sandboxruntime.Runtime
-type DockerSandboxRuntime = sandboxruntime.DockerSandboxRuntime
-type DockerSandboxRuntimeConfig = sandboxruntime.DockerSandboxRuntimeConfig
 type MemorySandboxRuntime = sandboxruntime.MemorySandboxRuntime
-
-func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
-	return sandboxruntime.NewDockerSandboxRuntime(cfg)
-}
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 	return sandboxruntime.NewMemorySandboxRuntime()

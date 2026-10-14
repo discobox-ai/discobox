@@ -658,8 +658,7 @@ and SOCKS connects are refused. All are audited as `host denied`.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
 header rules, the sentinel set with its swap tuning, and the host trusts
-([Host Trust](#host-trust)). `WatchConfigFile` polls
-a JSON config file into it; pool-agent instead calls it directly to publish
+([Host Trust](#host-trust)). Pool-agent calls it directly to publish
 sentinel sets and trusts. The proxy does not expose an HTTP configuration API; listener,
 certificate, audit database, recording, cache, control, and upstream settings
 remain startup-only.

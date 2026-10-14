@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs as the configure sandbox's primary terminal (see harness.Configure on the
-# opencode Definition). Launches opencode interactively, lets the user connect
+# Runs as the configure sandbox's primary terminal (see "Configure flows"
+# in harness/DESIGN.md). Launches opencode interactively, lets the user connect
 # whichever providers they want and configure it however they normally would,
 # then reads what opencode itself stored to capture the result. Writes it to
 # /run/discobox/configure/harness-configure.json for discobox to apply to the

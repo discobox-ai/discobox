@@ -19,19 +19,11 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 		byID[definition.ID] = definition
 	}
 	for _, id := range []string{"claude-code", "codex", "opencode", "copilot"} {
-		definition, ok := byID[id]
-		if !ok {
+		if _, ok := byID[id]; !ok {
 			t.Fatalf("missing definition %q", id)
 		}
-		if definition.Configure == nil {
-			t.Fatalf("definition %q must be configurable", id)
-		}
 	}
-	shell, ok := byID["shell"]
-	if !ok {
+	if _, ok := byID["shell"]; !ok {
 		t.Fatal("missing definition \"shell\"; it is the end of the harness resolution chain")
-	}
-	if shell.Configure != nil {
-		t.Fatalf("shell definition = %#v, want no configure flow: it collects no credentials", shell)
 	}
 }

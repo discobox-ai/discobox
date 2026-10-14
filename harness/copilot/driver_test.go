@@ -13,9 +13,6 @@ import (
 
 func TestDefinitionConfigure(t *testing.T) {
 	def := Driver{}.Definition()
-	if def.Configure == nil {
-		t.Fatal("Configure = nil, want a configure spec")
-	}
 	if id := (Driver{}).ID(); def.ID != id {
 		t.Fatalf("definition ID %q differs from the driver's %q, which is also its hook provider", def.ID, id)
 	}

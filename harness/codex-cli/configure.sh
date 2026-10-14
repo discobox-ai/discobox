@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs as the configure sandbox's primary terminal (see harness.Configure on the
-# codex-cli Definition). Launches Codex interactively, lets the user sign in and
+# Runs as the configure sandbox's primary terminal (see "Configure flows"
+# in harness/DESIGN.md). Launches Codex interactively, lets the user sign in and
 # configure it however they normally would, then inspects what codex itself
 # wrote to capture the result. Writes it to
 # /run/discobox/configure/harness-configure.json for discobox to apply to the

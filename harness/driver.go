@@ -10,8 +10,6 @@ import (
 )
 
 const (
-	TerminalIDEnv = "DISCOBOX_TERMINAL_ID"
-	SocketEnv     = "DISCOBOX_HOOK_SOCKET"
 	// ImageLabel is the OCI image-config label containing the JSON-encoded,
 	// non-secret image metadata (env, volumes, and the harness contract) used
 	// when a harness image is registered.
@@ -197,18 +195,6 @@ type Definition struct {
 	Name        string
 	Description string
 	Image       string
-	Configure   *Configure
-}
-
-// Configure declares the provider resources and environment for an ephemeral
-// configuration sandbox. The image supplies the configuration command and is
-// expected to write ConfigureOutputPath before exiting.
-type Configure struct {
-	Image        string
-	Env          map[string]string
-	CPUVCPUs     float64
-	MemoryBytes  int64
-	StorageBytes int64
 }
 
 // File is a file to write into the harness's home directory when the harness is
@@ -304,11 +290,4 @@ type Driver interface {
 	ID() string
 	// Definition returns the harness's built-in harness-config template.
 	Definition() Definition
-}
-
-func SetEnv(env map[string]string, key, value string) {
-	if env == nil || strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
-		return
-	}
-	env[key] = value
 }

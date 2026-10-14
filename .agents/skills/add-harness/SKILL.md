@@ -110,7 +110,7 @@ Write these down before writing scripts; most become ADR sections.
 | `Dockerfile` | `FROM ${SANDBOX_AGENT_IMAGE}`; refuse an empty `HARNESS_METADATA`; `npm install -g` then `rm -rf /root/.npm`; install `agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>`, `launch.sh` → `/usr/local/bin/discobox-harness-run`, `prompt.sh` → `/usr/local/bin/discobox-prompt` |
 | `image.json` | `apiVersion`, `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,config.{command,reminder,ports}}`. No `runCommand` — the convention is the command. Every localhost callback port a sign-in uses goes in `config.ports` — its number when fixed, `{"ephemeral": true}` when it changes each run — with an `unavailable` message naming the fallback (device code, an API key) |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
-| `driver.go` | `ID()` and `Definition()` naming `harness.ImageRef("discobox-harness-<id>")`, `Configure: &harness.Configure{}` |
+| `driver.go` | `ID()` and `Definition()` naming `harness.ImageRef("discobox-harness-<id>")` |
 | `launch.sh` | join prompt words into one prompt; `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
 | `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and empty cwd; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
 | `configure.sh` | see below |
