@@ -13,6 +13,7 @@ import (
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -212,6 +213,9 @@ type credentialBroker struct {
 	judge       *controlPlaneCredentials
 	activations *activations
 	trusts      *hostTrusts
+	// proxy is the server this process runs, whose audit trail the broker
+	// reads this sandbox's rows from.
+	proxy *proxy.Server
 }
 
 var _ agentcreds.Service = (*credentialBroker)(nil)

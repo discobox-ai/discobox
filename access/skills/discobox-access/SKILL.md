@@ -1,6 +1,6 @@
 ---
 name: discobox-access
-description: Ask a human for a credential this sandbox was not given, and run one command with it; or ask for a host whose certificate is refused to be trusted. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), when a request answers 502 with an X-Discobox-Untrusted-Host header (a Kubernetes API server, an internal service with its own CA), or to check which credentials you may already use.
+description: Ask a human for a credential this sandbox was not given, and run one command with it; or ask for a host whose certificate is refused to be trusted. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), when a request answers 502 with an X-Discobox-Untrusted-Host header (a Kubernetes API server, an internal service with its own CA), when an outbound request fails and the program that made it does not say why, or to check which credentials you may already use.
 allowed-tools: Bash
 ---
 
@@ -364,6 +364,41 @@ person's to repair.
 
 Anything outside these commands is refused: you cannot attach to, start a
 command in, archive, or delete a discobox you made.
+
+## 6. A request that failed without saying why
+
+Every outbound HTTP request this sandbox makes goes through an egress proxy
+that records what became of it. When it refuses one — a host that is not
+trusted, a credential used outside its approved use, a call the judge would
+not allow — it says why in the response, and many programs drop that: an SDK
+that reports "request failed", a build that says "could not fetch". Read the
+record instead:
+
+```
+discobox-access audit --blocked --since 10m
+```
+
+```
+2026-10-02T12:00:01Z  403 BLOCKED  POST https://api.github.com/repos/o/r/pulls
+    reason: judge: opening a pull request is not the approved use
+    uses: use_7f3c…
+```
+
+The reason tells you what to do next:
+
+| reason begins | what happened | what to do |
+| --- | --- | --- |
+| `judge:` | the request was held up to the use its credential was approved for, and refused | send what that use covers, or ask for the use you need (§2) |
+| `upstream certificate …` | the host's certificate is not trusted | ask for a trust (§4) |
+| `gate:` | a call to the discobox API without a live use of `ai.discobox.sandbox` | do what the reason says (§5) |
+| `host denied` | this discobox's network policy does not allow the host | nothing here changes it; tell the user |
+
+A request the destination refused is not `BLOCKED`: a 401 or 403 for a missing
+or wrong credential is recorded with that status. Leave out `--blocked` to see
+those — then check what you have (§1) and ask (§2). `uses:` names the approved
+uses the request carried. `--host` narrows to one destination (any port when
+you name none), and `--json` gives the same fields structured. It shows only
+this sandbox's requests.
 
 ## Never do this with the value
 

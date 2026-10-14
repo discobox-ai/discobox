@@ -37,6 +37,8 @@ type fakeService struct {
 	gotTrust        agentcreds.TrustRequestBody
 	trustStatus     agentcreds.TrustRequestStatus
 	trustPolls      []agentcreds.TrustRequestStatus
+	gotAudit        agentcreds.AuditQuery
+	exchanges       []agentcreds.AuditExchange
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -88,6 +90,11 @@ func (f *fakeService) TrustRequestStatus(_ context.Context, id string) (agentcre
 		f.trustPolls = f.trustPolls[1:]
 	}
 	return next, nil
+}
+
+func (f *fakeService) AuditHTTP(_ context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
+	f.gotAudit = query
+	return f.exchanges, nil
 }
 
 // serve points the CLI at a real handler over HTTP, so these exercise the wire

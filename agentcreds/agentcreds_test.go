@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -21,6 +22,8 @@ type fakeService struct {
 	trusts      []agentcreds.Trust
 	gotTrust    agentcreds.TrustRequestBody
 	trustStatus agentcreds.TrustRequestStatus
+	gotAudit    agentcreds.AuditQuery
+	exchanges   []agentcreds.AuditExchange
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -59,6 +62,11 @@ func (f *fakeService) RequestTrust(_ context.Context, body agentcreds.TrustReque
 
 func (f *fakeService) TrustRequestStatus(context.Context, string) (agentcreds.TrustRequestStatus, error) {
 	return f.trustStatus, nil
+}
+
+func (f *fakeService) AuditHTTP(_ context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
+	f.gotAudit = query
+	return f.exchanges, nil
 }
 
 func newTestClient(t *testing.T, svc agentcreds.Service) *agentcreds.Client {
@@ -152,5 +160,53 @@ func TestWaitForRequestPollsUntilSettled(t *testing.T) {
 	}
 	if settled.Status != agentcreds.StatusGranted || len(settled.Uses) != 1 {
 		t.Fatalf("settled = %#v", settled)
+	}
+}
+
+// Every filter the client sends reaches the service as it was meant, and the
+// limit the service sees is always one it may honor.
+func TestAuditHTTPCarriesTheQueryAndSettlesTheLimit(t *testing.T) {
+	since := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	blocked := true
+	svc := &fakeService{exchanges: []agentcreds.AuditExchange{{ID: "http_1", URL: "https://api.github.com/", Blocked: true, BlockedReason: "judge: no"}}}
+	client := newTestClient(t, svc)
+	exchanges, err := client.AuditHTTP(context.Background(), agentcreds.AuditQuery{Host: "api.github.com", Blocked: &blocked, Since: since, Limit: 5000})
+	if err != nil {
+		t.Fatalf("audit: %v", err)
+	}
+	if len(exchanges) != 1 || exchanges[0].BlockedReason != "judge: no" {
+		t.Fatalf("exchanges = %#v", exchanges)
+	}
+	got := svc.gotAudit
+	if got.Host != "api.github.com" || got.Blocked == nil || !*got.Blocked || !got.Since.Equal(since) || got.Limit != agentcreds.MaxAuditLimit {
+		t.Fatalf("service saw %+v", got)
+	}
+
+	svc.exchanges = nil
+	exchanges, err = client.AuditHTTP(context.Background(), agentcreds.AuditQuery{})
+	if err != nil || exchanges == nil || len(exchanges) != 0 {
+		t.Fatalf("empty audit = %#v, %v; want an empty list", exchanges, err)
+	}
+	if svc.gotAudit.Limit != agentcreds.DefaultAuditLimit || svc.gotAudit.Blocked != nil {
+		t.Fatalf("unfiltered read reached the service as %+v", svc.gotAudit)
+	}
+}
+
+func TestAuditHTTPRefusesAnUnreadableQuery(t *testing.T) {
+	server := httptest.NewServer(agentcreds.NewHandler(&fakeService{}))
+	t.Cleanup(server.Close)
+	for _, query := range []string{"blocked=maybe", "since=yesterday", "limit=0", "limit=x"} {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+agentcreds.PathAuditHTTP+"?"+query, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", query, resp.StatusCode)
+		}
 	}
 }

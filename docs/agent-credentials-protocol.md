@@ -4,7 +4,9 @@ A small HTTP protocol an agent inside a sandbox uses to **ask a human** for a
 credential it was not provisioned with, and then **use** it. Three operations:
 `list`, `request`, and `get`. A second
 verb, [trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
-certificate the sandbox's egress refuses to be trusted for it.
+certificate the sandbox's egress refuses to be trusted for it. A third,
+[audit](#audit--what-became-of-my-requests), reads back what the egress did
+with the sandbox's own requests.
 
 The protocol knows nothing about Discobox. It is the contract between the
 in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
@@ -328,6 +330,51 @@ upstream path, so the chain a person is shown is the one the proxy will meet,
 and a poll that reads `granted` has already put the pin in the proxy. A host
 the proxy refuses answers `502` with `X-Discobox-Untrusted-Host: <host:port>`,
 which is how an agent learns to ask.
+
+## `audit` — what became of my requests
+
+An implementation's egress refuses some requests — a host it does not trust,
+a credential used outside its approved use — and says why in the response. A
+program that does not pass that on leaves the agent with a failure and no
+reason. The audit verb reads the reason back. Decision record:
+[ADR 26-10-02-678](adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md).
+
+```
+GET /v1/audit/http?host=api.github.com&blocked=true&since=2026-10-02T12:00:00Z&limit=20
+```
+
+```json
+{ "exchanges": [ { "id": "http_812", "createdAt": "2026-10-02T12:00:01Z",
+  "method": "POST", "url": "https://api.github.com/repos/o/r/pulls",
+  "host": "api.github.com", "status": 403, "blocked": true,
+  "blockedReason": "judge: …", "durationMs": 41, "useIds": ["use_7f3c…"] } ] }
+```
+
+Newest first. Every parameter is optional: `host` keeps one destination (a
+host named without a port at any port, so `api.github.com` also finds the
+refused `CONNECT` to `api.github.com:443`),
+`blocked` (`true`/`false`) the refused or the let-through, `since` (RFC 3339)
+a window, and `limit` is 20 when absent and at most 200 — more is read as 200.
+An implementation may return fewer than the limit, the newest, to keep the
+response within 1 MiB; a narrower read reaches the rest.
+A value that does not parse is `invalid`. `blocked` means the implementation
+refused the request rather than the destination, and `blockedReason` says why;
+`useIds` are the approved uses whose sentinels the request carried — spent when
+it was let through, refused under when it was blocked. A refusal by the
+destination itself, a 401 for a missing or wrong credential, is an ordinary
+exchange with that status, not a blocked one. An exchange is a summary: no
+headers and no bodies, and an implementation that hands out short-lived
+values redacts any still live from the URL and reason, since a URL is recorded
+as sent. A service that predates the verb answers 404, which a client reads
+as the verb missing, not as an empty record.
+
+The read is the caller's own: the transport names whose exchanges these are,
+and no parameter can name another caller. An implementation that keeps no
+egress record answers an empty list.
+
+In Discobox the pool's proxy unit answers it from its own audit trail, keyed
+by the sandbox ID the client certificate carries, for the trail's retention
+window.
 
 ## The client shape that fits it best
 

@@ -33,6 +33,10 @@ type Service interface {
 	RequestTrust(ctx context.Context, body TrustRequestBody) (TrustRequestStatus, error)
 	// TrustRequestStatus reads a trust request's current status.
 	TrustRequestStatus(ctx context.Context, requestID string) (TrustRequestStatus, error)
+	// AuditHTTP returns the caller's own audited HTTP exchanges, newest first
+	// (ADR 26-10-02-678). The query's limit is already settled. An
+	// implementation that keeps no egress record returns none.
+	AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchange, error)
 }
 
 // ErrNotFound makes a handler answer 404. It is the "this id means nothing to
@@ -152,6 +156,22 @@ func NewHandler(svc Service) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, status)
 	})
+	mux.HandleFunc("GET "+PathAuditHTTP, func(w http.ResponseWriter, r *http.Request) {
+		query, err := parseAuditQuery(r.URL.Query())
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		exchanges, err := svc.AuditHTTP(r.Context(), query)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if exchanges == nil {
+			exchanges = []AuditExchange{}
+		}
+		writeJSON(w, http.StatusOK, AuditHTTPResponse{Exchanges: exchanges})
+	})
 	return mux
 }
 
@@ -160,6 +180,11 @@ func NewHandler(svc Service) http.Handler {
 // enough to fit here even escaped, so anything larger is a mistake or an
 // attack.
 const MaxBodyBytes = 64 << 10
+
+// MaxResponseBytes bounds a response body a client decodes. Every answer but
+// one is as small as a request; an audit page of MaxAuditLimit exchanges is
+// the one that is not.
+const MaxResponseBytes = 1 << 20
 
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes)).Decode(target); err != nil {

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -365,6 +366,20 @@ type DNSAuditEvent = audit.DNSEvent
 // the event is dropped and counted in /audit/dropped like any other.
 func (s *Server) RecordDNS(event DNSAuditEvent) {
 	s.audit.RecordDNS(event)
+}
+
+// ClientHTTPAudit reads one client's audited HTTP exchanges in this process,
+// for a caller that has already established who the client is: the pool's
+// credentials endpoint, from the certificate a sandbox reached it over
+// (ADR 26-10-02-678). It never reads the pool-wide trail, so an empty client
+// is an error rather than every client's rows; that read is the control API's,
+// behind its token.
+func (s *Server) ClientHTTPAudit(ctx context.Context, clientID string, query AuditQuery) ([]AuditHTTPExchange, error) {
+	if clientID == "" {
+		return nil, errors.New("an audit read for a client names the client")
+	}
+	query.ClientID = clientID
+	return s.audit.ListHTTP(ctx, query)
 }
 
 // Close stops the proxy and flushes queued audit events.

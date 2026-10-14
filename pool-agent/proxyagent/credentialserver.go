@@ -43,13 +43,13 @@ const (
 // is done. Every request is served for the sandbox named by the verified client
 // certificate, so a sandbox cannot ask about another sandbox's credentials by
 // saying so in a body (ADR 0031 §2).
-func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts) error {
+func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	var listenConfig net.ListenConfig
 	tcp, err := listenConfig.Listen(ctx, "tcp", CredentialsListenAddress)
 	if err != nil {
 		return err
 	}
-	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, live, trusts)
+	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, live, trusts, proxyServer)
 }
 
 // newControlPlaneCredentials is the broker's client of the control plane for
@@ -65,7 +65,7 @@ func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *con
 // test can drive the real mTLS stack on an ephemeral port — the certificate
 // handling and identity derivation are the parts worth testing, and they are
 // exactly what a fake listener would skip.
-func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts) error {
+func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	handler := &credentialsHandler{
 		controlPlane: controlPlane,
 		// Its own client: a verdict takes as long as a model takes, which is
@@ -73,6 +73,7 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 		judge:       &controlPlaneCredentials{contextPath: controlPlane.contextPath, client: judgeHTTPClient()},
 		activations: live,
 		trusts:      trusts,
+		proxy:       proxyServer,
 	}
 
 	listener := tls.NewListener(tcp, sandboxTLSConfig(bundle))
@@ -125,6 +126,7 @@ type credentialsHandler struct {
 	judge        *controlPlaneCredentials
 	activations  *activations
 	trusts       *hostTrusts
+	proxy        *proxy.Server
 }
 
 func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +147,7 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		judge:       h.judge,
 		activations: h.activations,
 		trusts:      h.trusts,
+		proxy:       h.proxy,
 	}).ServeHTTP(w, r.WithContext(ctx))
 }
 

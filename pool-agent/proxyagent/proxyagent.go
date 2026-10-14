@@ -341,7 +341,7 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		}()
 	}
 	go func() {
-		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, live, trusts)
+		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, live, trusts, server)
 	}()
 	go func() {
 		// Logged, not sent to errCh, for the control API's reason: a sandbox
