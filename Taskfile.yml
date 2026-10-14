@@ -1263,6 +1263,8 @@ tasks:
       - sh: '[ -x build/release/local/discobox ] && [ -x build/release/local/discobox-server ]'
         msg: "nothing to try: build a release first with task release -- v0.0.0-dev"
     cmds:
+      - task: release:try:own-dir
+        vars: { TRY_DIR: '{{.TRY_DIR}}', IF_MISSING: create }
       - |
         set -eu
         dir="{{.TRY_DIR}}"
@@ -1292,9 +1294,12 @@ tasks:
     vars:
       TRY_DIR: '{{.TRY_DIR | default (printf "/tmp/dbx-try-%s" (env "USER"))}}'
     cmds:
+      - task: release:try:own-dir
+        vars: { TRY_DIR: '{{.TRY_DIR}}', IF_MISSING: skip }
       - |
         set -eu
         dir="{{.TRY_DIR}}"
+        [ -e "$dir" ] || { echo "nothing to reset at $dir"; exit 0; }
         sock="$dir/run/discobox/server.sock"
         if [ -S "$sock" ] && curl -fsS --max-time 5 --unix-socket "$sock" -X POST http://try/shutdown >/dev/null 2>&1; then
           # Its pool VMs die with it; wait for the socket to stop answering so
@@ -1307,6 +1312,35 @@ tasks:
         fi
         rm -rf "$dir"
         echo "removed $dir"
+
+  release:try:own-dir:
+    internal: true
+    silent: true
+    # TRY_DIR is a predictable path in a shared /tmp, so release:try and its
+    # reset act on it only if it is this user's own and closed to everyone
+    # else: another user who made it first could hand the try server its env
+    # file and configuration, and through them libkrunPath or passtPath, which
+    # run as this user — or have a reset delete what it should not. A real
+    # directory, not a symlink, owned by this user, mode 700. IF_MISSING=create
+    # makes a missing one that way, without -p, so one created in between makes
+    # this fail rather than be adopted; IF_MISSING=skip leaves a missing one to
+    # the caller.
+    requires:
+      vars: [TRY_DIR, IF_MISSING]
+    cmds:
+      - |
+        set -eu
+        dir="{{.TRY_DIR}}"
+        if [ -e "$dir" ] || [ -L "$dir" ]; then
+          perm="$(stat -c %a "$dir" 2>/dev/null || stat -f %Lp "$dir")"
+          if [ -L "$dir" ] || [ ! -d "$dir" ] || [ ! -O "$dir" ] || [ "$perm" != 700 ]; then
+            echo "$dir is not a directory only you can use (owner, type or mode $perm); remove it or set TRY_DIR" >&2
+            exit 1
+          fi
+        elif [ "{{.IF_MISSING}}" = create ]; then
+          mkdir -m 700 "$dir"
+        fi
+
   release:build:
     desc: Build this platform's release binaries into build/release/bin
     # Release binaries are built on the platform they target because darwin has
