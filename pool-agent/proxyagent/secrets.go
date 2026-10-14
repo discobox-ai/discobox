@@ -243,14 +243,17 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		return proxy.SecretResolveResult{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusInternalServerError {
-		// Control plane is up but erroring: treat as transient (not an
-		// authoritative denial) so a cached value keeps serving until its grant
-		// expires rather than being invalidated by a blip.
+	if resp.StatusCode >= http.StatusInternalServerError || resolveStatusTransient(resp.StatusCode) {
+		// No answer about the credential, only about the control plane: treat
+		// it as transient, not an authoritative denial, so a cached value
+		// keeps serving until its grant expires and a request with nothing
+		// cached is held and then refused rather than sent with its sentinel
+		// (ADR 26-10-14-482 §2).
 		return proxy.SecretResolveResult{}, fmt.Errorf("resolve secret: control plane returned %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		// Not found / forbidden: leave the sentinel in place.
+		// Not found / forbidden: the control plane's answer. Leave the
+		// sentinel in place.
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
 	var out resolveResponseBody
@@ -275,6 +278,17 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		result.ExpiresAt = activationExpiry
 	}
 	return result, nil
+}
+
+// resolveStatusTransient reports whether a status below 500 says the resolve
+// was not answered rather than answered no: the request timed out, came too
+// early, or was rate limited. Asked again, any of them can be approved.
+func resolveStatusTransient(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
+		return true
+	}
+	return false
 }
 
 // Report tells the control plane what an upstream made of a value this resolver

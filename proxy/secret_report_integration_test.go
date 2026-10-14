@@ -29,7 +29,7 @@ func TestHTTPProxyReportsARejectedCredentialItCannotRetry(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: value}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestHTTPProxyReportsACredentialRejectedAfterItsRetry(t *testing.T) {
 		"sk-ant-oat01-FIRSTVALUE0000000000000000000000",
 		"sk-ant-oat01-SECONDVALUE000000000000000000000",
 	}}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestHTTPProxyReportsNothingWhenTheRetrySucceeds(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{stale, rotated}}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestHTTPProxyReportsARejectedCredentialOncePerCooldown(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: "sk-ant-oat01-DEADVALUE00000000000000000000000"}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	for range 5 {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
@@ -206,7 +206,7 @@ func TestHTTPProxyReportsAcceptanceAfterARejection(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: dead}
-	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
 		// No positive caching, so the second request resolves again and picks
 		// up the replaced credential the way a re-configured harness would.
 		cfg.Secrets.PositiveTTLSeconds = 0
@@ -265,7 +265,7 @@ func TestHTTPProxyReportsNothingForACredentialThatWorks(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: value}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -299,7 +299,7 @@ func TestHTTPProxyReportsNothingForAnUnswappedRequest(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: "sk-ant-oat01-GOODVALUE00000000000000000000000"}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -341,7 +341,7 @@ func TestHTTPProxyDoesNotTreatARedirectAsAcceptance(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: dead}
-	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
 		cfg.Secrets.PositiveTTLSeconds = 0
 	})
 	// The redirect is the answer, not a hop to follow.
@@ -405,7 +405,7 @@ func TestHTTPProxyReportsOnlyWithinACredentialsReportScope(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &settableResolver{value: dead, scope: secrets.ReportScope{{Host: "127.0.0.1", Paths: []string{"/v1/messages"}}}}
-	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
 		cfg.Secrets.PositiveTTLSeconds = 0
 	})
 

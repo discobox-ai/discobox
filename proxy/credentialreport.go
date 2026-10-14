@@ -17,10 +17,10 @@ import (
 // response path sees it and nothing else does, so this is where the fact leaves
 // the pool.
 //
-// It lives on the proxy rather than on the Swapper because the Swapper is
-// rebuilt on every ApplyConfig — which is every time a pool agent mints an
-// ephemeral sentinel — and everything here is memory that has to outlive that:
-// which keys have been reported, and how recently.
+// It lives on the proxy rather than on the Swapper because it is state about
+// the response path, not the resolve cache: which keys have been reported, and
+// how recently. The Swapper forgets a sentinel when it leaves its client's set;
+// a rejection's cooldown must not be forgotten with it.
 
 const (
 	// reportCooldown is how often one (client, sentinel, host) may be reported.

@@ -28,8 +28,6 @@ type Server struct {
 	cache       *cache.Cache
 	filter      *filter.Filter
 	rewriter    *rules.Rewriter
-	resolver    secrets.Resolver
-	swapper     *secrets.Swapper
 	http        *httpProxy
 	socks       *socksProxy
 	controlAuth *controlAuthenticator
@@ -85,7 +83,10 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		return nil, fmt.Errorf("control auth: %w", err)
 	}
 	flt, rewriter := buildPolicy(cfg)
-	swapper := buildSwapper(cfg, resolver)
+	var swapper *secrets.Swapper
+	if resolver != nil {
+		swapper = secrets.New(resolver, swapperConfig(cfg))
+	}
 	s := &Server{
 		ctx:         ctx,
 		cfg:         cfg,
@@ -94,8 +95,6 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		cache:       c,
 		filter:      flt,
 		rewriter:    rewriter,
-		resolver:    resolver,
-		swapper:     swapper,
 		controlAuth: controlAuth,
 		conns:       map[net.Conn]struct{}{},
 		closed:      make(chan struct{}),
@@ -141,25 +140,26 @@ func normalizeConfig(cfg Config) Config {
 
 // ApplyConfig hot-swaps runtime policy from cfg. Listener, certificate, cache,
 // and database settings are startup-only and are intentionally ignored here.
+// The sentinel set and swap tuning are installed in the running swapper rather
+// than a new one, so a resolved value survives the apply unless its sentinel
+// left its client's set.
 func (s *Server) ApplyConfig(cfg Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	flt, rewriter := buildPolicy(cfg)
-	swapper := buildSwapper(cfg, s.resolver)
 	trusts, err := buildTrustTable(cfg.Trusts, s.http.proxy.Tr, s.http.trustTable())
 	if err != nil {
 		return err
 	}
 	s.filter = flt
 	s.rewriter = rewriter
-	s.swapper = swapper
 	s.cfg.Allowlist = cfg.Allowlist
 	s.cfg.Headers = cfg.Headers
 	s.cfg.Secrets = cfg.Secrets
 	s.cfg.Trusts = cfg.Trusts
 	s.http.setPolicy(flt, rewriter)
-	s.http.setSwapper(swapper)
+	s.http.swapper.Reconfigure(swapperConfig(cfg))
 	s.http.setTrusts(trusts)
 	s.socks.setFilter(flt)
 	return nil
@@ -174,22 +174,20 @@ func buildPolicy(cfg Config) (*filter.Filter, *rules.Rewriter) {
 	}), rules.NewRewriter(convertHeaderRules(cfg.Headers))
 }
 
-func buildSwapper(cfg Config, resolver secrets.Resolver) *secrets.Swapper {
-	if resolver == nil {
-		return nil
-	}
+func swapperConfig(cfg Config) secrets.Config {
 	sentinels := make(map[string][]string, len(cfg.Secrets.Clients))
 	for _, client := range cfg.Secrets.Clients {
 		sentinels[client.ClientID] = client.Sentinels
 	}
-	return secrets.New(resolver, secrets.Config{
+	return secrets.Config{
 		Sentinels:       sentinels,
 		ScanQuery:       cfg.Secrets.ScanQuery,
 		PositiveTTL:     time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
 		NegativeTTL:     time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
 		RefreshInterval: time.Duration(cfg.Secrets.RefreshIntervalSeconds) * time.Second,
+		ResolveRetry:    time.Duration(cfg.Secrets.ResolveRetrySeconds) * time.Second,
 		GateHost:        cfg.Secrets.GateHost,
-	})
+	}
 }
 
 func convertAllowlistRules(rules []AllowlistRule) []filter.Rule {

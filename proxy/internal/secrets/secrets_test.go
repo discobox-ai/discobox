@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -173,8 +174,12 @@ func TestTransientErrorNotCached(t *testing.T) {
 	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
 		return ResolveResult{}, context.DeadlineExceeded
 	}}
-	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL"}}})
+	sw := New(resolver, Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL"}},
+		ResolveRetry: time.Nanosecond,
+	})
 
+	var asked int64
 	for i := 0; i < 2; i++ {
 		req := newRequest(t, http.MethodGet, "https://api.example.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
@@ -185,9 +190,209 @@ func TestTransientErrorNotCached(t *testing.T) {
 		if len(res.Errors) != 1 {
 			t.Fatalf("Errors = %v, want one transient error", res.Errors)
 		}
+		calls := resolver.calls.Load()
+		if calls <= asked {
+			t.Fatalf("Apply %d did not ask the resolver: a transient failure was cached", i+1)
+		}
+		asked = calls
 	}
+}
+
+// A control plane that comes back inside the retry window is waited for: the
+// request swaps and reports no error (ADR 26-10-14-482 §2).
+func TestTransientErrorRetriedWithinTheWindow(t *testing.T) {
+	var failures atomic.Int64
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		if failures.Add(1) <= 2 {
+			return ResolveResult{}, errors.New("connection refused")
+		}
+		return ResolveResult{Value: "REAL", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL"}},
+		ResolveRetry: 5 * time.Second,
+	})
+
+	got, ok := swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if !ok || got != "Bearer REAL" {
+		t.Fatalf("Authorization = %q (swapped %v), want the value resolved on the third ask", got, ok)
+	}
+	if calls := resolver.calls.Load(); calls != 3 {
+		t.Fatalf("resolver asked %d times, want 3", calls)
+	}
+}
+
+// A failure that outlasts the window is reported in Errors, once the window
+// has passed and not before.
+func TestTransientErrorOutlastingTheWindowIsReported(t *testing.T) {
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{}, errors.New("connection refused")
+	}}
+	const window = 300 * time.Millisecond
+	sw := New(resolver, Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL"}},
+		ResolveRetry: window,
+	})
+
+	req := newRequest(t, http.MethodGet, "https://api.example.com/")
+	req.Header.Set("Authorization", "Bearer SENTINEL")
+	start := time.Now()
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	waited := time.Since(start)
+
+	if res.Swapped() || len(res.Errors) != 1 {
+		t.Fatalf("Result = %+v, want no swap and one error", res)
+	}
+	if waited < window {
+		t.Fatalf("Apply returned after %v, before the %v window passed", waited, window)
+	}
+	if calls := resolver.calls.Load(); calls < 2 {
+		t.Fatalf("resolver asked %d times, want it asked again inside the window", calls)
+	}
+}
+
+// A denial is the control plane's answer, so it is neither retried nor an error:
+// the sentinel stays in place and the request goes (ADR 26-10-14-482 §3).
+func TestDenialIsNotRetried(t *testing.T) {
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{}, ErrDenied
+	}}
+	sw := New(resolver, Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL"}},
+		ResolveRetry: 5 * time.Second,
+	})
+
+	req := newRequest(t, http.MethodGet, "https://api.example.com/")
+	req.Header.Set("Authorization", "Bearer SENTINEL")
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	if res.Swapped() || len(res.Errors) != 0 {
+		t.Fatalf("Result = %+v, want no swap and no error", res)
+	}
+	if calls := resolver.calls.Load(); calls != 1 {
+		t.Fatalf("resolver asked %d times, want once", calls)
+	}
+}
+
+// Reconfigure keeps what was resolved for every sentinel still in its client's
+// set: a value, a denial, and the value a rotation displaced (ADR 26-10-14-482
+// §1).
+func TestReconfigureKeepsWhatAnUnchangedSentinelResolved(t *testing.T) {
+	now := time.Unix(1000, 0)
+	value := "OLD"
+	down := false
+	resolver := &fakeResolver{fn: func(req ResolveRequest) (ResolveResult, error) {
+		if down {
+			return ResolveResult{}, errors.New("connection refused")
+		}
+		if req.Sentinel == "DENIED" {
+			return ResolveResult{}, ErrDenied
+		}
+		return ResolveResult{Value: value, ExpiresAt: now.Add(30 * time.Second)}, nil
+	}}
+	cfg := Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL", "DENIED"}},
+		NegativeTTL:  time.Hour,
+		ResolveRetry: time.Nanosecond,
+	}
+	sw := New(resolver, cfg)
+	sw.now = func() time.Time { return now }
+
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	// Rotation: past the hard expiry, NEW is resolved and displaces OLD.
+	now = now.Add(time.Minute)
+	value = "NEW"
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	swapAuth(t, sw, "sandbox-1", "DENIED")
+	asked := resolver.calls.Load()
+
+	down = true
+	cfg.Sentinels = map[string][]string{
+		"sandbox-1": {"SENTINEL", "DENIED"},
+		"sandbox-2": {"ELSEWHERE"},
+	}
+	sw.Reconfigure(cfg)
+
+	if got, ok := swapAuth(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer NEW" {
+		t.Fatalf("Authorization = %q (swapped %v), want the cached value", got, ok)
+	}
+	if got, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer OLD" {
+		t.Fatalf("previous = %q (swapped %v), want the displaced value", got, ok)
+	}
+	if _, ok := swapAuth(t, sw, "sandbox-1", "DENIED"); ok {
+		t.Fatal("a cached denial swapped")
+	}
+	if calls := resolver.calls.Load(); calls != asked {
+		t.Fatalf("resolver asked %d more times after the reconfigure, want none", calls-asked)
+	}
+}
+
+// A sentinel that leaves its client's set is forgotten for that client: put
+// back, it resolves again, and its displaced value is gone.
+func TestReconfigureForgetsARemovedSentinel(t *testing.T) {
+	now := time.Unix(1000, 0)
+	value := "OLD"
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: value, ExpiresAt: now.Add(30 * time.Second)}, nil
+	}}
+	with := Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL", "OTHER"}}}
+	sw := New(resolver, with)
+	sw.now = func() time.Time { return now }
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	now = now.Add(time.Minute)
+	value = "NEW"
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if _, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); !ok {
+		t.Fatal("the rotation left no displaced value to forget")
+	}
+
+	sw.Reconfigure(Config{Sentinels: map[string][]string{"sandbox-1": {"OTHER"}}})
+	if _, ok := swapAuth(t, sw, "sandbox-1", "SENTINEL"); ok {
+		t.Fatal("a removed sentinel still swapped")
+	}
+
+	sw.Reconfigure(with)
+	asked := resolver.calls.Load()
+	if _, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); ok {
+		t.Fatal("the displaced value outlived the sentinel's removal")
+	}
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if calls := resolver.calls.Load(); calls != asked+1 {
+		t.Fatalf("resolver asked %d times after the sentinel came back, want once", calls-asked)
+	}
+}
+
+// A resolve still in flight when its sentinel is removed does not store its
+// answer, so the sentinel cannot come back with it.
+func TestReconfigureDropsALateAnswerForARemovedSentinel(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		select {
+		case entered <- struct{}{}:
+			<-release
+		default:
+		}
+		return ResolveResult{Value: "REAL", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	with := Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL"}}}
+	sw := New(resolver, with)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		req := newRequest(t, http.MethodGet, "https://api.example.com/")
+		req.Header.Set("Authorization", "Bearer SENTINEL")
+		sw.Apply(context.Background(), req, "sandbox-1")
+	}()
+	<-entered
+	sw.Reconfigure(Config{Sentinels: map[string][]string{"sandbox-1": {"OTHER"}}})
+	close(release)
+	<-done
+
+	sw.Reconfigure(with)
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
 	if calls := resolver.calls.Load(); calls != 2 {
-		t.Fatalf("resolver called %d times, want 2 (transient not cached)", calls)
+		t.Fatalf("resolver asked %d times, want the late answer discarded and the sentinel resolved again", calls)
 	}
 }
 
@@ -752,4 +957,35 @@ func TestSwapNamesTheSentinelsARequestAnswersFor(t *testing.T) {
 			t.Fatalf("request %d inside the scope: Reportable = %v, want both", i, res.Reportable)
 		}
 	}
+}
+
+// A control plane that hangs instead of refusing is bounded by the window as
+// well: each ask is given a deadline, never less than resolveAttemptFloor.
+func TestAHungResolveIsBoundedByTheWindow(t *testing.T) {
+	resolver := &ctxResolver{}
+	sw := New(resolver, Config{
+		Sentinels:    map[string][]string{"sandbox-1": {"SENTINEL"}},
+		ResolveRetry: 100 * time.Millisecond,
+	})
+
+	req := newRequest(t, http.MethodGet, "https://api.example.com/")
+	req.Header.Set("Authorization", "Bearer SENTINEL")
+	start := time.Now()
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	waited := time.Since(start)
+
+	if len(res.Errors) != 1 {
+		t.Fatalf("Errors = %v, want the hung ask reported", res.Errors)
+	}
+	if waited > resolveAttemptFloor+time.Second {
+		t.Fatalf("Apply held the request %v, want about the attempt floor (%v)", waited, resolveAttemptFloor)
+	}
+}
+
+// ctxResolver resolves nothing: it waits for the ask's context to end.
+type ctxResolver struct{ fakeResolver }
+
+func (r *ctxResolver) Resolve(ctx context.Context, _ ResolveRequest) (ResolveResult, error) {
+	<-ctx.Done()
+	return ResolveResult{}, ctx.Err()
 }
