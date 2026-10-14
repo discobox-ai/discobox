@@ -91,7 +91,7 @@ func validateURL(raw string) error {
 		return errors.New("a skills source needs a Git URL")
 	}
 	if strings.ContainsFunc(raw, isSpaceOrControl) {
-		return fmt.Errorf("Git URL %q holds a space or a control character", raw)
+		return fmt.Errorf("the Git URL %q holds a space or a control character", raw)
 	}
 	rest := raw
 	if scheme, after, ok := strings.Cut(raw, "://"); ok {
@@ -106,7 +106,7 @@ func validateURL(raw string) error {
 	// What follows a URL's `//` is a skills directory when a client reads it
 	// back as a --skills value, so the URL may hold none of its own.
 	if strings.Contains(rest, "//") {
-		return fmt.Errorf("Git URL %q holds //, which starts a skills directory", raw)
+		return fmt.Errorf("the Git URL %q holds //, which starts a skills directory", raw)
 	}
 	return nil
 }
