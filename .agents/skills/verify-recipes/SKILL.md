@@ -458,14 +458,15 @@ shell's command line matches the pattern. Wait on the watcher's outputs
   `pkill -f` naming it matches your own tool shell. The clone's error is in
   the box's `journalctl -u discobox-sandbox-agent` (`materialize source`).
 
-# Verifying the sandbox agent without a PID-1 flow (a VM guest's start)
+# Verifying the sandbox agent with nothing to wire (a VM guest's start)
 
-No disco-vm driver runs here; the sandbox image booted with systemd itself as
-PID 1 and no config volume is the same start a VM guest makes.
+No disco-vm driver runs here; the sandbox image booted with no config volume
+is the same start a VM guest makes: `discobox-wire.service` is skipped and the
+agent provisions from its own start.
 
 ```bash
 docker run -d --name vmlike --privileged --cgroupns=private --tmpfs /run \
-  --tmpfs /run/lock --entrypoint /lib/systemd/systemd discobox-sandbox-agent:local
+  --tmpfs /run/lock discobox-sandbox-agent:local
 # a real bootstrap: any dev box's, with another sandboxId
 d shell <box> -- sudo cat /etc/discobox/sandbox.json | jq '.sandboxId="sbx_vmlike"' > $S/s.json
 docker exec -i vmlike sh -c 'cat > /etc/discobox/.s.tmp && mv /etc/discobox/.s.tmp /etc/discobox/sandbox.json' < $S/s.json
@@ -478,6 +479,28 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
   /usr/local/bin/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
   it logs `waiting for a file to appear` and exits 0 on SIGTERM.
 - `docker restart` is the guest's reboot; `systemctl kill -s KILL` the crash.
+
+# Verifying a container's boot (`discobox-wire.service`)
+
+A dev box shows the wiring: `d shell <box> -- systemctl show discobox-wire -p
+ActiveState`, `sudo journalctl -b -u discobox-wire` (`wired sandbox volumes
+count=N`), and `findmnt` for the declared paths. `d stop`/`d start` is a new
+boot that re-wires; a normal stop exits the container 130.
+
+A failed wiring, without a pool: give the image a config volume whose
+bootstrap the wiring rejects, and the container exits 1 with the error in the
+tail of `docker logs`.
+
+```bash
+mkdir -p $S/vfail-config   # not $S/config: the isolated-server recipe uses that
+echo '{"sandboxId":"sbx_vfail","user":{"uid":1000,"gid":2000,"groupName":"docker","name":"dev"}}' > $S/vfail-config/sandbox.json
+docker run -d --name vfail --privileged --cgroupns=private -t \
+  -v $S/vfail-config:/.discobox/config <the dev sandbox image>
+docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -20
+```
+
+- A box's export is `d admin box export <box> -o <file>` (stop it first); the
+  export container overrides the entrypoint.
 
 # Verifying what the judge is asked (judge jobs, facts)
 
