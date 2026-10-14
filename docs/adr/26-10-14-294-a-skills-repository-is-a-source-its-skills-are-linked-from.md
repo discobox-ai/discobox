@@ -59,12 +59,30 @@ refused: it would need two checkouts of one name, and nothing needs that.
 
 ### 2. The reference is marked with its purpose
 
-`GitSourceReference` gains `purpose`, an enum: `work` (the default, and what an
-absent value means) or `skills`. A `skills` reference also carries
-`skillsDirectories`, the ordered `PATH`s of §1, with `.` for the root. The field
-is refused on a `work` reference. The server persists both with the reference.
-A sandbox created before this change reads as `work` throughout, so its
-manifest fingerprint is unchanged.
+`GitSource` gains `purpose`, an enum: `work` (the default, and what an absent
+value means) or `skills`. The primary source is never `skills`.
+
+The directories go beside the references, not on them. Source code references
+are a map keyed by the directory each lands in, so they hold no order, and §4
+needs the order the `--skills` values were given in. `SandboxCreateConfig`
+gains `skillsSources`, a list with one entry per `PATH` of §1, in that order:
+
+```json
+"skillsSources": [
+  {"source": "/workspace/skill-sources/tools",  "directory": "agents/skills"},
+  {"source": "/workspace/skill-sources/shared", "directory": "."},
+  {"source": "/workspace/skill-sources/tools",  "directory": "extra"}
+]
+```
+
+`source` is a source code reference key, and `directory` is the `PATH`, with
+`.` for the root. The server refuses an entry that names a reference whose
+purpose is not `skills`, and a `skills` reference that no entry names. It
+persists the list in the manifest, omitted when empty, the way it persists
+skills (ADR 26-10-09-395 §2). A sandbox created before this change has neither
+field, so its manifest fingerprint is unchanged. The pool resolves each entry
+to the checkout its reference lands in, and writes the list, in order, into
+`sandbox.json`.
 
 A `skills` source:
 
@@ -139,6 +157,13 @@ The sandbox logs each name a link replaced.
 - **Check out only `PATH` (a sparse checkout).** It is smaller, but a skill's
   scripts may reach elsewhere in the repository, and a sparse checkout is
   easy to commit from wrongly.
+- **Carry the directories on each reference, with an order number.** It keeps
+  a skills source's directories beside it, but an order number is a list
+  spelled out by hand, and one number per reference cannot order one
+  repository's directories among another's.
+- **Make source code references a list.** It would carry the order without a
+  second field, but it changes a public request and response shape and a
+  stored column of every existing sandbox, for an order only skills need.
 - **Infer the purpose from the destination path.** Anything that reads a
   sandbox's sources would have to know the convention. A field says it once,
   where the server and every client can read it.
@@ -149,8 +174,11 @@ The sandbox logs each name a link replaced.
 
 ## Consequences
 
-- `GitSourceReference` gains `purpose` and `skillsDirectories` in the server API, the store, the pool
-  create request and `sandboxconfig`'s source list. The sandbox agent reads it.
+- `GitSource` gains `purpose` in the server API. `SandboxCreateConfig` and
+  the sandbox's read config gain `skillsSources`, which the store keeps in its
+  own manifest column. The pool create request gains the same list, and
+  `sandboxconfig`'s runtime layer gains it resolved to checkout paths. The
+  sandbox agent reads it.
 - `sandbox-agent/terminal/skills.go` gains a fourth, linking layer, and its
   `DESIGN.md` describes the order.
 - A sandbox with skills sources parks in `awaiting_source` until they land, as
