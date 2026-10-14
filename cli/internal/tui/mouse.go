@@ -582,7 +582,7 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	}
 	if d.itemPress != nil {
 		// An input card's rows are its list's, answered by the list.
-		return d.itemPress(idx, d.input.Value())
+		return d.itemPress(idx, d.typed())
 	}
 	if !d.items[idx].enabled {
 		d.cursor = idx
@@ -791,7 +791,7 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 			if lines > 0 {
 				key = "up"
 			}
-			cmd, _ := d.keyFirst(keyPress(key), d.input.Value())
+			cmd, _ := d.keyFirst(keyPress(key), d.typed())
 			return cmd
 		}
 		if d := m.dialog; d != nil {

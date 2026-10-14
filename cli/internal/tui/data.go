@@ -1523,13 +1523,17 @@ type Rule struct {
 // credential — a well-known ID, answered by the project secret marked for it,
 // or a project secret — which discoboxes it is for, what it approves, the
 // longest a grant it mints may live and when it lapses. The hosts and the
-// purpose are the server's to default: the credential's own hosts, and to use.
+// purpose are the server's to default when unsaid: the credential's own
+// hosts, and to use.
 type NewRule struct {
 	WellKnownID string
 	SecretID    string
 	// Hosts are where its grants may go, sent as the card that made it read
 	// them, so the rule stored is the rule that was read.
 	Hosts []string
+	// Delegate is a rule that approves asks to delegate the credential: one
+	// made of a delegation grant. Every other is a rule to use it.
+	Delegate bool
 	ApprovalRule
 	// MaxGrantTTL caps each grant it mints; zero leaves the secret's own
 	// limit, and is sent as that.
@@ -1560,37 +1564,46 @@ func (c RuleChange) Empty() bool {
 	return c.Repositories == nil && !c.EveryDiscobox && c.Uses == nil && c.MaxGrantTTL == nil && c.Expires == nil && !c.NeverExpires
 }
 
-// RuleProposals is what a person who chose "auto approve" picks a rule from:
-// the repository of the discobox that asked, and contents, narrowest first,
-// each already put to the judge as the question the rule would later ask
-// about this request (ADR 26-10-12-330 §§7–8).
+// RuleProposals is what a person who chose "auto approve" starts a rule from:
+// the repository of the discobox that asked, and the uses the project's
+// judge wrote from the request's, already put to the judge as the question
+// the rule would later ask about this request (ADR 26-10-12-330 §§7–8).
 type RuleProposals struct {
-	// Repository is the asking discobox's, as host/path: what a rule for
-	// "discoboxes of this repository" names. Empty when it has none — a local
-	// source with no remote — and then only a rule for every discobox answers
-	// it.
-	Repository string
-	Contents   []RuleContentProposal
+	// Repository is the asking discobox's, as host/path, made safe to draw:
+	// what a rule for "discoboxes of this repository" names. Empty when it
+	// has none — a local source with no remote — and then only a rule for
+	// every discobox, or for repositories named, answers it. RepositoryStored
+	// is it in the server's own text, which is what is sent.
+	Repository, RepositoryStored string
+	// Written is the uses written, nil when no model wrote any.
+	Written *WrittenUses
 	// Credential, Hosts and Delegate are what a rule made from the request
 	// will say, as the server copies them from it.
 	Credential string
 	Hosts      []string
 	Delegate   bool
-	// Note says why only the uses as asked are offered, when no model could
-	// write the wider ones.
+	// WellKnownID is the well-known credential the request asked for by ID,
+	// empty when it named none. A rule made from the proposal is for it —
+	// answered with the secret marked for it — because that is the rule the
+	// uses were judged as.
+	WellKnownID string
+	// Note says why there are no uses written, when no model could write
+	// them.
 	Note string
 }
 
-// RuleContentProposal is one set of uses a rule may approve. Level is how
-// wide: 1 as asked, 2 the same work on any target of its kind, 3 the same
-// kind of work across the resource.
-type RuleContentProposal struct {
-	Level int
-	Uses  []string
+// WrittenUses are the uses the project's judge wrote from a request's — the
+// same work on any target of its kind — with the judge's verdict on them.
+type WrittenUses struct {
+	// Uses are drawn, made safe; Stored are the server's own text, sent for
+	// every line the person leaves as written.
+	Uses, Stored []string
 	// Covers is the judge finding every use the request asked for within
-	// these; only such uses may be chosen as written.
-	Covers bool
-	Reason string
+	// these, and Reason what it said. Refused is the server's reason the uses
+	// could not be a rule's — two lines, too long, too many — in which case
+	// the judge was not asked, and said nothing.
+	Covers          bool
+	Reason, Refused string
 }
 
 // RefreshAsk is which token a refresh request wants a new value of, and why.
@@ -2507,6 +2520,11 @@ type DataSource interface {
 	// the judge reads every one — so it is asked only when a person chooses
 	// "auto approve".
 	RuleProposals(ctx context.Context, server, requestID string) (RuleProposals, error)
+	// GrantRuleProposals is the same proposal from a grant a request was
+	// approved with: the rule that request's auto approve would have made,
+	// written from the uses the grant approved. A grant naming no uses, or
+	// whose request is no longer on record, has none.
+	GrantRuleProposals(ctx context.Context, server, grantID string) (RuleProposals, error)
 
 	// Rules lists the approval rules the server holds for the project, newest
 	// first. Only a person may read or change them.

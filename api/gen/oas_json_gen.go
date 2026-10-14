@@ -13064,14 +13064,6 @@ func (s *JudgeProposal) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("usesAcrossResource")
-		e.ArrStart()
-		for _, elem := range s.UsesAcrossResource {
-			e.Str(elem)
-		}
-		e.ArrEnd()
-	}
-	{
 		e.FieldStart("usesAnyTarget")
 		e.ArrStart()
 		for _, elem := range s.UsesAnyTarget {
@@ -13081,9 +13073,8 @@ func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfJudgeProposal = [2]string{
-	0: "usesAcrossResource",
-	1: "usesAnyTarget",
+var jsonFieldsNameOfJudgeProposal = [1]string{
+	0: "usesAnyTarget",
 }
 
 // Decode decodes JudgeProposal from json.
@@ -13095,28 +13086,8 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "usesAcrossResource":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				s.UsesAcrossResource = make([]string, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem string
-					v, err := d.Str()
-					elem = string(v)
-					if err != nil {
-						return err
-					}
-					s.UsesAcrossResource = append(s.UsesAcrossResource, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"usesAcrossResource\"")
-			}
 		case "usesAnyTarget":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				s.UsesAnyTarget = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -13145,7 +13116,7 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000011,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -20512,6 +20483,39 @@ func (s OptRuleTestStage) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptRuleTestStage) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RuleUsesProposal as json.
+func (o OptRuleUsesProposal) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes RuleUsesProposal from json.
+func (o *OptRuleUsesProposal) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRuleUsesProposal to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRuleUsesProposal) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRuleUsesProposal) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -29881,165 +29885,6 @@ func (s *RestartSandboxBody) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *RuleContentProposal) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *RuleContentProposal) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("covers")
-		e.Bool(s.Covers)
-	}
-	{
-		e.FieldStart("level")
-		e.Int64(s.Level)
-	}
-	{
-		if s.Reason.Set {
-			e.FieldStart("reason")
-			s.Reason.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("uses")
-		e.ArrStart()
-		for _, elem := range s.Uses {
-			e.Str(elem)
-		}
-		e.ArrEnd()
-	}
-}
-
-var jsonFieldsNameOfRuleContentProposal = [4]string{
-	0: "covers",
-	1: "level",
-	2: "reason",
-	3: "uses",
-}
-
-// Decode decodes RuleContentProposal from json.
-func (s *RuleContentProposal) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode RuleContentProposal to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "covers":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := d.Bool()
-				s.Covers = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"covers\"")
-			}
-		case "level":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Int64()
-				s.Level = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"level\"")
-			}
-		case "reason":
-			if err := func() error {
-				s.Reason.Reset()
-				if err := s.Reason.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"reason\"")
-			}
-		case "uses":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				s.Uses = make([]string, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem string
-					v, err := d.Str()
-					elem = string(v)
-					if err != nil {
-						return err
-					}
-					s.Uses = append(s.Uses, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"uses\"")
-			}
-		default:
-			return errors.Errorf("unexpected field %q", k)
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode RuleContentProposal")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001011,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfRuleContentProposal) {
-					name = jsonFieldsNameOfRuleContentProposal[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *RuleContentProposal) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RuleContentProposal) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
 func (s *RuleProposalsBody) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -30053,14 +29898,6 @@ func (s *RuleProposalsBody) encodeFields(e *jx.Encoder) {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
 		}
-	}
-	{
-		e.FieldStart("contents")
-		e.ArrStart()
-		for _, elem := range s.Contents {
-			elem.Encode(e)
-		}
-		e.ArrEnd()
 	}
 	{
 		if s.Credential.Set {
@@ -30092,16 +29929,29 @@ func (s *RuleProposalsBody) encodeFields(e *jx.Encoder) {
 			s.Repository.Encode(e)
 		}
 	}
+	{
+		if s.WellKnownId.Set {
+			e.FieldStart("wellKnownId")
+			s.WellKnownId.Encode(e)
+		}
+	}
+	{
+		if s.Uses.Set {
+			e.FieldStart("uses")
+			s.Uses.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRuleProposalsBody = [7]string{
+var jsonFieldsNameOfRuleProposalsBody = [8]string{
 	0: "$schema",
-	1: "contents",
-	2: "credential",
-	3: "hosts",
-	4: "note",
-	5: "purpose",
-	6: "repository",
+	1: "credential",
+	2: "hosts",
+	3: "note",
+	4: "purpose",
+	5: "repository",
+	6: "wellKnownId",
+	7: "uses",
 }
 
 // Decode decodes RuleProposalsBody from json.
@@ -30123,24 +29973,6 @@ func (s *RuleProposalsBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "contents":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				s.Contents = make([]RuleContentProposal, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem RuleContentProposal
-					if err := elem.Decode(d); err != nil {
-						return err
-					}
-					s.Contents = append(s.Contents, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"contents\"")
-			}
 		case "credential":
 			if err := func() error {
 				s.Credential.Reset()
@@ -30152,7 +29984,7 @@ func (s *RuleProposalsBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"credential\"")
 			}
 		case "hosts":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				s.Hosts = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -30182,7 +30014,7 @@ func (s *RuleProposalsBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"note\"")
 			}
 		case "purpose":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Purpose.Decode(d); err != nil {
 					return err
@@ -30201,6 +30033,26 @@ func (s *RuleProposalsBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"repository\"")
 			}
+		case "wellKnownId":
+			if err := func() error {
+				s.WellKnownId.Reset()
+				if err := s.WellKnownId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wellKnownId\"")
+			}
+		case "uses":
+			if err := func() error {
+				s.Uses.Reset()
+				if err := s.Uses.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"uses\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -30211,7 +30063,7 @@ func (s *RuleProposalsBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00101010,
+		0b00010100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -30497,6 +30349,165 @@ func (s RuleTestStage) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RuleTestStage) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RuleUsesProposal) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RuleUsesProposal) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("covers")
+		e.Bool(s.Covers)
+	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
+	{
+		if s.Refused.Set {
+			e.FieldStart("refused")
+			s.Refused.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("uses")
+		e.ArrStart()
+		for _, elem := range s.Uses {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfRuleUsesProposal = [4]string{
+	0: "covers",
+	1: "reason",
+	2: "refused",
+	3: "uses",
+}
+
+// Decode decodes RuleUsesProposal from json.
+func (s *RuleUsesProposal) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RuleUsesProposal to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "covers":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Bool()
+				s.Covers = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"covers\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "refused":
+			if err := func() error {
+				s.Refused.Reset()
+				if err := s.Refused.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"refused\"")
+			}
+		case "uses":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				s.Uses = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Uses = append(s.Uses, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"uses\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RuleUsesProposal")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRuleUsesProposal) {
+					name = jsonFieldsNameOfRuleUsesProposal[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RuleUsesProposal) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RuleUsesProposal) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

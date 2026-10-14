@@ -70,7 +70,7 @@ func (m *Model) narrate() (narration, tea.Cmd) {
 // nextNarration waits for the feed's next line. It re-arms itself, so one call
 // follows an operation from its first step to its last.
 func (m *Model) nextNarration(feed narration) tea.Cmd {
-	return func() tea.Msg {
+	return listen(func() tea.Msg {
 		text, ok := <-feed.ch
 		if !ok {
 			// The operation finished and closed its feed. Nothing to report and
@@ -78,7 +78,7 @@ func (m *Model) nextNarration(feed narration) tea.Cmd {
 			return nil
 		}
 		return narrationMsg{source: feed, text: text}
-	}
+	})
 }
 
 // narrated reports one line, and asks for the next.
@@ -134,7 +134,8 @@ func (m *Model) watchProvisioning(sandboxID string) tea.Cmd {
 		// is the signal the waiting dialog takes itself down on.
 		return provisioningDoneMsg{sandboxID: sandboxID}
 	}
-	return tea.Batch(watch, next)
+	// The watch follows the discobox for as long as it has something to say.
+	return tea.Batch(listen(watch), next)
 }
 
 // provisioningDoneMsg says a discobox has nothing left to report, so anything

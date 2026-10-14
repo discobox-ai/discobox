@@ -810,29 +810,18 @@ func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
 }
 
-// The wider uses a model wrote for an approval rule, narrower first. They authorize nothing; each
-// list is judged, and read by a person, before it becomes a rule.
+// The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
+// any target of its kind. They authorize nothing; they are judged, and read and edited by a person,
+// before they become a rule.
 // Ref: #/components/schemas/JudgeProposal
 type JudgeProposal struct {
-	// The same kind of work across the resource.
-	UsesAcrossResource []string `json:"usesAcrossResource"`
 	// The same work on any target of its kind.
 	UsesAnyTarget []string `json:"usesAnyTarget"`
-}
-
-// GetUsesAcrossResource returns the value of UsesAcrossResource.
-func (s *JudgeProposal) GetUsesAcrossResource() []string {
-	return s.UsesAcrossResource
 }
 
 // GetUsesAnyTarget returns the value of UsesAnyTarget.
 func (s *JudgeProposal) GetUsesAnyTarget() []string {
 	return s.UsesAnyTarget
-}
-
-// SetUsesAcrossResource sets the value of UsesAcrossResource.
-func (s *JudgeProposal) SetUsesAcrossResource(val []string) {
-	s.UsesAcrossResource = val
 }
 
 // SetUsesAnyTarget sets the value of UsesAnyTarget.

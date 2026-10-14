@@ -11,7 +11,7 @@ it.
 | File | What it holds |
 | --- | --- |
 | `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
-| `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the wider uses of an approval rule. |
+| `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the uses a person starts an approval rule from — the same work on any target of its kind. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
@@ -89,13 +89,13 @@ the control plane compares with the asking discobox's primary source, so no
 model reads it and nothing here describes a discobox.
 
 **A proposal is written, never decided** (`propose.go`, ADR 26-10-12-330 §7).
-The wider uses of a rule a person may choose are a model's to write, as a
-typed job like any other here: its own system prompt and schema, no tools, and
-a decode as strict as `Decode`. The request's uses are data in it. It writes
-sentences only — two lists of uses — and `ProposalSystem` has it keep every
-limit a use states. What it writes authorizes nothing: the control plane puts
-each list to the judge as the job a rule would later ask, and a person reads
-it, before it is a rule.
+The uses a person starts a rule from are a model's to write, as a typed job
+like any other here: its own system prompt and schema, no tools, and a decode
+as strict as `Decode`. The request's uses are data in it. It writes sentences
+only — one list, the same work on any target of its kind (`usesAnyTarget`) —
+and `ProposalSystem` has it keep every limit a use states. What it writes
+authorizes nothing: the control plane puts it to the judge as the job a rule
+would later ask, and a person reads and edits it, before it is a rule.
 
 **Guidance is the trusted side's.** A request names what a pool recognized it
 as (`Request.Protocol`, `Request.Endpoint`); the words that go with a name are
@@ -192,8 +192,8 @@ harness's judge model, and run it against every harness that judges.
 and counts what it was unsure of and what it refused alone on a case a correct
 judge does not refuse; change a question or a threshold there and run it.
 A proposer case has the wrapper write a proposal (`ProposalSystem`) and the
-same judge score it: each level covers its request, the wider uses cover the
-narrower, and no level covers a control.
+same judge score it: the written uses, and the uses as asked, cover the
+request, and neither covers a control.
 
 **A job says beside its request whether the judge may still ask.** `Prompt`
 derives `BodyCanBeShown` and `AsksLeft` — a request job before its last round,

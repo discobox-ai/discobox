@@ -75,10 +75,12 @@ a discobox of these repositories, is approved without asking. It holds:
 - **a lifetime cap** for the grants it mints, and optionally its own expiry;
 - who made it, and whether it is enabled.
 
-A person makes one two ways, and both make the same thing:
+A person makes one three ways, and all make the same thing:
 
 - **Answering a request with "auto approve"**, which proposes rules (§7),
   creates the one chosen, and approves the request under it, in one write.
+- **From a grant** a request was approved with, which proposes the rule that
+  request's auto approve would have (§7), and makes it directly.
 - **Directly** (`discobox secret rule create`), as a pre-approval is made.
 
 The sandbox role has no rule routes. A discobox never makes, edits, or reads
@@ -218,61 +220,68 @@ On a default server nothing changes: `judgeCommands` already keeps a judge.
 On a server with both switches off, a project's first rule brings its judge
 up, and nothing but rules is put to it.
 
-### 7. "Auto approve" offers the asking discobox's repository, and proposes uses at three levels
+### 7. "Auto approve" offers repositories, and proposes uses a person edits
 
-Choosing auto approve on a request asks the server for proposals.
+Choosing auto approve on a request asks the server for a proposal.
 
-**Which discoboxes** has two answers, and no model writes either:
+**Which discoboxes** has three answers, and no model writes any:
 
 1. **Discoboxes of this request's repository** — the asking discobox's (§2),
    which the answer names. Offered only when it has one.
-2. **Every discobox in this project.**
+2. **Discoboxes of repositories the person chooses or names** — the
+   repositories the client knows for the project, the asking discobox's
+   ticked to start with, and any typed.
+3. **Every discobox in this project.**
 
-**Content** comes at three levels, narrowest first.
-
-1. **As asked** — the request's uses, verbatim. No model.
-2. **The same work on any target of its kind** — placeholders where the
-   request named one instance: issue 42 becomes any issue in that
-   repository; `discobox/fix-foo` becomes any `discobox/<slug>` branch.
-3. **The same kind of work across the resource** — writing issues in that
-   repository; delivering pull requests from any branch but `main`.
-
-Levels 2 and 3 are written by a model, as a typed **proposal job** in the
-`judge` package: its own system prompt, schema and strict decode, put to the
+**Content** is one set of uses, written by a model: **the same work on any
+target of its kind** — placeholders where the request named one instance:
+issue 42 becomes any issue in that repository; `discobox/fix-foo` becomes any
+`discobox/<slug>` branch. It is a typed **proposal job** in the `judge`
+package: its own system prompt, schema and strict decode, put to the
 project's judge discobox with `--no-tools`. The request's uses are data in
-it. Every `never …` limit a use states is kept at every level. The proposer
-writes sentences only; credential, hosts and purpose are copied from the
-request by code, never generated.
+it. Every `never …` limit a use states is kept. The proposer writes sentences
+only; credential, hosts and purpose are copied from the request by code,
+never generated.
 
-The person picks which discoboxes and one content, then the lifetime, on the
-steps the approval dialog already has. The card shows the rule's full text:
-that text is what is being approved, and a generated sentence nobody read is
-the agent's ask promoted to authority.
+The person reads the written uses whole and edits them — a sentence changed,
+added or removed — before choosing the lifetime, on the steps the approval
+dialog already has. The card shows the rule's full text: that text is what is
+being approved, and a generated sentence nobody read is the agent's ask
+promoted to authority.
 
 Where no model can write (Jev with `jevUnsure: refuse`, or no judge yet on a
-server that judges nothing else), the uses as asked are offered alone and
-wider ones can be written by hand.
+server that judges nothing else), or what it wrote does not cover the
+request (§8), the person starts from the uses as asked, and is told why.
 
-### 8. A proposal is offered only once the judge has found it covers the request
+**From a grant** the proposal is the same one, made from the request the
+grant answered (found by the grant it records), but written from the uses the
+grant approved — which approving may have changed — and for the grant's
+hosts and purpose. They are judged against that request (§8), so the verdict
+says whether the rule would have approved this grant. The repository offered
+is the asking discobox's, absent when it has none or is gone. Nothing is
+approved by it: the request is already answered, and the rule is made as one
+made directly is, tested on what is pending from then on. A grant that names
+no uses, and one whose request is not on record, have nothing to propose
+from.
 
-Each content candidate is put to the judge as the exact job §4 would later
-ask, on the path that job takes: against the request's uses (§5).
+### 8. What is written is judged before it is shown
 
-- Only a candidate the judge says covers is offered. One it does not is
-  shown as failed, with the reason, and cannot be chosen.
-- Level 1 is tested too. A judge that will not find sentences within
-  themselves is a rule that will never approve a repeat ask, and that is
-  worth knowing before it is made.
-- Choosing a candidate approves the request under the verdict already on
-  record. Edited text is judged again before it is accepted.
+The written uses are put to the judge as the exact job §4 would later ask,
+on the path that job takes: against the request's uses (§5). The verdict —
+covers, or does not, with the reason — is shown with them.
+
+- Uses that cover are what the person starts from. Ones that do not are shown
+  with the reason, and the person starts from the uses as asked instead.
+- Uses chosen as written approve the request under the verdict already on
+  record. Edited text is no longer what the verdict was about, and is judged
+  again before the rule is accepted.
 - A rule made from a request is held to the request's own discobox as well:
   repositories it is not of are refused, as uses that do not cover it are.
 
 `test/judge-evals` gains rule cases recorded from the three skills' real
-asks, with controls each level must not cover (another repository, a push to
-`main`, a merge). Proposer cases are scored by the same judge: each level
-covers its request, each wider level covers the narrower, and no level covers
-a control.
+asks, with controls a rule must not cover (another repository, a push to
+`main`, a merge). Proposer cases are scored by the same judge: the written
+uses, and the uses as asked, cover the request, and neither covers a control.
 
 ### 9. A rule may hand on a gate or a delegation, because a rule is a person's
 
@@ -391,7 +400,7 @@ did not write, placed where it can argue for itself.
   judges nothing.
 - The approval dialog gains the auto-approve path; `discobox secret request
   approve` and `discobox secret rule` do the same acts from the CLI.
-- Proposing costs one model call and up to three judge calls, paid when a
+- Proposing costs one model call and one judge call, paid when a
   person asks for it. Each request from a discobox a rule is for costs one
   content job per rule until one covers it. Which discoboxes a rule is for
   costs nothing: it is a comparison.

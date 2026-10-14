@@ -387,7 +387,7 @@ func (m *Model) armBannerPulse() tea.Cmd {
 }
 
 func bannerPulseTick(gen int) tea.Cmd {
-	return tea.Tick(bannerPulseInterval, func(time.Time) tea.Msg {
+	return tick(bannerPulseInterval, func(time.Time) tea.Msg {
 		return bannerPulseMsg{gen: gen}
 	})
 }

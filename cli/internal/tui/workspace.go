@@ -234,7 +234,7 @@ func (m *Model) workspaceForward(msg workspaceForwardMsg) tea.Cmd {
 // context ends or the channel closes.
 func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
 	ctx := m.ctx
-	return func() tea.Msg {
+	return listen(func() tea.Msg {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -244,7 +244,7 @@ func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
 			}
 			return workspaceForwardChangedMsg{gen: gen}
 		}
-	}
+	})
 }
 
 // forwardedPorts is what the header draws its arrows from: the sandbox port a
@@ -293,7 +293,7 @@ func (m *Model) listExecs(gen int) tea.Cmd {
 // off-switch: detaching bumps it, and a tick from a workspace that is gone is
 // dropped rather than answered.
 func (m *Model) workspaceTick(gen int) tea.Cmd {
-	return tea.Tick(workspacePollEvery, func(time.Time) tea.Msg {
+	return tick(workspacePollEvery, func(time.Time) tea.Msg {
 		return workspaceTickMsg{gen: gen}
 	})
 }

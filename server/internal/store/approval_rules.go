@@ -119,6 +119,26 @@ func (s *Store) GetSecretRequestByID(ctx context.Context, requestID string) (*mo
 	return firstByID[model.SecretRequest](read, "id", requestID)
 }
 
+// GetSecretRequestByGrant reads the request a grant was minted to answer,
+// which approving it recorded on the request. A grant somebody minted without
+// a request — and one whose request is no longer on record — has none, and
+// is ErrNotFound.
+func (s *Store) GetSecretRequestByGrant(ctx context.Context, projectID, grantID string) (*model.SecretRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.SecretRequest
+	if err := read.Where("project_id = ? AND grant_id = ?", projectID, grantID).
+		Order("created_at DESC").Limit(1).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, ErrNotFound
+	}
+	return &out[0], nil
+}
+
 // QuestionRecordedUnder reports whether a rule already has a verdict of its
 // own for a question, so an answer reused for it is recorded under it once.
 func (s *Store) QuestionRecordedUnder(ctx context.Context, projectID, sandboxID, requestID, digest, ruleID string) (bool, error) {

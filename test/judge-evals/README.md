@@ -43,11 +43,10 @@ a refusal: the evidence against the bar Jev's no is read at
 
 A **proposer case** (`propose-*`) has a `proposal` — the uses a request asked
 for, with its credential and hosts — in place of a `job`, and `controls`:
-asks its rule must not cover. The wrapper writes the rule's wider uses
-(`judge.ProposalSystem`), and the same judge scores what
-it wrote, as the control plane does before a person may choose any of it: each
-level covers the request, the wider uses cover the narrower, and no level
-covers a control. The run is an `allow` when every check held, a `refuse` when
+asks its rule must not cover. The wrapper writes the rule's uses — the same
+work on any target of its kind (`judge.ProposalSystem`) — and the same judge
+scores what it wrote, as the control plane does before a person reads it: the
+uses, and the uses as asked, cover the request, and neither covers a control. The run is an `allow` when every check held, a `refuse` when
 one did not — the report names it — and `invalid` when the wrapper wrote no
 proposal. With `-jev` the wrapper still writes and Jev scores, which is who
 does each on a server that judges with Jev.

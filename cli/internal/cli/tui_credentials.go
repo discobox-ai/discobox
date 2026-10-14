@@ -587,6 +587,34 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 	if err != nil {
 		return tui.RuleProposals{}, err
 	}
+	return ruleProposals(body), nil
+}
+
+// GrantRuleProposals asks the grant's server for the rule auto approve would
+// have proposed from the request the grant answered, written from the uses
+// the grant approved. Slow for the same reason, and drawn safe the same way.
+func (d *apiDataSource) GrantRuleProposals(ctx context.Context, server, grantID string) (tui.RuleProposals, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	res, err := d.client.ProposeApprovalRuleFromGrant(ctx, apiclientgen.ProposeApprovalRuleFromGrantParams{
+		ProjectId: d.projectID,
+		GrantId:   grantID,
+	})
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	body, err := expectResponse[apimodel.RuleProposalsBody](res)
+	if err != nil {
+		return tui.RuleProposals{}, err
+	}
+	return ruleProposals(body), nil
+}
+
+// ruleProposals is a proposal as the window draws it, every sentence made
+// safe to draw.
+func ruleProposals(body *apimodel.RuleProposalsBody) tui.RuleProposals {
 	hosts := make([]string, 0, len(body.Hosts))
 	for _, host := range body.Hosts {
 		hosts = append(hosts, terminalSafe(host))
@@ -594,26 +622,31 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 	out := tui.RuleProposals{
 		// The name an agent asked under, for an ask that names no ID.
 		Credential: terminalSafe(strings.TrimSpace(body.Credential.Or(""))),
-		Hosts:      hosts,
-		Delegate:   body.Purpose == apiclientgen.RuleProposalsBodyPurposeDelegate,
-		Note:       terminalSafe(strings.TrimSpace(body.Note.Or(""))),
+		// An ID, compared with the secrets' marks and sent back; never drawn
+		// unchecked, since the well-known registry names what is drawn.
+		WellKnownID: strings.TrimSpace(body.WellKnownId.Or("")),
+		Hosts:       hosts,
+		Delegate:    body.Purpose == apiclientgen.RuleProposalsBodyPurposeDelegate,
+		Note:        terminalSafe(strings.TrimSpace(body.Note.Or(""))),
 		// Derived from a source URL a client reported when the discobox was
 		// created, so it is drawn as text like the rest.
-		Repository: terminalSafe(strings.TrimSpace(body.Repository.Or(""))),
+		Repository:       terminalSafe(strings.TrimSpace(body.Repository.Or(""))),
+		RepositoryStored: strings.TrimSpace(body.Repository.Or("")),
 	}
-	for _, content := range body.Contents {
-		uses := make([]string, 0, len(content.Uses))
-		for _, use := range content.Uses {
+	if written, ok := body.Uses.Get(); ok {
+		uses := make([]string, 0, len(written.Uses))
+		for _, use := range written.Uses {
 			uses = append(uses, terminalSafe(strings.TrimSpace(use)))
 		}
-		out.Contents = append(out.Contents, tui.RuleContentProposal{
-			Level:  int(content.Level),
-			Uses:   uses,
-			Covers: content.Covers,
-			Reason: terminalSafe(strings.TrimSpace(content.Reason.Or(""))),
-		})
+		out.Written = &tui.WrittenUses{
+			Uses:    uses,
+			Stored:  written.Uses,
+			Covers:  written.Covers,
+			Reason:  terminalSafe(strings.TrimSpace(written.Reason.Or(""))),
+			Refused: terminalSafe(strings.TrimSpace(written.Refused.Or(""))),
+		}
 	}
-	return out, nil
+	return out
 }
 
 // Rules lists the project's approval rules, newest first (ADR 26-10-12-330
@@ -686,6 +719,9 @@ func (d *apiDataSource) CreateRule(ctx context.Context, server string, rule tui.
 	}
 	if rule.EveryDiscobox {
 		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+	}
+	if rule.Delegate {
+		body.SetPurpose(apiclientgen.NewOptCreateApprovalRuleBodyPurpose(apiclientgen.CreateApprovalRuleBodyPurposeDelegate))
 	}
 	// Always said, zero included: zero is the secret's own limit, where
 	// leaving it out would be the server's hour.

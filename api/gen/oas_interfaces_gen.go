@@ -417,6 +417,10 @@ type MintSandboxAgentStatusTokensRes interface {
 	mintSandboxAgentStatusTokensRes()
 }
 
+type ProposeApprovalRuleFromGrantRes interface {
+	proposeApprovalRuleFromGrantRes()
+}
+
 type ProposeApprovalRulesRes interface {
 	proposeApprovalRulesRes()
 }

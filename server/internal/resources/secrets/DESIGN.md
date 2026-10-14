@@ -391,20 +391,32 @@ flowchart LR
 - **A rule may hand on a gate or a delegation** (§9), which only a person
   otherwise approves: a rule is that person's approval given in advance.
 
-**"Auto approve" proposes, and offers only what the judge found to cover**
-(`ProposeApprovalRules`, §§7–8). Three lists of uses, narrowest first. The
-narrowest needs no model: the uses as asked. The wider two are written by the
-project's judge discobox (`JudgeService.ProposeRule`); the credential, hosts
-and purpose are copied from the request by code. Every candidate is then put
-to the judge as the job a rule would later ask, and its verdict recorded, so
-choosing one approves under the verdict on record and a failed one is shown
-with its reason. A candidate that could not be a rule's (`ruleUsesProblem`) is
-shown as failed without being judged. Edited text is judged again by the
-approve (`ruleFromApproval`), which refuses a rule that would not cover the
-request it is made from. Where no model can write, the uses as asked are
-offered alone, with why. The answer also names the asking discobox's
-repository (`repository`, absent when it has none), which is what a client
-offers a rule for; nothing about it is written or judged.
+**"Auto approve" proposes uses, judged before they are shown**
+(`ProposeApprovalRules`, §§7–8). One set: the request's uses written by the
+project's judge discobox as the same work on any target of its kind
+(`JudgeService.ProposeRule`); the credential, hosts and purpose are copied
+from the request by code. What was written is put to the judge as the job a
+rule would later ask, and its verdict recorded and returned with it
+(`RuleProposalsBody.uses`: the uses, `covers`, and the reason), so uses chosen
+as written approve under the verdict on record. Uses that could not be a
+rule's (`ruleUsesProblem`) are returned not covering, unjudged. A person edits
+them before the rule is made; edited text is judged again by the approve
+(`ruleFromApproval`), which refuses a rule that would not cover the request it
+is made from. Where no model can write there are no uses, and the note says
+why; the uses as asked are the client's to start from. The answer also names
+the asking discobox's repository (`repository`, absent when it has none),
+which is what a client offers a rule for; nothing about it is written or
+judged.
+
+**A grant proposes the rule its request would have**
+(`ProposeApprovalRuleFromGrant`, §7): the same proposal (`proposeRule`, from
+a `ruleSource`), from the request the grant answered
+(`GetSecretRequestByGrant`, by the `grantId` approving recorded on it) but
+written from the grant's approved uses and for its hosts and purpose, and
+judged against that request. The request need not be pending, and its
+discobox need not still exist (then no repository). A grant with no uses, or
+no request on record, is refused. Nothing is approved; the client makes the
+rule as any other is made.
 
 ## The agent credentials broker
 

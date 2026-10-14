@@ -3686,6 +3686,7 @@ func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
 func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
+func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
@@ -7191,29 +7192,18 @@ func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
 }
 
-// The wider uses a model wrote for an approval rule, narrower first. They authorize nothing; each
-// list is judged, and read by a person, before it becomes a rule.
+// The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
+// any target of its kind. They authorize nothing; they are judged, and read and edited by a person,
+// before they become a rule.
 // Ref: #/components/schemas/JudgeProposal
 type JudgeProposal struct {
-	// The same kind of work across the resource.
-	UsesAcrossResource []string `json:"usesAcrossResource"`
 	// The same work on any target of its kind.
 	UsesAnyTarget []string `json:"usesAnyTarget"`
-}
-
-// GetUsesAcrossResource returns the value of UsesAcrossResource.
-func (s *JudgeProposal) GetUsesAcrossResource() []string {
-	return s.UsesAcrossResource
 }
 
 // GetUsesAnyTarget returns the value of UsesAnyTarget.
 func (s *JudgeProposal) GetUsesAnyTarget() []string {
 	return s.UsesAnyTarget
-}
-
-// SetUsesAcrossResource sets the value of UsesAcrossResource.
-func (s *JudgeProposal) SetUsesAcrossResource(val []string) {
-	s.UsesAcrossResource = val
 }
 
 // SetUsesAnyTarget sets the value of UsesAnyTarget.
@@ -13062,6 +13052,52 @@ func (o OptRuleTestStage) Get() (v RuleTestStage, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRuleTestStage) Or(d RuleTestStage) RuleTestStage {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRuleUsesProposal returns new OptRuleUsesProposal with value set to v.
+func NewOptRuleUsesProposal(v RuleUsesProposal) OptRuleUsesProposal {
+	return OptRuleUsesProposal{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRuleUsesProposal is optional RuleUsesProposal.
+type OptRuleUsesProposal struct {
+	Value RuleUsesProposal
+	Set   bool
+}
+
+// IsSet returns true if OptRuleUsesProposal was set.
+func (o OptRuleUsesProposal) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRuleUsesProposal) Reset() {
+	var v RuleUsesProposal
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRuleUsesProposal) SetTo(v RuleUsesProposal) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRuleUsesProposal) Get() (v RuleUsesProposal, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRuleUsesProposal) Or(d RuleUsesProposal) RuleUsesProposal {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19098,73 +19134,15 @@ type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 
-// One list of uses a person may choose for an approval rule, already tested against the uses the
-// request asked for.
-// Ref: #/components/schemas/RuleContentProposal
-type RuleContentProposal struct {
-	// Whether the judge found every use the request asked for within these. Only uses that cover may be
-	// chosen as written.
-	Covers bool `json:"covers"`
-	// How wide: 1 as asked, 2 the same work on any target of its kind, 3 the same kind of work across
-	// the resource.
-	Level int64 `json:"level"`
-	// What the judge said.
-	Reason OptString `json:"reason"`
-	// The rule's uses at this level.
-	Uses []string `json:"uses"`
-}
-
-// GetCovers returns the value of Covers.
-func (s *RuleContentProposal) GetCovers() bool {
-	return s.Covers
-}
-
-// GetLevel returns the value of Level.
-func (s *RuleContentProposal) GetLevel() int64 {
-	return s.Level
-}
-
-// GetReason returns the value of Reason.
-func (s *RuleContentProposal) GetReason() OptString {
-	return s.Reason
-}
-
-// GetUses returns the value of Uses.
-func (s *RuleContentProposal) GetUses() []string {
-	return s.Uses
-}
-
-// SetCovers sets the value of Covers.
-func (s *RuleContentProposal) SetCovers(val bool) {
-	s.Covers = val
-}
-
-// SetLevel sets the value of Level.
-func (s *RuleContentProposal) SetLevel(val int64) {
-	s.Level = val
-}
-
-// SetReason sets the value of Reason.
-func (s *RuleContentProposal) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetUses sets the value of Uses.
-func (s *RuleContentProposal) SetUses(val []string) {
-	s.Uses = val
-}
-
 // Ref: #/components/schemas/RuleProposalsBody
 type RuleProposalsBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Uses the rule may approve, narrowest first.
-	Contents []RuleContentProposal `json:"contents"`
 	// The credential a rule made from this request would approve, copied from the request.
 	Credential OptString `json:"credential"`
 	// The hosts a rule made from this request would name, copied from the request.
 	Hosts []string `json:"hosts"`
-	// Why only the uses as asked are offered, when no model could write the wider ones.
+	// Why there are no uses written, when no model could write them.
 	Note OptString `json:"note"`
 	// What a rule made from this request would approve the credential for, copied from the request.
 	Purpose RuleProposalsBodyPurpose `json:"purpose"`
@@ -19172,16 +19150,16 @@ type RuleProposalsBody struct {
 	// request may be for. Absent when it has none (a local source with no remote), and then only a rule
 	// for every discobox answers it.
 	Repository OptString `json:"repository"`
+	// The well-known credential the request asked for by ID, when it named one. A rule made from this
+	// proposal is for that ID, and is answered with the secret marked for it; the uses were judged as a
+	// rule for it.
+	WellKnownId OptString           `json:"wellKnownId"`
+	Uses        OptRuleUsesProposal `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
 func (s *RuleProposalsBody) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetContents returns the value of Contents.
-func (s *RuleProposalsBody) GetContents() []RuleContentProposal {
-	return s.Contents
 }
 
 // GetCredential returns the value of Credential.
@@ -19209,14 +19187,19 @@ func (s *RuleProposalsBody) GetRepository() OptString {
 	return s.Repository
 }
 
+// GetWellKnownId returns the value of WellKnownId.
+func (s *RuleProposalsBody) GetWellKnownId() OptString {
+	return s.WellKnownId
+}
+
+// GetUses returns the value of Uses.
+func (s *RuleProposalsBody) GetUses() OptRuleUsesProposal {
+	return s.Uses
+}
+
 // SetSchema sets the value of Schema.
 func (s *RuleProposalsBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetContents sets the value of Contents.
-func (s *RuleProposalsBody) SetContents(val []RuleContentProposal) {
-	s.Contents = val
 }
 
 // SetCredential sets the value of Credential.
@@ -19244,7 +19227,18 @@ func (s *RuleProposalsBody) SetRepository(val OptString) {
 	s.Repository = val
 }
 
-func (*RuleProposalsBody) proposeApprovalRulesRes() {}
+// SetWellKnownId sets the value of WellKnownId.
+func (s *RuleProposalsBody) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
+}
+
+// SetUses sets the value of Uses.
+func (s *RuleProposalsBody) SetUses(val OptRuleUsesProposal) {
+	s.Uses = val
+}
+
+func (*RuleProposalsBody) proposeApprovalRuleFromGrantRes() {}
+func (*RuleProposalsBody) proposeApprovalRulesRes()         {}
 
 // What a rule made from this request would approve the credential for, copied from the request.
 type RuleProposalsBodyPurpose string
@@ -19396,6 +19390,64 @@ func (s *RuleTestStage) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// The uses the project's judge wrote for an approval rule from the uses a request asked for — the
+// same work on any target of its kind — already put to the judge as the question the rule would
+// later ask about this request. A person reads and may edit them before they become a rule; edited,
+// they are judged again on the approve.
+// Ref: #/components/schemas/RuleUsesProposal
+type RuleUsesProposal struct {
+	// Whether the judge found every use the request asked for within these. False when the judge was not
+	// asked.
+	Covers bool `json:"covers"`
+	// What the judge said. Absent when it was not asked.
+	Reason OptString `json:"reason"`
+	// Why the uses as written could not be a rule's — a use on two lines, too long, too many — so
+	// the judge was not asked. Absent when it was.
+	Refused OptString `json:"refused"`
+	// The uses written, each one sentence.
+	Uses []string `json:"uses"`
+}
+
+// GetCovers returns the value of Covers.
+func (s *RuleUsesProposal) GetCovers() bool {
+	return s.Covers
+}
+
+// GetReason returns the value of Reason.
+func (s *RuleUsesProposal) GetReason() OptString {
+	return s.Reason
+}
+
+// GetRefused returns the value of Refused.
+func (s *RuleUsesProposal) GetRefused() OptString {
+	return s.Refused
+}
+
+// GetUses returns the value of Uses.
+func (s *RuleUsesProposal) GetUses() []string {
+	return s.Uses
+}
+
+// SetCovers sets the value of Covers.
+func (s *RuleUsesProposal) SetCovers(val bool) {
+	s.Covers = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RuleUsesProposal) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetRefused sets the value of Refused.
+func (s *RuleUsesProposal) SetRefused(val OptString) {
+	s.Refused = val
+}
+
+// SetUses sets the value of Uses.
+func (s *RuleUsesProposal) SetUses(val []string) {
+	s.Uses = val
 }
 
 // What an SSH client needs to verify this server. There is no address to discover; SSH reaches the

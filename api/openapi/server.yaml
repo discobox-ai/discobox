@@ -4772,13 +4772,8 @@ components:
             type: object
         JudgeProposal:
             additionalProperties: false
-            description: The wider uses a model wrote for an approval rule, narrower first. They authorize nothing; each list is judged, and read by a person, before it becomes a rule.
+            description: The uses a model wrote for an approval rule from the uses a request asked for, as the same work on any target of its kind. They authorize nothing; they are judged, and read and edited by a person, before they become a rule.
             properties:
-                usesAcrossResource:
-                    description: The same kind of work across the resource.
-                    items:
-                        type: string
-                    type: array
                 usesAnyTarget:
                     description: The same work on any target of its kind.
                     items:
@@ -4786,7 +4781,6 @@ components:
                     type: array
             required:
                 - usesAnyTarget
-                - usesAcrossResource
             type: object
         JudgeInput:
             additionalProperties: false
@@ -5174,27 +5168,25 @@ components:
                 - ruleId
                 - covered
             type: object
-        RuleContentProposal:
+        RuleUsesProposal:
             additionalProperties: false
-            description: One list of uses a person may choose for an approval rule, already tested against the uses the request asked for.
+            description: The uses the project's judge wrote for an approval rule from the uses a request asked for — the same work on any target of its kind — already put to the judge as the question the rule would later ask about this request. A person reads and may edit them before they become a rule; edited, they are judged again on the approve.
             properties:
                 covers:
-                    description: Whether the judge found every use the request asked for within these. Only uses that cover may be chosen as written.
+                    description: Whether the judge found every use the request asked for within these. False when the judge was not asked.
                     type: boolean
-                level:
-                    description: 'How wide: 1 as asked, 2 the same work on any target of its kind, 3 the same kind of work across the resource'
-                    format: int64
-                    type: integer
                 reason:
-                    description: What the judge said
+                    description: What the judge said. Absent when it was not asked.
+                    type: string
+                refused:
+                    description: Why the uses as written could not be a rule's — a use on two lines, too long, too many — so the judge was not asked. Absent when it was.
                     type: string
                 uses:
-                    description: The rule's uses at this level
+                    description: The uses written, each one sentence
                     items:
                         type: string
                     type: array
             required:
-                - level
                 - uses
                 - covers
             type: object
@@ -5207,11 +5199,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                contents:
-                    description: Uses the rule may approve, narrowest first
-                    items:
-                        $ref: '#/components/schemas/RuleContentProposal'
-                    type: array
                 credential:
                     description: The credential a rule made from this request would approve, copied from the request
                     type: string
@@ -5221,7 +5208,7 @@ components:
                         type: string
                     type: array
                 note:
-                    description: Why only the uses as asked are offered, when no model could write the wider ones
+                    description: Why there are no uses written, when no model could write them
                     type: string
                 purpose:
                     description: What a rule made from this request would approve the credential for, copied from the request
@@ -5232,8 +5219,12 @@ components:
                 repository:
                     description: The repository of the discobox that filed the request, as host/path, which a rule made from this request may be for. Absent when it has none (a local source with no remote), and then only a rule for every discobox answers it.
                     type: string
+                wellKnownId:
+                    description: The well-known credential the request asked for by ID, when it named one. A rule made from this proposal is for that ID, and is answered with the secret marked for it; the uses were judged as a rule for it.
+                    type: string
+                uses:
+                    $ref: '#/components/schemas/RuleUsesProposal'
             required:
-                - contents
                 - hosts
                 - purpose
             type: object
@@ -10306,7 +10297,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
         post:
-            description: Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            description: Has this discobox's harness write the uses a person starts an approval rule from (ADR 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
             operationId: propose-sandbox-rule
             parameters:
                 - description: Project that owns the sandbox.
@@ -11983,9 +11974,45 @@ paths:
             summary: Update an approval rule
             tags:
                 - Secrets
+    /projects/{projectId}/secret-grants/{grantId}/rule-proposals:
+        post:
+            description: Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same proposal auto approve makes from that request, but written from the uses the grant approved and for the grant's hosts and purpose, and put to the judge as the question the rule would have asked of that request. A grant that names no uses, or whose request is not on record, has nothing to propose from. Only a person may ask.
+            operationId: propose-approval-rule-from-grant
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret grant ID
+                  in: path
+                  name: grantId
+                  required: true
+                  schema:
+                    description: Secret grant ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/RuleProposalsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Propose an approval rule from a secret grant
+            tags:
+                - Secrets
     /projects/{projectId}/secret-requests/{requestId}/rule-proposals:
         post:
-            description: Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), as three lists of uses, narrowest first, and the repository of the discobox that asked, which the rule may be for. The narrowest uses, as asked, need no model. The wider ones are written by the project's judge and each is then put to the judge as the question a rule would later ask, so only a candidate found to cover this request may be chosen. Where no model can write, the uses as asked are offered alone. Only a person may ask.
+            description: Proposes an approval rule for a pending agent credential request (ADR 26-10-12-330) — the repository of the discobox that asked, which the rule may be for, and uses the project's judge wrote from the request's — the same work on any target of its kind — put to the judge as the question a rule would later ask, with what it said. Where no model can write, there are no uses and a note says why. Only a person may ask.
             operationId: propose-approval-rules
             parameters:
                 - description: Project ID

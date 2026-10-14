@@ -72,7 +72,7 @@ func (m *Model) autoPush(gen int) tea.Cmd {
 }
 
 func (m *Model) autoPushTick(gen int) tea.Cmd {
-	return tea.Tick(autoPushEvery, func(time.Time) tea.Msg {
+	return tick(autoPushEvery, func(time.Time) tea.Msg {
 		return autoPushTickMsg{gen: gen}
 	})
 }

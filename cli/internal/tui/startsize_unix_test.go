@@ -33,6 +33,15 @@ func (r resizeOnInit) Init() tea.Cmd {
 }
 
 func (r resizeOnInit) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// This is the real runtime, so the window's timers and listeners are
+	// run as the runtime runs them, not left as the test seams hand them
+	// back (TestMain).
+	switch msg := msg.(type) {
+	case timerMsg:
+		return r, tea.Tick(msg.after, msg.fire)
+	case listenerMsg:
+		return r, msg.run
+	}
 	_, cmd := r.Model.Update(msg)
 	return r, cmd
 }

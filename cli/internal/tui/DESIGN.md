@@ -183,23 +183,34 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   edit not yet confirmed included, and the draft keeps it (`ruleDraft.uses`,
   `ruleDraft.repositories`). Leaving the first step closes the flow, or goes
   back to the card an edit was begun on.
-- **a list** (`askLines`, `lines.go`): the lines written above a one-line
-  field, drawn as the input card's rows — `viewItems`, marked as a menu's are,
-  and answered by `dialog.itemPress` rather than the field's action — so a
-  press on a line takes it up as ↑ would, and the wheel walks the list as the
-  keys do (`dialog.keyFirst`). ↑ and ↓ move the field through them; a line
-  taken up is in the field with the cursor at its end and its row says
-  `← in the field below`; Enter puts the
-  edit back in its place, and Enter on a line emptied removes it — the key
-  line says so. Moving off a line keeps what was typed on it, and never
-  removes it; the new line keeps its half-typed text while the field is
-  elsewhere. Enter on the new line, empty, finishes the list, refused when it
-  must have one. Each line carries what it draws and what it sends
-  (`listLine`): a line the server holds is drawn made safe and sent in the
-  server's own text (`Rule.Stored`) until the person changes it, so an edit
-  never rewrites a line nobody touched. The key line puts Esc second, after
-  the one key the position needs most, and is short enough to stay whole at
-  90 columns: a key line is cut from its tail, and the way out must survive.
+- **a list** (`askLines`, `lines.go`): the lines written, then the new line,
+  as the input card's rows — `viewItems`, marked as a menu's are, answered by
+  `dialog.itemPress` rather than the field's action, and drawn in the normal
+  text colour (`dialog.inlineRows`). The line under the cursor is its own
+  editor, in its place (`dialog.editor`, a `textarea` sized by
+  `layoutEditor`): every row of it wrapped and the cursor in it, so a
+  sentence is never echoed in a second field, cut, or scrolled sideways; only
+  the `❯` and the cursor say which line it is. Every line wraps by the
+  editor's own rule at the editor's width (`editorLines`, the column it keeps
+  for the cursor included), so selecting a line never moves where it breaks.
+  A wrapped row is drawn whole
+  while the card has room for it, and one row, scrolling under the cursor,
+  when it does not. The section title holds still ("what it approves",
+  "repositories"). A rule's uses are numbered `1.`, `2.`… right-aligned past
+  nine, the new line the next number, a wrapped line set in under its text
+  (`linesAsk.numbered`, drawn in the menu's key column); repositories are
+  not, since ticks and names are not an order. ↑ and ↓ move between lines,
+  keeping what was typed on the one left; a press on a line takes it up as ↑
+  would, and the wheel walks the list as the keys do (`dialog.keyFirst`).
+  Enter on a line keeps the edit in its place, and on one emptied removes it
+  — the key line says so. Moving off a line never removes it. Enter on the
+  new line, empty, finishes the list, refused when it must have one. Each
+  line carries what it draws and what it sends (`listLine`): a line the
+  server holds is drawn made safe and sent in the server's own text
+  (`Rule.Stored`) until the person changes it, so an edit never rewrites a
+  line nobody touched. The key line puts Esc second, after the one key the
+  position needs most, and is short enough to stay whole at 90 columns: a key
+  line is cut from its tail, and the way out must survive.
 - **the repositories** are one list with picks above its lines
   (`newPickList`, `repositoryList`): every repository the console knows for
   the project — an edited rule's own first, chosen, then those of the
@@ -223,7 +234,20 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   it; the cap always, zero being the secret's own limit; every discobox in so
   many words; and the hosts the last card reads — the well-known
   credential's, or the secret's binding — so the rule stored is the rule
-  read. The purpose is the server's default, to use.
+  read. The purpose is the server's default, to use, except for a rule made
+  of a delegation grant.
+- **a rule made of a grant** (`reviewGrant`'s `n` row, `proposeGrantRule`,
+  `grantRuleProposed`): the grant card offers it when the grant names uses,
+  stands on a secret, and no rule minted it (otherwise the row says why).
+  `DataSource.GrantRuleProposals` is waited on as auto approve's proposal is,
+  Esc stopping it. The draft (`ruleDraft.from`) is a new rule whose
+  credential, hosts and purpose are the grant's — for the well-known ID when
+  its secret answers one — so it starts on which discoboxes, Esc there going
+  back to the grant: the asking discobox's repository ticked, the judge's
+  uses when they cover the request the grant answered and the grant's own
+  otherwise, said on the uses step as auto approve says it (`usesSections`
+  with `grantOrigin`), and each grant as long as this one was given. A
+  delegation grant makes a rule to delegate (`NewRule.Delegate`).
 - **a refusal** comes back whole on a card whose Esc is the step it is about
   (`refusedStep`, read from the server's own words: repositories, uses, the
   cap, the expiry, the credential; anything else is the last card), opened on
@@ -582,31 +606,33 @@ proxy opened, a refresh, and a trust stay a person's each time. It is the same
   two, so a status card is up; Esc cancels the call and goes back, and an
   answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
   raising a dialog on its own.
-- **which discoboxes** (`askAutoDiscoboxes`, through `askDiscoboxes`): two
-  rows and no sentence.
-  "Discoboxes of `<repository>`" — the asking discobox's
-  (`RuleProposals.Repository`), first and under the cursor — and "Every
-  discobox in this project", whose detail says what that does. A discobox with
-  no repository (a local source with no remote) gets the second row alone and
-  a section saying why. Nothing is written by hand and no model wrote
-  anything: the server compares repositories. Every discobox is its own
-  value (`ApprovalRule.EveryDiscobox`), set by that row alone and passed on
-  by the data source only from it; a rule with no repository that did not say
-  it is drawn as `not chosen` and sent saying neither.
-- **which uses** (`askRuleContent`): the proposals narrowest first, each a
-  menu row with its sentences whole and wrapped under its label
-  (`dialog.wrapDetails`): the sentence is what is chosen, and a row cut to "…"
-  would have a rule chosen by its label. A menu that wraps is drawn so only
-  while all of it fits the window; one that does not goes back to a row an
-  item, windowed on the cursor. One that does not cover this request keeps its
-  text, says it failed and why, and its row is disabled. `w` writes the uses
-  by hand, sent as written for the server to judge, as a list (`askLines`,
-  above). The steps after the proposals hand the step before them the
-  approval as it now stands (`askAutoDiscoboxes`, `askRuleContent`), so what
-  was written — half-typed included — rides every step back and forward, and
-  `w` opens on it. The
-  server's `Note` —
-  why only the uses as asked are offered — is here.
+- **which discoboxes** (`askAutoDiscoboxes`, through `askDiscoboxes`): three
+  rows and no sentence. "Discoboxes of `<repository>`" — the asking
+  discobox's (`RuleProposals.Repository`), first and under the cursor;
+  "Discoboxes of repositories you choose or name…", the new/edit rule flow's
+  known-repositories list (`knownRepositories`) with the asker's ticked; and
+  "Every discobox in this project", whose detail says what that does. A
+  discobox with no repository (a local source with no remote) gets the other
+  two and a section saying why. No model wrote anything: the server compares
+  repositories, which are sent in the server's text (`RepositoryStored`,
+  `approval.repositoriesShown` for drawing). Every discobox is its own value
+  (`ApprovalRule.EveryDiscobox`), set by that row alone and passed on by the
+  data source only from it; a rule with no repository that did not say it is
+  drawn as `not chosen` and sent saying neither.
+- **which uses** (`askRuleContent`): one list (`askLines`), not a menu of
+  levels. It opens on the uses the project's judge wrote
+  (`RuleProposals.Written`, the same work on any target of its kind) when the
+  judge found they cover this request, each sentence drawn whole and wrapped
+  (a wrapping menu draws a long label whole too), sent in the server's text
+  until edited; otherwise on the uses as asked, so there is always something
+  to edit. A section says which (`usesSections`): the model's, with the
+  judge's verdict and reason; changed, that the verdict was on the uses as
+  written and the server judges these when the rule is made; or why the list
+  starts from the ask — the model's did not cover it (shown, with the
+  reason), or no model wrote any (the server's `Note`). The steps after the
+  proposals hand the step before them the approval as it now stands
+  (`askAutoDiscoboxes`, `askRuleContent`), so what was written — half-typed
+  included — rides every step back and forward.
 - **the rule** (`reviewRule`), after the lifetime and its limit question: the
   full text — credential, hosts, purpose, what answers it, the repositories it
   is for, every use, the lifetime, and any change to the secret — as a y/n
@@ -3184,3 +3210,22 @@ go test ./internal/tui -run TestFrames -v
 
 renders every state — prompt, list, multiselect, visual, archived, action menu,
 options, the create card, harnesses, the config card, help — to the test log.
+
+## Testing seams
+
+Every command the window returns either does work and returns, or waits by
+design. The waits go through two package seams, so a test can tell them from
+work without timing anything:
+
+- **`tick`** sets every timer (it is `tea.Tick`).
+- **`listen`** wraps every command that waits for something to happen — a
+  terminal's next output (`termpane.WithListen`) or event, the forward's
+  events, an audit or narration feed, a follow or a provisioning watch.
+
+In tests (`TestMain`) the two hand back markers (`timerMsg`, `listenerMsg`)
+instead of waiting. `drain` runs every other command to its end, bounded by
+`commandWait`, and fails the test naming one that does not finish; it never
+fires a timer or runs a listener. The driver, which stands in for the runtime, fires timers when due
+and runs listeners as the runtime would. The cursor's blink, the one timer a
+widget sets itself, is named in `libraryTimers`.
+

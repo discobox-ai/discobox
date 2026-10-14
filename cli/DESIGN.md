@@ -2748,10 +2748,11 @@ A repository is sent as typed: a URL, git's scp-like form, or `host/path`. The
 server reads it, stores it as `host/path`, and refuses a bare `org/repo`.
 
 `secret request propose` prints what auto approve offers — the repository of
-the discobox that asked, and three lists of uses, each with what the judge
-made of it — and makes nothing. The CLI never chooses a level for the person:
-a sentence becomes a rule only by being passed to `--rule-use`, so the text
-approved is text they handled.
+the discobox that asked, and the uses the project's judge wrote (the same
+work on any target of its kind) with what the judge made of them — and makes
+nothing. A written sentence becomes a rule only by being passed to
+`--rule-use`, so the text approved is text the person handled; with no
+`--rule-use` the rule approves the uses as asked.
 
 - A proposal is a model's sentence written from an agent's ask, and a rule's
   uses may be one too: both are shown whole and through `terminalSafe`, as a

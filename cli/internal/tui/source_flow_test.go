@@ -212,7 +212,8 @@ func TestCreatingWithOneFolderShownOpensTheCardOnIt(t *testing.T) {
 		t.Fatalf("runs = %v, want the create held until the card is answered", ds.runs)
 	}
 	send(t, m, keyPress("enter"))
-	if m.dialog != nil {
+	// The start's own waiting card may be up, its watch not run: no question.
+	if m.dialog != nil && m.dialog.kind != dlgStatus {
 		t.Fatalf("dialog = %q, want the card answered by Enter", m.dialog.title)
 	}
 	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {

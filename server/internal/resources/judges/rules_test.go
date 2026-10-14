@@ -259,7 +259,7 @@ func proposalJob() judge.ProposalJob {
 // no proposal.
 func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	ctx := context.Background()
-	const good = `{"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
+	const good = `{"usesAnyTarget":["read any issue <number> in org/repo"]}`
 	service, appStore, sandboxes := newJudgeTest(t)
 	defaultHarness(t, appStore, "codex", "sha256:one")
 	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
@@ -273,7 +273,7 @@ func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProposeRule() error = %v", err)
 	}
-	if len(proposal.UsesAnyTarget) != 1 || len(proposal.UsesAcrossResource) != 1 {
+	if len(proposal.UsesAnyTarget) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	if path, _ := fake.path.Load().(string); !strings.HasSuffix(path, "/judge/proposal") {
@@ -284,7 +284,7 @@ func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 		t.Fatalf("job = %+v, want the request's uses as data, with what they are about", job)
 	}
 
-	service.SetLeases(newProposingJudge(t, `{"usesAnyTarget":["c"],"usesAcrossResource":["d"],"hosts":["evil.example"]}`))
+	service.SetLeases(newProposingJudge(t, `{"usesAnyTarget":["c"],"hosts":["evil.example"]}`))
 	if _, err := service.ProposeRule(ctx, "project-1", proposalJob()); err == nil {
 		t.Fatal("a proposal carrying a field nobody defined was accepted")
 	}

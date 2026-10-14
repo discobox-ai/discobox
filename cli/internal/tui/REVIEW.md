@@ -86,3 +86,14 @@
   left on the primary screen surface again on the way out or around a
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a
   builder does not.
+
+## Tests
+
+- **A command that waits by design goes through `listen`; a timer through
+  `tick`.** Never `tea.Tick`, and never a bare read of a channel, a select or
+  a follow in a returned command: a test runs every other command to its end
+  and fails, naming it, on one that does not finish (`TestABlockingCommandIsNamed`).
+  Nothing that does finite work is wrapped, or a test never sees it work.
+- **A driver test waits for what it asserts.** A fake records a call from the
+  command's goroutine, before the window has the answer: wait on the window's
+  state, not on the fake's.

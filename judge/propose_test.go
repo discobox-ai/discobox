@@ -47,29 +47,30 @@ func TestAProposalIsWrittenFromData(t *testing.T) {
 
 func TestOnlyOneCompleteProposalIsOne(t *testing.T) {
 	t.Parallel()
-	const good = `{"usesAnyTarget":["read any issue <number> in org/repo","push a branch discobox/<slug> to org/repo; never main"],` +
-		`"usesAcrossResource":["read issues and deliver pull requests in org/repo from any branch but main; never main"]}`
+	const anyTarget = `["read any issue <number> in org/repo","push a branch discobox/<slug> to org/repo; never main"]`
+	const good = `{"usesAnyTarget":` + anyTarget + `}`
 	proposal, err := judge.DecodeProposal([]byte(good))
 	if err != nil {
 		t.Fatalf("DecodeProposal() error = %v", err)
 	}
-	if len(proposal.UsesAnyTarget) != 2 || len(proposal.UsesAcrossResource) != 1 {
+	if len(proposal.UsesAnyTarget) != 2 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	for name, bad := range map[string]string{
 		"prose around it":                "Here you go: " + good,
 		"text after it":                  good + " ok?",
 		"a second object":                good + good,
-		"a missing level":                `{"usesAnyTarget":["c"]}`,
+		"no uses":                        `{}`,
+		"a wider level, no longer asked": `{"usesAnyTarget":["c"],"usesAcrossResource":["d"]}`,
 		"a key said twice":               strings.Replace(good, `{"usesAnyTarget"`, `{"UsesAnyTarget":["anything at all"],"usesAnyTarget"`, 1),
 		"a field nobody named":           strings.Replace(good, `{"usesAnyTarget"`, `{"hosts":["evil.example"],"usesAnyTarget"`, 1),
 		"a scope, which no model writes": strings.Replace(good, `{"usesAnyTarget"`, `{"scopeRepository":"every discobox","usesAnyTarget"`, 1),
 		"an empty use":                   strings.Replace(good, "read any issue <number> in org/repo", " ", 1),
-		"an empty list":                  strings.Replace(good, `["read issues and deliver pull requests in org/repo from any branch but main; never main"]`, `[]`, 1),
+		"an empty list":                  `{"usesAnyTarget":[]}`,
 		"a use that is not text":         strings.Replace(good, `"read any issue <number> in org/repo"`, `{"allow":true}`, 1),
-		"uses that are one sentence":     strings.Replace(good, `["read issues and deliver pull requests in org/repo from any branch but main; never main"]`, `"anything"`, 1),
+		"uses that are one sentence":     `{"usesAnyTarget":"anything"}`,
 		"a sentence too long":            strings.Replace(good, "read any issue <number> in org/repo", strings.Repeat("x", judge.MaxProposalSentence+1), 1),
-		"too many uses":                  strings.Replace(good, `["read issues and deliver pull requests in org/repo from any branch but main; never main"]`, "["+strings.TrimSuffix(strings.Repeat(`"u",`, judge.MaxProposalUses+1), ",")+"]", 1),
+		"too many uses":                  `{"usesAnyTarget":[` + strings.TrimSuffix(strings.Repeat(`"u",`, judge.MaxProposalUses+1), ",") + `]}`,
 	} {
 		if _, err := judge.DecodeProposal([]byte(bad)); err == nil {
 			t.Errorf("DecodeProposal() accepted %s", name)

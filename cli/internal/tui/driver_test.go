@@ -10,10 +10,10 @@ import (
 // driver runs a model the way the Bubble Tea runtime does: every command goes
 // on its own goroutine and its message comes back through a queue.
 //
-// The simpler helper in testsupport_test.go runs commands inline and gives up
-// on the ones that block, which is fine for a window whose commands all return
-// — but a pane's pump blocks until the terminal says something, and giving up
-// on it abandons a goroutine still holding the output channel. The next pump
+// The simpler helper in testsupport_test.go runs each command to its end and
+// leaves the ones that park, which is fine for a window whose commands all
+// return — but a pane's pump parks until the terminal says something, and
+// leaving it abandons a goroutine still holding the output channel. The next pump
 // then races it for the same bytes, and the output goes to whichever one wins.
 // Anything with a live terminal in it is driven from here instead.
 type driver struct {
@@ -58,6 +58,11 @@ func (d *driver) run(cmd tea.Cmd) {
 	}
 	go func() {
 		msg := cmd()
+		if l, ok := asListener(msg); ok {
+			// The runtime runs a listener like any command: it is this
+			// goroutine's to wait on, until what it waits for comes.
+			msg = l.run()
+		}
 		if msg == nil {
 			return
 		}
@@ -66,6 +71,16 @@ func (d *driver) run(cmd tea.Cmd) {
 				d.run(sub)
 			}
 			return
+		}
+		if timer, ok := msg.(timerMsg); ok {
+			// A timer fires here, as the runtime fires one: when it is due,
+			// unless the test is over by then.
+			select {
+			case at := <-time.After(timer.after):
+				msg = timer.fire(at)
+			case <-d.done:
+				return
+			}
 		}
 		select {
 		case d.msgs <- msg:
@@ -88,9 +103,13 @@ func (d *driver) settle() {
 }
 
 // wait pumps until a condition holds, and fails the test if it never does.
+//
+// It returns the moment the condition holds, so its bound is only what a
+// failing test costs: commandWait, long for the reason that is — a loaded
+// machine is slow, not broken.
 func (d *driver) wait(what string, cond func() bool) {
 	d.t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(commandWait)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return

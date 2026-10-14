@@ -20,18 +20,16 @@ import (
 var errRuleRefused = errors.New("this rule would not cover the request it is made from, so it is not made: its uses do not hold what the request asked for (a push to main is not within these); choose a proposal the judge found to cover it, or approve without a rule")
 
 // proposalsForTheRequest is what a server with a judge offers for
-// waitingRequest: the repository of the discobox that asked, and three
-// contents the judge found to cover the request.
+// waitingRequest: the repository of the discobox that asked, and the uses
+// the judge wrote and found to cover the request.
 func proposalsForTheRequest() RuleProposals {
+	written := []string{"Open a pull request against acme/pool from any discobox/<slug> branch"}
 	return RuleProposals{
-		Credential: "github",
-		Hosts:      []string{"api.github.com"},
-		Repository: "github.com/acme/pool",
-		Contents: []RuleContentProposal{
-			{Level: 1, Uses: []string{"Open a pull request against the current repo"}, Covers: true},
-			{Level: 2, Uses: []string{"Open a pull request against acme/pool from any discobox/<slug> branch"}, Covers: true},
-			{Level: 3, Uses: []string{"Deliver pull requests to acme/pool from any branch but main"}, Covers: true},
-		},
+		Credential:       "github",
+		Hosts:            []string{"api.github.com"},
+		Repository:       "github.com/acme/pool",
+		RepositoryStored: "github.com/acme/pool",
+		Written:          &WrittenUses{Uses: written, Stored: written, Covers: true, Reason: "every use asked for is within these"},
 	}
 }
 
@@ -90,7 +88,7 @@ func TestAutoApproveSendsTheChosenRepositoryAndUsesWithTheApproval(t *testing.T)
 	if !onRuleStep(m, "what it approves") {
 		t.Fatalf("dialog = %s, want the step asking what it approves", describe(m.dialog))
 	}
-	drain(t, m, m.dialog.action("content:2"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	if !onRuleStep(m, "the rule") {
 		t.Fatalf("dialog = %s, want the rule to read before anything is written", describe(m.dialog))
@@ -118,148 +116,170 @@ func TestAutoApproveSendsTheChosenRepositoryAndUsesWithTheApproval(t *testing.T)
 	}
 }
 
-// Which discoboxes a rule is for has two answers and no sentence: the
-// repository of the discobox that asked, first and under the cursor, and
-// every discobox in the project. Nothing here is a model's writing, and
-// nothing is written by hand.
-func TestWhichDiscoboxesIsTheRepositoryOrEveryDiscobox(t *testing.T) {
+// Which discoboxes a rule is for has three answers and no sentence: the
+// repository of the discobox that asked, first and under the cursor;
+// repositories the person chooses or names, the asker's ticked to start
+// with; and every discobox in the project.
+func TestWhichDiscoboxesIsTheRepositoryChosenOnesOrEveryDiscobox(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithProposals(t)
 
 	toRuleDiscoboxes(t, m)
 	items := m.dialog.items
-	if len(items) != 2 || items[0].key != ruleForRepository || items[1].key != ruleForEvery || !items[0].enabled || !items[1].enabled {
-		t.Fatalf("items = %+v, want the repository, then every discobox", items)
+	if len(items) != 3 || items[0].key != ruleForRepository || items[1].key != ruleForTyped || items[2].key != ruleForEvery {
+		t.Fatalf("items = %+v, want the repository, those chosen or named, then every discobox", items)
 	}
 	if m.dialog.cursor != 0 {
-		t.Fatalf("cursor = %d, want it on the narrower answer", m.dialog.cursor)
+		t.Fatalf("cursor = %d, want it on the narrowest answer", m.dialog.cursor)
 	}
 	card := cardWords(m)
-	for _, want := range []string{"Discoboxes of github.com/acme/pool", "whose primary source is this repository", "Every discobox in this project", everyDiscobox} {
+	for _, want := range []string{"Discoboxes of github.com/acme/pool", "whose primary source is this repository",
+		"Discoboxes of repositories you choose or name", "now github.com/acme/pool", "Every discobox in this project", everyDiscobox} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}
 	}
-	for _, gone := range []string{"by hand", "pinned", "This discobox"} {
+	for _, gone := range []string{"pinned", "This discobox"} {
 		if strings.Contains(card, gone) {
 			t.Fatalf("card = %q, want nothing about %q", card, gone)
 		}
 	}
-	// No key writes one: there is nothing to write.
-	step := m.dialog
-	send(t, m, keyPress("w"))
-	if m.dialog != step {
-		t.Fatalf("dialog = %s, want w to do nothing on this step", describe(m.dialog))
+}
+
+// Repositories chosen or named go to the rule as chosen: the asker's ticked
+// to start with, others ticked or typed beside it.
+func TestAutoApproveSendsTheRepositoriesChosen(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithProposals(t)
+	m.list.all[1].RepositoryIdentity, m.list.all[1].RepositoryShown = "github.com/acme/tools", "github.com/acme/tools"
+
+	toRuleDiscoboxes(t, m)
+	drain(t, m, m.dialog.action(ruleForTyped), 0)
+	if got := pickLabels(m); len(got) < 2 || got[0] != "[x] github.com/acme/pool" || got[1] != "[ ] github.com/acme/tools" {
+		t.Fatalf("picks = %q, want the asker's ticked, then the rest", got)
+	}
+	send(t, m, keyPress("up"), keyPress(" "))
+	send(t, m, keyPress("down"))
+	drain(t, m, m.dialog.action("gitlab.example.com/team/other"), 0)
+	drain(t, m, m.dialog.action(""), 0)
+	if !onRuleStep(m, "what it approves") {
+		t.Fatalf("dialog = %s, want the uses next", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action(""), 0)
+	grantFor(t, m, time.Hour)
+	send(t, m, keyPress("y"))
+	if len(ds.approvals) != 1 || ds.approvals[0].Rule == nil || ds.approvals[0].Rule.EveryDiscobox ||
+		strings.Join(ds.approvals[0].Rule.Repositories, ",") != "github.com/acme/pool,github.com/acme/tools,gitlab.example.com/team/other" {
+		t.Fatalf("approvals = %#v, want the repositories chosen and named", ds.approvals)
 	}
 }
 
 // A discobox started from a local directory with no remote has no repository
-// a rule could name. Only a rule for every discobox answers it, so that is
-// the one row, and the card says why there is no narrower one.
-func TestADiscoboxWithNoRepositoryIsOfferedOnlyEveryDiscobox(t *testing.T) {
+// a rule could name for it: the rows are repositories chosen or named, and
+// every discobox, and the card says why there is no narrower one.
+func TestADiscoboxWithNoRepositoryIsOfferedTheOthers(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	proposals := proposalsForTheRequest()
-	proposals.Repository = ""
+	proposals.Repository, proposals.RepositoryStored = "", ""
 	ds.proposals = proposals
 
 	toRuleDiscoboxes(t, m)
-	if items := m.dialog.items; len(items) != 1 || items[0].key != ruleForEvery {
-		t.Fatalf("items = %+v, want every discobox alone", items)
+	if items := m.dialog.items; len(items) != 2 || items[0].key != ruleForTyped || items[1].key != ruleForEvery {
+		t.Fatalf("items = %+v, want those chosen or named, and every discobox", items)
 	}
 	if card := cardWords(m); !strings.Contains(card, "no repository a rule could name") || !strings.Contains(card, everyDiscobox) {
 		t.Fatalf("card = %q, want it to say why there is no narrower rule, and what this one does", card)
 	}
 }
 
-// A proposal the judge did not find to cover this very request would be a rule
-// that does not approve the ask it was made from. It is shown, with the
-// judge's reason — that is what says how to write a better one — and it cannot
-// be chosen by its row, by the pointer, or by its key.
-func TestFailedUsesAreShownWithTheirReasonAndCannotBeChosen(t *testing.T) {
+// The uses step opens on the uses the judge wrote, whole, in the list a
+// person edits a line at a time, saying they are the model's and that the
+// judge found them to cover this request. Changed, the card says the verdict
+// is no longer about them, and the rule is sent with the uses as edited.
+func TestTheWrittenUsesAreLoadedToEdit(t *testing.T) {
 	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	proposals := proposalsForTheRequest()
-	proposals.Contents[2].Covers, proposals.Contents[2].Reason = false, "opening a pull request is not delivering one"
-	ds.proposals = proposals
+	m, ds := sourceWithProposals(t)
+	long := "Open a pull request against acme/pool from any discobox/<slug> branch, update its body and title, comment on it, and mark it ready for review; never push to main, never merge, and never close another pull request"
+	ds.proposals.Written.Uses, ds.proposals.Written.Stored = []string{long, "Read any issue in acme/pool"}, []string{long, "Read any issue in acme/pool"}
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	card := wholeCard(m)
-	for _, want := range []string{"As asked", "The same work on any target of its kind", "The same kind of work across the resource",
-		"Deliver pull requests to acme/pool from any branch but main", "failed, and cannot be chosen", "opening a pull request is not delivering one"} {
+	if !onRuleStep(m, "what it approves") || m.dialog.kind != dlgInput {
+		t.Fatalf("dialog = %s, want the uses as a list", describe(m.dialog))
+	}
+	card := cardWords(m)
+	for _, want := range []string{long, "Read any issue in acme/pool", "written by the project's judge",
+		"the same work on any target of its kind", "the judge found they cover this request: every use asked for is within these"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}
 	}
-	var failed action
-	for _, item := range m.dialog.items {
-		if item.key == "content:3" {
-			failed = item
+	for _, gone := range []string{"Write the uses by hand", "As asked", "across the resource"} {
+		if strings.Contains(card, gone) {
+			t.Fatalf("card = %q, want no %q", card, gone)
 		}
 	}
-	if failed.key == "" || failed.enabled {
-		t.Fatalf("row = %+v, want the failed uses listed and not choosable", failed)
+	// One taken up, edited in place.
+	send(t, m, keyPress("up"))
+	if m.dialog.typed() != "Read any issue in acme/pool" {
+		t.Fatalf("field = %q, want the last use to edit", m.dialog.typed())
 	}
-	content := m.dialog
-	drain(t, m, content.action("content:3"), 0)
-	if m.dialog != content {
-		t.Fatalf("dialog = %s, want the failed uses to answer nothing", describe(m.dialog))
-	}
-	// The cursor walks past it.
-	send(t, m, keyPress("down"), keyPress("down"))
-	if at := m.dialog.items[m.dialog.cursor]; at.key == "content:3" {
-		t.Fatal("the cursor rests on uses that cannot be chosen")
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("something was approved")
-	}
-}
-
-// Uses nobody proposed are the person's own words, and they are the rule:
-// they go to the server as written, where the judge reads them before the
-// rule is made.
-func TestHandWrittenTextIsSentAsWritten(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithProposals(t)
-
-	toRuleDiscoboxes(t, m)
-	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
-	if m.dialog == nil || m.dialog.kind != dlgInput {
-		t.Fatalf("dialog = %s, want a field to write the uses in", describe(m.dialog))
-	}
-	// One use a line; an empty line is the end of them.
-	drain(t, m, m.dialog.action("Open pull requests against acme/pool"), 0)
-	drain(t, m, m.dialog.action("Never push to main"), 0)
-	if card := wholeCard(m); !strings.Contains(card, "Open pull requests against acme/pool") || !strings.Contains(card, "Never push to main") {
-		t.Fatalf("card = %q, want the uses written so far", card)
+	drain(t, m, m.dialog.action("Read and label any issue in acme/pool"), 0)
+	if card := cardWords(m); !strings.Contains(card, "the judge's verdict was on the uses as written, not these") {
+		t.Fatalf("card = %q, want it to say the verdict no longer applies", card)
 	}
 	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	send(t, m, keyPress("y"))
-
-	if len(ds.approvals) != 1 || ds.approvals[0].Rule == nil {
-		t.Fatalf("approvals = %#v, want one carrying a rule", ds.approvals)
-	}
-	rule := ds.approvals[0].Rule
-	if len(rule.Repositories) != 1 || rule.Repositories[0] != "github.com/acme/pool" {
-		t.Fatalf("rule = %#v, want the repository chosen", rule)
-	}
-	if strings.Join(rule.Uses, "\n") != "Open pull requests against acme/pool\nNever push to main" {
-		t.Fatalf("uses = %q, want the two lines as written, in order", rule.Uses)
+	if len(ds.approvals) != 1 || ds.approvals[0].Rule == nil || strings.Join(ds.approvals[0].Rule.Uses, "\n") != long+"\nRead and label any issue in acme/pool" {
+		t.Fatalf("approvals = %#v, want the uses as edited", ds.approvals)
 	}
 }
 
-// A rule that approves nothing in particular is not one this window makes: an
-// empty line with no use written is refused where it was typed.
+// Uses the judge did not find to cover the request are not loaded: the list
+// starts from the uses as asked, and the card says why, with the model's
+// shown for reference. So does a proposal no model wrote.
+func TestUsesThatDoNotCoverStartFromTheAsk(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		written *WrittenUses
+		note    string
+		want    string
+	}{
+		{"not covering", &WrittenUses{Uses: []string{"Open any pull request anywhere"}, Stored: []string{"Open any pull request anywhere"}, Reason: "anywhere is not acme/pool"},
+			"", "the judge found they do not cover this request — anywhere is not acme/pool"},
+		{"refused for its shape", &WrittenUses{Uses: []string{"Open any pull request\nand merge"}, Stored: []string{"Open any pull request\nand merge"}, Refused: "each of a rule's uses is one sentence, on one line"},
+			"", "the model's uses could not be a rule's — each of a rule's uses is one sentence, on one line — so the judge was not asked"},
+		{"none written", nil, "no model wrote the uses: the project has no judge", "started from the uses as asked: no model wrote the uses: the project has no judge"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, ds := sourceWithRequest(t)
+			proposals := proposalsForTheRequest()
+			proposals.Written, proposals.Note = tc.written, tc.note
+			ds.proposals = proposals
+			toRuleDiscoboxes(t, m)
+			drain(t, m, m.dialog.action(ruleForRepository), 0)
+			card := cardWords(m)
+			if !strings.Contains(card, "Open a pull request against the current repo") || !strings.Contains(card, tc.want) {
+				t.Fatalf("card = %q, want the uses as asked and %q", card, tc.want)
+			}
+		})
+	}
+}
+
+// A rule that approves nothing in particular is not one this window makes:
+// finishing the uses with every line removed is refused where it was typed.
 func TestNoUsesWrittenIsNotARule(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithProposals(t)
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
+	send(t, m, keyPress("up"))
+	drain(t, m, m.dialog.action(""), 0)
 	drain(t, m, m.dialog.action(""), 0)
 
 	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(wholeCard(m), "write at least one use") {
@@ -280,14 +300,14 @@ func TestTheLastCardIsTheRuleInFull(t *testing.T) {
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:3"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, 24*time.Hour)
 
 	card := wholeCard(m)
 	for _, want := range []string{
 		"github", "GitHub token", "api.github.com", "purpose", "use",
 		"discoboxes of github.com/acme/pool",
-		"Deliver pull requests to acme/pool from any branch but main",
+		"Open a pull request against acme/pool from any discobox/<slug> branch",
 		"1 day",
 	} {
 		if !strings.Contains(card, want) {
@@ -319,7 +339,7 @@ func TestEveryDiscoboxSaysItApprovesForDiscoboxesThatDoNotExistYet(t *testing.T)
 		t.Fatalf("row = %q, want it to say what a rule for every discobox does", row)
 	}
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 
 	if card := cardWords(m); !strings.Contains(card, "every discobox in this project") || !strings.Contains(card, words) {
@@ -343,7 +363,7 @@ func TestEscWalksBackThroughTheRuleOneStepAtATime(t *testing.T) {
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:2"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 
 	send(t, m, keyPress("esc"))
@@ -375,28 +395,26 @@ func TestEscWalksBackThroughTheRuleOneStepAtATime(t *testing.T) {
 	}
 }
 
-// Esc never changes a word of the uses written by hand: it goes back to the
-// menu, and writing them by hand again opens on them as they were left, the
-// line half-typed into the field included.
+// Esc never changes a word of the uses: it goes back to which discoboxes, and
+// forward again opens on them as they were left, the line half-typed into
+// the field included.
 func TestEscKeepsTheUsesWritten(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithProposals(t)
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	send(t, m, keyPress("w"))
-	drain(t, m, m.dialog.action("Open pull requests against acme/pool"), 0)
 	drain(t, m, m.dialog.action("Merge them"), 0)
-	m.dialog.input.SetValue("Comment on th")
+	setField(m, "Comment on th")
 	send(t, m, keyPress("esc"))
-	if !onRuleStep(m, "what it approves") || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %s, want the menu of uses back", describe(m.dialog))
+	if !onRuleStep(m, "which discoboxes") {
+		t.Fatalf("dialog = %s, want which discoboxes back", describe(m.dialog))
 	}
-	send(t, m, keyPress("w"))
+	drain(t, m, m.dialog.action(ruleForRepository), 0)
 	card := wholeCard(m)
 	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(card, "Merge them") ||
-		!strings.Contains(card, "Open pull requests against acme/pool") || m.dialog.input.Value() != "Comment on th" {
-		t.Fatalf("card = %q, field = %q; want both lines and the half-typed one kept", card, m.dialog.input.Value())
+		!strings.Contains(card, "from any discobox/<slug> branch") || m.dialog.typed() != "Comment on th" {
+		t.Fatalf("card = %q, field = %q; want every line and the half-typed one kept", card, m.dialog.typed())
 	}
 }
 
@@ -414,7 +432,7 @@ func TestARefusedRuleIsShownAndCanBeChosenAgain(t *testing.T) {
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	send(t, m, keyPress("y"))
 
@@ -518,7 +536,7 @@ func TestAutoApproveCanStoreANewCredential(t *testing.T) {
 		t.Fatalf("dialog = %s, want the flow gone on to the rule", describe(m.dialog))
 	}
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	if card := cardWords(m); !strings.Contains(card, "answered with github") && !strings.Contains(card, "answered with GitHub") {
 		t.Fatalf("card = %q, want the rule answered with the new secret", card)
@@ -526,27 +544,6 @@ func TestAutoApproveCanStoreANewCredential(t *testing.T) {
 	send(t, m, keyPress("y"))
 	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_new" || ds.approvals[0].Rule == nil {
 		t.Fatalf("approvals = %#v, want the rule made with the secret just stored", ds.approvals)
-	}
-}
-
-// Where no model could write wider uses the server offers the uses as asked
-// alone and says why. Without that sentence a card with one row reads as the
-// window having lost the others. It is about the uses, so it is said there.
-func TestTheNoteSaysWhyOnlyTheNarrowestIsOffered(t *testing.T) {
-	t.Parallel()
-	const note = "only the uses as asked are offered, because no model wrote wider ones"
-	m, ds := sourceWithRequest(t)
-	proposals := proposalsForTheRequest()
-	proposals.Contents, proposals.Note = proposals.Contents[:1], note
-	ds.proposals = proposals
-
-	toRuleDiscoboxes(t, m)
-	if card := cardWords(m); strings.Contains(card, note) {
-		t.Fatalf("discoboxes = %q, want no note about uses where no use is chosen", card)
-	}
-	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	if card := cardWords(m); !strings.Contains(card, note) {
-		t.Fatalf("uses = %q, want the note", card)
 	}
 }
 
@@ -609,7 +606,7 @@ func TestARuleForAGateSaysWhatItHandsOut(t *testing.T) {
 		Credential: wellknown.DiscoboxSandbox,
 		Hosts:      []string{"api.discobox.internal"},
 		Repository: "github.com/acme/pool",
-		Contents:   []RuleContentProposal{{Level: 1, Uses: req.Uses, Covers: true}},
+		Written:    &WrittenUses{Uses: req.Uses, Stored: req.Uses, Covers: true},
 	}
 	m := newTestModel(t, ds)
 
@@ -620,7 +617,7 @@ func TestARuleForAGateSaysWhatItHandsOut(t *testing.T) {
 	}
 	send(t, m, keyPress(autoApproveKey))
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 
 	card := cardWords(m)
@@ -651,7 +648,7 @@ func TestARuleToDelegateSaysWhatItIs(t *testing.T) {
 
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 
 	if card := wholeCard(m); !strings.Contains(card, "may delegate it, never uses it") || !strings.Contains(card, "uses it would delegate") {
@@ -721,7 +718,7 @@ func TestARuleWithNoRepositoryIsNotTakenToBeForEveryDiscobox(t *testing.T) {
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
 	send(t, m, keyPress("esc"))
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("content:1"), 0)
+	drain(t, m, m.dialog.action(""), 0)
 	grantFor(t, m, time.Hour)
 	send(t, m, keyPress("y"))
 	if len(ds.approvals) != 1 || ds.approvals[0].Rule == nil || ds.approvals[0].Rule.EveryDiscobox {
@@ -738,7 +735,7 @@ func TestARuleMadeOverTheSecretsScreenIsReadIntoItsTable(t *testing.T) {
 		m, ds := sourceWithProposals(t)
 		toRuleDiscoboxes(t, m)
 		drain(t, m, m.dialog.action(ruleForRepository), 0)
-		drain(t, m, m.dialog.action("content:2"), 0)
+		drain(t, m, m.dialog.action(""), 0)
 		grantFor(t, m, time.Hour)
 		m.secretsOpen = open
 		reads := func() (n int) {

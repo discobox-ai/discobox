@@ -134,7 +134,7 @@ func TestJudgeAsksWithTheContractsOwnPrompt(t *testing.T) {
 	}
 }
 
-const writtenProposal = `{"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
+const writtenProposal = `{"usesAnyTarget":["read any issue <number> in org/repo"]}`
 
 func proposalJob() judge.ProposalJob {
 	return judge.ProposalJob{
@@ -156,7 +156,7 @@ func TestProposeAsksWithTheProposalsOwnPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Propose() error = %v", err)
 	}
-	if len(proposal.UsesAnyTarget) != 1 || len(proposal.UsesAcrossResource) != 1 {
+	if len(proposal.UsesAnyTarget) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	asked, err := os.ReadFile(args)

@@ -192,19 +192,21 @@ func (m *Model) openAudit() tea.Cmd {
 		}
 		return auditEndedMsg{gen: gen, err: err}
 	}
-	return tea.Batch(follow, nextAudit(gen, feed))
+	// Both wait by design: the follow for as long as the screen is open, the
+	// read for the next update it brings.
+	return tea.Batch(listen(follow), nextAudit(gen, feed))
 }
 
 // nextAudit waits for the feed's next update. It re-arms itself from the
 // handler, so one call follows the screen from its first update to its last.
 func nextAudit(gen int, feed chan AuditUpdate) tea.Cmd {
-	return func() tea.Msg {
+	return listen(func() tea.Msg {
 		update, ok := <-feed
 		if !ok {
 			return nil
 		}
 		return auditUpdateMsg{gen: gen, feed: feed, update: update}
-	}
+	})
 }
 
 // closeAudit takes the screen down and stops the follow, leaving the workspace

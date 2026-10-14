@@ -110,6 +110,7 @@ const (
 	ListSecretsOperation                      OperationName = "ListSecrets"
 	ListTrustRequestsOperation                OperationName = "ListTrustRequests"
 	MintSandboxAgentStatusTokensOperation     OperationName = "MintSandboxAgentStatusTokens"
+	ProposeApprovalRuleFromGrantOperation     OperationName = "ProposeApprovalRuleFromGrant"
 	ProposeApprovalRulesOperation             OperationName = "ProposeApprovalRules"
 	ProposeSandboxRuleOperation               OperationName = "ProposeSandboxRule"
 	PurgeSandboxOperation                     OperationName = "PurgeSandbox"

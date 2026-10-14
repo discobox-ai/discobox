@@ -145,8 +145,12 @@ func (fakeSecretService) ProposeApprovalRules(context.Context, string, string) (
 		Hosts:      []string{"github.com"},
 		Purpose:    "use",
 		Repository: serverapi.NewOptString("github.com/org/repo"),
-		Contents:   []serverapi.RuleContentProposal{{Level: 1, Uses: []string{"read issue 4"}, Covers: true}},
+		Uses:       serverapi.NewOptRuleUsesProposal(serverapi.RuleUsesProposal{Uses: []string{"read any issue <number>"}, Covers: true}),
 	}, nil
+}
+
+func (fakeSecretService) ProposeApprovalRuleFromGrant(context.Context, string, string) (*svcapi.RuleProposals, error) {
+	return &svcapi.RuleProposals{Hosts: []string{"github.com"}, Purpose: "use"}, nil
 }
 
 func fakeApprovalRule() model.ApprovalRule {

@@ -710,24 +710,33 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
 	MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
+	// ProposeApprovalRuleFromGrant implements propose-approval-rule-from-grant operation.
+	//
+	// Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same
+	// proposal auto approve makes from that request, but written from the uses the grant approved and
+	// for the grant's hosts and purpose, and put to the judge as the question the rule would have asked
+	// of that request. A grant that names no uses, or whose request is not on record, has nothing to
+	// propose from. Only a person may ask.
+	//
+	// POST /projects/{projectId}/secret-grants/{grantId}/rule-proposals
+	ProposeApprovalRuleFromGrant(ctx context.Context, params ProposeApprovalRuleFromGrantParams) (ProposeApprovalRuleFromGrantRes, error)
 	// ProposeApprovalRules implements propose-approval-rules operation.
 	//
-	// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), as three lists
-	// of uses, narrowest first, and the repository of the discobox that asked, which the rule may be for.
-	//  The narrowest uses, as asked, need no model. The wider ones are written by the project's judge
-	// and each is then put to the judge as the question a rule would later ask, so only a candidate
-	// found to cover this request may be chosen. Where no model can write, the uses as asked are offered
-	// alone. Only a person may ask.
+	// Proposes an approval rule for a pending agent credential request (ADR 26-10-12-330) — the
+	// repository of the discobox that asked, which the rule may be for, and uses the project's judge
+	// wrote from the request's — the same work on any target of its kind — put to the judge as the
+	// question a rule would later ask, with what it said. Where no model can write, there are no uses
+	// and a note says why. Only a person may ask.
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/rule-proposals
 	ProposeApprovalRules(ctx context.Context, params ProposeApprovalRulesParams) (ProposeApprovalRulesRes, error)
 	// ProposeSandboxRule implements propose-sandbox-rule operation.
 	//
-	// Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR
-	// 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask.
-	// The caller supplies the uses a request asked for; the prompt, the schema, the model role and the
-	// tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes
-	// nothing.
+	// Has this discobox's harness write the uses a person starts an approval rule from (ADR
+	// 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a
+	// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
+	// the uses a request asked for; the prompt, the schema, the model role and the tools restriction are
+	// the judge runtime's own, as for a judging job. What comes back authorizes nothing.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 	ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (ProposeSandboxRuleRes, error)

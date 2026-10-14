@@ -13,6 +13,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcejudges "github.com/discobox-ai/discobox/server/internal/resources/judges"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -928,23 +929,17 @@ func TestARuleMayHandOnADelegation(t *testing.T) {
 	}
 }
 
-// Proposals come at three levels of uses, narrowest first. The narrowest
-// needs no model. Every candidate is put to the judge as the job a rule would
-// later ask, and only one it finds to cover the request is offered as
-// covering. The credential, hosts and purpose are the request's own, and the
-// repository the rule may be for is the asking discobox's, compared and never
-// written by a model.
-func TestAutoApproveProposesThreeLevelsEachAlreadyJudged(t *testing.T) {
+// A proposal is one set of uses, written by the project's judge from the
+// request's as the same work on any target of its kind, and put to the judge
+// as the job a rule would later ask, its verdict carried with it. The
+// credential, hosts and purpose are the request's own, and the repository
+// the rule may be for is the asking discobox's, compared and never written by
+// a model.
+func TestAutoApproveProposesOneSetOfUsesAlreadyJudged(t *testing.T) {
 	svc, st, judging, _ := ruledService(t)
-	judging.proposal = judge.Proposal{
-		UsesAnyTarget:      []string{issueRule},
-		UsesAcrossResource: []string{"read and write issues in org/repo"},
-	}
-	judging.content = func(ask services.RuleAsk) (judge.Answer, error) {
-		if slices.Equal(ask.RuleUses, []string{issueRule}) {
-			return no("the rule names gh api GET, and nothing else")
-		}
-		return judge.Answer{Allow: true, Reason: "within"}, nil
+	judging.proposal = judge.Proposal{UsesAnyTarget: []string{issueRule}}
+	judging.content = func(services.RuleAsk) (judge.Answer, error) {
+		return no("the rule names gh api GET, and nothing else")
 	}
 	req := githubAsk(t, svc, nil)
 	proposals, err := svc.ProposeApprovalRules(testPrincipalContext(), "project-1", req.ID)
@@ -957,30 +952,20 @@ func TestAutoApproveProposesThreeLevelsEachAlreadyJudged(t *testing.T) {
 	if proposals.Repository.Or("") != repo {
 		t.Fatalf("repository = %q, want the asking discobox's, as a rule stores it", proposals.Repository.Or(""))
 	}
-	if len(proposals.Contents) != 3 {
-		t.Fatalf("proposals = %+v, want three contents", proposals)
+	written, ok := proposals.Uses.Get()
+	if !ok || !slices.Equal(written.Uses, []string{issueRule}) || written.Covers || !strings.Contains(written.Reason.Or(""), "nothing else") {
+		t.Fatalf("uses = %+v, want the written uses with the judge's verdict on them", proposals.Uses)
 	}
-	if asked := proposals.Contents[0]; asked.Level != 1 || !slices.Equal(asked.Uses, []string{issueUse}) || !asked.Covers {
-		t.Fatalf("level 1 content = %+v, want the uses as asked, tested too", asked)
-	}
-	if target := proposals.Contents[1]; target.Level != 2 || target.Covers || !strings.Contains(target.Reason.Or(""), "nothing else") {
-		t.Fatalf("level 2 content = %+v, want it shown as failed with the judge's reason", target)
-	}
-	if across := proposals.Contents[2]; across.Level != 3 || !across.Covers {
-		t.Fatalf("level 3 content = %+v, want it offered", across)
-	}
-	// One model call, and three judge calls.
-	if len(judging.proposed) != 1 || len(judging.contents) != 3 {
+	// One model call, and one judge call.
+	if len(judging.proposed) != 1 || len(judging.contents) != 1 {
 		t.Fatalf("judge was asked for %d proposals and %d contents", len(judging.proposed), len(judging.contents))
 	}
 	job := judging.proposed[0]
 	if !slices.Equal(job.Uses, []string{issueUse}) || job.Credential != wellknown.GitHubAPI || !slices.Equal(job.Hosts, []string{"github.com"}) {
 		t.Fatalf("proposal job = %+v, want the request's uses, and what they are about", job)
 	}
-	for _, ask := range judging.contents {
-		if ask.RuleID != "" || ask.RequestID != req.ID || !slices.Equal(ask.Hosts, []string{"github.com"}) {
-			t.Fatalf("content ask = %+v, want a candidate judged for this request before it is a rule", ask)
-		}
+	if ask := judging.contents[0]; ask.RuleID != "" || ask.RequestID != req.ID || !slices.Equal(ask.RuleUses, []string{issueRule}) {
+		t.Fatalf("content ask = %+v, want the written uses judged for this request before they are a rule", ask)
 	}
 
 	// A discobox with no repository has none to offer.
@@ -990,8 +975,8 @@ func TestAutoApproveProposesThreeLevelsEachAlreadyJudged(t *testing.T) {
 	}
 }
 
-// Where no model can write, the uses as asked are offered alone, with why.
-func TestWithNoModelToWriteOnlyTheNarrowestIsOffered(t *testing.T) {
+// Where no model can write, there are no uses, and the note says why.
+func TestWithNoModelToWriteThereAreNoUses(t *testing.T) {
 	svc, _, judging, _ := ruledService(t)
 	judging.proposeErr = errors.New("this project has no judge: the project has no default harness")
 	req := githubAsk(t, svc, nil)
@@ -999,11 +984,63 @@ func TestWithNoModelToWriteOnlyTheNarrowestIsOffered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
-	if len(proposals.Contents) != 1 || proposals.Repository.Or("") != repo || !strings.Contains(proposals.Note.Or(""), "no default harness") {
-		t.Fatalf("proposals = %+v, want level 1 alone, the repository all the same, and a note saying why", proposals)
+	if proposals.Uses.IsSet() || proposals.Repository.Or("") != repo || !strings.Contains(proposals.Note.Or(""), "no default harness") {
+		t.Fatalf("proposals = %+v, want no uses, the repository all the same, and a note saying why", proposals)
 	}
-	if !proposals.Contents[0].Covers || len(judging.contents) != 1 {
-		t.Fatalf("level 1 content = %+v, want it still tested", proposals.Contents[0])
+	if len(judging.contents) != 0 {
+		t.Fatalf("the judge was asked about %d contents, want none with nothing written", len(judging.contents))
+	}
+}
+
+// A grant a request was approved with proposes the rule auto approve would
+// have, written from the uses the grant approved — which approving may have
+// changed — and judged against that request. A grant naming no uses, and one
+// no request on record answered, have nothing to propose from.
+func TestAGrantProposesTheRuleItsRequestWouldHave(t *testing.T) {
+	svc, st, judging, _ := ruledService(t)
+	judging.proposal = judge.Proposal{UsesAnyTarget: []string{issueRule}}
+	judging.content = func(services.RuleAsk) (judge.Answer, error) {
+		return judge.Answer{Allow: true, Reason: "within it"}, nil
+	}
+	req := githubAsk(t, svc, nil)
+	approvedUse := "read issue 7 in org/repo with gh api GET"
+	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: approvedUse}}),
+	})
+	if err != nil || approved.GrantID == "" {
+		t.Fatalf("approve = %+v, %v", approved, err)
+	}
+	proposals, err := svc.ProposeApprovalRuleFromGrant(testPrincipalContext(), "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatalf("propose from grant: %v", err)
+	}
+	if proposals.Credential.Or("") != wellknown.GitHubAPI || proposals.WellKnownId.Or("") != wellknown.GitHubAPI ||
+		!slices.Equal(proposals.Hosts, []string{"github.com"}) || proposals.Purpose != "use" || proposals.Repository.Or("") != repo {
+		t.Fatalf("proposals = %+v, want the grant's credential, hosts and purpose, and the asking discobox's repository", proposals)
+	}
+	written, ok := proposals.Uses.Get()
+	if !ok || !slices.Equal(written.Uses, []string{issueRule}) || !written.Covers {
+		t.Fatalf("uses = %+v, want the written uses, found to cover", proposals.Uses)
+	}
+	if job := judging.proposed[0]; !slices.Equal(job.Uses, []string{approvedUse}) {
+		t.Fatalf("proposal job uses = %q, want the grant's approved uses", job.Uses)
+	}
+	if ask := judging.contents[0]; ask.RequestID != req.ID || !slices.Equal(ask.Uses, []string{approvedUse}) {
+		t.Fatalf("content ask = %+v, want the grant's uses judged against the request it answered", ask)
+	}
+
+	// A discobox with no repository: none to offer, and still a proposal.
+	ofRepository(t, st, testSandboxID, nil)
+	if none, err := svc.ProposeApprovalRuleFromGrant(testPrincipalContext(), "project-1", approved.GrantID); err != nil || none.Repository.IsSet() {
+		t.Fatalf("proposals = %+v, %v, want no repository for a discobox that has none", none, err)
+	}
+
+	// A sandbox may not ask.
+	if _, err := svc.ProposeApprovalRuleFromGrant(auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: testSandboxID, ProjectID: "project-1"}), "project-1", approved.GrantID); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("propose as a discobox = %v, want 403", err)
+	}
+	if _, err := svc.ProposeApprovalRuleFromGrant(testPrincipalContext(), "project-1", "grant_missing"); !isStatus(err, http.StatusNotFound) {
+		t.Fatalf("propose from a missing grant = %v, want 404", err)
 	}
 }
 
@@ -1152,25 +1189,21 @@ func TestARuleGoesWithTheSecretItNames(t *testing.T) {
 	}
 }
 
-// A proposal is held to what a rule may be before it is offered: a use on two
-// lines is shown as failed, never as covering, since making the rule would
-// refuse it. The judge is not asked about it.
-func TestAProposalThatCouldNotBeARuleIsNotOffered(t *testing.T) {
+// A proposal is held to what a rule may be before it is judged: a use on two
+// lines is shown as not covering, with why, and the judge is not asked.
+func TestAProposalThatCouldNotBeARuleIsNotJudged(t *testing.T) {
 	svc, _, judging, _ := ruledService(t)
-	judging.proposal = judge.Proposal{
-		UsesAnyTarget:      []string{"read any issue\nand push to main"},
-		UsesAcrossResource: []string{"read issues in org/repo"},
-	}
+	judging.proposal = judge.Proposal{UsesAnyTarget: []string{"read any issue\nand push to main"}}
 	req := githubAsk(t, svc, nil)
 	proposals, err := svc.ProposeApprovalRules(testPrincipalContext(), "project-1", req.ID)
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
-	if bad := proposals.Contents[1]; bad.Covers || !strings.Contains(bad.Reason.Or(""), "one line") {
-		t.Fatalf("level 2 content = %+v, want it failed for being more than a sentence", bad)
+	if written, _ := proposals.Uses.Get(); written.Covers || !strings.Contains(written.Refused.Or(""), "one line") || written.Reason.IsSet() {
+		t.Fatalf("uses = %+v, want them refused for being more than a sentence, with no judge's reason", written)
 	}
-	if len(judging.contents) != 2 {
-		t.Fatalf("the judge was asked about %d contents, want only the two that could be a rule's", len(judging.contents))
+	if len(judging.contents) != 0 {
+		t.Fatalf("the judge was asked about %d contents, want none", len(judging.contents))
 	}
 }
 

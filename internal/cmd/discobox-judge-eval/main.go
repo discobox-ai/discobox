@@ -77,7 +77,7 @@ const (
 // Case is one recorded job and what a correct judge does with it.
 //
 // A proposer case has a proposal job in place of a judge job (ADR 26-10-12-330
-// §8): the wrapper writes an approval rule's wider uses from one request, and the same judge then scores what it wrote, as the control plane
+// §8): the wrapper writes an approval rule's uses from one request, and the same judge then scores what it wrote, as the control plane
 // puts every candidate to the judge before a person may choose it.
 type Case struct {
 	Name   string      `json:"name"`
@@ -86,7 +86,7 @@ type Case struct {
 	Job    judge.Job   `json:"job"`
 	// Proposal is the request a proposer case's rule is written from.
 	Proposal *judge.ProposalJob `json:"proposal,omitempty"`
-	// Controls are what no level of a proposer case's rule may cover.
+	// Controls are what a proposer case's rule may not cover.
 	Controls *Controls `json:"controls,omitempty"`
 	path     string
 }
@@ -394,14 +394,14 @@ func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeou
 	return v
 }
 
-// propose has the wrapper write a rule's wider uses from a proposer case's
-// request, and then scores what it wrote with the judge, as the control plane
-// does before a person may choose any of it (ADR 26-10-12-330 §8):
+// propose has the wrapper write a rule's uses from a proposer case's request —
+// the same work on any target of its kind — and then scores what it wrote with
+// the judge, as the control plane does before a person reads it
+// (ADR 26-10-12-330 §8):
 //
-//   - each level covers its request: the uses at every level — as asked
-//     included — hold the uses asked for;
-//   - each wider level covers the narrower: the widest uses hold the middle ones;
-//   - no level covers a control: no level's uses hold a control ask.
+//   - the uses cover the request: they, and the uses as asked, hold the uses
+//     asked for;
+//   - they cover no control: neither holds a control ask.
 //
 // The run allows when every check held, refuses when one did not, and is
 // invalid when the wrapper did not write a proposal at all. Its answer is the
@@ -444,14 +444,13 @@ func propose(ctx context.Context, command []string, model string, judging func(c
 	levels := []struct {
 		level string
 		uses  []string
-	}{{"as asked", c.Proposal.Uses}, {"usesAnyTarget", proposal.UsesAnyTarget}, {"usesAcrossResource", proposal.UsesAcrossResource}}
+	}{{"as asked", c.Proposal.Uses}, {"usesAnyTarget", proposal.UsesAnyTarget}}
 	for _, level := range levels {
 		checks = append(checks, check{level.level + " covers the request", ruleJob(level.uses, c.Proposal.Uses), OutcomeAllow})
 		for i, control := range controls.Uses {
 			checks = append(checks, check{fmt.Sprintf("%s does not cover control ask %d", level.level, i), ruleJob(level.uses, control), OutcomeRefuse})
 		}
 	}
-	checks = append(checks, check{"usesAcrossResource covers usesAnyTarget", ruleJob(proposal.UsesAcrossResource, proposal.UsesAnyTarget), OutcomeAllow})
 
 	// One wrapper run already holds this worker; the checks run one after
 	// another inside it, so -parallel bounds the models asked at once.

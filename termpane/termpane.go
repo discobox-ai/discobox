@@ -146,6 +146,8 @@ type options struct {
 	linkRewrite func(string) string
 	// wordChars is nil for the selection package's default; see WithWordChars.
 	wordChars *string
+	// listen wraps the command that waits for output; see WithListen.
+	listen func(tea.Cmd) tea.Cmd
 }
 
 // prefixBinding is a key reserved behind the prefix and what it emits.
@@ -167,6 +169,14 @@ type Option func(*options)
 // default is the emulator's own, which is 10,000 lines.
 func WithScrollback(lines int) Option {
 	return func(o *options) { o.scrollback = lines }
+}
+
+// WithListen wraps the one command the pane returns that waits for
+// something to happen — the next output from its stream — rather than doing
+// work, so the host can tell it from the rest: a host's tests run a command
+// to its end, and this one has no end until the far end writes.
+func WithListen(wrap func(tea.Cmd) tea.Cmd) Option {
+	return func(o *options) { o.listen = wrap }
 }
 
 // WithReadOnly draws a stream nothing types at: keys, text and pastes are not
@@ -450,7 +460,17 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	m.forwardDone, m.forwardOut = make(chan struct{}), make(chan struct{})
 	startForwarding(m.emu, stream, m.forwardDone, m.forwardOut)
 
-	return m.reader.next()
+	return m.nextOutput()
+}
+
+// nextOutput is the command that waits for the stream's next output, as the
+// host asked it wrapped (WithListen).
+func (m *Model) nextOutput() tea.Cmd {
+	next := m.reader.next()
+	if next == nil || m.opts.listen == nil {
+		return next
+	}
+	return m.opts.listen(next)
 }
 
 // callbacks keep the state the pane draws chrome and a cursor from. They run on
@@ -614,7 +634,7 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		m.reconcileSelection()
 		// Output is also where an application's own copy arrives; the write
 		// above is what parsed it. See clipboard.go.
-		return m, tea.Batch(m.takeClipboard(), m.reader.next())
+		return m, tea.Batch(m.takeClipboard(), m.nextOutput())
 
 	case closedMsg:
 		m.attached = false

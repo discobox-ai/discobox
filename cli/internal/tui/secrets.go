@@ -813,7 +813,7 @@ func (m *Model) showGrants() tea.Cmd {
 		if !ok {
 			return m.report(true, "that grant is no longer there")
 		}
-		return m.reviewGrant(secret.Name, grant, m.showGrants)
+		return m.reviewGrant(m.configServer(), secret.Name, grant, m.showGrants)
 	})
 	d.titleRight = secretAge(*secret, m.secrets.now())
 	d.sections = describeSecret(*secret, m.secrets.now())
@@ -944,12 +944,16 @@ const (
 // grantRevokeKey withdraws the highlighted grant from the review list.
 const grantRevokeKey = "x"
 
+// grantRuleItem is the grant card's row that makes a rule of the grant.
+const grantRuleItem = "grant:rule"
+
 // reviewGrant is the grant read in full: what it covers, how long it lives,
 // and — for one minted by approving an agent's request — every use it was
-// approved for, with the ID an agent presents to take a value under it. back
-// is the list it was opened from: a secret's grants, or the ones a rule
-// minted.
-func (m *Model) reviewGrant(secretName string, grant Grant, back func() tea.Cmd) tea.Cmd {
+// approved for, with the ID an agent presents to take a value under it; and
+// the one thing to do from it, make a rule that approves requests like it.
+// server is where the grant was read, and back the list it was opened from:
+// a secret's grants, or the ones a rule minted.
+func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() tea.Cmd) tea.Cmd {
 	where := grant.Host
 	tone := toneAccent
 	if where == "" {
@@ -1001,9 +1005,28 @@ func (m *Model) reviewGrant(secretName string, grant Grant, back func() tea.Cmd)
 		})
 	}
 
-	d := textDialog("Grant", "")
+	makeRule := action{key: grantRuleItem, press: ruleNewKey, label: "Make a rule from this grant…",
+		detail:  "the project's judge writes its uses from these, as auto approve would have; you choose its discoboxes and read it whole before it is made",
+		enabled: true}
+	switch {
+	case grant.RuleID != "":
+		makeRule.enabled, makeRule.why = false, "approval rule "+grant.RuleID+" minted it, and approves requests like it already"
+	case len(grant.Uses) == 0:
+		makeRule.enabled, makeRule.why = false, "a rule approves uses, and this grant names none"
+	case grant.SecretID == "":
+		makeRule.enabled, makeRule.why = false, "it stands on no secret for a rule to answer with"
+	}
+	again := func() tea.Cmd { return m.reviewGrant(server, secretName, grant, back) }
+	d := actionsDialog("Grant", "", []action{makeRule}, func(string) tea.Cmd {
+		return m.proposeGrantRule(server, grant, again)
+	})
 	d.titleRight = grant.ID
 	d.sections = []section{covers, uses}
+	d.wrapDetails = true
+	d.keys = []hint{pressing("esc goes back", "esc")}
+	if makeRule.enabled {
+		d.keys = []hint{pressing("enter makes a rule of it", "enter"), pressing("esc goes back", "esc")}
+	}
 	// Back to the grants you were reading, not to the list behind them. The
 	// common next move after reading one is reading the next, or withdrawing
 	// this one, and both are in the list this came from.

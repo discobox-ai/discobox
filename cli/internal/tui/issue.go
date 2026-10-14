@@ -340,7 +340,7 @@ func (m *Model) loadIssue(p *pane, full bool) tea.Cmd {
 }
 
 func issueTick(id int) tea.Cmd {
-	return tea.Tick(issueRefreshEvery, func(time.Time) tea.Msg { return issueTickMsg{id: id} })
+	return tick(issueRefreshEvery, func(time.Time) tea.Msg { return issueTickMsg{id: id} })
 }
 
 // issueLoaded takes a read. A failure leaves what was read before on screen

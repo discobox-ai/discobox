@@ -1,6 +1,6 @@
 {
   "name": "propose-develop",
-  "why": "The develop skill's ask from a person's box: the wider levels generalize the branch and the pull request, keep never main and never merge, and stay on the repository.",
+  "why": "The develop skill's ask from a person's box: the uses written generalize the branch and the pull request, keep never main and never merge, and stay on the repository.",
   "expect": "allow",
   "proposal": {
     "uses": [
