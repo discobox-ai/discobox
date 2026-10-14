@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -16,6 +16,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/clientconfig"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // listProjectSkillsSources is the project's skills sources, in the order they
@@ -51,12 +52,18 @@ func projectSkills(ctx context.Context, client *apiclientgen.Client, projectID s
 	}
 	out := make([]sandboxcreate.SkillsRepository, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, projectSkillsRepository(source))
+		repo, err := projectSkillsRepository(source)
+		if err != nil {
+			return nil, fmt.Errorf("%w; remove it with discobox skills rm %s, or leave the project's out with --no-project-skills", err, source.ID)
+		}
+		out = append(out, repo)
 	}
 	return out, nil
 }
 
-func projectSkillsRepository(source apimodel.ProjectSkillsSource) sandboxcreate.SkillsRepository {
+// projectSkillsRepository is one entry as the --skills value it stands for,
+// and the refusal it earns (sandboxcreate.ProjectSkillsRepository).
+func projectSkillsRepository(source apimodel.ProjectSkillsSource) (sandboxcreate.SkillsRepository, error) {
 	return sandboxcreate.ProjectSkillsRepository(source.URL, source.Ref.Or(""), source.Directory)
 }
 
@@ -153,7 +160,8 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FROM\tSKILLS\tID")
 	for _, source := range project {
-		fmt.Fprintf(tw, "project\t%s\t%s\n", projectSkillsRepository(source).Arg, source.ID)
+		repo, _ := projectSkillsRepository(source)
+		fmt.Fprintf(tw, "project\t%s\t%s\n", repo.Arg, source.ID)
 	}
 	for _, skill := range cfg.New.Skills {
 		fmt.Fprintf(tw, "client.yaml\t%s\t\n", skill)
@@ -224,6 +232,11 @@ func addSkills(ctx context.Context, project projectClient, arg string) (skillsEd
 			return skillsEdit{}, err
 		}
 		url, ref := repo.URLAndRef()
+		// The server holds an entry to the same rule; asked here first, a
+		// refusal reads as itself rather than as a request that failed.
+		if err := sandboxconfig.ValidateSkillsRepository(url, ref); err != nil {
+			return skillsEdit{}, err
+		}
 		body := &apimodel.CreateProjectSkillsSourceBody{URL: url}
 		if ref != "" {
 			body.SetRef(apiclientgen.NewOptString(ref))
@@ -237,7 +250,8 @@ func addSkills(ctx context.Context, project projectClient, arg string) (skillsEd
 		if err != nil {
 			return skillsEdit{}, err
 		}
-		return skillsEdit{Project: true, ID: source.ID, Value: projectSkillsRepository(*source).Arg}, nil
+		added, _ := projectSkillsRepository(*source)
+		return skillsEdit{Project: true, ID: source.ID, Value: added.Arg}, nil
 	}
 	dir, err := skillsDirectory(arg)
 	if err != nil {
@@ -257,83 +271,104 @@ func addSkills(ctx context.Context, project projectClient, arg string) (skillsEd
 	return skillsEdit{Value: dir, File: path}, nil
 }
 
-// removeSkills takes one value out of where it is: a project entry by its ID
-// or by the --skills value it stands for, or a directory out of client.yaml.
+// removeSkills takes one value out of where it is. client.yaml is asked
+// first, for the value as a create reads it, since an entry there may be a
+// Git URL or a directory of any name; anything it does not name is the
+// project's, by its ID or a unique prefix of one, or by the URL[@REF][//PATH]
+// it stands for.
 func removeSkills(ctx context.Context, project projectClient, arg string) (skillsEdit, error) {
 	arg = strings.TrimSpace(arg)
-	if sandboxcreate.IsSkillsRepository(arg) || strings.HasPrefix(arg, projectSkillsSourceIDPrefix) {
-		client, projectID, err := project()
-		if err != nil {
-			return skillsEdit{}, err
-		}
-		sources, err := listProjectSkillsSources(ctx, client, projectID)
-		if err != nil {
-			return skillsEdit{}, err
-		}
-		source, err := matchProjectSkillsSource(sources, arg)
-		if err != nil {
-			return skillsEdit{}, err
-		}
-		res, err := client.DeleteProjectSkillsSource(ctx, apiclientgen.DeleteProjectSkillsSourceParams{ProjectId: projectID, SkillsSourceId: source.ID})
-		if err != nil {
-			return skillsEdit{}, err
-		}
-		if err := expectNoContent[apiclientgen.DeleteProjectSkillsSourceNoContent](res); err != nil {
-			return skillsEdit{}, err
-		}
-		return skillsEdit{Project: true, ID: source.ID, Value: projectSkillsRepository(source).Arg}, nil
-	}
-	dir, err := skillsDirectory(arg)
+	value, err := skillsDirectory(arg)
 	if err != nil {
 		return skillsEdit{}, err
 	}
-	path, err := clientconfig.RemoveSkill(dir)
+	cfg, err := loadClientConfig()
 	if err != nil {
 		return skillsEdit{}, err
 	}
-	return skillsEdit{Value: dir, File: path}, nil
+	if slices.Contains(cfg.New.Skills, value) {
+		return removeClientSkill(value)
+	}
+	client, projectID, err := project()
+	if err != nil {
+		return skillsEdit{}, err
+	}
+	sources, err := listProjectSkillsSources(ctx, client, projectID)
+	if err != nil {
+		return skillsEdit{}, err
+	}
+	source, ok := matchProjectSkillsSource(sources, arg)
+	if !ok {
+		return skillsEdit{}, fmt.Errorf("neither the project nor %s names %s", clientConfigName(cfg.Path), arg)
+	}
+	return removeProjectSkills(ctx, client, projectID, source)
 }
 
-// projectSkillsSourceIDPrefix starts every project skills source's ID, which
-// is how `skills rm` tells one from a directory.
-const projectSkillsSourceIDPrefix = "skills_"
+// removeProjectSkills deletes one project entry.
+func removeProjectSkills(ctx context.Context, client *apiclientgen.Client, projectID string, source apimodel.ProjectSkillsSource) (skillsEdit, error) {
+	res, err := client.DeleteProjectSkillsSource(ctx, apiclientgen.DeleteProjectSkillsSourceParams{ProjectId: projectID, SkillsSourceId: source.ID})
+	if err != nil {
+		return skillsEdit{}, err
+	}
+	if err := expectNoContent[apiclientgen.DeleteProjectSkillsSourceNoContent](res); err != nil {
+		return skillsEdit{}, err
+	}
+	repo, _ := projectSkillsRepository(source)
+	return skillsEdit{Project: true, ID: source.ID, Value: repo.Arg}, nil
+}
 
-// matchProjectSkillsSource is the one entry arg names: by its ID or a prefix
-// of it, or by the URL[@REF][//PATH] it stands for, read as --skills reads it.
-func matchProjectSkillsSource(sources []apimodel.ProjectSkillsSource, arg string) (apimodel.ProjectSkillsSource, error) {
+// removeClientSkill takes one entry, as a create reads it, out of
+// client.yaml's new.skills.
+func removeClientSkill(value string) (skillsEdit, error) {
+	path, err := clientconfig.RemoveSkill(value)
+	if err != nil {
+		return skillsEdit{}, err
+	}
+	return skillsEdit{Value: value, File: path}, nil
+}
+
+func clientConfigName(path string) string {
+	if path == "" {
+		return "client.yaml"
+	}
+	return path
+}
+
+// matchProjectSkillsSource is the one entry arg names: by its ID or a unique
+// prefix of it, or by the URL[@REF][//PATH] it stands for, read as --skills
+// reads it.
+func matchProjectSkillsSource(sources []apimodel.ProjectSkillsSource, arg string) (apimodel.ProjectSkillsSource, bool) {
 	var byPrefix []apimodel.ProjectSkillsSource
 	for _, source := range sources {
 		if source.ID == arg {
-			return source, nil
+			return source, true
 		}
 		if strings.HasPrefix(source.ID, arg) {
 			byPrefix = append(byPrefix, source)
 		}
 	}
 	if len(byPrefix) == 1 {
-		return byPrefix[0], nil
+		return byPrefix[0], true
 	}
 	if split, err := sandboxcreate.SplitSkills([]string{arg}); err == nil && len(split.Repositories) == 1 {
 		want := split.Repositories[0]
 		for _, source := range sources {
-			if have := projectSkillsRepository(source); have.Source == want.Source && have.Directory == want.Directory {
-				return source, nil
+			if have, _ := projectSkillsRepository(source); have.Source == want.Source && have.Directory == want.Directory {
+				return source, true
 			}
 		}
 	}
-	return apimodel.ProjectSkillsSource{}, fmt.Errorf("the project names no skills source %s", arg)
+	return apimodel.ProjectSkillsSource{}, false
 }
 
-// skillsDirectory is a directory named on the command line, absolute: it is
-// written into client.yaml, where a relative path would be relative to the
-// file rather than to where it was typed.
+// skillsDirectory is a value named on the command line as a create reads it:
+// a Git URL as given, and a directory absolute, since it is written into
+// client.yaml, where a relative path would be relative to the file rather
+// than to where it was typed.
 func skillsDirectory(arg string) (string, error) {
-	if arg == "~" || strings.HasPrefix(arg, "~/") || strings.HasPrefix(arg, "~"+string(filepath.Separator)) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		arg = filepath.Join(home, arg[1:])
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Abs(arg)
+	return clientconfig.ResolveSkill(wd, arg)
 }

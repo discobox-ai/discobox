@@ -76,7 +76,7 @@ not.
 (ADR 26-10-14-894). The project's skills sources on the header's server come
 first, in the order a create adds them, then client.yaml's `new.skills`, which
 are this machine's whichever server the header is on. Each row says where it
-is kept. It is `discobox skills` folded into the window, and the harnesses
+is kept. It is `discobox skills` folded into the window, and the secrets
 screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
 what it is, read as `--skills` reads it — a Git `URL[@REF][//PATH]` with the
 project, a directory in client.yaml — so there is one thing to type rather
@@ -2242,8 +2242,8 @@ the run options each put the others away on their way in — `openHarnesses`,
 them goes back to the console rather than to a surface left standing
 underneath. That is not tidiness. A surface left open under another still
 answers its own key from the dispatch above, so the key would close something
-nobody could see and change no frame at all; a fourth peer added here has to
-clear the other three for the same reason.
+nobody could see and change no frame at all; a fifth peer added here has to
+clear the other four for the same reason.
 
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the

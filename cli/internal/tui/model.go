@@ -1701,9 +1701,9 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// The run options on the same terms again: one key that opens the panel and
 	// closes it, from every screen the window has of its own.
 	//
-	// It is the third peer of the two screens rather than a layer over one, so
-	// opening it puts them away the same way openHarnesses and openSecrets put
-	// it away. A screen left standing underneath would take its own key back
+	// It is a peer of the three screens rather than a layer over one, so
+	// opening it puts them away the same way openHarnesses, openSecrets and
+	// openSkills put it away. A screen left standing underneath would take its own key back
 	// while nothing could see it: F3 over the panel would reach the harnesses
 	// dispatch above, close a screen that was already covered, and leave the
 	// frame exactly as it was — one press of the key the panel's own harness

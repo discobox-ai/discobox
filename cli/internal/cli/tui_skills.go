@@ -4,6 +4,7 @@ import (
 	"context"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
@@ -25,10 +26,11 @@ func (d *apiDataSource) Skills(ctx context.Context, server string) (tui.SkillsLi
 	}
 	listing := tui.SkillsListing{ClientFile: cfg.Path}
 	for _, source := range sources {
+		repo, _ := projectSkillsRepository(source)
 		listing.Entries = append(listing.Entries, tui.SkillsEntry{
 			Project: true,
 			ID:      source.ID,
-			Value:   projectSkillsRepository(source).Arg,
+			Value:   repo.Arg,
 			Added:   source.CreatedAt,
 		})
 	}
@@ -46,14 +48,19 @@ func (d *apiDataSource) AddSkills(ctx context.Context, server, value string) (tu
 	return tui.SkillsEntry{Project: added.Project, ID: added.ID, Value: added.Value}, nil
 }
 
-// RemoveSkills removes a project entry by its ID, so a second entry of the
-// same repository is never the one taken, and a directory by its path.
+// RemoveSkills removes the row where the screen says it is kept: a project
+// entry by its ID, so a second entry of the same repository is never the one
+// taken, and a client.yaml entry, Git URL or directory, by its value.
 func (d *apiDataSource) RemoveSkills(ctx context.Context, server string, entry tui.SkillsEntry) error {
-	value := entry.Value
-	if entry.Project {
-		value = entry.ID
+	if !entry.Project {
+		_, err := removeClientSkill(entry.Value)
+		return err
 	}
-	_, err := removeSkills(ctx, d.projectClient(ctx, server), value)
+	on, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	_, err = removeProjectSkills(ctx, on.client, on.projectID, apimodel.ProjectSkillsSource{ID: entry.ID, URL: entry.Value, Directory: "."})
 	return err
 }
 

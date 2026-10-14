@@ -177,7 +177,7 @@ func TestBuildPromptSandboxBodyFilesProjectSkillsFirst(t *testing.T) {
 		Platform:      linuxSandbox,
 		NoSource:      true,
 		IncludeDirty:  IncludeDirtyNever,
-		ProjectSkills: []SkillsRepository{ProjectSkillsRepository(shared, "", "skills")},
+		ProjectSkills: []SkillsRepository{projectEntry(shared, "", "skills")},
 		SkillDirs:     []string{tools},
 	})
 	if err != nil {
@@ -201,7 +201,7 @@ func TestBuildPromptSandboxBodyRefusesAProjectRepositoryAtAnotherRef(t *testing.
 		Platform:      linuxSandbox,
 		NoSource:      true,
 		IncludeDirty:  IncludeDirtyNever,
-		ProjectSkills: []SkillsRepository{ProjectSkillsRepository(tools, "main", ".")},
+		ProjectSkills: []SkillsRepository{projectEntry(tools, "main", ".")},
 		SkillDirs:     []string{tools + "//b"},
 	})
 	if local != nil {
@@ -222,7 +222,10 @@ func TestProjectSkillsRepositoryIsItsSkillsValue(t *testing.T) {
 		{url: "https://github.com/acme/tools", ref: "v2", dir: "agents/skills", arg: "https://github.com/acme/tools@v2//agents/skills"},
 		{url: "git@github.com:acme/tools", dir: "", arg: "git@github.com:acme/tools"},
 	} {
-		repo := ProjectSkillsRepository(tc.url, tc.ref, tc.dir)
+		repo, err := ProjectSkillsRepository(tc.url, tc.ref, tc.dir)
+		if err != nil {
+			t.Fatalf("%+v: %v", tc, err)
+		}
 		split, err := SplitSkills([]string{repo.Arg})
 		if err != nil || repo.Arg != tc.arg || len(split.Repositories) != 1 {
 			t.Fatalf("%+v: arg %q (%v), want %q", tc, repo.Arg, err, tc.arg)
@@ -232,6 +235,31 @@ func TestProjectSkillsRepositoryIsItsSkillsValue(t *testing.T) {
 		}
 		if url, ref := repo.URLAndRef(); url != tc.url || ref != tc.ref {
 			t.Fatalf("%q: url, ref = %q, %q", repo.Arg, url, ref)
+		}
+	}
+}
+
+// projectEntry is a project entry for a test repository, which is a file URL
+// the project itself would refuse: the order and refusals it is used for are
+// the create's, past the check ProjectSkillsRepository makes.
+func projectEntry(url, ref, dir string) SkillsRepository {
+	repo, _ := ProjectSkillsRepository(url, ref, dir)
+	return repo
+}
+
+// An entry is checked again on the client: it is what the server answered,
+// and another member wrote it.
+//
+//nolint:gosec // G101: fixtures of a credential in a URL, which is what is refused.
+func TestProjectSkillsRepositoryRefusesWhatTheServerShouldHave(t *testing.T) {
+	for _, tc := range []struct{ url, ref, dir string }{
+		{url: "--upload-pack=touch x#@x:y", ref: "."},
+		{url: "https://x-access-token:ghp_x@github.com/acme/tools"},
+		{url: "file:///srv/tools"},
+		{url: "https://github.com/acme/tools", dir: "../etc"},
+	} {
+		if _, err := ProjectSkillsRepository(tc.url, tc.ref, tc.dir); err == nil || !strings.Contains(err.Error(), "the project's skills source") {
+			t.Errorf("ProjectSkillsRepository(%q, %q, %q) = %v, want a refusal naming the project's entry", tc.url, tc.ref, tc.dir, err)
 		}
 	}
 }

@@ -108,7 +108,7 @@ func Load() (*Config, error) {
 func (cfg *Config) resolvePaths() error {
 	base := filepath.Dir(cfg.Path)
 	for i, entry := range cfg.New.Skills {
-		resolved, err := resolveSkill(base, entry)
+		resolved, err := ResolveSkill(base, entry)
 		if err != nil {
 			return fmt.Errorf("%s: new.skills[%d]: %w", cfg.Path, i, err)
 		}
@@ -117,9 +117,11 @@ func (cfg *Config) resolvePaths() error {
 	return nil
 }
 
-// resolveSkill is one new.skills entry as a create reads it: a Git URL as
-// written, and a directory made absolute against base, the file's directory.
-func resolveSkill(base, entry string) (string, error) {
+// ResolveSkill is one skills entry as a create reads it: a Git URL as
+// written, and a directory made absolute against base — the file's directory
+// for an entry of new.skills, the working directory for one typed on a
+// command line — with ~ for the home directory.
+func ResolveSkill(base, entry string) (string, error) {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
 		return "", errors.New("is empty; name a directory or a Git URL")
