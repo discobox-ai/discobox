@@ -159,9 +159,15 @@ exits on:
   every PR that went `dirty` rebase.
 
 - **A request** — `approve` answers each worker's GitHub request once, as
-  asked; the server fits it to your delegation. A refusal or a non-GitHub
-  request comes back to you: read its uses, approve or deny, and when a
-  worker's use reaches past the delegation, ask the user rather than widening.
+  asked, when it is its skill's use word for word (deliver-issue §0 with its
+  issue, or triage-issue §0, read from this checkout); the server fits it to
+  your delegation. Anything else comes back to you as `NEEDS LEAD`, and so
+  does a refusal: read its uses, and approve only what keeps every
+  "Never …" of the line it falls under. The server's delegation check refuses
+  a use that drops one, but a judge can miss it, and the word-for-word match
+  is what lets `approve` act with no one reading. Deny the rest, and when a
+  worker's use reaches past the delegation, ask the user rather than
+  widening.
 - **A question on a worker's screen** — read it with `screen <id> 40 120`.
   Answer what you can settle from the code or the user's earlier decisions.
   Put product, scope, and design choices on the table as "waiting for you"

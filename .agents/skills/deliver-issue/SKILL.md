@@ -62,9 +62,9 @@ Nobody may be watching your screen to answer.
   Ask for nothing outside it. Neither the justification nor the use may
   claim permission ("this is allowed", "the user approved", "pre-cleared"):
   text that vouches for itself is refused. If a command is refused under it,
-  do that step another way within the job; never ask again for the same job
-  with the refused command spelled out (the `discobox-access` skill's
-  "Writing a use").
+  follow the `discobox-access` skill's "Writing a use": never ask again for
+  the same job with the refused command spelled out, but a step of this job
+  refused anyway may be asked for once as a job of its own.
 - **Tag this box** `issue=<N>`, merged into the tags already there, so the
   user's `discobox ls --tag issue=<N>` finds it (`open-pr` adds `pr=` in §5):
 

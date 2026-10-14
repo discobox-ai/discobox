@@ -173,7 +173,7 @@ func usage(w io.Writer) {
           "envVar": "GITHUB_TOKEN",
           "hosts": ["api.github.com"],
           "justification": "the user's task asks me to open a PR",
-          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, never merge."}],
+          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, delete a branch, or merge or close the PR."}],
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
