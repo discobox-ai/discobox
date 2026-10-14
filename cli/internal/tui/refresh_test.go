@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -173,33 +171,6 @@ func TestATokenWithNoCommandOffersOnlyAValue(t *testing.T) {
 	}
 }
 
-// A well-known credential that suggests its command can be stored from it:
-// the command is shown, editable, and the secret is created with it.
-func TestAWellKnownAskCanBeAnsweredFromACommand(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.mu.Lock()
-	ds.requests[0].WellKnownID = wellknown.GitHubAPI
-	ds.requests[0].Name = "github-new"
-	ds.mu.Unlock()
-	send(t, m, credentialsLoadedMsg{requests: ds.requests})
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("command"), 0)
-	grantFor(t, m, time.Hour)
-	if m.dialog == nil || m.dialog.title != "From a command" || m.dialog.input.Value() != "gh auth token" {
-		t.Fatalf("dialog = %s, want the suggested command, editable", describe(m.dialog))
-	}
-	send(t, m, keyPress("enter"))
-	if len(ds.createdSecrets) != 1 || !slices.Equal(ds.createdSecrets[0].RefreshCommand, ghCommand) || ds.createdSecrets[0].Value.Token != "" ||
-		ds.createdSecrets[0].ValueTTLSeconds == nil || *ds.createdSecrets[0].ValueTTLSeconds != 86400 {
-		t.Fatalf("created = %#v, want a secret got from the command", ds.createdSecrets)
-	}
-	if len(ds.approvals) != 1 {
-		t.Fatalf("approvals = %#v, want the request approved with it", ds.approvals)
-	}
-}
-
 // F4 stores a token got from a command: the command is split as typed and
 // sent with no value, which the data source runs it for.
 func TestTheNewSecretFormTakesACommand(t *testing.T) {
@@ -350,34 +321,9 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	}
 }
 
-// The command in "From a command…" is drawn bold, not muted with the sentence
-// around it: it is what will run.
-func TestTheFromACommandRowEmphasizesTheCommand(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.mu.Lock()
-	ds.requests[0].WellKnownID = wellknown.GitHubAPI
-	ds.mu.Unlock()
-	send(t, m, credentialsLoadedMsg{requests: ds.requests})
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-
-	var row action
-	for _, item := range m.dialog.items {
-		if item.key == "command" {
-			row = item
-		}
-	}
-	if row.emphasis != "gh auth token" || !strings.Contains(row.detail, row.emphasis) {
-		t.Fatalf("row = %#v, want the command emphasized within its detail", row)
-	}
-	drawn := emphasized(m.st, row.detail, row.emphasis)
-	if ansi.Strip(drawn) != row.detail {
-		t.Fatalf("drawn = %q, want the detail's words unchanged", ansi.Strip(drawn))
-	}
-}
-
-// A secret got from a command says so where it is chosen, and once a secret
-// answers the ID nothing offers to run the command again.
+// A secret got from a command says so where it is chosen, and the request
+// card offers no row of its own for running the command: a new credential's
+// form is where it is chosen.
 func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)

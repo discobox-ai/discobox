@@ -112,6 +112,23 @@ type dialog struct {
 	page  int
 	input textinput.Model
 	err   bool
+	// keyFirst, on an input card, is asked about each key before the card
+	// answers it, and handed what the field holds: a card whose field edits
+	// a line of a list walks the list on ↑ and ↓, and toggles a pick on Space
+	// or Enter (askLines). handled keeps the key from the field and from
+	// Enter's answer; Esc is never asked.
+	keyFirst func(msg tea.KeyPressMsg, typed string) (cmd tea.Cmd, handled bool)
+	// cancelTyped, on an input card, is Esc handed what the field holds, for
+	// a card whose way back keeps the text half typed into it.
+	cancelTyped func(typed string) tea.Cmd
+	// itemPress, on an input card, is a press on one of its rows — the rows a
+	// list the field edits draws above it (askLines) — handed what the field
+	// holds. An input card's items are drawn and marked as a menu's are, and
+	// answered here rather than by action, which is the field's.
+	itemPress func(idx int, typed string) tea.Cmd
+	// pasteRefused, on an input card, is said instead of taking a paste,
+	// while the field is not where typing goes (a pick of a list is).
+	pasteRefused string
 
 	// emphasis is the one line a question turns on — the size of a directory
 	// being measured behind it — drawn under the body in the window's accent
@@ -307,6 +324,7 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.SetValue(value)
+	ti.CursorEnd()
 	ti.Focus()
 	// No character limit. The longest thing typed into one of these is a
 	// credential, and a credential is as long as whoever issued it made it —
@@ -378,6 +396,9 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if d.kind == dlgForm && d.form.listing {
 			d.form.closeList()
 			return nil, false
+		}
+		if d.kind == dlgInput && d.cancelTyped != nil {
+			return d.cancelTyped(d.input.Value()), true
 		}
 		return d.cancel(), true
 	}
@@ -492,6 +513,11 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return d.create.update(msg)
 
 	case dlgInput:
+		if d.keyFirst != nil {
+			if cmd, handled := d.keyFirst(msg, d.input.Value()); handled {
+				return cmd, false
+			}
+		}
 		if keyName(msg) == "enter" {
 			if d.action != nil {
 				return d.action(strings.TrimSpace(d.input.Value())), true
@@ -516,6 +542,12 @@ func (d *dialog) paste(msg tea.PasteMsg) tea.Cmd {
 	case dlgForm:
 		return d.form.paste(msg)
 	case dlgInput:
+		if d.pasteRefused != "" {
+			// Said where it was dropped, as typing there is: nothing lands
+			// in a field the keys are not in.
+			d.emphasis = d.pasteRefused
+			return nil
+		}
 		var cmd tea.Cmd
 		d.input, cmd = d.input.Update(msg)
 		return cmd
@@ -970,6 +1002,9 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 
 	case dlgInput:
 		answer()
+		if len(d.items) > 0 {
+			b.WriteString(d.viewItems(st, z, row(), inner, itemRoom))
+		}
 		// The field is a field: a press in it puts the caret where the
 		// pointer is, rather than only bringing the card into focus it
 		// already has.

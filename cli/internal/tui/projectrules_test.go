@@ -132,10 +132,12 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 		t.Fatalf("title = %q, want it to count the rules", rows[rules])
 	}
 	for i, want := range [][]string{
-		{"com.github.api", "enabled", "github.com/org/repo, github.com/org/tools", "2 uses", "no expiry"},
+		// Repositories longer than their column are cut; the uses take the
+		// rest of the row, as much of them as fits.
+		{"com.github.api", "enabled", "github.com/org/repo, github.com/o…", "Open, update, comment on", "no expiry"},
 		// A rule for a project secret is named by the secret, not its ID.
-		{"OpenAI key", "disabled", "gitlab.example.com/team/models", "1 use"},
-		{"com.github.api", "lapsed", "every discobox", "1 use", "lapsed 1h ago"},
+		{"OpenAI key", "disabled", "gitlab.example.com/team/models", "Call the OpenAI API"},
+		{"com.github.api", "lapsed", "every discobox", "Read any issue in org/repo", "lapsed 1h ago"},
 	} {
 		row := rows[rules+1+i]
 		for _, word := range want {
@@ -152,8 +154,9 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 }
 
 // A narrow window gives up the columns that say least, from the right, and
-// cuts the repositories to what is left. The credential and whether the rule is
-// answering are what the row is for, and stay.
+// shares what is left between the repositories and the uses, cutting both.
+// The credential and whether the rule is answering are what the row is for,
+// and stay.
 func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 	t.Parallel()
 	m, _ := rulesFixture(t)
@@ -161,7 +164,7 @@ func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 
 	rows := plainRows(m)
 	row := rows[titleRow(rows, "Rules")+1]
-	for _, want := range []string{"com.github.api", "enabled", "github.com/org/repo"} {
+	for _, want := range []string{"com.github.api", "enabled", "github.com/or", "Open, update"} {
 		if !strings.Contains(row, want) {
 			t.Fatalf("row = %q, want it to keep %q", row, want)
 		}
@@ -177,8 +180,8 @@ func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 }
 
 // An empty table that said nothing would read as a listing that did not
-// arrive. A project with no rules says so, and says the two ways one is made,
-// since neither is a key on this screen.
+// arrive. A project with no rules says so, and how one is made: the empty
+// table takes the cursor, its key line offers n, and n starts a rule.
 func TestAProjectWithNoRulesSaysSoAndHowOneIsMade(t *testing.T) {
 	t.Parallel()
 	m, ds := rulesFixture(t)
@@ -190,15 +193,37 @@ func TestAProjectWithNoRulesSaysSoAndHowOneIsMade(t *testing.T) {
 	if rules < 0 {
 		t.Fatalf("the table is not drawn:\n%s", strings.Join(rows, "\n"))
 	}
-	for _, want := range []string{"no rules", "auto approve", "discobox secret rule create"} {
+	for _, want := range []string{"no rules", "n makes one", "auto approve"} {
 		if !strings.Contains(rows[rules+1], want) {
 			t.Fatalf("empty line = %q, want it to carry %q", rows[rules+1], want)
 		}
 	}
-	// There is no row to put a cursor on, so nothing moves the keys there.
-	send(t, m, keyPress("end"), keyPress("down"), keyPress("tab"))
+	// The line takes the cursor, and the key line there is making one.
+	send(t, m, keyPress("end"), keyPress("down"))
+	if m.table != tableRules {
+		t.Fatalf("the keys are in table %d, want them on the empty rules", m.table)
+	}
+	rows = plainRows(m)
+	if !strings.Contains(rows[titleRow(rows, "Rules")+1], "❯") {
+		t.Fatalf("empty line = %q, want the cursor on it", rows[titleRow(rows, "Rules")+1])
+	}
+	frame := plainFrame(m)
+	if !strings.Contains(frame, "n new rule") || strings.Contains(frame, "enter read it") || strings.Contains(frame, "d delete") {
+		t.Fatalf("key line does not offer only a new rule:\n%s", frame)
+	}
+	send(t, m, keyPress(ruleNewKey))
+	if m.dialog == nil || m.dialog.title != "New rule: which credential" {
+		t.Fatalf("dialog = %s, want n to start a rule", describe(m.dialog))
+	}
+	// Leaving it is back on the table, with nothing made.
+	send(t, m, keyPress("esc"))
+	if m.dialog != nil || len(ds.madeRules) != 0 {
+		t.Fatalf("dialog = %s, made %v; want the table back and nothing made", describe(m.dialog), ds.madeRules)
+	}
+	// Up from it is the table above.
+	send(t, m, keyPress("up"))
 	if m.table != tableSecrets {
-		t.Fatalf("the keys are in table %d, want them left in the secrets", m.table)
+		t.Fatalf("the keys are in table %d, want the secrets above", m.table)
 	}
 }
 
@@ -385,8 +410,8 @@ func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 		longUse, "Read any issue in org/repo",
 		"1 grant it minted still stands",
 		"fix flaky pool reaper tests · sandbox sbx_one api.github.com · expires in",
-		// What this card does not do, and where it is done.
-		"discobox secret rule update rule_1",
+		// An edit is offered, and what happens to one.
+		"Edit this rule", "an edit is read whole before it is saved",
 	} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card does not carry %q:\n%s", want, wholeCard(m))
@@ -394,8 +419,8 @@ func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 	}
 	// A grant that has lapsed authorizes nothing, and one another rule or a
 	// person made is not this rule's.
-	if got := itemKeys(m.dialog); !slices.Equal(got, []string{ruleToggleItem, ruleDeleteItem, "grant_r1"}) {
-		t.Fatalf("rows = %v, want the two actions and the one grant still standing", got)
+	if got := itemKeys(m.dialog); !slices.Equal(got, []string{ruleEditItem, ruleToggleItem, ruleDeleteItem, "grant_r1"}) {
+		t.Fatalf("rows = %v, want the three actions and the one grant still standing", got)
 	}
 
 	// Enter on a grant reads it, and leaving it comes back to the rule.
@@ -438,8 +463,8 @@ func TestDisablingAndEnablingSendOnlyThatAndComeBackToTheRule(t *testing.T) {
 		t.Fatalf("dialog = %s, want the rule's card back, saying it is off:\n%s", describe(m.dialog), wholeCard(m))
 	}
 	// Its grant still stands, and the same key turns it back on.
-	if !slices.Contains(itemKeys(m.dialog), "grant_r1") || m.dialog.items[0].label != "Enable this rule" {
-		t.Fatalf("rows = %v (first %q), want the grant kept and the way back on", itemKeys(m.dialog), m.dialog.items[0].label)
+	if !slices.Contains(itemKeys(m.dialog), "grant_r1") || m.dialog.items[1].label != "Enable this rule" {
+		t.Fatalf("rows = %v (toggle %q), want the grant kept and the way back on", itemKeys(m.dialog), m.dialog.items[1].label)
 	}
 	send(t, m, keyPress("s"))
 	if !slices.Equal(ds.ruleEdits, []string{"rule_1 enabled=false", "rule_1 enabled=true"}) || !strings.Contains(cardWords(m), "state enabled") {
@@ -493,7 +518,7 @@ func TestAGrantIsRevokedFromTheRuleThatMintedIt(t *testing.T) {
 		t.Fatalf("dialog = %s, want the rule's card still up", describe(m.dialog))
 	}
 
-	send(t, m, keyPress("down"), keyPress("down"), keyPress(grantRevokeKey))
+	send(t, m, keyPress("down"), keyPress("down"), keyPress("down"), keyPress(grantRevokeKey))
 	if m.dialog == nil || m.dialog.kind != dlgConfirm || m.dialog.titleRight != "grant_r1" || !m.dialog.defaultNo {
 		t.Fatalf("dialog = %s, want the revoke question for the grant, defaulting to no", describe(m.dialog))
 	}
@@ -687,10 +712,10 @@ func TestAFailedRulesReadLeavesTheRestOfTheScreen(t *testing.T) {
 	}
 }
 
-// A rules table that loses its last row gives the keys back to the secrets,
-// however it lost it: the key line of a table with no row would offer keys
-// that do nothing.
-func TestTheKeysLeaveARulesTableThatHasNoRowLeft(t *testing.T) {
+// A rules table that loses its last row keeps the keys on its empty line,
+// however it lost it, and its key line offers only what that line does —
+// making a rule — never a rule's keys that would do nothing.
+func TestARulesTableThatHasNoRowLeftOffersOnlyANewRule(t *testing.T) {
 	t.Parallel()
 	m, ds := rulesFixture(t)
 	onRule(t, m, "rule_1")
@@ -699,11 +724,19 @@ func TestTheKeysLeaveARulesTableThatHasNoRowLeft(t *testing.T) {
 	ds.rules = nil
 	ds.mu.Unlock()
 	send(t, m, keyPress("enter"))
-	if m.dialog != nil || m.table != tableSecrets || len(m.rules.all) != 0 {
-		t.Fatalf("dialog = %s, table = %d with %d rules; want the secrets and no card", describe(m.dialog), m.table, len(m.rules.all))
+	if m.dialog != nil || m.table != tableRules || len(m.rules.all) != 0 {
+		t.Fatalf("dialog = %s, table = %d with %d rules; want the empty rules and no card", describe(m.dialog), m.table, len(m.rules.all))
 	}
-	if frame := plainFrame(m); strings.Contains(frame, "enter read it") {
-		t.Fatalf("the key line still offers a rule's keys:\n%s", frame)
+	if frame := plainFrame(m); strings.Contains(frame, "enter read it") || !strings.Contains(frame, "n new rule") {
+		t.Fatalf("the key line offers a rule's keys, or not a new one:\n%s", frame)
+	}
+	// A listing that failed has no line to act on, and gives the keys back.
+	ds.mu.Lock()
+	ds.rulesErr = errors.New("the server is gone")
+	ds.mu.Unlock()
+	send(t, m, keyPress("r"))
+	if m.table != tableSecrets {
+		t.Fatalf("table = %d, want the secrets once the rules cannot be read", m.table)
 	}
 }
 
@@ -716,7 +749,7 @@ func TestAGrownWindowShowsTheRulesItHasRoomFor(t *testing.T) {
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 16})
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frame := plainFrame(m)
-	for _, want := range []string{"gitlab.example.com/team/models", "every discobox", "github.com/org/repo, github.com/org/tools"} {
+	for _, want := range []string{"gitlab.example.com/team/models", "every discobox", "github.com/org/repo, github.com/o"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("the grown window does not draw the rule with %q:\n%s", want, frame)
 		}

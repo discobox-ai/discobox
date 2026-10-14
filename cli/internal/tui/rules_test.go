@@ -375,8 +375,10 @@ func TestEscWalksBackThroughTheRuleOneStepAtATime(t *testing.T) {
 	}
 }
 
-// A line of hand-written uses is taken back the way every other step is.
-func TestEscTakesBackTheLastUseWritten(t *testing.T) {
+// Esc never changes a word of the uses written by hand: it goes back to the
+// menu, and writing them by hand again opens on them as they were left, the
+// line half-typed into the field included.
+func TestEscKeepsTheUsesWritten(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithProposals(t)
 
@@ -385,11 +387,16 @@ func TestEscTakesBackTheLastUseWritten(t *testing.T) {
 	send(t, m, keyPress("w"))
 	drain(t, m, m.dialog.action("Open pull requests against acme/pool"), 0)
 	drain(t, m, m.dialog.action("Merge them"), 0)
+	m.dialog.input.SetValue("Comment on th")
 	send(t, m, keyPress("esc"))
-
+	if !onRuleStep(m, "what it approves") || m.dialog.kind != dlgActions {
+		t.Fatalf("dialog = %s, want the menu of uses back", describe(m.dialog))
+	}
+	send(t, m, keyPress("w"))
 	card := wholeCard(m)
-	if m.dialog == nil || m.dialog.kind != dlgInput || strings.Contains(card, "Merge them") || !strings.Contains(card, "Open pull requests against acme/pool") {
-		t.Fatalf("card = %q, want the last line gone and the first kept", card)
+	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(card, "Merge them") ||
+		!strings.Contains(card, "Open pull requests against acme/pool") || m.dialog.input.Value() != "Comment on th" {
+		t.Fatalf("card = %q, field = %q; want both lines and the half-typed one kept", card, m.dialog.input.Value())
 	}
 }
 
@@ -476,23 +483,49 @@ func TestOnlyAnAgentsOwnAskOffersAutoApprove(t *testing.T) {
 	}
 }
 
-// A rule answers later requests with a credential the project holds. With
-// none stored the row is there, so the path is known to exist, and says why
-// it cannot be taken yet.
-func TestAutoApproveNeedsASecretToAnswerWith(t *testing.T) {
+// A rule answers with a credential the project holds, and with none stored
+// its first step offers to store one: the request card's own new-credential
+// form, filled from the request, stored when it is saved — the form says so —
+// and the flow goes on with it chosen. Esc from the form stores nothing.
+func TestAutoApproveCanStoreANewCredential(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
+	req := waitingRequest()
+	req.WellKnownID = wellknown.GitHubAPI
+	ds.requests = []CredentialRequest{req}
+	ds.proposals = proposalsForTheRequest()
 	m := newTestModel(t, ds)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	request := m.dialog
-	send(t, m, keyPress(autoApproveKey))
-	if m.dialog != request {
-		t.Fatalf("dialog = %s, want the key to do nothing with no secret to answer with", describe(m.dialog))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey), keyPress(autoApproveKey))
+	if m.dialog == nil || m.dialog.title != "Auto approve" || len(m.dialog.items) != 1 || m.dialog.items[0].key != "new" {
+		t.Fatalf("dialog = %s, want the new credential offered alone", describe(m.dialog))
 	}
-	if card := wholeCard(m); !strings.Contains(card, "there is none yet") {
-		t.Fatalf("card = %q, want the row to say why", card)
+	drain(t, m, m.dialog.action("new"), 0)
+	if !onNewCredentialForm(m) || m.dialog.form.chosen("kind") != wellKnownKind+wellknown.GitHubAPI ||
+		!strings.Contains(cardWords(m), "when this form is saved") {
+		t.Fatalf("dialog = %s, want the filled form, saying when it is stored:\n%s", describe(m.dialog), wholeCard(m))
+	}
+	send(t, m, keyPress("esc"))
+	if m.dialog == nil || m.dialog.title != "Auto approve" || len(ds.createdSecrets) != 0 {
+		t.Fatalf("dialog = %s, created %d; want the secret step back and nothing stored", describe(m.dialog), len(ds.createdSecrets))
+	}
+	drain(t, m, m.dialog.action("new"), 0)
+	send(t, m, keyPress("enter"))
+	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].WellKnownID != wellknown.GitHubAPI {
+		t.Fatalf("created = %#v, want the well-known credential stored, marked for its ID", ds.createdSecrets)
+	}
+	if !onRuleStep(m, "which discoboxes") {
+		t.Fatalf("dialog = %s, want the flow gone on to the rule", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action(ruleForRepository), 0)
+	drain(t, m, m.dialog.action("content:1"), 0)
+	grantFor(t, m, time.Hour)
+	if card := cardWords(m); !strings.Contains(card, "answered with github") && !strings.Contains(card, "answered with GitHub") {
+		t.Fatalf("card = %q, want the rule answered with the new secret", card)
+	}
+	send(t, m, keyPress("y"))
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_new" || ds.approvals[0].Rule == nil {
+		t.Fatalf("approvals = %#v, want the rule made with the secret just stored", ds.approvals)
 	}
 }
 

@@ -310,6 +310,14 @@ type Sandbox struct {
 	// SourceRemote marks a Source that is a repository URL rather than a
 	// directory on a client.
 	SourceRemote bool
+	// RepositoryIdentity is the repository an approval rule names to be for
+	// this discobox: its source's URL, else the remote a local source tracks,
+	// as host/path (sourcecache.NormalizeRemote, as the server reduces it).
+	// Empty for a local source with no remote, which no rule names. It is
+	// what a rule sends, in the text the source gave; RepositoryShown is it
+	// made safe to draw, since a source's remote is whatever whoever created
+	// the discobox — a lead discobox among them — said it was.
+	RepositoryIdentity, RepositoryShown string
 	// SourceOriginKey is where a discobox cut from Source on this machine is
 	// filed: what the list follows the Source row to when it is set to this
 	// one. It is OriginKey itself for a discobox created here.
@@ -1485,6 +1493,11 @@ type ApprovalRule struct {
 type Rule struct {
 	ID string
 	ApprovalRule
+	// Stored is the rule's repositories and uses in the server's own text.
+	// ApprovalRule's are made safe to draw, and can differ; an edit sends
+	// these for every line the person did not change, so it never rewrites
+	// one they did not touch.
+	Stored ApprovalRule
 	// The one credential it answers for: a well-known ID, or a project
 	// secret's ID.
 	WellKnownID string
@@ -1504,6 +1517,47 @@ type Rule struct {
 	// Enabled is whether it is tested at all. Disabling one mints nothing
 	// more and revokes nothing.
 	Enabled bool
+}
+
+// NewRule is an approval rule a person makes from the secrets screen: one
+// credential — a well-known ID, answered by the project secret marked for it,
+// or a project secret — which discoboxes it is for, what it approves, the
+// longest a grant it mints may live and when it lapses. The hosts and the
+// purpose are the server's to default: the credential's own hosts, and to use.
+type NewRule struct {
+	WellKnownID string
+	SecretID    string
+	// Hosts are where its grants may go, sent as the card that made it read
+	// them, so the rule stored is the rule that was read.
+	Hosts []string
+	ApprovalRule
+	// MaxGrantTTL caps each grant it mints; zero leaves the secret's own
+	// limit, and is sent as that.
+	MaxGrantTTL time.Duration
+	// Expires is when it lapses; zero never does.
+	Expires time.Time
+}
+
+// RuleChange is an edit to a rule: only what is set is sent, so what the
+// person did not touch is never the server's to read again.
+type RuleChange struct {
+	// Repositories, when set, replace the rule's; EveryDiscobox makes it a
+	// rule for every discobox instead. At most one of them is set, and every
+	// discobox is never what an empty Repositories means.
+	Repositories  []string
+	EveryDiscobox bool
+	// Uses, when set, replace what it approves.
+	Uses []string
+	// MaxGrantTTL, when set, is the new cap; zero is the secret's own limit.
+	MaxGrantTTL *time.Duration
+	// Expires, when set, is when it now lapses; NeverExpires clears that.
+	Expires      *time.Time
+	NeverExpires bool
+}
+
+// Empty reports whether the change changes nothing.
+func (c RuleChange) Empty() bool {
+	return c.Repositories == nil && !c.EveryDiscobox && c.Uses == nil && c.MaxGrantTTL == nil && c.Expires == nil && !c.NeverExpires
 }
 
 // RuleProposals is what a person who chose "auto approve" picks a rule from:
@@ -2457,6 +2511,14 @@ type DataSource interface {
 	// Rules lists the approval rules the server holds for the project, newest
 	// first. Only a person may read or change them.
 	Rules(ctx context.Context, server string) ([]Rule, error)
+
+	// CreateRule makes an approval rule, and returns it as the server holds
+	// it. The server refuses one it could not make — a repository that names
+	// no host, a use on two lines — and says why.
+	CreateRule(ctx context.Context, server string, rule NewRule) (Rule, error)
+
+	// UpdateRule changes what the change sets and nothing else.
+	UpdateRule(ctx context.Context, server, ruleID string, change RuleChange) error
 
 	// SetRuleEnabled turns one rule off or on, and changes nothing else about
 	// it. A disabled rule is tested for nothing; the grants it minted stand.

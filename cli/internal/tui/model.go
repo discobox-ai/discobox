@@ -1015,6 +1015,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case ruleActionMsg:
 		return m.ruleActed(msg)
 
+	case ruleWrittenMsg:
+		return m.ruleWritten(msg)
+
+	case ruleSecretStoredMsg:
+		return m.ruleSecretStored(msg)
+
 	case renewalAnsweredMsg:
 		return m.renewalAnswered(msg)
 
@@ -4434,6 +4440,12 @@ func (m *Model) helpText() string {
 		"                   answers a request without asking. On a rule,",
 		"                   Enter reads it whole, with the grants it minted,",
 		"                   and there " + grantRevokeKey + " withdraws one",
+		"    " + ruleNewKey + "              on the rules, a new rule: its credential,",
+		"                   which discoboxes, what it approves, its longest",
+		"                   grant and when it lapses, read whole before it",
+		"                   is made. Esc on a step is the step before",
+		"    " + ruleEditKey + "              on a rule, edit it the same way; the last",
+		"                   card says what changes, before and after",
 		"    " + ruleToggleKey + "              on a rule, disable or enable it",
 		"    r              refresh",
 		"    Esc or " + SecretsKeyName + "      leave this screen",

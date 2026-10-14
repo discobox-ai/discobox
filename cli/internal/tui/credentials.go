@@ -210,27 +210,16 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 		return m.askAboutGate(req, secrets, known)
 	}
 	items := secretRows(secrets, req)
-	// A credential that suggests the command printing it can be stored that
-	// way: run here, now, and renewed with it when it goes stale
-	// (ADR 26-09-25-122 §2).
-	//
-	// Only while nothing answers the ID: a secret that does is already the
-	// answer — the first row — and one stored from the command is renewed
-	// with it, so running it again would store a second copy of the same
-	// credential.
-	answered := slices.ContainsFunc(secrets, func(secret Secret) bool { return secret.WellKnownID == req.WellKnownID })
-	if known, ok := wellknown.Lookup(req.WellKnownID); ok && len(known.RefreshCommand) > 0 && !answered {
-		command := refreshcmd.Join(known.RefreshCommand)
-		items = append(items, action{key: "command", press: "c", label: "From a command…",
-			detail: "run " + command + " here, store what it prints, and renew with it", emphasis: command, enabled: true})
-	}
+	// A new credential is the secrets screen's own form, filled from the
+	// request: a well-known one as that credential — its name, host, and the
+	// command that prints it, with how long a value lasts — so storing it from
+	// its command is the form's default rather than a row of its own.
 	items = append(items, action{key: "new", press: "n", label: "New credential…", detail: "store it as a project secret and approve with it", enabled: true})
 	if req.Ruleable() {
-		// A rule approves later requests with a credential the project holds,
-		// so with none stored there is nothing for one to answer with yet.
+		// A rule answers with a credential the project holds; with none
+		// stored yet, its first step offers to store one.
 		items = append(items, action{key: "auto", press: autoApproveKey, label: "Auto approve…",
-			detail:  "approve this, and requests like it from now on, under a rule you read first",
-			enabled: len(secrets) > 0, why: "a rule answers with a project secret, and there is none yet"})
+			detail: "approve this, and requests like it from now on, under a rule you read first", enabled: true})
 	}
 	items = append(items, action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true})
 
@@ -244,12 +233,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			return m.askRuleSecret(a)
 		case result == "new":
 			a.fresh = true
-			return m.startNewCredential(a)
-		case result == "command":
-			known, _ := wellknown.Lookup(req.WellKnownID)
-			a.fresh = true
-			a.command = slices.Clone(known.RefreshCommand)
-			return m.startNewCredential(a)
+			return m.askLifetime(a, m.toRequest(a))
 		case strings.HasPrefix(result, "secret:"):
 			return m.chooseSecret(a, strings.TrimPrefix(result, "secret:"))
 		}
@@ -367,59 +351,113 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 		// Not a row, so not what anything below may open on or mark.
 		asked = 0
 	}
-	items := make([]action, 0, len(offered)+1)
-	for _, d := range offered {
-		items = append(items, action{
-			key:     strconv.FormatInt(lifetime.Seconds(d), 10),
-			label:   lifetime.Label(d),
-			detail:  lifetimeDetail(a.secret, asked, d),
-			enabled: true,
-		})
-	}
-	items = append(items, action{key: lifetimeCustom, label: "custom…", detail: "type one: 90m, 3d, 6mo", enabled: true})
-
-	again := func() tea.Cmd { return m.askLifetime(a, back) }
 	opensOn := agentcreds.DefaultGrantTTL
 	if asked > 0 {
 		opensOn = asked
 	}
-	opens := strconv.FormatInt(lifetime.Seconds(opensOn), 10)
-	d := actionsDialog("How long?", "", items, func(result string) tea.Cmd {
-		if result == lifetimeCustom {
-			return m.askCustomLifetime(a, again, "")
+	ask := durationAsk{
+		title:        "How long?",
+		sections:     []section{grantSection(a)},
+		answerLabel:  "how long may " + credentialName(a.req) + " be used for?",
+		footer:       "when it lapses the credential stops working, and the agent asks again",
+		customFooter: "1h, 90m, 3d, 2w, 1mo — or forever",
+		choices:      offered,
+		opensOn:      opensOn,
+		detail:       func(d time.Duration) string { return lifetimeDetail(a.secret, asked, d) },
+	}
+	if a.auto {
+		// One answer for both: the server caps what the rule mints at the
+		// lifetime of the approval that made it.
+		ask.sections = append(ask.sections, ruleSections(a.asRule())...)
+		ask.footer = "this grant lives that long, and so does each one the rule approves after it"
+	}
+	return m.askDuration(ask, func(d time.Duration, _ bool, again func() tea.Cmd) tea.Cmd {
+		next := a
+		next.ttl = d
+		return m.lifetimeChosen(next, again)
+	}, back)
+}
+
+// durationAsk is a lifetime chosen from the presets, or typed: how long a
+// grant lives, the longest one a rule may mint, when a rule lapses. What a
+// row is called and what it says beyond its name are the asker's, since
+// "forever" means something different in each.
+type durationAsk struct {
+	title, answerLabel, footer string
+	// customFooter is what the field for one the presets lack says it takes.
+	customFooter string
+	sections     []section
+	// choices are the rows, and opensOn the one the cursor starts on.
+	choices []time.Duration
+	opensOn time.Duration
+	// name is a row's label, lifetime.Label when nil; detail what it means
+	// beyond that.
+	name, detail func(time.Duration) string
+	// keep, when set, is a first row that leaves the value as it is, labeled
+	// with what it is; the cursor starts there.
+	keep string
+}
+
+// askDuration asks for the lifetime and hands chose what was chosen — kept
+// when it is the row that leaves it as it is — with the way back to this
+// card, for whatever follows to return to. back is the step before.
+func (m *Model) askDuration(ask durationAsk, chose func(d time.Duration, kept bool, again func() tea.Cmd) tea.Cmd, back func() tea.Cmd) tea.Cmd {
+	name := ask.name
+	if name == nil {
+		name = lifetime.Label
+	}
+	items := make([]action, 0, len(ask.choices)+2)
+	if ask.keep != "" {
+		items = append(items, action{key: lifetimeKeep, label: "as it is", detail: ask.keep, enabled: true})
+	}
+	for _, d := range ask.choices {
+		detail := ""
+		if ask.detail != nil {
+			detail = ask.detail(d)
+		}
+		items = append(items, action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: name(d), detail: detail, enabled: true})
+	}
+	items = append(items, action{key: lifetimeCustom, label: "custom…", detail: "type one: 90m, 3d, 6mo", enabled: true})
+
+	again := func() tea.Cmd { return m.askDuration(ask, chose, back) }
+	d := actionsDialog(ask.title, "", items, func(result string) tea.Cmd {
+		switch result {
+		case lifetimeCustom:
+			return m.askCustomDuration(ask, chose, again, "")
+		case lifetimeKeep:
+			return chose(0, true, again)
 		}
 		seconds, err := strconv.ParseInt(result, 10, 64)
 		if err != nil {
 			return nil
 		}
-		next := a
-		next.ttl = time.Duration(seconds) * time.Second
-		return m.lifetimeChosen(next, again)
+		return chose(time.Duration(seconds)*time.Second, false, again)
 	})
-	// It opens on the agent's ask, else the default, whatever order the rows
-	// are offered in, so Enter is the answer nobody had to choose. The first
-	// row carrying the key wins, so a second one that somehow shared it could
-	// never take the cursor from it.
+	// It opens on the row asked for whatever order the rows are in, so Enter
+	// is the answer nobody had to choose. The first row carrying the key
+	// wins, so a second one that somehow shared it could never take the
+	// cursor from it.
+	opens := strconv.FormatInt(lifetime.Seconds(ask.opensOn), 10)
+	if ask.keep != "" {
+		opens = lifetimeKeep
+	}
 	for i, item := range items {
 		if item.key == opens {
 			d.cursor = i
 			break
 		}
 	}
-	d.sections = []section{grantSection(a)}
-	d.answerLabel = "how long may " + credentialName(a.req) + " be used for?"
-	d.footer = "when it lapses the credential stops working, and the agent asks again"
-	if a.auto {
-		// One answer for both: the server caps what the rule mints at the
-		// lifetime of the approval that made it.
-		d.sections = append(d.sections, ruleSections(a.asRule())...)
-		d.footer = "this grant lives that long, and so does each one the rule approves after it"
-	}
+	d.sections = ask.sections
+	d.answerLabel = ask.answerLabel
+	d.footer = ask.footer
 	d.keys = []hint{pressing("enter chooses the highlighted lifetime", "enter"), pressing("esc goes back", "esc")}
 	d.onCancel = back
 	m.dialog = d
 	return nil
 }
+
+// lifetimeKeep is the row that leaves a lifetime as it is.
+const lifetimeKeep = "keep"
 
 // lifetimeChoices is the presets, with the lifetime the agent asked for in its
 // place among them when it is not already one: the row the card opens on has to
@@ -462,23 +500,21 @@ func lifetimeDetail(secret Secret, asked, d time.Duration) string {
 	return strings.Join(notes, " · ")
 }
 
-// askCustomLifetime takes a lifetime the presets do not offer. refused is the
-// last answer's refusal, which the card keeps rather than closing onto the
-// screen behind it: what is wrong with "3 weeks-ish" has to be said where it
-// was typed. back is the lifetime menu.
-func (m *Model) askCustomLifetime(a approval, back func() tea.Cmd, refused string) tea.Cmd {
-	d := inputDialog("How long?", "", "e.g. 90m, 3d, 6mo", "", func(value string) tea.Cmd {
+// askCustomDuration takes a lifetime the presets do not offer. refused is
+// the last answer's refusal, which the card keeps rather than closing onto
+// the screen behind it: what is wrong with "3 weeks-ish" has to be said where
+// it was typed. back is the lifetime menu.
+func (m *Model) askCustomDuration(ask durationAsk, chose func(d time.Duration, kept bool, again func() tea.Cmd) tea.Cmd, back func() tea.Cmd, refused string) tea.Cmd {
+	d := inputDialog(ask.title, "", "e.g. 90m, 3d, 6mo", "", func(value string) tea.Cmd {
 		chosen, err := lifetime.Parse(value)
 		if err != nil {
-			return m.askCustomLifetime(a, back, fmt.Sprintf("%v", err))
+			return m.askCustomDuration(ask, chose, back, fmt.Sprintf("%v", err))
 		}
-		next := a
-		next.ttl = chosen
-		return m.lifetimeChosen(next, func() tea.Cmd { return m.askCustomLifetime(a, back, "") })
+		return chose(chosen, false, func() tea.Cmd { return m.askCustomDuration(ask, chose, back, "") })
 	})
-	d.sections = []section{grantSection(a)}
-	d.answerLabel = "how long may " + credentialName(a.req) + " be used for?"
-	d.footer = "1h, 90m, 3d, 2w, 1mo — or forever"
+	d.sections = ask.sections
+	d.answerLabel = ask.answerLabel
+	d.footer = ask.customFooter
 	d.emphasis = refused
 	d.onCancel = back
 	m.dialog = d
@@ -492,7 +528,7 @@ func grantSection(a approval) section {
 	answered := a.secret.Name
 	switch {
 	case a.fresh:
-		answered = "a new credential, stored as " + a.storedAs()
+		answered = "a new credential, filled in on the next card"
 	case a.gate:
 		answered = "no secret: its pool lets its uses in"
 	}
@@ -517,11 +553,8 @@ const delegationPurpose = "delegation — may delegate it, never uses it"
 // needs its value, and an existing one may need its limit raised. back is the
 // dialog the lifetime was chosen on, which either of them returns to.
 func (m *Model) lifetimeChosen(a approval, back func() tea.Cmd) tea.Cmd {
-	if a.fresh && a.command != nil {
-		return m.askForRefreshCommand(a, back)
-	}
 	if a.fresh {
-		return m.askForNewCredential(a, back)
+		return m.askNewCredentialForm(a)
 	}
 	return m.confirmGrantLimit(a, back)
 }
@@ -727,171 +760,143 @@ func secretKind(secret Secret) string {
 	return secret.Type
 }
 
-// startNewCredential is the way into storing a credential the project does not
-// have: the lifetime, then the value. The name is asked for first only when the
-// credential the agent named is one the project already has under that name,
-// type, and host — the collision the server refuses the create for, which is
-// advice ("pick another name") nothing here could otherwise follow.
-func (m *Model) startNewCredential(a approval) tea.Cmd {
-	if secretNameTaken(a.secrets, credentialName(a.req), secretType(a.req), a.req.binding()) {
-		return m.askStoredAs(a, "", m.toRequest(a))
-	}
-	return m.askLifetime(a, m.toRequest(a))
+// askNewCredentialForm stores a credential the project does not have yet and
+// answers the request with it: the secrets screen's form (secretForm), filled
+// from the request (fillFromRequest), every field still the person's to
+// change. It comes after the lifetime, so the token typed into it is never
+// held by a card that can be gone back to: Esc here is the request, still
+// waiting.
+func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
+	return m.newCredentialForm(a, section{label: "approves the request", fields: []field{
+		{label: "credential", value: credentialName(a.req), tone: toneAccent},
+		{label: "granted for", value: lifetime.Label(a.ttl), tone: toneAccent},
+	}}, "enter stores and approves", func(f *form, secret NewSecret) tea.Cmd {
+		// A limit shorter than the grant this approval is making is one the
+		// server would refuse the grant for, after the secret was stored.
+		if limit := time.Duration(secret.MaxTTLSeconds) * time.Second; limit > 0 && (a.ttl <= 0 || a.ttl > limit) {
+			f.err = "the grant limit is shorter than the " + lifetime.Label(a.ttl) + " this request is being approved for"
+			return nil
+		}
+		return m.createAndApprove(a, secret)
+	}, m.toRequest(a))
 }
 
-// askStoredAs asks what to store the new credential as, offering the first free
-// name so that accepting is one keystroke. note is what is wrong with the name
-// that was tried, on the way back round.
-func (m *Model) askStoredAs(a approval, note string, back func() tea.Cmd) tea.Cmd {
-	taken := credentialName(a.req)
-	suggestion := a.name
-	if suggestion == "" {
-		suggestion = freeSecretName(a.secrets, taken, secretType(a.req), a.req.binding())
-	}
-	where := "with no host"
-	if bound := a.req.binding(); bound != "" {
-		where = "for " + bound
-	}
-	body := note
-	if body == "" {
-		body = fmt.Sprintf("this project already has a %s secret named %q %s", secretType(a.req), taken, where)
-	}
-	d := inputDialog("Name the credential", body, "name", suggestion, func(value string) tea.Cmd {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return m.askStoredAs(a, "a credential is stored under a name; the request is still waiting", back)
+// newCredentialForm is the new-secret form filled from a request, with what
+// storing it then does: approve the request, or go on to make a rule with it.
+// about says so above the form, and back is where Esc goes, nothing stored.
+func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
+	f := secretForm(nil)
+	unmarked := fillFromRequest(f, a.req, a.secrets)
+	d := formDialog("New credential", f, func(f *form) tea.Cmd {
+		secret, ok := secretFromForm(f)
+		if !ok {
+			return nil
 		}
-		if secretNameTaken(a.secrets, value, secretType(a.req), a.req.binding()) {
-			return m.askStoredAs(a, fmt.Sprintf("%q is taken %s too; pick another", value, where), back)
-		}
-		next := a
-		next.name = value
-		return m.askLifetime(next, func() tea.Cmd { return m.askStoredAs(next, "", back) })
+		return then(f, secret)
 	})
-	fields := []field{{label: "answers", value: taken, tone: toneAccent}}
-	if bound := a.req.binding(); bound != "" {
-		fields = append(fields, field{label: "bound to", value: bound, tone: toneAccent})
+	d.sections = []section{about}
+	if unmarked != "" {
+		d.sections = append(d.sections, section{label: "why it is not marked", lines: []line{{text: unmarked, tone: toneAlert}}})
 	}
-	d.sections = []section{{label: "the new project secret", fields: fields}}
-	d.answerLabel = "store it as"
-	d.footer = "the name is this project's own; the agent never sees it"
-	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc goes back", "esc")}
+	// Esc second: a key line is cut from its tail, and the way back — the
+	// request still waiting — is the one thing it must always say.
+	d.keys = []hint{pressing(store, "enter"), pressing("esc back, nothing stored", "esc"), says("↑↓ moves"), says("←→ chooses")}
 	d.onCancel = back
 	m.dialog = d
 	return nil
 }
 
-// askForNewCredential collects a credential the project does not have yet. The
-// value is typed masked, and goes straight to the server: this window never
-// writes it anywhere, and the dialog holding it is replaced the moment it is
-// answered.
+// fillFromRequest fills the new-secret form from what a request asks for: a
+// well-known credential is chosen as its kind, which fills its name, host,
+// command and how long a value lasts (fillWellKnown); any other is named,
+// typed and bound as the request asks. A name the project already holds for
+// that kind and host is the first free one instead, which the server would
+// otherwise refuse the create for.
 //
-// It comes after the lifetime rather than before it, so that going back never
-// has to hold a token that was already typed: Esc here returns to the lifetime,
-// and nothing typed survives it.
-func (m *Model) askForNewCredential(a approval, back func() tea.Cmd) tea.Cmd {
-	req := a.req
-	fields := []field{{label: "stored as", value: a.storedAs(), tone: toneAccent}}
-	if bound := req.binding(); bound != "" {
-		fields = append(fields, field{label: "bound to", value: bound, tone: toneAccent})
-	}
-	fields = append(fields, field{label: "granted for", value: lifetime.Label(a.ttl), tone: toneAccent})
-	d := inputDialog("New credential", "", "token", "", func(value string) tea.Cmd {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return m.report(true, "no token entered; the request is still waiting")
+// A well-known ID the project already has a secret marked for is filled as a
+// plain token instead — the same name, host, command and how long a value
+// lasts — since the server refuses to mark a second one: stored that way it
+// answers only the request it is stored for. What it returns says so, for the
+// form to show; empty when the form is filled as asked.
+func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) (unmarked string) {
+	known, ok := wellknown.Lookup(req.WellKnownID)
+	switch marked := markedFor(secrets, req.WellKnownID); {
+	case ok && !known.Gate && marked == nil:
+		f.pickOption("kind", wellKnownKind+known.ID)
+	case ok && !known.Gate:
+		f.set("name", known.Name)
+		f.set("host", known.Host())
+		if len(known.RefreshCommand) > 0 {
+			f.set("command", refreshcmd.Join(known.RefreshCommand))
+			f.choose("source", "command")
 		}
-		return m.createAndApprove(a, value)
-	})
-	d.sections = []section{{label: "the new project secret", fields: fields}}
-	d.answerLabel = "paste the token"
-	d.footer = "it is stored encrypted and this request approved with it"
-	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc goes back", "esc")}
-	d.input.EchoMode = 1 // textinput.EchoPassword: a credential is not drawn back.
-	d.onCancel = back
-	m.dialog = d
+		if known.RefreshTTL > 0 {
+			f.choose("lasts", itoa(int(known.RefreshTTL/time.Second)))
+		}
+		unmarked = known.ID + " is already answered by " + marked.Name + "; this one is stored without the ID, and answers only this request"
+	default:
+		if secretType(req) == "oauth" {
+			f.pickOption("kind", "oauth")
+		}
+		f.set("name", credentialName(req))
+		f.set("host", req.binding())
+	}
+	kind := "token"
+	if f.chosen("kind") == "oauth" {
+		kind = "oauth"
+	}
+	name, host := f.value("name"), f.value("host")
+	if secretNameTaken(secrets, name, kind, host) || secretNameTaken(secrets, name, secretType(req), host) {
+		free := freeSecretName(secrets, name, kind, host)
+		for secretNameTaken(secrets, free, secretType(req), host) {
+			free = freeSecretName(secrets, free, secretType(req), host)
+		}
+		f.set("name", free)
+	}
+	return unmarked
+}
+
+// markedFor is the project secret marked as the answer to a well-known ID,
+// or nil when none is.
+func markedFor(secrets []Secret, id string) *Secret {
+	if id == "" {
+		return nil
+	}
+	for i := range secrets {
+		if secrets[i].WellKnownID == id {
+			return &secrets[i]
+		}
+	}
 	return nil
 }
 
-// askForRefreshCommand shows the command a new credential will be got from,
-// editable, before anything runs: it runs on this machine, as the person
-// reading it, and is what they will be offered to renew the credential with.
-func (m *Model) askForRefreshCommand(a approval, back func() tea.Cmd) tea.Cmd {
-	req := a.req
-	fields := []field{{label: "stored as", value: a.storedAs(), tone: toneAccent}}
-	if bound := req.binding(); bound != "" {
-		fields = append(fields, field{label: "bound to", value: bound, tone: toneAccent})
-	}
-	fields = append(fields, field{label: "granted for", value: lifetime.Label(a.ttl), tone: toneAccent})
-	d := inputDialog("From a command", "", "command", refreshcmd.Join(a.command), func(value string) tea.Cmd {
-		command, err := refreshcmd.Split(value)
-		if err != nil || len(command) == 0 {
-			return m.report(true, "no command to run; the request is still waiting")
-		}
-		next := a
-		next.command = command
-		return m.createAndApprove(next, "")
-	})
-	d.sections = []section{{label: "the new project secret", fields: fields}}
-	d.answerLabel = "run this here for the token"
-	lasts := defaultValueLifetime
-	if ttl := wellKnownValueTTL(req.WellKnownID, a.command); ttl != nil {
-		lasts = time.Duration(*ttl) * time.Second
-	}
-	d.footer = "it runs now, without a shell, and what it prints is stored encrypted · a value lasts " + lifetime.Label(lasts) + ", then it is asked for again"
-	d.keys = []hint{pressing("Enter runs it", "enter"), pressing("Esc goes back", "esc")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
-// createAndApprove stores the typed credential and answers with it. A secret
-// stored here has no grant limit of its own, so the lifetime chosen is the
-// whole of what bounds the grant, and there is nothing to ask about on the way
-// through.
-func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
+// createAndApprove stores the new credential and answers with it, for the
+// lifetime chosen. A secret stored from a command is run for its first value
+// by the data source. A refusal after the secret was stored says so: the
+// secret stays, and the request still waits.
+func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 	req, ttl := a.req, a.ttl
 	status := "storing the credential…"
-	if a.command != nil {
-		status = "running " + refreshcmd.Join(a.command) + "…"
+	if secret.RefreshCommand != nil {
+		status = "running " + refreshcmd.Join(secret.RefreshCommand) + "…"
 	}
 	m.dialog = statusDialog("Credential request", status)
 	return func() tea.Msg {
-		secret, err := m.ds.CreateSecret(m.ctx, req.Server, NewSecret{
-			Name:           a.storedAs(),
-			Type:           req.Type,
-			Host:           req.binding(),
-			Value:          SecretValue{Token: value},
-			RefreshCommand: a.command,
-			// The lifetime the well-known credential says its value really
-			// has, rather than the short one any command gets.
-			ValueTTLSeconds: wellKnownValueTTL(req.WellKnownID, a.command),
-		})
+		stored, err := m.ds.CreateSecret(m.ctx, req.Server, secret)
 		if err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		}
 		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, Approval{
 			RequestID:  req.ID,
-			SecretID:   secret.ID,
+			SecretID:   stored.ID,
 			TTLSeconds: lifetime.Seconds(ttl),
 		})
 		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		if err != nil {
-			msg.applied = []string{"the token was stored as the project secret " + secret.Name}
+			msg.applied = []string{"the token was stored as the project secret " + stored.Name}
 		}
 		return msg
 	}
-}
-
-// wellKnownValueTTL is how long a value lasts for a credential stored from a
-// well-known ID's command, nil when the ID says nothing.
-func wellKnownValueTTL(id string, command []string) *int64 {
-	known, ok := wellknown.Lookup(id)
-	if !ok || command == nil || known.RefreshTTL <= 0 {
-		return nil
-	}
-	seconds := lifetime.Seconds(known.RefreshTTL)
-	return &seconds
 }
 
 // approval is what answering a request will do, gathered one step at a time:
@@ -905,13 +910,10 @@ type approval struct {
 	req     CredentialRequest
 	secrets []Secret
 	secret  Secret
-	// fresh is an answer typed in on the spot rather than a secret the project
-	// holds: secret is empty, and the value is asked for after the lifetime.
+	// fresh is a new credential rather than a secret the project holds:
+	// secret is empty, and the new-secret form is filled in after the
+	// lifetime.
 	fresh bool
-	// command, on a fresh answer, is the command the value is got from instead
-	// of typed: run here when the secret is stored, and kept on it for its
-	// renewal.
-	command []string
 	// gate is an answer that is no secret at all: the credential is a gate
 	// (wellknown.Credential.Gate), secret is empty, and the server answers it.
 	gate bool
@@ -922,11 +924,14 @@ type approval struct {
 	auto      bool
 	proposals RuleProposals
 	rule      ApprovalRule
-	// name is what the new credential is stored under, when the approver was
-	// asked for one because the request's own name is taken. Empty is the
-	// request's name, which is the usual case.
-	name string
-	ttl  time.Duration
+	// heldUses is the list of uses written by hand as it was left — half
+	// typed included — for when the uses are written by hand again.
+	heldUses lineList
+	ttl      time.Duration
+	// stored is the name of a secret this approval stored on its way — auto
+	// approve's new credential — which stays whatever comes of the rule, and
+	// is said whenever the flow is left without one.
+	stored string
 	// bindTo and limit are what the approver agreed to change on the secret so
 	// the grant fits it: its binding (empty releases it) and its grant limit.
 	// Nil leaves each alone. They go with the approval, which the server
@@ -936,16 +941,6 @@ type approval struct {
 	// changes is what they do, in the words the status dialog says while it
 	// happens.
 	changes []string
-}
-
-// storedAs is the project secret name a new credential takes: the credential
-// the agent asked for, unless the approver renamed it because that name was
-// already in use.
-func (a approval) storedAs() string {
-	if a.name != "" {
-		return a.name
-	}
-	return credentialName(a.req)
 }
 
 // toRequest is the way back to the request card: where Esc goes from the first
@@ -1122,7 +1117,11 @@ func (m *Model) finishApproval(a approval, again func() tea.Cmd) tea.Cmd {
 	m.dialog = statusDialog("Credential request", what)
 	return func() tea.Msg {
 		err := m.ds.ApproveCredentialRequest(m.ctx, a.req.Server, sent)
-		return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err, ruled: a.auto, again: again}
+		msg := credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err, ruled: a.auto, again: again}
+		if err != nil && a.stored != "" {
+			msg.applied = []string{storedNote(a.stored, a.req.WellKnownID)}
+		}
+		return msg
 	}
 }
 

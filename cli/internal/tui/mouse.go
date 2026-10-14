@@ -555,9 +555,10 @@ func (m *Model) pressRequestRow(idx, clicks int) tea.Cmd {
 }
 
 func (m *Model) pressRuleRow(idx, clicks int) tea.Cmd {
-	// A table with no row — empty, or not read — has nothing to put the keys
-	// on, and a press in it leaves them where they were.
-	if len(m.rules.all) == 0 {
+	// A table not read, or one that failed, has nothing to put the keys on,
+	// and a press in it leaves them where they were. An empty one read takes
+	// them: its line makes the first rule.
+	if !m.rulesReachable() {
 		return nil
 	}
 	m.table = tableRules
@@ -578,6 +579,10 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	d := m.dialog
 	if d == nil || idx < 0 || idx >= len(d.items) {
 		return nil
+	}
+	if d.itemPress != nil {
+		// An input card's rows are its list's, answered by the list.
+		return d.itemPress(idx, d.input.Value())
 	}
 	if !d.items[idx].enabled {
 		d.cursor = idx
@@ -779,6 +784,16 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 			d.create.moveSource(-sign(lines))
 		}
 	case hitDialogItem:
+		if d := m.dialog; d != nil && d.keyFirst != nil {
+			// A list the field edits is walked the way its keys walk it, so
+			// the wheel and the keys never disagree about where it is.
+			key := "down"
+			if lines > 0 {
+				key = "up"
+			}
+			cmd, _ := d.keyFirst(keyPress(key), d.input.Value())
+			return cmd
+		}
 		if d := m.dialog; d != nil {
 			at := min(max(d.cursor-lines, 0), len(d.items)-1)
 			d.cursor = d.nextEnabled(at, sign(-lines))

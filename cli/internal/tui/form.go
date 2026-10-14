@@ -277,6 +277,17 @@ func (f *form) choose(key, option string) {
 	}
 }
 
+// pickOption chooses an option as a person choosing it would: the row moves
+// to it, and whatever the row fills in on a choice follows.
+func (f *form) pickOption(key, option string) {
+	f.choose(key, option)
+	for i := range f.rows {
+		if f.rows[i].key == key && f.rows[i].chose != nil {
+			f.rows[i].chose(f)
+		}
+	}
+}
+
 // chosenLabel is that option as it is said to a person, for the report after
 // the form is answered.
 func (f *form) chosenLabel(key string) string {

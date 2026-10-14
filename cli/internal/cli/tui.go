@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/sourcecache"
 	"github.com/discobox-ai/discobox/tools"
 	"github.com/discobox-ai/x/gitutil"
 )
@@ -924,10 +925,13 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// on GitHub.
 		if row.SourceRemote {
 			row.Repository = sandboxcreate.GitHubRepositoryURL(row.Source)
+			row.RepositoryIdentity = sourcecache.NormalizeRemote(row.Source)
 		} else {
 			row.Repository = sandboxcreate.GitHubRepositoryURL(source.UpstreamUrl.Or(""))
+			row.RepositoryIdentity = sourcecache.NormalizeRemote(source.UpstreamUrl.Or(""))
 		}
 		row.RepositoryKey = sandboxcreate.GitHubRepositoryKey(row.Repository)
+		row.RepositoryShown = terminalSafe(row.RepositoryIdentity)
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
 			row.Commit = shortCommit(strings.TrimSpace(checkout.Commit.Or("")))

@@ -55,6 +55,12 @@ func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 	if len(rule.Repositories) != 2 || !strings.HasPrefix(rule.Repositories[0], "github.com/org/repo") || len(rule.Uses) != 2 || !strings.HasPrefix(rule.Uses[0], "read any issue in org/repo") {
 		t.Fatalf("repositories = %q, uses = %q; want both kept, with what was escaped shown", rule.Repositories, rule.Uses)
 	}
+	// The server's own text is kept beside the drawn, for an edit to send
+	// back for the lines it leaves alone.
+	if len(rule.Stored.Uses) != 2 || !strings.Contains(rule.Stored.Uses[0], "\x1b]0;approved\x07") ||
+		!strings.Contains(rule.Stored.Repositories[0], "\x1b[2J") {
+		t.Fatalf("stored = %+v, want the server's text as it holds it", rule.Stored)
+	}
 	if rule.ID != "rule_1" || rule.WellKnownID != "com.github.api" || rule.SecretID != "secret-1" || !rule.Delegate || rule.Enabled ||
 		rule.MaxGrantTTL != time.Hour || rule.Expires.IsZero() || rule.CreatedBy != "user:darren" || rule.Created.IsZero() {
 		t.Fatalf("rule = %+v, want it as the server holds it", rule)
@@ -128,5 +134,60 @@ func TestTheConsoleSaysEveryDiscoboxOnlyWhenThePersonDid(t *testing.T) {
 				t.Fatalf("rule sent = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A rule made from the console is sent as it was chosen: a well-known ID
+// alone, the cap always (zero is the secret's own limit), and every discobox
+// only in so many words. An edit sends what changed and nothing else.
+func TestTheConsoleMakesAndEditsARuleWithWhatWasChosen(t *testing.T) {
+	sent := map[string]map[string]any{}
+	server := ruleServer(t, sent)
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
+
+	lapses := time.Now().Add(72 * time.Hour)
+	made, err := ds.CreateRule(context.Background(), "", tui.NewRule{
+		WellKnownID: "com.github.api", Hosts: []string{"github.com", "githubcopilot.com"},
+		ApprovalRule: tui.ApprovalRule{Repositories: []string{"github.com/org/repo"}, Uses: []string{"read issues"}},
+		Expires:      lapses,
+	})
+	if err != nil || made.ID != "rule_1" {
+		t.Fatalf("CreateRule() = %+v, %v", made, err)
+	}
+	body := sent["POST /projects/project-1/approval-rules"]
+	if hosts, _ := body["hosts"].([]any); len(hosts) != 2 || hosts[1] != "githubcopilot.com" {
+		t.Fatalf("create body = %#v, want the hosts the card read", body)
+	}
+	if body["wellKnownId"] != "com.github.api" || body["secretId"] != nil || body["everyDiscobox"] != nil ||
+		body["maxGrantTTLSeconds"] != float64(0) || body["expiresAt"] == nil {
+		t.Fatalf("create body = %#v", body)
+	}
+	if _, err := ds.CreateRule(context.Background(), "", tui.NewRule{
+		SecretID: "secret-1", ApprovalRule: tui.ApprovalRule{EveryDiscobox: true, Uses: []string{"read issues"}}, MaxGrantTTL: time.Hour,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body = sent["POST /projects/project-1/approval-rules"]
+	if body["secretId"] != "secret-1" || body["everyDiscobox"] != true || body["repositories"] != nil || body["maxGrantTTLSeconds"] != float64(3600) || body["expiresAt"] != nil {
+		t.Fatalf("create body = %#v", body)
+	}
+
+	capped := 2 * time.Hour
+	if err := ds.UpdateRule(context.Background(), "", "rule_1", tui.RuleChange{Uses: []string{"read issues"}, MaxGrantTTL: &capped, NeverExpires: true}); err != nil {
+		t.Fatal(err)
+	}
+	edit := sent["PATCH /projects/project-1/approval-rules/rule_1"]
+	if len(edit) != 3 || edit["maxGrantTTLSeconds"] != float64(7200) || edit["neverExpires"] != true || edit["uses"] == nil {
+		t.Fatalf("edit body = %#v, want the uses, the cap and the expiry cleared, and nothing else", edit)
+	}
+	if err := ds.UpdateRule(context.Background(), "", "rule_1", tui.RuleChange{EveryDiscobox: true}); err != nil {
+		t.Fatal(err)
+	}
+	if edit = sent["PATCH /projects/project-1/approval-rules/rule_1"]; len(edit) != 1 || edit["everyDiscobox"] != true {
+		t.Fatalf("edit body = %#v, want every discobox alone", edit)
 	}
 }

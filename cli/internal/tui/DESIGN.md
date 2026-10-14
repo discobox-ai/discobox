@@ -131,32 +131,103 @@ and taking no cursor until the next load reads them.
   bottom of a table reaches the next one down that has a row, ↑ off the top
   the one above, Tab goes down the screen and round to the secrets, and a
   press says which table it landed in (`hitRuleRow`). An empty table is a line
-  and takes no cursor.
+  and takes no cursor — except the rules read and found empty, whose line is
+  where `n` makes the first one (`rulesReachable`) — in a window too short to
+  draw it too, since moving into the rules swaps them in; a rules listing not
+  read, or failed, takes none.
 - **a row**: credential (a secret by name), state (`enabled`/`disabled`/
   `lapsed`), which discoboxes — its repositories cut to the column, or
-  `every discobox`, led by `delegates` for a rule to delegate — use count, and
-  expiry. Uses and expiry drop first as the window narrows, then the
-  repositories;
-  the credential and state stay. No rules is a line naming auto approve and
-  `discobox secret rule create`.
+  `every discobox`, led by `delegates` for a rule to delegate — its uses as
+  one line, and expiry. The credential and repositories columns are as wide as
+  the table's widest, within bounds, and the uses take the rest of the row and
+  are cut to it; in a narrow row the repositories give up room to the uses
+  first. Expiry drops first as the window narrows, then the uses, then
+  the repositories; the credential and state stay. No rules is a line saying
+  `n` makes one, and that auto approve does too.
 - **height** (`layout`): the rules take their rows up to a quarter of the
   screen, as the requests take a third. A window too short for a row of each
   table leaves one of the lower two out — the rules unless they have the keys,
   then the requests (`rulesHidden`, `requestsHidden`); one left out is neither
   drawn nor marked.
-- **keys on a rule row** (`ruleHints`): Enter reads it, `s` disables or
-  enables it (the key line says which), `d` deletes it behind a question.
+- **keys on a rule row** (`ruleHints`): `n` makes a rule, Enter reads it, `e`
+  edits it, `s` disables or enables it (the key line says which), `d` deletes
+  it behind a question. On the empty table the key line is `n` alone.
 - **the card** (`openRule`, `showRule`): read fresh, with the grants the rule
   minted by rule (`GrantFilter.RuleID`). The review card's own sections, drawn
   from the same `Rule` value (`ruleFactsSection`, `ruleSections`,
   `ruleHandsOut`; `approval.asRule` is the rule a review is of), with state,
-  the cap on each grant, expiry, and who made it and when. Its rows are `s`,
+  the cap on each grant, expiry, and who made it and when (`ruleText` is the
+  rule's whole text on every card that shows one). Its rows are `e`, `s`,
   `d`, and the grants still standing, named by their discobox: Enter reads one
   and `x` revokes it, through the secret's own cards (`reviewGrant`,
   `confirmRevokeGrant`). Esc is back on the rule's row.
-- **what it does not do**: a rule's repositories and uses are changed with
-  `discobox secret rule update`, where the server reads and judges them, and
-  which the card names; making one is auto approve's and the CLI's.
+- **making and editing** (`ruleedit.go`): see below.
+
+**A rule is made and edited a step at a time** (`ruleDraft`, `ruleStep`),
+on the cards auto approve uses, generalised so both flows share them: the
+discoboxes step (`askDiscoboxes`), a list typed a line at a time
+(`askLines`), a lifetime menu (`askDuration`), and the rule's whole text
+(`ruleText`) on a last card that asks, defaulting to No.
+
+- **the steps**, in order: the credential (a new rule only: a well-known ID a
+  project secret answers, or a project secret; one bound to no host is
+  disabled and says why), which discoboxes (repositories chosen and named on
+  one card, below, or every discobox, its own row), what it approves (a use a
+  line), its longest grant (presets, `the secret's
+  own limit`, custom; it opens on an hour, the server's default), when it
+  lapses (opens on `never lapses`; an edit of a rule that lapses has `as it
+  is` first), and the rule.
+- **back and forth**: each step opens on what the draft holds now, and Esc is
+  the step before, so nothing chosen is lost walking back. Esc never changes
+  a word: a list step hands back its list as it stands, half-typed text and an
+  edit not yet confirmed included, and the draft keeps it (`ruleDraft.uses`,
+  `ruleDraft.repositories`). Leaving the first step closes the flow, or goes
+  back to the card an edit was begun on.
+- **a list** (`askLines`, `lines.go`): the lines written above a one-line
+  field, drawn as the input card's rows — `viewItems`, marked as a menu's are,
+  and answered by `dialog.itemPress` rather than the field's action — so a
+  press on a line takes it up as ↑ would, and the wheel walks the list as the
+  keys do (`dialog.keyFirst`). ↑ and ↓ move the field through them; a line
+  taken up is in the field with the cursor at its end and its row says
+  `← in the field below`; Enter puts the
+  edit back in its place, and Enter on a line emptied removes it — the key
+  line says so. Moving off a line keeps what was typed on it, and never
+  removes it; the new line keeps its half-typed text while the field is
+  elsewhere. Enter on the new line, empty, finishes the list, refused when it
+  must have one. Each line carries what it draws and what it sends
+  (`listLine`): a line the server holds is drawn made safe and sent in the
+  server's own text (`Rule.Stored`) until the person changes it, so an edit
+  never rewrites a line nobody touched. The key line puts Esc second, after
+  the one key the position needs most, and is short enough to stay whole at
+  90 columns: a key line is cut from its tail, and the way out must survive.
+- **the repositories** are one list with picks above its lines
+  (`newPickList`, `repositoryList`): every repository the console knows for
+  the project — an edited rule's own first, chosen, then those of the
+  project's discoboxes on the rule's server (`Sandbox.RepositoryIdentity`,
+  their primary source reduced by `sourcecache.NormalizeRemote` as the server
+  reduces it, and drawn through `terminalSafe` as `Sandbox.RepositoryShown`
+  while the raw identity is what is sent) and of its other rules, each once,
+  sorted. The picks are rows too: a press ticks or clears one. ↑ from the
+  first line reaches them; Space or Enter ticks or clears the one under the
+  cursor, and on a pick the field takes no keys — a paste there is refused on
+  the card (`dialog.pasteRefused`), not dropped. An entry typed that is one
+  of the picks, however spelled (`repositoryIdentity`), chooses that pick
+  instead of being a second line. Finishing needs one chosen or named.
+- **an edit** starts on which discoboxes — the credential is what a rule is —
+  with every step prefilled from the rule. The last card says what changes,
+  before → after, with the uses it approved before listed whole, and sends
+  only those (`RuleChange`, `DataSource.UpdateRule`); one that changes
+  nothing sends nothing.
+- **a new rule** sends what was chosen (`NewRule`, `DataSource.CreateRule`):
+  a well-known ID alone, which the server answers with the secret marked for
+  it; the cap always, zero being the secret's own limit; every discobox in so
+  many words; and the hosts the last card reads — the well-known
+  credential's, or the secret's binding — so the rule stored is the rule
+  read. The purpose is the server's default, to use.
+- **a refusal** comes back whole on a card whose Esc is the step it is about
+  (`refusedStep`, read from the server's own words: repositories, uses, the
+  cap, the expiry, the credential; anything else is the last card), opened on
+  what was chosen.
 
 Disabling sends only `enabled` (`DataSource.SetRuleEnabled`) and asks nothing:
 it mints nothing more and revokes nothing, and the same key undoes it. Deleting
@@ -338,8 +409,9 @@ this machine, without a shell (`refreshcmd`). "For the session" is a permission
 in the window's memory, keyed by server, token, and the exact command
 (`sessionKey`): the poll answers that pair's next asks unprompted
 (`renewBySession`), an edited command asks a person again, and a failure drops
-the permission. A well-known ask whose credential suggests a command offers
-"From a command…" beside "New credential…", and F4's new token picks between
+the permission. A request's "New credential…" is F4's own new-secret form,
+filled from the request (see below), so a well-known credential that suggests
+a command is stored from it by default there; F4's new token picks between
 entering a value and getting it from a command, with how long a value lasts
 (5m unless chosen, or the lifetime a well-known credential says its value really has — a day for GitHub; minutes to a day, not a grant's weeks and months), which the
 edit card changes for any token. F4's kind offers every
@@ -401,7 +473,8 @@ them all, a binding must cover every one, and a credential typed in on the spot
 is bound to the site they share — or to nothing, when they share none
 (`CredentialRequest.binding`).
 
-**How long is a required second step** (`askLifetime`). Choosing a secret opens
+**How long is a required second step** (`askLifetime`, through
+`askDuration`, which the rule flows share). Choosing a secret opens
 a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
 typed one — with the cursor on the lifetime the agent asked for
 (`CredentialRequest.GrantTTL`, shown on the request card as "wanted for"), else
@@ -426,10 +499,11 @@ a row's identity is its second count, and one that shared forever's count would
 otherwise take the cursor.
 
 The steps run: request → binding question, only when the secret is bound
-elsewhere → name question, only when a new credential's name is taken →
-lifetime → limit question, only when the lifetime is over the secret's cap →
-approve. A new credential takes its lifetime *before* its token, so going back
-never has to hold a token that was already typed. "Auto approve" adds its own
+elsewhere → lifetime → limit question, only when the lifetime is over the
+secret's cap → approve; for a new credential, request → lifetime → the
+new-secret form → store and approve. A new credential takes its lifetime
+*before* its token, so going back never has to hold a token that was already
+typed. "Auto approve" adds its own
 between the binding question and the lifetime, and one before the approve; see
 below.
 
@@ -442,17 +516,28 @@ credentials, on a create or by answering their requests, but only within what
 it is separately delegated — because the ordinary card describes one
 credential, and this is every one it is delegated.
 
-**A new credential is named only when it has to be** (`startNewCredential`,
-`askStoredAs`). It is stored as what the agent asked for, and the project's
-uniqueness is (name, type, host), so the collision is visible here before the
-token is typed: the step opens with the first free name (`freeSecretName`,
-"github-2") to type over, and a name that is taken too is refused on the spot
-rather than by the server after a token has been typed. Without it the server's
-"pick another name" is advice this screen gives no way to follow. **Esc, or No,
-goes back exactly one step**: from the lifetime to the name question if one was
-asked, else to the binding question if one was, else to the request; from a typed lifetime to the presets; from the
-limit question to wherever the lifetime was chosen; from the token to the
-lifetime. The answers so far travel as one `approval` value, copied rather than
+**A new credential is the secrets screen's form, filled from the request**
+(`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
+A well-known ID is chosen as the form's kind, so `fillWellKnown` fills its
+name, host, the command that prints it — with "get it from a command" chosen
+— and how long a value lasts; any other ask fills the name, kind and host it
+asks for. A name the project already holds for that kind and host is the
+first free one instead (`freeSecretName`, "github-2"), which the server would
+otherwise refuse the create for. Every field stays editable. Saving stores it
+and approves the request with it for the lifetime chosen (`createAndApprove`:
+a command is run by the data source, and a refusal after the store says what
+was already done); a grant limit shorter than that lifetime is refused on the
+form, before anything is stored. Esc from the form is the request, still
+waiting. A well-known ID the project already has a secret marked for is
+filled as a plain token instead — the same name, host and command — since
+the server marks no second one; the form says why, and stored that way it
+answers only this request. The request card has no separate "From a
+command…" row: the form stores from the command by default, so nothing is
+lost. **Esc, or No,
+goes back exactly one step**: from the lifetime to the binding question if one
+was asked, else to the request; from a typed lifetime to the presets; from the
+limit question to wherever the lifetime was chosen; from the new-credential
+form to the request. The answers so far travel as one `approval` value, copied rather than
 changed at each step, so the dialog before is rebuilt from the approval as it
 stood when that dialog was asked — agreeing to a rebind, backing out of the
 lifetime, and agreeing again binds once.
@@ -476,14 +561,29 @@ agent's own ask naming its uses (`CredentialRequest.Ruleable`): a request the
 proxy opened, a refresh, and a trust stay a person's each time. It is the same
 `approval` value with `auto` set, on the same chain, with four steps added:
 
-- **what answers** (`askRuleSecret`): the project's secrets only, since a rule
-  is read whole before anything is written and a typed credential is stored
-  late. A gate skips it. With no secret stored the row is disabled and says so.
+- **what answers** (`askRuleSecret`): the project's secrets, and "New
+  credential…" — the request card's own new-credential form
+  (`newCredentialForm`), filled from the request. It is stored when the form
+  is saved, and the form says so, rather than deferred to the rule's `y`: the
+  steps after it — the binding and limit questions, and the server holding
+  the rule to the secret marked for a well-known ID, which storing one of
+  that kind marks — are then about a secret that exists (`ruleSecretStored`
+  goes on with it chosen). The form says both consequences: it is stored on
+  save, and for a well-known ID it answers every request for that ID from
+  then on, even if the rule is declined. Leaving the flow without a rule after
+  storing it — back to this step, or a refusal — says what was stored and that
+  `d` on the secrets table removes it (`storedNote`, `approval.stored`). For
+  an ID the project already has a secret marked for, the row is disabled and
+  says why: a rule for the ID answers with that secret, edited on F4. Esc from
+  the form is this step, nothing stored.
+  Auto approve is offered with no secret stored; this row is then its only
+  one. A gate skips the step.
 - **the wait** (`proposeRules`): `DataSource.RuleProposals` takes a minute or
   two, so a status card is up; Esc cancels the call and goes back, and an
   answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
   raising a dialog on its own.
-- **which discoboxes** (`askRuleDiscoboxes`): two rows and no sentence.
+- **which discoboxes** (`askAutoDiscoboxes`, through `askDiscoboxes`): two
+  rows and no sentence.
   "Discoboxes of `<repository>`" — the asking discobox's
   (`RuleProposals.Repository`), first and under the cursor — and "Every
   discobox in this project", whose detail says what that does. A discobox with
@@ -500,8 +600,12 @@ proxy opened, a refresh, and a trust stay a person's each time. It is the same
   while all of it fits the window; one that does not goes back to a row an
   item, windowed on the cursor. One that does not cover this request keeps its
   text, says it failed and why, and its row is disabled. `w` writes the uses
-  by hand, sent as written for the server to judge, a line at a time (Enter
-  adds, an empty line finishes, Esc takes one back). The server's `Note` —
+  by hand, sent as written for the server to judge, as a list (`askLines`,
+  above). The steps after the proposals hand the step before them the
+  approval as it now stands (`askAutoDiscoboxes`, `askRuleContent`), so what
+  was written — half-typed included — rides every step back and forward, and
+  `w` opens on it. The
+  server's `Note` —
   why only the uses as asked are offered — is here.
 - **the rule** (`reviewRule`), after the lifetime and its limit question: the
   full text — credential, hosts, purpose, what answers it, the repositories it
