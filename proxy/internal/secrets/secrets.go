@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/discobox/hostscope"
@@ -21,7 +22,11 @@ import (
 
 // ErrDenied indicates a sentinel is unknown, unapproved, or not permitted for
 // the requested host. On this error the proxy leaves the sentinel in place so
-// the upstream receives the placeholder and rejects the request.
+// the upstream receives the placeholder and rejects the request. It is the
+// only error that does: any other is taken as the resolver being unreachable,
+// is asked again within the retry window, and refuses the request with a 503
+// if it lasts (ADR 26-10-14-482 §2). A resolver returns it only for an answer
+// about the credential, never for a failure to get one.
 var ErrDenied = errors.New("secret resolution denied")
 
 // ResolveRequest asks for the real value bound to a sentinel for a destination.
@@ -200,6 +205,9 @@ type Refusal struct {
 // what the upstream made of it. Implementations live outside the proxy
 // (pool-agent/proxyagent) so the proxy stays server-agnostic.
 type Resolver interface {
+	// Resolve returns the value bound to a sentinel for a host, ErrDenied when
+	// the answer is no, or any other error when there is no answer yet — which
+	// holds the request rather than sending the sentinel (see ErrDenied).
 	Resolve(ctx context.Context, req ResolveRequest) (ResolveResult, error)
 	// Report says what an upstream did with a value this resolver returned.
 	// It is required rather than optional: a resolver that silently discarded
@@ -270,6 +278,11 @@ type Config struct {
 	// invalidation, yet a control-plane outage cannot stop a running sandbox
 	// from resolving until the grant actually expires. Zero uses a default.
 	RefreshInterval time.Duration
+	// ResolveRetry is how long a resolve that failed transiently — anything
+	// but ErrDenied — is asked again before Apply gives up on it, long enough
+	// to outlast a control-plane restart (ADR 26-10-14-482 §2). Zero uses a
+	// default.
+	ResolveRetry time.Duration
 	// GateHost is a host the proxy never sends to the internet: a request for
 	// it is answered by the resolver's Gate, which admits one carrying a live
 	// use of the credential that opens it (ADR 0140 §2). Empty is no gate.
@@ -279,6 +292,17 @@ type Config struct {
 const (
 	defaultNegativeTTL     = 10 * time.Second
 	defaultRefreshInterval = 30 * time.Second
+	defaultResolveRetry    = 5 * time.Second
+	// resolveRetryBackoff is the first pause between asks inside the retry
+	// window, doubled after each one up to resolveRetryMaxBackoff: a restart
+	// that takes a second is caught within one, and a longer outage is not
+	// asked about ten times a second by every waiting request.
+	resolveRetryBackoff    = 100 * time.Millisecond
+	resolveRetryMaxBackoff = time.Second
+	// resolveAttemptFloor is the least an ask is given when the window has
+	// all but run out: a request carrying a second sentinel still asks about
+	// it once, briefly, after the first used the window up.
+	resolveAttemptFloor = time.Second
 	// refreshTimeout bounds a background refresh so a hung control plane cannot
 	// leak goroutines; the served value is unaffected while it runs.
 	refreshTimeout = 30 * time.Second
@@ -292,24 +316,53 @@ const (
 )
 
 // Swapper detects sentinels in requests and substitutes resolved values.
+//
+// One Swapper lives as long as the proxy that holds it: Reconfigure installs a
+// new sentinel set and tuning without discarding what has been resolved, so a
+// cached value outlives every publish that leaves its sentinel in place (ADR
+// 26-10-14-482 §1).
 type Swapper struct {
-	resolver   Resolver
-	scanQuery  bool
-	posTTL     time.Duration
-	negTTL     time.Duration
-	refreshTTL time.Duration
-	sentinels  map[string][]string
-	gateHost   string
+	resolver Resolver
+	// settings is what Reconfigure replaces. It is stored under mu, so a
+	// store that checks it under mu cannot race the prune that follows a
+	// change, and read without it everywhere else.
+	settings atomic.Pointer[settings]
 
 	mu    sync.Mutex
-	cache map[string]cacheEntry
+	cache map[cacheKey]cacheEntry
 	// previous is what each key resolved to before its most recent change,
 	// kept for previousValueGrace. It is deliberately not part of cacheEntry:
 	// Invalidate drops the entry, and the whole point of this memory is to
 	// outlive the value that was just rejected.
-	previous   map[string]previousValue
-	refreshing map[string]struct{}
+	previous   map[cacheKey]previousValue
+	refreshing map[cacheKey]struct{}
 	now        func() time.Time
+}
+
+// settings is a Swapper's configuration: the sentinel set and swap tuning a
+// Config carries, cleaned and defaulted.
+type settings struct {
+	scanQuery    bool
+	posTTL       time.Duration
+	negTTL       time.Duration
+	refreshTTL   time.Duration
+	resolveRetry time.Duration
+	sentinels    map[string][]string
+	gateHost     string
+}
+
+// watches reports whether sentinel is one of clientID's.
+func (st *settings) watches(clientID, sentinel string) bool {
+	return slices.Contains(st.sentinels[clientID], sentinel)
+}
+
+// cacheKey is what a resolved value is cached under: a credential is
+// authorized per destination, so the same sentinel resolves separately for
+// every host it is sent to.
+type cacheKey struct {
+	clientID string
+	sentinel string
+	host     string
 }
 
 type previousValue struct {
@@ -343,6 +396,47 @@ type cacheEntry struct {
 
 // New creates a Swapper. A nil resolver produces a Swapper that never swaps.
 func New(resolver Resolver, cfg Config) *Swapper {
+	s := &Swapper{
+		resolver:   resolver,
+		cache:      map[cacheKey]cacheEntry{},
+		previous:   map[cacheKey]previousValue{},
+		refreshing: map[cacheKey]struct{}{},
+		now:        time.Now,
+	}
+	s.settings.Store(newSettings(cfg))
+	return s
+}
+
+// Reconfigure installs cfg's sentinel set and tuning in place. What was
+// resolved for a sentinel the new set still holds is kept — its value, its
+// denial, and the value a rotation displaced — so a publish that changes
+// trusts, or another client's sentinels, costs nothing that is cached. A
+// sentinel that left a client's set is forgotten for that client here, and
+// stops resolving with this call (ADR 26-10-14-482 §1).
+//
+// An entry kept keeps the bounds it was cached with; new tuning applies to
+// what is resolved from now on.
+func (s *Swapper) Reconfigure(cfg Config) {
+	if s == nil {
+		return
+	}
+	next := newSettings(cfg)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings.Store(next)
+	for key := range s.cache {
+		if !next.watches(key.clientID, key.sentinel) {
+			delete(s.cache, key)
+		}
+	}
+	for key := range s.previous {
+		if !next.watches(key.clientID, key.sentinel) {
+			delete(s.previous, key)
+		}
+	}
+}
+
+func newSettings(cfg Config) *settings {
 	sentinels := make(map[string][]string, len(cfg.Sentinels))
 	for clientID, list := range cfg.Sentinels {
 		cleaned := make([]string, 0, len(list))
@@ -363,18 +457,18 @@ func New(resolver Resolver, cfg Config) *Swapper {
 	if refreshTTL <= 0 {
 		refreshTTL = defaultRefreshInterval
 	}
-	return &Swapper{
-		resolver:   resolver,
-		scanQuery:  cfg.ScanQuery,
-		posTTL:     cfg.PositiveTTL,
-		negTTL:     negTTL,
-		refreshTTL: refreshTTL,
-		sentinels:  sentinels,
-		gateHost:   extractHost(strings.ToLower(strings.TrimSpace(cfg.GateHost))),
-		cache:      map[string]cacheEntry{},
-		previous:   map[string]previousValue{},
-		refreshing: map[string]struct{}{},
-		now:        time.Now,
+	resolveRetry := cfg.ResolveRetry
+	if resolveRetry <= 0 {
+		resolveRetry = defaultResolveRetry
+	}
+	return &settings{
+		scanQuery:    cfg.ScanQuery,
+		posTTL:       cfg.PositiveTTL,
+		negTTL:       negTTL,
+		refreshTTL:   refreshTTL,
+		resolveRetry: resolveRetry,
+		sentinels:    sentinels,
+		gateHost:     extractHost(strings.ToLower(strings.TrimSpace(cfg.GateHost))),
 	}
 }
 
@@ -396,7 +490,12 @@ type Result struct {
 	// reported for these and for no others. Apply fills it; ApplyPrevious does
 	// not, since a retry goes to the URL the first attempt was judged at.
 	Reportable []string
-	// Errors holds non-fatal resolution error strings (transient failures).
+	// Errors holds the transient resolution failures that outlasted the retry
+	// window: a sentinel left in place for no reason but the resolver being
+	// unreachable. A request with any must not be sent, since the upstream
+	// would read the sentinel as a bad credential (ADR 26-10-14-482 §2). A
+	// denial is not one of these; it leaves the sentinel in place and says
+	// nothing here.
 	Errors []string
 	// Encoded reports that at least one substitution happened inside a
 	// base64-encoded token rather than in a value's own text.
@@ -416,22 +515,31 @@ func (r Result) Swapped() bool { return len(r.Headers) > 0 || len(r.QueryParams)
 
 // Active reports whether the Swapper can swap for clientID.
 func (s *Swapper) Active(clientID string) bool {
-	return s != nil && s.resolver != nil && len(s.sentinels[clientID]) > 0
+	return s != nil && s.resolver != nil && len(s.settings.Load().sentinels[clientID]) > 0
 }
 
 // Apply swaps any sentinels found in req's headers (and query, when enabled)
 // for their resolved values, scoped to the destination host. Sentinels that
-// cannot be resolved are left in place. Apply mutates req.
+// cannot be resolved are left in place: a denied one says nothing more, and
+// one that failed transiently, through the retry window, is named in
+// Result.Errors. Apply mutates req.
 func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string) Result {
 	if req == nil || !s.Active(clientID) {
 		return Result{}
 	}
-	sentinels := s.sentinels[clientID]
-	at := destination{host: extractHost(req.Host), path: requestPath(req)}
+	st := s.settings.Load()
+	at := destination{
+		host: extractHost(req.Host),
+		path: requestPath(req),
+		// One window for the whole request, however many sentinels it
+		// carries: it bounds how long the request is held, not each ask.
+		// Real time rather than s.now, which is the cache's clock.
+		retryUntil: time.Now().Add(st.resolveRetry),
+	}
 	var res Result
 
-	res.Headers, res.QueryParams = s.eachValue(req, func(value string) (string, bool) {
-		return s.swapValue(ctx, clientID, at, value, sentinels, &res)
+	res.Headers, res.QueryParams = eachValue(st, req, func(value string) (string, bool) {
+		return s.swapValue(ctx, st, clientID, at, value, &res)
 	})
 
 	dedupe(&res.Headers)
@@ -482,9 +590,10 @@ func (s *Swapper) Match(req *http.Request, clientID string) []string {
 	if req == nil || !s.Active(clientID) {
 		return nil
 	}
-	sentinels := s.sentinels[clientID]
+	st := s.settings.Load()
+	sentinels := st.sentinels[clientID]
 	var found []string
-	s.eachValue(req, func(value string) (string, bool) {
+	eachValue(st, req, func(value string) (string, bool) {
 		swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
 			found = append(found, sentinel)
 			// Substituting nothing is what keeps this a read: the value the
@@ -506,7 +615,7 @@ func (s *Swapper) Match(req *http.Request, clientID string) []string {
 // is authorized and what is substituted cannot come apart. ApplyPrevious scans
 // a subset of it — headers only, from its own loop, because a request whose
 // query was swapped is never retried at all.
-func (s *Swapper) eachValue(req *http.Request, visit func(value string) (string, bool)) (headers, params []string) {
+func eachValue(st *settings, req *http.Request, visit func(value string) (string, bool)) (headers, params []string) {
 	for name, values := range req.Header {
 		for i, value := range values {
 			swapped, ok := visit(value)
@@ -518,7 +627,7 @@ func (s *Swapper) eachValue(req *http.Request, visit func(value string) (string,
 		}
 	}
 
-	if s.scanQuery && req.URL != nil && req.URL.RawQuery != "" {
+	if st.scanQuery && req.URL != nil && req.URL.RawQuery != "" {
 		query := req.URL.Query()
 		changed := false
 		for name, values := range query {
@@ -539,9 +648,9 @@ func (s *Swapper) eachValue(req *http.Request, visit func(value string) (string,
 	return headers, params
 }
 
-func (s *Swapper) swapValue(ctx context.Context, clientID string, at destination, value string, sentinels []string, res *Result) (string, bool) {
-	out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
-		return s.resolve(ctx, clientID, sentinel, at, res)
+func (s *Swapper) swapValue(ctx context.Context, st *settings, clientID string, at destination, value string, res *Result) (string, bool) {
+	out := swapSentinels(value, st.sentinels[clientID], func(sentinel string) (string, bool) {
+		return s.resolve(ctx, st, clientID, sentinel, at, res)
 	})
 	if out.encoded {
 		res.Encoded = true
@@ -592,9 +701,9 @@ func replaceSentinels(value string, sentinels []string, lookup lookupFunc) (stri
 	return out, swapped
 }
 
-func (s *Swapper) resolve(ctx context.Context, clientID, sentinel string, at destination, res *Result) (string, bool) {
+func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel string, at destination, res *Result) (string, bool) {
 	host := at.host
-	key := clientID + "\x00" + sentinel + "\x00" + host
+	key := cacheKey{clientID: clientID, sentinel: sentinel, host: host}
 	now := s.now()
 
 	s.mu.Lock()
@@ -607,7 +716,7 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel string, at des
 		// and refresh it in the background, so a control-plane outage cannot stop
 		// the running value from resolving before its grant truly expires.
 		if !entry.refreshAt.IsZero() && !now.Before(entry.refreshAt) {
-			s.triggerRefresh(clientID, sentinel, host, key)
+			s.triggerRefresh(key)
 		}
 		noteSwap(res, entry.useID, entry.secretID)
 		noteSentinel(res, sentinel, entry.reportScope, at)
@@ -615,17 +724,18 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel string, at des
 	}
 	s.mu.Unlock()
 
-	result, err := s.resolver.Resolve(ctx, ResolveRequest{ClientID: clientID, Sentinel: sentinel, Host: host})
+	result, err := s.resolveRetrying(ctx, ResolveRequest{ClientID: clientID, Sentinel: sentinel, Host: host}, at.retryUntil)
+	now = s.now()
 	if err != nil {
 		if errors.Is(err, ErrDenied) {
-			s.store(key, cacheEntry{denied: true, expiresAt: now.Add(s.negTTL)})
+			s.store(key, cacheEntry{denied: true, expiresAt: now.Add(st.negTTL)})
 		} else {
 			res.Errors = append(res.Errors, err.Error())
 		}
 		return "", false
 	}
 
-	entry, cacheable := s.entryFor(result, now)
+	entry, cacheable := entryFor(st, result, now)
 	if cacheable {
 		s.store(key, entry)
 	}
@@ -634,10 +744,48 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel string, at des
 	return result.Value, true
 }
 
-// destination is where a request is going, as far as a report scope reads it.
+// resolveRetrying asks the resolver, and asks again while the answer is a
+// transient failure and retryUntil has not passed. A denial is an answer and is
+// never asked again; a failure that outlasts the window is returned for the
+// caller to refuse the request on (ADR 26-10-14-482 §2).
+//
+// Each ask is bounded by the window too, so a control plane that hangs rather
+// than refusing holds the request no longer than one that refuses — except
+// that an ask is never given less than resolveAttemptFloor.
+func (s *Swapper) resolveRetrying(ctx context.Context, req ResolveRequest, retryUntil time.Time) (ResolveResult, error) {
+	pause := resolveRetryBackoff
+	for {
+		attemptUntil := retryUntil
+		if floor := time.Now().Add(resolveAttemptFloor); attemptUntil.Before(floor) {
+			attemptUntil = floor
+		}
+		attempt, cancel := context.WithDeadline(ctx, attemptUntil)
+		result, err := s.resolver.Resolve(attempt, req)
+		cancel()
+		if err == nil || errors.Is(err, ErrDenied) {
+			return result, err
+		}
+		remaining := time.Until(retryUntil)
+		if remaining <= 0 {
+			return result, err
+		}
+		timer := time.NewTimer(min(pause, remaining))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return result, err
+		case <-timer.C:
+		}
+		pause = min(2*pause, resolveRetryMaxBackoff)
+	}
+}
+
+// destination is where a request is going, as far as a report scope reads it,
+// and how long a value for it may be waited for.
 type destination struct {
-	host string
-	path string
+	host       string
+	path       string
+	retryUntil time.Time
 }
 
 func requestPath(req *http.Request) string {
@@ -672,17 +820,17 @@ func noteSwap(res *Result, useID, secretID string) {
 // entryFor turns a resolver result into a cache entry, applying the positive TTL
 // cap for the hard bound and the refresh interval for the soft bound. cacheable
 // is false for a value that must be used once and not stored.
-func (s *Swapper) entryFor(result ResolveResult, now time.Time) (cacheEntry, bool) {
+func entryFor(st *settings, result ResolveResult, now time.Time) (cacheEntry, bool) {
 	expiresAt := result.ExpiresAt
-	if s.posTTL > 0 {
-		if capped := now.Add(s.posTTL); expiresAt.IsZero() || capped.Before(expiresAt) {
+	if st.posTTL > 0 {
+		if capped := now.Add(st.posTTL); expiresAt.IsZero() || capped.Before(expiresAt) {
 			expiresAt = capped
 		}
 	}
 	if expiresAt.IsZero() || !expiresAt.After(now) {
 		return cacheEntry{}, false
 	}
-	refreshAt := now.Add(s.refreshTTL)
+	refreshAt := now.Add(st.refreshTTL)
 	if !refreshAt.Before(expiresAt) {
 		// The entry hard-expires before the soft window opens: no background
 		// refresh, it will resolve synchronously once expired.
@@ -696,7 +844,7 @@ func (s *Swapper) entryFor(result ResolveResult, now time.Time) (cacheEntry, boo
 // caches the denial; on a transient failure it keeps serving the cached value
 // and only pushes the soft bound forward so a sustained outage does not refetch
 // on every request.
-func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
+func (s *Swapper) triggerRefresh(key cacheKey) {
 	s.mu.Lock()
 	if _, inflight := s.refreshing[key]; inflight {
 		s.mu.Unlock()
@@ -713,20 +861,21 @@ func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 		defer cancel()
-		result, err := s.resolver.Resolve(ctx, ResolveRequest{ClientID: clientID, Sentinel: sentinel, Host: host})
+		result, err := s.resolver.Resolve(ctx, ResolveRequest{ClientID: key.clientID, Sentinel: key.sentinel, Host: key.host})
 		now := s.now()
+		st := s.settings.Load()
 		if err != nil {
 			if errors.Is(err, ErrDenied) {
 				// Control plane answered authoritatively: stop serving the value.
-				s.store(key, cacheEntry{denied: true, expiresAt: now.Add(s.negTTL)})
+				s.store(key, cacheEntry{denied: true, expiresAt: now.Add(st.negTTL)})
 				return
 			}
 			// Transient failure (control plane unreachable): keep the cached value
 			// until its hard expiry, backing the soft bound off by one interval.
-			s.deferRefresh(key, now.Add(s.refreshTTL))
+			s.deferRefresh(key, now.Add(st.refreshTTL))
 			return
 		}
-		entry, cacheable := s.entryFor(result, now)
+		entry, cacheable := entryFor(st, result, now)
 		if !cacheable {
 			s.evict(key)
 			return
@@ -735,8 +884,15 @@ func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
 	}()
 }
 
-func (s *Swapper) store(key string, entry cacheEntry) {
+// store caches entry under key, unless the sentinel has left its client's set
+// since it was resolved: Reconfigure forgets such a sentinel, and an answer
+// that arrives after it must not bring it back.
+func (s *Swapper) store(key cacheKey, entry cacheEntry) {
 	s.mu.Lock()
+	if !s.settings.Load().watches(key.clientID, key.sentinel) {
+		s.mu.Unlock()
+		return
+	}
 	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value {
 		s.previous[key] = previousValue{value: old.value, useID: old.useID, secretID: old.secretID, until: s.now().Add(previousValueGrace)}
 	}
@@ -746,7 +902,7 @@ func (s *Swapper) store(key string, entry cacheEntry) {
 
 // deferRefresh pushes a still-valid entry's soft bound forward after a failed
 // background refresh, leaving its value and hard expiry intact.
-func (s *Swapper) deferRefresh(key string, refreshAt time.Time) {
+func (s *Swapper) deferRefresh(key cacheKey, refreshAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, ok := s.cache[key]
@@ -770,7 +926,7 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 	if req == nil || !s.Active(clientID) {
 		return Result{}
 	}
-	sentinels := s.sentinels[clientID]
+	sentinels := s.settings.Load().sentinels[clientID]
 	host := extractHost(req.Host)
 	now := s.now()
 	var res Result
@@ -801,7 +957,7 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 }
 
 func (s *Swapper) previousFor(clientID, sentinel, host string, now time.Time) (previousValue, bool) {
-	key := clientID + "\x00" + sentinel + "\x00" + host
+	key := cacheKey{clientID: clientID, sentinel: sentinel, host: host}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev, ok := s.previous[key]
@@ -826,10 +982,23 @@ func (s *Swapper) Report(ctx context.Context, req ReportRequest) error {
 	return s.resolver.Report(ctx, req)
 }
 
+// ResolveRetry is how long a transient resolve failure is asked about again
+// before Apply gives up on it.
+func (s *Swapper) ResolveRetry() time.Duration {
+	if s == nil {
+		return defaultResolveRetry
+	}
+	return s.settings.Load().resolveRetry
+}
+
 // IsGate reports whether host is the gate host, which is answered by the
 // resolver's Gate and never sent to the internet.
 func (s *Swapper) IsGate(host string) bool {
-	return s != nil && s.gateHost != "" && extractHost(strings.ToLower(host)) == s.gateHost
+	if s == nil {
+		return false
+	}
+	gateHost := s.settings.Load().gateHost
+	return gateHost != "" && extractHost(strings.ToLower(host)) == gateHost
 }
 
 // Gate hands a request for the gate host to the resolver. A Swapper without a
@@ -868,12 +1037,12 @@ func (s *Swapper) Invalidate(clientID, host string) {
 	host = extractHost(host)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, sentinel := range s.sentinels[clientID] {
-		delete(s.cache, clientID+"\x00"+sentinel+"\x00"+host)
+	for _, sentinel := range s.settings.Load().sentinels[clientID] {
+		delete(s.cache, cacheKey{clientID: clientID, sentinel: sentinel, host: host})
 	}
 }
 
-func (s *Swapper) evict(key string) {
+func (s *Swapper) evict(key cacheKey) {
 	s.mu.Lock()
 	delete(s.cache, key)
 	s.mu.Unlock()

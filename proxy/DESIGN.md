@@ -383,9 +383,12 @@ flowchart LR
     scan -->|no match| fwd["forward unchanged"]
     scan -->|match| judge["Resolver.Authorize(request as sent, sentinels)"]
     judge -->|deny / error| refuse["refused by the proxy (403, or the protocol's own no), audited once as blocked"]
-    judge -->|allow| resolve["Resolver.Resolve(sentinel, host, clientID)"]
+    judge -->|allow| resolve["Resolver.Resolve(sentinel, host, clientID)\n(cache first)"]
     resolve -->|approved| swap["substitute real value + redact from audit"]
-    resolve -->|denied / pending / error| leave["leave sentinel in place → upstream 401"]
+    resolve -->|denied / pending| leave["leave sentinel in place → upstream 401"]
+    resolve -->|error| retry["ask again, within ResolveRetrySeconds"]
+    retry -->|approved| swap
+    retry -->|still failing| unavailable["refused by the proxy (503, Retry-After), audited once as blocked"]
     swap --> fwd
     leave --> fwd
 ```
@@ -405,9 +408,23 @@ Key properties:
   each distinct destination triggers an on-demand resolution the server maps to a
   secret request that is approved or denied per `(secretID, host)`. Exfiltration
   of a sentinel to another host simply fails to resolve.
-- **Fail-closed on the secret, fail-open on the request.** On denial, pending
-  approval, or resolver error, the sentinel is left in place; the upstream
-  receives the placeholder and rejects it. The real value is never leaked.
+- **A denial is sent; an outage is not.** On denial or pending approval the
+  sentinel is left in place and the request is sent: the upstream receives the
+  placeholder and rejects it, which is the right answer for a credential that
+  is not granted. A resolve that fails for any other reason — the control
+  plane unreachable, or a `408`/`425`/`429`/`5xx` from it — is asked again,
+  with backoff, for `ResolveRetrySeconds` (5 s by default), which outlasts a
+  control-plane restart. Each ask is bounded by the window as well, but never
+  given less than a second, so a control plane that hangs holds the request no
+  longer than one that refuses. If it still fails
+  the request is never sent: the proxy answers `503` with `Retry-After` and
+  `x-should-retry: true`, and audits it once as blocked
+  (`credential unavailable: <error>`). A client reads a `401` as a dead login
+  and a `503` as an outage
+  ([ADR 26-10-14-482](../docs/adr/26-10-14-482-a-sentinel-the-control-plane-could-not-resolve-is-never-sent.md)).
+  The window is per request, and one unresolved sentinel refuses the whole
+  request, whatever else in it resolved. The real value is never leaked
+  either way.
 - **A request carrying sentinels is authorized before any of them is resolved**,
   as is every request to a host the client trusts by a pin
   ([Host Trust](#host-trust))
@@ -427,7 +444,7 @@ Key properties:
   never shows a 403's body — a git push answered with the rejection `git push`
   prints — and the row records the status that was sent. `Match` reports every sentinel the request
   carries, which is a superset of what `Apply` substitutes — an unresolvable
-  one is authorized and then left in place — so nothing is substituted without
+  one is authorized and then left in place or refused — so nothing is substituted without
   having been authorized, which is the direction that matters. The two share
   one definition of the surface they walk (`eachValue`) but walk it twice, so a
   request carrying a sentinel pays the base64 scan over its header values
@@ -504,6 +521,16 @@ Key properties:
   re-encodes the original token to itself, so a token passed through is never
   reshaped; the default is only visible on a token that was rewritten, when the
   real credential needs padding or a 62/63 character the sentinel did not.
+- **One cache for the life of the proxy.** The `Swapper` is built once, with
+  the resolver, and `ApplyConfig` reconfigures it in place
+  (`Swapper.Reconfigure`). The pool agent publishes on every trust refresh,
+  sentinel-file write, and agent-credential mint or expiry, so a cache rebuilt
+  per publish would rarely hold anything for an outage to be served from.
+  What a publish drops is exactly what left: every cached value, cached
+  denial, and displaced value for a `(client, sentinel)` no longer in the set.
+  That sentinel stops resolving at that publish, and a resolve still in flight
+  for it does not store its answer. Entries kept keep the bounds they were
+  cached with; new tuning applies to what resolves next.
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
   the grant expiry (capped by `PositiveTTLSeconds`, 300s by default); a result
   with no `ExpiresAt` is used once and not cached; denials are cached briefly
@@ -533,8 +560,11 @@ Key properties:
   retryable only if all of it had been sent when the 401 arrived.
   The retry is a credential the first attempt did not carry, so it is
   authorized before it is sent, over `Match` of the request about to go — not
-  over what the first attempt managed to resolve, since a sentinel that failed
-  transiently resolves on the retry. A refusal there is the third outcome
+  over what the first attempt managed to resolve, since a sentinel that was
+  denied resolves on the retry. A fresh resolve that left any sentinel
+  unresolved transiently is not sent as the retry, and the displaced values are
+  sent only when they cover every sentinel the first attempt swapped: either
+  would put a sentinel on the wire as itself. A refusal there is the third outcome
   beside the two above: nothing is re-sent, the upstream's own 401 is what the
   sandbox gets, and the refusal is recorded as a blocked row carrying that same
   status, because no 403 was ever sent for it.
@@ -560,8 +590,8 @@ Key properties:
   bounded by what has been refused lately rather than by everything ever
   refused — the keys include one per ephemeral sentinel, and the case this
   exists for is a credential that stays refused. The reporter lives on the proxy
-  rather than on the `Swapper`, which `ApplyConfig` replaces on every
-  ephemeral-sentinel mint.
+  rather than on the `Swapper`: it is state about the response path, and the
+  `Swapper` forgets a sentinel that leaves its client's set.
   See [ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md).
 - **Only a request that answers for a credential reports on it.** A resolver
   may hand back a `ReportScope` with a value — hosts, and path prefixes on a
@@ -657,7 +687,8 @@ denies everything. HTTP requests it denies are answered `403`; denied `CONNECT`s
 and SOCKS connects are refused. All are audited as `host denied`.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
-header rules, the sentinel set with its swap tuning, and the host trusts
+header rules, the sentinel set with its swap tuning — installed in the running
+`Swapper`, so its cache survives — and the host trusts
 ([Host Trust](#host-trust)). Pool-agent calls it directly to publish
 sentinel sets and trusts. The proxy does not expose an HTTP configuration API; listener,
 certificate, audit database, recording, cache, control, and upstream settings

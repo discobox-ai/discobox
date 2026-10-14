@@ -109,6 +109,41 @@ func TestResolverPendingIsDenied(t *testing.T) {
 	}
 }
 
+// A status that says the resolve went unanswered — the control plane erroring,
+// timing out, or rate limiting — is transient, so the proxy holds the request
+// instead of sending its sentinel; a status that answers is a denial
+// (ADR 26-10-14-482 §2).
+func TestResolverTellsAnUnansweredResolveFromADenial(t *testing.T) {
+	for status, transient := range map[int]bool{
+		http.StatusInternalServerError: true,
+		http.StatusBadGateway:          true,
+		http.StatusServiceUnavailable:  true,
+		http.StatusRequestTimeout:      true,
+		http.StatusTooEarly:            true,
+		http.StatusTooManyRequests:     true,
+		http.StatusForbidden:           false,
+		http.StatusNotFound:            false,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			root := withTestRoot(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
+
+			resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
+			_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
+			if err == nil {
+				t.Fatal("resolved, want an error")
+			}
+			if denied := errors.Is(err, proxy.ErrSecretResolveDenied); denied == transient {
+				t.Fatalf("err = %v, want transient %v", err, transient)
+			}
+		})
+	}
+}
+
 func TestResolverNoContextIsDenied(t *testing.T) {
 	root := withTestRoot(t)
 	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())

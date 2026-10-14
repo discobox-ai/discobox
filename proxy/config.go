@@ -59,7 +59,13 @@ type SecretsConfig struct {
 	PositiveTTLSeconds     int64
 	NegativeTTLSeconds     int64
 	RefreshIntervalSeconds int64
-	Clients                []SecretClient
+	// ResolveRetrySeconds is how long a sentinel that failed to resolve for
+	// any reason but a denial is asked about again before the request is
+	// refused with a 503, rather than sent with the sentinel in it (ADR
+	// 26-10-14-482 §2). Zero is five seconds, which outlasts a control-plane
+	// restart.
+	ResolveRetrySeconds int64
+	Clients             []SecretClient
 	// GateHost is a host the proxy never sends to the internet. A request for
 	// it is answered by the resolver's Gate: admitted to the upstream behind it
 	// only while it carries a live use of the credential that opens it, and

@@ -76,8 +76,18 @@
 - The resolver is a stable construction dependency, not reloadable config. It
   must be preserved across `ApplyConfig`; only the sentinel set and swap tuning
   come from `Config.Secrets`.
-- On resolver denial, pending approval, or error, leave the sentinel in place
-  (fail-closed on the secret). Do not swap partially or block the request.
+- On resolver denial or pending approval, leave the sentinel in place
+  (fail-closed on the secret) and send the request. On a transient resolver
+  error, never send it: retry within the window, then refuse the whole request
+  with a `503` (ADR 26-10-14-482 §2). A raw sentinel reaching an upstream
+  because the control plane blinked is the bug that ADR fixes; no path —
+  first attempt or the `401` retry — may send one for that reason.
+- Keep one `Swapper` for the life of the proxy. `ApplyConfig` reconfigures it
+  in place (`Swapper.Reconfigure`); building a new one empties the resolve
+  cache on every trust refresh, and a control-plane outage then finds nothing
+  to serve (ADR 26-10-14-482 §1). Anything cached for a `(client, sentinel)`
+  that leaves the set is dropped at that publish, and a late answer for it is
+  not stored.
 - A 401 on a *swapped* request is retried once, and only ever with a credential
   that differs from the one just rejected. Never retry the same value, never
   retry more than once, and never retry a request whose body was too large to
@@ -88,9 +98,8 @@
   as it passes, as the retry does.
 - A rejection is reported off the request path, never on it, and never more
   than once per `(client, sentinel, host)` per cooldown. Reporting state belongs
-  to the proxy, not the `Swapper`: `ApplyConfig` builds a new `Swapper` every
-  time a sentinel set changes, so anything that must outlive a config apply —
-  which rejections and their cooldowns must — cannot live there.
+  to the proxy, not the `Swapper`: the `Swapper` forgets a sentinel that leaves
+  its client's set, and a rejection's cooldown must outlive that.
 - A report names a sentinel, a client and a host. Never put a resolved value, or
   anything derived from one, into a report.
 - A queue the datapath writes to and shutdown closes needs the close guard, not

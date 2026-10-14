@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,18 +28,19 @@ import (
 )
 
 type httpProxy struct {
-	proxy         *goproxy.ProxyHttpServer
-	certs         *CertificateBundle
-	filter        *filter.Filter
-	rewriter      *rules.Rewriter
+	proxy    *goproxy.ProxyHttpServer
+	certs    *CertificateBundle
+	filter   *filter.Filter
+	rewriter *rules.Rewriter
+	// swapper is the proxy's one Swapper, set at construction and
+	// reconfigured in place (ADR 26-10-14-482 §1); nil swaps nothing.
 	swapper       *secrets.Swapper
 	cache         *cache.Cache
 	audit         *audit.Recorder
 	mitmConnect   *goproxy.ConnectAction
 	rejectConnect *goproxy.ConnectAction
-	// reports carries a refused credential back to the resolver. It outlives
-	// every swapper this proxy is given, which is the point of it being here;
-	// see credentialreport.go.
+	// reports carries a refused credential back to the resolver; see
+	// credentialreport.go.
 	reports *credentialReporter
 	mu      sync.RWMutex
 	ids     map[string]clientIdentity
@@ -217,12 +220,7 @@ func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.
 	p.Verbose = false
 	enableHTTP2(p)
 	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
-	// Through the current swapper rather than the one held at construction:
-	// ApplyConfig replaces it, and a report belongs to whichever resolver is
-	// live when it goes out.
-	h.reports = newCredentialReporter(func(ctx context.Context, req secrets.ReportRequest) error {
-		return h.secretSwapper().Report(ctx, req)
-	})
+	h.reports = newCredentialReporter(swapper.Report)
 	h.setupMITM()
 	h.setupHandlers()
 	return h
@@ -235,22 +233,10 @@ func (h *httpProxy) setPolicy(flt *filter.Filter, rewriter *rules.Rewriter) {
 	h.rewriter = rewriter
 }
 
-func (h *httpProxy) setSwapper(swapper *secrets.Swapper) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.swapper = swapper
-}
-
 func (h *httpProxy) policy() (*filter.Filter, *rules.Rewriter) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.filter, h.rewriter
-}
-
-func (h *httpProxy) secretSwapper() *secrets.Swapper {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.swapper
 }
 
 func (h *httpProxy) setupMITM() {
@@ -295,7 +281,7 @@ func (h *httpProxy) setupHandlers() {
 		// The gate host and the origins host are intercepted whatever the
 		// allowlist says: neither reaches the internet, and what may reach
 		// them is the gate's, or the pool's origin listener's, to decide.
-		if h.secretSwapper().IsGate(host) || h.origins.answers(host) {
+		if h.swapper.IsGate(host) || h.origins.answers(host) {
 			return h.mitmConnect, host
 		}
 		if !flt.AllowHostForClient(host, client.ID) {
@@ -385,7 +371,7 @@ func (h *httpProxy) setupHandlers() {
 			}
 		}
 
-		if swapper := h.secretSwapper(); swapper.IsGate(req.Host) {
+		if swapper := h.swapper; swapper.IsGate(req.Host) {
 			return req, h.serveGate(req, meta, client, swapper)
 		}
 		// The pool's own origins: never the internet's, and never the
@@ -654,7 +640,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 // nothing, and a value already in the cache does not carry a new operation
 // through on the strength of an older one (ADR 26-09-22-838 §4).
 func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) *http.Response {
-	swapper := h.secretSwapper()
+	swapper := h.swapper
 	if !swapper.Active(client.ID) {
 		return nil
 	}
@@ -673,12 +659,24 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	}
 	span.SetAttributes(attribute.Bool("proxy.secret_swap.authorized", true))
 	meta.authorized = true
+	var preSwapQuery string
+	if req.URL != nil {
+		preSwapQuery = req.URL.RawQuery
+	}
 	result := swapper.Apply(meta.ctx, req, client.ID)
+	if len(result.Errors) > 0 {
+		span.SetAttributes(attribute.Int("proxy.secret_swap.errors", len(result.Errors)))
+		// Whatever did resolve went into req, which is never sent now: put
+		// the sentinels back, in the headers and the query, so nothing past
+		// here holds a real value.
+		req.Header = preSwapHeader
+		if req.URL != nil {
+			req.URL.RawQuery = preSwapQuery
+		}
+		return h.refuseUnresolved(req, meta, client, preURL, result.Errors)
+	}
 	if !result.Swapped() {
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.swapped", false))
-		if len(result.Errors) > 0 {
-			span.SetAttributes(attribute.Int("proxy.secret_swap.errors", len(result.Errors)))
-		}
 		return nil
 	}
 	meta.swappedHeaders = result.Headers
@@ -702,6 +700,31 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Bool("proxy.secret_swap.encoded", result.Encoded),
 	)
 	return nil
+}
+
+// refuseUnresolved answers a request carrying a sentinel that could not be
+// resolved for any reason but a denial — the control plane unreachable through
+// the whole retry window — and never sends it (ADR 26-10-14-482 §2). Sent, the
+// sentinel would reach the upstream as a credential it rejects, and a client
+// reads a 401 as a dead login; a 503 it reads as an outage, and retries.
+func (h *httpProxy) refuseUnresolved(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, errs []string) *http.Response {
+	reason := "credential unavailable: " + strings.Join(errs, "; ")
+	status := http.StatusServiceUnavailable
+	meta.answered = true
+	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
+	h.recordRefusal(req, meta, client, refusalRecord{
+		url:    preURL,
+		header: req.Header,
+		reason: reason,
+		status: status,
+	})
+	resp := goproxy.NewResponse(req, goproxy.ContentTypeText, status,
+		"blocked by proxy: the credential this request carries could not be resolved; retry shortly\n")
+	// Wait about as long as the proxy itself just waited.
+	retryAfter := int64(math.Ceil(h.swapper.ResolveRetry().Seconds()))
+	resp.Header.Set("Retry-After", strconv.FormatInt(retryAfter, 10))
+	resp.Header.Set("X-Should-Retry", "true")
+	return resp
 }
 
 // serveGate answers a request for the gate host, which is never sent to the
@@ -771,7 +794,7 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 	// The body goes with the request so the judge can ask to see it. Whether
 	// or not it did, what is sent on is the body the authorizer handed back.
 	body := secrets.NewRequestBody(req.Body)
-	verdict, err := h.secretSwapper().Authorize(meta.ctx, secrets.AuthorizeRequest{
+	verdict, err := h.swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
 		ClientID:    client.ID,
 		Sentinels:   matched,
 		TrustUseIDs: trustUseIDs,
@@ -807,7 +830,7 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 	h.recordRefusal(req, meta, client, refusalRecord{
 		url:    preURL,
 		header: preSwapHeader,
-		reason: reason,
+		reason: "judge: " + reason,
 		useIDs: verdict.UseIDs,
 		status: answer.Status,
 	})
@@ -838,6 +861,10 @@ func refusalReason(verdict secrets.Verdict, err error) string {
 // retry is not answered at all, and the sandbox keeps whatever the upstream
 // already said, so claiming a 403 would put a response in the trail that
 // nobody received.
+//
+// The reason is the row's whole BlockedReason, led by what refused it: "judge:"
+// for a verdict, "credential unavailable:" for a sentinel nothing could
+// resolve.
 type refusalRecord struct {
 	url    string
 	header http.Header
@@ -861,7 +888,7 @@ func (h *httpProxy) recordRefusal(req *http.Request, meta *requestMeta, client c
 		Host:           req.Host,
 		Status:         rec.status,
 		Blocked:        true,
-		BlockedReason:  "judge: " + rec.reason,
+		BlockedReason:  rec.reason,
 		SwappedUseIDs:  rec.useIDs,
 		RequestHeaders: rec.header,
 	})
@@ -991,7 +1018,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		// report.
 		return nil
 	}
-	swapper := h.secretSwapper()
+	swapper := h.swapper
 	if swapper == nil {
 		return nil
 	}
@@ -1022,8 +1049,9 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	//
 	// The set comes from Match and not from what the first attempt managed to
 	// resolve. The swaps below re-scan every sentinel from scratch, so a
-	// sentinel that failed transiently the first time can resolve now — and
-	// would otherwise go upstream under a verdict that never named it.
+	// sentinel that was denied the first time — and sent as itself — can
+	// resolve now, and would otherwise go upstream under a verdict that never
+	// named it.
 	previous := h.rebuiltRequest(req, meta)
 	matched := swapper.Match(previous, meta.client.ID)
 	var retryTrustUseIDs []string
@@ -1055,7 +1083,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		h.recordRefusal(req, meta, meta.client, refusalRecord{
 			url:    meta.url(req),
 			header: meta.preSwapHeader,
-			reason: refusalReason(verdict, err),
+			reason: "judge: " + refusalReason(verdict, err),
 			useIDs: verdict.UseIDs,
 			// What the sandbox got is the upstream's own answer, which is
 			// going down the wire unchanged.
@@ -1076,9 +1104,14 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	var retryReq *http.Request
 	var source string
 	switch {
-	case resolvedResult.Swapped() && !sameHeaderValues(req.Header, resolved.Header, meta.swappedHeaders):
+	// A fresh resolve that failed transiently for any sentinel would send that
+	// sentinel as itself (ADR 26-10-14-482 §2), so it is not a candidate.
+	case resolvedResult.Swapped() && len(resolvedResult.Errors) == 0 && !sameHeaderValues(req.Header, resolved.Header, meta.swappedHeaders):
 		retryReq, source = resolved, "resolved"
-	case previousResult.Swapped() && !sameHeaderValues(req.Header, previous.Header, meta.swappedHeaders):
+	// The displaced values cover only sentinels that rotated lately. One the
+	// first attempt swapped and this cannot would go out as itself, so the
+	// previous candidate is sent only when it covers all of them.
+	case previousResult.Swapped() && coversAll(previousResult.Sentinels, meta.swappedSentinels) && !sameHeaderValues(req.Header, previous.Header, meta.swappedHeaders):
 		retryReq, source = previous, "previous"
 	default:
 		// Nothing to send that is not the value just refused, which means the
@@ -1117,6 +1150,16 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	ctx.Req = retryReq
 	meta.start = time.Now()
 	return retryResp
+}
+
+// coversAll reports whether every one of want is in have.
+func coversAll(have, want []string) bool {
+	for _, sentinel := range want {
+		if !slices.Contains(have, sentinel) {
+			return false
+		}
+	}
+	return true
 }
 
 // rebuiltRequest is the same request again, with the sentinels back in its

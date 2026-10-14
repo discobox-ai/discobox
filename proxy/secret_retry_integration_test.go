@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -102,8 +101,8 @@ func (r *rotatingResolver) resolveCount() int {
 }
 
 // startSecretProxy brings up a proxy with one sandbox and one sentinel, and
-// returns an mTLS client for that sandbox.
-func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolver secrets.Resolver, tune ...func(*Config)) *http.Client {
+// returns it with an mTLS client for that sandbox.
+func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolver secrets.Resolver, tune ...func(*Config)) (*Server, *http.Client) {
 	t.Helper()
 	dir := t.TempDir()
 	prepared, err := PrepareCertificates(PrepareOptions{
@@ -147,7 +146,7 @@ func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolv
 		}
 	})
 	addr := waitForAddr(t, server)
-	return mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	return server, mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
 }
 
 // A sandbox holds a sentinel and cannot be at fault for a 401, so a rejected
@@ -181,7 +180,7 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{stale, rotated}}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL, strings.NewReader(body))
 	if err != nil {
@@ -237,7 +236,7 @@ func TestHTTPProxyRetriesAStreamedBodyItSentWhole(t *testing.T) {
 	})
 	defer origin.Close()
 
-	client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{stale, rotated}})
+	_, client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{stale, rotated}})
 	// A reader of unknown size makes the client send the body chunked.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL, io.MultiReader(strings.NewReader(body)))
 	if err != nil {
@@ -277,7 +276,7 @@ func TestHTTPProxyDoesNotRetryWhenTheCredentialIsUnchanged(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{value}}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	_, client := startSecretProxy(ctx, t, sentinel, resolver)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -315,7 +314,7 @@ func TestHTTPProxyDoesNotRetryUnswappedRequests(t *testing.T) {
 	})
 	defer origin.Close()
 
-	client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{"unused"}})
+	_, client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{"unused"}})
 
 	originURL, err := url.Parse(origin.URL)
 	if err != nil {
@@ -397,7 +396,7 @@ func TestHTTPProxyRetriesWithTheDisplacedCredential(t *testing.T) {
 	resolver := &settableResolver{value: accepted}
 	// A one-second positive TTL is what makes the rotation observable in a
 	// test: the second request re-resolves rather than serving the cache.
-	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
 		cfg.Secrets.PositiveTTLSeconds = 1
 	})
 
@@ -494,7 +493,7 @@ func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 
 	resolver := &revokingResolver{value: value}
 	var dsn string
-	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) { dsn = cfg.DatabaseDSN })
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) { dsn = cfg.DatabaseDSN })
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
 	if err != nil {
@@ -578,16 +577,16 @@ func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange
 	}
 }
 
-// flakyResolver rotates one sentinel's value and fails another's first resolve
-// with a transient error, which is what leaves a sentinel in place on the first
-// attempt and resolvable on the retry.
+// flakyResolver rotates one sentinel's value and denies another's first
+// resolve, which is what leaves a sentinel in place on the first attempt and
+// resolvable on the retry: the retry's Invalidate drops the cached denial.
 type flakyResolver struct {
 	reportLog
-	mu        sync.Mutex
-	values    map[string][]string
-	calls     map[string]int
-	transient string
-	asked     [][]string
+	mu         sync.Mutex
+	values     map[string][]string
+	calls      map[string]int
+	deniedOnce string
+	asked      [][]string
 }
 
 func (r *flakyResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
@@ -608,10 +607,10 @@ func (r *flakyResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (
 	defer r.mu.Unlock()
 	n := r.calls[req.Sentinel]
 	r.calls[req.Sentinel]++
-	if req.Sentinel == r.transient && n == 0 {
-		// Not ErrDenied: a transient failure leaves the sentinel in place
-		// without being cached as a denial, so the retry resolves it.
-		return secrets.ResolveResult{}, errors.New("the control plane is unreachable")
+	if req.Sentinel == r.deniedOnce && n == 0 {
+		// A denial, not a transient failure: only a denial is sent with the
+		// sentinel in place (ADR 26-10-14-482 §3).
+		return secrets.ResolveResult{}, secrets.ErrDenied
 	}
 	values := r.values[req.Sentinel]
 	return secrets.ResolveResult{Value: values[min(n, len(values)-1)], ExpiresAt: time.Now().Add(time.Second)}, nil
@@ -625,8 +624,8 @@ func (r *flakyResolver) authorized() [][]string {
 
 // The retry is authorized over what the request carries, not over what the
 // first attempt happened to resolve (ADR 26-09-22-838 §4). A sentinel whose resolve
-// failed transiently is still in the request, resolves on the retry, and so
-// must be named in the verdict that lets the retry go.
+// was denied is still in the request, resolves on the retry, and so must be
+// named in the verdict that lets the retry go.
 func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -656,11 +655,11 @@ func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &flakyResolver{
-		values:    map[string][]string{rotating: {stale, rotated}, flaky: {second}},
-		calls:     map[string]int{},
-		transient: flaky,
+		values:     map[string][]string{rotating: {stale, rotated}, flaky: {second}},
+		calls:      map[string]int{},
+		deniedOnce: flaky,
 	}
-	client := startSecretProxy(ctx, t, rotating, resolver, func(cfg *Config) {
+	_, client := startSecretProxy(ctx, t, rotating, resolver, func(cfg *Config) {
 		cfg.Secrets.Clients = []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{rotating, flaky}}}
 	})
 
