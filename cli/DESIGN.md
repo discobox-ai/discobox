@@ -2092,8 +2092,10 @@ behind `attach`, `apply`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
 ones less the archived, the lifecycle and meta ones with them. Which servers
 they ask is 0116 §4's and unchanged: the pickers, `shell`, `cp` and `tools`
 every server; `rm`, the lifecycle commands, `tag` and `rename` the primary. The
-origin key narrows nothing in the CLI; it is the console's folder
-(`tui/folder.go`). `apply` finds the checkout a discobox came from by its
+origin key narrows nothing in the CLI. In the console it is the folder of a
+discobox whose source is on no GitHub repository; one that is on GitHub sits in
+that repository's folder instead (`tui/folder.go`,
+[ADR 26-10-14-585](../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md)). `apply` finds the checkout a discobox came from by its
 `Origin.HostId` and the source's `LocalDirectory`, not by the key.
 
 Host identity comes from `internal/hostid` in the root module. The server does

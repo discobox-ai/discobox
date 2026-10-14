@@ -403,7 +403,9 @@ type Session struct {
 
 	// OriginKey is where a discobox cut from the window's own source is filed,
 	// and HostKey is this machine's own key, which files its discoboxes with no
-	// source (ADR 0111). Together they are the window's own folder.
+	// source (ADR 0111). Together they are the window's own folder when its
+	// checkout is not on GitHub; when it is, the folder is RepositoryKey and
+	// these bring in only what resolved to no repository (ADR 26-10-14-585).
 	OriginKey string
 	HostKey   string
 

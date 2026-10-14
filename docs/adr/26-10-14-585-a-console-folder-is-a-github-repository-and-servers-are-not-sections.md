@@ -1,6 +1,6 @@
 # 26-10-14-585 — A console folder is a GitHub repository, and servers are not sections
 
-- **Status**: Accepted
+- **Status**: Accepted ("`discobox ls` … stand" and "`ls` … keep the key", for `ls`, superseded by [ADR 26-10-10-954](26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md))
 - **Date**: 2026-10-14
 - **Supersedes**, in part:
   [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)
