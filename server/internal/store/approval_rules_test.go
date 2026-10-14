@@ -71,7 +71,7 @@ func TestAnApprovalRuleKeepsItsZeros(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := on.CreatedAt
-	on.Enabled, on.MaxGrantTTL, on.Scope = false, 0, ""
+	on.Enabled, on.MaxGrantTTL, on.Repositories = false, 0, nil
 	if err := st.UpdateApprovalRule(ctx, on); err != nil {
 		t.Fatal(err)
 	}
@@ -90,9 +90,8 @@ func TestAnApprovalRuleKeepsItsZeros(t *testing.T) {
 	}
 }
 
-// An answer on record is found by the question it answered: the kind, the
-// discobox, the digest and, for a question asked per request, the request. The
-// newest answer is the one that stands.
+// An answer on record is found by the question it answered: the discobox, the
+// request and the digest. The newest answer is the one that stands.
 func TestAnAnsweredQuestionIsFoundByItsDigest(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
@@ -100,19 +99,19 @@ func TestAnAnsweredQuestionIsFoundByItsDigest(t *testing.T) {
 	if err := st.CreateProject(ctx, project); err != nil {
 		t.Fatal(err)
 	}
-	record := func(kind, sandboxID, requestID, digest string, allow bool, at time.Time) {
+	record := func(kind, sandboxID, requestID, digest, ruleID string, allow bool, at time.Time) {
 		t.Helper()
 		if err := st.CreateCredentialVerdict(ctx, &model.CredentialVerdict{
 			ProjectID: project.ID, Kind: kind, Origin: model.CredentialVerdictOriginJudge, SandboxID: sandboxID,
-			SecretRequestID: requestID, QuestionDigest: digest, Allow: allow, Reason: "decided", CreatedAt: at,
+			SecretRequestID: requestID, QuestionDigest: digest, RuleID: ruleID, Allow: allow, Reason: "decided", CreatedAt: at,
 		}); err != nil {
 			t.Fatalf("record verdict: %v", err)
 		}
 	}
 	now := time.Now().UTC()
-	record(model.CredentialVerdictKindScope, "sbx_1", "sreq_1", "digest-scope", false, now.Add(-time.Minute))
-	record(model.CredentialVerdictKindScope, "sbx_1", "sreq_2", "digest-scope", true, now)
-	record(model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", true, now)
+	record(model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", "", false, now.Add(-time.Minute))
+	record(model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", "rule_1", true, now)
+	record(model.CredentialVerdictKindDelegation, "sbx_1", "sreq_3", "digest-delegation", "", true, now)
 	// A discobox's own judge's word is never an answer to a rule's question.
 	if err := st.CreateCredentialVerdict(ctx, &model.CredentialVerdict{
 		ProjectID: project.ID, Kind: model.CredentialVerdictKindRule, Origin: model.CredentialVerdictOriginSandbox,
@@ -121,22 +120,25 @@ func TestAnAnsweredQuestionIsFoundByItsDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A scope is decided for a discobox, whatever request it came up under.
-	if got, err := st.AnsweredQuestion(ctx, project.ID, model.CredentialVerdictKindScope, "sbx_1", "", "digest-scope", true); err != nil || !got.Allow {
-		t.Fatalf("scope answer = %+v, %v, want the newest", got, err)
+	for _, fresh := range []bool{true, false} {
+		if got, err := st.AnsweredQuestion(ctx, project.ID, "sbx_1", "sreq_1", "digest-rule", fresh); err != nil || !got.Allow {
+			t.Fatalf("rule answer = %+v, %v, want the newest", got, err)
+		}
 	}
-	if got, err := st.AnsweredQuestion(ctx, project.ID, model.CredentialVerdictKindRule, "sbx_1", "sreq_1", "digest-rule", false); err != nil || !got.Allow {
-		t.Fatalf("rule answer = %+v, %v", got, err)
-	}
-	for name, miss := range map[string][4]string{
-		"another request":    {model.CredentialVerdictKindRule, "sbx_1", "sreq_2", "digest-rule"},
-		"another discobox":   {model.CredentialVerdictKindScope, "sbx_2", "", "digest-scope"},
-		"another kind":       {model.CredentialVerdictKindRule, "sbx_1", "", "digest-scope"},
-		"an edited question": {model.CredentialVerdictKindScope, "sbx_1", "", "digest-edited"},
-		"a volunteered row":  {model.CredentialVerdictKindRule, "sbx_1", "sreq_9", "digest-volunteered"},
+	for name, miss := range map[string][3]string{
+		"another request":    {"sbx_1", "sreq_2", "digest-rule"},
+		"another discobox":   {"sbx_2", "sreq_1", "digest-rule"},
+		"another kind":       {"sbx_1", "sreq_3", "digest-delegation"},
+		"an edited question": {"sbx_1", "sreq_1", "digest-edited"},
+		"a volunteered row":  {"sbx_1", "sreq_9", "digest-volunteered"},
 	} {
-		if _, err := st.AnsweredQuestion(ctx, project.ID, miss[0], miss[1], miss[2], miss[3], true); !errors.Is(err, store.ErrNotFound) {
+		if _, err := st.AnsweredQuestion(ctx, project.ID, miss[0], miss[1], miss[2], true); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("%s = %v, want no answer on record", name, err)
+		}
+	}
+	for ruleID, want := range map[string]bool{"rule_1": true, "rule_2": false} {
+		if named, err := st.QuestionRecordedUnder(ctx, project.ID, "sbx_1", "sreq_1", "digest-rule", ruleID); err != nil || named != want {
+			t.Errorf("QuestionRecordedUnder(%s) = %v, %v, want %v", ruleID, named, err, want)
 		}
 	}
 }

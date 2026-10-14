@@ -78,7 +78,7 @@ func TestProposingARuleRequiresTheJudgeScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
-	job := `{"uses":["gh api GET repos/org/repo/issues/43"],"hosts":["github.com"],"discobox":{"createdBy":"a person"}}`
+	job := `{"uses":["gh api GET repos/org/repo/issues/43"],"hosts":["github.com"]}`
 
 	for _, tc := range []struct {
 		name, scope string

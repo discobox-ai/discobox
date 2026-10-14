@@ -48,17 +48,16 @@ An approval rule is a third reason to keep a judge, and hangs on neither switch
 ([ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
 §6): a project with a rule switched on (`store.HasEnabledApprovalRule`) wants
 one on a server that judges nothing else, and nothing but rules is put to it.
-`rules.go` answers a rule's two questions for the secrets service, each from
-the verdict on record for the same job (`store.AnsweredQuestion`, by
-`judge.Digest`) before it asks anybody, and records what it asked as a `scope`
-or `rule` verdict before the answer is acted on:
+`rules.go` answers a rule's one question for the secrets service — whether
+the uses a request asked for are within the rule's — from the verdict on
+record for the same job (`store.AnsweredQuestion`, by `judge.Digest`) before
+it asks anybody, and records what it asked as a `rule` verdict before the
+answer is acted on. Which discoboxes a rule is for is a list of repositories
+the secrets service compares; no judge is asked.
 
-- `JudgeScope` — with Jev, Jev alone: its yes is a match and anything else is
-  not, and nothing is sent on to the judge discobox whatever `jevUnsure` says.
-  A server with no Jev key asks its judge discobox.
 - `JudgeRule` — through `put`, like a delegation: Jev first, and what it is
   unsure of handled by `jevUnsure`.
-- `ProposeRule` — the judge discobox writes a rule's wider scopes and uses
+- `ProposeRule` — the judge discobox writes a rule's wider uses
   (`POST .../judge/proposal`). Jev writes nothing, so a server with no judge
   discobox has nobody to ask, and says so.
 

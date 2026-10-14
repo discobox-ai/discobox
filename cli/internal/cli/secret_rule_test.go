@@ -14,7 +14,7 @@ import (
 
 const (
 	ruleJSON = `{"id":"rule_1","projectId":"project-1","wellKnownId":"com.github.api","hosts":["github.com"],"purpose":"use",` +
-		`"scope":"discoboxes started to deliver an issue in org/repo","uses":["read any issue <number> in org/repo","push a branch discobox/<slug>; never main"],` +
+		`"repositories":["github.com/org/repo"],"uses":["read any issue <number> in org/repo","push a branch discobox/<slug>; never main"],` +
 		`"maxGrantTTLSeconds":3600,"enabled":true,"createdBy":"user-1","createdAt":"2026-10-12T00:00:00Z","updatedAt":"2026-10-12T00:00:01Z"}`
 	pendingAskJSON = `{"id":"request-1","projectId":"project-1","requestedBy":"agent:sbx_1","sandboxId":"sbx_1","type":"token","hosts":["github.com"],` +
 		`"status":"pending","wellKnownId":"com.github.api","uses":[{"description":"gh api GET repos/org/repo/issues/43"}],` +
@@ -51,10 +51,9 @@ func ruleServer(t *testing.T, sent map[string]map[string]any) *httptest.Server {
 				`"purpose":"use","ruleId":"rule_1","grantedAt":"2026-10-12T00:00:00Z","createdAt":"2026-10-12T00:00:00Z","updatedAt":"2026-10-12T00:00:00Z"}]}`))
 		case "POST /projects/project-1/secret-requests/request-1/rule-proposals":
 			_, _ = w.Write([]byte(`{"credential":"com.github.api","hosts":["github.com"],"purpose":"use",` +
-				`"scopes":[{"level":1,"sandboxId":"sbx_1","covers":true,"reason":"this discobox, by its ID; nothing is read"},` +
-				`{"level":2,"scope":"discoboxes started to deliver an issue in org/repo","covers":false,"reason":"Refused: Jev could not tell (0.41)."}],` +
+				`"repository":"github.com/org/repo\u001b[2J",` +
 				`"contents":[{"level":1,"uses":["gh api GET repos/org/repo/issues/43"],"covers":true,"reason":"within"},` +
-				`{"level":2,"uses":["read any issue <number> in org/repo\u001b[2J"],"covers":true,"reason":"within"}]}`))
+				`{"level":2,"uses":["read any issue <number> in org/repo\u001b[2J"],"covers":false,"reason":"Refused: Jev could not tell (0.41)."}]}`))
 		default:
 			t.Errorf("unexpected request = %s", key)
 			http.NotFound(w, r)
@@ -64,45 +63,58 @@ func ruleServer(t *testing.T, sent map[string]map[string]any) *httptest.Server {
 	return server
 }
 
-// A rule is made directly with the sentences a person wrote. The CLI sends
-// what was said and nothing it was not: a cap, a purpose or a pin nobody
-// named is the server's default to give.
+// A rule is made directly with the sentences a person wrote, for the
+// repositories they named. The CLI sends what was said and nothing it was not:
+// a cap or a purpose nobody named is the server's default to give, and a
+// repository is the server's to read and store.
 func TestSecretRuleCreateSendsTheSentencesAsWritten(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
 	out := runCLI(t, server.URL, "secret", "rule", "create", "--well-known", "com.github.api",
-		"--scope", " discoboxes started to deliver an issue in org/repo ",
+		"--repo", " git@github.com:org/repo.git ,github.com/org/other", "--repo", "https://gitlab.example.com/group/project",
 		"--use", "read any issue <number> in org/repo", "--use", "push a branch discobox/<slug>; never main",
 		"--max-grant-ttl", "2h")
 	body := sent["POST /projects/project-1/approval-rules"]
 	uses, _ := body["uses"].([]any)
-	if body["wellKnownId"] != "com.github.api" || body["scope"] != "discoboxes started to deliver an issue in org/repo" ||
+	repositories, _ := body["repositories"].([]any)
+	if body["wellKnownId"] != "com.github.api" || len(repositories) != 3 || repositories[0] != "git@github.com:org/repo.git" ||
+		repositories[1] != "github.com/org/other" || repositories[2] != "https://gitlab.example.com/group/project" ||
 		len(uses) != 2 || uses[1] != "push a branch discobox/<slug>; never main" || body["maxGrantTTLSeconds"] != float64(7200) {
 		t.Fatalf("create body = %#v", body)
 	}
-	for _, unsaid := range []string{"purpose", "sandboxId", "secretId", "enabled", "expiresAt", "hosts"} {
+	for _, unsaid := range []string{"purpose", "secretId", "enabled", "expiresAt", "hosts", "everyDiscobox"} {
 		if _, ok := body[unsaid]; ok {
 			t.Fatalf("create body = %#v, want %s left to the server", body, unsaid)
 		}
 	}
 	// The rule's text is what approves, so it is read back whole.
-	for _, want := range []string{"rule_1", "enabled", "com.github.api", "never main", "discoboxes started to deliver", "1 hour"} {
+	for _, want := range []string{"rule_1", "enabled", "com.github.api", "never main", "discoboxes of github.com/org/repo", "1 hour"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output = %q, want %q in it", out, want)
 		}
 	}
+
+	// A rule for every discobox is made by saying so, and names no repository.
+	runCLI(t, server.URL, "secret", "rule", "create", "--well-known", "com.github.api", "--every-discobox", "--use", "read issues")
+	if body := sent["POST /projects/project-1/approval-rules"]; body["repositories"] != nil || body["everyDiscobox"] != true {
+		t.Fatalf("create body = %#v, want every discobox said in so many words, and no repository named", body)
+	}
 }
 
-// A rule names one credential and says what it approves; the CLI refuses the
-// others before it asks the server anything.
+// A rule names one credential, says which discoboxes it is for and what it
+// approves; the CLI refuses the others before it asks the server anything. A
+// rule for every discobox is never what saying nothing makes.
 func TestSecretRuleCreateRefusesWhatIsNotARule(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
 	for name, args := range map[string][]string{
-		"no credential":     {"--use", "read issues"},
-		"two credentials":   {"--well-known", "com.github.api", "--secret", "sec_1", "--use", "read issues"},
-		"no uses":           {"--well-known", "com.github.api"},
-		"an expiry of zero": {"--well-known", "com.github.api", "--use", "read issues", "--expires-in", "forever"},
+		"no credential":                    {"--repo", "github.com/org/repo", "--use", "read issues"},
+		"two credentials":                  {"--repo", "github.com/org/repo", "--well-known", "com.github.api", "--secret", "sec_1", "--use", "read issues"},
+		"no uses":                          {"--repo", "github.com/org/repo", "--well-known", "com.github.api"},
+		"an expiry of zero":                {"--repo", "github.com/org/repo", "--well-known", "com.github.api", "--use", "read issues", "--expires-in", "forever"},
+		"nothing said of which discoboxes": {"--well-known", "com.github.api", "--use", "read issues"},
+		"a repository that says nothing":   {"--repo", " ", "--well-known", "com.github.api", "--use", "read issues"},
+		"repositories and every discobox":  {"--repo", "github.com/org/repo", "--every-discobox", "--well-known", "com.github.api", "--use", "read issues"},
 	} {
 		cmd := NewRootCommand()
 		var out bytes.Buffer
@@ -127,24 +139,44 @@ func TestSecretRuleUpdateSendsOnlyWhatWasGiven(t *testing.T) {
 	if body := sent["PATCH /projects/project-1/approval-rules/rule_1"]; len(body) != 1 || body["enabled"] != false {
 		t.Fatalf("update body = %#v, want only enabled: false", body)
 	}
-	runCLI(t, server.URL, "secret", "rule", "update", "rule_1", "--scope", "", "--never-expires", "--max-grant-ttl", "forever")
+	runCLI(t, server.URL, "secret", "rule", "update", "rule_1", "--every-discobox", "--never-expires", "--max-grant-ttl", "forever")
 	body := sent["PATCH /projects/project-1/approval-rules/rule_1"]
-	if len(body) != 3 || body["scope"] != "" || body["neverExpires"] != true || body["maxGrantTTLSeconds"] != float64(0) {
-		t.Fatalf("update body = %#v, want the cleared scope, the cleared expiry and the zero cap, and nothing else", body)
+	if _, listed := body["repositories"]; len(body) != 3 || listed || body["everyDiscobox"] != true ||
+		body["neverExpires"] != true || body["maxGrantTTLSeconds"] != float64(0) {
+		t.Fatalf("update body = %#v, want every discobox said, the cleared expiry and the zero cap, and nothing else", body)
+	}
+	runCLI(t, server.URL, "secret", "rule", "update", "rule_1", "--repo", "github.com/org/other")
+	body = sent["PATCH /projects/project-1/approval-rules/rule_1"]
+	if repositories, _ := body["repositories"].([]any); len(body) != 1 || len(repositories) != 1 || repositories[0] != "github.com/org/other" {
+		t.Fatalf("update body = %#v, want the repositories replaced and nothing else", body)
+	}
+	for name, args := range map[string][]string{
+		"a repository that says nothing":  {"--repo", ""},
+		"repositories and every discobox": {"--repo", "github.com/org/repo", "--every-discobox"},
+	} {
+		delete(sent, "PATCH /projects/project-1/approval-rules/rule_1")
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "secret", "rule", "update", "rule_1"}, args...))
+		if err := cmd.Execute(); err == nil || len(sent["PATCH /projects/project-1/approval-rules/rule_1"]) != 0 {
+			t.Errorf("an edit with %s was sent: %v", name, err)
+		}
 	}
 }
 
 func TestSecretRuleListGetAndDelete(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
-	if out := runCLI(t, server.URL, "secret", "rule", "ls"); !strings.Contains(out, "rule_1") || !strings.Contains(out, "(+1 more)") {
-		t.Fatalf("ls = %q, want the rule and how many uses it has", out)
+	if out := runCLI(t, server.URL, "secret", "rule", "ls"); !strings.Contains(out, "rule_1") || !strings.Contains(out, "(+1 more)") || !strings.Contains(out, "github.com/org/repo") {
+		t.Fatalf("ls = %q, want the rule, its repository and how many uses it has", out)
 	}
 	if out := runCLI(t, server.URL, "secret", "rule", "ls", "--quiet"); strings.TrimSpace(out) != "rule_1" {
 		t.Fatalf("ls --quiet = %q, want the ID alone", out)
 	}
-	if out := runCLI(t, server.URL, "secret", "rule", "get", "rule_1"); !strings.Contains(out, "never main") {
-		t.Fatalf("get = %q, want every use", out)
+	if out := runCLI(t, server.URL, "secret", "rule", "get", "rule_1"); !strings.Contains(out, "never main") || !strings.Contains(out, "discoboxes of github.com/org/repo") {
+		t.Fatalf("get = %q, want every use, and which discoboxes it is for", out)
 	}
 	if out := runCLI(t, server.URL, "secret", "rule", "delete", "rule_1"); !strings.Contains(out, "rule_1") {
 		t.Fatalf("delete = %q", out)
@@ -157,32 +189,35 @@ func TestSecretRuleListGetAndDelete(t *testing.T) {
 }
 
 // --auto makes a rule from the request and approves under it. With nothing
-// else said it is the narrowest rule, which needs no model: pinned to the
-// discobox that asked, the uses as asked. The rule made is read back whole.
-func TestSecretRequestApproveAutoPinsTheRuleUnlessTold(t *testing.T) {
+// else said it is the narrowest rule: the uses as asked, for the repository of
+// the discobox that asked, which the server names — the CLI says nothing of
+// which discoboxes, and the server never reads that as every one of them. The
+// rule made is read back whole.
+func TestSecretRequestApproveAutoLeavesTheRepositoryToTheServerUnlessTold(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
 	out := runCLI(t, server.URL, "secret", "request", "approve", "request-1", "--auto")
 	rule, _ := sent["POST /projects/project-1/secret-requests/request-1/approve"]["rule"].(map[string]any)
-	if rule == nil || rule["sandboxId"] != "sbx_1" || rule["scope"] != nil || rule["uses"] != nil {
-		t.Fatalf("rule = %#v, want it pinned to the asking discobox with the uses left as asked", rule)
+	if rule == nil || len(rule) != 0 {
+		t.Fatalf("rule = %#v, want a rule with nothing said: the asking discobox's repository, and the uses as asked", rule)
 	}
 	if !strings.Contains(out, "Approval rule made:") || !strings.Contains(out, "never main") {
 		t.Fatalf("output = %q, want the rule that was made, in full", out)
 	}
 
 	runCLI(t, server.URL, "secret", "request", "approve", "request-1", "--auto",
-		"--rule-scope", "any discobox on org/repo", "--rule-use", "read any issue <number> in org/repo")
+		"--rule-repo", "github.com/org/repo,github.com/org/other", "--rule-use", "read any issue <number> in org/repo")
 	rule, _ = sent["POST /projects/project-1/secret-requests/request-1/approve"]["rule"].(map[string]any)
 	uses, _ := rule["uses"].([]any)
-	if rule["scope"] != "any discobox on org/repo" || rule["sandboxId"] != nil || len(uses) != 1 {
-		t.Fatalf("rule = %#v, want the sentences given and no pin", rule)
+	repositories, _ := rule["repositories"].([]any)
+	if len(repositories) != 2 || repositories[1] != "github.com/org/other" || rule["everyDiscobox"] != nil || len(uses) != 1 {
+		t.Fatalf("rule = %#v, want the repositories and sentences given", rule)
 	}
 
 	runCLI(t, server.URL, "secret", "request", "approve", "request-1", "--auto", "--rule-every-discobox")
 	rule, _ = sent["POST /projects/project-1/secret-requests/request-1/approve"]["rule"].(map[string]any)
-	if rule == nil || rule["scope"] != nil || rule["sandboxId"] != nil {
-		t.Fatalf("rule = %#v, want neither a sentence nor a pin", rule)
+	if rule == nil || rule["everyDiscobox"] != true || rule["repositories"] != nil {
+		t.Fatalf("rule = %#v, want every discobox said, and no repository", rule)
 	}
 }
 
@@ -193,11 +228,11 @@ func TestSecretRequestApproveRuleFlagsNeedAuto(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
 	for name, args := range map[string][]string{
-		"a scope without --auto":        {"--rule-scope", "any discobox on org/repo"},
-		"a use without --auto":          {"--rule-use", "read issues"},
-		"a scope and every discobox":    {"--auto", "--rule-scope", "any discobox", "--rule-every-discobox"},
-		"a scope that says nothing":     {"--auto", "--rule-scope", " "},
-		"every discobox without --auto": {"--rule-every-discobox"},
+		"a repository without --auto":     {"--rule-repo", "github.com/org/repo"},
+		"a use without --auto":            {"--rule-use", "read issues"},
+		"a repository and every discobox": {"--auto", "--rule-repo", "github.com/org/repo", "--rule-every-discobox"},
+		"a repository that says nothing":  {"--auto", "--rule-repo", " "},
+		"every discobox without --auto":   {"--rule-every-discobox"},
 	} {
 		cmd := NewRootCommand()
 		var out bytes.Buffer
@@ -225,8 +260,8 @@ func TestSecretRequestProposeShowsEveryProposalAndItsVerdict(t *testing.T) {
 	server := ruleServer(t, sent)
 	out := runCLI(t, server.URL, "secret", "request", "propose", "request-1")
 	for _, want := range []string{
-		"com.github.api", "pinned to sbx_1",
-		`--rule-scope "discoboxes started to deliver an issue in org/repo"`,
+		"com.github.api", "discoboxes of github.com/org/repo",
+		"--rule-repo github.com/org/repo", "--rule-every-discobox",
 		"FAILED", "Jev could not tell (0.41)",
 		`--rule-use "gh api GET repos/org/repo/issues/43"`,
 		"the same work on any target of its kind",
@@ -246,10 +281,12 @@ func TestSecretRequestProposeShowsEveryProposalAndItsVerdict(t *testing.T) {
 func TestSecretRequestGetSaysWhyNoRuleCoveredIt(t *testing.T) {
 	asked := strings.Replace(pendingAskJSON, `"status":"pending"`,
 		`"status":"pending","ruleTests":[{"ruleId":"rule_1","covered":false,"stage":"content","reason":"pushes to main"},`+
-			`{"ruleId":"rule_2","covered":false,"pending":true,"stage":"scope"}]`, 1)
+			`{"ruleId":"rule_2","covered":false,"pending":true,"stage":"content"},`+
+			`{"ruleId":"rule_3","covered":false,"stage":"facts","reason":"the rule is for discoboxes of github.com/org/other, and this discobox is of github.com/org/repo"}]`, 1)
 	server := completionServer(t, map[string]string{"/projects/project-1/secret-requests/request-1": asked})
 	out := runCLI(t, server.URL, "secret", "request", "get", "request-1")
-	for _, want := range []string{"rule_1 did not cover it (content): pushes to main", "rule_2: its scope is still being judged"} {
+	for _, want := range []string{"rule_1 did not cover it (content): pushes to main", "rule_2: its content is still being judged",
+		"rule_3 did not cover it (facts): the rule is for discoboxes of github.com/org/other"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("get = %q, want %q in it", out, want)
 		}
@@ -257,8 +294,8 @@ func TestSecretRequestGetSaysWhyNoRuleCoveredIt(t *testing.T) {
 }
 
 // The console draws what a model wrote from an agent's ask: proposals reach it
-// with an escape sequence shown rather than obeyed, and with the levels, the
-// pin and each verdict as the server said them.
+// with an escape sequence shown rather than obeyed, and with the repository,
+// the levels and each verdict as the server said them.
 func TestRuleProposalsReachTheConsoleSafeToDraw(t *testing.T) {
 	server := ruleServer(t, map[string]map[string]any{})
 	client, err := apiclientgen.NewClient(server.URL)
@@ -270,14 +307,14 @@ func TestRuleProposalsReachTheConsoleSafeToDraw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuleProposals() error = %v", err)
 	}
-	if proposals.Credential != "com.github.api" || proposals.Delegate || len(proposals.Scopes) != 2 || len(proposals.Contents) != 2 {
+	if proposals.Credential != "com.github.api" || proposals.Delegate || len(proposals.Contents) != 2 {
 		t.Fatalf("proposals = %+v", proposals)
 	}
-	if pin := proposals.Scopes[0]; pin.Level != 1 || pin.SandboxID != "sbx_1" || !pin.Covers {
-		t.Fatalf("level 1 scope = %+v, want the pin", pin)
+	if strings.ContainsRune(proposals.Repository, '\x1b') || !strings.HasPrefix(proposals.Repository, "github.com/org/repo") {
+		t.Fatalf("repository = %q, want the asking discobox's, safe to draw", proposals.Repository)
 	}
-	if failed := proposals.Scopes[1]; failed.Covers || !strings.Contains(failed.Reason, "0.41") {
-		t.Fatalf("level 2 scope = %+v, want it failed, with the judge's reason", failed)
+	if failed := proposals.Contents[1]; failed.Covers || !strings.Contains(failed.Reason, "0.41") {
+		t.Fatalf("level 2 content = %+v, want it failed, with the judge's reason", failed)
 	}
 	written := proposals.Contents[1].Uses[0]
 	if strings.ContainsRune(written, '\x1b') || !strings.Contains(written, "read any issue <number> in org/repo") {

@@ -1678,7 +1678,7 @@ type CredentialVerdict struct {
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	// Kind and Origin default to what every row written before request
 	// verdicts existed was, so adding the columns is the whole upgrade.
-	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command, request, delegation, or an approval rule's scope or its uses" enum:"command,request,delegation,scope,rule"`
+	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command, request, delegation, or an approval rule's uses" enum:"command,request,delegation,rule"`
 	Origin    string `gorm:"column:origin;not null;type:text;default:'sandbox'" json:"origin" doc:"Who judged: sandbox, for a discobox's own judge, or judge, for the project's" enum:"sandbox,judge"`
 	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in, or the request came from"`
 	// GrantID is resolved from UseID against the sandbox's live grants at
@@ -1698,22 +1698,21 @@ type CredentialVerdict struct {
 	// Empty on every other verdict, which is what every row written before
 	// delegation verdicts existed already is.
 	//
-	// On a rule verdict it is the request the rule was tested against, and on
-	// a scope verdict recorded for a proposal, the request being answered.
+	// On a rule verdict it is the request the rule was tested against.
 	SecretRequestID string `gorm:"column:secret_request_id;not null;type:text;default:'';index" json:"secretRequestId,omitempty" doc:"On a delegation verdict, the secret request the discobox was approving; on a rule verdict, the request the rule was tested against. The request names the grant the approval minted"`
 	// ForSandboxID is, on a delegation verdict, the discobox the uses were
 	// handed on to: the requester of an approval, or the discobox a create
 	// gave them to, which has no request to name it by.
 	ForSandboxID string `gorm:"column:for_sandbox_id;not null;type:text;default:'';index" json:"forSandboxId,omitempty" doc:"On a delegation verdict, the discobox the uses were handed on to"`
-	// RuleID is, on a scope or rule verdict, the approval rule that was being
-	// tested (ADR 26-10-12-330 §§2, 5). It is empty on one recorded while a
-	// rule was still being proposed, which names its request instead.
-	RuleID string `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"On a scope or rule verdict, the approval rule tested; empty while the rule was still a proposal"`
-	// QuestionDigest is, on a scope or rule verdict, the SHA-256 of the prompt
-	// that was judged: the rule's sentences and what they were read against.
+	// RuleID is, on a rule verdict, the approval rule that was being tested
+	// (ADR 26-10-12-330 §5). It is empty on one recorded while a rule was
+	// still being proposed, which names its request instead.
+	RuleID string `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"On a rule verdict, the approval rule tested; empty while the rule was still a proposal"`
+	// QuestionDigest is, on a rule verdict, the SHA-256 of the prompt that was
+	// judged: the rule's sentences and what they were read against.
 	// It is how a question already answered is found rather than asked again,
 	// and why an edited rule is asked afresh: its question differs.
-	QuestionDigest string `gorm:"column:question_digest;not null;type:text;default:'';index" json:"questionDigest,omitempty" doc:"On a scope or rule verdict, the digest of the question judged, by which an answer on record is reused"`
+	QuestionDigest string `gorm:"column:question_digest;not null;type:text;default:'';index" json:"questionDigest,omitempty" doc:"On a rule verdict, the digest of the question judged, by which an answer on record is reused"`
 	// Command is serialized JSON rather than a joined string: SecretGrant.Uses
 	// already sets the precedent for a slice column on this model, and keeping
 	// argv elements distinct is what let the judge — and lets a reader of this
@@ -1785,7 +1784,6 @@ const (
 	CredentialVerdictKindCommand    = judge.KindCommand
 	CredentialVerdictKindRequest    = judge.KindRequest
 	CredentialVerdictKindDelegation = judge.KindDelegation
-	CredentialVerdictKindScope      = judge.KindScope
 	CredentialVerdictKindRule       = judge.KindRule
 
 	CredentialVerdictOriginSandbox = "sandbox"

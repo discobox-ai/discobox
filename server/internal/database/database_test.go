@@ -1,8 +1,10 @@
 package database_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -1926,5 +1928,136 @@ func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("requests after migrate = %v, want %v", got, want)
+	}
+}
+
+// A rule made while a rule had a scope sentence or a pinned discobox must not
+// come out of the upgrade as a rule for every discobox, nor one keypress from
+// it: neither column says a repository, so the rule is deleted with its
+// columns, and said to have been. A rule that had neither was already for
+// every discobox and is kept. The grants a deleted rule minted stand, as they
+// do when a person deletes one, and the scope verdicts go.
+func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	write := db.Write.WithContext(ctx)
+	if err := write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	now := time.Now().UTC()
+	verdict := func(id, kind string) {
+		t.Helper()
+		if err := write.Model(&model.CredentialVerdict{}).Create(map[string]any{
+			"id": id, "project_id": "project-1", "sandbox_id": "sbx_1", "use_id": "", "role": "judge", "prompt": "p",
+			"kind": kind, "origin": "judge", "round": 1, "allow": true, "rule_id": "rule_scoped", "created_at": now,
+		}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	// A database that never had the columns is not touched: a verdict of a
+	// kind nothing writes is left where it is, since nothing says to look.
+	verdict("cv_untouched", "scope")
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate with no old columns: %v", err)
+	}
+	var untouched int64
+	if err := write.Model(&model.CredentialVerdict{}).Where("id = ?", "cv_untouched").Count(&untouched).Error; err != nil || untouched != 1 {
+		t.Fatalf("verdicts = %d, %v, want nothing deleted from a database with no old columns", untouched, err)
+	}
+	if err := write.Exec("DELETE FROM credential_verdicts").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// The columns as a database built from the branch that had them has them,
+	// the pin with its index.
+	for _, statement := range []string{
+		"ALTER TABLE approval_rules ADD COLUMN scope text NOT NULL DEFAULT ''",
+		"ALTER TABLE approval_rules ADD COLUMN sandbox_id text NOT NULL DEFAULT ''",
+		"CREATE INDEX idx_approval_rules_sandbox_id ON approval_rules(sandbox_id)",
+	} {
+		if err := write.Exec(statement).Error; err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	for _, rule := range []struct{ id, scope, pin string }{
+		{"rule_scoped", "discoboxes started to deliver an issue in org/repo", ""},
+		{"rule_pinned", "", "sbx_1"},
+		{"rule_both", "any discobox a person started", "sbx_1"},
+		{"rule_every", "", ""},
+	} {
+		if err := write.Exec(
+			"INSERT INTO approval_rules (id, project_id, scope, sandbox_id, well_known_id, hosts, purpose, uses, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			rule.id, "project-1", rule.scope, rule.pin, "com.github.api", `["github.com"]`, model.SecretGrantPurposeUse, `["read any issue in org/repo"]`, true, now, now).Error; err != nil {
+			t.Fatalf("seed %s: %v", rule.id, err)
+		}
+	}
+	if err := write.Exec(
+		"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, granted_by, granted_at, rule_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"grant_minted", "project-1", "sec-1", model.SecretGrantScopeProject, "project-1", "user-1", now, "rule_scoped", now, now).Error; err != nil {
+		t.Fatalf("seed grant: %v", err)
+	}
+	verdict("cv_scope", "scope")
+	verdict("cv_rule", model.CredentialVerdictKindRule)
+
+	var logged bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	// Twice: the step runs on every start, and the second finds nothing to do.
+	for run := 1; run <= 2; run++ {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatalf("upgrade migrate %d: %v", run, err)
+		}
+		for _, column := range []string{"scope", "sandbox_id"} {
+			if db.Write.Migrator().HasColumn("approval_rules", column) {
+				t.Fatalf("run %d: approval_rules.%s survived the migration", run, column)
+			}
+		}
+		var rules []model.ApprovalRule
+		if err := write.Order("id").Find(&rules).Error; err != nil {
+			t.Fatalf("run %d: read rules: %v", run, err)
+		}
+		if len(rules) != 1 || rules[0].ID != "rule_every" || !rules[0].Enabled || len(rules[0].Repositories) != 0 || len(rules[0].Uses) != 1 {
+			t.Fatalf("run %d: rules = %+v, want only the rule that was already for every discobox, as it was", run, rules)
+		}
+		var grant model.SecretGrant
+		if err := write.First(&grant, "id = ?", "grant_minted").Error; err != nil || grant.RuleID != "rule_scoped" {
+			t.Fatalf("run %d: grant = %+v, %v, want the deleted rule's grant standing and still naming it", run, grant, err)
+		}
+		var kinds []string
+		if err := write.Model(&model.CredentialVerdict{}).Order("id").Pluck("kind", &kinds).Error; err != nil {
+			t.Fatalf("run %d: read verdicts: %v", run, err)
+		}
+		if len(kinds) != 1 || kinds[0] != model.CredentialVerdictKindRule {
+			t.Errorf("run %d: verdict kinds = %q, want the rule verdict alone", run, kinds)
+		}
+	}
+	// One line a rule, said once, with what it was for.
+	said := logged.String()
+	for _, want := range []string{
+		"rule_scoped", "rule_pinned", "rule_both", "project-1", "com.github.api",
+		`"discoboxes started to deliver an issue in org/repo"`, `pinned to discobox "sbx_1"`,
+	} {
+		if !strings.Contains(said, want) {
+			t.Errorf("log = %q, want it to say %q", said, want)
+		}
+	}
+	if strings.Contains(said, "rule_every") || strings.Count(said, "deleted approval rule") != 3 {
+		t.Errorf("log = %q, want one line for each of the three deleted rules and none for the one kept", said)
 	}
 }

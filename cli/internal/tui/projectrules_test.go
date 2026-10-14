@@ -32,18 +32,18 @@ func rulesFixture(t *testing.T) (*Model, *fakeSource) {
 	ds.rules = []Rule{
 		{
 			ID:           "rule_1",
-			ApprovalRule: ApprovalRule{Scope: "discoboxes started to deliver an issue in org/repo", Uses: []string{longUse, "Read any issue in org/repo"}},
+			ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo", "github.com/org/tools"}, Uses: []string{longUse, "Read any issue in org/repo"}},
 			WellKnownID:  "com.github.api", SecretID: "sec_gh", Hosts: []string{"github.com", "api.github.com"},
 			MaxGrantTTL: 8 * time.Hour, CreatedBy: "user:darren", Created: now.Add(-3 * time.Hour), Enabled: true,
 		},
 		{
 			ID:           "rule_2",
-			ApprovalRule: ApprovalRule{SandboxID: "sbx_two", Uses: []string{"Call the OpenAI API"}},
+			ApprovalRule: ApprovalRule{Repositories: []string{"gitlab.example.com/team/models"}, Uses: []string{"Call the OpenAI API"}},
 			SecretID:     "sec_loose", Hosts: []string{"api.openai.com"}, Created: now.Add(-time.Hour),
 		},
 		{
 			ID:           "rule_3",
-			ApprovalRule: ApprovalRule{Uses: []string{"Read any issue in org/repo"}},
+			ApprovalRule: ApprovalRule{EveryDiscobox: true, Uses: []string{"Read any issue in org/repo"}},
 			WellKnownID:  "com.github.api", Hosts: []string{"github.com"},
 			Expires: now.Add(-time.Hour), Created: now.Add(-48 * time.Hour), Enabled: true,
 		},
@@ -132,9 +132,9 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 		t.Fatalf("title = %q, want it to count the rules", rows[rules])
 	}
 	for i, want := range [][]string{
-		{"com.github.api", "enabled", "discoboxes started to deliver an issue in org/repo", "2 uses", "no expiry"},
+		{"com.github.api", "enabled", "github.com/org/repo, github.com/org/tools", "2 uses", "no expiry"},
 		// A rule for a project secret is named by the secret, not its ID.
-		{"OpenAI key", "disabled", "pinned to sbx_two", "1 use"},
+		{"OpenAI key", "disabled", "gitlab.example.com/team/models", "1 use"},
 		{"com.github.api", "lapsed", "every discobox", "1 use", "lapsed 1h ago"},
 	} {
 		row := rows[rules+1+i]
@@ -152,7 +152,7 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 }
 
 // A narrow window gives up the columns that say least, from the right, and
-// cuts the sentence to what is left. The credential and whether the rule is
+// cuts the repositories to what is left. The credential and whether the rule is
 // answering are what the row is for, and stay.
 func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 	t.Parallel()
@@ -161,13 +161,13 @@ func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 
 	rows := plainRows(m)
 	row := rows[titleRow(rows, "Rules")+1]
-	for _, want := range []string{"com.github.api", "enabled", "discoboxes started"} {
+	for _, want := range []string{"com.github.api", "enabled", "github.com/org/repo"} {
 		if !strings.Contains(row, want) {
 			t.Fatalf("row = %q, want it to keep %q", row, want)
 		}
 	}
-	if strings.Contains(row, "org/repo") || strings.Contains(row, "no expiry") {
-		t.Fatalf("row = %q, want the sentence cut and the last column dropped", row)
+	if strings.Contains(row, "org/tools") || strings.Contains(row, "no expiry") {
+		t.Fatalf("row = %q, want the repositories cut and the last column dropped", row)
 	}
 	for _, line := range rows {
 		if w := lipgloss.Width(line); w > 72 {
@@ -249,7 +249,7 @@ func TestFocusMovesThroughTheThreeTables(t *testing.T) {
 	}
 
 	// A press on a rule's row is in that table, on that rule.
-	x, y := at(t, m, "pinned to sbx_two")
+	x, y := at(t, m, "gitlab.example.com/team/models")
 	tap(t, m, x, y)
 	if !onRuleRow(m, "rule_2") {
 		t.Fatalf("a press on a rule left the keys in table %d on %+v", m.table, m.rules.current())
@@ -356,12 +356,12 @@ func TestAShortWindowShowsTheTableWithTheKeys(t *testing.T) {
 	// Its share is fewer rows than it has rules, windowed on the cursor like
 	// any list here.
 	send(t, m, keyPress("end"))
-	if rows = plainRows(m); !strings.Contains(rows[titleRow(rows, "Rules")+1], "pinned to sbx_two") || !strings.Contains(rows[titleRow(rows, "Rules")+2], "every discobox") {
+	if rows = plainRows(m); !strings.Contains(rows[titleRow(rows, "Rules")+1], "gitlab.example.com/team/models") || !strings.Contains(rows[titleRow(rows, "Rules")+2], "every discobox") {
 		t.Fatalf("the rows under the title do not follow the cursor:\n%s", strings.Join(rows, "\n"))
 	}
 	// A press lands on the table that is drawn, not on one that is not.
 	slowClock(m)
-	x, y := at(t, m, "pinned to sbx_two")
+	x, y := at(t, m, "gitlab.example.com/team/models")
 	tap(t, m, x, y)
 	if !onRuleRow(m, "rule_2") {
 		t.Fatalf("the press left the keys in table %d on %+v", m.table, m.rules.current())
@@ -381,7 +381,7 @@ func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 		"state enabled", "credential com.github.api", "answered with gh",
 		"github.com, api.github.com", "purpose use", "at most 8 hours",
 		"expires never", "made by user:darren", "3h ago",
-		"discoboxes started to deliver an issue in org/repo",
+		"discoboxes of github.com/org/repo", "discoboxes of github.com/org/tools",
 		longUse, "Read any issue in org/repo",
 		"1 grant it minted still stands",
 		"fix flaky pool reaper tests · sandbox sbx_one api.github.com · expires in",
@@ -516,7 +516,7 @@ func TestAGrantIsRevokedFromTheRuleThatMintedIt(t *testing.T) {
 	}
 }
 
-// A rule with no scope and no pin approves for discoboxes that do not exist
+// A rule that names no repository approves for discoboxes that do not exist
 // yet. That is the widest thing on this screen, so it is said in the words the
 // decision to allow it was recorded in, on its card and before it is deleted.
 func TestARuleForEveryDiscoboxSaysWhatThatMeans(t *testing.T) {
@@ -551,10 +551,10 @@ func TestAStoredRuleSaysWhatItHandsOut(t *testing.T) {
 	}
 	m, ds := rulesFixture(t)
 	ds.rules = []Rule{{ID: "rule_gate", WellKnownID: gate.ID, Delegate: true, Enabled: true,
-		ApprovalRule: ApprovalRule{SandboxID: "sbx_one", Uses: []string{"Create discoboxes to deliver issues"}}}}
+		ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo"}, Uses: []string{"Create discoboxes to deliver issues"}}}}
 	send(t, m, keyPress("r"))
 	// Its row says it delegates: a rule to use the same credential is another.
-	if !strings.Contains(frameText(m), "delegates · pinned to sbx_one") {
+	if !strings.Contains(frameText(m), "delegates · github.com/org/repo") {
 		t.Fatalf("the row does not say the rule delegates:\n%s", frameText(m))
 	}
 	openRule(t, m, "rule_gate")
@@ -716,7 +716,7 @@ func TestAGrownWindowShowsTheRulesItHasRoomFor(t *testing.T) {
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 16})
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	frame := plainFrame(m)
-	for _, want := range []string{"pinned to sbx_two", "every discobox", "discoboxes started to deliver"} {
+	for _, want := range []string{"gitlab.example.com/team/models", "every discobox", "github.com/org/repo, github.com/org/tools"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("the grown window does not draw the rule with %q:\n%s", want, frame)
 		}

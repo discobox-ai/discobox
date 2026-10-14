@@ -15787,11 +15787,14 @@ func (s *Server) handleMintSandboxAgentStatusTokensRequest(args [1]string, argsE
 
 // handleProposeApprovalRulesRequest handles propose-approval-rules operation.
 //
-// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), three scopes
-// and three lists of uses, each narrowest first. The narrowest of each needs no model. The wider
-// ones are written by the project's judge and each is then put to the judge as the question a rule
-// would later ask, so only a candidate found to cover this request may be chosen. Where no model can
-// write, the narrowest of each is offered alone. Only a person may ask.
+// Proposes approval rules for a pending agent credential request (ADR 26-10-12-330), as three lists
+// of uses, narrowest first, and the repository of the discobox that asked, which the rule may be for.
+//
+//	The narrowest uses, as asked, need no model. The wider ones are written by the project's judge
+//
+// and each is then put to the judge as the question a rule would later ask, so only a candidate
+// found to cover this request may be chosen. Where no model can write, the uses as asked are offered
+// alone. Only a person may ask.
 //
 // POST /projects/{projectId}/secret-requests/{requestId}/rule-proposals
 func (s *Server) handleProposeApprovalRulesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -15938,11 +15941,11 @@ func (s *Server) handleProposeApprovalRulesRequest(args [2]string, argsEscaped b
 
 // handleProposeSandboxRuleRequest handles propose-sandbox-rule operation.
 //
-// Has this discobox's harness write the wider scopes and uses a person may choose for an approval
-// rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying
-// judge:run may ask. The caller supplies the uses a request asked for and what was recorded about
-// the asking discobox; the prompt, the schema, the model role and the tools restriction are the
-// judge runtime's own, as for a judging job. What comes back authorizes nothing.
+// Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR
+// 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask.
+// The caller supplies the uses a request asked for; the prompt, the schema, the model role and the
+// tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes
+// nothing.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 func (s *Server) handleProposeSandboxRuleRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -20882,8 +20885,8 @@ func (s *Server) handleUnsetDefaultPoolRequest(args [2]string, argsEscaped bool,
 
 // handleUpdateApprovalRuleRequest handles update-approval-rule operation.
 //
-// Edits an approval rule. Only the fields sent change. A rule whose scope or uses changed is tested
-// afresh against what is pending; grants it already minted are untouched.
+// Edits an approval rule. Only the fields sent change. A rule whose repositories or uses changed is
+// tested afresh against what is pending; grants it already minted are untouched.
 //
 // PATCH /projects/{projectId}/approval-rules/{ruleId}
 func (s *Server) handleUpdateApprovalRuleRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {

@@ -142,17 +142,17 @@ func (fakeSecretService) DeleteApprovalRule(context.Context, string, string) err
 
 func (fakeSecretService) ProposeApprovalRules(context.Context, string, string) (*svcapi.RuleProposals, error) {
 	return &svcapi.RuleProposals{
-		Hosts:    []string{"github.com"},
-		Purpose:  "use",
-		Scopes:   []serverapi.RuleScopeProposal{{Level: 1, SandboxId: serverapi.NewOptString("sbx_1"), Covers: true}},
-		Contents: []serverapi.RuleContentProposal{{Level: 1, Uses: []string{"read issue 4"}, Covers: true}},
+		Hosts:      []string{"github.com"},
+		Purpose:    "use",
+		Repository: serverapi.NewOptString("github.com/org/repo"),
+		Contents:   []serverapi.RuleContentProposal{{Level: 1, Uses: []string{"read issue 4"}, Covers: true}},
 	}, nil
 }
 
 func fakeApprovalRule() model.ApprovalRule {
 	return model.ApprovalRule{
 		ID: "rule_1", ProjectID: "project-1", WellKnownID: "com.github.api",
-		Scope: "any discobox on org/repo", Hosts: []string{"github.com"}, Purpose: "use",
+		Repositories: []string{"github.com/org/repo"}, Hosts: []string{"github.com"}, Purpose: "use",
 		Uses: []string{"read any issue <number> in org/repo"}, MaxGrantTTL: 3600, Enabled: true,
 	}
 }

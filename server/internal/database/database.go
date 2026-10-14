@@ -160,7 +160,98 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := denyOrphanedSecretRequests(write); err != nil {
 		return err
 	}
+	if err := retireApprovalRuleScopes(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
+}
+
+// retireApprovalRuleScopes takes an approval rule's scope sentence and its
+// pinned discobox out of the schema (ADR 26-10-12-330 §2): which discoboxes a
+// rule is for is now a list of repositories, or every discobox when a person
+// said so.
+//
+// Neither old column says a repository, so neither can be carried over, and a
+// rule that had one would read, with the column gone, as a rule for every
+// discobox — wider than anybody made it. Switched off it would be one
+// keypress from that, with nothing left on it to say it was ever narrower. So
+// a rule that had a scope or a pin is deleted, as DeleteApprovalRule deletes
+// one: the grants it minted stand, and they and its verdicts go on naming it
+// by ID. Each is logged with what it said, which is the only record left of
+// it. A rule that had neither was already for every discobox, and is kept.
+// The columns never reached a release; databases built from the branch that
+// had them are what this is for.
+//
+// The scope verdicts go with the sentences they read: no rule asks that
+// question any more, and a kind the API's enum no longer names would fail
+// every listing it is in.
+//
+// All of it runs only while one of the columns is still there, which is what
+// says the database is from before. A step interrupted before the drops and
+// run again finds the same rows gone and finishes; once both columns are gone
+// it does nothing, and issues no statement.
+func retireApprovalRuleScopes(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.ApprovalRule{}) {
+		return nil
+	}
+	var retired []string
+	for _, column := range []string{"scope", "sandbox_id"} {
+		if migrator.HasColumn(&model.ApprovalRule{}, column) {
+			retired = append(retired, column)
+		}
+	}
+	if len(retired) == 0 {
+		return nil
+	}
+	narrowed := make([]string, 0, len(retired))
+	for _, column := range retired {
+		narrowed = append(narrowed, fmt.Sprintf("%q <> ''", column))
+	}
+	var rules []map[string]any
+	if err := db.Table("approval_rules").
+		Select(append([]string{"id", "project_id", "well_known_id", "secret_id"}, retired...)).
+		Where(strings.Join(narrowed, " OR ")).Order("id").Find(&rules).Error; err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		credential := columnText(rule["well_known_id"])
+		if credential == "" {
+			credential = "secret " + columnText(rule["secret_id"])
+		}
+		// %q throughout: a scope is a sentence a person or a model wrote.
+		log.Printf("deleted approval rule %s of project %s for %s (scope %q, pinned to discobox %q): a rule is now for repositories or for every discobox, and neither says one; its grants stand, and a rule for its repositories is made anew",
+			columnText(rule["id"]), columnText(rule["project_id"]), credential, columnText(rule["scope"]), columnText(rule["sandbox_id"]))
+		if err := db.Exec("DELETE FROM approval_rules WHERE id = ?", rule["id"]).Error; err != nil {
+			return err
+		}
+	}
+	// Before the columns go: they are what says this step has work left, so
+	// a start interrupted after them would leave the verdicts for good.
+	if migrator.HasTable(&model.CredentialVerdict{}) {
+		if err := db.Exec("DELETE FROM credential_verdicts WHERE kind = 'scope'").Error; err != nil {
+			return err
+		}
+	}
+	for _, column := range retired {
+		if err := dropRetiredColumn(db, &model.ApprovalRule{}, "approval_rules", column); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// columnText is a text column read into a map, as a driver hands it back,
+// or nothing for one that was not selected.
+func columnText(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case []byte:
+		return string(v)
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 // addsImageKindColumn reports whether the pools table predates image kinds

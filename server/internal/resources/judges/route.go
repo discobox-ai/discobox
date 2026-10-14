@@ -710,9 +710,6 @@ func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 	if job.Credential != "" {
 		body.Credential = sandboxapi.NewOptString(job.Credential)
 	}
-	if job.Discobox != nil {
-		body.Discobox = sandboxapi.NewOptJudgeDiscobox(factSheetBody(*job.Discobox))
-	}
 	if in := job.Stdin; in != nil {
 		stdin := sandboxapi.JudgeInput{Content: in.Content}
 		if in.Missing != "" {

@@ -26,8 +26,7 @@ type CredentialVerdictFilter struct {
 	// ID reads the one verdict it names, which is how a caller holding an ID
 	// from a listing reads that verdict in full.
 	ID string
-	// Kind keeps one kind of verdict: command, request, delegation, scope or
-	// rule.
+	// Kind keeps one kind of verdict: command, request, delegation or rule.
 	Kind string
 	// RuleID keeps the verdicts recorded while testing one approval rule.
 	RuleID string

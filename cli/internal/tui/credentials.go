@@ -1170,7 +1170,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 			// its refusal says which half did not cover the request, and the
 			// way back to choosing is from here.
 			d.sections = append(d.sections, section{lines: []line{
-				{text: "no rule was made · esc goes back to it, to choose another scope or other uses", tone: toneDim},
+				{text: "no rule was made · esc goes back to it, to choose other discoboxes or other uses", tone: toneDim},
 			}})
 			d.onCancel = msg.again
 		}
@@ -1179,7 +1179,13 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 	}
 	m.dialog = nil
 	if msg.approved && msg.ruled {
-		return tea.Batch(m.loadCredentialRequests(),
+		// The rule just made belongs in the secrets screen's table, when that
+		// is what is behind the card.
+		reload := m.loadCredentialRequests()
+		if m.secretsOpen {
+			reload = tea.Batch(reload, m.loadSecrets())
+		}
+		return tea.Batch(reload,
 			m.report(false, "approved %s for %s, and made the rule that approves requests like it", credentialName(msg.request), lifetime.Label(msg.ttl)))
 	}
 	if msg.approved {

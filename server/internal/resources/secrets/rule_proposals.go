@@ -14,11 +14,14 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// "Auto approve" proposes rules at three levels, for scope and for content,
-// each narrowest first (ADR 26-10-12-330 §7). The narrowest of each needs no
-// model: this discobox, by its ID, and the request's uses as asked. The wider
-// two are written by the project's judge as a typed proposal job, from the
-// request's uses and the fact sheet, both data.
+// "Auto approve" proposes a rule's uses at three levels, narrowest first
+// (ADR 26-10-12-330 §7). The narrowest needs no model: the request's uses as
+// asked. The wider two are written by the project's judge as a typed proposal
+// job, from the request's uses, which are data.
+//
+// Which discoboxes the rule is for is not proposed, because nothing about it
+// is written: it is the repository of the discobox that asked, which the
+// answer names, or every discobox in the project.
 //
 // A proposal is offered only once the judge has found it covers the request
 // (§8). Each candidate is put to the judge as the exact job a rule would
@@ -40,27 +43,26 @@ func (s *Service) ProposeApprovalRules(ctx context.Context, projectID, requestID
 	if err := ruleProposable(req); err != nil {
 		return nil, err
 	}
-	sandbox, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
+	repository, found, err := s.requesterRepository(ctx, req)
 	if err != nil {
-		return nil, apperrors.NotFound(err, "the discobox that filed the request was not found")
+		return nil, err
+	}
+	if !found {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "the discobox that filed the request was not found")
 	}
 	purpose, err := grantPurpose(req.Purpose)
 	if err != nil {
 		return nil, err
 	}
-	sheet := s.factSheet(ctx, sandbox)
 	asked := useDescriptions(req.Uses)
 
 	out := &services.RuleProposals{
-		Hosts:   req.Hosts,
-		Purpose: apigen.RuleProposalsBodyPurpose(purpose),
-		Scopes: []apigen.RuleScopeProposal{{
-			Level:     1,
-			SandboxId: apigen.NewOptString(sandbox.ID),
-			Covers:    true,
-			Reason:    apigen.NewOptString("this discobox, by its ID; nothing is read"),
-		}},
+		Hosts:    req.Hosts,
+		Purpose:  apigen.RuleProposalsBodyPurpose(purpose),
 		Contents: []apigen.RuleContentProposal{{Level: 1, Uses: asked}},
+	}
+	if repository != "" {
+		out.Repository = apigen.NewOptString(repository)
 	}
 	if credential := ruleCredential(&model.ApprovalRule{WellKnownID: req.WellKnownID}); credential != "" {
 		out.Credential = apigen.NewOptString(credential)
@@ -74,53 +76,31 @@ func (s *Service) ProposeApprovalRules(ctx context.Context, projectID, requestID
 	}
 	// The wider levels are a model's to write. Where none can — Jev with
 	// jevUnsure: refuse, no judge yet on a server that judges nothing else, a
-	// judge that did not answer — the narrowest of each is offered alone, and
-	// the sentences can be written by hand.
+	// judge that did not answer — the uses as asked are offered alone, and
+	// wider ones can be written by hand.
 	proposal, err := s.judge.ProposeRule(ctx, projectID, judge.ProposalJob{
 		Uses:       asked,
 		Credential: out.Credential.Or(""),
 		Hosts:      req.Hosts,
-		Discobox:   sheet,
 	})
 	if err != nil {
-		out.Note = apigen.NewOptString(fmt.Sprintf("only the narrowest scope and uses are offered, because no model wrote wider ones: %s. The sentences can be written by hand.", errorSentence(err)))
+		out.Note = apigen.NewOptString(fmt.Sprintf("only the uses as asked are offered, because no model wrote wider ones: %s. Wider uses can be written by hand.", errorSentence(err)))
 	} else {
-		out.Scopes = append(out.Scopes,
-			apigen.RuleScopeProposal{Level: 2, Scope: apigen.NewOptString(proposal.ScopeWork)},
-			apigen.RuleScopeProposal{Level: 3, Scope: apigen.NewOptString(proposal.ScopeRepository)})
 		out.Contents = append(out.Contents,
 			apigen.RuleContentProposal{Level: 2, Uses: proposal.UsesAnyTarget},
 			apigen.RuleContentProposal{Level: 3, Uses: proposal.UsesAcrossResource})
 	}
 
-	// Every candidate is tested, the narrowest content included: a judge that
-	// will not find sentences within themselves is a rule that will never
-	// approve a repeat ask, and that is worth knowing before it is made (§8).
-	// They are independent questions, so they are asked together.
+	// Every candidate is tested, the narrowest included: a judge that will
+	// not find sentences within themselves is a rule that will never approve
+	// a repeat ask, and that is worth knowing before it is made (§8). They
+	// are independent questions, so they are asked together.
 	var asks sync.WaitGroup
-	for i := range out.Scopes {
-		candidate := &out.Scopes[i]
-		scope, ok := candidate.Scope.Get()
-		if !ok {
-			continue
-		}
-		// Held to what a rule may be before it is judged: nothing is offered
-		// as covering that making the rule would then refuse.
-		if problem := ruleScopeProblem(scope); problem != "" {
-			candidate.Reason = apigen.NewOptString(problem)
-			continue
-		}
-		asks.Add(1)
-		go func() {
-			defer asks.Done()
-			rule := &model.ApprovalRule{ProjectID: projectID, Scope: scope}
-			answer, err := s.judge.JudgeScope(ctx, projectID, scopeAsk(rule, req, sheet))
-			candidate.Covers, candidate.Reason = err == nil && answer.Allow, apigen.NewOptString(verdictSentence(answer, err))
-		}()
-	}
 	for i := range out.Contents {
 		candidate := &out.Contents[i]
-		if problem := ruleSentencesProblem("", candidate.Uses); problem != "" {
+		// Held to what a rule may be before it is judged: nothing is offered
+		// as covering that making the rule would then refuse.
+		if problem := ruleUsesProblem(candidate.Uses); problem != "" {
 			candidate.Reason = apigen.NewOptString(problem)
 			continue
 		}

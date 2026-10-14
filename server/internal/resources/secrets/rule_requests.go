@@ -40,7 +40,8 @@ func (s *Service) RuleRequests() *RuleRequests { return &RuleRequests{secrets: s
 
 // Reconcile tests the project's rules against one request, one at a time and
 // each on its own — never several rules' uses together — in the order of what
-// each step costs: the facts, then the scope, then the content. The first rule
+// each step costs: the facts, the repository the discobox is of among them,
+// then the content. The first rule
 // that covers the request approves it and ends the run. A request no rule
 // covers stays pending, for a person, exactly as it would with no rules.
 //
@@ -59,31 +60,26 @@ func (r *RuleRequests) Reconcile(ctx context.Context, requestID string) (reconci
 	if !ruleTestable(req) {
 		return reconcile.Result{}, nil
 	}
-	live, err := s.liveRules(ctx, req.ProjectID)
-	if err != nil || len(live) == 0 {
+	rules, err := s.liveRules(ctx, req.ProjectID)
+	if err != nil || len(rules) == 0 {
 		return reconcile.Result{}, err
 	}
-	rules := rulesFor(live, req)
-	sandbox, err := s.store.GetSandbox(ctx, req.ProjectID, req.SandboxID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return reconcile.Result{}, nil
-		}
+	repository, found, err := s.requesterRepository(ctx, req)
+	if err != nil || !found {
 		return reconcile.Result{}, err
 	}
-	sheet := s.factSheet(ctx, sandbox)
 
 	var unanswered error
 	for i := range rules {
 		rule := &rules[i]
-		secret, _, reason, err := s.ruleFacts(ctx, rule, req, nil, false)
+		secret, _, reason, err := s.ruleFacts(ctx, rule, req, repository, nil, false)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 		if reason != "" {
 			continue
 		}
-		covered, _, _, err := s.ruleReadings(ctx, rule, req, sheet)
+		covered, _, err := s.ruleUsesCover(ctx, rule, req)
 		if err != nil {
 			if unanswered == nil {
 				unanswered = err

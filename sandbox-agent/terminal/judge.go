@@ -57,8 +57,8 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	return answer, nil
 }
 
-// Propose has the judge's model write the wider scopes and uses of an
-// approval rule from one request (ADR 26-10-12-330 §7). It is a run like a
+// Propose has the judge's model write the wider uses of an approval rule
+// from one request (ADR 26-10-12-330 §7). It is a run like a
 // judging one — the same wrapper, role and --no-tools, its own system prompt
 // and schema — and counts against the same runs. What it writes authorizes
 // nothing: the control plane puts each sentence to Judge before a person may

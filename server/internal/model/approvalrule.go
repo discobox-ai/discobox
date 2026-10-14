@@ -20,20 +20,18 @@ const idPrefixApprovalRule = "rule"
 // ApprovalRule is one rule. Only a person makes one; a discobox never makes,
 // edits, or reads one.
 //
-// Its credential, hosts, purpose and lifetime cap are facts the server checks
-// a request against. Its scope and uses are sentences the judge reads: Scope
-// against what the control plane recorded about the asking discobox, Uses
+// Its repositories, credential, hosts, purpose and lifetime cap are facts the
+// server checks a request against. Its uses are sentences the judge reads
 // against the uses the request asked for.
 type ApprovalRule struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable approval rule ID"`
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	// Scope says which discoboxes the rule is tested for, as a sentence the
-	// judge reads against facts recorded when a discobox was created. With no
-	// sentence and no pin, the rule is for every discobox in the project,
+	// Repositories say which discoboxes the rule is for: those whose primary
+	// source is one of them, each stored as host/path and compared exactly,
+	// by the server. With none — which a rule has only because a person said
+	// every discobox, never by saying nothing — it is for every discobox in the project,
 	// including ones that do not exist yet.
-	Scope string `gorm:"column:scope;not null;type:text;default:''" json:"scope,omitempty" doc:"Which discoboxes the rule is for, as a sentence the judge reads against what was recorded about a discobox when it was created; empty, with no pinned discobox, is every discobox in the project"`
-	// SandboxID pins the rule to one discobox. A pin is compared, not read.
-	SandboxID string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"The one discobox the rule is pinned to, when it is pinned"`
+	Repositories []string `gorm:"column:repositories;type:text;serializer:json" json:"repositories,omitempty" doc:"The repositories the rule is for, each as host/path: it answers a discobox whose primary source is one of them. Empty is every discobox in the project"`
 	// WellKnownID and SecretID name the rule's one credential: a well-known
 	// ID, answered by the project secret marked for it, or a project secret.
 	WellKnownID string `gorm:"column:well_known_id;not null;type:text;default:''" json:"wellKnownId,omitempty" doc:"The well-known credential the rule approves, when it names one by ID"`
@@ -95,7 +93,6 @@ func (r *ApprovalRule) Credential() string {
 // (ADR 26-10-12-330 §4).
 const (
 	RuleTestStageFacts   = "facts"
-	RuleTestStageScope   = "scope"
 	RuleTestStageContent = "content"
 )
 
@@ -109,6 +106,6 @@ type RuleTest struct {
 	// Pending is a rule whose judge has not answered yet: neither covered nor
 	// found not to.
 	Pending bool   `json:"pending,omitempty" doc:"True while a judge has still to be asked about the rule"`
-	Stage   string `json:"stage,omitempty" doc:"The stage that decided: facts the server checked, the rule's scope, or its content" enum:"facts,scope,content"`
+	Stage   string `json:"stage,omitempty" doc:"The stage that decided: facts the server checked, the rule's repositories among them, or its content, which the judge read" enum:"facts,content"`
 	Reason  string `json:"reason,omitempty" doc:"Why the rule does not cover the request, or that it does"`
 }

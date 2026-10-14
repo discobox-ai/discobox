@@ -173,7 +173,7 @@ Keep files split by resource area:
 | `providers.go` | Provider instance persistence and `SandboxProviderInstanceStore`. |
 | `pools.go` | Pool persistence: CRUD, agent registration and heartbeats, bootstrap tokens, telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go`, `secret_grants.go` | Secrets (sealed values), secret requests, and host-scoped grants. |
-| `approval_rules.go` | Approval rules (ADR 26-10-12-330), a project's pending requests a rule could answer (`ListRuleTestableRequests`), and `AnsweredQuestion`: the verdict on record for one of a rule's questions, from the primary for whoever would otherwise ask the judge. A rule is deleted with its project, the secret it names, and the discobox it is pinned to; its grants outlive it. |
+| `approval_rules.go` | Approval rules (ADR 26-10-12-330), a project's pending requests a rule could answer (`ListRuleTestableRequests`), and `AnsweredQuestion`: the verdict on record for a rule's question about one request, from the primary for whoever would otherwise ask the judge. A rule is deleted with its project and the secret it names; it names repositories, never a discobox, so it outlives the discoboxes it answered, and its grants outlive it. |
 | `sandbox_secrets.go` | Sandbox secret assignments and agent credentials. |
 | `credential_verdicts.go` | Recorded credential verdicts of every kind: written per decision, read per project through `CredentialVerdictFilter`; the judge reads its standing allows (`StandingVerdicts`) and a round's asks for a body (`BodyAsks`, from the primary: a read-after-write that decides who answers the next round) directly. |
 | `ssh_keys.go` | Project SSH keys. |

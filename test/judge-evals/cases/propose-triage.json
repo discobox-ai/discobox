@@ -12,30 +12,7 @@
     "credential": "com.github.api",
     "hosts": [
       "github.com"
-    ],
-    "discobox": {
-      "repository": "https://github.com/discobox-ai/discobox",
-      "ref": "main",
-      "createdBy": "a discobox",
-      "creator": "sbx_dzwcskm10hx1gyjp",
-      "prompt": {
-        "content": "/triage-issue 162"
-      },
-      "promptWrittenBy": "a discobox",
-      "skills": [
-        "commit",
-        "deliver-issue",
-        "develop",
-        "open-pr",
-        "orchestrate-issues",
-        "test-fix",
-        "triage-issue",
-        "verify",
-        "verify-recipes"
-      ],
-      "harness": "claude-code",
-      "platform": "linux/amd64"
-    }
+    ]
   },
   "controls": {
     "uses": [
@@ -45,30 +22,6 @@
       [
         "gh api -X PATCH repos/discobox-ai/discobox -f default_branch=<branch>: change repository settings"
       ]
-    ],
-    "discoboxes": [
-      {
-        "repository": "https://github.com/discobox-ai/hooks",
-        "ref": "main",
-        "createdBy": "a person",
-        "prompt": {
-          "content": "/deliver-issue 12"
-        },
-        "promptWrittenBy": "a person",
-        "skills": [
-          "commit",
-          "deliver-issue",
-          "develop",
-          "open-pr",
-          "orchestrate-issues",
-          "test-fix",
-          "triage-issue",
-          "verify",
-          "verify-recipes"
-        ],
-        "harness": "claude-code",
-        "platform": "linux/amd64"
-      }
     ]
   }
 }

@@ -14,29 +14,7 @@
     "credential": "com.github.api",
     "hosts": [
       "github.com"
-    ],
-    "discobox": {
-      "repository": "https://github.com/discobox-ai/discobox",
-      "ref": "main",
-      "createdBy": "a person",
-      "prompt": {
-        "content": "/develop 26-10-12-330"
-      },
-      "promptWrittenBy": "a person",
-      "skills": [
-        "commit",
-        "deliver-issue",
-        "develop",
-        "open-pr",
-        "orchestrate-issues",
-        "test-fix",
-        "triage-issue",
-        "verify",
-        "verify-recipes"
-      ],
-      "harness": "claude-code",
-      "platform": "linux/amd64"
-    }
+    ]
   },
   "controls": {
     "uses": [
@@ -54,52 +32,6 @@
         "read my pull request's state, reviews and comments and reply to them, with gh api GET repos/discobox-ai/hooks/pulls/<number>, pulls/<number>/reviews, pulls/<number>/comments, pulls/<number>/requested_reviewers and issues/<number>/comments, and POST repos/discobox-ai/hooks/pulls/<number>/comments (replies with in_reply_to)",
         "gh api GET repos/discobox-ai/hooks/issues/<number> and repos/discobox-ai/hooks/issues/<number>/comments, to read the issues this change fixes or refers to"
       ]
-    ],
-    "discoboxes": [
-      {
-        "repository": "https://github.com/discobox-ai/hooks",
-        "ref": "main",
-        "createdBy": "a person",
-        "prompt": {
-          "content": "/deliver-issue 12"
-        },
-        "promptWrittenBy": "a person",
-        "skills": [
-          "commit",
-          "deliver-issue",
-          "develop",
-          "open-pr",
-          "orchestrate-issues",
-          "test-fix",
-          "triage-issue",
-          "verify",
-          "verify-recipes"
-        ],
-        "harness": "claude-code",
-        "platform": "linux/amd64"
-      },
-      {
-        "repository": "https://github.com/someone-else/discobox",
-        "ref": "main",
-        "createdBy": "a person",
-        "prompt": {
-          "content": "/deliver-issue 162"
-        },
-        "promptWrittenBy": "a person",
-        "skills": [
-          "commit",
-          "deliver-issue",
-          "develop",
-          "open-pr",
-          "orchestrate-issues",
-          "test-fix",
-          "triage-issue",
-          "verify",
-          "verify-recipes"
-        ],
-        "harness": "claude-code",
-        "platform": "linux/amd64"
-      }
     ]
   }
 }

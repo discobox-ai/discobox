@@ -18,17 +18,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
-func scopeAsk() services.ScopeAsk {
-	return services.ScopeAsk{
-		RuleID: "rule-1", SandboxID: "sbx-worker",
-		Scope: "discoboxes started to deliver an issue in org/repo",
-		Discobox: judge.Discobox{
-			Repository: "https://github.com/org/repo", CreatedBy: judge.CreatedByPerson,
-			Prompt: &judge.Input{Content: "/deliver-issue 43"}, PromptWrittenBy: judge.CreatedByPerson,
-		},
-	}
-}
-
 func ruleAsk() services.RuleAsk {
 	return services.RuleAsk{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
 		RuleID: "rule-1", RequestID: "sreq-1", SandboxID: "sbx-worker",
@@ -64,101 +53,58 @@ func harnessJudged(t *testing.T, answer sandboxapi.JudgeAnswer) (*Service, *stor
 	return service, appStore, fake, judgeSandbox
 }
 
-// A scope is decided once for a discobox and a rule. The verdict is recorded
-// as kind scope, naming the rule and the discobox, with the digest of the
-// question — and the same question asked again is answered from the record,
-// with nobody asked. A rule whose sentence was edited is another question.
-func TestAScopeIsDecidedOnceAndRecorded(t *testing.T) {
+// A rule's question is decided once for a request. The verdict is recorded as
+// kind rule, naming the rule, the request and the discobox, with the digest of
+// the question — and the same question asked again is answered from the
+// record, with nobody asked. A rule whose uses were edited is another question,
+// as is another discobox's ask.
+func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, fake, judgeSandbox := harnessJudged(t,
-		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "the repository and the task match"})
+		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "reading issue 43 is reading an issue in org/repo"})
 
-	first, err := service.JudgeScope(ctx, "project-1", scopeAsk())
+	first, err := service.JudgeRule(ctx, "project-1", ruleAsk())
 	if err != nil || !first.Allow {
-		t.Fatalf("JudgeScope() = %+v, %v, want the judge's match", first, err)
+		t.Fatalf("JudgeRule() = %+v, %v, want the judge's allow", first, err)
 	}
 	jobs := fake.asked()
-	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindScope || jobs[0].Host != "" || jobs[0].Purpose != scopeAsk().Scope {
-		t.Fatalf("jobs = %+v, want one scope job with the sentence as its purpose and no host", jobs)
+	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindRule || jobs[0].Host != "github.com" ||
+		!strings.Contains(jobs[0].Purpose, "never main") || len(jobs[0].Uses) != 1 {
+		t.Fatalf("jobs = %+v, want one rule job with the rule's uses as its purpose and the uses asked for", jobs)
 	}
-	sheet, ok := jobs[0].Discobox.Get()
-	if !ok || sheet.Repository.Or("") != "https://github.com/org/repo" || sheet.Prompt.Value.Content != "/deliver-issue 43" ||
-		string(sheet.PromptWrittenBy.Or("")) != judge.CreatedByPerson {
-		t.Fatalf("job = %+v, want the fact sheet carried to the judge", jobs[0])
-	}
-	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindScope)
+	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)
 	if len(verdicts) != 1 {
 		t.Fatalf("verdicts = %+v, want one", verdicts)
 	}
 	row := verdicts[0]
-	if row.RuleID != "rule-1" || row.SandboxID != "sbx-worker" || !row.Allow || row.QuestionDigest == "" ||
-		row.JudgeSandboxID != judgeSandbox.ID || row.PromptVersion != judge.PromptVersion || !strings.Contains(row.Prompt, "/deliver-issue 43") {
-		t.Fatalf("verdict = %+v, want a scope verdict naming the rule, the discobox and the judge, with the question it answered", row)
+	if row.RuleID != "rule-1" || row.SecretRequestID != "sreq-1" || row.SandboxID != "sbx-worker" || !row.Allow || row.QuestionDigest == "" ||
+		row.JudgeSandboxID != judgeSandbox.ID || row.PromptVersion != judge.PromptVersion || !strings.Contains(row.Prompt, "issues/43") {
+		t.Fatalf("verdict = %+v, want a rule verdict naming the rule, the request, the discobox and the judge, with the question it answered", row)
 	}
 
-	// Asked again — another request from the same discobox — nobody is asked.
+	// Asked again, nobody is asked.
 	fake.say(sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(false), Reason: "changed its mind"})
-	again := scopeAsk()
-	again.RequestID = "sreq-2"
-	second, err := service.JudgeScope(ctx, "project-1", again)
+	second, err := service.JudgeRule(ctx, "project-1", ruleAsk())
 	if err != nil || !second.Allow || second.Reason != first.Reason {
-		t.Fatalf("JudgeScope() again = %+v, %v, want the answer on record", second, err)
+		t.Fatalf("JudgeRule() again = %+v, %v, want the answer on record", second, err)
 	}
-	if len(fake.asked()) != 1 || len(ruleVerdicts(t, appStore, model.CredentialVerdictKindScope)) != 1 {
-		t.Fatal("a scope already decided for this discobox was asked or recorded again")
+	if len(fake.asked()) != 1 || len(ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)) != 1 {
+		t.Fatal("a question already decided for this request was asked or recorded again")
 	}
 
-	// An edited sentence, or another discobox, is a question nobody answered.
-	edited := scopeAsk()
-	edited.Scope = "any discobox on org/repo"
-	if answer, err := service.JudgeScope(ctx, "project-1", edited); err != nil || answer.Allow {
-		t.Fatalf("JudgeScope() of an edited rule = %+v, %v, want it asked afresh", answer, err)
+	// Edited uses, or another discobox, is a question nobody answered.
+	edited := ruleAsk()
+	edited.RuleUses = []string{"read any pull request in org/repo"}
+	if answer, err := service.JudgeRule(ctx, "project-1", edited); err != nil || answer.Allow {
+		t.Fatalf("JudgeRule() of an edited rule = %+v, %v, want it asked afresh", answer, err)
 	}
-	other := scopeAsk()
+	other := ruleAsk()
 	other.SandboxID = "sbx-other"
-	if _, err := service.JudgeScope(ctx, "project-1", other); err != nil {
+	if _, err := service.JudgeRule(ctx, "project-1", other); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.asked()) != 3 {
 		t.Fatalf("the judge was asked %d times, want once per distinct question", len(fake.asked()))
-	}
-}
-
-// With Jev, Jev's yes is a match and anything else is not, and nothing else is
-// put to the judge discobox — even on a server that sends Jev's refusals on:
-// most discoboxes do not match most rules, and a wrong "no match" costs only
-// a person being asked (ADR 26-10-12-330 §2).
-func TestAScopeJevDoesNotMatchIsNotSentOn(t *testing.T) {
-	ctx := context.Background()
-	service, appStore, jevFake, harnessJudge, _ := jevWithFallback(t,
-		map[string]float64{"within": 0.62, "claims_approval": 0.02},
-		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "the discobox would have said yes"})
-
-	answer, err := service.JudgeScope(ctx, "project-1", scopeAsk())
-	if err != nil {
-		t.Fatalf("JudgeScope() error = %v", err)
-	}
-	if answer.Allow || !strings.Contains(answer.Reason, "0.62") {
-		t.Fatalf("answer = %+v, want no match, at Jev's score", answer)
-	}
-	if len(harnessJudge.asked()) != 0 {
-		t.Fatal("a scope Jev did not match was put to the judge discobox")
-	}
-	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindScope)
-	if len(verdicts) != 1 || verdicts[0].Model != "jev-1.13.0" || verdicts[0].JudgeSandboxID != "" || len(verdicts[0].JevInput) == 0 ||
-		verdicts[0].Probabilities["within"] != 0.62 {
-		t.Fatalf("verdicts = %+v, want Jev's own, with what it was sent and said", verdicts)
-	}
-	// The miss stands: it is not asked again.
-	if _, err := service.JudgeScope(ctx, "project-1", scopeAsk()); err != nil || jevFake.count() != 1 {
-		t.Fatalf("Jev was asked %d times (%v), want once", jevFake.count(), err)
-	}
-
-	jevFake.say(map[string]float64{"within": 0.93, "claims_approval": 0.02})
-	other := scopeAsk()
-	other.SandboxID = "sbx-other"
-	if answer, err := service.JudgeScope(ctx, "project-1", other); err != nil || !answer.Allow {
-		t.Fatalf("JudgeScope() = %+v, %v, want Jev's clear yes to be a match", answer, err)
 	}
 }
 
@@ -263,10 +209,7 @@ func TestARuleJobNobodyAnsweredLeavesNoVerdict(t *testing.T) {
 	if _, err := service.JudgeRule(ctx, "project-1", ruleAsk()); err == nil {
 		t.Fatal("JudgeRule() answered with no judge")
 	}
-	if _, err := service.JudgeScope(ctx, "project-1", scopeAsk()); err == nil {
-		t.Fatal("JudgeScope() answered with no judge")
-	}
-	if rows := append(ruleVerdicts(t, appStore, model.CredentialVerdictKindRule), ruleVerdicts(t, appStore, model.CredentialVerdictKindScope)...); len(rows) != 0 {
+	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule); len(rows) != 0 {
 		t.Fatalf("verdicts = %+v, want none for a question nobody answered", rows)
 	}
 }
@@ -306,7 +249,7 @@ func (f *proposingJudge) AcquireSandboxHTTPClientForServer(_ context.Context, pr
 
 func proposalJob() judge.ProposalJob {
 	return judge.ProposalJob{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Uses: ruleAsk().Uses, Credential: "com.github.api", Hosts: []string{"github.com"}, Discobox: scopeAsk().Discobox,
+		Uses: ruleAsk().Uses, Credential: "com.github.api", Hosts: []string{"github.com"},
 	}
 }
 
@@ -316,8 +259,7 @@ func proposalJob() judge.ProposalJob {
 // no proposal.
 func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	ctx := context.Background()
-	const good = `{"scopeWork":"discoboxes started to deliver an issue in org/repo","scopeRepository":"any discobox on org/repo",` +
-		`"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
+	const good = `{"usesAnyTarget":["read any issue <number> in org/repo"],"usesAcrossResource":["read and write issues in org/repo"]}`
 	service, appStore, sandboxes := newJudgeTest(t)
 	defaultHarness(t, appStore, "codex", "sha256:one")
 	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
@@ -331,18 +273,18 @@ func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProposeRule() error = %v", err)
 	}
-	if proposal.ScopeRepository != "any discobox on org/repo" || len(proposal.UsesAnyTarget) != 1 {
+	if len(proposal.UsesAnyTarget) != 1 || len(proposal.UsesAcrossResource) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	if path, _ := fake.path.Load().(string); !strings.HasSuffix(path, "/judge/proposal") {
 		t.Fatalf("path = %q, want the proposal route", path)
 	}
 	job, _ := fake.job.Load().(sandboxapi.JudgeProposalJob)
-	if len(job.Uses) != 1 || job.Discobox.Repository.Or("") != "https://github.com/org/repo" || job.Credential.Or("") != "com.github.api" {
-		t.Fatalf("job = %+v, want the request's uses and the fact sheet as data", job)
+	if len(job.Uses) != 1 || len(job.Hosts) != 1 || job.Credential.Or("") != "com.github.api" {
+		t.Fatalf("job = %+v, want the request's uses as data, with what they are about", job)
 	}
 
-	service.SetLeases(newProposingJudge(t, `{"scopeWork":"a","scopeRepository":"b","usesAnyTarget":["c"],"usesAcrossResource":["d"],"hosts":["evil.example"]}`))
+	service.SetLeases(newProposingJudge(t, `{"usesAnyTarget":["c"],"usesAcrossResource":["d"],"hosts":["evil.example"]}`))
 	if _, err := service.ProposeRule(ctx, "project-1", proposalJob()); err == nil {
 		t.Fatal("a proposal carrying a field nobody defined was accepted")
 	}
@@ -413,10 +355,10 @@ func TestAnAskForABodyIsNoVerdictOnARule(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, _, _ := harnessJudged(t, sandboxapi.JudgeAnswer{
 		Need: sandboxapi.NewOptJudgeNeed(sandboxapi.JudgeNeed{Body: true}), Reason: "show me the body"})
-	if _, err := service.JudgeScope(ctx, "project-1", scopeAsk()); err == nil {
-		t.Fatal("JudgeScope() answered from a judge that decided nothing")
+	if _, err := service.JudgeRule(ctx, "project-1", ruleAsk()); err == nil {
+		t.Fatal("JudgeRule() answered from a judge that decided nothing")
 	}
-	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindScope); len(rows) != 0 {
+	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule); len(rows) != 0 {
 		t.Fatalf("verdicts = %+v, want none", rows)
 	}
 }
@@ -459,16 +401,16 @@ func TestRulesAskingTheSameQuestionAreEachRecordedOnce(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, fake, _ := harnessJudged(t,
 		sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "matches"})
-	other := scopeAsk()
+	other := ruleAsk()
 	other.RuleID = "rule-2"
 	for range 3 {
-		for _, ask := range []services.ScopeAsk{scopeAsk(), other} {
-			if answer, err := service.JudgeScope(ctx, "project-1", ask); err != nil || !answer.Allow {
-				t.Fatalf("JudgeScope() = %+v, %v", answer, err)
+		for _, ask := range []services.RuleAsk{ruleAsk(), other} {
+			if answer, err := service.JudgeRule(ctx, "project-1", ask); err != nil || !answer.Allow {
+				t.Fatalf("JudgeRule() = %+v, %v", answer, err)
 			}
 		}
 	}
-	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindScope); len(rows) != 2 || len(fake.asked()) != 1 {
+	if rows := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule); len(rows) != 2 || len(fake.asked()) != 1 {
 		t.Fatalf("verdicts = %d after %d asks of the judge, want one per rule and one ask", len(rows), len(fake.asked()))
 	}
 }

@@ -13,7 +13,6 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcejudges "github.com/discobox-ai/discobox/server/internal/resources/judges"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -25,10 +24,6 @@ import (
 // noRules is a judge that reads no approval rule, for the fakes that judge
 // something else.
 type noRules struct{}
-
-func (noRules) JudgeScope(context.Context, string, services.ScopeAsk) (judge.Answer, error) {
-	return judge.Answer{}, errors.New("not a rule judge")
-}
 
 func (noRules) JudgeRule(context.Context, string, services.RuleAsk) (judge.Answer, error) {
 	return judge.Answer{}, errors.New("not a rule judge")
@@ -43,14 +38,12 @@ func (noRules) ProposeRule(context.Context, string, judge.ProposalJob) (judge.Pr
 // several goroutines when rules are proposed.
 type ruleJudge struct {
 	mu sync.Mutex
-	// scope and content answer the two readings; nil says yes.
-	scope   func(services.ScopeAsk) (judge.Answer, error)
+	// content answers the rule's reading; nil says yes.
 	content func(services.RuleAsk) (judge.Answer, error)
 	// proposal is what the model writes, or proposeErr why it did not.
 	proposal   judge.Proposal
 	proposeErr error
 
-	scopes   []services.ScopeAsk
 	contents []services.RuleAsk
 	proposed []judge.ProposalJob
 }
@@ -65,17 +58,6 @@ func (j *ruleJudge) JudgeCommand(context.Context, string, services.CommandAsk) (
 
 func (j *ruleJudge) JudgeDelegation(context.Context, string, services.DelegationAsk) (judge.Answer, error) {
 	return judge.Answer{}, errors.New("not a delegation judge")
-}
-
-func (j *ruleJudge) JudgeScope(_ context.Context, _ string, ask services.ScopeAsk) (judge.Answer, error) {
-	j.mu.Lock()
-	j.scopes = append(j.scopes, ask)
-	answer := j.scope
-	j.mu.Unlock()
-	if answer != nil {
-		return answer(ask)
-	}
-	return judge.Answer{Allow: true, Reason: "in scope"}, nil
 }
 
 func (j *ruleJudge) JudgeRule(_ context.Context, _ string, ask services.RuleAsk) (judge.Answer, error) {
@@ -114,17 +96,43 @@ func (m *marks) MarkDirty(_ context.Context, resourceType, id string) error {
 const (
 	issueUse  = "gh api GET repos/org/repo/issues/43"
 	issueRule = "read any issue <number> in org/repo with gh api GET"
-	repoScope = "discoboxes started to deliver or triage an issue in org/repo"
+	// repoURL is the primary source of the discobox that asks, and repo the
+	// repository that makes it: what a rule names to be for it.
+	repoURL = "https://github.com/org/repo.git"
+	repo    = "github.com/org/repo"
 )
+
+// ofRepository gives a discobox a primary source, as the client that created
+// it would have: a remote URL, or a local checkout tracking upstream.
+func ofRepository(t *testing.T, st *store.Store, sandboxID string, source *model.GitSource) {
+	t.Helper()
+	sandbox, err := st.GetSandbox(context.Background(), "project-1", sandboxID)
+	if err != nil {
+		t.Fatalf("read sandbox: %v", err)
+	}
+	sandbox.Source = source
+	if err := st.UpdateSandbox(context.Background(), sandbox); err != nil {
+		t.Fatalf("give %s its source: %v", sandboxID, err)
+	}
+}
+
+// forEveryDiscobox makes githubRule's rule one for every discobox, said as
+// the API has it said.
+func forEveryDiscobox(b *services.CreateApprovalRuleBody) {
+	b.Repositories, b.EveryDiscobox = nil, serverapi.NewOptBool(true)
+}
+
+func remote(url string) *model.GitSource { return &model.GitSource{Kind: "git", URL: &url} }
 
 // ruledService is a service whose judge reads rules, with the project's
 // GitHub secret stored for its well-known ID, so an ask by that ID has a
-// secret to be answered with.
+// secret to be answered with. The discobox that asks is of org/repo.
 func ruledService(t *testing.T) (*resourcesecrets.Service, *store.Store, *ruleJudge, *model.Secret) {
 	t.Helper()
 	svc, st := newAgentCredentialService(t)
 	judging := &ruleJudge{}
 	svc.SetJudge(judging)
+	ofRepository(t, st, testSandboxID, remote(repoURL))
 	secret, err := svc.CreateSecret(testPrincipalContext(), "project-1", services.CreateSecretBody{
 		Name:               "github",
 		Type:               serverapi.CreateSecretBodyTypeToken,
@@ -138,13 +146,14 @@ func ruledService(t *testing.T) (*resourcesecrets.Service, *store.Store, *ruleJu
 	return svc, st, judging, secret
 }
 
-// githubRule is a rule for the GitHub credential, as a person makes one.
+// githubRule is a rule for the GitHub credential, for discoboxes of org/repo,
+// as a person makes one.
 func githubRule(t *testing.T, svc *resourcesecrets.Service, change func(*services.CreateApprovalRuleBody)) *model.ApprovalRule {
 	t.Helper()
 	body := services.CreateApprovalRuleBody{
-		WellKnownId: serverapi.NewOptString(wellknown.GitHubAPI),
-		Scope:       serverapi.NewOptString(repoScope),
-		Uses:        []string{issueRule},
+		WellKnownId:  serverapi.NewOptString(wellknown.GitHubAPI),
+		Repositories: []string{repo},
+		Uses:         []string{issueRule},
 	}
 	if change != nil {
 		change(&body)
@@ -228,9 +237,6 @@ func TestARuleApprovesTheRequestItCovers(t *testing.T) {
 		t.Fatalf("the credential was not bound for the agent: %v", err)
 	}
 
-	if len(judging.scopes) != 1 || judging.scopes[0].Scope != repoScope || judging.scopes[0].SandboxID != testSandboxID {
-		t.Fatalf("scope asks = %+v, want the rule's sentence read against the asking discobox", judging.scopes)
-	}
 	if len(judging.contents) != 1 {
 		t.Fatalf("content asks = %+v, want one", judging.contents)
 	}
@@ -248,31 +254,29 @@ func TestARuleApprovesTheRequestItCovers(t *testing.T) {
 	}
 }
 
-// A rule approves or says nothing. Whatever stage finds it does not cover the
-// request — a fact, the scope, the content — the request stays pending for a
-// person, exactly as it would with no rules, and the later, costlier stages
-// are not asked.
+// A rule approves or says nothing. Whatever finds it does not cover the
+// request — a fact the server checks, the repository the discobox is of among
+// them, or the content the judge reads — the request stays pending for a
+// person, exactly as it would with no rules, and the judge is asked only about
+// a request the facts already hold.
 func TestARuleThatDoesNotCoverLeavesTheRequestForAPerson(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		rule         func(*services.CreateApprovalRuleBody)
 		ask          func(*services.CreateSandboxCredentialRequestBody)
 		judge        func(*ruleJudge)
-		wantScopes   int
 		wantContents int
 	}{
-		{name: "hosts outside the rule's", wantScopes: 0, wantContents: 0,
+		{name: "hosts outside the rule's", wantContents: 0,
 			rule: func(b *services.CreateApprovalRuleBody) { b.Hosts = []string{"api.github.com"} },
 			ask:  func(b *services.CreateSandboxCredentialRequestBody) { b.Hosts = []string{"github.com"} }},
-		{name: "another purpose", wantScopes: 0, wantContents: 0,
+		{name: "another purpose", wantContents: 0,
 			ask: func(b *services.CreateSandboxCredentialRequestBody) {
 				b.Purpose = serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate)
 			}},
-		{name: "a discobox the scope does not describe", wantScopes: 1, wantContents: 0,
-			judge: func(j *ruleJudge) {
-				j.scope = func(services.ScopeAsk) (judge.Answer, error) { return no("another repository") }
-			}},
-		{name: "a use outside the rule's", wantScopes: 1, wantContents: 1,
+		{name: "a discobox of another repository", wantContents: 0,
+			rule: func(b *services.CreateApprovalRuleBody) { b.Repositories = []string{"github.com/org/elsewhere"} }},
+		{name: "a use outside the rule's", wantContents: 1,
 			judge: func(j *ruleJudge) {
 				j.content = func(services.RuleAsk) (judge.Answer, error) { return no("pushes to main") }
 			}},
@@ -290,26 +294,33 @@ func TestARuleThatDoesNotCoverLeavesTheRequestForAPerson(t *testing.T) {
 			if now := requestNow(t, st, req); now.Status != model.SecretRequestStatusPending || now.GrantID != "" {
 				t.Fatalf("request = %+v, want it left pending for a person", now)
 			}
-			if len(judging.scopes) != tc.wantScopes || len(judging.contents) != tc.wantContents {
-				t.Fatalf("judge was asked %d scopes and %d contents, want %d and %d",
-					len(judging.scopes), len(judging.contents), tc.wantScopes, tc.wantContents)
+			if len(judging.contents) != tc.wantContents {
+				t.Fatalf("judge was asked about %d contents, want %d", len(judging.contents), tc.wantContents)
 			}
 		})
 	}
 }
 
-// Rules are tested one at a time, those pinned to the discobox first, each on
-// its own: never several rules' uses together. The first that covers the
-// request ends it, and the grant names that rule.
+// Rules are tested one at a time, those that name the discobox's repository
+// before those for every discobox, each on its own: never several rules' uses
+// together. The first that covers the request ends it, and the grant names
+// that rule.
 func TestRulesAreTestedOneAtATimeAndTheFirstThatCoversEndsIt(t *testing.T) {
 	svc, st, judging, _ := ruledService(t)
-	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"read pull requests in org/repo"} })
-	wide := githubRule(t, svc, nil)
-	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"anything at all in org/repo"} })
-	pinned := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
-		b.Scope, b.SandboxId = serverapi.OptString{}, serverapi.NewOptString(testSandboxID)
-		b.Uses = []string{"read the wiki of org/repo"}
+	every := forEveryDiscobox
+	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
+		every(b)
+		b.Uses = []string{"read pull requests in org/repo"}
 	})
+	wide := githubRule(t, svc, every)
+	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
+		every(b)
+		b.Uses = []string{"anything at all in org/repo"}
+	})
+	// Made last, tested first: it names the repository.
+	named := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Uses = []string{"read the wiki of org/repo"} })
+	// And one for another repository, which is never put to the judge.
+	githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Repositories = []string{"github.com/org/elsewhere"} })
 	judging.content = func(ask services.RuleAsk) (judge.Answer, error) {
 		if ask.RuleID == wide.ID {
 			return judge.Answer{Allow: true, Reason: "within"}, nil
@@ -329,14 +340,10 @@ func TestRulesAreTestedOneAtATimeAndTheFirstThatCoversEndsIt(t *testing.T) {
 	}
 	// The rest are tested oldest first, and rules made in one tick of the
 	// clock have no order between them, so what is held is what must hold:
-	// the pinned rule first, the one that covers last, and none asked twice.
-	if len(asked) < 2 || asked[0] != pinned.ID || asked[len(asked)-1] != wide.ID || len(slices.Compact(slices.Sorted(slices.Values(asked)))) != len(asked) {
-		t.Fatalf("rules asked about = %v, want the pinned one (%s) first and none after the first that covers (%s)", asked, pinned.ID, wide.ID)
-	}
-	// A pin is compared, not read: only the rules with a sentence had it put
-	// to the judge.
-	if len(judging.scopes) != len(asked)-1 {
-		t.Fatalf("scope asks = %d for %d rules asked about, want none for the pinned rule", len(judging.scopes), len(asked))
+	// the rule naming the repository first, the one that covers last, and
+	// none asked twice.
+	if len(asked) < 2 || len(asked) > 4 || asked[0] != named.ID || asked[len(asked)-1] != wide.ID || len(slices.Compact(slices.Sorted(slices.Values(asked)))) != len(asked) {
+		t.Fatalf("rules asked about = %v, want the one naming the repository (%s) first and none after the first that covers (%s)", asked, named.ID, wide.ID)
 	}
 	grant, err := st.GetSecretGrant(context.Background(), "project-1", requestNow(t, st, req).GrantID)
 	if err != nil || grant.RuleID != wide.ID {
@@ -370,7 +377,7 @@ func TestAJudgeThatCannotAnswerIsAskedAgain(t *testing.T) {
 }
 
 // Only an agent's own ask for a grant is tested. A rule that is disabled or
-// past its expiry is not tested at all, a rule for another discobox or
+// past its expiry is not tested at all, a rule for another repository or
 // another credential is not this request's, and a request already answered is
 // left as it was.
 func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
@@ -384,7 +391,7 @@ func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
 		if err := testRules(t, svc, req); err != nil {
 			t.Fatal(err)
 		}
-		if requestNow(t, st, req).Status != model.SecretRequestStatusPending || len(judging.scopes)+len(judging.contents) != 0 {
+		if requestNow(t, st, req).Status != model.SecretRequestStatusPending || len(judging.contents) != 0 {
 			t.Fatal("a disabled rule was tested")
 		}
 	})
@@ -404,18 +411,15 @@ func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
 			t.Fatal("a lapsed rule was tested")
 		}
 	})
-	t.Run("a rule pinned to another discobox", func(t *testing.T) {
+	t.Run("a rule for another repository", func(t *testing.T) {
 		svc, st, judging, _ := ruledService(t)
-		createSandbox(t, st, "sbx-other", testPoolID)
-		githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
-			b.Scope, b.SandboxId = serverapi.OptString{}, serverapi.NewOptString("sbx-other")
-		})
+		githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Repositories = []string{"github.com/org/elsewhere"} })
 		req := githubAsk(t, svc, nil)
 		if err := testRules(t, svc, req); err != nil {
 			t.Fatal(err)
 		}
 		if requestNow(t, st, req).Status != model.SecretRequestStatusPending || len(judging.contents) != 0 {
-			t.Fatal("a rule pinned to another discobox was tested")
+			t.Fatal("a rule for another repository was tested")
 		}
 	})
 	t.Run("a free-form ask the rule's secret is not bound for", func(t *testing.T) {
@@ -442,7 +446,7 @@ func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
 		if err := testRules(t, svc, req); err != nil {
 			t.Fatal(err)
 		}
-		if requestNow(t, st, req).Status != model.SecretRequestStatusPending || len(judging.scopes)+len(judging.contents) != 0 {
+		if requestNow(t, st, req).Status != model.SecretRequestStatusPending || len(judging.contents) != 0 {
 			t.Fatal("a reactive request, which names no uses, was tested against a rule")
 		}
 	})
@@ -469,6 +473,8 @@ func TestARuleChangedUnderTheJudgeApprovesNothing(t *testing.T) {
 	for name, change := range map[string]services.UpdateApprovalRuleBody{
 		"disabled": {Enabled: serverapi.NewOptBool(false)},
 		"edited":   {Uses: []string{"read and write any issue in org/repo"}},
+		"widened":  {EveryDiscobox: serverapi.NewOptBool(true)},
+		"moved":    {Repositories: []string{repo, "github.com/org/elsewhere"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, st, judging, _ := ruledService(t)
@@ -514,64 +520,164 @@ func TestDeletingARuleRevokesNothing(t *testing.T) {
 	}
 }
 
-// The fact sheet a scope is read against is the control plane's record of the
-// discobox, fixed when it was created: its repository — the remote its
-// checkout tracks, without credentials — who created it, and the prompt it
-// was created with, labeled with who wrote it. Nothing the discobox says
-// about itself is on it.
-func TestAScopeIsReadAgainstWhatWasRecordedAboutTheDiscobox(t *testing.T) {
-	svc, st, judging, _ := ruledService(t)
-	ctx := context.Background()
-	local, upstream, ref, lead := "/home/me/src/repo", "https://me:hunter2@github.com/org/repo.git", "main", "sbx-lead" //nolint:gosec // G101: a made-up password, there to be dropped from the sheet.
-	description := "started by a person to deliver an issue in org/repo"
-	const worker = "sbx-worker"
-	if err := st.CreateSandbox(ctx, &model.Sandbox{
-		ID: worker, ProjectID: "project-1", Name: "worker", PoolID: testPoolID,
-		CreatedBySandboxID: &lead,
-		SandboxManifest: model.SandboxManifest{
-			Source: &model.GitSource{Kind: "git", LocalDirectory: &local, UpstreamURL: &upstream, Checkout: &model.GitSourceCheckout{RefName: &ref}},
-			Prompt: []string{"/deliver-issue", "43"},
-			Skills: sandboxconfig.Skills{"deliver-issue": {Skill: "# deliver-issue"}},
-		},
-		// What the discobox says about itself, which a scope never reads.
-		Description: &description,
-		Tags:        map[string]string{"issue": "43", "started-by": "a person"},
-	}); err != nil {
-		t.Fatalf("create sandbox: %v", err)
+// Which discoboxes a rule is for is compared, never read: a rule that names
+// repositories answers a discobox whose primary source is one of them —
+// whichever way the remote is spelled, and for a local checkout the remote it
+// tracks — and no other. Its other sources never count, a local source with
+// no remote is nobody's, and only a rule for every discobox answers that one.
+func TestARuleIsForDiscoboxesOfItsRepositories(t *testing.T) {
+	local, ssh, fork := "/home/me/src/repo", "git@GitHub.com:org/repo.git", "https://github.com/someone-else/fork"
+	credentialed := "https://me:hunter2@github.com/org/repo/" //nolint:gosec // G101: a made-up password, there to be dropped.
+	for _, tc := range []struct {
+		name         string
+		source       *model.GitSource
+		others       model.SourceCodeReferences
+		repositories []string
+		approved     bool
+	}{
+		{name: "the same repository over https", source: remote(repoURL), repositories: []string{repo}, approved: true},
+		{name: "the same repository over ssh", source: remote(ssh), repositories: []string{repo}, approved: true},
+		{name: "a URL carrying credentials", source: remote(credentialed), repositories: []string{repo}, approved: true},
+		{name: "one of several the rule names", source: remote(repoURL), repositories: []string{"github.com/org/elsewhere", repo}, approved: true},
+		{name: "a local checkout tracking it", source: &model.GitSource{Kind: "git", LocalDirectory: &local, UpstreamURL: &ssh}, repositories: []string{repo}, approved: true},
+		{name: "another repository", source: remote(fork), repositories: []string{repo}},
+		// What a box cloned is the repository it is of: an upstream named
+		// beside a URL is a repository it does not hold.
+		{name: "a fork claiming the repository as its upstream", source: &model.GitSource{Kind: "git", URL: &fork, UpstreamURL: &ssh}, repositories: []string{repo}},
+		{name: "the repository as an additional source only", source: remote(fork),
+			others: model.SourceCodeReferences{"repo": *remote(repoURL)}, repositories: []string{repo}},
+		{name: "a local source with no remote", source: &model.GitSource{Kind: "git", LocalDirectory: &local}, repositories: []string{repo}},
+		{name: "no source at all", repositories: []string{repo}},
+		{name: "a local source with no remote, and a rule for every discobox", source: &model.GitSource{Kind: "git", LocalDirectory: &local}, approved: true},
+		{name: "no source at all, and a rule for every discobox", approved: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, st, judging, _ := ruledService(t)
+			sandbox, err := st.GetSandbox(context.Background(), "project-1", testSandboxID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sandbox.Source, sandbox.SourceCodeReferences = tc.source, tc.others
+			if err := st.UpdateSandbox(context.Background(), sandbox); err != nil {
+				t.Fatal(err)
+			}
+			rule := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
+				if b.Repositories = tc.repositories; len(tc.repositories) == 0 {
+					forEveryDiscobox(b)
+				}
+			})
+			req := githubAsk(t, svc, nil)
+			if err := testRules(t, svc, req); err != nil {
+				t.Fatalf("test rules: %v", err)
+			}
+			now := requestNow(t, st, req)
+			if approved := now.Status == model.SecretRequestStatusApproved; approved != tc.approved {
+				t.Fatalf("request = %+v, want approved %v", now, tc.approved)
+			}
+			if tc.approved {
+				return
+			}
+			// No judge reads which discoboxes a rule is for, and nothing is
+			// recorded for a comparison.
+			if len(judging.contents) != 0 {
+				t.Fatalf("the judge was asked about a rule that is not for this discobox: %+v", judging.contents)
+			}
+			if verdicts, err := st.ListCredentialVerdicts(context.Background(), "project-1", store.CredentialVerdictFilter{}); err != nil || len(verdicts) != 0 {
+				t.Fatalf("verdicts = %+v, %v, want none recorded for a comparison", verdicts, err)
+			}
+			seen, err := svc.GetSecretRequest(testPrincipalContext(), "project-1", req.ID)
+			if err != nil || len(seen.RuleTests) != 1 {
+				t.Fatalf("request = %+v, %v, want the rule on its card", seen, err)
+			}
+			test := seen.RuleTests[0]
+			if test.RuleID != rule.ID || test.Covered || test.Pending || test.Stage != model.RuleTestStageFacts ||
+				!strings.Contains(test.Reason, repo) || strings.Contains(test.Reason, "hunter2") {
+				t.Fatalf("test = %+v, want the repository named as the fact that failed", test)
+			}
+		})
 	}
-	githubRule(t, svc, nil)
-	req := githubAsk(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.SandboxId = worker })
-	if err := testRules(t, svc, req); err != nil {
-		t.Fatal(err)
+}
+
+// A rule's repositories are stored as host/path however they were given, said
+// once each, and a bare org/repo is refused for naming no host.
+func TestARulesRepositoriesAreStoredAsHostAndPath(t *testing.T) {
+	svc, _, _, _ := ruledService(t)
+	ctx := testPrincipalContext()
+	rule := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) {
+		b.Repositories = []string{
+			" https://me@GitHub.com/org/repo.git/ ", "git@github.com:org/other.git", "ssh://git@git.example.com:2222/team/thing",
+			"gitlab.example.com/group/sub/project/", "git.example.com:8443/team/thing",
+		}
+	})
+	want := []string{repo, "github.com/org/other", "git.example.com:2222/team/thing", "gitlab.example.com/group/sub/project", "git.example.com:8443/team/thing"}
+	if !slices.Equal(rule.Repositories, want) {
+		t.Fatalf("repositories = %q, want %q", rule.Repositories, want)
 	}
-	if len(judging.scopes) != 1 {
-		t.Fatalf("scope asks = %d, want one", len(judging.scopes))
+	// What is stored reads back as itself at every edit.
+	edited, err := svc.UpdateApprovalRule(ctx, "project-1", rule.ID, services.UpdateApprovalRuleBody{Enabled: serverapi.NewOptBool(false)})
+	if err != nil || !slices.Equal(edited.Repositories, want) {
+		t.Fatalf("edit = %+v, %v, want the repositories untouched by an edit that did not name them", edited, err)
 	}
-	sheet := judging.scopes[0].Discobox
-	if sheet.Repository != "https://github.com/org/repo.git" || sheet.Ref != "main" {
-		t.Fatalf("sheet = %+v, want the tracked remote without its credentials, and the ref", sheet)
+	// A rule for every discobox is an edit that says so. A list sent empty
+	// is refused, never read as the wider rule, and so is saying both.
+	for name, body := range map[string]services.UpdateApprovalRuleBody{
+		"an empty list":                    {Repositories: []string{}},
+		"repositories and every discobox":  {Repositories: []string{repo}, EveryDiscobox: serverapi.NewOptBool(true)},
+		"an empty list and every discobox": {Repositories: []string{}, EveryDiscobox: serverapi.NewOptBool(true)},
+	} {
+		if _, err := svc.UpdateApprovalRule(ctx, "project-1", rule.ID, body); !isStatus(err, http.StatusBadRequest) {
+			t.Errorf("an edit sending %s = %v, want a 400", name, err)
+		}
 	}
-	if sheet.CreatedBy != judge.CreatedByDiscobox || sheet.Creator != lead || sheet.PromptWrittenBy != judge.CreatedByDiscobox {
-		t.Fatalf("sheet = %+v, want a discobox named as the creator and as who wrote the prompt", sheet)
+	if kept, err := svc.GetApprovalRule(ctx, "project-1", rule.ID); err != nil || !slices.Equal(kept.Repositories, want) {
+		t.Fatalf("rule = %+v, %v, want its repositories as they were after the refused edits", kept, err)
 	}
-	if sheet.Prompt == nil || sheet.Prompt.Content != "/deliver-issue 43" || !slices.Equal(sheet.Skills, []string{"deliver-issue"}) {
-		t.Fatalf("sheet = %+v, want the prompt and skills it was created with", sheet)
+	if wide, err := svc.UpdateApprovalRule(ctx, "project-1", rule.ID, services.UpdateApprovalRuleBody{EveryDiscobox: serverapi.NewOptBool(true)}); err != nil || len(wide.Repositories) != 0 {
+		t.Fatalf("edit = %+v, %v, want a rule for every discobox", wide, err)
 	}
-	prompt, err := judge.Prompt(judging.scopes[0].Job())
-	if err != nil {
-		t.Fatalf("the sheet is not one a scope job carries: %v", err)
+	// Saying nothing of which discoboxes makes no rule, and neither does
+	// saying both.
+	for name, body := range map[string]services.CreateApprovalRuleBody{
+		"nothing said":                    {},
+		"an empty list":                   {Repositories: []string{}},
+		"every discobox said false":       {EveryDiscobox: serverapi.NewOptBool(false)},
+		"repositories and every discobox": {Repositories: []string{repo}, EveryDiscobox: serverapi.NewOptBool(true)},
+	} {
+		body.WellKnownId, body.Uses = serverapi.NewOptString(wellknown.GitHubAPI), []string{"read issues"}
+		if _, err := svc.CreateApprovalRule(ctx, "project-1", body); !isStatus(err, http.StatusBadRequest) {
+			t.Errorf("a rule made with %s = %v, want a 400", name, err)
+		}
 	}
-	for _, own := range []string{"started-by", description, "hunter2", "pre-approved"} {
-		if strings.Contains(prompt, own) {
-			t.Fatalf("the scope job carries %q, which the discobox or its agent wrote: %s", own, prompt)
+	for name, given := range map[string][]string{
+		"a bare org/repo":           {"org/repo"},
+		"a bare name":               {"repo"},
+		"a host with no path":       {"github.com"},
+		"a URL with no path":        {"https://github.com/"},
+		"an empty entry":            {repo, " "},
+		"a path on a machine":       {"/home/me/src/repo"},
+		"a file URL":                {"file:///home/me/src/repo"},
+		"one repository said twice": {repo, "git@github.com:org/repo.git"},
+		"something on two lines":    {"github.com/org/repo\ngithub.com/org/other"},
+		"more than a rule may name": slices.Repeat([]string{"x"}, 33),
+		"a repository too long":     {"github.com/" + strings.Repeat("x", 600)},
+	} {
+		_, err := svc.CreateApprovalRule(ctx, "project-1", services.CreateApprovalRuleBody{
+			WellKnownId: serverapi.NewOptString(wellknown.GitHubAPI), Uses: []string{"read issues"}, Repositories: given,
+		})
+		if !isStatus(err, http.StatusBadRequest) {
+			t.Errorf("a rule for %s = %v, want a 400", name, err)
+		}
+		if name == "a bare org/repo" && (err == nil || !strings.Contains(err.Error(), "github.com/org/repo")) {
+			t.Errorf("a bare org/repo = %v, want to be told to name the host", err)
 		}
 	}
 }
 
 // Answering a request with "auto approve" makes the rule and approves the
 // request under it in one write. The rule's credential, hosts and purpose are
-// the request's, copied by the server; its scope and uses are what the person
-// chose, and are held to the judge before anything is made.
+// the request's, copied by the server; its uses are what the person chose,
+// held to the judge before anything is made; and with no repositories named
+// it is for the repository of the discobox that asked, never for more.
 func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 	svc, st, judging, secret := ruledService(t)
 	dirty := &marks{}
@@ -579,10 +685,7 @@ func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 	req := githubAsk(t, svc, nil)
 	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
 		GrantTTLSeconds: serverapi.NewOptInt64(1800),
-		Rule: serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{
-			Scope: serverapi.NewOptString(repoScope),
-			Uses:  []string{issueRule},
-		}),
+		Rule:            serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{Uses: []string{issueRule}}),
 	})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
@@ -593,8 +696,8 @@ func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 	}
 	rule := rules[0]
 	if rule.WellKnownID != wellknown.GitHubAPI || rule.SecretID != "" || !slices.Equal(rule.Hosts, []string{"github.com"}) ||
-		rule.Purpose != model.SecretGrantPurposeUse || rule.Scope != repoScope || !slices.Equal(rule.Uses, []string{issueRule}) {
-		t.Fatalf("rule = %+v, want the request's credential, hosts and purpose with the chosen scope and uses", rule)
+		rule.Purpose != model.SecretGrantPurposeUse || !slices.Equal(rule.Repositories, []string{repo}) || !slices.Equal(rule.Uses, []string{issueRule}) {
+		t.Fatalf("rule = %+v, want the request's credential, hosts and purpose, the asking discobox's repository, and the chosen uses", rule)
 	}
 	if !rule.Enabled || rule.CreatedBy != "user-1" || rule.MaxGrantTTL != 1800 {
 		t.Fatalf("rule = %+v, want it enabled, the approver's, and capped at the lifetime this approval granted", rule)
@@ -607,10 +710,9 @@ func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 		t.Fatalf("grant uses = %v, want the uses as asked, not the rule's class", got)
 	}
 	// Judged as a candidate before it was a rule, then read once more under
-	// its ID, which is what records its verdicts as the rule's.
-	if len(judging.scopes) != 2 || len(judging.contents) != 2 || judging.contents[0].RuleID != "" ||
-		judging.contents[1].RuleID != rule.ID || judging.scopes[1].RuleID != rule.ID {
-		t.Fatalf("asks = %+v / %+v, want the candidate judged, then read again naming the rule", judging.scopes, judging.contents)
+	// its ID, which is what records its verdict as the rule's.
+	if len(judging.contents) != 2 || judging.contents[0].RuleID != "" || judging.contents[1].RuleID != rule.ID {
+		t.Fatalf("asks = %+v, want the candidate judged, then read again naming the rule", judging.contents)
 	}
 	// The new rule answers what else is pending, and is a reason to keep a judge.
 	if !slices.Contains(dirty.marked, resourcejudges.JudgeResourceType+"/project-1") {
@@ -620,30 +722,35 @@ func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 
 // A rule that would not cover the very request it is made from is refused
 // rather than made: nothing is minted, the request stays pending, and the
-// refusal says which of the two readings failed.
+// refusal says what failed. So is one that does not say which discoboxes it
+// is for when the asking discobox has no repository to default to: a rule for
+// every discobox is said, never assumed.
 func TestAutoApproveRefusesARuleThatWouldNotCoverItsOwnRequest(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		judge func(*ruleJudge)
-		body  serverapi.ApproveWithRule
-		want  string
+		name   string
+		judge  func(*ruleJudge)
+		source *model.GitSource
+		body   serverapi.ApproveWithRule
+		want   string
 	}{
-		{name: "a scope the discobox is not in", want: "scope",
-			judge: func(j *ruleJudge) {
-				j.scope = func(services.ScopeAsk) (judge.Answer, error) { return no("another repository") }
-			},
-			body: serverapi.ApproveWithRule{Scope: serverapi.NewOptString("discoboxes on org/elsewhere")}},
-		{name: "uses that do not hold the ask", want: "uses",
+		{name: "repositories the discobox is not of", want: "github.com/org/elsewhere", source: remote(repoURL),
+			body: serverapi.ApproveWithRule{Repositories: []string{"github.com/org/elsewhere"}}},
+		{name: "uses that do not hold the ask", want: "uses", source: remote(repoURL),
 			judge: func(j *ruleJudge) {
 				j.content = func(services.RuleAsk) (judge.Answer, error) { return no("reads pulls, not issues") }
 			},
 			body: serverapi.ApproveWithRule{Uses: []string{"read pull requests in org/repo"}}},
-		{name: "a pin to another discobox", want: "pinned",
-			body: serverapi.ApproveWithRule{SandboxId: serverapi.NewOptString("sbx-other")}},
+		{name: "repositories and every discobox at once", want: "not both", source: remote(repoURL),
+			body: serverapi.ApproveWithRule{Repositories: []string{repo}, EveryDiscobox: serverapi.NewOptBool(true)}},
+		{name: "a bare org/repo", want: "names no host", source: remote(repoURL),
+			body: serverapi.ApproveWithRule{Repositories: []string{"org/repo"}}},
+		{name: "nothing said, from a discobox with no repository", want: "every discobox", body: serverapi.ApproveWithRule{}},
+		{name: "a repository named for a discobox with none", want: "no repository",
+			body: serverapi.ApproveWithRule{Repositories: []string{repo}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc, st, judging, _ := ruledService(t)
-			createSandbox(t, st, "sbx-other", testPoolID)
+			ofRepository(t, st, testSandboxID, tc.source)
 			if tc.judge != nil {
 				tc.judge(judging)
 			}
@@ -652,7 +759,7 @@ func TestAutoApproveRefusesARuleThatWouldNotCoverItsOwnRequest(t *testing.T) {
 				Rule: serverapi.NewOptApproveWithRule(tc.body),
 			})
 			if !isStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("approve = %v, want a 400 naming the %s", err, tc.want)
+				t.Fatalf("approve = %v, want a 400 saying %q", err, tc.want)
 			}
 			if now := requestNow(t, st, req); now.Status != model.SecretRequestStatusPending {
 				t.Fatalf("request = %+v, want it pending", now)
@@ -661,6 +768,24 @@ func TestAutoApproveRefusesARuleThatWouldNotCoverItsOwnRequest(t *testing.T) {
 				t.Fatalf("rules = %+v, want none made", rules)
 			}
 		})
+	}
+}
+
+// A rule for every discobox is made only by saying so, and then answers a
+// discobox with no repository too.
+func TestAutoApproveForEveryDiscoboxIsSaid(t *testing.T) {
+	svc, st, _, _ := ruledService(t)
+	ofRepository(t, st, testSandboxID, nil)
+	req := githubAsk(t, svc, nil)
+	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+		Rule: serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{EveryDiscobox: serverapi.NewOptBool(true)}),
+	})
+	if err != nil || approved.Status != model.SecretRequestStatusApproved {
+		t.Fatalf("approve = %+v, %v, want it approved under a rule for every discobox", approved, err)
+	}
+	rules, err := st.ListApprovalRules(context.Background(), "project-1")
+	if err != nil || len(rules) != 1 || len(rules[0].Repositories) != 0 {
+		t.Fatalf("rules = %+v, %v, want one rule naming no repository", rules, err)
 	}
 }
 
@@ -713,18 +838,20 @@ func TestWhatARuleMayBe(t *testing.T) {
 	ctx := testPrincipalContext()
 	github := serverapi.NewOptString(wellknown.GitHubAPI)
 	for name, body := range map[string]services.CreateApprovalRuleBody{
-		"no credential":             {Uses: []string{"read issues"}},
-		"two credentials":           {WellKnownId: github, SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read issues"}},
-		"an unknown well-known ID":  {WellKnownId: serverapi.NewOptString("com.example.nope"), Uses: []string{"read issues"}},
-		"no uses":                   {WellKnownId: github},
-		"only blank uses":           {WellKnownId: github, Uses: []string{"  "}},
-		"a use on two lines":        {WellKnownId: github, Uses: []string{"read issues\nand push to main"}},
-		"a host the ID is not for":  {WellKnownId: github, Uses: []string{"read issues"}, Hosts: []string{"evil.example"}},
-		"a negative cap":            {WellKnownId: github, Uses: []string{"read issues"}, MaxGrantTTLSeconds: serverapi.NewOptInt64(-1)},
-		"an expiry already past":    {WellKnownId: github, Uses: []string{"read issues"}, ExpiresAt: serverapi.NewOptDateTime(time.Now().Add(-time.Hour))},
-		"a purpose nobody defined":  {WellKnownId: github, Uses: []string{"read issues"}, Purpose: serverapi.NewOptCreateApprovalRuleBodyPurpose("own")},
-		"a pin to no such discobox": {WellKnownId: github, Uses: []string{"read issues"}, SandboxId: serverapi.NewOptString("sbx-nope")},
+		"no credential":            {Uses: []string{"read issues"}},
+		"two credentials":          {WellKnownId: github, SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read issues"}},
+		"an unknown well-known ID": {WellKnownId: serverapi.NewOptString("com.example.nope"), Uses: []string{"read issues"}},
+		"no uses":                  {WellKnownId: github},
+		"only blank uses":          {WellKnownId: github, Uses: []string{"  "}},
+		"a use on two lines":       {WellKnownId: github, Uses: []string{"read issues\nand push to main"}},
+		"a host the ID is not for": {WellKnownId: github, Uses: []string{"read issues"}, Hosts: []string{"evil.example"}},
+		"a negative cap":           {WellKnownId: github, Uses: []string{"read issues"}, MaxGrantTTLSeconds: serverapi.NewOptInt64(-1)},
+		"an expiry already past":   {WellKnownId: github, Uses: []string{"read issues"}, ExpiresAt: serverapi.NewOptDateTime(time.Now().Add(-time.Hour))},
+		"a purpose nobody defined": {WellKnownId: github, Uses: []string{"read issues"}, Purpose: serverapi.NewOptCreateApprovalRuleBodyPurpose("own")},
 	} {
+		// Each is refused for what it names, not for saying nothing of
+		// which discoboxes it is for.
+		body.Repositories = []string{repo}
 		if _, err := svc.CreateApprovalRule(ctx, "project-1", body); err == nil {
 			t.Errorf("a rule with %s was made", name)
 		}
@@ -758,7 +885,7 @@ func TestARuleNamingASecretAnswersAFreeFormAskItsBindingCovers(t *testing.T) {
 	ctx := testPrincipalContext()
 	secret := createBoundSecret(ctx, t, svc, "github", "github.com", 3600)
 	rule, err := svc.CreateApprovalRule(ctx, "project-1", services.CreateApprovalRuleBody{
-		SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read any issue in org/repo"},
+		SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read any issue in org/repo"}, EveryDiscobox: serverapi.NewOptBool(true),
 	})
 	if err != nil {
 		t.Fatalf("create rule: %v", err)
@@ -801,24 +928,23 @@ func TestARuleMayHandOnADelegation(t *testing.T) {
 	}
 }
 
-// Proposals come at three levels for scope and for content, narrowest first.
-// The narrowest of each needs no model. Every candidate but the pin is put to
-// the judge as the job a rule would later ask, and only one it finds to cover
-// the request is offered as covering. The credential, hosts and purpose are
-// the request's own.
+// Proposals come at three levels of uses, narrowest first. The narrowest
+// needs no model. Every candidate is put to the judge as the job a rule would
+// later ask, and only one it finds to cover the request is offered as
+// covering. The credential, hosts and purpose are the request's own, and the
+// repository the rule may be for is the asking discobox's, compared and never
+// written by a model.
 func TestAutoApproveProposesThreeLevelsEachAlreadyJudged(t *testing.T) {
-	svc, _, judging, _ := ruledService(t)
+	svc, st, judging, _ := ruledService(t)
 	judging.proposal = judge.Proposal{
-		ScopeWork:          repoScope,
-		ScopeRepository:    "any discobox on org/repo",
 		UsesAnyTarget:      []string{issueRule},
 		UsesAcrossResource: []string{"read and write issues in org/repo"},
 	}
-	judging.scope = func(ask services.ScopeAsk) (judge.Answer, error) {
-		if ask.Scope == repoScope {
-			return no("the prompt names no issue")
+	judging.content = func(ask services.RuleAsk) (judge.Answer, error) {
+		if slices.Equal(ask.RuleUses, []string{issueRule}) {
+			return no("the rule names gh api GET, and nothing else")
 		}
-		return judge.Answer{Allow: true, Reason: "the repository matches"}, nil
+		return judge.Answer{Allow: true, Reason: "within"}, nil
 	}
 	req := githubAsk(t, svc, nil)
 	proposals, err := svc.ProposeApprovalRules(testPrincipalContext(), "project-1", req.ID)
@@ -828,38 +954,43 @@ func TestAutoApproveProposesThreeLevelsEachAlreadyJudged(t *testing.T) {
 	if proposals.Credential.Or("") != wellknown.GitHubAPI || !slices.Equal(proposals.Hosts, []string{"github.com"}) || proposals.Purpose != "use" {
 		t.Fatalf("proposals = %+v, want the request's credential, hosts and purpose", proposals)
 	}
-	if len(proposals.Scopes) != 3 || len(proposals.Contents) != 3 {
-		t.Fatalf("proposals = %+v, want three scopes and three contents", proposals)
+	if proposals.Repository.Or("") != repo {
+		t.Fatalf("repository = %q, want the asking discobox's, as a rule stores it", proposals.Repository.Or(""))
 	}
-	pin := proposals.Scopes[0]
-	if pin.Level != 1 || pin.SandboxId.Or("") != testSandboxID || pin.Scope.IsSet() || !pin.Covers {
-		t.Fatalf("level 1 scope = %+v, want this discobox, pinned, with nothing read", pin)
-	}
-	if work := proposals.Scopes[1]; work.Level != 2 || work.Covers || !strings.Contains(work.Reason.Or(""), "names no issue") {
-		t.Fatalf("level 2 scope = %+v, want it shown as failed with the judge's reason", work)
-	}
-	if repo := proposals.Scopes[2]; repo.Level != 3 || !repo.Covers {
-		t.Fatalf("level 3 scope = %+v, want it offered", repo)
+	if len(proposals.Contents) != 3 {
+		t.Fatalf("proposals = %+v, want three contents", proposals)
 	}
 	if asked := proposals.Contents[0]; asked.Level != 1 || !slices.Equal(asked.Uses, []string{issueUse}) || !asked.Covers {
 		t.Fatalf("level 1 content = %+v, want the uses as asked, tested too", asked)
 	}
-	// One model call, and five judge calls: two scopes, three contents.
-	if len(judging.proposed) != 1 || len(judging.scopes) != 2 || len(judging.contents) != 3 {
-		t.Fatalf("judge was asked for %d proposals, %d scopes, %d contents", len(judging.proposed), len(judging.scopes), len(judging.contents))
+	if target := proposals.Contents[1]; target.Level != 2 || target.Covers || !strings.Contains(target.Reason.Or(""), "nothing else") {
+		t.Fatalf("level 2 content = %+v, want it shown as failed with the judge's reason", target)
+	}
+	if across := proposals.Contents[2]; across.Level != 3 || !across.Covers {
+		t.Fatalf("level 3 content = %+v, want it offered", across)
+	}
+	// One model call, and three judge calls.
+	if len(judging.proposed) != 1 || len(judging.contents) != 3 {
+		t.Fatalf("judge was asked for %d proposals and %d contents", len(judging.proposed), len(judging.contents))
 	}
 	job := judging.proposed[0]
-	if !slices.Equal(job.Uses, []string{issueUse}) || job.Discobox.CreatedBy != judge.CreatedByPerson {
-		t.Fatalf("proposal job = %+v, want the request's uses and the fact sheet", job)
+	if !slices.Equal(job.Uses, []string{issueUse}) || job.Credential != wellknown.GitHubAPI || !slices.Equal(job.Hosts, []string{"github.com"}) {
+		t.Fatalf("proposal job = %+v, want the request's uses, and what they are about", job)
 	}
 	for _, ask := range judging.contents {
 		if ask.RuleID != "" || ask.RequestID != req.ID || !slices.Equal(ask.Hosts, []string{"github.com"}) {
 			t.Fatalf("content ask = %+v, want a candidate judged for this request before it is a rule", ask)
 		}
 	}
+
+	// A discobox with no repository has none to offer.
+	ofRepository(t, st, testSandboxID, nil)
+	if none, err := svc.ProposeApprovalRules(testPrincipalContext(), "project-1", req.ID); err != nil || none.Repository.IsSet() {
+		t.Fatalf("proposals = %+v, %v, want no repository for a discobox that has none", none, err)
+	}
 }
 
-// Where no model can write, the narrowest of each is offered alone, with why.
+// Where no model can write, the uses as asked are offered alone, with why.
 func TestWithNoModelToWriteOnlyTheNarrowestIsOffered(t *testing.T) {
 	svc, _, judging, _ := ruledService(t)
 	judging.proposeErr = errors.New("this project has no judge: the project has no default harness")
@@ -868,8 +999,8 @@ func TestWithNoModelToWriteOnlyTheNarrowestIsOffered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
-	if len(proposals.Scopes) != 1 || len(proposals.Contents) != 1 || !strings.Contains(proposals.Note.Or(""), "no default harness") {
-		t.Fatalf("proposals = %+v, want level 1 of each and a note saying why", proposals)
+	if len(proposals.Contents) != 1 || proposals.Repository.Or("") != repo || !strings.Contains(proposals.Note.Or(""), "no default harness") {
+		t.Fatalf("proposals = %+v, want level 1 alone, the repository all the same, and a note saying why", proposals)
 	}
 	if !proposals.Contents[0].Covers || len(judging.contents) != 1 {
 		t.Fatalf("level 1 content = %+v, want it still tested", proposals.Contents[0])
@@ -988,31 +1119,27 @@ func TestALapsedRuleCanStillBeEdited(t *testing.T) {
 	}
 }
 
-// A rule that could never approve again goes with what it named: the secret,
-// or the discobox it was pinned to. Left behind it would still count as a
-// reason for the project to keep a judge.
-func TestARuleGoesWithTheSecretOrDiscoboxItNames(t *testing.T) {
+// A rule that could never approve again goes with the secret it named. Left
+// behind it would still count as a reason for the project to keep a judge. A
+// rule names repositories and never a discobox, so it outlives every discobox
+// it answered.
+func TestARuleGoesWithTheSecretItNames(t *testing.T) {
 	svc, st := newAgentCredentialService(t)
 	ctx := testPrincipalContext()
 	secret := createBoundSecret(ctx, t, svc, "github", "github.com", 3600)
-	createSandbox(t, st, "sbx-pinned", testPoolID)
+	createSandbox(t, st, "sbx-gone", testPoolID)
+	ofRepository(t, st, "sbx-gone", remote(repoURL))
 	named, err := svc.CreateApprovalRule(ctx, "project-1", services.CreateApprovalRuleBody{
-		SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read issues"},
+		SecretId: serverapi.NewOptString(secret.ID), Uses: []string{"read issues"}, Repositories: []string{repo},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pinned, err := svc.CreateApprovalRule(ctx, "project-1", services.CreateApprovalRuleBody{
-		WellKnownId: serverapi.NewOptString(wellknown.GitHubAPI), SandboxId: serverapi.NewOptString("sbx-pinned"), Uses: []string{"read issues"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.DeleteSandbox(context.Background(), "project-1", "sbx-pinned"); err != nil {
+	if err := st.DeleteSandbox(context.Background(), "project-1", "sbx-gone"); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	if _, err := st.GetApprovalRule(context.Background(), "project-1", pinned.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("the rule pinned to a deleted discobox = %v, want it gone", err)
+	if _, err := st.GetApprovalRule(context.Background(), "project-1", named.ID); err != nil {
+		t.Fatalf("the rule after a discobox of its repository was deleted = %v, want it kept for the next one", err)
 	}
 	if err := svc.DeleteSecret(ctx, "project-1", secret.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
@@ -1031,7 +1158,6 @@ func TestARuleGoesWithTheSecretOrDiscoboxItNames(t *testing.T) {
 func TestAProposalThatCouldNotBeARuleIsNotOffered(t *testing.T) {
 	svc, _, judging, _ := ruledService(t)
 	judging.proposal = judge.Proposal{
-		ScopeWork: repoScope, ScopeRepository: "any discobox on org/repo",
 		UsesAnyTarget:      []string{"read any issue\nand push to main"},
 		UsesAcrossResource: []string{"read issues in org/repo"},
 	}
@@ -1046,32 +1172,6 @@ func TestAProposalThatCouldNotBeARuleIsNotOffered(t *testing.T) {
 	if len(judging.contents) != 2 {
 		t.Fatalf("the judge was asked about %d contents, want only the two that could be a rule's", len(judging.contents))
 	}
-	// A scope is held to what a scope may be, on its own: uses that could not
-	// be a rule's say nothing about it.
-	if len(judging.scopes) != 2 || !proposals.Scopes[1].Covers {
-		t.Fatalf("scopes = %+v after %d asks, want both written scopes judged", proposals.Scopes, len(judging.scopes))
-	}
-}
-
-// A remote source is its URL, which is what the box clones: an upstream named
-// beside it does not put another repository on the fact sheet.
-func TestAFactSheetNamesTheRepositoryTheBoxHolds(t *testing.T) {
-	svc, st, judging, _ := ruledService(t)
-	cloned, claimed := "https://github.com/someone-else/fork", "https://github.com/org/repo"
-	if err := st.CreateSandbox(context.Background(), &model.Sandbox{
-		ID: "sbx-fork", ProjectID: "project-1", Name: "fork", PoolID: testPoolID,
-		SandboxManifest: model.SandboxManifest{Source: &model.GitSource{Kind: "git", URL: &cloned, UpstreamURL: &claimed}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	githubRule(t, svc, nil)
-	req := githubAsk(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.SandboxId = "sbx-fork" })
-	if err := testRules(t, svc, req); err != nil {
-		t.Fatal(err)
-	}
-	if got := judging.scopes[0].Discobox.Repository; got != cloned {
-		t.Fatalf("repository = %q, want the URL the box was cloned from", got)
-	}
 }
 
 // The card a person reads says, for each rule tested against a pending
@@ -1082,6 +1182,7 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 	svc, st, _, _ := ruledService(t)
 	ctx := context.Background()
 	elsewhere := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Hosts = []string{"api.github.com"} })
+	foreign := githubRule(t, svc, func(b *services.CreateApprovalRuleBody) { b.Repositories = []string{"github.com/org/elsewhere"} })
 	unread := githubRule(t, svc, nil)
 	req := githubAsk(t, svc, nil)
 
@@ -1101,27 +1202,28 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 	if got := first[elsewhere.ID]; got.Covered || got.Stage != model.RuleTestStageFacts || !strings.Contains(got.Reason, "api.github.com") {
 		t.Fatalf("test = %+v, want the hosts named as the fact that failed", got)
 	}
-	if got := first[unread.ID]; got.Covered || !got.Pending || got.Stage != model.RuleTestStageScope {
-		t.Fatalf("test = %+v, want it pending on its scope", got)
+	if got := first[foreign.ID]; got.Covered || got.Pending || got.Stage != model.RuleTestStageFacts ||
+		!strings.Contains(got.Reason, "github.com/org/elsewhere") || !strings.Contains(got.Reason, repo) {
+		t.Fatalf("test = %+v, want both repositories named as the fact that failed, with no judge to wait on", got)
+	}
+	if got := first[unread.ID]; got.Covered || !got.Pending || got.Stage != model.RuleTestStageContent {
+		t.Fatalf("test = %+v, want it pending on its content", got)
 	}
 
-	// The judge says no to the scope, and the card carries its sentence.
-	sandbox, err := st.GetSandbox(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sheet := judge.Discobox{CreatedBy: judge.CreatedByPerson, Platform: sandbox.Platform.String()}
-	digest, err := judge.Digest(services.ScopeAsk{Scope: repoScope, Discobox: sheet}.Job())
+	// The judge says no to the uses, and the card carries its sentence.
+	digest, err := judge.Digest(services.RuleAsk{
+		RuleUses: []string{issueRule}, Uses: []string{issueUse}, Credential: wellknown.GitHubAPI, Hosts: []string{"github.com"},
+	}.Job())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := st.CreateCredentialVerdict(ctx, &model.CredentialVerdict{
-		ProjectID: "project-1", Kind: model.CredentialVerdictKindScope, Origin: model.CredentialVerdictOriginJudge,
-		SandboxID: testSandboxID, RuleID: unread.ID, QuestionDigest: digest, Reason: "Refused: Jev could not tell (0.41).",
+		ProjectID: "project-1", Kind: model.CredentialVerdictKindRule, Origin: model.CredentialVerdictOriginJudge,
+		SandboxID: testSandboxID, SecretRequestID: req.ID, RuleID: unread.ID, QuestionDigest: digest, Reason: "Refused: Jev could not tell (0.41).",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := tests()[unread.ID]; got.Covered || got.Pending || got.Stage != model.RuleTestStageScope || !strings.Contains(got.Reason, "0.41") {
-		t.Fatalf("test = %+v, want the scope's verdict and its score", got)
+	if got := tests()[unread.ID]; got.Covered || got.Pending || got.Stage != model.RuleTestStageContent || !strings.Contains(got.Reason, "0.41") {
+		t.Fatalf("test = %+v, want the content's verdict and its score", got)
 	}
 }

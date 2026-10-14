@@ -296,8 +296,9 @@ and a discobox that needs both holds two grants.
 
 An `ApprovalRule` is a project's standing answer to a credential request
 ([ADR 26-10-12-330](../../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)):
-a request like this, from a discobox like that, is approved without asking.
-`rules.go` owns the rule and what holds a request to it, `rule_requests.go` the
+a request like this, from a discobox of these repositories, is approved
+without asking. `rules.go` owns the rule and what holds a request to it,
+`rule_repositories.go` which discoboxes a rule is for, `rule_requests.go` the
 reconciler that tests rules, and `rule_proposals.go` what "auto approve" offers.
 
 ```mermaid
@@ -305,8 +306,7 @@ flowchart LR
     ask["agent files a request"] -->|"pending, returns at once"| dirty[(ruleRequest dirty)]
     made["rule made or edited"] --> dirty
     dirty --> test["RuleRequests.Reconcile"]
-    test -->|"facts: credential, hosts, purpose"| scope["JudgeScope: sentence vs fact sheet"]
-    scope -->|"in scope"| content["JudgeRule: rule's uses vs uses asked"]
+    test -->|"facts: repository, credential, hosts, purpose"| content["JudgeRule: rule's uses vs uses asked"]
     content -->|"covers"| write["commitApproval: grant as asked, RuleID"]
     test -. "no rule covers" .-> person["stays pending for a person"]
 ```
@@ -317,24 +317,40 @@ flowchart LR
   (`CreateApprovalRule`) or by answering a request with a `rule` on the
   approve body, which makes the rule and approves under it in one write. The
   sandbox role lists none of the routes.
-- **Facts are checked here; sentences are the judge's** (`ruleFacts`,
-  `ruleReadings`), the way an approval is held to a delegation:
-  - the pin, compared, never read;
+- **Facts are checked here; the uses are the judge's** (`ruleFacts`,
+  `ruleUsesCover`), the way an approval is held to a delegation:
   - the same credential — the well-known ID the request names, or, for an ask
     that names none, a secret whose host binding covers the hosts asked for;
+  - a discobox of one of the rule's repositories (below);
   - the same purpose, hosts within the rule's, and the secret's own binding;
   - the lifetime, fitted and never refused (`ruleTTL`): the ask, else the
     hour, capped by the rule and the secret's limit;
-  - the scope sentence against the **fact sheet** (`factSheet`), and the
-    rule's uses against the uses asked for. The justification is in neither.
-- **The fact sheet is the control plane's record of the discobox**, fixed
-  when it was created: its primary source's repository (the remote a local
-  checkout tracks, and for a remote source the URL it is cloned from; without
-  userinfo) and ref, its other sources, who created
-  it, the prompt it was created with labelled with who wrote it, its skills,
-  harness and platform. Never its tags or description (ADR 0136), and nothing
-  from its request: a box that could write its way into a scope has chosen
-  its own rule.
+  - the rule's uses against the uses asked for, which is the judge's. The
+    justification is not shown.
+- **Which discoboxes a rule is for is a list of repositories, compared**
+  (`rule_repositories.go`, §2). A rule with none is for every discobox in the
+  project. One with some answers a discobox whose **primary source** is one
+  of them, exactly: its additional sources never count.
+  - A repository's identity is `host/path` as `sourcecache.NormalizeRemote`
+    reduces a remote: no scheme or userinfo, host lower-cased, no trailing
+    slash or `.git`, the scp-like `git@host:org/repo.git` understood.
+  - A discobox's is its source's `URL`, else the `UpstreamURL` its client
+    reported for a local checkout (`repositoryIdentity`). A local source with
+    no remote has none, and only a rule for every discobox answers it.
+  - A rule's are normalised by the same code when it is made or edited
+    (`ruleRepositories`) and stored that way: a URL, the scp-like form or
+    `host/path`; a bare `org/repo` names no host and is refused; no empty or
+    repeated entry; at most `maxRuleRepositories`.
+  - A rule for other repositories is said on the card as a fact
+    (`ruleRepositoryProblem`). No judge is asked and no verdict recorded.
+- **A rule for every discobox is said, never assumed**: `everyDiscobox`, on
+  every route, refused beside repositories (`errRepositoriesAndEvery`).
+  - `CreateApprovalRule`: at least one repository or `everyDiscobox`; neither
+    is refused.
+  - `UpdateApprovalRule`: repositories replace the rule's, `everyDiscobox`
+    removes them, an empty list is refused, nothing said leaves them alone.
+  - An approve that makes a rule (`ruleFromApproval`): given neither, the
+    asking discobox's repository, and refused when it has none.
 - **Rules are tested off the path that files a request**
   (`RuleRequests`, reconcile type `ruleRequest`, id a request ID). A request
   is marked when filed in a project with a rule (`requestFiled`) and when a
@@ -345,8 +361,9 @@ flowchart LR
   credentials request is tested
   (`ruleTestable`): reactive requests, refresh requests and host trusts stay
   a person's.
-- **One rule at a time, cheapest step first**: rules pinned to the discobox
-  first, each on its own, never several rules' uses together. The first that
+- **One rule at a time, cheapest step first**: rules that name repositories
+  before rules for every discobox (`liveRules`), each on its own, never
+  several rules' uses together. The first that
   covers ends it. A judge that could not answer about some rule, when none
   covered, fails the run so the request is tested again.
 - **A rule's approval is a person's approval's write** (`commitApproval`,
@@ -358,13 +375,15 @@ flowchart LR
   rule.
 - **A grant is independent of its rule.** Disabling or deleting a rule mints
   nothing more and revokes nothing; `ListSecretGrants` filters by rule. A rule
-  itself goes with its project, the secret it names, and the discobox it is
-  pinned to: one that could never approve again would still keep a judge.
+  itself goes with its project and the secret it names: one that could never
+  approve again would still keep a judge. It names no discobox, so deleting
+  one leaves it.
 - **A rule for a well-known credential answers with the secret marked for
   it**, so auto approve is refused when the approval names another.
 - **Each question is asked once.** The judges service answers from the
   verdict on record for the same job. An edited rule is a different job, so
-  it is tested afresh against what is pending.
+  it is tested afresh against what is pending. A repository comparison asks
+  nobody and records nothing.
 - **The card says why** (`ruleTestDescriber`): a person reading a pending
   request sees each rule tested and the fact or verdict that kept it from
   covering, read from the record — a replica's, and making nothing — without
@@ -373,17 +392,19 @@ flowchart LR
   otherwise approves: a rule is that person's approval given in advance.
 
 **"Auto approve" proposes, and offers only what the judge found to cover**
-(`ProposeApprovalRules`, §§7–8). Three scopes and three lists of uses,
-narrowest first. The narrowest of each needs no model: the pin, and the uses
-as asked. The wider two are written by the project's judge discobox
-(`JudgeService.ProposeRule`); the credential, hosts and purpose are copied
-from the request by code. Every candidate but the pin is then put to the judge
-as the job a rule would later ask, and its verdict recorded, so choosing one
-approves under the verdict on record and a failed one is shown with its
-reason. A candidate that could not be a rule's (`ruleSentencesProblem`) is
-shown as failed without being judged. Edited text is judged again by the approve (`ruleFromApproval`), which
-refuses a rule that would not cover the request it is made from. Where no
-model can write, the narrowest of each is offered alone, with why.
+(`ProposeApprovalRules`, §§7–8). Three lists of uses, narrowest first. The
+narrowest needs no model: the uses as asked. The wider two are written by the
+project's judge discobox (`JudgeService.ProposeRule`); the credential, hosts
+and purpose are copied from the request by code. Every candidate is then put
+to the judge as the job a rule would later ask, and its verdict recorded, so
+choosing one approves under the verdict on record and a failed one is shown
+with its reason. A candidate that could not be a rule's (`ruleUsesProblem`) is
+shown as failed without being judged. Edited text is judged again by the
+approve (`ruleFromApproval`), which refuses a rule that would not cover the
+request it is made from. Where no model can write, the uses as asked are
+offered alone, with why. The answer also names the asking discobox's
+repository (`repository`, absent when it has none), which is what a client
+offers a rule for; nothing about it is written or judged.
 
 ## The agent credentials broker
 

@@ -1426,8 +1426,6 @@ func (s CredentialVerdictKind) Validate() error {
 		return nil
 	case "delegation":
 		return nil
-	case "scope":
-		return nil
 	case "rule":
 		return nil
 	default:
@@ -2556,93 +2554,12 @@ func (s JobStatus) Validate() error {
 	}
 }
 
-func (s *JudgeDiscobox) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.CreatedBy.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "createdBy",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.PromptWrittenBy.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "promptWrittenBy",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s JudgeDiscoboxCreatedBy) Validate() error {
-	switch s {
-	case "a person":
-		return nil
-	case "a discobox":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s JudgeDiscoboxPromptWrittenBy) Validate() error {
-	switch s {
-	case "a person":
-		return nil
-	case "a discobox":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s *JudgeJob) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
-	if err := func() error {
-		if value, ok := s.Discobox.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "discobox",
-			Error: err,
-		})
-	}
 	if err := func() error {
 		if err := s.Kind.Validate(); err != nil {
 			return err
@@ -2685,8 +2602,6 @@ func (s JudgeJobKind) Validate() error {
 	case "request":
 		return nil
 	case "delegation":
-		return nil
-	case "scope":
 		return nil
 	case "rule":
 		return nil
@@ -2735,17 +2650,6 @@ func (s *JudgeProposalJob) Validate() error {
 	}
 
 	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.Discobox.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "discobox",
-			Error: err,
-		})
-	}
 	if err := func() error {
 		if s.Uses == nil {
 			return errors.New("nil is invalid value")
@@ -2955,8 +2859,6 @@ func (s ListCredentialVerdictsKind) Validate() error {
 	case "request":
 		return nil
 	case "delegation":
-		return nil
-	case "scope":
 		return nil
 	case "rule":
 		return nil
@@ -5352,17 +5254,6 @@ func (s *RuleProposalsBody) Validate() error {
 			Error: err,
 		})
 	}
-	if err := func() error {
-		if s.Scopes == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "scopes",
-			Error: err,
-		})
-	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -5413,8 +5304,6 @@ func (s *RuleTest) Validate() error {
 func (s RuleTestStage) Validate() error {
 	switch s {
 	case "facts":
-		return nil
-	case "scope":
 		return nil
 	case "content":
 		return nil

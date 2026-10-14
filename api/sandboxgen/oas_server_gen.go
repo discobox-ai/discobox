@@ -181,11 +181,11 @@ type Handler interface {
 	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (*SandboxToolsResponse, error)
 	// ProposeSandboxRule implements propose-sandbox-rule operation.
 	//
-	// Has this discobox's harness write the wider scopes and uses a person may choose for an approval
-	// rule (ADR 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying
-	// judge:run may ask. The caller supplies the uses a request asked for and what was recorded about
-	// the asking discobox; the prompt, the schema, the model role and the tools restriction are the
-	// judge runtime's own, as for a judging job. What comes back authorizes nothing.
+	// Has this discobox's harness write the wider uses a person may choose for an approval rule (ADR
+	// 26-10-12-330). Only a discobox in judge mode answers, and only a token carrying judge:run may ask.
+	// The caller supplies the uses a request asked for; the prompt, the schema, the model role and the
+	// tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes
+	// nothing.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 	ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (*JudgeProposal, error)

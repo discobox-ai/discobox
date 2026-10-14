@@ -49,6 +49,12 @@ by what it is looking for and is idempotent:
    a codex harness's captured `config.toml`),
    moving a secret request's and grant's one `host` into its `hosts` list and
    dropping the column (`moveSecretHostsToLists`, ADR 26-10-02-393 §6),
+   deleting the approval rules that had a scope sentence or a pinned discobox,
+   one logged line each, and dropping those columns and the `scope` verdicts
+   (`retireApprovalRuleScopes`, ADR 26-10-12-330 §2: neither says a
+   repository, so such a rule would otherwise read as one for every discobox;
+   its grants stand, as when a person deletes a rule; all of it runs only
+   while one of the columns is still there),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows), the
    sandbox state split (ADR 0034), deleting the secret grants scoped to a

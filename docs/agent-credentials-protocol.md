@@ -176,7 +176,10 @@ Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls. A project may hold approval
 rules that answer a request without a person
 ([ADR 26-10-12-330](adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md));
-the protocol is the same either way. A rule only ever approves, so a request
+the protocol is the same either way. A rule is for the repositories it names —
+it answers a discobox whose primary source is one of them — or for every
+discobox in the project, and what it may approve is sentences the judge reads
+the request's `uses` against. A rule only ever approves, so a request
 none covers stays `pending` for a person, and a client cannot tell — and need
 not know — which of the two answered.
 
