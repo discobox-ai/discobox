@@ -89,9 +89,9 @@ func TestAWorkspaceThatCannotDeliverReturnsToTheList(t *testing.T) {
 	m.openOS = func(string) error { return nil }
 	d := newDriver(t, m)
 	d.start()
-	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
+	// The window opens on the first discobox once the listing is in.
+	d.wait("the list", func() bool { return m.focus == focusList })
 
-	d.key("tab")
 	d.key("enter")
 	d.wait("the report", func() bool { return strings.Contains(frameText(m), "/src/gone") })
 

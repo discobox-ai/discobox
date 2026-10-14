@@ -52,7 +52,7 @@ var welcomeSteps = []struct{ text, command string }{
 
 // welcomeKeys is the window's own three keys, after the three steps: what the
 // screen behind this one expects.
-const welcomeKeys = "Enter starts one, Tab moves to the ones you have, F1 lists every key."
+const welcomeKeys = "Enter on a discobox opens it, Esc goes to the prompt to start one, F1 lists every key."
 
 // welcomeFooter is the one instruction, and the only key the screen takes.
 const welcomeFooter = "Press Enter to continue"
