@@ -188,37 +188,12 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 	return appStore.UpsertProject(ctx, project)
 }
 
-// defaultProviderType is the provider a first start installs on this host
-// (ADR 26-09-23-473 §1). Each OS has its VM backend, and Linux's is libkrun in a release
-// build. A development build on Linux installs the host's Docker instead: the
-// `task dev` loop converges the images it builds onto that daemon, and a
-// contributor's machine should not need KVM to run the product. A configured
-// choice decides it on Linux, which is the only OS with two to choose from.
-func defaultProviderType(configured string, released bool) string {
-	switch runtime.GOOS {
-	case "linux":
-		if configured != "" {
-			return configured
-		}
-		if released {
-			return providerlibkrun.ProviderType
-		}
-		return providerdocker.ProviderType
-	case "darwin":
-		return "vz"
-	case "windows":
-		return "wslc"
-	default:
-		return "unsupported"
-	}
-}
-
 // chooseDefaultProvider decides the provider a first start installs, and checks
 // that it can run here before anything is installed. A provider that cannot is
 // never quietly replaced with a weaker one (ADR 26-09-23-473 §2): the start holds until
 // someone chooses, or refuses when nothing can ask.
 func (s *Service) chooseDefaultProvider(ctx context.Context) (string, error) {
-	providerType := defaultProviderType(s.options.DefaultProvider, version.Released())
+	providerType := providerregistry.DefaultProviderType(s.options.DefaultProvider, version.Released())
 	err := providerregistry.CheckDefaultProvider(ctx, providerType, s.options.providerFactoryOptions())
 	if err == nil {
 		return providerType, nil

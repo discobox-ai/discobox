@@ -109,7 +109,7 @@ type Options struct {
 	JudgeJevFallback bool
 	// DefaultProvider is the provider type a first start installs as the
 	// machine's default, when the server is configured with one (ADR 26-09-23-473 §4).
-	// Empty lets the build decide: see defaultProviderType.
+	// Empty lets the build decide: see providers.DefaultProviderType.
 	DefaultProvider string
 	// AwaitDefaultProviderChoice holds a first start whose default provider
 	// cannot run on this host until someone chooses one of alternatives, and

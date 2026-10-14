@@ -2,14 +2,13 @@ package server
 
 import (
 	"fmt"
-	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/providers"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // Images is every image a first run on this machine will want, for the CLI that
@@ -26,16 +25,11 @@ func Images() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
+	providerType := providers.DefaultProviderType(cfg.DefaultProvider, version.Released())
 	if cfg.Release != nil {
-		refs := cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH)
-		// A server told to install Docker boots no libkrun image, and staging
-		// one would download hundreds of megabytes for nothing.
-		if cfg.DefaultProvider == "docker" {
-			refs = slices.DeleteFunc(refs, func(ref string) bool { return ref == cfg.Release.Images.Libkrun })
-		}
-		return refs, nil
+		return providers.ReleaseImages(cfg.Release.Images, providerType), nil
 	}
-	images := append([]string{}, providers.DefaultBootImages(cfg.DefaultProvider)...)
+	images := append([]string{}, providers.DefaultBootImages(providerType)...)
 	images = append(images, dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{PoolImage: cfg.DockerPoolImage}), cfg.DefaultSandboxImage)
 	for _, definition := range harnessdefs.Seeds(cfg.HarnessImages, false) {
 		images = append(images, definition.Image)

@@ -704,7 +704,7 @@ seeded on an earlier boot.
 A first start whose **default provider cannot run** holds rather than
 installing another one (ADR 26-09-23-473 §2). The provider a first start installs is
 the OS's VM backend, and on Linux a release build's is libkrun
-(`service.defaultProviderType`; a development build installs Docker, and the
+(`providers.DefaultProviderType`; a development build installs Docker, and the
 `defaultProvider` setting decides either way). Before installing it,
 `providers.CheckDefaultProvider` asks whether it can run here — for libkrun:
 the platform, `/dev/kvm`, and the image's libkrun loaded in a launcher child.

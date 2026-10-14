@@ -18,7 +18,7 @@ extracted into, so neither has an install location. `libkrunPath` and
 and are otherwise unset.
 
 This is what makes libkrun Linux's default in a release build
-(`service.defaultProviderType`). A first start that would install it runs
+(`providers.DefaultProviderType`). A first start that would install it runs
 `CheckHost` — the platform, `/dev/kvm`, and the image's libkrun loaded in a
 launcher child — and a host that fails holds the start for a choice rather than
 installing Docker in its place (ADR 26-09-23-473 §2; see

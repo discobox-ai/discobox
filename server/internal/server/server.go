@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +31,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.
@@ -153,7 +153,8 @@ func Run(ctx context.Context) error {
 
 	if cfg.Release != nil {
 		startup.setPhase("downloading release images")
-		_, err := imagecache.Open(cfg.ImageCacheDir).Stage(ctx, cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH), imagecache.Options{
+		images := providers.ReleaseImages(cfg.Release.Images, providers.DefaultProviderType(cfg.DefaultProvider, version.Released()))
+		_, err := imagecache.Open(cfg.ImageCacheDir).Stage(ctx, images, imagecache.Options{
 			OnProgress: func(p imagecache.Progress) {
 				startup.setPhase(fmt.Sprintf("downloading release images (%d/%d): %s", p.Index, p.Images, p.Image))
 			},
