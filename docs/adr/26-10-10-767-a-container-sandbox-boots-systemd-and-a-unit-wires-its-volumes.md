@@ -5,7 +5,9 @@
   volumes, from a unit of the container's init; takes up
   [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md)'s
   deferred "containers on the same model", and replaces its §1 "a container
-  keeps its PID-1 `init` flow")
+  keeps its PID-1 `init` flow"; narrows [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §§2-3 and
+  [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md) §2, whose PID-1 flow
+  becomes that unit)
 - **Date**: 2026-10-10
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
@@ -42,6 +44,14 @@ that makes a container unlike every other sandbox:
   after the PID-1 flow has exec'd into it, so the secrets volume cannot be
   bound by the flow and is bound by the agent's server process instead
   (`boot.WireSecrets`).
+
+ADR 0126 §3 holds that "starting the init first and doing the PID-1 work
+afterwards is not equivalent" to wiring before it. That is true of work done
+*after* init in the sense of unordered against its units — a service the agent
+runs once systemd is up races everything that reads a wired path. It is not
+true of a unit every such reader is ordered after. What 0126 §3 requires — the
+config complete before the wiring runs, and the wiring done before anything
+uses it — is what §2 below keeps; only the process doing it changes.
 
 The agent is installed in an image at build time, on every backend; it is
 never placed into a running machine and asked to configure it. So everything
@@ -90,8 +100,8 @@ the config volume and does nothing, as it does today after `init`.
 The unit resolves the sandbox user from `sandbox.json`'s `user`, as the VM path
 does. A unit does not see the container's environment, and the bootstrap is the
 same manifest layer `DISCOBOX_USER_*` is rendered from (ADR 0012). The export
-container, which has no bootstrap bound where the agent reads it and no init,
-keeps reading the environment (ADR 0129).
+container keeps reading the environment, which the pool agent renders from
+that same bootstrap (ADR 0129); it has no unit, so nothing changes for it.
 
 ### 4. Units bound to the sandbox user are reloaded, on every backend
 
