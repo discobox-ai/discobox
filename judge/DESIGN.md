@@ -14,6 +14,7 @@ it.
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the uses a person starts an approval rule from — the same work on any target of its kind. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
+| `facts.go` | `Discobox`, `Facts` and `DelegationFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
 | `recognized.go` | `Recognition`, the names of the protocols, endpoints and parsers a pool recognizes, and `GuidanceFor`: the trusted words that go with each name. |
 | `jev/` | The same jobs put to TypeSafe's Jev rather than a model behind `discobox-prompt` (ADR 26-10-01-324): its HTTP client, the yes/no questions a job becomes, and the code that decides a `judge.Answer` from their probabilities. |
@@ -105,11 +106,23 @@ Discobox speaking. A name nobody wrote guidance for brings none, so a pool
 newer than its control plane is judged without guidance, not refused.
 Guidance explains; the system prompt says it never authorizes.
 
-**Facts are the trusted side's too** (ADR 26-10-01-324 §8). `Job.Facts` are
-sentences the control plane states about a job's targets and the discobox
-asking, at most `MaxFacts`. Like guidance, they explain and never authorize.
-`jev/` puts them in its questions' instructions. The judge discobox's job (the
-sandbox API's `JudgeJob`) does not carry them, and the server states none yet.
+**Facts are the trusted side's too** (ADR 26-10-01-324 §8,
+ADR 26-10-14-691). `Job.Facts` are sentences the control plane states, at
+most `MaxFacts`, so a purpose can say "this discobox's repository". `Facts`
+writes them about the discobox asking and `DelegationFacts` about both
+discoboxes of a delegation, since a use handed on means the receiving one: each
+from what was recorded when that discobox was created — its ID, its sources'
+remotes and the ref each was created from, and the discobox that created it —
+and from nothing the discobox can move afterwards: not its name (meta it
+writes), not where its work has got to. Every sentence names its discobox by
+ID. A remote or ref is repeated only as one printable word JSON does not
+escape, since whoever created the discobox named it and a fact is Discobox
+speaking. Other sources come last, so the cap drops only them, and a discobox
+whose other sources do not all fit is said to have more than are listed.
+"This discobox's repository" is its primary source. Like guidance, facts
+explain and never authorize. `System` says both, `jev/` says both in every
+question that reads facts and puts them in its instructions, and the judge
+discobox's job (the sandbox API's `JudgeJob`) carries them.
 
 **A wrapper prints the verdict and nothing else.** `Decode` takes one JSON
 object and no prose around it, which is a requirement on every harness image's

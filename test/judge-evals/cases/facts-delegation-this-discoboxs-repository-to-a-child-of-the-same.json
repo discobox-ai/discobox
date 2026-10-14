@@ -1,0 +1,22 @@
+{
+  "name": "facts-delegation-this-discoboxs-repository-to-a-child-of-the-same",
+  "why": "The same words handed on to a child created from the lead's own repository mean the same target.",
+  "expect": "allow",
+  "job": {
+    "kind": "delegation",
+    "purpose": "create issues in this discobox's repository, for the discoboxes I create",
+    "host": "api.github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "create issues in this discobox's repository"
+    ],
+    "facts": [
+      "The discobox asking, which would hand the credential on, is sbx_9w2k4m7qd1xc5n8t.",
+      "The primary source sbx_9w2k4m7qd1xc5n8t was created with is the Git repository github.com/acme/web, checked out from the branch main.",
+      "The discobox it would hand the credential to is sbx_3p8r1v6hz0kf2j4y.",
+      "The primary source sbx_3p8r1v6hz0kf2j4y was created with is the Git repository github.com/acme/web, checked out from the branch main.",
+      "sbx_3p8r1v6hz0kf2j4y was created by the discobox sbx_9w2k4m7qd1xc5n8t."
+    ]
+  }
+}

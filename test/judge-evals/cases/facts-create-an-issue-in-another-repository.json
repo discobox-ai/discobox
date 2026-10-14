@@ -1,0 +1,52 @@
+{
+  "name": "facts-create-an-issue-in-another-repository",
+  "why": "Control: the same use and the same issue, in a repository the facts do not name.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "purpose": "create issues for the primary source of this discobox",
+    "host": "api.github.com",
+    "credential": "com.github.api",
+    "round": 2,
+    "request": {
+      "method": "POST",
+      "url": "https://api.github.com/repos/acme/billing/issues",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "105"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 105,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "body",
+            "title"
+          ]
+        },
+        "content": "{\"title\":\"Flaky TestPoolDrain on arm64\",\"body\":\"Fails about one run in ten; log attached in CI run 812.\"}"
+      }
+    },
+    "facts": [
+      "The discobox asking is sbx_7k2m4q9wfc3d8n1p.",
+      "Its primary source, as it was created, is the Git repository github.com/acme/web, checked out from the branch main."
+    ]
+  }
+}
