@@ -142,6 +142,8 @@ func TestRecorderListsAuditRows(t *testing.T) {
 	}
 	recorder.RecordHTTP(HTTPEvent{Time: time.Now().UTC(), ClientID: "sandbox-1", Host: "api.example.com", Method: http.MethodGet})
 	recorder.RecordHTTP(HTTPEvent{Time: time.Now().UTC(), ClientID: "sandbox-2", Host: "other.example.com", Method: http.MethodGet})
+	recorder.RecordHTTP(HTTPEvent{Time: time.Now().UTC(), ClientID: "sandbox-3", Host: "api.example.com:443", Method: http.MethodConnect, Blocked: true})
+	recorder.RecordHTTP(HTTPEvent{Time: time.Now().UTC(), ClientID: "sandbox-3", Host: "api.example.com.evil:443", Method: http.MethodConnect, Blocked: true})
 	recorder.RecordSOCKS(SOCKSEvent{Time: time.Now().UTC(), ClientID: "sandbox-1", Destination: "api.example.com", Port: 443, Allowed: true})
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -162,6 +164,15 @@ func TestRecorderListsAuditRows(t *testing.T) {
 	}
 	if len(httpRows) != 1 || httpRows[0].ClientID != "sandbox-1" {
 		t.Fatalf("HTTP rows = %#v", httpRows)
+	}
+
+	// A host named without a port keeps the CONNECT the policy refused, which
+	// is recorded by its authority, and nothing that only begins with it.
+	for host, want := range map[string]int{"api.example.com": 1, "api.example.com:443": 1, "api.example.com:8443": 0} {
+		rows, err := reader.ListHTTP(context.Background(), QueryOptions{ClientID: "sandbox-3", Host: host, Limit: 10})
+		if err != nil || len(rows) != want {
+			t.Fatalf("host %q: %d rows (err %v), want %d", host, len(rows), err, want)
+		}
 	}
 
 	socksRows, err := reader.ListSOCKS(context.Background(), QueryOptions{Host: "api.example.com", Limit: 1})

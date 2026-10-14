@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -263,7 +264,10 @@ type Recorder struct {
 // QueryOptions filters audit reads. Limit defaults to 100 and is capped at 1000.
 type QueryOptions struct {
 	ClientID string
-	Host     string
+	// Host keeps one destination. For HTTP, a host named without a port also
+	// keeps that host at any port: a CONNECT the policy refused is recorded
+	// by its authority, host:443, and a reader asking about a host means it.
+	Host string
 	// UseID narrows to the requests that spent one approved credential use.
 	// It applies to HTTP reads only: a SOCKS connect tunnels bytes the proxy
 	// never inspects, so no sentinel is ever swapped in one.
@@ -830,7 +834,11 @@ func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
 	if opts.Host != "" {
-		query = query.Where("host = ?", opts.Host)
+		if _, _, err := net.SplitHostPort(opts.Host); err == nil {
+			query = query.Where("host = ?", opts.Host)
+		} else {
+			query = query.Where(`(host = ? OR host LIKE ? ESCAPE '\')`, opts.Host, escapeLike(opts.Host)+":%")
+		}
 	}
 	if opts.MinStatus > 0 {
 		query = query.Where("status >= ?", opts.MinStatus)
