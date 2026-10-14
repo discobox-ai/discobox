@@ -1,6 +1,6 @@
 # 26-10-12-330 — A credential request may be answered by a rule the judge reads
 
-- **Status**: Accepted (the rejected fact sheet superseded in part by [26-10-14-691](26-10-14-691-the-judge-is-told-who-is-asking-from-the-control-planes-record.md) §6, for a rule's uses only)
+- **Status**: Accepted (the rejected fact sheet superseded in part by [26-10-14-691](26-10-14-691-the-judge-is-told-who-is-asking-from-the-control-planes-record.md) §6, for a rule's uses only; §5's one noul per use asked for superseded in part by [26-10-14-223](26-10-14-223-a-use-that-drops-a-limit-of-its-line-is-wider.md))
 - **Date**: 2026-10-12
 - **Relates to**: [26-09-30-782](26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md),
   whose split — the server checks facts, the judge reads two authorization
