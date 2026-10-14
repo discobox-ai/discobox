@@ -16,7 +16,8 @@
 //   - "request" carries nested, free-text fields — a justification and a list
 //     of use descriptions — through a shell that treats quotes and apostrophes
 //     as syntax. That is the payload JSON is for, so --json reads it from stdin.
-//   - "list" takes nothing, where flags are already precise.
+//   - "list" takes nothing, and "audit" a few filters, where flags are
+//     already precise.
 //
 // There is no "get" that hands back a bare value: every use this CLI supports
 // goes through "run", so it is always the judge's argv, never a value with no
@@ -98,6 +99,8 @@ func Run(args []string) int {
 		return runTrust(ctx, rest)
 	case "trusts":
 		return runTrusts(ctx, rest)
+	case "audit":
+		return runAudit(ctx, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return exitOK
@@ -211,6 +214,15 @@ func usage(w io.Writer) {
 
   %[1]s trusts [--json]
       Show the hosts this sandbox trusts and what each was trusted for.
+
+  %[1]s audit [--json] [--host HOST] [--blocked|--allowed] [--since 10m] [--limit 20]
+      Show this sandbox's own outbound HTTP requests as the egress recorded
+      them, newest first: the status each was answered with and, for one the
+      egress refused, why. Read it when a request fails and the program that
+      made it does not say why — the reason says whether to ask for a
+      credential (request), ask for a host to be trusted (trust), or narrow
+      what you sent. Only this sandbox's requests are shown, for as long as
+      the egress keeps its record.
 
   %[1]s --debug COMMAND ...
       Before any command, print every call it makes to the credentials

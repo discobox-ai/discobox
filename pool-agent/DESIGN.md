@@ -30,7 +30,7 @@ from the in-sandbox `sandbox-agent` API.
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
 | `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), the origins host the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031) and a sandbox's read of its own egress audit (ADR 26-10-02-678), the origins host the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
@@ -1441,7 +1441,7 @@ flowchart LR
     relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17083"]
     broker -->|"scoped pool token"| cp["control plane"]
     broker -->|"mint + register"| live["activations"]
-    broker -->|"probe host, apply pins"| proxy["pool proxy"]
+    broker -->|"probe host, apply pins, read own audit"| proxy["pool proxy"]
     live --> swap["resolver: ephemeral → stable"]
     swap --> cp
 ```
@@ -1498,6 +1498,17 @@ proxy would recognize it.
   on every `trusts` list, and — before it answers — on a poll that reads
   `granted`, so the agent's next request finds the pin in force. A trust the
   proxy would refuse is reported and skipped, never allowed to fail the rest.
+- **The audit verb** (`audit.go`,
+  [ADR 26-10-02-678](../docs/adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md))
+  reads the caller's own HTTP exchanges from the proxy's trail in process
+  (`proxy.Server.ClientHTTPAudit`), narrowed to the certificate's sandbox — not
+  through the loopback control API, which is the agent process's and needs a
+  token. It returns a summary (status, block and reason, the uses carried),
+  never headers or bodies. The URL is recorded before any swap, so the
+  sandbox's live ephemeral sentinels are redacted from it and the reason
+  (ADR 0092: no value leaves except to the command it was minted for). Each
+  text field is cut to 2 KiB, and the page stops, newest first, before it
+  outgrows `agentcreds.MaxResponseBytes`.
 - The token in the resolve-context file carries `secret:resolve` and
   `credential:broker`. They stay separate scopes so splitting these roles across
   processes later is a change of who holds which token, not of what one means.

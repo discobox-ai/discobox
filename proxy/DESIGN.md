@@ -745,6 +745,14 @@ serves the control API on loopback only, trusting a key the pool agent holds,
 and the pool agent is its only reader
 ([`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md#reading-the-proxys-audit)).
 
+`ClientHTTPAudit` is the one read that is not the control API: the process
+that runs the proxy reads one client's HTTP rows in process, for a caller it
+has already identified — the pool's credentials endpoint, by the certificate a
+sandbox reached it over
+([ADR 26-10-02-678](../docs/adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md)).
+It refuses an empty client rather than reading the pool-wide trail, which stays
+behind the control API's token.
+
 SOCKS5 is a TCP tunnel (no-auth method). It is authenticated by the same mTLS
 listener and records connect attempts, destination, allow/deny, and client
 identity, but it does not inspect tunneled payloads.

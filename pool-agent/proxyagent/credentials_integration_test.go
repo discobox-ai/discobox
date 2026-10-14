@@ -251,7 +251,7 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 	live := newActivations()
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), live, nil)
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), live, nil, nil)
 	}()
 
 	client := agentcreds.NewClient("https://"+listener.Addr().String(), agentcreds.WithHTTPClient(mtlsClient(t, bundle, material)))
@@ -309,7 +309,7 @@ func TestCredentialsEndpointRefusesAnUnknownCertificate(t *testing.T) {
 	}
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), newActivations(), nil)
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), newActivations(), nil, nil)
 	}()
 
 	// A client that trusts the server but presents nothing of its own.

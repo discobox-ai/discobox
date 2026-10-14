@@ -53,6 +53,7 @@ shape, so they deliberately do not get the same interface.
 | `list` | nothing | — |
 | `trust` | a host argument and flags, or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. It carries free text for the reason `request` does. Nothing is run under it, so there is nothing to judge here; the proxy judges every request to the trusted host against its uses. |
 | `trusts` | nothing | — |
+| `audit` | filter flags (`--host`, `--blocked`/`--allowed`, `--since`, `--limit`) | The protocol's audit verb ([ADR 26-10-02-678](../docs/adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md)): the sandbox's own outbound requests as the egress recorded them, with the reason for each refusal. It is for the failure a program swallowed; the reason says whether to `request`, `trust`, or narrow the command. Filters are short and exact, so they are flags, not a JSON body. |
 | `wait` | `request` or `trust`, then an existing request ID; optional `--json` and `--timeout` flags first | Resume polling without creating another request. The explicit kind keeps service-owned ID formats out of the CLI. |
 
 There is no command that takes a use id and prints the bare value

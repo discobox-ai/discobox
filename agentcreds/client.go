@@ -108,6 +108,19 @@ func (c *Client) TrustRequestStatus(ctx context.Context, requestID string) (Trus
 	return out, err
 }
 
+// AuditHTTP reads the caller's own audited HTTP exchanges, newest first.
+func (c *Client) AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchange, error) {
+	path := PathAuditHTTP
+	if values := query.values(); len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	var out AuditHTTPResponse
+	if err := c.do(ctx, callTimeout, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Exchanges, nil
+}
+
 // WaitForTrustRequest polls a trust request until it settles or ctx is done,
 // for the reason WaitForRequest polls.
 func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, interval time.Duration) (TrustRequestStatus, error) {
@@ -185,7 +198,7 @@ func (c *Client) do(ctx context.Context, timeout time.Duration, method, path str
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, MaxBodyBytes)).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(out)
 }
 
 // statusError maps a response back onto the package's sentinel errors, so a

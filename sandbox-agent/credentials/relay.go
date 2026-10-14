@@ -202,6 +202,10 @@ func (r *Relay) TrustRequestStatus(ctx context.Context, requestID string) (agent
 	return r.current().TrustRequestStatus(ctx, requestID)
 }
 
+func (r *Relay) AuditHTTP(ctx context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
+	return r.current().AuditHTTP(ctx, query)
+}
+
 // Serve runs the loopback protocol endpoint until ctx is done.
 //
 // There is no token on this listener, for the same reason the hook socket has
