@@ -57,7 +57,7 @@ runner queue:
 
 ```bash
 go tool task ci:test    # every module's tests, the way CI runs them
-go tool task ci:check   # lint, shellcheck, and the windows/amd64 cross type-check
+go tool task ci:check   # lint, dead code, shellcheck, and the windows/amd64 cross type-check
 go tool task verify     # fmt, go.mod, generated files, Mermaid are current
 ```
 

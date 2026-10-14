@@ -147,6 +147,7 @@ vars:
   # driver; the default docker driver supports neither.
   BUILDX_BUILDER: discobox
   LINT_BIN: golangci-lint{{.EXE}}
+  DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
   default:
@@ -733,6 +734,15 @@ tasks:
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
       - cd access && ../build/tools/{{.LINT_BIN}} run
 
+  check:deadcode:
+    desc: Fail on functions no main or test program reaches on linux, darwin, or windows
+    # Built for the host, unlike `go tool deadcode`, which would build it for
+    # whichever GOOS scripts/deadcode.sh is analysing.
+    cmds:
+      - mkdir -p build/tools
+      - go build -o build/tools/{{.DEADCODE_BIN}} golang.org/x/tools/cmd/deadcode
+      - scripts/deadcode.sh ./build/tools/{{.DEADCODE_BIN}}
+
   check:windows:
     desc: Type-check the whole tree, tests included, for windows/amd64
     # wslc drives WSL by shelling out, so nothing in the tree is cgo or
@@ -992,9 +1002,10 @@ tasks:
       - docker buildx create --name {{.BUILDX_BUILDER}} --driver docker-container >/dev/null
 
   ci:check:
-    desc: "The static half of CI on Linux: every lint pass, shellcheck, and the windows/amd64 cross type-check"
+    desc: "The static half of CI on Linux: every lint pass, dead code, shellcheck, and the windows/amd64 cross type-check"
     cmds:
       - task: check
+      - task: check:deadcode
       - task: check:windows
       - task: check:dockerfiles
       - task: check:dockerfile-deps
