@@ -3,7 +3,10 @@
 - **Status**: Accepted (§1's cache backing amended by
   [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md): a
   cache path is backed by the sandbox user's partition of the pool cache,
-  `/.discobox/cache/.users/<uid>/<target>`, not by the tree root)
+  `/.discobox/cache/.users/<uid>/<target>`, not by the tree root;
+  "as PID 1 before systemd starts" superseded by
+  [26-10-10-767](26-10-10-767-a-container-sandbox-boots-systemd-and-a-unit-wires-its-volumes.md): a unit of the
+  container's init wires the volumes before `sysinit.target`)
 - **Date**: 2026-07-20
 
 ## Context
