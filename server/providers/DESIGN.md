@@ -950,6 +950,19 @@ operation does not wait for the host: it retries once, after any reconcile the
 pool's pending intent already owes, because proxied traffic must not hang on a
 missing host and a remove must not hold a reconcile slot for one.
 
+A create also outlasts a host that leaves while the create is in it
+(`createOnPool`). A replacing create removes the old container before it builds
+the new one, so an agent replaced under that request leaves the sandbox with no
+container and an error that says only that the connection closed. A create the
+agent was not there to answer (`poolAgentUnanswered`: refused, reset, or closed
+under the request — not a certificate or address failure, and not a client
+timeout, under which the agent may still be building) is sent again once the
+host is back. One deadline, `poolAgentWaitCeiling` from the first request lost,
+bounds the host wait and the start of every further attempt; attempts back off
+to `poolAgentResendMaxInterval`, since most drivers' acquires cannot see an
+agent that is not answering yet. Any answer the agent gives is still the
+create's one verdict.
+
 Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting

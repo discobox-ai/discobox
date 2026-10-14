@@ -13,9 +13,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/discobox-ai/discobox/auditid"
@@ -52,6 +56,12 @@ const (
 	// would renew it forever. Long enough for a container recreate that pulls a
 	// new pool-agent image.
 	defaultPoolAgentWaitCeiling = 5 * time.Minute
+	// poolAgentResendMaxInterval is the longest a create waits between two
+	// attempts on an agent that keeps leaving it unanswered. Each attempt is a
+	// driver acquire — a cloud API call, a forked command — so a host that
+	// takes minutes to come back is asked a couple of dozen times rather than
+	// every second.
+	poolAgentResendMaxInterval = 15 * time.Second
 )
 
 var (
@@ -406,13 +416,103 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 	return p.createOnPool(ctx, ref, nil, opts, pool)
 }
 
+// createOnPool sends the create to the pool's agent, and sends it again when
+// the agent went away before answering.
+//
+// awaitPoolAgentClient covers a host that is not there when the create
+// arrives. This covers the one that leaves while the create is in it: the
+// agent's container replaced under a request it had accepted. A create that
+// replaces a container removes the old one before it builds the new, so that
+// request can die with the sandbox holding no container at all, and its error
+// says only that the connection closed. Taken as the create's answer it
+// settled the sandbox as failed (ADR 0017 §4) with nothing left to rebuild it
+// but a repair — and it is the common case, not a rare one: an image rebuild
+// moves the harness digest, which re-pins every stopped sandbox (ADR 0082),
+// and replaces the pool agent in the same breath.
+//
+// The agent that comes back is simply asked again. A second create for a
+// sandbox finds whatever the first left, and one that arrives while the first
+// is still running waits behind it on the sandbox's lock. What it finds is
+// finished as the pool agent's CreateSandbox finishes any create, with one
+// gap: a replace cut after stopping a running container does not know it was
+// running, so it leaves the new one stopped, and the next action starts it
+// (ADR 26-10-12-711).
+//
+// One deadline bounds all of it, set when the first request is lost: the wait
+// for the host and every further attempt start before it or not at all, for
+// the reason awaitPoolAgentClient has a ceiling. An agent that keeps dropping
+// the create is a failure, and is recorded as one. A create the agent has
+// accepted is never cut short by it.
+//
+// Attempts back off, because only the local driver's acquire can see that an
+// agent is not answering yet; every other driver hands out a lease at once,
+// and the wait between attempts is then the only pacing there is.
 func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions, pool *model.Pool) (*sandbox.Sandbox, []byte, error) {
-	lease, err := p.awaitPoolAgentClient(ctx, pool)
-	if err != nil {
-		return nil, state, err
+	waitCtx := ctx
+	pause := poolCapacityPollInterval
+	var lost error
+	for {
+		// One lease per attempt: the call it is made for consumes it.
+		lease, err := p.awaitPoolAgentClient(waitCtx, pool)
+		if err != nil {
+			if lost != nil && ctx.Err() == nil && errors.Is(context.Cause(waitCtx), errPoolWaitExpired) {
+				// The host never came back in time; what the create was lost
+				// to is the account of it. Any other refusal — the pool
+				// deleted, its intent failed — speaks for itself.
+				return nil, state, poolAgentTransportError("create sandbox on", pool.ID, lost)
+			}
+			return nil, state, err
+		}
+		client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+		runtimeSandbox, created, err := client.Create(ctx, ref, state, opts)
+		if !poolAgentUnanswered(ctx, err) {
+			return runtimeSandbox, created, err
+		}
+		if lost == nil {
+			slog.WarnContext(ctx, "pool agent went away during a sandbox create; sending it again once it is back",
+				"sandboxId", ref.SandboxID, "poolId", pool.ID, "error", err)
+			// Set once, on the first loss, so the defer runs once.
+			var cancel context.CancelFunc
+			waitCtx, cancel = context.WithTimeoutCause(ctx, poolAgentWaitCeiling, errPoolWaitExpired)
+			defer cancel()
+		}
+		lost = err
+		select {
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return nil, state, ctx.Err()
+			}
+			return nil, state, poolAgentTransportError("create sandbox on", pool.ID, lost)
+		case <-time.After(pause):
+		}
+		pause = min(pause*2, poolAgentResendMaxInterval)
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
-	return client.Create(ctx, ref, state, opts)
+}
+
+// poolAgentUnanswered reports whether a call to the pool agent failed because
+// the agent was not there to answer it: the connection refused, reset, or
+// closed under the request. An answer of any status is never that.
+//
+// It is narrower than "http.Client returned no response". A certificate the
+// client will not trust, a URL that does not parse and a redirect it will not
+// follow also come back as a *url.Error, and no agent coming back fixes them;
+// those fail the create at once, saying what they are. A caller that stopped
+// waiting is not the agent leaving, and neither is a client-side timeout: the
+// agent may still be working on that create.
+func poolAgentUnanswered(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) || urlErr.Timeout() {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "read" || opErr.Op == "write")
 }
 
 // awaitPoolAgentClient reaches the agent of the pool a create was placed on,
