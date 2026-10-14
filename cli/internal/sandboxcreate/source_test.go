@@ -1227,3 +1227,49 @@ func TestGitHubRepositoryURL(t *testing.T) {
 		}
 	}
 }
+
+// What a source is on GitHub is asked without creating anything: a URL names
+// its repository, a clone names the one its checkout's remote does, and a
+// directory with no remote there names none.
+func TestSourceGitHubRepository(t *testing.T) {
+	ctx := context.Background()
+	const want = "https://github.com/example/project"
+	for _, remote := range []string{want, want + ".git", want + ".git@main", "git@github.com:example/project.git"} {
+		if got := SourceGitHubRepository(ctx, remote); got != want {
+			t.Fatalf("SourceGitHubRepository(%q) = %q, want %q", remote, got, want)
+		}
+	}
+
+	repoRoot := newRunSourceTestRepo(t)
+	if got := SourceGitHubRepository(ctx, repoRoot); got != "" {
+		t.Fatalf("a clone with no remote = %q, want none", got)
+	}
+	git := runSourceTestGit(t, repoRoot)
+	git("remote", "add", "origin", "git@github.com:example/project.git")
+	if got := SourceGitHubRepository(ctx, repoRoot); got != want {
+		t.Fatalf("a clone of it = %q, want %q", got, want)
+	}
+	git("remote", "set-url", "origin", "https://gitlab.com/example/project.git")
+	if got := SourceGitHubRepository(ctx, repoRoot); got != "" {
+		t.Fatalf("a clone of a repository somewhere else = %q, want none", got)
+	}
+}
+
+// Every spelling of one repository's remote has one key, whatever its case.
+func TestGitHubRepositoryKey(t *testing.T) {
+	for _, remote := range []string{
+		"https://github.com/discobox-ai/discobox",
+		"https://github.com/Discobox-AI/Discobox.git",
+		"git@github.com:discobox-ai/discobox.git",
+		"ssh://git@github.com/discobox-ai/DISCOBOX",
+	} {
+		if got := GitHubRepositoryKey(remote); got != "discobox-ai/discobox" {
+			t.Fatalf("GitHubRepositoryKey(%q) = %q, want discobox-ai/discobox", remote, got)
+		}
+	}
+	for _, remote := range []string{"", "/src/disco2", "https://gitlab.com/discobox-ai/discobox"} {
+		if got := GitHubRepositoryKey(remote); got != "" {
+			t.Fatalf("GitHubRepositoryKey(%q) = %q, want none", remote, got)
+		}
+	}
+}

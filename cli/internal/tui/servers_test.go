@@ -145,38 +145,32 @@ func TestUnreachableServersAreReportedWhenThatChanges(t *testing.T) {
 	}
 }
 
-// The list is one section per server, in the order the session names them,
-// with the primary's first (ADR 0116 §4).
-func TestTheListIsOneSectionPerServer(t *testing.T) {
+// Servers are not sections: every server's discoboxes are one list, newest
+// first as the listing gave them, and which server one is on is the header's
+// filter to answer. A server that did not answer is still said.
+func TestServersAreNotSections(t *testing.T) {
 	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_b1", Name: "three", Server: "beta", State: StateRunning},
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
-		{ID: "sbx_a2", Name: "two", Server: "alpha", State: StateRunning},
+		{ID: "sbx_b1", Name: "three", Server: "beta", State: StateRunning, OriginKey: testKey("/src/disco2")},
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
+		{ID: "sbx_a2", Name: "two", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
 	})
-	l.setUnreachable([]string{"gamma"})
-
+	l.folder = folder{key: testKey("/src/disco2"), label: "/src/disco2"}
+	if l.grouped() {
+		t.Fatal("one folder on two servers is drawn in sections")
+	}
 	out := l.view(newStyles(false), &zones{}, true)
-	var order []int
-	for _, text := range []string{"alpha", "one", "two", "beta", "three", "gamma"} {
-		i := strings.Index(out, text)
-		if i < 0 {
-			t.Fatalf("view is missing %q:\n%s", text, out)
-		}
-		order = append(order, i)
+	if strings.Contains(out, "server alpha") || strings.Contains(out, "server beta") {
+		t.Fatalf("the list names a server over its rows:\n%s", out)
 	}
-	for i := 1; i < len(order); i++ {
-		if order[i] < order[i-1] {
-			t.Fatalf("sections and rows are out of order:\n%s", out)
-		}
+	if rows := l.rows(); rows[0].Name != "three" || rows[1].Name != "one" || rows[2].Name != "two" {
+		t.Fatalf("rows = %+v, want the listing's own order", rows)
 	}
+
 	// A server that did not answer is a section with no rows, so the
 	// discoboxes missing from the listing say why.
-	if !strings.Contains(out, "not answering") {
+	l.setUnreachable([]string{"gamma"})
+	if out = l.view(newStyles(false), &zones{}, true); !strings.Contains(out, "server gamma") || !strings.Contains(out, "not answering") {
 		t.Fatalf("view does not say gamma is not answering:\n%s", out)
-	}
-	// The rows themselves are grouped, which is what the cursor moves through.
-	if rows := l.rows(); rows[0].Server != "alpha" || rows[1].Server != "alpha" || rows[2].Server != "beta" {
-		t.Fatalf("rows = %+v, want alpha's first", rows)
 	}
 }
 
@@ -198,9 +192,9 @@ func TestTheListHasNoSectionsWithOneServer(t *testing.T) {
 // A header is a label: the mouse walks past it onto the list, which is what
 // the row map the draw records says (zones.go).
 func TestSectionHeadersAreNotRows(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
-		{ID: "sbx_b1", Name: "two", Server: "beta", State: StateRunning},
+	l := listForTest(Session{}, []Sandbox{
+		{ID: "sbx_a1", Name: "one", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
+		{ID: "sbx_b1", Name: "two", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
 	})
 	l.view(newStyles(false), &zones{}, true)
 	want := []int{-1, 0, -1, 1}
@@ -213,10 +207,10 @@ func TestSectionHeadersAreNotRows(t *testing.T) {
 // headers: what a row costs is known where it is drawn.
 func TestTheCursorStaysOnScreenAmongSections(t *testing.T) {
 	boxes := make([]Sandbox, 0, 6)
-	for i, server := range []string{"alpha", "alpha", "alpha", "beta", "beta", "beta"} {
-		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box%d", i), Server: server, State: StateRunning})
+	for i, dir := range []string{"/src/a", "/src/a", "/src/a", "/src/b", "/src/b", "/src/b"} {
+		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box%d", i), OriginKey: testKey(dir), Source: dir, State: StateRunning})
 	}
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, boxes)
+	l := listForTest(Session{}, boxes)
 	l.height = 6
 	l.moveTo(len(boxes) - 1)
 
@@ -241,10 +235,6 @@ func listForTest(session Session, boxes []Sandbox) *sandboxList {
 func TestUnreachableSectionsDrawBeforeTheSessionArrives(t *testing.T) {
 	l := listForTest(Session{}, nil)
 	l.setUnreachable([]string{"beta"})
-	if l.byServer() {
-		t.Fatal("the list is grouped by server before the session says there is more than one server")
-	}
-
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "beta") || !strings.Contains(out, "not answering") {
 		t.Fatalf("view does not say beta is not answering:\n%s", out)
@@ -427,14 +417,13 @@ func TestTheWindowOpensOnEveryServer(t *testing.T) {
 	if strings.Contains(headerLine(m), "server ") {
 		t.Fatalf("the header names a server while it is showing every one: %q", headerLine(m))
 	}
-	// Every server on screen is more than one to tell apart, so the rows are
-	// sectioned under the server each is on.
-	if !m.list.grouped() {
-		t.Fatalf("the list is not sectioned by server:\n%s", out)
+	// Both servers' rows are one list: which server a row is on is the
+	// filter's to answer, not a band's.
+	if m.list.grouped() || strings.Contains(out, "server alpha") {
+		t.Fatalf("the list is sectioned by server:\n%s", out)
 	}
 
-	// And narrowing to one is a choice on the card: the section bands go,
-	// because the header now says the name a band over every row would repeat.
+	// And narrowing to one is a choice on the card.
 	filterTo(t, m, "alpha")
 	if m.list.server != "alpha" {
 		t.Fatalf("the list is showing %q, want alpha", m.list.server)
@@ -508,9 +497,6 @@ func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
 	filterTo(t, m, allServers)
 	if m.list.server != "" {
 		t.Fatalf("the list is showing %q, want every server", m.list.server)
-	}
-	if !m.list.grouped() {
-		t.Fatal("the list showing every server is not sectioned by server")
 	}
 	if got := m.opts.command("fix it"); strings.Contains(got, "--server") {
 		t.Fatalf("command = %q, want no --server, which is the primary", got)
@@ -901,9 +887,9 @@ func TestTheMachineLineIsOnlyOverThePrimary(t *testing.T) {
 	}
 }
 
-// On every server and every folder, a section is a folder and a server at
-// once, named `folder on server`, folders leading and each one's servers under it.
-func TestEveryServerAndFolderIsASectionEach(t *testing.T) {
+// On every server and every folder, a section is a folder, with every
+// server's discoboxes in it under one band that names no server.
+func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
 	session := Session{Servers: []string{"alpha", "beta"}, OriginKey: testKey("/src/disco2"), Directory: "/src/disco2"}
 	l := listForTest(session, []Sandbox{
 		{ID: "sbx_1", Name: "one", Server: "beta", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
@@ -913,8 +899,8 @@ func TestEveryServerAndFolderIsASectionEach(t *testing.T) {
 	})
 	out := l.view(newStyles(false), &zones{}, true)
 	// The window's own folder leads, the way the filter offers it, and each
-	// folder's servers follow in the session's order.
-	order := []string{"/src/disco2 on alpha", "three", "/src/disco2 on beta", "four", "/src/obot on alpha", "two", "/src/obot on beta", "one"}
+	// folder's rows keep the listing's order whichever server they are on.
+	order := []string{"/src/disco2", "three", "four", "/src/obot", "one", "two"}
 	last := -1
 	for _, text := range order {
 		i := strings.Index(out, text)
@@ -923,32 +909,29 @@ func TestEveryServerAndFolderIsASectionEach(t *testing.T) {
 		}
 		last = i
 	}
-	if want := []int{-1, 0, -1, 1, -1, 2, -1, 3}; !slices.Equal(l.drawn.rows, want) {
+	if strings.Contains(out, " on alpha") || strings.Contains(out, " on beta") {
+		t.Fatalf("a section names a server:\n%s", out)
+	}
+	if want := []int{-1, 0, 1, -1, 2, 3}; !slices.Equal(l.drawn.rows, want) {
 		t.Fatalf("drawn rows = %v, want %v", l.drawn.rows, want)
 	}
 
-	// Narrowed to one server, the server drops out of the bands and the
-	// folders are what is left to tell apart.
+	// Narrowed to one server, the folders are still what is told apart.
 	l.server = "alpha"
-	out = l.view(newStyles(false), &zones{}, true)
-	if strings.Contains(out, " on alpha") || !strings.Contains(out, "/src/obot") {
-		t.Fatalf("one server's list is not sectioned by folder alone:\n%s", out)
-	}
+	l.view(newStyles(false), &zones{}, true)
 	if want := []int{-1, 0, -1, 1}; !slices.Equal(l.drawn.rows, want) {
 		t.Fatalf("drawn rows = %v, want %v", l.drawn.rows, want)
 	}
 
-	// Narrowed to one folder as well, there is one section, and so none.
+	// Narrowed to one folder there is one section, and so none, on one server
+	// or on every one.
 	l.folder = session.folder()
 	if l.grouped() {
-		t.Fatal("the list is sectioned while it shows one server and one folder")
+		t.Fatal("the list is sectioned while it shows one folder")
 	}
-
-	// And one folder on every server is sectioned by server as it always was.
 	l.server = ""
-	out = l.view(newStyles(false), &zones{}, true)
-	if !strings.Contains(out, "server alpha") || !strings.Contains(out, "server beta") || strings.Contains(out, "/src/disco2 on") {
-		t.Fatalf("one folder's list is not sectioned by server alone:\n%s", out)
+	if out = l.view(newStyles(false), &zones{}, true); l.grouped() || strings.Contains(out, "server alpha") {
+		t.Fatalf("one folder's list is sectioned by server:\n%s", out)
 	}
 }
 
@@ -972,5 +955,136 @@ func TestUnofferedFoldersAreOneSectionEach(t *testing.T) {
 	}
 	if headers != 2 {
 		t.Fatalf("drawn rows = %v, want two sections of two", l.drawn.rows)
+	}
+}
+
+// Discoboxes whose source resolved to one GitHub repository — a clone in a
+// directory, the URL with and without `.git`, whatever case it was typed in
+// (the data source keys them alike), whichever server they are on — are one
+// section named for the repository,
+// and one choice on the filter's card. A source that resolved to none keeps
+// the folder it is filed under.
+func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
+	const repository, key = "https://github.com/discobox-ai/discobox", "discobox-ai/discobox"
+	session := Session{
+		Servers:   []string{"alpha", "beta"},
+		OriginKey: testKey("/src/disco2"), Directory: "/src/disco2", RepositoryKey: key,
+		HostID: testHostID, HostKey: testHostKey,
+	}
+	l := listForTest(session, []Sandbox{
+		{ID: "sbx_1", Name: "one", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot", OriginHostID: testHostID},
+		{ID: "sbx_2", Name: "two", Server: "beta", State: StateRunning, OriginKey: testKey(repository + ".git"), Source: repository + ".git", SourceRemote: true, Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
+		{ID: "sbx_3", Name: "three", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/other"), Source: "/src/other", OriginHostID: testHostID},
+		{ID: "sbx_4", Name: "four", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
+		{ID: "sbx_5", Name: "five", Server: "beta", State: StateRunning, OriginKey: testKey(repository), Source: repository, SourceRemote: true, Repository: "https://github.com/Discobox-AI/Discobox", RepositoryKey: key, OriginHostID: farHostID},
+		// Cut from the window's directory before its upstream was recorded:
+		// filed under the window's key, so in the window's folder.
+		{ID: "sbx_6", Name: "six", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", OriginHostID: testHostID},
+	})
+	out := l.view(newStyles(false), &zones{}, true)
+	// The repository is the window's own folder, so it leads, and its rows
+	// keep the order the listing gave them.
+	order := []string{"discobox-ai/discobox on github", "4 boxes", "two", "four", "five", "six", "/src/obot", "one", "/src/other", "three"}
+	last := -1
+	for _, text := range order {
+		i := strings.Index(out, text)
+		if i <= last {
+			t.Fatalf("%q is missing or out of order:\n%s", text, out)
+		}
+		last = i
+	}
+	if want := []int{-1, 0, 1, 2, 3, -1, 4, -1, 5}; !slices.Equal(l.drawn.rows, want) {
+		t.Fatalf("drawn rows = %v, want %v", l.drawn.rows, want)
+	}
+
+	// The filter offers the repository once, and none of the places its
+	// discoboxes are filed under.
+	var labels []string
+	for _, f := range l.folders() {
+		labels = append(labels, f.label)
+	}
+	if want := []string{"discobox-ai/discobox on github", "/src/obot", "/src/other"}; !slices.Equal(labels, want) {
+		t.Fatalf("folders = %q, want %q", labels, want)
+	}
+	// It cuts from the window's own source, and narrowed to it the list is
+	// every one of the repository's discoboxes.
+	own := l.folders()[0]
+	if own.source != "/src/disco2" || !own.local {
+		t.Fatalf("the repository's folder = %+v, want this machine's, cutting from /src/disco2", own)
+	}
+	l.folder = own
+	if got := len(l.rows()); got != 4 {
+		t.Fatalf("the repository's folder lists %d discoboxes, want 4", got)
+	}
+}
+
+// A repository the window is not running in cuts from what its newest
+// discobox was cut from, when that can be cut from here, and from the
+// repository itself when it was a directory on another machine.
+func TestARepositoryFolderCutsFromWhatCanBeCutFromHere(t *testing.T) {
+	const repository, key = "https://github.com/discobox-ai/discobox", "discobox-ai/discobox"
+	session := Session{OriginKey: testKey("/src/obot"), Directory: "/src/obot", HostID: testHostID, HostKey: testHostKey}
+	far := Sandbox{ID: "sbx_1", Name: "one", State: StateRunning, OriginKey: testKey("far"), Source: "/home/wilma/disco", Repository: repository, RepositoryKey: key, OriginHostID: farHostID}
+	near := Sandbox{ID: "sbx_2", Name: "two", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID}
+
+	if f := listForTest(session, []Sandbox{far}).folders()[1]; f.source != repository || f.local {
+		t.Fatalf("another machine's clone: folder = %+v, want one cutting from %s", f, repository)
+	}
+	if f := listForTest(session, []Sandbox{near, far}).folders()[1]; f.source != "/src/disco2" || !f.local {
+		t.Fatalf("this machine's clone: folder = %+v, want one cutting from /src/disco2", f)
+	}
+	// This machine's wherever in the listing its clone is.
+	if f := listForTest(session, []Sandbox{far, near}).folders()[1]; !f.local {
+		t.Fatalf("folder = %+v, want this machine's", f)
+	}
+}
+
+// A view saved while the window's folder was its origin key opens on the
+// repository that folder now is, rather than on a folder the card no longer
+// offers.
+func TestAViewSavedOnTheWindowsOriginKeyOpensOnItsRepository(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	if ds.session.OriginKey == "" {
+		t.Fatal("the test session has no origin key to have saved a view on")
+	}
+	ds.session.RepositoryKey = "discobox-ai/discobox"
+	ds.session.View = ListView{FolderKey: ds.session.OriginKey, FolderLabel: "/src/disco2", FolderSource: "/src/disco2", FolderLocal: true}
+	m := newTestModel(t, ds)
+
+	if got := m.list.folder; got.key != "discobox-ai/discobox" || got.label != "discobox-ai/discobox on github" {
+		t.Fatalf("the window opened on %+v, want the repository's folder", got)
+	}
+	if !strings.Contains(headerLine(m), "discobox-ai/discobox on github") {
+		t.Fatalf("the header does not name the repository: %q", headerLine(m))
+	}
+	// Its own discoboxes, filed under the key and resolved to nothing, are
+	// still in it.
+	if len(m.list.rows()) == 0 {
+		t.Fatal("the window's folder lists none of the discoboxes filed under its key")
+	}
+}
+
+// The window's folder is the repository its checkout resolves to now, and a
+// discobox is in the repository its source resolved to when it was cut. In a
+// fork, a discobox cut from this directory while its branch tracked the
+// upstream is in the upstream's folder, not the window's: it is filed under
+// the window's key, and its work goes back to the other repository.
+func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testing.T) {
+	session := Session{OriginKey: testKey("/src/disco2"), Directory: "/src/disco2", RepositoryKey: "me/discobox"}
+	l := listForTest(session, []Sandbox{
+		{ID: "sbx_1", Name: "fork", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/me/discobox", RepositoryKey: "me/discobox"},
+		{ID: "sbx_2", Name: "upstream", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/discobox-ai/discobox", RepositoryKey: "discobox-ai/discobox"},
+	})
+	var labels []string
+	for _, f := range l.folders() {
+		labels = append(labels, f.label)
+	}
+	if want := []string{"me/discobox on github", "discobox-ai/discobox on github"}; !slices.Equal(labels, want) {
+		t.Fatalf("folders = %q, want %q", labels, want)
+	}
+	l.folder = session.folder()
+	if rows := l.rows(); len(rows) != 1 || rows[0].Name != "fork" {
+		t.Fatalf("the window's folder lists %+v, want the fork's discobox alone", rows)
 	}
 }

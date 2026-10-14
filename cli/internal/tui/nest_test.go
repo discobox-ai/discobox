@@ -82,7 +82,7 @@ func TestADiscoboxFiledApartFromItsCreatorIsAlsoInItsOwnFolder(t *testing.T) {
 	// A nested row is in the section of the row its tree hangs from.
 	sections := map[string]int{}
 	for _, s := range l.rows() {
-		sections[l.sectionOf(s).folder]++
+		sections[l.sectionOf(s)]++
 	}
 	if sections["here:/src/app"] != 5 || sections["box:sbx_lead:/workspace/source"] != 3 || sections["box:sbx_old:/workspace/source"] != 1 {
 		t.Fatalf("sections = %v", sections)
@@ -220,7 +220,8 @@ func TestNestingStaysInsideOneServer(t *testing.T) {
 		{ID: "sbx_child", Name: "child", Server: "beta", CreatedBy: "sbx_lead"},
 		{ID: "sbx_lead", Name: "lead", Server: "alpha"},
 	})
-	if got := rowNames(l); strings.Join(got, "|") != "lead|child" {
+	// Neither is nested, so both keep the listing's order.
+	if got := rowNames(l); strings.Join(got, "|") != "child|lead" {
 		t.Fatalf("rows = %q", got)
 	}
 }

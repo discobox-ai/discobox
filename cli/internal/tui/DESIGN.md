@@ -850,8 +850,9 @@ at them every time a poll runs long.
 narrowed to one server (`server.go`, `sandboxList.server`), one folder
 (`folder.go`) and any number of tags (`tags.go`, `sandboxList.tags`), and the header
 carries all three as one line naming only what is narrowed — `server beta ·
-~/src/foo @ main · #wip #ticket=ENG-12 ▾`, or `all discoboxes ▾` — since what is left open the
-list's own sections already name. Enter or a click opens one card
+~/src/foo @ main · #wip #ticket=ENG-12 ▾`, or `all discoboxes ▾` (a folder
+that is a GitHub repository reads `owner/repo on github`, with no directory or
+branch: the Source row in the run options says what is cut). Enter or a click opens one card
 (`filterPicker`, `dlgFilter`) with a group per filter: the servers when
 `Session.Servers` has more than one (`all servers` first, the primary next),
 the folders, and the tags once any discobox inside the other two carries one
@@ -919,23 +920,48 @@ discoboxes (`sandboxList.onPrimary`) — unnamed above a list narrowed to anothe
 server, it reads as that server's capacity, which is the number checked before
 creating there.
 
-**The list is sectioned by every filter the header leaves open**
-(`sandboxList.grouped`, `sectionKey`): by server while it shows every server
-and there is more than one (`byServer`, from `Session.Servers`, the primary
-first), and by folder on `all folders` (`byFolder`, in the card's order,
-the window's own first), since the rows carry no folder column. On both, a
-section is a folder and a server at once; a filter narrowed to one value drops
-out of the sections, because the header has said the name, so one server and
-one folder is no sections at all. Rows are ordered by section — folders leading,
-each one's servers under it — and newest-first within one, a created discobox
-under its creator (see "A discobox a discobox created is drawn under it"), and each section is
-introduced by the band the list's own title is drawn as (`renderTitle`, in the
-dim of the two): `server <name>`, the folder's label, or `<folder> on <server>`,
-with that section's count; or `server <name>` and `not answering` for a
-server that did not answer, whose section has no rows under it — rows that are
-missing say why rather than vanishing. A band rather than a line of text
-because a bare name above a list of discoboxes is one more name among them,
-and reads as a row whose glyph went missing.
+**The list is sectioned by folder, and by nothing else**
+([ADR 26-10-14-585](../../../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
+`sandboxList.grouped`, `sectionOf`): on `all folders`, in the card's order,
+the window's own first, since the rows carry no folder column. A list narrowed
+to one folder has no sections, because the header has said the name. Rows are
+newest-first within a section, a created discobox under its creator (see "A
+discobox a discobox created is drawn under it"), and each is introduced by the band the list's
+own title is drawn as (`renderTitle`, in the dim of the two) — the folder's
+label with that section's count. A band rather than a line of text because a
+bare name above a list of discoboxes is one more name among them, and reads as
+a row whose glyph went missing.
+
+**Servers are not sections.** Which server a discobox is on is answered by
+narrowing the header to that server; a band per server split one repository's
+discoboxes across as many sections as there were servers, which is the
+grouping nobody reads the list for. The one thing still said by server is a
+server whose rows are *missing*: `server <name>` and `not answering` (or
+`still listing`), a band with no rows under it — rows that are missing say why
+rather than vanishing.
+
+**A GitHub repository is one folder** ([ADR 26-10-14-585](../../../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
+`Sandbox.folder`, `Sandbox.RepositoryKey`). A clone in a directory, the
+`owner/repo` shorthand and every spelling of the URL are filed under as many
+origin keys and are one repository, so a discobox whose source resolved to one
+when it was cut (`Sandbox.Repository`: the URL a remote source clones, or the
+remote a local checkout recorded as its upstream) is in the repository's
+folder, named `owner/repo on github`. The key is the data source's
+(`sandboxcreate.GitHubRepositoryKey`, `owner/repo` lower-cased as GitHub
+compares it); this package compares it and derives none. That folder is what
+the filter's card offers and what a section is, on every machine and server at
+once. A source that resolved to none is in the folder it is filed under, as
+before. The window's own folder is the repository its checkout resolves to
+*now* (`Session.RepositoryKey`, as a create from it would record it), and also
+keeps the discoboxes filed under the window's key that resolved to nothing. A
+discobox is in the repository it resolved to when it was cut, so in a fork one
+cut while the branch tracked the upstream is in the upstream's folder, not the
+window's. `discobox ls` and `apply` still go by the origin key; the header is a
+filter, and a filter that merges clones sends nothing anywhere. A repository's folder cuts from the window's own source
+when it is the window's, and otherwise from what its newest discobox was cut
+from when that can be cut from here — a URL, or a directory of this machine's
+— and from the repository itself when not.
+
 A header is a label and not a row: the cursor never lands on one, and the
 mouse walks past it onto the block (`drawn.rows`, marked from the walk that
 draws). Scrolling counts headers as the lines they are, which is why the window
@@ -2492,14 +2518,16 @@ dot sits in the cell its figure would have — with two layouts, resizing the
 cells puts the dots under the wrong columns.
 
 **The folder is a header control, not a column.** The label in the header is
-which folder's sandboxes are listed (`folder.go`). A folder is an origin key
+which folder's sandboxes are listed (`folder.go`). A folder is a GitHub
+repository when the source resolved to one (above). Otherwise it is an origin key
 ([ADR 0111](../../../docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)):
 a machine, and where the discoboxes in it had their source from — a directory or
-a repository URL. It is matched by the key the server stored on each row
+a repository URL — matched by the key the server stored on each row
 (`Sandbox.OriginKey`) and named by that source, so a URL is a folder the way a
 directory is. The header opens on the folder the directory's saved view names,
 or on `allFolders` (see "The header's filters are kept per folder"); the window's
-own folder (`Session.OriginKey`, what `discobox ls` lists here) leads the
+own folder (`Session.RepositoryKey` when its checkout is on GitHub, otherwise
+`Session.OriginKey`, what `discobox ls` lists here) leads the
 filter card's folders, with every folder something is filed in beside it. A folder of this machine's also holds its
 discoboxes with no source, which are filed under the machine alone
 (`Session.HostKey`) — `ls` sends both keys the same way — so that key is never
@@ -2516,8 +2544,8 @@ creator, behind a dim branch (`├ `, `└ `) that sits after the state glyph �
 the glyphs stay one column — and comes out of the name's width. Tops, and the
 rows under one creator, keep the listing's order.
 
-Nesting does not re-file anything. A discobox's folder is still the key the
-server stored (below), and a created discobox's is often not its creator's:
+Nesting does not re-file anything. A discobox's folder is still its own — the
+key the server stored, or its GitHub repository (below) — and a created discobox's is often not its creator's:
 one cut from a checkout inside the creator records the creator as the machine
 and a path inside it, and nothing makes a creator and what it creates share a
 source. So a discobox is drawn under its creator wherever the creator is
@@ -2597,19 +2625,24 @@ the one entry that is not a source but the input field for a path, URL or
 `DIR@REF` the listing has never seen.
 
 Sources and folders are not the same list. A folder is where a discobox is
-*filed* — a machine and a source — so one source cut on two machines is two
-folders; a source is what can be *cut from here*. So the row carries
+*listed* — a GitHub repository, or a machine and a source — so a repository is
+one folder holding many sources, and any other source cut on two machines is
+two folders; a source is what can be *cut from here*. So the row carries
 `Source`/`SourceRemote`/`SourceOriginKey` beside `OriginKey` rather than one
 being worked out from the other, and the listing says which of the two a value
 is rather than this package parsing it. What counts as a remote belongs to the
-creation path, and so does a key: this package derives none.
+creation path, and so does a key — an origin key or a repository's: this
+package derives none. A repository's folder holds several sources, and the
+Source row still offers each: a clone and the URL are one place to list and
+two things to cut from.
 
 The link runs both ways: the header moves the source (`setFolder`), and choosing
 a source moves the header to the folder that source's discoboxes are filed under
 (`followSource`, `Model.followSource`). A directory or a URL files under its own
 folder, whose key the listing reported (`Source.OriginKey`) or the check of a
 typed source did (`ResolveSource` — a typed directory files under its
-repository root, which is not what was typed). `no source` and the window's own
+repository root, which is not what was typed), or under its GitHub repository's
+when either reported one (`Source.RepositoryKey`). `no source` and the window's own
 source file under the window's folder, which holds this machine's sourceless
 discoboxes too. A source nothing has reported on is not followed.
 

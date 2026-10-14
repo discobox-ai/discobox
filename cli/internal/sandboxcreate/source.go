@@ -1066,6 +1066,33 @@ func GitHubRepositoryURL(remote string) string {
 	return "https://github.com/" + owner + "/" + repo
 }
 
+// GitHubRepositoryKey is what tells one GitHub repository from another, for a
+// remote GitHubRepositoryURL recognizes: its `owner/repo`, lower-cased because
+// GitHub does not tell names apart by case. Empty for anything else. Every
+// spelling of one repository's remote — https or ssh, with or without `.git`,
+// in any case — has the one key.
+func GitHubRepositoryKey(remote string) string {
+	return strings.ToLower(strings.TrimPrefix(GitHubRepositoryURL(remote), "https://github.com/"))
+}
+
+// SourceGitHubRepository is the GitHub repository a discobox cut from
+// sourceArg now would belong to, as GitHubRepositoryURL spells it: the URL a
+// remote source names, or the remote a local one's checkout would record as
+// its upstream (localRemote). Empty when that is not on GitHub, and for a
+// directory that cannot be resolved — it answers what something is, and a
+// source nothing can be cut from is refused where it is cut.
+func SourceGitHubRepository(ctx context.Context, sourceArg string) string {
+	source, ref, _ := splitRunSourceRef(sourceArg)
+	if IsRemoteGitSource(strings.TrimSpace(source)) {
+		return GitHubRepositoryURL(source)
+	}
+	root, err := SourceRoot(ctx, sourceArg)
+	if err != nil {
+		return ""
+	}
+	return GitHubRepositoryURL(localRemoteURL(ctx, root, localRunCheckout(ctx, root, ref, "")))
+}
+
 // githubOwner reports whether name can be a GitHub user or organization:
 // letters, digits and single hyphens, never at either end.
 func githubOwner(name string) bool {

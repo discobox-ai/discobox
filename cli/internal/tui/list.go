@@ -160,35 +160,19 @@ func (l *sandboxList) rows() []Sandbox {
 	out := l.nest()
 	// Grouped by section, and newest-first inside one as everywhere else: the
 	// sort is stable, so the order the listing arrived in is what orders a
-	// section (ADR 0116 §4). Folders lead and servers follow inside each, so
-	// one folder's servers sit together under it. A nested row is in the
-	// section of the row its tree hangs from (top), so the sort moves a tree
-	// whole.
+	// section. A nested row is in the section of the row its tree hangs
+	// from (top), so the sort moves a tree whole.
 	if l.grouped() {
 		folders := l.folderRanks()
-		rank := func(s Sandbox) (server, folder int, key string) {
-			if l.byServer() {
-				server = l.section(s.Server)
-			}
-			if l.byFolder() {
-				key = l.top(s).OriginKey
-				folder = folderRank(folders, key)
-			}
-			return server, folder, key
-		}
 		sort.SliceStable(out, func(i, j int) bool {
-			si, fi, ki := rank(out[i])
-			sj, fj, kj := rank(out[j])
-			if fi != fj {
+			ki, kj := l.sectionOf(out[i]), l.sectionOf(out[j])
+			if fi, fj := folderRank(folders, ki), folderRank(folders, kj); fi != fj {
 				return fi < fj
 			}
 			// Folders the filter does not offer share a rank, and each is
 			// still a section of its own: kept apart by key, or their rows
 			// interleave and every change of key draws another header.
-			if ki != kj {
-				return ki < kj
-			}
-			return si < sj
+			return ki < kj
 		})
 	}
 	return out
@@ -302,7 +286,7 @@ func (l *sandboxList) nest() []Sandbox {
 			if at = nodes[at].parent; at < 0 || at == i {
 				return false
 			}
-			if a := l.all[at]; l.folder.holds(a, l.session) && (!l.byFolder() || a.OriginKey == l.all[i].OriginKey) {
+			if a := l.all[at]; l.folder.holds(a, l.session) && (!l.grouped() || a.folderKey(l.session) == l.all[i].folderKey(l.session)) {
 				return true
 			}
 		}
@@ -378,46 +362,23 @@ func (l *sandboxList) setWaiting(servers []string) {
 	l.waiting = append(l.waiting[:0], servers...)
 }
 
-// grouped reports whether the list is drawn in sections: one per server, one
-// per folder, or one per server and folder when it is showing every one of
-// both. A dimension the header narrows to one value is not a dimension of the
-// sections — a band naming it over every row says what the header already
-// says — so a list filtered to one server and one folder has none.
+// grouped reports whether the list is drawn in sections, one per folder,
+// which it is on "all folders": the rows carry no folder column, since the
+// header stands in for one, so a list of every folder has to say which rows
+// came from where. A list narrowed to one folder has none — a band naming it
+// over every row says what the header already says.
+//
+// Servers are not sections. Which server a discobox is on is answered by
+// narrowing the header to that server, and a section per server split one
+// repository's discoboxes across as many bands as there were servers.
 func (l *sandboxList) grouped() bool {
-	return l.byServer() || l.byFolder()
-}
-
-// byServer reports whether the sections tell servers apart, which they do once
-// there is more than one server on screen: because there is one, or because
-// the header is filtered to one, there is nothing to tell apart.
-func (l *sandboxList) byServer() bool {
-	return l.server == "" && len(l.session.Servers) > 1
-}
-
-// byFolder reports whether the sections tell folders apart, which they do on
-// "all folders": the rows carry no folder column, since the header stands in
-// for one, so a list of every folder has to say which rows came from where.
-func (l *sandboxList) byFolder() bool {
 	return l.folder.key == ""
 }
 
-// sectionKey is what decides a row's section: the dimensions the list is
-// sectioned by, and nothing of the ones it is not.
-type sectionKey struct {
-	server, folder string
-}
-
-// sectionOf is the section a row is drawn under: its own, or for a nested row
-// the one of the row its tree hangs from.
-func (l *sandboxList) sectionOf(s Sandbox) sectionKey {
-	var k sectionKey
-	if l.byServer() {
-		k.server = s.Server
-	}
-	if l.byFolder() {
-		k.folder = l.top(s).OriginKey
-	}
-	return k
+// sectionOf is the section a row is drawn under: the folder it is in, or for
+// a nested row the folder of the row its tree hangs from.
+func (l *sandboxList) sectionOf(s Sandbox) string {
+	return l.top(s).folderKey(l.session)
 }
 
 // folderRanks is where each folder's rows go: the order the header's filter
@@ -472,44 +433,38 @@ func onlyServer(names []string, server string) []string {
 }
 
 // sectioned reports whether the body carries any line that is not a row: the
-// server headers when it is grouped, and the servers that did not answer
-// whenever there are any. The listing and the session arrive on their own
-// schedules, so a server can be missing from a list the window does not yet
-// know is grouped, and it is still missing.
+// folder headers when it is grouped, and the servers that did not answer
+// whenever there are any.
 func (l *sandboxList) sectioned() bool {
 	return l.grouped() || len(l.missing()) > 0 || len(l.waitingOn()) > 0
 }
 
-// section is where a server's rows go: the order the session lists its
-// servers, the primary first. A row whose server is not among them sorts last,
-// which is what a listing that arrived before the session does.
-func (l *sandboxList) section(server string) int {
-	for i, name := range l.session.Servers {
-		if name == server {
-			return i
-		}
-	}
-	return len(l.session.Servers)
-}
-
 // folders are what the header can filter to (ADR 0111): the window's own
 // folder first, whether or not anything was cut from it yet, then every other
-// folder the project's discoboxes are filed in, newest first, then the one the
-// header is on if nothing is filed in it yet. The order does not follow the
+// folder the project's discoboxes are in, newest first, then the one the
+// header is on if nothing is in it yet. The order does not follow the
 // selection, so the filter card's folders and the list's folder sections
 // (folderRanks) keep their places whichever folder is chosen. This machine's own key is never one of them: its discoboxes with no
 // source are in every folder of this machine's already.
 //
+// A GitHub repository is one folder however many places its discoboxes are
+// filed under (Sandbox.folder), so the card offers the repository once rather
+// than each directory and spelling of the URL it was cut from. It is this
+// machine's when any of those places is.
+//
 // It is derived from the listing rather than asked for separately: the folders
 // worth offering are exactly the ones something is sitting in.
 func (l *sandboxList) folders() []folder {
-	seen := map[string]bool{"": true, l.session.HostKey: true}
+	at := map[string]int{"": -1, l.session.HostKey: -1}
 	out := []folder{}
 	add := func(f folder) {
-		if seen[f.key] {
+		if i, ok := at[f.key]; ok {
+			if i >= 0 {
+				out[i].local = out[i].local || f.local
+			}
 			return
 		}
-		seen[f.key] = true
+		at[f.key] = len(out)
 		out = append(out, f)
 	}
 	add(l.session.folder())
@@ -543,7 +498,7 @@ func (l *sandboxList) sources() []Source {
 			continue
 		}
 		seen[s.Source] = true
-		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey})
+		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey, RepositoryKey: s.RepositoryKey})
 	}
 	return out
 }
@@ -851,18 +806,18 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	}
 	// How many each section has, for its band to say, counted once rather
 	// than per header: a section scrolled into twice is one section.
-	sectionCounts := map[sectionKey]int{}
+	sectionCounts := map[string]int{}
 	if l.grouped() {
 		for _, s := range rows {
 			sectionCounts[l.sectionOf(s)]++
 		}
 	}
-	var drawnSection *sectionKey
+	var drawnSection *string
 	var rowLinks []rowLink
 	for i := l.offset; i < len(rows) && len(body) < rowBudget; i++ {
 		// A header in front of each section's rows, and in front of the first
 		// row drawn whichever section it is in: a window scrolled into the
-		// middle of one still says which server and folder is on screen.
+		// middle of one still says which folder is on screen.
 		if key := l.sectionOf(rows[i]); l.grouped() && (drawnSection == nil || key != *drawnSection) {
 			if len(body)+1 >= rowBudget {
 				break
@@ -944,28 +899,10 @@ func (l *sandboxList) sectionHeader(st *styles, title, right string) string {
 	return renderTitle(st.titleDim, title, right, l.width)
 }
 
-// sectionTitle names the section a row is drawn under, in the dimensions the
-// list is sectioned by: `server alpha`, the folder alone, or both as
-// `<folder> on alpha`.
+// sectionTitle names the section a row is drawn under: its folder — for a
+// nested row, its tree's — the way the header's filter names it.
 func (l *sandboxList) sectionTitle(s Sandbox) string {
-	switch {
-	case l.byServer() && l.byFolder():
-		return l.folderOf(s).label + " on " + sectionServer(s.Server)
-	case l.byServer():
-		return serverTitle(s.Server)
-	default:
-		return l.folderOf(s).label
-	}
-}
-
-// folderOf is the folder a row is filed in, named the way the header's
-// filter names it: the window's own folder by its source and branch.
-func (l *sandboxList) folderOf(s Sandbox) folder {
-	s = l.top(s)
-	if s.OriginKey != "" && s.OriginKey == l.session.OriginKey {
-		return l.session.folder()
-	}
-	return s.folder(l.session)
+	return l.top(s).folder(l.session).label
 }
 
 // serverTitle is a server as a band names it. It says "server" because a bare

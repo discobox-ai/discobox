@@ -398,6 +398,9 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	if session.OriginKey, session.HostKey, err = sandboxcreate.OriginKeys(ctx, d.app.source); err != nil {
 		return session, err
 	}
+	// The GitHub repository the window's own source belongs to, which is the
+	// folder its discoboxes are in whichever clone or URL they were cut from.
+	session.RepositoryKey = sandboxcreate.GitHubRepositoryKey(sandboxcreate.SourceGitHubRepository(ctx, d.app.source))
 	// A window opened on a repository URL cuts from that URL by default, and
 	// its header names it: the directory it happens to run in is only where
 	// its draft is kept.
@@ -906,6 +909,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		} else {
 			row.Repository = sandboxcreate.GitHubRepositoryURL(source.UpstreamUrl.Or(""))
 		}
+		row.RepositoryKey = sandboxcreate.GitHubRepositoryKey(row.Repository)
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
 			row.Commit = shortCommit(strings.TrimSpace(checkout.Commit.Or("")))
@@ -1037,7 +1041,12 @@ func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.S
 	if err != nil {
 		return tui.Source{}, err
 	}
-	return tui.Source{Value: value, Remote: sandboxcreate.IsRemoteGitSource(sourceDirectory(value)), OriginKey: key}, nil
+	return tui.Source{
+		Value:         value,
+		Remote:        sandboxcreate.IsRemoteGitSource(sourceDirectory(value)),
+		OriginKey:     key,
+		RepositoryKey: sandboxcreate.GitHubRepositoryKey(sandboxcreate.SourceGitHubRepository(ctx, value)),
+	}, nil
 }
 
 // resolveSourceValue is ResolveSource's check of the value itself: ~ expanded,

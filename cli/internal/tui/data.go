@@ -211,9 +211,9 @@ type Sandbox struct {
 	State State
 
 	// Server is the server the discobox is on, by the name the window lists it
-	// under (ADR 0116 §4): which section the row is drawn in, once there is
-	// more than one server. Empty when there is only one, where naming it says
-	// nothing.
+	// under (ADR 0116 §4): what the header's server filter matches, and where
+	// every action on the row is routed. Empty when there is only one, where
+	// naming it says nothing.
 	Server string
 
 	// PendingRequests is how many credential requests on this discobox are
@@ -319,6 +319,11 @@ type Sandbox struct {
 	// on GitHub or there is no source. It is what an `issue=` or `pr=` tag is
 	// numbered in, which is what makes such a tag a link (Sandbox.tagURL).
 	Repository string
+	// RepositoryKey tells Repository apart from every other GitHub
+	// repository, as `owner/repo` lower-cased: the same for a clone, the
+	// shorthand and every spelling of the URL (sandboxcreate.GitHubRepositoryKey).
+	// It is the folder the discobox is in when it is set (Sandbox.folder).
+	RepositoryKey string
 
 	Branch string
 	Commit string // the commit it was spawned from, short
@@ -402,6 +407,12 @@ type Session struct {
 	// folder the header opens on.
 	OriginKey string
 	HostKey   string
+
+	// RepositoryKey is the GitHub repository the window's own source belongs
+	// to, resolved the way a discobox cut from it now would record it and
+	// keyed as Sandbox.RepositoryKey is, and empty when it is not on GitHub.
+	// It is what makes the window's folder the repository's.
+	RepositoryKey string
 
 	// HostID is this machine's client identity, which is what makes a
 	// discobox created somewhere else recognizable as such. Empty where it
@@ -798,11 +809,29 @@ func (s Sandbox) elsewhere(session Session) string {
 	return "from " + s.OriginHost + " (" + shortHostID(s.OriginHostID) + ")"
 }
 
-// folder is the header folder a discobox is filed in: its origin key, named by
-// its source — or as having none — and by the machine it was created on when
-// that is not this one, since one path on two machines is two folders.
+// folder is the header folder a discobox is in (folder.go): its repository's
+// when its source resolved to a GitHub repository when it was cut, and its
+// origin key's otherwise — named by its source, or as having none, and by the
+// machine it was created on when that is not this one. A discobox filed under
+// the window's own key that resolved to no repository is in the window's
+// folder; one that resolved to a repository is in that one's, even when the
+// window's checkout now resolves to another, as a fork's does.
 func (s Sandbox) folder(session Session) folder {
-	f := folder{key: s.OriginKey, label: s.Source, source: s.Source}
+	local := session.HostID != "" && s.OriginHostID == session.HostID
+	if s.RepositoryKey != "" {
+		// What a create from the repository cuts from is what this one was
+		// cut from when that can be cut from here — a URL, or a directory of
+		// this machine's — and the repository itself otherwise.
+		f := folder{key: s.RepositoryKey, label: repositoryLabel(s.RepositoryKey), source: s.Repository, local: local}
+		if s.Source != "" && (s.SourceRemote || local) {
+			f.source = s.Source
+		}
+		return f
+	}
+	if s.OriginKey != "" && s.OriginKey == session.OriginKey {
+		return session.folder()
+	}
+	f := folder{key: s.OriginKey, label: s.Source, source: s.Source, local: local}
 	if s.Source == "" {
 		// Nothing was cut from it, so there is nothing to cut from in it: the
 		// panel falls back to the window's own source, the way it does for
@@ -814,8 +843,19 @@ func (s Sandbox) folder(session Session) folder {
 	if from := s.elsewhere(session); from != "" {
 		f.label += " · " + from
 	}
-	f.local = session.HostID != "" && s.OriginHostID == session.HostID
 	return f
+}
+
+// folderKey is the key of the folder a discobox is in: what the header's
+// filter matches and the list's sections tell rows apart by.
+func (s Sandbox) folderKey(session Session) string {
+	if s.RepositoryKey != "" {
+		return s.RepositoryKey
+	}
+	if s.OriginKey != "" && s.OriginKey == session.OriginKey {
+		return session.folder().key
+	}
+	return s.OriginKey
 }
 
 // shortHostID is a host id the length a row can afford: the prefix and enough
