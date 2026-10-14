@@ -200,3 +200,61 @@ func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {
 		t.Fatalf("narrow row = %q, want the name kept", narrow)
 	}
 }
+
+// A row tagged with its pull request's status is lit in its band, blocked over
+// ready, whether or not the tag itself fits — and the cursor's band still
+// wins, since it says what a key will act on.
+func TestARowTaggedWithAPullRequestStatusIsLit(t *testing.T) {
+	t.Parallel()
+	row := func(tags []string, width int, focused bool) string {
+		l := newSandboxList(Session{})
+		l.width = width
+		box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: tags}
+		line, _ := l.row(newStyles(true), &zones{}, box, 0, 0, focused)
+		return line
+	}
+	painted := func(line, bg string) bool { return strings.HasPrefix(line, "\x1b[48;5;"+bg+"m") }
+	for _, tc := range []struct {
+		tags []string
+		bg   string
+	}{
+		{[]string{"ready", "issue=4"}, colPRReadyBG},
+		{[]string{"blocked"}, colPRBlockedBG},
+		{[]string{"blocked", "ready"}, colPRBlockedBG},
+	} {
+		for _, width := range []int{160, 40} {
+			if line := row(tc.tags, width, false); !painted(line, tc.bg) {
+				t.Errorf("tags %v at width %d: row = %q, want it painted %s", tc.tags, width, line, tc.bg)
+			}
+		}
+	}
+	if line := row([]string{"wip"}, 160, false); strings.HasPrefix(line, "\x1b[48;5;") {
+		t.Errorf("row = %q, want a row with no pull request status unpainted", line)
+	}
+	if line := row([]string{"ready"}, 160, true); !painted(line, colHighlightBG) {
+		t.Errorf("row = %q, want the cursor's band over the status's", line)
+	}
+}
+
+// The status is the last tag a narrowing row gives up: without color there is
+// no band to say it once the tag has gone.
+func TestARowKeepsItsPullRequestStatusLongest(t *testing.T) {
+	t.Parallel()
+	box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: []string{"issue=4", "ticket=ENG-12", "ready"}}
+	shown := 0
+	for width := 40; width <= 160; width++ {
+		l := newSandboxList(Session{})
+		l.width = width
+		line, _ := l.row(newStyles(false), &zones{}, box, 0, 0, false)
+		line = ansi.Strip(line)
+		if strings.Contains(line, "#") {
+			shown++
+			if !strings.Contains(line, "fix the reaper #ready") {
+				t.Fatalf("width %d: row = %q, want #ready first among the tags it shows", width, line)
+			}
+		}
+	}
+	if shown == 0 {
+		t.Fatal("no width showed a tag")
+	}
+}

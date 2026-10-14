@@ -591,6 +591,23 @@ repository the tag is plain: `issue=4` alone does not say whose issue 4.
   is for. A plain click on either opens it as a tab, below, rather than the
   browser (`hitIssue`, `hitPull`); Ctrl-click still follows the link.
 
+## A pull request's status lights its row
+
+A discobox tagged `ready` or `blocked` — where its pull request stands, as the
+delivering skills tag it (`deliver-issue` and `develop`, "Ready, blocked,
+merged"): ready for a human merge, or waiting on somebody — is drawn on a band
+of its own, dark green or dark red (`Sandbox.prStatus`, `colPRReadyBG`,
+`colPRBlockedBG`), and the tag is bold in the band's color. This `ready` is
+the pull request's, not the work's `ready` to apply that the header and list
+already spell out. They are the tags somebody scans a list of boxes for, so the
+band goes on the row rather than relying on the tag, which a long name can push
+off it; and the tag is drawn first among the row's tags (`Sandbox.rowTags`), so
+it is the last to give way — without color there is no band, and the tag is
+all a plain terminal gets. `blocked` wins over `ready`: it is the one waiting
+on a person. The cursor and selection bands win over both, since they say what
+a key will act on. `merged`, the third of the set, is not lit: the work is done
+and asks nothing of anyone.
+
 ## The issue tab
 
 The issue a discobox is tagged with, read in the workspace (`issue.go`):

@@ -116,6 +116,41 @@ func tagsLabel(tags []string) string {
 	return strings.Join(labels, " ")
 }
 
+// Where a discobox's pull request stands, as the delivering skills tag it
+// (deliver-issue and develop, "Ready, blocked, merged"): ready for a human
+// merge, or blocked on somebody. They are the tags somebody scans a list of
+// boxes for, so a row carrying one is lit (sandboxList.row) rather than left to
+// a dim tag that may not fit. `merged`, the third, is not among them: the work
+// is done and asks nothing of anyone.
+const (
+	prReady   = "ready"
+	prBlocked = "blocked"
+)
+
+// prStatus is the pull request status a discobox carries, blocked before ready
+// since it is the one waiting on somebody, and empty for none.
+func (s Sandbox) prStatus() string {
+	for _, v := range []string{prBlocked, prReady} {
+		if slices.ContainsFunc(s.Tags, func(tag string) bool { return tagKey(tag) == v }) {
+			return v
+		}
+	}
+	return ""
+}
+
+// rowTags are the tags in the order a row draws them: its pull request status
+// first, then the rest as they are kept.
+func (s Sandbox) rowTags() []string {
+	status := slices.DeleteFunc(slices.Clone(s.Tags), func(tag string) bool { return !isPRStatus(tag) })
+	return append(status, slices.DeleteFunc(slices.Clone(s.Tags), isPRStatus)...)
+}
+
+// isPRStatus reports whether a tag is a pull request status.
+func isPRStatus(tag string) bool {
+	key := tagKey(tag)
+	return key == prReady || key == prBlocked
+}
+
 // githubTagPaths are the tag keys that number something in the discobox's
 // GitHub repository, and where on GitHub that number is: `issue=4` is issue 4
 // and `pr=12` is pull request 12.
