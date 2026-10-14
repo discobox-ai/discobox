@@ -245,11 +245,10 @@ grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
 
 ### One failure hides the rest
 
-`test:all` runs the modules in order — root, `cli`, `termpane`, `server`,
-`pool-agent`, `sandbox-agent`, `access` — and stops at the first one that fails. Every
-package *within* a module still runs, but no later module does. So a green
-`windows` job after a fix is not evidence the fix was the last problem; it may
-just be the first. Expect to iterate, and do not promise a single round trip.
+`test:all` runs every module's packages in one `go test`, so one run reports
+every package that fails. A fix can still uncover a failure behind the line
+that broke, so a green `windows` job after a fix is not evidence the fix was the
+last problem. Expect to iterate, and do not promise a single round trip.
 
 ### What actually breaks on the non-Linux runners
 

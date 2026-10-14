@@ -3,14 +3,14 @@
 Shared by `open-pr` and `push-main`. CI is `.github/workflows/ci.yml`; six
 jobs: `check` (`ci:check`), `test` (`ci:test`), `verify`, `build`
 (`release:build`), `darwin` (`ci:darwin`), `windows` (`ci:test` on Windows).
-It takes about seven minutes on Depot's runners; `windows` is the critical
-path. Inside a discobox every `gh` call goes through `discobox-access run`.
+It takes about eight minutes on Depot's runners; `darwin` and `windows` are
+the longest jobs. Inside a discobox every `gh` call goes through `discobox-access run`.
 
 ## Read a finished job while the run is still going
 
 `gh run view --log-failed` refuses while the run is still in progress. To read a
 finished job's log while its siblings are still going — which is most of the
-time, since `windows` is the longest job — go through the API:
+time, since `windows` is one of the longest jobs — go through the API:
 
 ```bash
 J=$(gh run view <run-id> --repo discobox-ai/discobox --json jobs \
@@ -22,9 +22,9 @@ grep -nE "(--- FAIL|FAIL\s+github|panic:)" <scratchpad>/windows.log
 
 ## One failure hides the rest
 
-`test:all` runs the modules in order — root, `cli`, `termpane`, `server`,
-`pool-agent`, `sandbox-agent`, `access` — and stops at the first that fails. Every
-package *within* a module still runs, but no later module does. A green job
+`test:all` runs every module's packages in one `go test`, so one run reports
+every package that fails to build or pass. What it cannot report is a failure
+a fix uncovers: a test that never got past the line that broke. A green job
 after a fix is not proof the fix was the last problem. Expect to iterate; do
 not promise a single round trip.
 
