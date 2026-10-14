@@ -39,7 +39,9 @@ func (m *Model) restoreView(view ListView) {
 	switch view.FolderKey {
 	case "":
 		m.list.folder = everyFolder
-	case m.session.OriginKey:
+	case m.session.OriginKey, m.session.folder().key:
+		// Its origin key is what a view saved before the window's folder was
+		// its repository names it by.
 		m.list.folder = m.session.folder()
 	default:
 		m.list.folder = folder{key: view.FolderKey, label: view.FolderLabel, source: view.FolderSource, local: view.FolderLocal}

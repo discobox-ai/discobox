@@ -159,7 +159,7 @@ func (p *filterPicker) serverDetail(name string) string {
 // running in.
 func (p *filterPicker) folderDetail(f folder) string {
 	detail := plural(p.count(func(l *sandboxList) { l.folder = f }), "box", "boxes")
-	if f.key != "" && f.key == p.list.session.OriginKey {
+	if f.key != "" && f.key == p.list.session.folder().key {
 		detail += " · where this window is running"
 	}
 	return detail

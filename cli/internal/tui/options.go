@@ -155,6 +155,10 @@ type Source struct {
 	// OriginKey is where a discobox cut from Value on this machine is filed
 	// (ADR 0111), which is the folder the list follows the source to.
 	OriginKey string
+	// RepositoryKey is the GitHub repository Value belongs to, keyed as
+	// Sandbox.RepositoryKey is, and empty when it is not on GitHub: the
+	// folder the list follows the source to is then the repository's.
+	RepositoryKey string
 }
 
 // sourceNone is what the Source row carries for a discobox with nothing
@@ -476,8 +480,9 @@ func (o *optionSet) chooseSource(value string) {
 // source files under the window's own folder, and so does "no source", since
 // this machine's discoboxes with no source are in every one of its folders. A
 // directory or a URL files under its own, as the listing — or the check of a
-// source typed by hand — reported it. A source nothing has reported on is not
-// followed anywhere.
+// source typed by hand — reported it, and is in its GitHub repository's folder
+// when it resolved to one. A source nothing has reported on is not followed
+// anywhere.
 func (o *optionSet) sourceFolder() (folder, bool) {
 	value := o.opts[optSource].selected()
 	if value == sourceNone || value == o.session.source() {
@@ -492,6 +497,9 @@ func (o *optionSet) sourceFolder() (folder, bool) {
 		dir := value
 		if !source.Remote {
 			dir = sourceDirectory(value)
+		}
+		if source.RepositoryKey != "" {
+			return folder{key: source.RepositoryKey, label: repositoryLabel(source.RepositoryKey), source: dir, local: true}, true
 		}
 		return folder{key: source.OriginKey, label: dir, source: dir, local: true}, true
 	}
