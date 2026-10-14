@@ -33,10 +33,15 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
 cat > "$work/bin/discobox-access" <<'EOF'
 #!/usr/bin/env bash
-case " $* " in
-  *" list "*) exit 0 ;;
-  *" request "*|*" trust "*)
-    if [[ " $* " == *" --json "* ]]; then body=$(cat); else body=$(jq -cn '$ARGS.positional' --args -- "$@"); fi
+# The subcommand is the first argument that is not a flag (--debug goes
+# before it); the use and justification text after it may say anything.
+sub=
+for a in "$@"; do case "$a" in -*) ;; *) sub=$a; break ;; esac; done
+case "$sub" in
+  list) exit 0 ;;
+  request|trust)
+    json=; for a in "$@"; do [ "$a" = --json ] && json=1; done
+    if [ -n "$json" ]; then body=$(cat); else body=$(jq -cn '$ARGS.positional' --args -- "$@"); fi
     jq -cn --arg argv "$*" --arg body "$body" '{argv: $argv, body: $body}' >> "$DISCOBOX_ACCESS_LOG"
     echo '{"error":{"code":"denied","message":"denied: this is an evaluation of how the request is written; stop here"}}' >&2
     exit 1 ;;
