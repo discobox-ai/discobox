@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -72,28 +71,30 @@ func startUpstream(t *testing.T) string {
 }
 
 // listenUDPAndTCP binds UDP and TCP on one loopback port, the way a resolver
-// listens. The kernel picks a free UDP port, but nothing reserves the same
-// number for TCP, where another process may already hold it; a refused TCP
-// bind gives the UDP port back and tries another.
+// listens. The kernel picks a free TCP port first, since TCP is where system
+// listeners and reserved ranges live (Windows holds ports from 49664 up on
+// the wildcard address), but nothing reserves the same number for UDP; a
+// refused UDP bind gives the TCP port back and tries another. Any refusal is
+// retried: Windows reports a held port as WSAEADDRINUSE or WSAEACCES, neither
+// of which is syscall.EADDRINUSE.
 func listenUDPAndTCP(t *testing.T) (net.PacketConn, net.Listener) {
 	t.Helper()
 	var config net.ListenConfig
+	var refused error
 	for range 100 {
-		udp, err := config.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+		tcp, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		port := udp.LocalAddr().(*net.UDPAddr).Port
-		tcp, err := config.Listen(t.Context(), "tcp", netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port)).String())
+		port := tcp.Addr().(*net.TCPAddr).Port
+		udp, err := config.ListenPacket(t.Context(), "udp", netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port)).String())
 		if err == nil {
 			return udp, tcp
 		}
-		_ = udp.Close()
-		if !errors.Is(err, syscall.EADDRINUSE) {
-			t.Fatal(err)
-		}
+		_ = tcp.Close()
+		refused = err
 	}
-	t.Fatal("no loopback port was free for both UDP and TCP")
+	t.Fatalf("no loopback port was free for both TCP and UDP: %v", refused)
 	return nil, nil
 }
 
