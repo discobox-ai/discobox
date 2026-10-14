@@ -35,7 +35,8 @@ written by the pool about a request this sandbox sent, keyed by the client ID
 its mTLS certificate carries; the URL is recorded before any sentinel is
 swapped into it and the headers are redacted where they are written (ADR 0130
 §3). Nothing in a row is something the sandbox did not already hold, except
-the proxy's account of what it did with it — which is the point.
+the proxy's account of what it did with it — which is the point — and one
+thing §3 takes out: an ephemeral sentinel the URL carried.
 
 ## Decision
 
@@ -54,7 +55,8 @@ GET /v1/audit/http?host=&blocked=&since=&limit=
 
 Newest first; `limit` defaults to 20 and is capped at 200. `blocked=true`
 keeps the refused, `false` the let through, absent both. `since` is RFC 3339.
-`useIds` are the approved uses the request spent, the join to `discobox-access
+`useIds` are the approved uses whose sentinels the request carried — spent, or
+refused under when blocked — the join to `discobox-access
 run --use`.
 
 It is in the protocol, not beside it, because the protocol is already the
@@ -91,6 +93,15 @@ session cookie, a signed URL — the program kept from the agent on purpose or
 by accident, and the agent needs none of it to learn why a request failed.
 Bodies are unbounded and are the same question at a larger size.
 `discobox admin audit get` remains the full record, for a person.
+
+Because the URL is recorded as sent, it can carry an ephemeral sentinel a
+command put in it, which the proxy does not swap in a URL. A live one is a
+bearer token for its window, and the sandbox held it only inside the command
+it was minted for; handing it back here would be the unjudged way to take a
+value [ADR 0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) rules
+out. The broker redacts the sandbox's live sentinels from the URL and the
+reason. A page also stops, newest first, before it outgrows what a client
+decodes, since field bounds cannot promise that once JSON escapes them.
 
 Adding a field later is cheap; taking one back from a protocol is not.
 
