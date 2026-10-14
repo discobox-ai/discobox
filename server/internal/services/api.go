@@ -640,9 +640,12 @@ type RuleAsk struct {
 	// RuleID is the rule being tested, empty while it is still a proposal.
 	RuleID string
 	// RequestID is the request tested, and SandboxID the discobox that filed
-	// it.
+	// it. Asking is that discobox as it was created, which the judge is told
+	// about (ADR 26-10-14-691): a rule's uses may say "this discobox's
+	// repository" as well as a grant's.
 	RequestID string
 	SandboxID string
+	Asking    judge.Discobox
 	// RuleUses are the rule's uses, the authorization; Uses are the uses the
 	// request asked for, which are judged.
 	RuleUses []string
@@ -662,6 +665,7 @@ func (a RuleAsk) Job() judge.Job {
 		Credential: a.Credential,
 		Round:      1,
 		Uses:       a.Uses,
+		Facts:      judge.Facts(a.Asking),
 	}
 }
 

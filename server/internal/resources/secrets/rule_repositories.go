@@ -37,15 +37,7 @@ func repositoryIdentity(source *model.GitSource) string {
 	if source == nil {
 		return ""
 	}
-	// A remote source is its URL: that is what the box clones, and an
-	// upstream named beside it would be a repository it does not hold.
-	switch {
-	case source.URL != nil && strings.TrimSpace(*source.URL) != "":
-		return sourcecache.NormalizeRemote(*source.URL)
-	case source.UpstreamURL != nil:
-		return sourcecache.NormalizeRemote(*source.UpstreamURL)
-	}
-	return ""
+	return sourcecache.NormalizeRemote(source.RepositoryURL())
 }
 
 // ruleRepository is one repository as a rule stores it, from what a person

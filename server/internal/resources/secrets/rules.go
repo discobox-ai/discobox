@@ -501,17 +501,24 @@ func sameRuleText(read, now *model.ApprovalRule) bool {
 
 // ruleAsk is a rule's question about one request, composed the same way
 // wherever it is asked — proposing, approving, reconciling, or reading the
-// card — so one answer on record serves all four.
-func ruleAsk(rule *model.ApprovalRule, req *model.SecretRequest) services.RuleAsk {
+// card — so one answer on record serves all four. The discobox that filed the
+// request is read for it, since the judge is told what that discobox was
+// created with (ADR 26-10-14-691), and the facts are part of the question.
+func (s *Service) ruleAsk(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest) (services.RuleAsk, error) {
+	asking, err := s.store.GetSandbox(ctx, req.ProjectID, req.SandboxID)
+	if err != nil {
+		return services.RuleAsk{}, apperrors.NotFound(err, "the discobox that asked was not found")
+	}
 	return services.RuleAsk{
 		RuleID:     rule.ID,
 		RequestID:  req.ID,
 		SandboxID:  req.SandboxID,
+		Asking:     asking.JudgeDiscobox(),
 		RuleUses:   rule.Uses,
 		Uses:       useDescriptions(req.Uses),
 		Credential: ruleCredential(rule),
 		Hosts:      rule.Hosts,
-	}
+	}, nil
 }
 
 // ruleUsesCover asks the judge a rule's one question about a request: whether
@@ -522,7 +529,11 @@ func (s *Service) ruleUsesCover(ctx context.Context, rule *model.ApprovalRule, r
 	if s.judge == nil {
 		return false, "", apperrors.NewStatusError(http.StatusServiceUnavailable, "no judge can read an approval rule on this server")
 	}
-	answer, err := s.judge.JudgeRule(ctx, rule.ProjectID, ruleAsk(rule, req))
+	ask, err := s.ruleAsk(ctx, rule, req)
+	if err != nil {
+		return false, "", err
+	}
+	answer, err := s.judge.JudgeRule(ctx, rule.ProjectID, ask)
 	if err != nil {
 		return false, "", err
 	}
@@ -630,7 +641,12 @@ func (s *Service) ruleTestDescriber(ctx context.Context, projectID string) func(
 // uses and a request's.
 func (s *Service) describeRuleReading(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest, test *model.RuleTest) {
 	test.Stage = model.RuleTestStageContent
-	digest, err := judge.Digest(ruleAsk(rule, req).Job())
+	ask, err := s.ruleAsk(ctx, rule, req)
+	if err != nil {
+		test.Pending = true
+		return
+	}
+	digest, err := judge.Digest(ask.Job())
 	if err != nil {
 		test.Pending = true
 		return

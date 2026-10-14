@@ -1,0 +1,19 @@
+{
+  "name": "facts-rule-this-discoboxs-repository",
+  "why": "A rule that says \"this discobox's repository\", read against what the asking discobox was created with (ADR 26-10-14-691).",
+  "expect": "allow",
+  "job": {
+    "kind": "rule",
+    "purpose": "create issues in this discobox's repository with gh issue create",
+    "host": "api.github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "gh issue create -R acme/web to file the flaky TestPoolDrain failure I found"
+    ],
+    "facts": [
+      "The discobox asking is sbx_6t1n8c3vqk2m9x4w.",
+      "The primary source sbx_6t1n8c3vqk2m9x4w was created with is the Git repository github.com/acme/web, checked out from the branch main."
+    ]
+  }
+}
