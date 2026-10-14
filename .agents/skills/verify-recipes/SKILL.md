@@ -474,3 +474,21 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
   `test/judge-evals` case (`{name, why, expect, job}`) in a scratch directory,
   and run `go run ./internal/cmd/discobox-judge-eval -wrapper
   harness/claude-code/prompt.sh <dir>`.
+
+# Verifying the exec lifecycle (sandbox-agent/execs: shims, runtime files)
+
+Every `d shell <box> -- <cmd>` is one of the agent's shim-backed execs, so a
+burst of them drives `execs.Manager`, the shim and the watcher end to end; its
+exit status comes back as the client's (`d shell $id -- sh -c 'exit 7'; echo $?`).
+
+- The runtime files are in `/run/discobox/agent-terminals` (the box's
+  `sandbox.json` `agentRuntime.runtimeDir`), not the package default
+  `/run/discobox/execs`. It is 0700 root: run the whole script under
+  `sudo sh -c '...'`, or the glob expands as the box user and matches nothing.
+- The box has `jq` but no `inotifywait` or `stat`; `ls -i` shows whether a
+  write replaced the file (new inode) or rewrote it in place.
+- A probe you run with `d shell` is itself the newest exec; pick the file by
+  its `command`, not by `ls -t`.
+- The dev server restarts whenever the image watcher finishes an image, which
+  drops every `d shell` in flight. Run an in-box loop detached (`nohup sh
+  script > /root/log &`) and read its log afterwards.
