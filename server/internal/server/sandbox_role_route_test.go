@@ -84,13 +84,14 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 	}
 }
 
-// A discobox starts, stops, and restarts the discoboxes it created, and the
-// call gets past the role and the handler into the sandbox service: neither
-// refuses a sandbox caller (ADR 26-10-02-478 §1). The worker is archived, so
-// the service answers with its own refusal before it resolves a provider or
-// instructs the pool; what lies past that point reads no principal, and is not
-// reached here.
-func TestASandboxPowersOnlyTheDiscoboxesItCreated(t *testing.T) {
+// A discobox starts, stops, restarts and repairs any discobox in its project,
+// and the call gets past the role and the handler into the sandbox service:
+// neither refuses a sandbox caller (ADR 26-10-02-478 §1, ADR 26-10-14-320
+// §§1, 3). Both discoboxes are archived, so the service answers with its own
+// refusal before it resolves a provider or instructs the pool; what lies past
+// that point reads no principal, and is not reached here. The project's judge
+// is refused before the service is asked (ADR 26-10-14-320 §4).
+func TestASandboxPowersAnyDiscoboxInItsProjectButTheJudge(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
@@ -98,25 +99,32 @@ func TestASandboxPowersOnlyTheDiscoboxesItCreated(t *testing.T) {
 	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
 	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 	lead := routeTestSandboxID
+	archived := model.ResourceLifecycle{DesiredState: model.DesiredStateArchived}
 	for _, sandbox := range []*model.Sandbox{
-		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStateArchived}},
-		{ID: "sbx-persons", Name: "persons"},
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ResourceLifecycle: archived},
+		{ID: "sbx-persons", Name: "persons", ResourceLifecycle: archived},
+		{ID: "sbx-judge", Name: "judge"},
 	} {
 		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
 		if err := db.Write.WithContext(ctx).Create(sandbox).Error; err != nil {
 			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
 		}
 	}
+	if err := db.Write.WithContext(ctx).Model(&model.Project{}).Where("id = ?", projectID).Update("judge_sandbox_id", "sbx-judge").Error; err != nil {
+		t.Fatalf("name the project's judge: %v", err)
+	}
 
-	for _, action := range []string{"start", "stop", "restart"} {
-		t.Run(action+" its worker", func(t *testing.T) {
-			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-worker/"+action, "{}", token, routeTestPoolID, lead)
-			if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "archived") {
-				t.Fatalf("status = %d, want the service's 409 for an archived discobox; body = %s", resp.Code, resp.Body.String())
-			}
-		})
-		t.Run(action+" a person's discobox", func(t *testing.T) {
-			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-persons/"+action, "{}", token, routeTestPoolID, lead)
+	for _, action := range []string{"start", "stop", "restart", "repair"} {
+		for _, target := range []string{"sbx-worker", "sbx-persons"} {
+			t.Run(action+" "+target, func(t *testing.T) {
+				resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/"+target+"/"+action, "{}", token, routeTestPoolID, lead)
+				if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "archived") {
+					t.Fatalf("status = %d, want the service's 409 for an archived discobox; body = %s", resp.Code, resp.Body.String())
+				}
+			})
+		}
+		t.Run(action+" the judge", func(t *testing.T) {
+			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-judge/"+action, "{}", token, routeTestPoolID, lead)
 			if resp.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
 			}
@@ -124,13 +132,14 @@ func TestASandboxPowersOnlyTheDiscoboxesItCreated(t *testing.T) {
 	}
 }
 
-// A discobox changes the meta of the discoboxes it created, and the call gets
-// past the role and the handler into the sandbox service: neither refuses a
-// sandbox caller (ADR 26-10-08-447 §1). The change both sets and removes one
-// tag, so the service refuses it as the caller's mistake before it starts the
-// worker or leases a client to it; what lies past that point is the scope
-// check authorizeRequestedScopes already admits, and is not reached here.
-func TestASandboxTagsOnlyTheDiscoboxesItCreated(t *testing.T) {
+// A discobox changes the meta of any discobox in its project, and the call
+// gets past the role and the handler into the sandbox service: neither refuses
+// a sandbox caller (ADR 26-10-08-447 §1, ADR 26-10-14-320 §1). The change both
+// sets and removes one tag, so the service refuses it as the caller's mistake
+// before it starts the discobox or leases a client to it; what lies past that
+// point is the scope check authorizeRequestedScopes already admits, and is not
+// reached here.
+func TestASandboxTagsAnyDiscoboxInItsProject(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
@@ -149,18 +158,14 @@ func TestASandboxTagsOnlyTheDiscoboxesItCreated(t *testing.T) {
 	}
 	const body = `{"setTags":{"to-delete":""},"removeTags":["to-delete"]}`
 
-	t.Run("its worker", func(t *testing.T) {
-		resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", body, token, routeTestPoolID, lead)
-		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "both set and removed") {
-			t.Fatalf("status = %d, want the service's 400 for the change; body = %s", resp.Code, resp.Body.String())
-		}
-	})
-	t.Run("a person's discobox", func(t *testing.T) {
-		resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", body, token, routeTestPoolID, lead)
-		if resp.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
-		}
-	})
+	for _, target := range []string{"sbx-worker", "sbx-persons"} {
+		t.Run(target, func(t *testing.T) {
+			resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/"+target+"/meta", body, token, routeTestPoolID, lead)
+			if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "both set and removed") {
+				t.Fatalf("status = %d, want the service's 400 for the change; body = %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
 }
 
 // A forwarded call is the pool's word for which sandbox is calling, and it is

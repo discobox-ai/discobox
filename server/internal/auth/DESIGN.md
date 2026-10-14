@@ -123,35 +123,50 @@ with the error's `StatusCode()` if it has one, 404 for `store.ErrNotFound`, and
 Current authorizers:
 
 - `SandboxRoleAuthorizer` answers every request a sandbox principal makes, and
-  only those: it allows the routes of the sandbox role (`sandboxRole`: discobox
-  create, list, and get; source delivery, terminal screen, wait, and input,
-  start, stop, and restart, and meta changes, on discoboxes it created; secret requests list, get, approve, and deny;
-  secrets list; the project's skills sources list, ADR 26-10-14-894) in the sandbox's own project, resolving `default` to it, and refuses
-  everything else — including the any-authenticated routes below, which is
-  why it runs first. It is decided by the route; no grant or use text is
-  read ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
-  §§4–5). Some routes also ask what they name to belong to the caller (the
-  route's `owner`): source delivery — the pin and the push into a discobox's
-  `git-origins`, and `complete-source-push` — only into a discobox the caller
-  created, by its recorded `CreatedBySandboxID`
-  ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
-  §2). Fetching an origin is not delivery, and neither is fetching what a
-  pool's cache remembers of a remote (`git-caches`): no sandbox role route
-  names either
-  ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) §7); its terminals — the exec listing, `screen`, `wait`, and `input`, but
-  not `attach` or creating or ending an exec — only for a discobox the caller
-  created
-  ([ADR 26-10-01-397](../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
-  its power — `start`, `stop`, and `restart`, but not archive, purge,
-  repair, or upgrade — only for a discobox the caller created
-  ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
-  its meta — `PATCH .../meta`, its name, description and tags, but not its
-  configured name —
-  only for a discobox the caller created
-  ([ADR 26-10-08-447](../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md));
-  and a secret request's get, approve, and deny only when a discobox the
-  caller created filed it — the request's owner. A request filed by no
-  discobox, or by one that is gone, has no owner and is a person's to answer.
+  only those: it allows the routes of the sandbox role (`sandboxRole`) in the
+  sandbox's own project, resolving `default` to it, and refuses everything
+  else — including the any-authenticated routes below, which is why it runs
+  first. It is decided by the route; no grant or use text is read
+  ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
+  §§4–5). The role is:
+  - discobox create and list, and on any discobox in the project: get;
+    source delivery — the pin and the push into its `git-origins`, and
+    `complete-source-push`
+    ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
+    §2); its terminals — the exec listing, one exec, its `logs`, `events`,
+    `screen`, `wait`, and `input`
+    ([ADR 26-10-01-397](../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
+    its power — `start`, `stop`, `restart`, `repair`, and `upgrade`
+    ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
+    its meta — `PATCH .../meta`
+    ([ADR 26-10-08-447](../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md));
+    its services — list, get, `logs`, `start`, `stop`, and `restart`; and
+    HTTP to any of its ports, any method (`http/{port}`);
+  - secret requests list, get, approve, and deny, and secrets list;
+  - the project's skills sources list
+    ([ADR 26-10-14-894](../../../docs/adr/26-10-14-894-a-project-names-skills-repositories-every-discobox-is-created-with.md)
+    §1).
+
+  A route naming a discobox (`projectDiscobox`) takes any in the caller's
+  project, whoever created it: which one a call may act on is the judge's
+  question, asked knowing who created it
+  ([ADR 26-10-14-320](../../../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md)
+  §§1, 5). The project's judge (`Project.JudgeSandboxID`) is the one it never
+  takes (§4): its terminals and logs hold every job it judged. Not in the
+  role: archive, purge, unarchive, `attach`, creating, starting, or ending an
+  exec, TCP and UDP tunnels, and fetching an origin or what a pool's cache
+  remembers of a remote (`git-caches`)
+  ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
+  §7). No role path matches a segment that is empty, `.`, or `..`, so a path
+  under `http/{port}` names where it goes.
+
+  A secret request's get, approve, and deny (`ownedRequest`) are allowed only
+  when a discobox the caller created filed it — the request's owner. A request
+  filed by no discobox, or by one that is gone, has no owner and is a person's
+  to answer. This stays the server's rule, not the judge's: a discobox is never
+  its own creator, so it never approves its own request and two discoboxes
+  never approve each other's, which keeps a delegation from becoming a use
+  (ADR 26-10-14-320 §2).
   The role lists no approval-rule route and no `rule-proposals`: a discobox
   never makes, edits, reads, or is proposed a rule
   ([ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)

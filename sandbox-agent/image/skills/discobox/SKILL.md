@@ -448,11 +448,17 @@ and run under: `discobox-access run --use <id> -- discobox …`. Without one,
 every call is refused by the pool.
 
 With it, you may create discoboxes with `discobox new`, cut from the directory
-you run it in; list and read them (`admin box ls`, `admin box get`); read
-and type into the terminals of the ones you created (`admin terminal screen`,
-`input`, `wait`); start, stop, and restart the ones you created
-(`discobox start`, `stop`, `restart`); tag and name them (`discobox tag`, `discobox rename`); and list and answer credential
-requests (`discobox secret request ls`, `approve`, `deny`). Nothing else: the
+you run it in; list and read them (`admin box ls`, `admin box get`). On any
+discobox in this project but its judge, you may read and type into its
+terminals and read their logs (`admin terminal screen`, `input`, `wait`,
+`logs`); start, stop, and restart it (`discobox start`, `stop`, `restart`);
+repair and upgrade it (`admin box repair`, `upgrade`); list, start, stop, and
+restart its services and read their logs (`admin services`); reach its ports
+over HTTP, at `https://api.discobox.internal/projects/default/sandboxes/<id>/http/<port>/`;
+and tag and name it (`discobox tag`, `discobox rename`). Which of them a use
+reaches is what the judge reads from its words, told which discobox created
+the one a call names. You list and answer the credential requests only of the
+boxes you created (`discobox secret request ls`, `approve`, `deny`). Nothing else: the
 user's other commands above need their machine or reach further than a box
 may, and are refused. A box you create is the user's,
 and cannot be given `ai.discobox.sandbox` by you — a person approves that when

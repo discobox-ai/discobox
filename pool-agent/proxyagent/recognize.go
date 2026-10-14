@@ -74,11 +74,11 @@ var endpoints = []*endpoint{
 	// discobox: it polls it, pushes its source into its origin, and reports
 	// the push done. Each is judged on its own, so each is named.
 	mustEndpoint(judge.EndpointDiscoboxSandboxGet, 1, GateHost(), "GET /projects/{project}/sandboxes/{sandbox}", nil, nil),
-	mustEndpoint(judge.EndpointDiscoboxSandboxOriginRefs, 1, GateHost(),
+	mustEndpoint(judge.EndpointDiscoboxSandboxOriginRefs, 2, GateHost(),
 		"GET /projects/{project}/sandboxes/{sandbox}/git-origins/{repo}/info/refs", nil, nil),
-	mustEndpoint(judge.EndpointDiscoboxSandboxOriginPush, 1, GateHost(),
+	mustEndpoint(judge.EndpointDiscoboxSandboxOriginPush, 2, GateHost(),
 		"POST /projects/{project}/sandboxes/{sandbox}/git-origins/{repo}/git-receive-pack", nil, nil),
-	mustEndpoint(judge.EndpointDiscoboxSandboxSourcePushed, 1, GateHost(),
+	mustEndpoint(judge.EndpointDiscoboxSandboxSourcePushed, 2, GateHost(),
 		"POST /projects/{project}/sandboxes/{sandbox}/complete-source-push", jsonParser, describeSourcePushed),
 }
 

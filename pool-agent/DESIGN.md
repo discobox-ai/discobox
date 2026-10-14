@@ -1003,8 +1003,9 @@ flowchart TD
   branch it holds, and for a project member's delivery the namespace's
   `refs/remotes/origin/*` and tags are copied to `refs/cache/heads/` and
   `refs/cache/tags/` (`Delivered`).
-- **A sandbox delivering to a discobox it created**
-  ([ADR 26-09-24-630](../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md))
+- **A sandbox delivering to a discobox in its project**
+  ([ADR 26-09-24-630](../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md),
+  [ADR 26-10-14-320](../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
   is named by the control plane in `X-Discobox-Git-Cache-Caller` and held to
   what it sends and what its own namespaces reach (§7). Its pin holds an
   object only where a namespace recorded as its own reaches it. Its push is
