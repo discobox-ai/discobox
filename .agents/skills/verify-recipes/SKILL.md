@@ -266,6 +266,19 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   json` (`.jobs[]`, by `resourceId`) for `attempts`/`error` and the log for
   `reconcile failed`. List outputs are wrapped (`.pools[]`, `.providers[]`).
 
+- The CLI's `new` against it enrolls an SSH key and adds
+  `Include ~/.local/state/discobox/cli/ssh/<project>/config` to `~/.ssh/config`;
+  remove that line and directory when you clean up.
+- To lose a create mid-request (the pool agent replaced under it): start
+  `new -d --no-source -H shell` in the background, poll the new box's
+  `runtime.provisionProgress.phase` every 0.1s, and `docker restart -t 0` (or
+  `stop`, then `start` later) *your* pool's `discobox-vm-pool_<id>` on
+  `preparing_volumes` or `waiting_for_agent`. A fixed delay misses: a create
+  takes a second or two once the harness image is on the pool. The server logs
+  `pool agent went away during a sandbox create` to stderr, so to
+  `$S/server.log` as started above. Sandbox containers
+  are siblings on the host's Docker, so one already booted survives the restart.
+
 ## The CLI's autolaunch, as a systemd user unit
 
 A box has no user manager, so the autolaunch falls back to executing the
