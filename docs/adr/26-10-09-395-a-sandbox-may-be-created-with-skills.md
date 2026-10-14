@@ -1,6 +1,6 @@
 # 26-10-09-395 — A sandbox may be created with skills
 
-- **Status**: Accepted
+- **Status**: Accepted (§§3–4 amended by [26-10-14-294](26-10-14-294-a-skills-repository-is-a-source-its-skills-are-linked-from.md), for a `--skills` that is a Git URL)
 - **Date**: 2026-10-09
 - **Relates to**: [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md),
   [0080](0080-the-image-ships-the-skills-for-what-it-installs.md),
