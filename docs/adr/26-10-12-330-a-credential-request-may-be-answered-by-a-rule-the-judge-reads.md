@@ -44,9 +44,10 @@ Today the only standing answers are:
 Neither answers "a box doing this kind of work on this repository asked for
 what that work always asks for".
 
-Whether an ask is the usual one, from the usual kind of box, is a reading of
-sentences, which is what the judge is for. Three facts shape how it can be
-used:
+Whether an ask is the usual one is a reading of sentences, which is what the
+judge is for. Which boxes it is usual for is not: the work repeats per
+repository, and a repository is a fact the control plane already holds. Three
+facts shape how the judge can be used:
 
 - **The ask is the agent's writing.** Its uses, name and justification are
   whatever the agent — or an issue it read — put there. A person reading a
@@ -64,9 +65,9 @@ used:
 ### 1. An approval rule is a project's standing answer, and only a person makes one
 
 An **approval rule** belongs to a project and says: a request like this, from
-a discobox like that, is approved without asking. It holds:
+a discobox of these repositories, is approved without asking. It holds:
 
-- **scope** — which discoboxes it is tested for (§2);
+- **repositories** — which discoboxes it is tested for (§2);
 - **one credential** — a well-known ID, or a project secret;
 - **hosts** the grant may name, and **one purpose** (`use` or `delegate`), as
   a grant has one;
@@ -87,43 +88,52 @@ one.
 then approved, or it does not, and the request waits for a person exactly as
 it does today. No rule denies anything.
 
-### 2. Scope is a sentence the judge reads, against facts the control plane recorded
+### 2. A rule is for a list of repositories, or for every discobox, and the server compares
 
-A rule's scope is a sentence — "discoboxes started to deliver or triage an
-issue in discobox-ai/discobox", "any discobox on a repository in the
-discobox-ai organization that a person started" — and, optionally, one
-discobox it is pinned to. No sentence and no pin is every discobox in the
-project.
+A rule says which discoboxes it is for with a list of **repositories**. A rule
+that names none is for every discobox in the project, and is one only because
+a person said so. There is nothing else: no sentence, and no single discobox.
 
-**A pin is compared, not read.** "This discobox" is its ID.
+**It is compared, not read.** No model is asked which discoboxes a rule is
+for. A rule that names repositories is for a discobox whose **primary source**
+is one of them, exactly. A discobox's additional sources never count: a box
+that pulled a repository in beside its work is not a box working on it.
 
-**The sentence is read against a fact sheet the server composes** from the
-discobox's own record, every line fixed when it was created:
+**A repository is its host and path**, `github.com/org/repo`:
 
-- its primary source's repository and ref, and its other sources;
-- who created it — a person, or a discobox, and which;
-- the prompt it was created with, **labelled with who wrote it**;
-- the skills it was created with, its harness, and its pool's platform.
+- the scheme and any userinfo are dropped, and the host is lower-cased;
+- git's scp-like form, `git@github.com:org/repo.git`, is the same repository
+  as its HTTPS URL;
+- a trailing `.git` and trailing slashes are dropped.
 
-**Nothing a discobox writes about itself is on the sheet**: not its tags or
-description (ADR 0136), not the justification on its request. The prompt is
-its creator's words, not its own. When the creator is a discobox, the label
-says so, and a rule that wants only a person's word says "started by a
-person".
+One piece of code reduces both sides to it: what a person gives a rule, and
+what a discobox's source says.
 
-The judge gains a job kind, `scope`: the sentence is the authorization, the
-fact sheet is what is judged, and the prompt in it is data, never
-instructions.
+**A discobox's repository is its primary source's URL**, and for a source
+delivered from a local directory, the remote its checkout tracks, when the
+client that created the discobox reported one. A local source with no remote
+has no repository. Only a rule for every discobox answers it: a path on
+somebody's machine names nothing a rule could mean.
 
-**It is decided once for a discobox and a rule**, since the facts do not
-change, recorded as a verdict of kind `scope`, and reused for every request
-that discobox files while the rule stands as it was read.
+**A rule's repositories are stored normalised.** A person gives a URL, the
+scp-like form, or `host/org/repo`. A bare `org/repo` names no host and is
+refused, with the host to name: the same path on another host is another
+repository. An entry is said once, and a rule names a bounded number of them.
 
-**Jev's yes is a match, and anything else is not.** With Jev, a scope
-matches at 0.8 or above and the claim-of-approval hazard clear. Nothing else
-is put to the judge discobox: most discoboxes do not match most rules, and a
-wrong "no match" costs only what happens today, a person being asked. A
-server with no Jev key asks its judge discobox.
+**A rule for every discobox is said, never assumed.** It is its own answer,
+`everyDiscobox`, given in so many words on every route that makes or edits a
+rule, by the API and by every client, and refused beside repositories:
+
+- made directly, a rule names at least one repository or says
+  `everyDiscobox`; one that says neither is refused;
+- edited, repositories replace the rule's and `everyDiscobox` removes them;
+  an empty list is refused, and saying nothing leaves them as they are;
+- made from a request (§7), saying nothing makes it a rule for the asking
+  discobox's repository, and is refused when that discobox has none.
+
+**Nothing a discobox writes about itself decides it**: not its tags or
+description (ADR 0136), and not anything on its request. Its source is what
+its creator gave it.
 
 ### 3. Content is sentences the judge reads; everything else is a fact the server checks
 
@@ -132,13 +142,15 @@ delegation (782 §3):
 
 - **the same credential** — the well-known ID the request names; for an ask
   that names none, hosts the rule's secret is bound for;
+- **a discobox of one of the rule's repositories** (§2), or any discobox for
+  a rule that names none;
 - **hosts within** the rule's hosts;
 - **the same purpose**;
 - **a lifetime fitted**, not refused: what the request asked for, else the
   hour, capped by the rule and by the secret's limit;
 - **uses within** the rule's uses, which is the judge's question.
 
-The judge gains a second job kind, `rule`: the rule's uses as the
+The judge gains a job kind, `rule`: the rule's uses as the
 authorization, the uses asked for as what is judged, and no request evidence.
 It is the delegation job's shape with its own words, because who wrote what
 differs. A rule's uses name a class ("any issue in org/repo", "a branch named
@@ -157,10 +169,11 @@ tested off that path, by a reconciler over pending requests:
 - Only agent-credentials requests are tested. Reactive requests, refresh
   requests and host trusts stay a person's.
 - A rule is tested in the order of what each step costs: the facts (§3),
-  then its scope (§2, usually already decided), then its content.
-- Rules are tested one at a time, those pinned to the discobox first, each
-  on its own — never several rules' uses together. The first that covers the
-  request ends it.
+  the repository among them (§2), then its content, which is the one thing
+  the judge is asked.
+- Rules are tested one at a time, those that name repositories before those
+  for every discobox, each on its own — never several rules' uses together.
+  The first that covers the request ends it.
 - A rule that covers approves through the same write a person's approval
   takes (`mintGrantAs`, the agent binding, the request marked approved), with
   the rule read again in that transaction: still enabled, unexpired, with the
@@ -169,7 +182,8 @@ tested off that path, by a reconciler over pending requests:
   **as asked**, so each box holds its own branch and not the class — and
   records the rule it was minted under.
 - **A request no rule covers stays pending** (§1). The card shows each rule
-  tested and why it did not cover the request.
+  tested and why it did not cover the request. A rule for other repositories
+  says so as a fact: nobody was asked, and no verdict is recorded for it.
 - A request is tested once per rule as that rule stands. A rule made or
   edited later is tested against what is pending. An identical ask reuses the
   open request (`asksTheSame`), so asking again does not ask the judge again.
@@ -189,13 +203,9 @@ A `rule` job goes through `judges.Service.put`, like a delegation:
 - With no key, the judge discobox answers.
 - No judge, no answer, or anything that does not decode is not a yes.
 
-The fallback is kept here and not for scope because of how often each is
-asked: a content job runs only for a discobox already in scope, about a
-request somebody would otherwise have to read.
-
 The verdict is recorded before anything is minted, as kind `rule`, naming the
 rule, the request, and the asking discobox, with Jev's model, probabilities
-and input when Jev was asked. Nothing stands for either job.
+and input when Jev was asked. Nothing stands for a rule job.
 
 ### 6. A rule is a reason to keep a judge
 
@@ -208,19 +218,17 @@ On a default server nothing changes: `judgeCommands` already keeps a judge.
 On a server with both switches off, a project's first rule brings its judge
 up, and nothing but rules is put to it.
 
-### 7. "Auto approve" proposes rules at three levels, for scope and for content
+### 7. "Auto approve" offers the asking discobox's repository, and proposes uses at three levels
 
-Choosing auto approve on a request asks the server for proposals: three
-scopes and three contents, each narrowest first.
+Choosing auto approve on a request asks the server for proposals.
 
-**Scope.**
+**Which discoboxes** has two answers, and no model writes either:
 
-1. **This discobox** — the pin. No model.
-2. **Discoboxes doing this work on this repository** — from the fact sheet:
-   the repository, and the kind of task the prompt describes.
-3. **Any discobox on this repository.**
+1. **Discoboxes of this request's repository** — the asking discobox's (§2),
+   which the answer names. Offered only when it has one.
+2. **Every discobox in this project.**
 
-**Content.**
+**Content** comes at three levels, narrowest first.
 
 1. **As asked** — the request's uses, verbatim. No model.
 2. **The same work on any target of its kind** — placeholders where the
@@ -229,41 +237,42 @@ scopes and three contents, each narrowest first.
 3. **The same kind of work across the resource** — writing issues in that
    repository; delivering pull requests from any branch but `main`.
 
-Levels 2 and 3 of each are written by a model, as a typed **proposal job** in
-the `judge` package: its own system prompt, schema and strict decode, put to
-the project's judge discobox with `--no-tools`. The request's uses and the
-fact sheet are data in it. Every `never …` limit a use states is kept at
-every level. The proposer writes sentences only; credential, hosts and
-purpose are copied from the request by code, never generated.
+Levels 2 and 3 are written by a model, as a typed **proposal job** in the
+`judge` package: its own system prompt, schema and strict decode, put to the
+project's judge discobox with `--no-tools`. The request's uses are data in
+it. Every `never …` limit a use states is kept at every level. The proposer
+writes sentences only; credential, hosts and purpose are copied from the
+request by code, never generated.
 
-The person picks one scope and one content, then the lifetime, on the steps
-the approval dialog already has. The card shows the rule's full text: that
-text is what is being approved, and a generated sentence nobody read is the
-agent's ask promoted to authority.
+The person picks which discoboxes and one content, then the lifetime, on the
+steps the approval dialog already has. The card shows the rule's full text:
+that text is what is being approved, and a generated sentence nobody read is
+the agent's ask promoted to authority.
 
 Where no model can write (Jev with `jevUnsure: refuse`, or no judge yet on a
-server that judges nothing else), level 1 of each is offered alone and the
-sentences can be written by hand.
+server that judges nothing else), the uses as asked are offered alone and
+wider ones can be written by hand.
 
 ### 8. A proposal is offered only once the judge has found it covers the request
 
-Each candidate is put to the judge as the exact job §4 would later ask, on
-the path that job takes: a scope candidate against the asking discobox's fact
-sheet (§2), a content candidate against the request's uses (§5).
+Each content candidate is put to the judge as the exact job §4 would later
+ask, on the path that job takes: against the request's uses (§5).
 
 - Only a candidate the judge says covers is offered. One it does not is
   shown as failed, with the reason, and cannot be chosen.
-- Content level 1 is tested too. A judge that will not find sentences within
+- Level 1 is tested too. A judge that will not find sentences within
   themselves is a rule that will never approve a repeat ask, and that is
   worth knowing before it is made.
-- Choosing candidates approves the request under the verdicts already on
+- Choosing a candidate approves the request under the verdict already on
   record. Edited text is judged again before it is accepted.
+- A rule made from a request is held to the request's own discobox as well:
+  repositories it is not of are refused, as uses that do not cover it are.
 
-`test/judge-evals` gains scope and rule cases recorded from the three skills'
-real boxes and asks, with controls each level must not cover (another
-repository, a push to `main`, a merge, a box started for other work).
-Proposer cases are scored by the same judge: each level covers its request,
-each wider level covers the narrower, and no level covers a control.
+`test/judge-evals` gains rule cases recorded from the three skills' real
+asks, with controls each level must not cover (another repository, a push to
+`main`, a merge). Proposer cases are scored by the same judge: each level
+covers its request, each wider level covers the narrower, and no level covers
+a control.
 
 ### 9. A rule may hand on a gate or a delegation, because a rule is a person's
 
@@ -275,21 +284,36 @@ in the gate card's words. A discobox still approves neither.
 
 ## Alternatives rejected
 
-**Scope as a selector of recorded fields** (this discobox, this repository,
-this creator), compared by code. It is exact and can be listed, and it was
-this ADR's first draft. It cannot say an organization, a kind of task, or
-"started by me or by one of my leads" without a field, a glob or an operator
-for each, and the prompt — the best record of what a box is for — is free
-text no selector reads.
+**Scope as a sentence the judge reads**, against a fact sheet the server
+composes from a discobox's record: its repository and ref, who created it, the
+prompt it was created with, its skills. It can say an organization, a kind of
+task, or "started by a person", and it was what this ADR first accepted.
+Turned down by the project's owner before anything shipped: which discoboxes
+a rule answers should not depend on a model. A rule that mints grants nobody
+reads is the wrong place for a reading that may differ between two asks, that
+cannot be listed, and that puts a creator's prompt — a lead's own writing,
+when a discobox created the box — in front of the model that decides.
+Repositories, or all of them, is enough.
 
-**Let the scope read what a discobox says about itself** (tags, description,
+**A rule pinned to one discobox.** It was the narrowest scope the first
+decision offered, compared by ID. A discobox is disposable and its asks end
+with it, so a rule for one answers little a single approval does not, and it
+had to be deleted with its discobox. Turned down with the sentence, for the
+same reason: repositories, or all of them, is enough.
+
+**More selectors than the repository** (creator, ref, an organization glob).
+Each is a field, a glob or an operator a person has to learn, for a
+difference the uses already hold: a rule's uses name the repository and the
+branches it may touch, and every command is judged against the use minted.
+The ref is no part of the match: a box on any branch of a repository is a box
+of that repository.
+
+**Match a discobox's additional sources too.** A box that pulled a repository
+in for reference would be answered as one working on it.
+
+**Let a rule read what a discobox says about itself** (tags, description,
 the skill it says it is running). The server does not know which skill a box
-is running. A box that can write its way into a rule's scope has chosen its
-own rule.
-
-**Send a scope Jev does not match to the judge discobox.** Most pairs of
-discobox and rule do not match, so nearly every pair would cost a model
-call, to avoid a miss whose whole cost is a person being asked.
+is running. A box that can write its way into a rule has chosen its own rule.
 
 **A wider pre-approval instead** (a project-scoped grant with class-shaped
 uses). Every covered discobox holds it unasked, and commands are judged
@@ -336,9 +360,12 @@ did not write, placed where it can argue for itself.
 - **A rule above a project** (#162's user-level grant). A rule names a
   project's secret and is tested against a project's discoboxes. Revisit with
   whatever first gives a server anything shared across projects.
-- **Showing which existing discoboxes a scope matches** when a rule is made.
-  Only the asking discobox is tested (§8). Revisit if rules are made that
-  match more than their author meant.
+- **Showing which existing discoboxes a rule is for** when it is made. It is
+  a comparison now, so it can be listed; nothing does yet. Revisit if rules
+  are made that answer more than their author meant.
+- **Matching a renamed, mirrored or forked repository.** A repository is
+  compared by the host and path it was given. Revisit if rules are seen
+  missing boxes cloned from another spelling of one repository.
 - **A server-wide off switch.** Disabling a rule is per rule. Revisit when an
   operator needs to forbid rules for projects they do not administer.
 - **Limits on what one rule mints** (grants per discobox, per day). An open
@@ -350,13 +377,13 @@ did not write, placed where it can argue for itself.
 ## Consequences
 
 - **#162 is settled in part.** A standing answer for GitHub, made from the
-  inbox, scoped by repository or organization, holding its "never `main`,
+  inbox, for the discoboxes of a repository, holding its "never `main`,
   never merge" limits, with what it does not cover going to a person. Not
   settled: the three items deferred above.
 - New resource `ApprovalRule` with its store, service, and routes under the
   project; `SecretGrant` and `CredentialVerdict` gain the rule they were made
   under; the approve body gains a rule to create.
-- `judge` gains the `scope` and `rule` job kinds and the proposal job;
+- `judge` gains the `rule` job kind and the proposal job;
   `PromptVersion` and Jev's `QuestionsVersion` change. A judge discobox whose
   sandbox agent predates a kind refuses its jobs until its image is
   replaced, so nothing is covered until then.
@@ -364,21 +391,21 @@ did not write, placed where it can argue for itself.
   judges nothing.
 - The approval dialog gains the auto-approve path; `discobox secret request
   approve` and `discobox secret rule` do the same acts from the CLI.
-- Proposing costs one model call and up to six judge calls, paid when a
-  person asks for it. A discobox's first request under a rule costs one
-  scope job; each request in scope costs one content job per rule until one
-  covers it.
-- **Which discoboxes a rule covers cannot be listed**, only asked about one
-  at a time. The verdicts say which it has matched.
-- **A scope that should match may not.** Jev reads a long sentence against
-  free text poorly (ADR 26-10-07-937's Context), and a miss is not sent on.
-  The card says the scope did not match and at what score.
-- **A lead's prompt is its own writing.** A lead that read hostile text can
-  start a box with a prompt that reads as the kind of work a rule covers.
-  The label says a discobox wrote it, and the content check and the command
-  judge still hold what that box is given.
-- With Jev, a rule's sentences, the fact sheet with its prompt, and the uses
-  asked for go to TypeSafe.
+- Proposing costs one model call and up to three judge calls, paid when a
+  person asks for it. Each request from a discobox a rule is for costs one
+  content job per rule until one covers it. Which discoboxes a rule is for
+  costs nothing: it is a comparison.
+- **Which discoboxes a rule is for is exact, and can be said without asking
+  anybody.** It is the same answer every time it is asked.
+- **A rule cannot say an organization, a kind of work, or who started a
+  box.** A project with many repositories names each, or makes a rule for
+  every discobox. A discobox another discobox created on the same repository
+  is answered like one a person started; what it is given is still held by
+  the rule's uses and by the command judge.
+- **A box whose source is spelled differently is not matched.** A fork, a
+  mirror, or a local checkout with no remote is another repository or none,
+  and its request waits for a person, which is what happens today.
+- With Jev, a rule's uses and the uses asked for go to TypeSafe.
 - **A wrong yes mints a grant with no person having read the ask.** What
   still holds: the credential, hosts, purpose and lifetime are facts the rule
   fixed; the grant is one discobox's; and every command is judged against
@@ -386,6 +413,11 @@ did not write, placed where it can argue for itself.
 - **"My pull request" is not checked at approval.** A rule's uses can say
   "its own pull request", and nothing at the ask knows which that is. The
   command judge holds each command to the minted use.
-- A rule with no scope approves for discoboxes that do not exist yet,
+- A rule with no repositories approves for discoboxes that do not exist yet,
   including ones a discobox creates. The proposal card names that in those
-  words.
+  words, and it is never what saying nothing makes.
+- A database built before repositories replaced the scope sentence and the
+  pin is upgraded in place: a rule that had either is deleted, and logged
+  with what it said, since neither says a repository and it would otherwise
+  read as a rule for every discobox, or one switch away from it. Its grants
+  stand, as they do when a person deletes a rule.
