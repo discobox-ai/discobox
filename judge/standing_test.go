@@ -250,3 +250,33 @@ func TestAJobAdmitsOnlyARouteDerivedFromItsOwnEvidence(t *testing.T) {
 		t.Fatal("a command's allow was let stand")
 	}
 }
+
+// Literal says whether a route names one segment as written, which the
+// control plane asks of the segment a discobox API route names its discobox
+// in (ADR 26-10-14-320 §6): a {name} there, or a {name...} at or before it,
+// leaves it open.
+func TestARouteSaysWhichSegmentsItNamesLiterally(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		route string
+		index int
+		want  bool
+	}{
+		{"POST /projects/default/sandboxes/sbx_1/stop", 3, true},
+		{"POST /projects/{p}/sandboxes/sbx_1/stop", 3, true},
+		{"POST /projects/default/sandboxes/{id}/stop", 3, false},
+		{"GET /projects/default/sandboxes/{rest...}", 3, false},
+		{"GET /projects/default/{rest...}", 3, false},
+		{"GET /api/projects/default/sandboxes/sbx_1/execs", 4, true},
+		{"GET /projects/default/sandboxes", 3, false},
+		{"GET /projects/default/sandboxes/sbx_1", -1, false},
+	} {
+		route, err := judge.ParseRoute(tc.route)
+		if err != nil {
+			t.Fatalf("ParseRoute(%q): %v", tc.route, err)
+		}
+		if got := route.Literal(tc.index); got != tc.want {
+			t.Errorf("ParseRoute(%q).Literal(%d) = %v, want %v", tc.route, tc.index, got, tc.want)
+		}
+	}
+}
