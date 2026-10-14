@@ -25,7 +25,7 @@ const (
 	Role = "judge"
 	// PromptVersion changes whenever System changes. A stored verdict names
 	// it, so a decision can be read against the words that produced it.
-	PromptVersion = "10"
+	PromptVersion = "11"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
 	//
@@ -152,12 +152,14 @@ type Job struct {
 	// by whoever observed the request (ADR 26-09-26-240 §4). It explains; it
 	// never authorizes.
 	Guidance []string `json:"guidance,omitempty"`
-	// Facts are what the control plane knows about the job's targets and the
-	// discobox asking, in its own words: that the discobox a request reads
-	// was created by the one asking, say. Like Guidance they are the trusted
-	// side's, set by what builds the job and never by a pool, and they are
-	// facts rather than authority: a fact explains a target, and never
-	// widens Purpose.
+	// Facts are what the control plane recorded about the discoboxes a job
+	// concerns, in its own words (Facts and DelegationFacts,
+	// ADR 26-10-14-691): the discobox asking — its ID, the sources it was
+	// created with, the discobox that created it — and, for a delegation, the
+	// one it would hand the credential to. Like Guidance
+	// they are the trusted side's, set by what builds the job and never by a
+	// pool, and they are facts rather than authority: a fact explains what
+	// the purpose refers to, and never widens it.
 	Facts []string `json:"facts,omitempty"`
 }
 

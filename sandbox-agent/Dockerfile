@@ -33,6 +33,7 @@ COPY sandboxservices ./sandboxservices
 COPY sandboxshell ./sandboxshell
 COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
+COPY sourcecache ./sourcecache
 COPY tarsums ./tarsums
 COPY tools ./tools
 COPY vsock ./vsock
