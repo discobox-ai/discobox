@@ -21,6 +21,7 @@
     { "path": "/nix", "volume": "cache", "scope": "shared", "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "/nix/var/nix/profiles", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "/nix/var/nix/gcroots", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0755" },
+    { "path": "/nix/var/nix/daemon-socket", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "%HOME%/.cache", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.local/share/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.local/share/discobox/agents", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },

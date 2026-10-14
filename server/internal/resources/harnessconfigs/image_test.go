@@ -331,6 +331,53 @@ func TestHarnessManifestsDeclareNoBaseFacts(t *testing.T) {
 	}
 }
 
+// The base layer shares the nix store with the whole pool and keeps three
+// directories inside it for the sandbox alone. Each one landing on the shared
+// side is a failure nothing reports: shared profiles or gcroots let one
+// sandbox's `nix profile install` rewrite another's default profile (ADR 0075
+// §2), and a shared daemon-socket points every sandbox's `nix` at whichever
+// sandbox's daemon bound it last (ADR 26-10-14-129).
+func TestBaseLayerKeepsPerSandboxNixStateOffTheSharedStore(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	var base harness.ImageMetadata
+	if err := json.Unmarshal([]byte(compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.json"))), &base); err != nil {
+		t.Fatal(err)
+	}
+	volumes := make(map[string]harness.Volume, len(base.Volumes))
+	for _, volume := range base.Volumes {
+		volumes[volume.Path] = volume
+	}
+
+	store, ok := volumes["/nix"]
+	if !ok || store.Volume != harness.VolumeCache || store.Scope != harness.VolumeScopeShared {
+		t.Fatalf("/nix = %+v, want a cache volume with scope %q", store, harness.VolumeScopeShared)
+	}
+	for _, path := range []string{
+		"/nix/var/nix/profiles",
+		"/nix/var/nix/gcroots",
+		"/nix/var/nix/daemon-socket",
+	} {
+		volume, ok := volumes[path]
+		if !ok {
+			t.Errorf("%s is not declared, so it lives on the pool-shared /nix", path)
+			continue
+		}
+		if volume.Volume != harness.VolumeData {
+			t.Errorf("%s volume = %q, want %q: it is this sandbox's own", path, volume.Volume, harness.VolumeData)
+		}
+		// Links into /nix, or a socket file: nothing an export can carry
+		// (ADR 0129 §2).
+		if !volume.ExcludeFromExport {
+			t.Errorf("%s travels in an export, want excludeFromExport", path)
+		}
+		// Root's, like the store around it: boot applies exactly what is
+		// declared, and nix-daemon and systemd are who write here.
+		if volume.UID != "0" || volume.GID != "0" || volume.Mode != "0755" {
+			t.Errorf("%s owner %s:%s mode %s, want 0:0 0755", path, volume.UID, volume.GID, volume.Mode)
+		}
+	}
+}
+
 func compactFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
