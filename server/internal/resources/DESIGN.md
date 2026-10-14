@@ -220,7 +220,10 @@ flowchart LR
 
 - Resource packages call stores for simple CRUD. Sandbox and pool lifecycle
   intent (generation bump plus `MarkDirtyTx`) commits in one store
-  transaction.
+  transaction. Whatever the intent hands back is read inside that
+  transaction, never re-read after it: the mark wakes the engine on commit,
+  and a delete it converges first leaves an accepted intent reading as not
+  found.
 - Each reconcile type is a `reconcile.Reconciler` registered on
   `internal/reconcile.Engine` by `internal/service` at startup:
   `sandboxes.Service.RegisterJobs`, `pools.ControlPlane.RegisterJobs`, and the

@@ -14,6 +14,11 @@ import (
 // records the desired state, and marks the sandbox dirty on the reconcile
 // engine — all in one transaction.
 //
+// Each returns the sandbox as read inside its own transaction, never re-read
+// after the commit. The dirty mark wakes the engine the moment the transaction
+// commits, and a reconcile that finishes first — a delete drops the row — would
+// turn an accepted intent into a not-found (issue #204).
+//
 // Intent here means existence and spec only. Start, stop, and restart are not
 // intent and do not pass through this file: they are instructions forwarded to
 // the runtime, which reports what became of them (ADR 0017 §9).
@@ -28,6 +33,7 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
+	var created *model.Sandbox
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		sandbox.IncrementGeneration()
 		sandbox.RecordIntent(model.DesiredStatePresent)
@@ -51,11 +57,16 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 				return err
 			}
 		}
-		return s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
+		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID)); err != nil {
+			return err
+		}
+		var err error
+		created, err = txStore.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID)
+	return created, nil
 }
 
 // recordSandboxIntent records intent on an existing sandbox (generation bump +
@@ -66,6 +77,7 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
+	var recorded *model.Sandbox
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
@@ -80,11 +92,15 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration)); err != nil {
 			return err
 		}
-		return s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID))
+		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+			return err
+		}
+		recorded, err = txStore.GetSandbox(ctx, projectID, sandboxID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandbox(ctx, projectID, sandboxID)
+	return recorded, nil
 }
 
 // updateSandboxMetadata persists a mutation to an existing sandbox that
@@ -94,6 +110,7 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 // reconciliation: nothing about desired or observed runtime state
 // changed, so there is nothing for the reconcile engine to act on.
 func (s *Service) updateSandboxMetadata(ctx context.Context, projectID, sandboxID string, mutate func(*model.Sandbox)) (*model.Sandbox, error) {
+	var updated *model.Sandbox
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
@@ -101,11 +118,15 @@ func (s *Service) updateSandboxMetadata(ctx context.Context, projectID, sandboxI
 		}
 		previousGeneration := sandbox.Generation
 		mutate(sandbox)
-		return txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration))
+		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration)); err != nil {
+			return err
+		}
+		updated, err = txStore.GetSandbox(ctx, projectID, sandboxID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandbox(ctx, projectID, sandboxID)
+	return updated, nil
 }
 
 // scheduleSandboxReconcile marks the sandbox dirty (drift-driven reconcile, no

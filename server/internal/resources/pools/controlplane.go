@@ -189,12 +189,13 @@ func (s *ControlPlane) SchedulePoolRepair(ctx context.Context, poolID, reason st
 
 // SubmitPoolDelete records delete intent for the pool: generation bump,
 // desiredState=deleted, and dirty mark, atomically. The reconciler removes the
-// runtime and then the row.
-func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
+// runtime and then the row — possibly before this returns, since the mark
+// wakes it on commit — so there is no pool to hand back.
+func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID string) error {
 	if s.engine == nil {
-		return nil, errors.New("reconcile engine is required")
+		return errors.New("reconcile engine is required")
 	}
-	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		pool, err := txStore.GetPool(ctx, projectID, poolID)
 		if err != nil {
 			return err
@@ -209,10 +210,7 @@ func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID s
 			return err
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
-	}); err != nil {
-		return nil, err
-	}
-	return s.store.GetPool(ctx, projectID, poolID)
+	})
 }
 
 const bootstrapTokenPurgeInterval = time.Hour
