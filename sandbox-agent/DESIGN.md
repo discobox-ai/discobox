@@ -859,7 +859,10 @@ development images without a registry.
   The login sequence is the hook because the harness command is *typed* into a
   terminal's login shell (ADR 0027), so it runs before the agent in every
   harness image, ours and other people's, with no launcher changes. `pin` is
-  synchronous and touches only symlinks and directory names; `refresh` is
+  synchronous and touches only symlinks and directory names, and replaces a
+  pin into another package's store directory — left by an image whose agent
+  was another package under the same command, as opencode 1 was — since it
+  would run a program the image no longer ships (ADR 26-10-15-848 §7); `refresh` is
   `setsid`-detached and returns immediately unless the store's 12h stamp has
   expired, so no login waits on the network and a sandbox that powers off
   mid-fetch (ADR 0108) loses a temp directory rather than a version. The script
