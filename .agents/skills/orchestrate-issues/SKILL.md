@@ -49,7 +49,7 @@ discobox-access request --json <<'EOF'
   "id": "ai.discobox.sandbox",
   "justification": "the user asked me to deliver issues <list> (or: to triage the open untriaged issues) through worker discoboxes I create; I launch them with no credentials, watch and answer them, start and stop them, tag the finished ones, and answer their credential requests",
   "uses": [
-    {"description": "Create worker discoboxes cloned from the GitHub repository discobox-ai/discobox, each with any prompt and no grants or secrets. Read the discoboxes I create; create them. Never give one a grant or secret, or clone it from another repository."},
+    {"description": "Create worker discoboxes cloned from the GitHub repository discobox-ai/discobox, each with any prompt and no grants or secrets: everything discobox new -d -C https://github.com/discobox-ai/discobox@main -p <prompt> does for the one discobox it creates, including reading the project's skills sources and settings, pushing its sources (discobox-ai/discobox and the project's other sources, such as hooks) into that new discobox's own git origins and pinning their refs, and polling it. Never give one a grant or secret, clone it from another repository, or push to a discobox I did not just create."},
     {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete, repair or upgrade them, start a command or run a service in them, reach their ports, deliver their source, or act on a discobox I did not create."},
     {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never widen a request's uses, or create, change or delete a secret."}
   ],
