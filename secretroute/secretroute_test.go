@@ -79,18 +79,22 @@ func TestPathCoversWholeSegments(t *testing.T) {
 	}
 }
 
-func TestRequestPathResolvesDotSegments(t *testing.T) {
-	for raw, want := range map[string]string{
-		"https://x.test":                       "/",
-		"https://x.test/mcp/readonly?q=1":      "/mcp/readonly",
-		"https://x.test/mcp/readonly/../write": "/mcp/write",
-		"https://x.test/mcp/readonly%2F..%2Fx": "/mcp/x",
-		"https://x.test/mcp/readonly/":         "/mcp/readonly",
-		"/relative/only":                       "/relative/only",
-		"https://x.test/%zz":                   "/",
+func TestRequestPathsResolveDotSegments(t *testing.T) {
+	for raw, want := range map[string][]string{
+		"https://x.test":                       {"/"},
+		"https://x.test/mcp/readonly?q=1":      {"/mcp/readonly"},
+		"https://x.test/mcp/readonly/../write": {"/mcp/write"},
+		"https://x.test/mcp/%2e%2e/write":      {"/write"},
+		"https://x.test/mcp/readonly/":         {"/mcp/readonly"},
+		"/relative/only":                       {"/relative/only"},
+		"https://x.test/%zz":                   {"/"},
+		// An encoded "/" is read both ways: decoded, and kept in its segment
+		// as a server routing on the path as sent would keep it.
+		"https://x.test/mcp/x%2F..%2Freadonly":            {"/mcp/readonly", "/mcp/x%2F..%2Freadonly"},
+		"https://x.test/mcp/readonly/a%2F..%2F..%2Fwrite": {"/mcp/write", "/mcp/readonly/a%2F..%2F..%2Fwrite"},
 	} {
-		if got := RequestPath(raw); got != want {
-			t.Fatalf("RequestPath(%q) = %q, want %q", raw, got, want)
+		if got := RequestPaths(raw); !slices.Equal(got, want) {
+			t.Fatalf("RequestPaths(%q) = %q, want %q", raw, got, want)
 		}
 	}
 }

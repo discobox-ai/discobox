@@ -1309,18 +1309,21 @@ flowchart LR
   binds each sentinel the proxy matched to a live activation of the sending
   sandbox — the same binding `Resolve` makes — and answers with the uses those
   activations name, so a refusal is recorded against the use it was about. A
-  sentinel with no live activation is spending no approved use and keeps the
-  policy it already has: an injected static sentinel is held to its grant and
-  host by the control plane at resolve time, while one this process minted
+  sentinel with no live activation and no routes is spending no approved use
+  and keeps the policy it already has: an injected static sentinel is held to
+  its grant and host by the control plane at resolve time, while one this process minted
   whose activation has lapsed — or whose host the use does not cover — never
   reaches the control plane at all, because `Resolve` refuses it here.
 - **A secret may carry routes** (ADR 26-10-02-924): where every swap of it
-  may go. For an injected sentinel, the control plane pushes them with the
-  sentinel set (`sentinelRoutes`, kept in SecretsFile). For an
-  agent-requested credential, the listing carries them (`secretRoutes`) and
-  the activation records them. `uses` matches the request's host and
-  decoded, cleaned path with `secretroute.Match`, and the most specific
-  routes win.
+  may go. For an injected sentinel, the control plane sends them with the
+  sentinel set (`sentinelRoutes`, kept in SecretsFile) on every create and
+  update; a route change reaches a sandbox as an update. The watcher stages the new routes beside
+  those of any sentinel leaving before it moves the sentinel set, so no
+  sentinel is ever swappable without its routes. For an agent-requested
+  credential, the listing carries them (`secretRoutes`) and the activation
+  records them. `uses` matches the request's host and every reading of its
+  path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
+  its segment) with `secretroute.Match`, and the most specific routes win.
   - A route there with no use allows the request unjudged.
   - Otherwise the routes' uses are one group, and any one allowing is enough.
   - If no route covers the request, `authorize` refuses it without asking the
@@ -1330,9 +1333,10 @@ flowchart LR
   per approved use it spends, and every one of them has to allow before
   anything is substituted. The ask is synchronous on the proxy's request path:
   the discobox's request waits for a model to answer, which is why only a
-  request spending an approved use is asked about and an ordinary injected
-  sentinel never is. The pool sends which discobox and which use, never what
-  the use allows; the control plane reads that from the live grant. Only an
+  request spending an approved use is asked about: a grant's, or a judged
+  route's, and an injected sentinel off every judged route never is. The pool
+  sends which discobox and which use, never what the use allows; the control
+  plane reads that from the live grant, or from the secret's route. Only an
   explicit allow allows. This also covers a sandbox's own calls to the discobox
   API, which the gate admits through the same contract — and whose operation is
   usually in the body.

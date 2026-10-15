@@ -668,6 +668,12 @@ func TestTheMostSpecificRouteDecides(t *testing.T) {
 	}{
 		{"https://api.individual.githubcopilot.com/mcp/readonly", true, 0},
 		{"https://api.individual.githubcopilot.com/mcp/readonly/../write", false, 1},
+		// An encoded "/" cannot move a request onto the unjudged route
+		// whichever way the upstream reads it: decoded it reaches
+		// /mcp/readonly but is sent under /mcp/x, and kept as sent it falls
+		// on /mcp/readonly but reaches /mcp/write when decoded.
+		{"https://api.individual.githubcopilot.com/mcp/x%2F..%2Freadonly", false, 1},
+		{"https://api.individual.githubcopilot.com/mcp/readonly/a%2F..%2F..%2Fwrite", false, 1},
 		{"https://api.individual.githubcopilot.com/mcp", false, 1},
 		{"https://api.individual.githubcopilot.com/v1/messages", true, 0},
 	} {
