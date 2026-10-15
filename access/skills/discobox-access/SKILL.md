@@ -78,7 +78,7 @@ discobox-access request --json <<'EOF'
   "envVar": "GH_TOKEN",
   "hosts": ["api.github.com"],
   "justification": "the task asks me to fix issue #43 and get the fix merged through a pull request",
-  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main. Read anything in the repository; push that branch, open and update the pull request, and comment on it. Never push main or any other branch, delete a branch, merge or close the pull request, or delete a comment."}],
+  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main. Read anything in the repository; push that branch, open and update the pull request, and comment on it. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, or read secrets."}],
   "grantTTLSeconds": 3600,
   "wait": true,
   "timeoutSeconds": 3600
@@ -122,7 +122,7 @@ getting them wrong is then impossible:
 | `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes; on any discobox in this project but its judge, deliver its source, read and type into its terminals, start, stop, restart, repair, and upgrade it, run its services and read their logs, reach its ports over HTTP, and tag it; and answer the credential requests of the ones you created | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
-discobox-access request com.github.api --use "Open a pull request from branch fix-43 into main of acme/web. Read anything in the repository; push that branch and open the pull request. Never push main or another branch, delete a branch, or merge or close the pull request." --why "the task asks for a PR" --wait
+discobox-access request com.github.api --use "Open a pull request from branch fix-43 into main of acme/web. Read anything in the repository; push that branch and open the pull request. Never push main or another branch, force-push, delete a branch, merge or close the pull request, open one in another repository, or read secrets." --why "the task asks for a PR" --wait
 ```
 
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
@@ -150,8 +150,9 @@ command to. Write it in three parts, always in this order:
 > Read anything in the repository; push that branch (with --force-with-lease
 > after a rebase), open and update the pull request, comment on it and reply
 > to its reviews, and re-run its failed CI. Never push main or any other
-> branch, delete a branch, merge or close the pull request, delete a comment,
-> or start any other workflow.
+> branch, force-push without a lease, delete a branch, merge or close the pull
+> request, open one in another repository, comment on unrelated issues, delete
+> a comment, cancel or delete a run, start any other workflow, or read secrets.
 
 That one use covers every `git push`, `gh pr …`, `gh run …` and `gh api`
 call the job takes, in whatever form you end up writing them, and nothing
@@ -185,12 +186,15 @@ past its lines.
      branch is next to `main`, your namespace next to another, your tag next
      to an older one.
 
-   For a read, the neighbor is secrets, and whatever is readable just
-   outside the scope you stated. Each answer the job does not need goes in
+   For a read, the neighbor is secrets. Other targets are already outside
+   the read scope you stated (rule 3), so they need no "Never". Each answer the job does not need goes in
    "Never …", and each must be one a command can show (rule 7): "never
    delete a comment", not "never edit others' comments". This is not a list
    of everything bad — that is already outside — but of what a reader might
-   think came with the job, usually two to five things.
+   think came with the job: as many as its writes have neighbors. A job with
+   several writes may need eight or nine. List each one; do not fold them
+   into a broader phrase ("nothing destructive"), which the judge then has
+   to interpret.
 6. **Actions, not commands.** "Push that branch", not
    `git push --force-with-lease=refs/heads/…:<sha>`. Name a flag only when the
    flag is the line (`--force-with-lease`, not `--force`).
@@ -206,7 +210,7 @@ past its lines.
 | --- | --- |
 | Too fine | `gh api GET repos/acme/web/pulls/<n>, pulls/<n>/reviews and pulls/<n>/comments, and POST pulls/<n>/comments (replies with in_reply_to)` |
 | Too vague | `GitHub operations for the task` |
-| Right | `Answer the review on pull request #812 in acme/web. Read anything in the repository; reply to its comments and push fixes to its branch fix-43. Never merge.` |
+| Right | `Answer the review on pull request #812 in acme/web. Read anything in the repository; reply to its comments and push fixes to its branch fix-43. Never push main or another branch, force-push, delete a branch, merge or close the pull request, comment on unrelated issues, delete a comment, or read secrets.` |
 | Too fine | `kubectl get pods -n shop`, `kubectl logs -n shop`, `kubectl describe pod -n shop` |
 | Right | `Find out why the api pods restart in namespace shop of the prod cluster. Read anything in namespace shop; change nothing. Never exec into a pod or read secrets.` |
 
@@ -215,13 +219,14 @@ Common writes and the neighbors to rule out:
 | Write | Wider | Harsher | Elsewhere |
 | --- | --- | --- | --- |
 | add and remove issue labels | delete or rename a repository label | — | label another repository's issues |
-| push that branch | — | push without a lease, delete the branch | push `main` or another branch |
+| push that branch | — | force-push without a lease, delete the branch | push `main` or another branch |
 | open and update the pull request | — | merge it, close it | open one in another repository |
 | comment and reply | — | delete a comment | comment on unrelated issues |
 | re-run its failed CI | start any other workflow | cancel or delete runs | — |
-| push tag vX.Y.Z | — | move or delete a tag | push another tag |
+| push tag vX.Y.Z | — | move or delete a tag, delete or edit a release | push another tag |
 | type into the workers' terminals | start a command in them | delete a worker | — |
-| approve or deny requests | create or change a secret | — | — |
+| approve or deny requests | create or change a secret | widen a request's uses | — |
+| read anything in the repository | read secrets | — | — |
 
 A use without its neighbors ruled out reads as permission for them:
 
@@ -230,7 +235,8 @@ A use without its neighbors ruled out reads as permission for them:
 >
 > ✓ Triage issues in acme/web. Read anything in the repository; add and remove
 > issue labels, and post my triage comments. Never delete or rename a label,
-> delete a comment, or close, assign or retitle an issue.
+> label another repository's issues, delete a comment, close, assign or
+> retitle an issue, or read secrets.
 
 A judge allowed `gh label delete` under the first.
 
@@ -364,7 +370,7 @@ discobox-access request --json <<'EOF'
   "uses": [
     {"description": "Create worker discoboxes from <this directory>, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory's sources to them. Never give one a grant or secret, or create one from another directory or repository."},
     {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them."},
-    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never create, change or delete a secret."}
+    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never widen a request's uses, or create, change or delete a secret."}
   ],
   "grantTTLSeconds": 28800,
   "wait": true
@@ -377,8 +383,9 @@ Then, for each credential your workers will need, ask to delegate it
 for, each the job a worker will do in "Writing a use"'s shape with "for the
 discoboxes I create" in front — "For the discoboxes I create: triage issues in
 org/repo. Read anything in the repository; add and remove issue labels, and
-post my triage comments. Never delete or rename a label, delete a comment, or
-close, assign or retitle an issue." — and a lifetime as long as the
+post my triage comments. Never delete or rename a label, label another
+repository's issues, delete a comment, close, assign or retitle an issue, or
+read secrets." — and a lifetime as long as the
 orchestration. Without one you approve nothing: the server hands on only what a delegation grant you hold covers —
 that credential, to its host, for no longer than it lasts — so a person sees
 what you mean to hand on before you hand on any of it.

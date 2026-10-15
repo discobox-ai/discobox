@@ -51,7 +51,7 @@ discobox-access request --json <<'EOF'
   "uses": [
     {"description": "Create worker discoboxes cloned from the GitHub repository discobox-ai/discobox, each with any prompt and no grants or secrets. Read the discoboxes I create; create them. Never give one a grant or secret, or clone it from another repository."},
     {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them."},
-    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never create, change or delete a secret."}
+    {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never widen a request's uses, or create, change or delete a secret."}
   ],
   "grantTTLSeconds": 172800,
   "wait": true
@@ -67,7 +67,7 @@ discobox-access request --json <<'EOF'
   "id": "com.github.api",
   "justification": "I track the pull requests my worker discoboxes open in discobox-ai/discobox and main's CI, find the untriaged issues I hand them, and file the issues I hand them",
   "uses": [
-    {"description": "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, or file an issue in another repository."}
+    {"description": "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, file an issue in another repository, or read secrets."}
   ],
   "grantTTLSeconds": 604800,
   "wait": true
@@ -90,8 +90,8 @@ discobox-access request --json <<'EOF'
   "purpose": "delegate",
   "justification": "each worker discobox I create triages issues in discobox-ai/discobox one at a time and labels and comments on them, or delivers one issue as a pull request into discobox-ai/discobox, answers its reviews, and keeps the PR mergeable until a human merges it. Needs contents:write, pull-requests:write and actions:write (and workflow scope if a change touches .github/workflows).",
   "uses": [
-    {"description": "For the discoboxes I create, each on its own issue n: deliver issue #n as a pull request from branch discobox/issue-<n> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."},
-    {"description": "For the discoboxes I create: triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push."}
+    {"description": "For the discoboxes I create, each on its own issue n: deliver issue #n as a pull request from branch discobox/issue-<n> into main of discobox-ai/discobox. Read anything in the repository; push that branch (with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."},
+    {"description": "For the discoboxes I create: triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, label another repository's issues, delete a comment, close, assign, or retitle an issue, push, or read secrets."}
   ],
   "grantTTLSeconds": 604800,
   "wait": true

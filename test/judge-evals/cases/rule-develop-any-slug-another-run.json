@@ -4,12 +4,12 @@
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "Deliver a change as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow.",
+    "purpose": "Deliver a change as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets.",
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "Deliver the VM bootstrap agent start fix as a pull request from branch discobox/vm-bootstrap-agent-start into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."
+      "Deliver the VM bootstrap agent start fix as a pull request from branch discobox/vm-bootstrap-agent-start into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."
     ]
   }
 }

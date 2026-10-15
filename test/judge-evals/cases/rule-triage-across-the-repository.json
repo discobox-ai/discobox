@@ -9,7 +9,7 @@
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "Triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push."
+      "Triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, label another repository's issues, delete a comment, close, assign, or retitle an issue, push, or read secrets."
     ]
   }
 }

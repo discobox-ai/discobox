@@ -39,7 +39,7 @@ discobox-access request --json <<'EOF'
   "id": "com.github.api",
   "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox and get its CI green",
   "uses": [
-    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green. Read anything in the repository; push that branch, open and update the pull request, comment on it, and re-run its failed CI. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, or start any other workflow."}
+    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green. Read anything in the repository; push that branch, open and update the pull request, comment on it, and re-run its failed CI. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, cancel or delete a run, start any other workflow, or read secrets."}
   ],
   "grantTTLSeconds": 14400,
   "wait": true
