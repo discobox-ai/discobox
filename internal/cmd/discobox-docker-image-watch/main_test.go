@@ -32,8 +32,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 8 {
-		t.Fatalf("image specs = %d, want base, worker, sandbox, and five harnesses", len(specs))
+	if len(specs) != 9 {
+		t.Fatalf("image specs = %d, want base, worker, sandbox, and six harnesses", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -56,7 +56,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{baseSpecName, "pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode", "harness-copilot", "harness-shell"}
+	wantNames := []string{baseSpecName, "pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode", "harness-copilot", "harness-omp", "harness-shell"}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
@@ -69,6 +69,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
 		"DISCOBOX_HARNESS_OPENCODE_IMAGE",
 		"DISCOBOX_HARNESS_COPILOT_IMAGE",
+		"DISCOBOX_HARNESS_OMP_IMAGE",
 		"DISCOBOX_HARNESS_SHELL_IMAGE",
 	} {
 		if !gotEnvKeys[key] {
@@ -181,6 +182,7 @@ func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
 		"harness-claude-code": sandboxAgentSpecName,
 		"harness-opencode":    sandboxAgentSpecName,
 		"harness-copilot":     sandboxAgentSpecName,
+		"harness-omp":         sandboxAgentSpecName,
 		"harness-shell":       sandboxAgentSpecName,
 	}
 	wantArgs := map[string]string{
@@ -190,6 +192,7 @@ func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
 		"harness-claude-code": "SANDBOX_AGENT_IMAGE",
 		"harness-opencode":    "SANDBOX_AGENT_IMAGE",
 		"harness-copilot":     "SANDBOX_AGENT_IMAGE",
+		"harness-omp":         "SANDBOX_AGENT_IMAGE",
 		"harness-shell":       "SANDBOX_AGENT_IMAGE",
 	}
 	specs, _ := loadDockerImageSpecs(t)
@@ -307,6 +310,7 @@ func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 		"harness-codex":       harness.MetadataBuildArg,
 		"harness-opencode":    harness.MetadataBuildArg,
 		"harness-copilot":     harness.MetadataBuildArg,
+		"harness-omp":         harness.MetadataBuildArg,
 	}
 	if !maps.Equal(labeled, want) {
 		t.Fatalf("labeled images = %v, want %v", labeled, want)
