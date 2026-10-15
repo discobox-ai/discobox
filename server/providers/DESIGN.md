@@ -17,13 +17,13 @@ orchestration, and API shape.
 
 A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
 runs the pool-agent container, and the pool's sandboxes run beside it on the
-same Docker daemon — never nested inside it. A `discovm` pool is the exception:
+same Docker daemon — never nested inside it. A `vm` pool is the exception:
 its sandboxes are disco-vm machines (ADR 26-10-09-106), and none of the
 engine's Docker mechanics apply to it, whatever its driver runs a machine as
 (disco-vm's docker driver runs one as a container).
 
 `providers.RegisterBuiltInSandboxProviderFactories` registers the portable
-providers (`discovm`, `docker`, `digitalocean`, `exec`, `libkrun`) everywhere,
+providers (`vm`, `docker`, `digitalocean`, `exec`, `libkrun`) everywhere,
 plus one build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
 
 ## Runtime References

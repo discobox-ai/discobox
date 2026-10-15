@@ -1,9 +1,10 @@
-// Package discovm registers the "discovm" provider type: pools whose sandboxes
-// are disco-vm machines (github.com/discobox-ai/vm), one per sandbox, run by the
-// disco-vm engine this server embeds (ADR 26-10-09-106 §§1–2).
+// Package discovm registers the "vm" provider type: pools whose sandboxes are
+// disco-vm machines (github.com/discobox-ai/vm), one per sandbox, run by the
+// disco-vm engine this server embeds (ADR 26-10-09-106 §§1–2). What a person
+// sees is spelled vm, never disco-vm (ADR 26-10-15-629).
 //
 // It is a poolruntime.RuntimeProvider beside dockerworker.Engine, not a
-// dockerworker.Driver: a discovm pool has none of the engine's Docker mechanics,
+// dockerworker.Driver: a vm pool has none of the engine's Docker mechanics,
 // whatever its driver runs a machine as. Its driver is
 // disco-vm's, named in the provider's configuration and passed to disco-vm as
 // it is. Nothing here is written per driver: where a pool's agent runs follows
@@ -24,7 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
-const ProviderType = "discovm"
+const ProviderType = "vm"
 
 // Config is the persisted provider instance configuration.
 type Config struct {
@@ -77,17 +78,17 @@ func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.Provide
 	}
 }
 
-// Definition describes the disco-vm provider for provider catalogs.
+// Definition describes the vm provider for provider catalogs.
 func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
-		Name:        "disco-vm",
+		Name:        ProviderType,
 		Icon:        "server",
-		Description: "Runs each sandbox as a disco-vm machine, on whichever disco-vm driver it is configured with.",
+		Description: "Runs each sandbox as a virtual machine, on whichever VM driver it is configured with.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			// Immutable: a pool's host was made through the driver, and only
 			// that driver can reach it to remove it.
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The disco-vm driver to run machines on, as disco-vm names it: for example vz on macOS, docker on a Docker daemon, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
-			{Key: "agent", Label: "Guest Agent", Type: "string", Description: "Path on the server's machine of the disco-vm binary built for the guests' OS and CPU. Images are built with it as the guest agent, so building one needs it.", Advanced: true},
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: for example vz on macOS, docker on a Docker daemon, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
+			{Key: "agent", Label: "Guest Agent", Type: "string", Description: "Path on the server's machine of the VM guest agent binary (github.com/discobox-ai/vm) built for the guests' OS and CPU. Images are built with it as the guest agent, so building one needs it.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

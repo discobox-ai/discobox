@@ -338,7 +338,7 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	if _, ok := provider.(*poolruntime.Provider); !ok {
 		t.Fatalf("factory built %T, want *poolruntime.Provider", provider)
 	}
-	if provider.Definition().Name != "disco-vm" {
+	if provider.Definition().Name != "vm" {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)

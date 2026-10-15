@@ -136,7 +136,7 @@ func (r *Runtime) RemovePool(ctx context.Context, _ *model.Project, _ *model.San
 }
 
 // errNoPoolAgent is every driver's answer until a discovm pool runs an agent.
-var errNoPoolAgent = errors.New("a discovm pool runs no pool agent yet: a host pool agent is staged in #64, and a pool machine's in #127")
+var errNoPoolAgent = errors.New("a vm pool runs no pool agent yet: a host pool agent is staged in #64, and a pool machine's in #127")
 
 func (r *Runtime) AcquirePoolAgentClient(_ context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
 	if err := requirePool(pool); err != nil {
