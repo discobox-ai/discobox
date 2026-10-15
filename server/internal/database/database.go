@@ -283,7 +283,7 @@ func unsetManifestFileImageKinds(db *gorm.DB) error {
 }
 
 // respellDiscoVMImageKinds rewrites every pool's and harness's image kind
-// stored as `vm/<driver>`, the spelling releases before ADR 26-10-15-629
+// stored as `discovm/<driver>`, the spelling releases before ADR 26-10-15-629
 // wrote, as `vm/<driver>`, the only spelling platform.ParseImageKind reads.
 // It runs on every start, before anything scans a kind; after the first it
 // matches nothing.

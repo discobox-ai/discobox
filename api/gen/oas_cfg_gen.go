@@ -19,7 +19,6 @@ import (
 
 var regexMap = map[string]ogenregex.Regexp{
 	"^(oci|vm/[a-z0-9]+)$":                   ogenregex.MustCompile("^(oci|vm/[a-z0-9]+)$"),
-	"^(|oci|vm/[a-z0-9]+)$":                  ogenregex.MustCompile("^(|oci|vm/[a-z0-9]+)$"),
 	"^[0-9a-f]{40}$":                         ogenregex.MustCompile("^[0-9a-f]{40}$"),
 	"^[A-Za-z0-9_-]+:dns_[0-9]+$":            ogenregex.MustCompile("^[A-Za-z0-9_-]+:dns_[0-9]+$"),
 	"^[A-Za-z0-9_-]+:http_[0-9]+$":           ogenregex.MustCompile("^[A-Za-z0-9_-]+:http_[0-9]+$"),
