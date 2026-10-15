@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
@@ -78,6 +78,33 @@ sudo install -m 0755 $S/runc.orig /opt/discobox/bin/runc   # always restore
   kind forwards the caller's proxy env into the node, so its containerd's env
   (`/proc/$(pidof containerd)/environ`) shows what the wrapper left there.
   Delete the cluster afterwards.
+
+# Verifying the sandbox's DNS stub (`sandbox-agent/dnsstub`, nested DNS)
+
+Wait for the image watcher to rebuild both `discobox-sandbox-agent:local` and
+`discobox-harness-shell:local` (`docker run --rm --entrypoint sh <img> -c
+'grep -c "<new string>" /usr/local/bin/discobox-sandbox-agent'`), then `d new
+-d -H shell --no-source -p x`. In the box (`d shell <id> -- ...`): `sudo
+iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
+ping -c1 -W2 example.com` on the default bridge, a user network, one with
+`-o com.docker.network.bridge.name=X`, and `--network host` shows nested
+resolution (busybox `nslookup` prints no addresses for single-label names;
+`ping`'s first line does). What resolved: `d admin audit dns --discobox-id <id>
+--since 15m`.
+
+- The box has no `nslookup`: `docker cp` `/bin/busybox` out of a `docker
+  create busybox:1.36` and run `busybox nslookup`.
+- A neighbor on the dev pool's sandbox network (`docker run --network
+  discobox-sbnet-<pool> --cap-add NET_ADMIN`, routing `169.254.53.53` via the
+  box's `eth0`) never reaches the stub here: the host Docker's internal-network
+  rule (`ip daddr != <subnet> iifname br-… drop`) drops it first, even with the
+  stub's rule deleted. To exercise the stub's rule itself, in the box: `ip
+  netns add probe`, a veth whose box end is named `eth9` (dropped) or `nst0`
+  (answered), route `169.254.53.53` through it, and `ip netns exec probe
+  busybox nslookup example.com 169.254.53.53`; the rule's counter (`iptables
+  -L INPUT -v -n`) moves only for `eth9`.
+- `sudo systemctl restart discobox-proxy-bridge.service` re-runs the stub's
+  claim; the rule must stay single.
 
 # Verifying the pool proxy (`proxy/`)
 
