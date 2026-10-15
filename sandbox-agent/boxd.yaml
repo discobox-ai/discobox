@@ -548,6 +548,7 @@ layers:
       - copy: {src: sandboxtree, dst: /var/tmp/discobox-src/sandboxtree}
       - copy: {src: sandboxuser, dst: /var/tmp/discobox-src/sandboxuser}
       - copy: {src: secretformat, dst: /var/tmp/discobox-src/secretformat}
+      - copy: {src: secretroute, dst: /var/tmp/discobox-src/secretroute}
       - copy: {src: serverstage, dst: /var/tmp/discobox-src/serverstage}
       - copy: {src: sourcecache, dst: /var/tmp/discobox-src/sourcecache}
       - copy: {src: tarsums, dst: /var/tmp/discobox-src/tarsums}
