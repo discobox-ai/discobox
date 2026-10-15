@@ -190,13 +190,12 @@ func TestDisplayIsAReferenceToTheSameSource(t *testing.T) {
 		{"https://gitlab.com/g/p.git", "https://gitlab.com/g/p"},
 		{"git@gitlab.com:g/p.git@v1", "git@gitlab.com:g/p@v1"},
 		{"/srv/app@main", "/srv/app@main"},
-		{"/home/me/app", "~" + string(filepath.Separator) + "app"},
 	} {
 		r, err := Parse(tc.in)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := r.Display(filepath.FromSlash("/home/me"))
+		got := r.Display("")
 		if got != tc.want {
 			t.Errorf("Display(%q) = %q, want %q", tc.in, got, tc.want)
 		}
@@ -211,7 +210,14 @@ func TestDisplayIsAReferenceToTheSameSource(t *testing.T) {
 			t.Errorf("Display(%q) = %q keys as %q, want %q", tc.in, got, back.CloneKey(), r.CloneKey())
 		}
 	}
-	if got := Display("/home/me/app", ""); got != "/home/me/app" {
+	// A directory under home reads from ~; with no home named, whole. The
+	// home is a real directory, so it is absolute on every platform.
+	home := t.TempDir()
+	app := filepath.Join(home, "app")
+	if got, want := Display(app, home), "~"+string(filepath.Separator)+"app"; got != want {
+		t.Errorf("Display(%q) under home = %q, want %q", app, got, want)
+	}
+	if got := Display(app, ""); got != app {
 		t.Errorf("Display with no home = %q, want the path as it is", got)
 	}
 	if got := Display("@", ""); got != "@" {
