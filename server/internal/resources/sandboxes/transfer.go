@@ -291,6 +291,16 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 			return nil, err
 		}
 	}
+	// The archive's working directory is checked as a create's is: the
+	// client hands it to host tools, and an archive is no more trusted than a
+	// create (ADR 26-10-15-417).
+	importPlatform := spec.Platform
+	if importPlatform.IsZero() {
+		importPlatform = pool.Platform
+	}
+	if err := validateSourceWorkingDirectory(spec.Manifest.Source, importPlatform); err != nil {
+		return nil, err
+	}
 
 	if s.sandboxProviders == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")

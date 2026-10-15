@@ -263,6 +263,9 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, err
 	}
+	if err := validateSourceWorkingDirectory(source, sandboxPlatform); err != nil {
+		return nil, err
+	}
 	// And the pool must run the kind of image its harness's image is
 	// (ADR 26-10-09-106 §4).
 	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {

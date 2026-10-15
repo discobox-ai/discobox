@@ -7,9 +7,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -100,6 +103,74 @@ func validateSkillsSources(source *model.GitSource, refs model.SourceCodeReferen
 		}
 	}
 	return nil
+}
+
+// validateSourceWorkingDirectory refuses a primary source whose working
+// directory is not an absolute path, by the sandbox's platform, at or below the
+// directory the same request names for the source (ADR 26-10-15-417).
+//
+// The client hands the server's record to host tools: it is the folder an
+// editor's remote URL opens (`ssh-remote+<host><workdir>`) and `{workdir}` in
+// a tool's command. Anything not absolute could name a host there instead of a
+// path, and the request is not trusted to be the client's own: a box can create
+// boxes (ADR 26-10-14-320), and an archive is anyone's. The pool once refused a
+// relative one, because Docker did as a WorkingDir; now it only ignores one
+// outside the source when it places the start directory (ADR 26-10-15-664 §3),
+// so the check lives where it is stored. The client guards the same sink for
+// every path it hands a host tool (sandboxSSHFolder); this is the second line.
+//
+// It checks the record against itself, not against where the source lands:
+// placement is the pool's to decide (normalizeSandboxConfig), and this does not
+// restate it. Paths are compared cleaned, so a repository whose path has a
+// space in it passes, as the client produces such paths.
+//
+// A sandbox whose pool has not declared its platform yet is judged by either
+// rule set, so a create is not refused for its pool being new.
+func validateSourceWorkingDirectory(source *model.GitSource, sandboxPlatform platform.Platform) error {
+	if source == nil || source.Destination == nil || source.Destination.WorkingDirectory == nil {
+		return nil
+	}
+	workingDirectory := *source.Destination.WorkingDirectory
+	rules := []sandboxpath.Paths{sandboxpath.For(sandboxPlatform)}
+	if sandboxPlatform.IsZero() {
+		rules = []sandboxpath.Paths{
+			sandboxpath.For(platform.Platform{OS: "linux"}),
+			sandboxpath.For(platform.Platform{OS: "windows"}),
+		}
+	}
+	for _, paths := range rules {
+		if sourceWorkingDirectoryInside(paths, source.Destination.Directory, workingDirectory) {
+			return nil
+		}
+	}
+	return apperrors.NewStatusError(http.StatusBadRequest,
+		fmt.Sprintf("source working directory %q is not an absolute path inside the source's directory", workingDirectory))
+}
+
+// sourceWorkingDirectoryInside reports whether workingDirectory is absolute by
+// paths, holds no control character, and lies at or below directory when the
+// request names one.
+func sourceWorkingDirectoryInside(paths sandboxpath.Paths, directory *string, workingDirectory string) bool {
+	if !paths.IsAbs(workingDirectory) || strings.IndexFunc(workingDirectory, unicode.IsControl) >= 0 {
+		return false
+	}
+	if directory == nil || strings.TrimSpace(*directory) == "" {
+		return true
+	}
+	if !paths.IsAbs(*directory) {
+		return false
+	}
+	root := paths.Clean(*directory)
+	for p := paths.Clean(workingDirectory); ; {
+		if p == root {
+			return true
+		}
+		parent := paths.Dir(p)
+		if parent == p {
+			return false
+		}
+		p = parent
+	}
 }
 
 // sourceCacheKey names the pool cache a source is delivered into (ADR
