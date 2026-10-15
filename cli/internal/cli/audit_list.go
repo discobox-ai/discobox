@@ -386,10 +386,10 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 // Claude Code and Codex send tool_name and tool_input; the opencode image's
 // plugin sends tool and args, before the tool runs and after (an opencode 1
 // image sent only a title after); Copilot sends toolName with toolArgs, or
-// toolInput on a permissionRequest; the omp image's extension sends omp's own
-// toolName with input. Claude Code's PostToolBatch names every call of a
-// batch in tool_calls. Claude Code and Codex send a UserPromptSubmit's text
-// as prompt.
+// toolInput on a permissionRequest; the omp and pi images' extensions send
+// their CLI's own toolName with input, and a before_agent_start's text as
+// prompt. Claude Code's PostToolBatch names every call of a batch in
+// tool_calls. Claude Code and Codex send a UserPromptSubmit's text as prompt.
 type hookPayload struct {
 	Prompt    string         `json:"prompt"`
 	ToolName  string         `json:"tool_name"`
@@ -405,11 +405,11 @@ type hookPayload struct {
 	CopilotToolName  string          `json:"toolName"`
 	CopilotToolArgs  json.RawMessage `json:"toolArgs"`
 	CopilotToolInput map[string]any  `json:"toolInput"`
-	// omp's tool_call and tool_result: toolName, as Copilot spells it, and
-	// the arguments as input.
-	OmpInput  map[string]any `json:"input"`
-	Title     string         `json:"title"`
-	ToolCalls []struct {
+	// omp's and pi's tool_call and tool_result: toolName, as Copilot spells
+	// it, and the arguments as input.
+	ExtensionInput map[string]any `json:"input"`
+	Title          string         `json:"title"`
+	ToolCalls      []struct {
 		ToolName string `json:"tool_name"`
 	} `json:"tool_calls"`
 }
@@ -458,7 +458,7 @@ func hookSummary(payload []byte) string {
 			input = p.CopilotToolInput
 		}
 		if input == nil {
-			input = p.OmpInput
+			input = p.ExtensionInput
 		}
 	}
 	if tool == "" {
