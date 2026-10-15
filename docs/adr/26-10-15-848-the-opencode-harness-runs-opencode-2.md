@@ -8,6 +8,9 @@
   [0147](0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md)'s
   plugin file and its event list; its decision that an image-owned plugin in
   the managed layer is opencode's hook layer stands.
+  [0114](0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)
+  §2's "an existing pin is never rewritten", narrowed by §7 to pins of the
+  package the image installs.
 
 ## Context
 
@@ -36,11 +39,16 @@ marked):
   does today.
 - **`--prompt` submits.** In a tmux pane, `opencode --standalone --prompt
   "say hi"` sent the request and rendered the answer with no keypress.
-- **`auth.json` is not imported into a new database.** With a v1 `auth.json`
-  holding a key and three OAuth entries, a fresh `opencode.db` recorded the
-  `import_legacy_credentials` migration as done and held no credential. ADR
-  0127's "opencode 2 imports `auth.json`" is not a migration path for a
-  sandbox that starts on opencode 2.
+- **`auth.json` is imported only into a database opencode 1 made.** With a
+  v1 `auth.json` holding a key and three OAuth entries, a fresh `opencode.db`
+  recorded the `import_legacy_credentials` migration as done and held no
+  credential. Opening a database opencode 1.19 made beside an `auth.json` did
+  import it, under ids of opencode's own, as each provider's active
+  credential. Its mapping, read from the binary: `api` is `key`, `wellknown`
+  is a `key` holding its token, and `oauth` keeps its tokens with method
+  `chatgpt-browser` for openai, `device` for github-copilot, opencode and xai,
+  and `oauth` for any other provider. An opencode 1 `opencode.json`, its old
+  `plugin` key included, still loads.
 - **Plugins changed shape.** The config key is `plugins`; a path entry must be
   a directory (a single file is refused: "configured plugin path must be a
   directory"); plugins are written against `@opencode/plugin`. The v1
@@ -85,20 +93,26 @@ plugin runs; not measured).
 Secrets stay one per provider, `OPENCODE_<PROVIDER>_CREDENTIAL`, typed as ADR
 0127 §2 types them. The configure command captures with `opencode auth
 export` and returns the export, with each provider's sentinel in place of its
-value, as a templated harness file. The launcher removes the credentials the
-image owns and imports that file before it starts opencode, because import
-never updates an id it already has. Image-owned credentials carry a fixed id
-per provider, so a credential the user connected by hand inside a sandbox is
-left alone.
+value, as a templated harness file. Before it starts opencode the launcher
+brings the store to that file: an image-owned credential that differs is
+logged out and imported again, because import never updates an id it already
+has, and an image-owned credential that is not active is switched to its
+provider's active credential wherever the provider has another, because
+import activates one only for a provider with none and logging out a
+provider's active credential promotes another (measured). Image-owned
+credentials carry a fixed id per provider, so a credential the user connected
+by hand inside a sandbox is never logged out or changed; it stops being its
+provider's active one when a changed configuration is brought in.
 
 ### 4. A configuration made under ADR 0127 keeps working
 
 A configuration made before this has `auth.json` as its harness file and no
 export. When the export is absent the launcher builds the import from
-`auth.json`: an `api` entry is a `key` credential, an `oauth` entry an `oauth`
-credential with its provider's sign-in method. The table of sign-in methods
-by provider is measured per provider during implementation, and a provider
-with no known method is skipped with a message naming the reconfigure.
+`auth.json` with opencode's own legacy mapping (Context), so a provider is
+read exactly as opencode would read it, generic `oauth` method included. On a
+sandbox that ran opencode 1, opencode's own import of the same `auth.json`
+sits beside the image's copy; §3's switch keeps the image's active. A
+reconfigure reads the old `auth.json` the same way and returns the export.
 
 ### 5. The hook plugin is rebuilt for opencode 2
 
@@ -112,10 +126,24 @@ payloads during implementation.
 
 `discobox-prompt --no-tools` keeps ADR 0127 §4's guarantee — an empty
 directory, empty config, state and cache, no project config, no inherited
-`OPENCODE_*` — using `OPENCODE_CONFIG_DIR`, `OPENCODE_DISABLE_PROJECT_CONFIG`,
-an isolated home, and a `"*": "deny"` permission in config in place of
-`--pure` and `OPENCODE_PERMISSION`. Tools off is accepted only once the fake
-model is shown to receive no tools.
+`OPENCODE_*` — using isolated XDG directories, `OPENCODE_DISABLE_PROJECT_CONFIG`,
+an isolated home (opencode 2 reads `~/.claude` and `~/.agents`), and a
+`"*": "deny"` permission in config in place of `--pure` and
+`OPENCODE_PERMISSION`; the image's own plugin is left, silent without the hook
+socket. Tools off is accepted only once the fake model is shown to receive no
+tools. Its credentials are the delivered ones (§3's file, or §4's
+`auth.json`), imported into a database of its own: a judge discobox never
+launches the harness, so its store is empty, and a credential the agent
+connected by hand no longer reaches the judge.
+
+### 7. The version store replaces a pin for another package
+
+A sandbox pinned under opencode 1 has `~/.local/bin/opencode` linked into the
+store's `opencode-ai` directory, ahead of the image's opencode 2 on PATH.
+`discobox-agent-store pin` treats a link into the store under another
+package's directory as its own stale pin: it removes it and pins as for a new
+sandbox. A link out of the store is still the user's, and a pin of the
+image's own package is still never rewritten.
 
 ## Rejected alternatives
 
@@ -132,6 +160,10 @@ model is shown to receive no tools.
   still reads them, but they carry no OAuth sign-in.
 - **Rely on opencode's legacy `auth.json` import** for configurations made
   under ADR 0127. It does not run for a new database (measured).
+- **The judge reads the sandbox's store**, as it read `auth.json`. A judge
+  discobox's store is empty, since only a launch fills it.
+- **Leave an opencode 1 pin until `upgrade`.** The sandbox would run
+  opencode 1 under scripts written for opencode 2 until somebody asked.
 - **Require a reconfigure** after the upgrade. Simpler, but every opencode
   user's harness stops working until they notice.
 
@@ -139,10 +171,13 @@ model is shown to receive no tools.
 
 - opencode 2's daily releases reach a sandbox only through the version store,
   so a breaking release is met by the version a sandbox pins, not by the image.
-- The launcher runs `opencode auth` before every launch, each its own
-  standalone server: a launch is slower by that much.
-- Web search under opencode 2 is not yet measured: `OPENCODE_ENABLE_EXA` is
-  gone, so ADR 0127 §5's `webSearch: true` needs a new mechanism or is
-  dropped, decided during implementation.
+- Each `opencode auth` command starts a standalone server of its own: under a
+  second on an idle machine, 10 to 40 seconds in a sandbox on a loaded one
+  (measured). So the launcher keeps what it last synced and runs nothing while
+  that is still what is delivered, a first launch only imports, and it
+  switches a credential to active only where its provider has another.
+- opencode 2 searches the web with every provider by default (measured), so
+  ADR 0127 §5's question now only turns it off: `webSearch: false` denies the
+  `websearch` permission, which removes the tool, and `true` is the default.
 - `canonicalHookEvents` loses the opencode 1 names and gains opencode 2's.
   Audit rows recorded under the old names keep them.
