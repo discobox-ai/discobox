@@ -1,6 +1,6 @@
 # 26-10-01-032 — A sandbox's egress is denied when any of its levels says so
 
-- **Status**: Accepted
+- **Status**: Accepted (narrows [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md) §§1, 3)
 - **Date**: 2026-10-01
 - **Relates to**: [ADR 0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
   §6, which makes the pool proxy a sandbox's only route out;
@@ -108,6 +108,16 @@ those the levels allow, and no special case is made for it.
   child must be, and each entry of the child's `allow` must be covered by an
   entry of the creator's (a domain by an equal or wider pattern, an IP or CIDR
   by a CIDR containing it). Checked at create only; later edits are a person's.
+- **A discobox may not act on one wider than itself.** The sandbox role also
+  reaches existing discoboxes in its project (ADR 26-10-14-320): typing into
+  their terminals, HTTP to their ports, powering them, running their
+  services, writing their meta, delivering their source. Each of those writes
+  to or sends into the target, so a restricted discobox could reach anything
+  through an unrestricted sibling. Every such route is allowed only when the
+  target's effective policy is covered by the caller's, by the same rule as a
+  create, read as both stand at the call. Reads — a discobox, its terminals'
+  screens and transcripts, its services and logs — bring data to the caller,
+  never out of it, and are not held to it.
 
 ### 5. Delivery: carried by the create, then pushed until it lands
 
@@ -211,6 +221,12 @@ sandbox from its certificate and could ask the same filter.
   container.
 - **No pool level.** The project covers a project with one pool, but not a
   pool on a network the rest of the project is not on.
+- **Leave which discobox a call may act on to the judge** (ADR 26-10-14-320
+  §§1, 5). The judge reads what a call is for; it cannot know what reaching
+  a wider discobox means to a policy it was never shown, and a judged call is
+  still one judged call — typing a command into an unrestricted sibling is one
+  call that sends anything anywhere. The bound is a fact the control plane
+  holds, so it is checked there, before the judge is asked.
 - **Exempt the judge.** A judge on a harness that declares its hosts needs
   nothing more (§3), one on a harness that declares none is in the same place
   as every other discobox on it, and an exemption is a hole in a project's
@@ -227,5 +243,6 @@ sandbox from its certificate and could ask the same filter.
   BuildKit `RUN` steps (filtered as the owning sandbox) need their hosts
   allowed in a restricted sandbox.
 - A host the filter denies cannot be trusted either (`ProbeTLS` refuses it).
-- A discobox created by a restricted one stays restricted.
+- A discobox created by a restricted one stays restricted, and a restricted
+  one types into, posts to, or powers only discoboxes within its own policy.
 - DNS remains open (§8).

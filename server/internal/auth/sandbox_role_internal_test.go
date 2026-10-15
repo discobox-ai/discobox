@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -37,10 +38,17 @@ func roleStore(t *testing.T) *store.Store {
 		t.Fatalf("create pool: %v", err)
 	}
 	lead := "sbx-lead"
+	restricted := func(allow ...string) egress.Policy { return egress.Policy{DenyByDefault: true, Allow: allow} }
 	for _, sandbox := range []*model.Sandbox{
+		{ID: "sbx-lead", Name: "lead"},
 		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead},
 		{ID: "sbx-persons", Name: "persons"},
 		{ID: "sbx-judge", Name: "judge"},
+		// Restricted discoboxes (ADR 26-10-01-032 §4): one reaching GitHub,
+		// one reaching only its API, and one reaching nothing.
+		{ID: "sbx-github", Name: "github", Egress: restricted("*.github.com", "github.com")},
+		{ID: "sbx-github-api", Name: "github-api", Egress: restricted("api.github.com")},
+		{ID: "sbx-sealed", Name: "sealed", Egress: restricted()},
 	} {
 		sandbox.ProjectID, sandbox.PoolID, sandbox.CreatedByUserID = "proj-1", "pool-1", "user-1"
 		if err := st.CreateSandbox(ctx, sandbox); err != nil {
@@ -275,4 +283,30 @@ func TestADiscoboxListsOnlyTheRequestsItOwns(t *testing.T) {
 	if err != nil || len(all) != 4 {
 		t.Fatalf("all = %d requests, %v; want every one for a person", len(all), err)
 	}
+}
+
+// A discobox writes to or sends into another only when that one reaches
+// nothing it cannot (ADR 26-10-01-032 §4): otherwise a restricted discobox
+// would reach the world by typing into, or posting to, a wider one. Reading
+// brings data to the caller and stays open.
+func TestSandboxRoleActsOnlyOnDiscoboxesWithinItsEgress(t *testing.T) {
+	github := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-github", ProjectID: "proj-1", UserID: "user-1"}
+	sealed := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-sealed", ProjectID: "proj-1", UserID: "user-1"}
+	gone := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-gone", ProjectID: "proj-1", UserID: "user-1"}
+	checkRole(t, []roleCase{
+		{"type into an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-persons/execs/primary/input", http.StatusForbidden},
+		{"post to an unrestricted discobox's port", github, http.MethodPost, "/projects/default/sandboxes/sbx-persons/http/8080/x", http.StatusForbidden},
+		{"get from an unrestricted discobox's port", github, http.MethodGet, "/projects/default/sandboxes/sbx-persons/http/8080", http.StatusForbidden},
+		{"start an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-persons/start", http.StatusForbidden},
+		{"run an unrestricted discobox's service", github, http.MethodPost, "/projects/default/sandboxes/sbx-persons/services/web/restart", http.StatusForbidden},
+		{"write an unrestricted discobox's meta", github, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", http.StatusForbidden},
+		{"push into an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-persons/git-origins/primary.git/git-receive-pack", http.StatusForbidden},
+		{"type into a narrower discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-api/execs/primary/input", http.StatusOK},
+		{"type into itself", github, http.MethodPost, "/projects/default/sandboxes/sbx-github/execs/primary/input", http.StatusOK},
+		{"type into a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-github-api/execs/primary/input", http.StatusForbidden},
+		{"read an unrestricted discobox's screen", sealed, http.MethodGet, "/projects/default/sandboxes/sbx-persons/execs/primary/screen", http.StatusOK},
+		{"wait on an unrestricted discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-persons/execs/primary/wait", http.StatusOK},
+		{"an unrestricted caller types anywhere", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-sealed/execs/primary/input", http.StatusOK},
+		{"a caller that is gone", gone, http.MethodPost, "/projects/default/sandboxes/sbx-persons/start", http.StatusForbidden},
+	})
 }
