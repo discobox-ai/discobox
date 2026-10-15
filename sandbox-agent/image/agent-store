@@ -13,7 +13,8 @@
 #   - A sandbox keeps its version across restarts. The pin is a symlink in
 #     ~/.local/bin, which is on the sandbox's own data volume and precedes
 #     /usr/bin on PATH. Once written it is never rewritten (except by `upgrade`,
-#     which a person asks for).
+#     which a person asks for, or when it pins another package than this
+#     image's, ADR 26-10-15-848 §7).
 #   - A new sandbox starts on the newest version the pool already downloaded.
 #     `pin` reads the store, not the network.
 #   - Nothing asks the network at startup. `refresh` is started detached from
@@ -209,6 +210,17 @@ cmd_pin() {
 		# the store has moved on to, and just say it is still in use.
 		touch_pin "$pinned"
 		return 0
+	fi
+	# A link into the store under another package's directory is a pin this
+	# script wrote for an agent an earlier image installed under the same
+	# command — opencode moved from opencode-ai to @opencode/cli (ADR
+	# 26-10-15-848 §7). It runs a program this image no longer ships, beside
+	# launchers written for the one it does, so it goes, and the sandbox is
+	# pinned as a new one would be.
+	if [ -L "$link" ]; then
+		case $(readlink "$link") in
+		"$store"/*) rm -f "$link" ;;
+		esac
 	fi
 	# Anything else already at the path — a real file, a directory, a link out
 	# of the store — belongs to whoever put it there.

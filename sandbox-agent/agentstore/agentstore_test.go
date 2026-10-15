@@ -367,6 +367,48 @@ func TestPinLeavesAnExistingLinkAlone(t *testing.T) {
 	}
 }
 
+// A pin into another package's store directory was written for the agent an
+// earlier image installed under the same command (opencode 1 became
+// @opencode/cli). Keeping it would run that program beside launchers written
+// for this image's, so it is replaced: by the store's newest when that beats
+// the image, and otherwise by nothing, leaving the image's own copy on PATH.
+func TestPinReplacesAPinForAnotherPackage(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, image, want string
+	}{
+		{"store is newer", "2.0.0", "2.2.0"},
+		{"image is newer", "2.5.0", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := t.TempDir()
+			seedVersion(t, store, "2.2.0")
+			old := filepath.Join(store, "old-package", "1.19.0", "bin", agentBin)
+			writeFile(t, old, "#!/bin/sh\n", 0o755)
+			b := newBox(t, store, tc.image)
+			if err := os.MkdirAll(filepath.Join(b.home, ".local", "bin"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// Linked by the path the sandbox reaches the store at, as the
+			// script itself writes a pin.
+			viaHome := filepath.Join(b.home, ".local", "share", "discobox", "agents", "old-package", "1.19.0", "bin", agentBin)
+			if err := os.Symlink(viaHome, filepath.Join(b.home, ".local", "bin", agentBin)); err != nil {
+				t.Fatal(err)
+			}
+
+			b.run("pin")
+
+			if got := b.pinnedVersion(); got != tc.want {
+				t.Fatalf("pinned %q (link %q), want %q", got, b.pinTarget(), tc.want)
+			}
+			if tc.want == "" && b.pinTarget() != "" {
+				t.Fatalf("left the old package's pin %q on PATH", b.pinTarget())
+			}
+		})
+	}
+}
+
 // The store is caught up by whoever logs in next, and every login inside the
 // window is free — ten sandboxes starting is one registry query.
 func TestRefreshAsksTheRegistryOncePerWindow(t *testing.T) {
