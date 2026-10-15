@@ -261,7 +261,17 @@ func (b *booter) writeSudoers(name string) error {
 }
 
 // seedHome creates the home directory (a mounted data volume) and, when empty,
-// populates it from /etc/skel, then fixes ownership.
+// populates it from /etc/skel, giving the copy to the user.
+//
+// It chowns only what it creates: the home directory itself and the skeleton it
+// copied. It never walks a home that was already there. That home holds the
+// volumes and sources mounted under it -- the pool cache, module caches,
+// checkouts, unbounded and all bound from one host filesystem, so no device
+// check can tell them apart. wireVolume and seedWorkingRoot give away the
+// directories they invent on the way to a mountpoint (mkdirAllOwned) and
+// applyOwnership the mountpoints; the user owns what it wrote; and what an
+// image shipped there keeps the image's ownership, which is the image's
+// statement (#234).
 func (b *booter) seedHome(id identity) error {
 	if err := os.MkdirAll(id.home, 0o755); err != nil {
 		return err
@@ -273,56 +283,29 @@ func (b *booter) seedHome(id identity) error {
 	if err != nil {
 		return err
 	}
-	if empty {
-		if _, err := os.Stat("/etc/skel"); err == nil {
-			if err := b.run("cp", "-aT", "/etc/skel", id.home); err != nil {
-				return err
-			}
-		}
+	if !empty {
+		return nil
 	}
-	// Root's home tree stays as shipped; a non-root user owns its whole home.
-	if id.uid == 0 {
-		return os.Lchown(id.home, id.uid, id.gid)
+	if !dirExists("/etc/skel") {
+		return nil
 	}
-	return chownTreeOnOwnFilesystem(id.home, id.uid, id.gid)
-}
-
-// chownTreeOnOwnFilesystem chowns root and everything under it that lives on
-// root's own filesystem, never descending into a volume mounted underneath.
-//
-// The recursion is here for the directories boot itself creates as root on the
-// way to a mountpoint -- ~/.cargo on the way to ~/.cargo/registry, ~/go/pkg on
-// the way to ~/go/pkg/mod -- which wireVolume leaves root-owned because
-// applyOwnership chowns only the mountpoint. Those live on home's filesystem.
-//
-// What it must not walk is the volumes themselves. The shared pool cache and
-// the source trees are mounted under home, they already have the ownership
-// wireVolume/wireSources and the pool agent gave them, and they are large:
-// ~4.7*10^5 inodes on a working machine, which cost ~14s of every boot on a
-// cold page cache. GNU chown has no --one-file-system, hence the explicit walk.
-func chownTreeOnOwnFilesystem(root string, uid, gid int) error {
-	fi, err := os.Lstat(root)
-	if err != nil {
+	if err := b.run("cp", "-aT", "/etc/skel", id.home); err != nil {
 		return err
 	}
-	// An unreportable device number means every path compares equal below, so
-	// the walk degrades to covering the whole tree rather than skipping it.
-	rootDev, haveDev := fileDevice(fi)
-	return filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	// Root's skeleton stays as shipped: cp -a kept root's ownership already.
+	if id.uid == 0 {
+		return nil
+	}
+	return chownTree(id.home, id.uid, id.gid)
+}
+
+// chownTree chowns root and everything under it. seedHome calls it only on a
+// home it has just filled from an empty directory, so what it walks is the
+// skeleton copy and nothing mounted.
+func chownTree(root string, uid, gid int) error {
+	return filepath.WalkDir(root, func(p string, _ os.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if p != root && haveDev {
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			if dev, ok := fileDevice(info); ok && dev != rootDev {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
 		}
 		//nolint:gosec // The tree is the sandbox user's own home; Lchown avoids following symlinks out of it.
 		return os.Lchown(p, uid, gid)
@@ -375,9 +358,9 @@ func (b *booter) gitConfigSet(id identity, key string) bool {
 // Git itself is the authority on what is set, rather than boot parsing the file:
 // the same rule the CLI follows when reading the identity on the way in.
 //
-// Runs after seedHome, which recursively chowns the home tree: a file written
-// before that would be correctly owned by luck rather than by construction, and
-// one written after has to say so itself. Writing via git also means an existing
+// Runs after seedHome, which fills only an empty home from /etc/skel and
+// chowns nothing it did not copy, so this file has to say who owns it itself.
+// Writing via git also means an existing
 // file is replaced through a lock-and-rename, which leaves it owned by boot --
 // so the chown below is what a rewrite needs, not only a fresh file.
 func (b *booter) seedGitConfig(id identity, git sandboxconfig.GitIdentity) error {

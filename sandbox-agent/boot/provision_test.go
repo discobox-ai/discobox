@@ -87,7 +87,7 @@ func TestBootstrapIdentityRejectsGidAndGroupTogether(t *testing.T) {
 
 // A sandbox is provisioned once: an agent restarted after a crash, or a machine
 // stopped and started, finds the marker naming its own sandbox and runs nothing
-// -- no account changes under the user's running processes, no walk of home.
+// -- no account changes under the user's running processes, no re-seeding.
 func TestProvisionRunsOncePerSandbox(t *testing.T) {
 	dir := t.TempDir()
 	saved := provisionedPath

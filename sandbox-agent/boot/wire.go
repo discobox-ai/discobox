@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -65,7 +66,11 @@ func (b *booter) wireVolumes(volumes []harness.ResolvedVolume, id identity) erro
 
 func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 	dir := volumeDir(v, id.uid)
-	if err := os.MkdirAll(v.Path, 0o755); err != nil {
+	// A path nested in home -- ~/go/pkg/mod -- invents ~/go and ~/go/pkg on
+	// home's own volume, and applyOwnership below speaks only for the
+	// mountpoint, so those are given to the user as they are made. Nothing
+	// walks home afterwards to fix them up (#234).
+	if err := mkdirAllOwned(v.Path, id.home, id.uid, id.gid); err != nil {
 		return err
 	}
 	nonEmpty, err := dirNonEmpty(v.Path)
@@ -173,14 +178,16 @@ func applyOwnership(target string, v harness.ResolvedVolume) error {
 // Only the directory itself, not a walk of it: everything under it is either a
 // directory wireSources created and gave away with it (mkdirAllOwned), a source
 // with the ownership wireSources gave it, or work the sandbox user made and
-// already owns. Recursing into a checkout is the cost chownTreeOnOwnFilesystem
-// exists to avoid.
+// already owns. Recursing into a checkout is a cost boot never pays.
+//
+// A working root inside home invents the directories between home and it, and
+// those go to the user as well: nothing walks home to fix them up afterwards.
 //
 // Before wireVolumes and wireSources, so that a declared volume or a source
 // bound onto the working root itself -- which is the primary source's default
 // target -- states the ownership and this does not overwrite it.
 func (b *booter) seedWorkingRoot(root string, id identity) error {
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := mkdirAllOwned(root, id.home, id.uid, id.gid); err != nil {
 		return err
 	}
 	return os.Chown(root, id.uid, id.gid)
@@ -211,7 +218,7 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 			return err
 		}
 		uid, gid := sourceOwner(s, id)
-		if err := mkdirAllOwned(s.Target, uid, gid); err != nil {
+		if err := mkdirAllOwned(s.Target, "/", uid, gid); err != nil {
 			return fmt.Errorf("create source target %s: %w", s.Target, err)
 		}
 		if err := bindMount(src, s.Target, false); err != nil {
@@ -252,8 +259,9 @@ func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.Resol
 	return harness.ResolveVolumes(sandboxPaths, volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
 }
 
-// mkdirAllOwned creates dir, giving the components it had to create to
-// uid:gid and leaving the ownership of anything that already existed alone.
+// mkdirAllOwned creates dir, giving the components it had to create at or below
+// under to uid:gid and leaving the ownership of anything that already existed,
+// or that it created above under, alone.
 //
 // The distinction is between a directory the image shipped -- whose ownership
 // is the image's statement and not boot's to overwrite -- and one boot invented
@@ -263,7 +271,15 @@ func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.Resol
 // down, and for a target outside the working root (/srv/code/api) nothing would
 // ever chown it. Source destinations are free-form, so this is reachable
 // without an unusual image.
-func mkdirAllOwned(dir string, uid, gid int) error {
+//
+// under is "/" for a source, whose whole invented path is the user's. A
+// declared volume or the working root passes the user's home: what it invents
+// there is the user's, and anything above it (/home, /var/lib) stays root's.
+//
+// This is how boot owns what it creates without walking anything afterwards:
+// the ownership is decided as each directory is made, so nothing has to
+// rediscover later which directories those were (#234).
+func mkdirAllOwned(dir, under string, uid, gid int) error {
 	created, err := missingDirs(dir)
 	if err != nil {
 		return err
@@ -272,6 +288,9 @@ func mkdirAllOwned(dir string, uid, gid int) error {
 		return err
 	}
 	for _, p := range created {
+		if !within(under, p) {
+			continue
+		}
 		if err := os.Chown(p, uid, gid); err != nil {
 			return fmt.Errorf("chown %s: %w", p, err)
 		}
@@ -299,6 +318,12 @@ func missingDirs(dir string) ([]string, error) {
 		p = parent
 	}
 	return missing, nil
+}
+
+// within reports whether p is dir or lies below it.
+func within(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 // sourceOwner decides who owns a wired source: the manifest's ids when the pool

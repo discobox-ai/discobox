@@ -80,7 +80,13 @@ launchers, and configure scripts.
   container mechanism: on any other platform there is nothing to bind, and
   `ResolveVolumes` refuses a declaration rather than ignoring it — which is
   also what keeps `%UID%`/`%GID%`, tokens only a volume carries, to the
-  platform where they mean something (ADR 0145 §6). A cache path is per sandbox user unless it declares
+  platform where they mean something (ADR 0145 §6). Boot chowns only the
+  mountpoint as declared, never what is under it or what the image shipped
+  around it, so what an image ships under home keeps the image's ownership. A
+  path under `%HOME%` the user must write is a declared volume with
+  `%UID%`/`%GID%`; a tree the image ships is handed to a group (setgid and
+  `additionalGroups`, [ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)); a per-user file is a `harness.files` entry
+  ([sandbox-agent REVIEW](../sandbox-agent/REVIEW.md), "Boot cost"). A cache path is per sandbox user unless it declares
   `scope: shared`, which is refused on a `data` path (`ValidateVolumeScope`,
   [ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)).
   An env value's `%HOME%` is expanded by `ExpandEnvHomeTokens`, and left in
