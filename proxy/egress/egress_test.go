@@ -48,7 +48,7 @@ func TestValidateEntry(t *testing.T) {
 			t.Errorf("ValidateEntry(%q) = %v, want nil", entry, err)
 		}
 	}
-	for _, entry := range []string{"", " ", "github.com:443", "https://github.com", "*github.com", "a.*.com", "10.0.0.0/33", "a..b", "**.x"} {
+	for _, entry := range []string{"::ffff:8.0.0.0/101", "::ffff:1.2.3.4", "", " ", "github.com:443", "https://github.com", "*github.com", "a.*.com", "10.0.0.0/33", "a..b", "**.x"} {
 		if err := ValidateEntry(entry); err == nil {
 			t.Errorf("ValidateEntry(%q) = nil, want an error", entry)
 		}
@@ -97,6 +97,7 @@ func TestCovers(t *testing.T) {
 		{name: "star covers no IP literal", outer: restricted("*"), child: restricted("1.2.3.4"), want: false},
 		{name: "CIDR covers a contained CIDR and IP", outer: restricted("10.0.0.0/8"), child: restricted("10.1.0.0/16", "10.2.3.4"), want: true},
 		{name: "CIDR does not cover a wider CIDR", outer: restricted("10.1.0.0/16"), child: restricted("10.0.0.0/8"), want: false},
+		{name: "a mapped IPv4 prefix reaches nothing, so cannot widen", outer: restricted("8.0.0.0/8"), child: restricted("::ffff:8.0.0.0/101"), want: true},
 		{name: "domain does not cover an IP", outer: restricted("github.com"), child: restricted("140.82.112.3"), want: false},
 	}
 	for _, tt := range tests {

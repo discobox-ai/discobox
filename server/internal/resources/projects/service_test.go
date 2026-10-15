@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -116,11 +117,13 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	pool := &model.Pool{ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "Default", ProviderInstanceID: provider.ID, CPUVCPUs: 4}}
+	pool := &model.Pool{ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "Default", ProviderInstanceID: provider.ID, CPUVCPUs: 4},
+		Egress: egress.Policy{DenyByDefault: true, Allow: []string{"10.0.0.0/8"}}}
 	if err := st.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Configured: true, Image: "codex:stale"}
+	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Configured: true, Image: "codex:stale",
+		Egress: egress.Policy{Allow: []string{"api.openai.com"}}}
 	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: "/home/user/.codex/config", Content: "hello"}}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -225,6 +228,9 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	if project.DefaultPoolID != pools[0].ID {
 		t.Fatalf("default pool = %q, want %q", project.DefaultPoolID, pools[0].ID)
 	}
+	if !pools[0].Egress.DenyByDefault || strings.Join(pools[0].Egress.Allow, ",") != "10.0.0.0/8" {
+		t.Fatalf("pool egress = %+v, want the source pool's carried across", pools[0].Egress)
+	}
 
 	configs, err := st.ListHarnessConfigs(ctx, project.ID)
 	if err != nil {
@@ -236,6 +242,9 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	config := configs[0]
 	if !config.Configured || len(config.ConfiguredFiles) != 1 {
 		t.Fatalf("copied harness config = %#v; want the configured state carried across", config)
+	}
+	if strings.Join(config.Egress.Allow, ",") != "api.openai.com" {
+		t.Fatalf("built-in harness egress = %+v, want the level a person set carried across", config.Egress)
 	}
 	// The new project was seeded against the current image, and copying the
 	// source's configured state must not drag its stale image back in.

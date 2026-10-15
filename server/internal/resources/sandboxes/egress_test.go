@@ -21,12 +21,7 @@ func egressFixture(t *testing.T, st *store.Store, project, pool, harnessLevel, o
 	t.Helper()
 	ctx := context.Background()
 	ensurePool(t, st)
-	p, err := st.GetProject(ctx, "project-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.Egress = project
-	if err := st.UpsertProject(ctx, p); err != nil {
+	if err := st.SetProjectEgress(ctx, "project-1", project); err != nil {
 		t.Fatal(err)
 	}
 	pl, err := st.GetPool(ctx, "project-1", "pool-1")
@@ -79,7 +74,7 @@ func TestEffectiveEgressMergesEveryLevel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, st := newUpgradeEngineFixture(t)
 			sb := egressFixture(t, st, tc.project, tc.pool, tc.harness, tc.own, tc.imageHosts...)
-			got, err := effectiveEgress(ctx, st, sb)
+			got, err := st.EffectiveSandboxEgress(ctx, sb)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -244,12 +239,7 @@ func TestEgressReconcilePushesTheMergedPolicy(t *testing.T) {
 	ctx := context.Background()
 	svc, rec := newAssignFixture(t)
 	st := svc.store
-	project, err := st.GetProject(ctx, "project-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	project.Egress = egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}
-	if err := st.UpsertProject(ctx, project); err != nil {
+	if err := st.SetProjectEgress(ctx, "project-1", egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	sb, err := st.GetSandbox(ctx, "project-1", "sb-1")
@@ -306,7 +296,8 @@ func TestEgressReconcilePushesTheMergedPolicy(t *testing.T) {
 }
 
 // A create that fails late may still have put its policy, merged before a
-// level change, over the push that change made. Its push is queued anyway.
+// level change, over the push that change made. Its push is queued anyway,
+// with the write that records the failure — the write a push needs first.
 func TestAFailedCreateStillQueuesTheEgressPush(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
@@ -332,10 +323,51 @@ func TestAFailedCreateStillQueuesTheEgressPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.NewSandboxReconciler().createSandbox(ctx, loaded, false); err == nil || err.Error() != "container failed to start" {
-		t.Fatalf("create error = %v, want the provider's failure", err)
+	if _, err := svc.NewSandboxReconciler().ReconcileSandbox(ctx, loaded); err == nil || err.Error() != "container failed to start" {
+		t.Fatalf("reconcile error = %v, want the provider's failure", err)
 	}
 	if !slices.Contains(dirtySandboxIDs(t, svc), SandboxDirtyID("project-1", sb.ID)) {
 		t.Fatal("a failed create did not queue the egress push")
+	}
+}
+
+// A whole-row save of a project or a harness config — a default being set,
+// the configure flow committing — loaded before a person changed its egress
+// level must not save the old level back.
+func TestAStaleWholeRowSaveDoesNotRevertProjectOrHarnessEgress(t *testing.T) {
+	ctx := context.Background()
+	_, st := newUpgradeEngineFixture(t)
+	tightened := egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}
+
+	staleProject, err := st.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProjectEgress(ctx, "project-1", tightened); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertProject(ctx, staleProject); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetProject(ctx, "project-1"); !got.Egress.DenyByDefault {
+		t.Fatalf("project egress after a stale save = %+v", got.Egress)
+	}
+
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "custom", Name: "Custom"}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	staleConfig, err := st.GetHarnessConfig(ctx, "project-1", config.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHarnessConfigEgress(ctx, "project-1", config.ID, tightened); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateHarnessConfig(ctx, staleConfig); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetHarnessConfig(ctx, "project-1", config.ID); !got.Egress.DenyByDefault {
+		t.Fatalf("harness egress after a stale save = %+v", got.Egress)
 	}
 }

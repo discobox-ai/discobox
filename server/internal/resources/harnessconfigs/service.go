@@ -169,14 +169,14 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if apiFiles, ok := input.ConfiguredFiles.Get(); ok {
 		config.ConfiguredFiles = services.HarnessConfigFilesToModel(apiFiles)
 	}
-	egressChanged := false
+	var personLevel *egress.Policy
 	if level, ok := input.Egress.Get(); ok {
 		if config.Egress, err = services.EgressPolicyToModel(level); err != nil {
 			return nil, err
 		}
-		egressChanged = true
+		personLevel = &config.Egress
 	}
-	if err := s.updateHarnessConfig(ctx, config, egressChanged); err != nil {
+	if err := s.updateHarnessConfig(ctx, config, personLevel); err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetHarnessConfig(ctx, projectID, configID)
@@ -538,16 +538,23 @@ func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) 
 	return fmt.Errorf("project %s has no harness to run: %s", projectID, strings.Join(reasons, "; "))
 }
 
-// updateHarnessConfig saves config and, when its egress level changed — what a
-// person set, or the hosts its image declares — marks its discoboxes for
-// reconcile in the same transaction, so each converges onto the newly merged
-// policy (ADR 26-10-01-032 §5).
-func (s *Service) updateHarnessConfig(ctx context.Context, config *model.HarnessConfig, egressChanged bool) error {
+// updateHarnessConfig saves config, and the egress level a person set on it
+// when personLevel is given: the whole-row save never writes that level
+// (store.SetHarnessConfigEgress). A level given marks the config's
+// discoboxes for an egress push in the same transaction (ADR 26-10-01-032
+// §5); a change to the hosts its image declares is marked where the image is
+// re-snapshotted, with its secret routes.
+func (s *Service) updateHarnessConfig(ctx context.Context, config *model.HarnessConfig, personLevel *egress.Policy) error {
 	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		if err := txStore.UpdateHarnessConfig(ctx, config); err != nil {
 			return err
 		}
-		return s.markEgressChangedTx(ctx, txStore, txDB, config, egressChanged)
+		if personLevel != nil {
+			if err := txStore.SetHarnessConfigEgress(ctx, config.ProjectID, config.ID, *personLevel); err != nil {
+				return err
+			}
+		}
+		return s.markEgressChangedTx(ctx, txStore, txDB, config, personLevel != nil)
 	})
 }
 

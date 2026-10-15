@@ -83,12 +83,14 @@ func (s *Store) GetHarnessConfigBySlug(ctx context.Context, projectID, slug stri
 	return &config, nil
 }
 
+// UpdateHarnessConfig saves the config's row, all but the egress level a
+// person set, which only SetHarnessConfigEgress writes (see egressColumn).
 func (s *Store) UpdateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
-	return write.Save(config).Error
+	return write.Omit(egressColumn).Save(config).Error
 }
 
 func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {

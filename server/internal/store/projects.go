@@ -17,12 +17,14 @@ func (s *Store) CreateProject(ctx context.Context, project *model.Project) error
 	return write.Create(project).Error
 }
 
+// UpsertProject saves the project's row, all but its egress level, which only
+// SetProjectEgress writes (see egressColumn).
 func (s *Store) UpsertProject(ctx context.Context, project *model.Project) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
-	return write.Save(project).Error
+	return write.Omit(egressColumn).Save(project).Error
 }
 
 func (s *Store) CreateProjectIfNotExists(ctx context.Context, project *model.Project) (*model.Project, error) {

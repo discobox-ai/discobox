@@ -858,6 +858,44 @@ func (p *policyPublisher) setTrusts(trusts []proxy.HostTrust) {
 
 // publish applies every source to the running proxy.
 func (p *policyPublisher) publish() {
+	if err := p.apply(); err != nil && p.onError != nil {
+		p.onError(err)
+	}
+}
+
+// loadFile applies SecretsFile as it stands before the proxy serves anything,
+// and says when it cannot. A restricted sandbox's allow list is in that file,
+// and the proxy filters only the clients it has a policy for, so serving
+// before it is applied — or after reading it failed — would let every
+// restricted sandbox out unfiltered (ADR 26-10-01-032 §6). A missing file is
+// a pool with no sandboxes yet, not a failure.
+//
+// The sentinels' routes are staged and set around the publish in the order
+// the watcher keeps (watchSecretsFile), so no sentinel is ever swappable
+// without the routes it was written with (ADR 26-10-02-924).
+func (p *policyPublisher) loadFile(path string, resolver *secretResolver) error {
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		return fmt.Errorf("read proxy policy file: %w", err)
+	}
+	if resolver != nil {
+		resolver.stageSentinelRoutes(doc.Routes)
+	}
+	p.mu.Lock()
+	p.file = doc
+	p.mu.Unlock()
+	if err := p.apply(); err != nil {
+		return fmt.Errorf("apply proxy policy file: %w", err)
+	}
+	if resolver != nil {
+		resolver.setSentinelRoutes(doc.Routes)
+	}
+	return nil
+}
+
+// apply applies every source to the running proxy. A failed apply leaves the
+// proxy on the last policy it took.
+func (p *policyPublisher) apply() error {
 	p.applyMu.Lock()
 	defer p.applyMu.Unlock()
 	p.mu.Lock()
@@ -882,9 +920,7 @@ func (p *policyPublisher) publish() {
 	cfg.Secrets.Clients = secretClients(merged)
 	cfg.Trusts = trusts
 	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
-	if err := p.server.ApplyConfig(cfg); err != nil && p.onError != nil {
-		p.onError(err)
-	}
+	return p.server.ApplyConfig(cfg)
 }
 
 // watchSecretsFile watches SecretsFile and feeds its sentinel sets to the

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -286,5 +287,22 @@ func TestSandboxUserValidateAccountRefusesIDsOffLinux(t *testing.T) {
 	linuxUID := 1000
 	if err := (SandboxUserFields{Name: &name, UID: &linuxUID}).ValidateAccount("linux"); err != nil {
 		t.Fatalf("a Linux account = %v, want nil", err)
+	}
+}
+
+// The sandbox's own egress level is on its record: `box update` keeps the part
+// of a level its flags leave out by reading it back from here.
+func TestSandboxToAPIIncludesItsEgressLevel(t *testing.T) {
+	sandbox := &model.Sandbox{ID: "sb_1", ProjectID: "p1", Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}}
+	out, err := SandboxToAPI(sandbox, nil)
+	if err != nil {
+		t.Fatalf("SandboxToAPI: %v", err)
+	}
+	level, ok := out.Egress.Get()
+	if !ok || !level.DenyByDefault.Or(false) {
+		t.Fatalf("egress = %+v, set %v", level, ok)
+	}
+	if allow, _ := level.Allow.Get(); len(allow) != 1 || allow[0] != "github.com" {
+		t.Fatalf("allow = %v", allow)
 	}
 }

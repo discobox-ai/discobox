@@ -368,39 +368,16 @@ var sandboxPlatformColumns = []string{"platform"}
 // only need their state.
 var sandboxSkillColumns = []string{"skills", "skill_names"}
 
-// sandboxEgressColumns are the sandbox's own egress level (ADR 26-10-01-032),
-// written by create and by SetSandboxEgress and by nothing else. A change to it
-// bumps no generation — it is not spec, and must not rebuild the container — so
-// a reconcile that loaded the row before the change would pass its generation
-// guard and put the old level back, silently loosening a policy a person had
-// just tightened.
-var sandboxEgressColumns = []string{"egress"}
+// sandboxEgressColumns are the sandbox's own egress level, which only
+// SetSandboxEgress writes (see egressColumn).
+var sandboxEgressColumns = []string{egressColumn}
 
 // sandboxOmittedColumns is what UpdateSandbox never writes.
 var sandboxOmittedColumns = append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...)
 
 // SetSandboxEgress writes a sandbox's own egress level, and nothing else.
 func (s *Store) SetSandboxEgress(ctx context.Context, projectID, sandboxID string, level egress.Policy) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	// Encoded here rather than left to the field's serializer, which a
-	// column-map update does not apply.
-	encoded, err := json.Marshal(level)
-	if err != nil {
-		return err
-	}
-	result := write.WithContext(ctx).Model(&model.Sandbox{}).
-		Where("project_id = ? AND id = ?", projectID, sandboxID).
-		Update("egress", string(encoded))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.setEgress(ctx, &model.Sandbox{}, projectID, sandboxID, level)
 }
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {

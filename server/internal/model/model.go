@@ -265,8 +265,9 @@ type Project struct {
 	// reach the same project from.
 	Welcomed bool `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
 	// Egress is the project's level of every one of its discoboxes' egress
-	// policy (ADR 26-10-01-032). Effective policy is merged when a discobox is
-	// reconciled, never stored, so a change here reaches each by marking it.
+	// policy (ADR 26-10-01-032). The effective policy is merged whenever it is
+	// delivered, never stored, so a change here reaches each discobox by
+	// marking its egress push. Written by store.SetProjectEgress alone.
 	Egress    egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The project's egress policy level"`
 	CreatedAt time.Time     `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time     `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
