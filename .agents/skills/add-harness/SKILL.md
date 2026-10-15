@@ -62,7 +62,8 @@ the techniques.
 | How does it run a prompt interactively, and non-interactively? | `launch.sh` and `discobox-prompt` | claude/codex: positional; opencode: `--prompt`; copilot: `--interactive=` (the `=` keeps a dash-led prompt a prompt) |
 | How does it resume, and what happens with nothing to resume? | `--resume` in the convention | `--continue`, `resume --last`; copilot opens fresh |
 | Does a browser sign-in call back to a localhost port? Fixed, or a new one each run? | `config.ports` | codex: fixed 1455; opencode: fixed 1455 and 1456; copilot: a new one each run (`listen(0)`), so `{"ephemeral": true}` |
-| Where does a sign-in land, in what shape? | the configure capture | claude/codex/opencode: a JSON file; copilot: a "managed automatically" `config.json` it rewrites |
+| Where does a sign-in land, in what shape? | the configure capture | claude/codex: a JSON file; opencode 2: rows in SQLite, reached only through `auth export`/`auth import`; copilot: a "managed automatically" `config.json` it rewrites |
+| Does it run a shared background server? | launch flags, hook attribution | opencode 2: a per-user service by default; `--standalone` on every command, or one terminal's environment publishes every terminal's hooks |
 | Is there a documented env var for the credential? Does it outrank the stored one? | env vs file delivery | copilot: `COPILOT_GITHUB_TOKEN` outranks a stored login |
 | Which hosts receive the credential, and what else can it do there? | secret `host`, and whether to escalate to the user | copilot's token goes to `api.github.com` *and* `githubcopilot.com`, and carries `repo` |
 | Does the token expire? Is there a refresh token, and a standard refresh endpoint? | `token` vs `oauth` secret | codex: OAuth refresh; copilot: OAuth App token, never expires |
@@ -100,9 +101,11 @@ Write these down before writing scripts; most become ADR sections.
    or prefers an env var that would defeat the file (claude-code, codex); the
    default env delivery when the CLI documents an env var for headless use
    and the stored-login file is its own churned state (copilot). A store that
-   is not a file (omp's SQLite) is delivered as the CLI's own export document,
-   templated, and imported by the launcher on every launch. Never ship a
-   baseline credential file: an empty one reads as "signed in".
+   is not a file (omp's and opencode 2's SQLite) is delivered as the CLI's own
+   export document, templated, and imported by the launcher under ids the
+   image owns, changing only what differs (never write the database
+   yourself). Never ship a baseline credential file: an empty one reads as
+   "signed in".
 4. **Policy baseline**: auto-approve and trust, in a layer the configure
    capture cannot replace — a system config, an image env var, or a launcher
    flag. Not the user's settings file: configure replaces that wholesale.
@@ -156,6 +159,13 @@ lessons that each cost a bug:
   prompt takes any token Copilot accepts, gh's repo-scoped `gho_` included;
   a least-privilege prompt has to look at the token it got, warn on a broad
   one, and name the secret for what the token is.
+
+Moving a harness to a new major of its CLI is this whole skill again, against
+the existing folder: probe, an ADR superseding the old one, and every
+configuration captured under the old CLI keeps working without a reconfigure
+(opencode 2 reads opencode 1's `auth.json` in its launcher). When the npm
+package changes too (`opencode-ai` → `@opencode/cli`), `AGENT_PACKAGE`
+changes, and the agent store replaces a pin into the old package's directory.
 
 ## 4. Wire it in
 
