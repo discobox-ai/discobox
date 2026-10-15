@@ -89,7 +89,7 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		// disco-vm's default agent is the running binary, and this one is a
 		// server: an image built with it would boot a guest whose agent, or
 		// whose init, is discobox-server.
-		return nil, fmt.Errorf("this %s provider names no guest agent: set its agent to a disco-vm binary built for the guests before building images", ProviderType)
+		return nil, fmt.Errorf("this %s provider names no guest agent: set its agent to a VM guest agent binary built for the guests before building images", ProviderType)
 	}
 	if info, err := os.Stat(r.agent); err != nil || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("the %s provider's guest agent %s is not a file on the machine running the control plane", ProviderType, r.agent)
@@ -104,7 +104,7 @@ func (r *Runtime) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderI
 		return nil, err
 	}
 	if len(images) == 0 {
-		return nil, fmt.Errorf("%s holds no disco-vm build spec for the %s driver (a %s.yaml beside a Dockerfile): %w", source, driver, driver, sandbox.ErrGuestImageBuildUnsupported)
+		return nil, fmt.Errorf("%s holds no VM build spec for the %s driver (a %s.yaml beside a Dockerfile): %w", source, driver, driver, sandbox.ErrGuestImageBuildUnsupported)
 	}
 
 	reader, writer := io.Pipe()

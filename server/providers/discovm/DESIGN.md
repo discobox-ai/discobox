@@ -1,8 +1,8 @@
-# disco-vm Provider Design
+# vm Provider Design
 
-`discovm` is the `poolruntime.RuntimeProvider` for pools whose sandboxes are
-disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
-beside `dockerworker.Engine` rather than under it: a discovm pool has no
+The `vm` provider (package `discovm`) is the `poolruntime.RuntimeProvider`
+for pools whose sandboxes are disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
+beside `dockerworker.Engine` rather than under it: a vm pool has no
 pool-agent container, BuildKit, registry or sandbox network of the engine's
 (ADR 26-10-09-106 §1), whatever its driver runs a machine as. This package is the skeleton: the provider kind,
 the embedded engine and its shim, and pool hosting with its console, log, and
@@ -38,7 +38,7 @@ flowchart TD
   twins (below) name their parents by tag. The server is where the engine, its image store, its
   shims, and the boxd credential live (ADR §2).
 - The module is imported by commit (a pseudo-version), never a tag.
-- A local machine's shim is this binary re-executed as `__discovm-shim`
+- A local machine's shim is this binary re-executed as `__vm-shim`
   (`RunShimIfInvoked`, called from `server.RunVMLauncherIfInvoked` before
   anything a server does) with the engine's root and driver, so the server
   ships no disco-vm binary. A remote driver (boxd, docker) runs no shim: the
