@@ -5355,11 +5355,10 @@ type HarnessConfig struct {
 	Image OptString `json:"image"`
 	// Content digest observed when the harness image metadata was registered.
 	ImageDigest OptString `json:"imageDigest"`
-	// The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for
-	// that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a
-	// manifest-file harness registered before image kinds, which runs on no pool until its file declares
-	// one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are
-	// all oci.
+	// The kind of image the harness's image is: oci, or vm/<driver> for a VM image built for that driver.
+	//  A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file
+	// harness registered before image kinds, which runs on no pool until its file declares one and its
+	// image is refreshed. Absent from a server from before image kinds, whose harnesses are all oci.
 	ImageKind OptString `json:"imageKind"`
 	// Harness config name.
 	Name string `json:"name"`
@@ -16051,8 +16050,8 @@ type Pool struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Stable pool ID.
 	ID string `json:"id"`
-	// The kind of image the pool runs: oci, or discovm/<driver> for disco-vm images of that driver.
-	// Declared by its agent; empty until the agent first reports.
+	// The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its
+	// agent; empty until the agent first reports.
 	ImageKind OptString `json:"imageKind"`
 	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
 	// leaves the size to the provider's configuration, then the host.
@@ -18598,11 +18597,14 @@ type ProviderConfigField struct {
 	CredentialAuthType OptString `json:"credentialAuthType"`
 	CredentialProvider OptString `json:"credentialProvider"`
 	Description        OptString `json:"description"`
-	Key                string    `json:"key"`
-	Label              string    `json:"label"`
-	Placeholder        OptString `json:"placeholder"`
-	Required           OptBool   `json:"required"`
-	Type               string    `json:"type"`
+	// The field cannot change while the provider instance has pools, because the pools' hosts were made
+	// by what it names.
+	Immutable   OptBool   `json:"immutable"`
+	Key         string    `json:"key"`
+	Label       string    `json:"label"`
+	Placeholder OptString `json:"placeholder"`
+	Required    OptBool   `json:"required"`
+	Type        string    `json:"type"`
 }
 
 // GetAdvanced returns the value of Advanced.
@@ -18623,6 +18625,11 @@ func (s *ProviderConfigField) GetCredentialProvider() OptString {
 // GetDescription returns the value of Description.
 func (s *ProviderConfigField) GetDescription() OptString {
 	return s.Description
+}
+
+// GetImmutable returns the value of Immutable.
+func (s *ProviderConfigField) GetImmutable() OptBool {
+	return s.Immutable
 }
 
 // GetKey returns the value of Key.
@@ -18668,6 +18675,11 @@ func (s *ProviderConfigField) SetCredentialProvider(val OptString) {
 // SetDescription sets the value of Description.
 func (s *ProviderConfigField) SetDescription(val OptString) {
 	s.Description = val
+}
+
+// SetImmutable sets the value of Immutable.
+func (s *ProviderConfigField) SetImmutable(val OptBool) {
+	s.Immutable = val
 }
 
 // SetKey sets the value of Key.
@@ -18897,8 +18909,8 @@ type RegisterPoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema         OptURI `json:"$schema"`
 	BootstrapToken string `json:"bootstrapToken"`
-	// The kind of image the pool runs, oci or discovm/<driver>. An agent from before image kinds sends
-	// none, and runs OCI images, which is what is recorded for it.
+	// The kind of image the pool runs, oci or vm/<driver>. An agent from before image kinds sends none,
+	// and runs OCI images, which is what is recorded for it.
 	ImageKind OptString `json:"imageKind"`
 	KeyType   OptString `json:"keyType"`
 	// The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its
@@ -29922,9 +29934,8 @@ type UpdatePoolStatusBody struct {
 	AvailableStorageBytes int64   `json:"availableStorageBytes"`
 	Conditions            jx.Raw  `json:"conditions"`
 	Degraded              bool    `json:"degraded"`
-	// The kind of image the pool runs, oci or discovm/<driver>, declared on every report beside the
-	// platform. An agent from before image kinds sends none, and runs OCI images, which is what is
-	// recorded for it.
+	// The kind of image the pool runs, oci or vm/<driver>, declared on every report beside the platform.
+	// An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
 	ImageKind OptString `json:"imageKind"`
 	// The one platform the pool hosts, as os/arch. Declared on every report, because an agent whose key
 	// survives a restart does not register again. An agent from before platforms sends none, and its

@@ -9,7 +9,10 @@
   §2's pool-assembled template, narrows its §1 with an image kind, and narrows
   its §5 for macOS; supersedes [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)'s
   consequence that a provider credential stays in the pool; builds on
-  ADR 26-10-09-143, [PR #105](https://github.com/discobox-ai/discobox/pull/105))
+  ADR 26-10-09-143, [PR #105](https://github.com/discobox-ai/discobox/pull/105);
+  §1's provider type `discovm` and §4's image kind spelling `discovm/<driver>`
+  superseded by [26-10-15-629](26-10-15-629-the-vm-provider-and-its-image-kind-are-spelled-vm.md),
+  which spells both `vm`)
 - **Date**: 2026-10-09
 - **Amended**: 2026-10-12, §§1 and 5, the Consequences, one rejected
   alternative and the Status line (which no longer narrows 0144 §3), before

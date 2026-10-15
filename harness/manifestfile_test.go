@@ -15,7 +15,7 @@ const darwinManifestFile = `{
 	"io.discobox.image.v1.10-sandbox-base": {
 		"apiVersion": "discobox.dev/image/v1",
 		"platform": "darwin/arm64",
-		"imageKind": "discovm/vz",
+		"imageKind": "vm/vz",
 		"account": "discobox",
 		"shell": "/bin/zsh",
 		"env": {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "en_US.UTF-8"},
@@ -46,8 +46,8 @@ func TestReadManifestFileLayersLikeLabels(t *testing.T) {
 	if want := (platform.Platform{OS: "darwin", Arch: "arm64"}); metadata.Platform != want {
 		t.Errorf("platform = %v, want %v", metadata.Platform, want)
 	}
-	if metadata.ImageKind != platform.DiscoVM("vz") {
-		t.Errorf("image kind = %v, want the base layer's discovm/vz", metadata.ImageKind)
+	if metadata.ImageKind != platform.VM("vz") {
+		t.Errorf("image kind = %v, want the base layer's vm/vz", metadata.ImageKind)
 	}
 	if metadata.Account != "discobox" || metadata.Shell != "/bin/zsh" {
 		t.Errorf("account, shell = %q, %q; want the base layer's", metadata.Account, metadata.Shell)
@@ -106,7 +106,7 @@ func TestReadManifestFileRefusesWhatIsNotALayer(t *testing.T) {
 		"a layer twice":             {`{"io.discobox.image.v1": {"account": "a"}, " io.discobox.image.v1 ": {"account": "b"}}`, "names layer \"io.discobox.image.v1\" twice"},
 		"a wrong version":           {`{"io.discobox.image.v1": {"apiVersion": "discobox.dev/image/v2"}}`, "unsupported apiVersion"},
 		"a bad platform":            {`{"io.discobox.image.v1": {"platform": "darwin"}}`, "not an os/arch pair"},
-		"a bad image kind":          {`{"io.discobox.image.v1": {"imageKind": "vmdk"}}`, "is neither oci nor discovm/<driver>"},
+		"a bad image kind":          {`{"io.discobox.image.v1": {"imageKind": "vmdk"}}`, "is neither oci nor vm/<driver>"},
 		"a numeric layer":           {`{"io.discobox.image.v1": 1}`, "must be a JSON object"},
 		"an array layer":            {`{"io.discobox.image.v1": []}`, "must be a JSON object"},
 	} {
@@ -128,17 +128,17 @@ func TestMergeImageMetadataPlatformAccountShellFeatures(t *testing.T) {
 	merged := MergeImageMetadata(
 		ImageMetadata{
 			Platform:  platform.Platform{OS: "darwin", Arch: "arm64"},
-			ImageKind: platform.DiscoVM("vz"),
+			ImageKind: platform.VM("vz"),
 			Account:   "base", Shell: "/bin/sh",
 			Features: Features{Docker: true},
 		},
-		ImageMetadata{Account: "leaf", ImageKind: platform.DiscoVM("boxd"), Features: Features{Desktop: true}},
+		ImageMetadata{Account: "leaf", ImageKind: platform.VM("boxd"), Features: Features{Desktop: true}},
 		ImageMetadata{Shell: "  ", Features: Features{}},
 	)
 	if merged.Platform != (platform.Platform{OS: "darwin", Arch: "arm64"}) {
 		t.Errorf("platform = %v, want the base's, which nothing overrode", merged.Platform)
 	}
-	if merged.ImageKind != platform.DiscoVM("boxd") {
+	if merged.ImageKind != platform.VM("boxd") {
 		t.Errorf("image kind = %v, want the leaf's", merged.ImageKind)
 	}
 	if merged.Account != "leaf" || merged.Shell != "/bin/sh" {

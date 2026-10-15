@@ -31,7 +31,7 @@ launchers, and configure scripts.
 - **What a platform has is declared, and what it lacks is the declaration's
   absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
   A manifest file declares its `platform` (`os/arch`) and its `imageKind`
-  (`discovm/<driver>`, ADR 26-10-09-106 §4); an image declares neither,
+  (`vm/<driver>`, ADR 26-10-09-106 §4); an image declares neither,
   because its platforms are what its registry publishes and it is an OCI image
   by being one. A non-Linux manifest
   names its one `account` by name alone (ADR 0145 §5) and the `shell` its

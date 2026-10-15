@@ -267,6 +267,12 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `DISCOBOX_DEFAULT_SANDBOX_*`, `DISCOBOX_DOCKER_POOL_*` and
   `DISCOBOX_HARNESS_*` lines of the checkout's `.env`.
 
+- A manifest-file harness (`admin harness create --image file://<path>`) is read
+  only from `$DISCOBOX_CACHE_DIR/overlays`; put the JSON there. To exercise a
+  stored-row migration, write the old value with `sqlite3
+  $S/data/discobox.db` while the server is stopped and read it back right after
+  start: built-in harnesses are re-seeded and pools re-reported within seconds,
+  which overwrites what you planted on them.
 - It exits at start (`project … has no harness to run`) until at least one
   `discobox-harness-*:local` image exists; on a fresh box wait for the image
   watcher to build one.

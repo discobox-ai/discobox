@@ -84,7 +84,7 @@ true of it, and true *by rule* rather than by slug:
 - A config records the **image kind** its image is (`platform.ImageKind`, ADR
   26-10-09-106 §4), read by the same inspection: `oci` for any image, which a
   label cannot say otherwise — one declaring `imageKind` is refused — and, for
-  a manifest file, the `discovm/<driver>` it must declare. Seeding compares it
+  a manifest file, the `vm/<driver>` it must declare. Seeding compares it
   too. The column defaults to `oci`, which backfilled every image config from
   before kinds; a manifest-file config from before them is left with no kind,
   and runs on no pool until its file declares one and its image is refreshed
@@ -102,7 +102,7 @@ true of it, and true *by rule* rather than by slug:
   `harness.ResolveImageLabels` (`harness.ReadManifestFile` turns the file into
   that label set). Its digest is the file's sha256, so a changed overlay moves
   the pin as a rebuilt tag does, its platforms are the one platform the
-  file declares, which it must, and its image kind is the disco-vm kind it
+  file declares, which it must, and its image kind is the VM kind it
   must declare as well: a manifest file is no OCI image. Both sources require the base layer and judge
   the merged result by its platform (`harness.ImageMetadata.ValidateFor`): an
   image is Linux's, and a label naming a platform, an account or a shell is

@@ -34,7 +34,7 @@ type imageMetadata struct {
 	Platforms platform.Set
 	// ImageMetadata is the resolved manifest. Its ImageKind is the kind the
 	// harness's image is (ADR 26-10-09-106 §4), always set once inspected: OCI
-	// for an image, or the disco-vm kind a manifest file declares.
+	// for an image, or the VM kind a manifest file declares.
 	harness.ImageMetadata
 }
 
@@ -402,7 +402,7 @@ const imageLabelSource = harness.ImageLabel + " label"
 // parseManifestFile resolves a manifest file's layers and validates the result
 // for the platform it declares, which a manifest file must: nothing else says
 // what its template runs. It must declare its image kind too, and that kind is
-// a disco-vm image for a driver (ADR 26-10-09-106 §4): an OCI template is an
+// a VM image for a driver (ADR 26-10-09-106 §4): an OCI template is an
 // image, and a reference to a file is none. The kind is what keeps a Linux
 // manifest file off a Docker pool of its platform — placement refuses it there
 // with that reason — so a manifest file may be any platform's.
@@ -423,8 +423,8 @@ func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 	if metadata.Platform.IsZero() {
 		return imageMetadata{}, fmt.Errorf("manifest file declares no platform: a template with no image says which one it runs")
 	}
-	if metadata.ImageKind.Format != platform.FormatDiscoVM {
-		return imageMetadata{}, fmt.Errorf("manifest file declares no disco-vm image kind: a template with no image names the disco-vm driver its image is built for, as %s/<driver>", platform.FormatDiscoVM)
+	if metadata.ImageKind.Format != platform.FormatVM {
+		return imageMetadata{}, fmt.Errorf("manifest file declares no VM image kind: a template with no image names the VM driver its image is built for, as %s/<driver>", platform.FormatVM)
 	}
 	if err := validateImageMetadata(metadata, metadata.Platform.OS, manifestFileSource); err != nil {
 		return imageMetadata{}, err

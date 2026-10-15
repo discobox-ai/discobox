@@ -89,8 +89,7 @@ components:
                     description: Content digest observed when the harness image metadata was registered.
                     type: string
                 imageKind:
-                    description: "The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are all oci."
-                    pattern: ^(|oci|discovm/[a-z0-9]+)$
+                    description: "The kind of image the harness's image is: oci, or vm/<driver> for a VM image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are all oci."
                     type: string
                 name:
                     description: Harness config name
@@ -2651,8 +2650,7 @@ components:
                     description: Stable pool ID
                     type: string
                 imageKind:
-                    description: "The kind of image the pool runs: oci, or discovm/<driver> for disco-vm images of that driver. Declared by its agent; empty until the agent first reports."
-                    pattern: ^(oci|discovm/[a-z0-9]+)$
+                    description: "The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its agent; empty until the agent first reports."
                     type: string
                 memoryBytes:
                     description: Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
@@ -3096,6 +3094,9 @@ components:
                     type: string
                 description:
                     type: string
+                immutable:
+                    description: The field cannot change while the provider instance has pools, because the pools' hosts were made by what it names.
+                    type: boolean
                 key:
                     type: string
                 label:
@@ -3137,8 +3138,8 @@ components:
                 bootstrapToken:
                     type: string
                 imageKind:
-                    description: The kind of image the pool runs, oci or discovm/<driver>. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
-                    pattern: ^(oci|discovm/[a-z0-9]+)$
+                    description: The kind of image the pool runs, oci or vm/<driver>. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
+                    pattern: ^(oci|vm/[a-z0-9]+)$
                     type: string
                 keyType:
                     type: string
@@ -6385,8 +6386,8 @@ components:
                 degraded:
                     type: boolean
                 imageKind:
-                    description: The kind of image the pool runs, oci or discovm/<driver>, declared on every report beside the platform. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
-                    pattern: ^(oci|discovm/[a-z0-9]+)$
+                    description: The kind of image the pool runs, oci or vm/<driver>, declared on every report beside the platform. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
+                    pattern: ^(oci|vm/[a-z0-9]+)$
                     type: string
                 platform:
                     description: The one platform the pool hosts, as os/arch. Declared on every report, because an agent whose key survives a restart does not register again. An agent from before platforms sends none, and its pool keeps the platform recorded for it.
