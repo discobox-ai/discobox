@@ -149,7 +149,7 @@ Current authorizers:
 
   A route naming a discobox (`projectDiscobox`) takes any in the caller's
   project, whoever created it: which one a call may act on is the judge's
-  question, asked knowing who created it
+  question — within the egress bound below — asked knowing who created it
   ([ADR 26-10-14-320](../../../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md)
   §§1, 5). The project's judge (`Project.JudgeSandboxID`) is the one it never
   takes (§4): its terminals and logs hold every job it judged. Not in the
@@ -159,6 +159,15 @@ Current authorizers:
   ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
   §7). No role path matches a segment that is empty, `.`, or `..`, so a path
   under `http/{port}` names where it goes.
+
+  A route that writes to a discobox or sends into it (`withinCaller`) — source
+  delivery, terminal `input`, power, meta, a service's `start`, `stop` or
+  `restart`, and HTTP to a port — is also held to egress: the target's
+  effective egress policy must be covered by the caller's
+  (`store.EffectiveSandboxEgress`, `egress.Covers`;
+  [ADR 26-10-01-032](../../../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)
+  §4). Otherwise a restricted discobox would reach the world through a wider
+  one. Reads bring data to the caller, never out of it, and are not held to it.
 
   A secret request's get, approve, and deny (`ownedRequest`) are allowed only
   when a discobox the caller created filed it — the request's owner. A request
