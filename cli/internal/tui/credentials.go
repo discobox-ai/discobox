@@ -11,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/wellknown"
 
@@ -611,7 +612,7 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 			what.label = "uses it would delegate"
 		}
 		for _, use := range req.Uses {
-			what.lines = append(what.lines, line{text: use, bullet: true})
+			what.lines = append(what.lines, useLines(use, tonePlain)...)
 		}
 		if req.Justification != "" {
 			if len(what.lines) > 0 {
@@ -627,6 +628,43 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		sections = append(sections, tested)
 	}
 	return sections
+}
+
+// useLines is one use as a card shows it: a bullet on its first line, and
+// the rest of it broken into its parts under that (uselines), so a use an
+// agent wrote as one long sentence reads as its job, what it reads and
+// writes, and its lines, with every word as it was written.
+func useLines(use string, t tone) []line {
+	var out []line
+	for i, part := range uselines.Split(use) {
+		next := line{text: part.Text, tone: t, indent: 1}
+		switch {
+		case i == 0:
+			next.bullet, next.indent = true, 0
+		case part.Hang:
+			next.indent = 2
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+// useFields is one use as the value of a field labeled label, broken up as
+// useLines breaks it: the rows after the first continue the field, set in
+// under its first line.
+func useFields(label, use string) []field {
+	var out []field
+	for i, part := range uselines.Split(use) {
+		next := field{value: "  " + part.Text}
+		switch {
+		case i == 0:
+			next = field{label: label, value: part.Text}
+		case part.Hang:
+			next.value = "    " + part.Text
+		}
+		out = append(out, next)
+	}
+	return out
 }
 
 func credentialName(req CredentialRequest) string {

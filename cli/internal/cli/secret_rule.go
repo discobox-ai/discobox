@@ -570,13 +570,13 @@ func (a *App) writeApprovalRule(cmd *cobra.Command, rule *apimodel.ApprovalRule)
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", rulePurposeText(rule.Purpose))
 	fmt.Fprintf(tw, "FOR\t%s\n", ruleRepositoriesText(rule))
 	// The rule's sentences are what is approved; a person wrote or chose
-	// them, and they are shown whole.
+	// them, and every word is shown, broken up as the console breaks them.
 	for i, use := range rule.Uses {
 		label := "USES"
 		if i > 0 {
 			label = ""
 		}
-		fmt.Fprintf(tw, "%s\t%s\n", label, terminalSafe(use))
+		useRows(tw, label, use, "")
 	}
 	fmt.Fprintf(tw, "GRANTS LIVE AT MOST\t%s\n", ruleCapText(rule.MaxGrantTTLSeconds))
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", ruleExpiryText(rule))

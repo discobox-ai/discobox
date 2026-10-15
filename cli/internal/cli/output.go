@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/wellknown"
 )
@@ -650,7 +651,7 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 			if i > 0 {
 				label = ""
 			}
-			fmt.Fprintf(tw, "%s\t%s (%s)\n", label, use.Description, use.UseId.Or(""))
+			useRows(tw, label, use.Description, " ("+use.UseId.Or("")+")")
 		}
 	}
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
@@ -734,7 +735,7 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 			if i > 0 {
 				label = ""
 			}
-			fmt.Fprintf(tw, "%s\t%s\n", label, use.Description)
+			useRows(tw, label, use.Description, "")
 		}
 	}
 	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {
@@ -1282,4 +1283,26 @@ func grantHostsText(hosts []string) string {
 		return strings.Join(hosts, ",")
 	}
 	return "(any)"
+}
+
+// useRows writes one use as rows of a label/value table, broken up as the
+// console breaks it (uselines): its first line beside label, the rest set in
+// under it, and suffix after its last word. A use is an agent's words, so
+// each row is escaped on its way to the terminal.
+func useRows(w io.Writer, label, use, suffix string) {
+	parts := uselines.Split(use)
+	for i, part := range parts {
+		text := terminalSafe(part.Text)
+		switch {
+		case i == 0:
+		case part.Hang:
+			label, text = "", "    "+text
+		default:
+			label, text = "", "  "+text
+		}
+		if i == len(parts)-1 {
+			text += suffix
+		}
+		fmt.Fprintf(w, "%s\t%s\n", label, text)
+	}
 }

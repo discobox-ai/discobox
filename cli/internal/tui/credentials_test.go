@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -160,6 +161,41 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	for _, want := range []string{"never to use it", "uses it would delegate"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("card = %q, want it to carry %q", dialogText(m), want)
+		}
+	}
+}
+
+// A use written as one long sentence is read on the card in its parts: the
+// job, what it reads, each write and each line it will not cross set in under
+// them, every word as the agent wrote it.
+func TestAUseIsReadInItsParts(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.Uses = []string{"Fix issue #43 in acme/web as a pull request from branch fix-43 into main. " +
+		"Read anything in the repository; push that branch, and open the pull request. " +
+		"Never push main, delete a branch, or read secrets."}
+	ds.requests = []CredentialRequest{req}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	}
+	rows := strings.Split(dialogText(m), "\n")
+	for _, want := range []string{
+		"· Fix issue #43 in acme/web as a pull request from branch fix-43 into main.",
+		"  Read anything in the repository;",
+		"    push that branch,",
+		"    and open the pull request.",
+		"  Never push main,",
+		"    delete a branch,",
+		"    or read secrets.",
+	} {
+		// Inside the frame, from the card's margin, so the indent is
+		// compared too.
+		if !slices.ContainsFunc(rows, func(row string) bool { return strings.Contains(row, "│  "+want+" ") }) {
+			t.Fatalf("card =\n%s\nwant a row reading %q", dialogText(m), want)
 		}
 	}
 }

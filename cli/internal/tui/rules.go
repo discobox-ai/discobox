@@ -453,7 +453,7 @@ func usesSections(proposals RuleProposals, origin usesOrigin, now lineList) []se
 			{text: "started from " + origin.asked + ": the project's judge wrote these, and the judge found they do not cover " + origin.against + " — " + reasonOr(written.Reason, "no reason given"), tone: toneAlert},
 		}
 		for _, use := range written.Uses {
-			sec.lines = append(sec.lines, line{text: use, bullet: true, tone: toneDim})
+			sec.lines = append(sec.lines, useLines(use, toneDim)...)
 		}
 		sec.lines = append(sec.lines, line{text: origin.judged, tone: toneDim})
 	default:
@@ -574,7 +574,7 @@ func ruleSections(rule Rule) []section {
 		uses.label = "uses it would delegate"
 	}
 	for _, use := range rule.Uses {
-		uses.lines = append(uses.lines, line{text: use, bullet: true})
+		uses.lines = append(uses.lines, useLines(use, tonePlain)...)
 	}
 	return []section{ruleDiscoboxesSection(rule.ApprovalRule), uses}
 }

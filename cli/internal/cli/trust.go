@@ -310,7 +310,7 @@ func (a *App) writeTrustRequest(cmd *cobra.Command, request *apimodel.HostTrustR
 		fmt.Fprintf(tw, "WHY\t%s\n", justification)
 	}
 	for _, use := range request.Uses.Or(nil) {
-		fmt.Fprintf(tw, "USE\t%s\n", use.Description)
+		useRows(tw, "USE", use.Description, "")
 	}
 	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
