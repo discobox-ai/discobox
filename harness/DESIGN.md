@@ -401,7 +401,7 @@ subject to repo trust prompts or user/project override:
   opencode has no command hook at any layer — its lifecycle reaches plugins
   and nothing else — so `hook-plugin/` (an opencode 2 plugin: a directory whose
   `server.js` default-exports `{id, setup}`; a single file is refused) is what
-  the other images declare as commands, and it invokes the same generic
+  claude-code, codex-cli and copilot declare as commands, and it invokes the same generic
   publisher. It publishes only when `DISCOBOX_HOOK_SOCKET` is set, which is
   also what keeps it silent in the tool-free judge. It hears the lifecycle
   through the bus, which a plugin subscribes to after opencode starts: the

@@ -101,10 +101,12 @@ Write these down before writing scripts; most become ADR sections.
    or prefers an env var that would defeat the file (claude-code, codex); the
    default env delivery when the CLI documents an env var for headless use
    and the stored-login file is its own churned state (copilot). A store that
-   is not a file (omp's and opencode 2's SQLite) is delivered as the CLI's own
-   export document, templated, and imported by the launcher under ids the
-   image owns, changing only what differs (never write the database
-   yourself). Never ship a baseline credential file: an empty one reads as
+   is not a file is delivered as the CLI's own export document, templated, and
+   imported by the launcher — never write the database yourself. omp imports
+   the whole document on every launch, since each import replaces that
+   provider's key and that account's login; opencode 2's import never updates
+   an id it has, so its launcher imports under ids the image owns and changes
+   only what differs. Never ship a baseline credential file: an empty one reads as
    "signed in".
 4. **Policy baseline**: auto-approve and trust, in a layer the configure
    capture cannot replace — a system config, an image env var, or a launcher

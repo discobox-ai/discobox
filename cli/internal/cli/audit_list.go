@@ -388,8 +388,8 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 // image sent only a title after); Copilot sends toolName with toolArgs, or
 // toolInput on a permissionRequest; the omp image's extension sends omp's own
 // toolName with input. Claude Code's PostToolBatch names every call of a
-// batch in tool_calls. Claude Code
-// and Codex send a UserPromptSubmit's text as prompt.
+// batch in tool_calls. Claude Code and Codex send a UserPromptSubmit's text
+// as prompt.
 type hookPayload struct {
 	Prompt    string         `json:"prompt"`
 	ToolName  string         `json:"tool_name"`
