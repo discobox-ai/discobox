@@ -31,6 +31,23 @@ func (r Remote) workdir() string {
 	return r.Workdir
 }
 
+// workdirURLPath is the workdir as the path of a URL whose authority is the ssh
+// host, as a template spells it (`ssh-remote+{ssh.host}{workdir.urlpath}`):
+// always beginning with `/`, so nothing in the workdir runs on into the
+// authority and names a host of its own -- a Windows drive path does not begin
+// with one, and `C:\x@attacker.example` would. A drive path is written the way
+// a file URL writes one, `/C:/src/app` (ADR 26-10-15-417).
+func (r Remote) workdirURLPath() string {
+	p := r.workdir()
+	if len(p) >= 2 && p[1] == ':' {
+		p = strings.ReplaceAll(p, `\`, "/")
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Path: p}).EscapedPath()
+}
+
 // sshURL is the working tree as an `ssh://` URL whose authority is the
 // ssh_config host, so whatever takes it hands the whole connection back to the
 // ssh that already knows how to reach the discobox. Built with net/url so a
@@ -63,7 +80,7 @@ func (r Remote) Expand(args []string) ([]string, error) {
 			"{ssh.host}", r.Host,
 			"{ssh.url}", r.sshURL(),
 			"{git.url}", r.GitURL(),
-			"{workdir.urlpath}", (&url.URL{Path: r.workdir()}).EscapedPath(),
+			"{workdir.urlpath}", r.workdirURLPath(),
 			"{workdir}", r.workdir(),
 			"{discobox.id}", r.SandboxID,
 		).Replace(arg))

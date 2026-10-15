@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -670,16 +671,35 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 // explicit destination uses the working root of the sandbox's platform. Empty
 // means the sandbox has no primary source: an editor still opens on the
 // working root (tools.Remote), but there is no git URL to print.
+//
+// The folder comes from the server's record, which the client does not write
+// alone -- a box can create boxes, and an archive is anyone's -- and every
+// host tool takes it as a path on the far side of an SSH host: an editor's
+// `ssh-remote+<host><folder>` URL, `{workdir}` in a command. One that is not
+// an absolute path in the sandbox could name a host there instead, so it is
+// refused here, for every source and every record however old
+// (ADR 26-10-15-417).
 func sandboxSSHFolder(sandbox *apimodel.Sandbox, sourceSlug string) (string, error) {
+	var folder string
 	if sourceSlug != "" {
-		return sourceSlugWorkdir(sandbox, sourceSlug)
+		dir, err := sourceSlugWorkdir(sandbox, sourceSlug)
+		if err != nil {
+			return "", err
+		}
+		folder = dir
+	} else {
+		source, ok := sandbox.Config.Source.Get()
+		if !ok {
+			return "", nil
+		}
+		folder = sourceWorkdir(source)
 	}
-	source, ok := sandbox.Config.Source.Get()
-	if !ok {
-		return "", nil
+	paths := sandboxPaths(sandbox)
+	if folder == "" {
+		return paths.WorkingRoot(), nil
 	}
-	if dir := sourceWorkdir(source); dir != "" {
-		return dir, nil
+	if !paths.IsAbs(folder) || strings.HasPrefix(folder, `\\`) || strings.IndexFunc(folder, unicode.IsControl) >= 0 {
+		return "", fmt.Errorf("the discobox records %q as its source's directory, which is not an absolute path in it; refusing to hand it to a tool on this machine", folder)
 	}
-	return sandboxPaths(sandbox).WorkingRoot(), nil
+	return folder, nil
 }
