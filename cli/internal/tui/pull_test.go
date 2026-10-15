@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func testPull() Issue {
 		Comments:    1,
 		PullRequest: true,
 		Pull: &PullRequest{
-			Head: "fix-reaper", Base: "main", HeadSHA: "abc1234567890",
+			Head: "fix-reaper", Base: "main", HeadSHA: "abc1234567890", BaseSHA: "0001112223334",
 			MergeMethods: []string{"squash", "rebase"},
 			Commits:      2, Additions: 12, Deletions: 3, ChangedFiles: 3,
 			Mergeable: "blocked",
@@ -34,13 +35,6 @@ func testPull() Issue {
 				{Name: "build", State: "success", URL: "https://ci.example/build"},
 				{Name: "lint", State: "failure", URL: "https://ci.example/lint"},
 				{Name: "e2e", State: "pending", URL: "file:///etc/passwd"},
-			},
-			Files: []PullFile{
-				{Path: "reaper/reaper.go", Status: "modified", Additions: 10, Deletions: 3,
-					Patch: "@@ -1,3 +1,4 @@\n func reap() {\n-\tall()\n+\tstopped()\n }"},
-				{Path: "reaper/reaper_test.go", Status: "added", Additions: 2,
-					Patch: "@@ -0,0 +1,2 @@\n+package reaper\n+// tested"},
-				{Path: "logo.png", Status: "added"},
 			},
 		},
 		Timeline: []IssueEvent{
@@ -61,9 +55,16 @@ func testPull() Issue {
 	}
 }
 
+// testPullDiff is pull request 9's files changed at its head.
+const testPullDiff = "diff --git a/reaper/reaper.go b/reaper/reaper.go\n--- a/reaper/reaper.go\n+++ b/reaper/reaper.go\n" +
+	"@@ -1,3 +1,3 @@\n func reap() {\n-\tall()\n+\tstopped()\n }\n" +
+	"diff --git a/reaper/reaper_test.go b/reaper/reaper_test.go\nnew file mode 100644\n--- /dev/null\n+++ b/reaper/reaper_test.go\n" +
+	"@@ -0,0 +1,2 @@\n+package reaper\n+// tested\n"
+
 func pullSource() *fakeSource {
 	ds := issueSource()
 	ds.issues["https://github.com/acme/foo#9"] = testPull()
+	ds.pullDiffs = map[string]string{"abc1234567890": testPullDiff}
 	return ds
 }
 
@@ -176,9 +177,9 @@ func TestTheLeaderSaysWhenThereIsNoPullRequest(t *testing.T) {
 }
 
 // f turns the tab to the files changed and back, each page keeping its place.
-// The files are a list like any other in the window: the arrows move its
-// cursor, Enter opens the diff of the file under it, n and p turn to the next
-// file's and the one before, and Esc goes back to the list.
+// The files changed are discobox-review's window over the pull request
+// between the two commits the tab read. It is a reader: nothing in it
+// comments, approves or checks out, and the tab's way back is its own key.
 func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
@@ -188,117 +189,84 @@ func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 	read := v.conversation.offset
 
 	d.key("f")
-	frame := tightFrame(m)
-	for _, want := range []string{
-		"Files changed #9 · 3 files · +12 −3",
-		"❯ M reaper/reaper.go +10 −3", "A reaper/reaper_test.go +2 −0", "A logo.png",
-	} {
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	// The window opens with its files folded, and Space unfolds the one
+	// under its cursor, as in any discobox's diff.
+	d.key(" ")
+	frame := plainFrame(m)
+	for _, want := range []string{"reaper/reaper.go", "reaper/reaper_test.go", "all()", "stopped()"} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("the files changed do not say %q:\n%s", want, plainFrame(m))
+			t.Errorf("the files changed do not show %q:\n%s", want, frame)
 		}
 	}
-	if strings.Contains(frame, "@@") {
-		t.Errorf("the list of files shows a diff nobody opened:\n%s", plainFrame(m))
+	if want := []string{"https://github.com/acme/foo#9: 0001112223334...abc1234567890"}; !slices.Equal(ds.pullSources, want) {
+		t.Errorf("the files changed were read as %q, want %q", ds.pullSources, want)
 	}
 	hints := hintLine(m.hints())
-	if !strings.Contains(hints, "Enter diff") || strings.Contains(hints, "close PR") {
-		t.Errorf("the list's keys line is %q, want the list's keys and no close", hints)
+	if !strings.Contains(hints, "f conversation") || strings.Contains(hints, "close PR") || strings.Contains(hints, "comment") {
+		t.Errorf("the keys line is %q, want the way back and none of the conversation's", hints)
 	}
 	if got := v.pageURL(); got != "https://github.com/acme/foo/pull/9/files" {
 		t.Errorf("o would open %q, want the files changed", got)
 	}
 
-	d.key("down")
-	if v.fileCursor != 1 || !strings.Contains(tightFrame(m), "❯ A reaper/reaper_test.go") {
-		t.Fatalf("↓ left the cursor on file %d:\n%s", v.fileCursor, plainFrame(m))
-	}
-	d.key("up")
-	d.key("up")
-	if v.fileCursor != 0 {
-		t.Errorf("↑ past the first file left the cursor on %d", v.fileCursor)
-	}
-
-	d.key("enter")
-	frame = tightFrame(m)
-	for _, want := range []string{"M reaper/reaper.go 1 of 3 +10 −3", "@@ -1,3 +1,4 @@", "- all()", "+ stopped()"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("the file's diff does not say %q:\n%s", want, plainFrame(m))
-		}
-	}
-	if strings.Contains(frame, "package reaper") {
-		t.Errorf("one file's diff shows another's:\n%s", plainFrame(m))
-	}
-	if hints := hintLine(m.hints()); !strings.Contains(hints, "next file") || !strings.Contains(hints, "Esc files") {
-		t.Errorf("the diff's keys line is %q", hints)
-	}
-	d.key("n")
-	if v.fileCursor != 1 || !strings.Contains(tightFrame(m), "+package reaper") {
-		t.Errorf("n did not turn to the second file's diff:\n%s", plainFrame(m))
-	}
-	d.key("n")
-	d.key("n")
-	if v.fileCursor != 2 || !strings.Contains(plainFrame(m), "no diff to show") {
-		t.Errorf("n past the last file: on %d:\n%s", v.fileCursor, plainFrame(m))
-	}
-	d.key("p")
-	d.key("esc")
-	if v.fileOpen || !strings.Contains(tightFrame(m), "❯ A reaper/reaper_test.go") {
-		t.Errorf("Esc did not go back to the list with the cursor on the file that was open:\n%s", plainFrame(m))
+	// The window's keys are the window's: c is a comment in discobox-review,
+	// and over a pull request there is nowhere to put one.
+	d.key("c")
+	if v.composing {
+		t.Errorf("c on the files changed opened the tab's comment field")
 	}
 
 	d.key("f")
 	if v.files || v.conversation.offset != read {
 		t.Errorf("f again: files %v, the conversation at %d; want it back where it was read to, %d", v.files, v.conversation.offset, read)
 	}
+	// Back again is the same window, not another read of GitHub.
+	d.key("f")
+	if !v.files || len(ds.pullSources) != 1 {
+		t.Errorf("f a second time: files %v, %d sources opened; want the window that was open", v.files, len(ds.pullSources))
+	}
+	// q is the window's close, which is the way back too.
+	d.key("q")
+	if v.files || issueTabOf(m) == nil {
+		t.Errorf("q in the window: files %v, tab open %v; want the conversation", v.files, issueTabOf(m) != nil)
+	}
 }
 
-// A click on a file points at it, and a second opens its diff.
-func TestClickingAFileOpensItsDiff(t *testing.T) {
+// A pull request whose files changed cannot be opened says why, and the tab
+// stays on the conversation.
+func TestFilesChangedThatCannotBeOpenedSayWhy(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
+	ds.pullSourceErr = errors.New("acme/foo is not a GitHub repository")
 	d, m := openPullPane(t, ds)
 	v := issueTabOf(m).issue
 	d.key("f")
-	// Two presses on the one clock, so the second is the first's double.
-	now := time.Now()
-	m.now = func() time.Time { return now }
-	x, y := at(t, m, "reaper/reaper_test.go")
-	tap(t, m, x, y)
-	if v.fileCursor != 1 || v.fileOpen {
-		t.Fatalf("a click: cursor on %d, open %v; want it on the file and the list still up", v.fileCursor, v.fileOpen)
+	if v.files || v.review != nil {
+		t.Errorf("a source that failed left the tab on files %v, window %v", v.files, v.review != nil)
 	}
-	tap(t, m, x, y)
-	if !v.fileOpen || !strings.Contains(plainFrame(m), "+package reaper") {
-		t.Errorf("a second click did not open the file's diff:\n%s", plainFrame(m))
+	if frame := plainFrame(m); !strings.Contains(frame, "cannot show the files changed: acme/foo is not") {
+		t.Errorf("the failure is not said:\n%s", frame)
 	}
 }
 
-// A file GitHub sent no diff for says so, and a long line of a diff runs on
-// rather than being cut.
-func TestAFileWithNoDiffSaysSo(t *testing.T) {
+// A pull request's diff is a stranger's text, and the files changed draw it
+// as it came from GitHub: the window, not the source, is what keeps an escape
+// sequence in it from reaching the terminal.
+func TestTheFilesChangedDrawAStrangersEscapesAsText(t *testing.T) {
 	t.Parallel()
-	m := &Model{st: newStyles(false)}
-	last := ansi.Strip(strings.Join(m.pullDiffLines(testPull(), 2, 80), "\n"))
-	if !strings.Contains(last, "A logo.png") || !strings.Contains(last, "no diff to show") {
-		t.Errorf("the file with no patch reads:\n%s", last)
-	}
-	pull := testPull()
-	pull.Pull.Files[0].Patch = "+" + strings.Repeat("x", 200)
-	var long int
-	for _, line := range m.pullDiffLines(pull, 0, 40) {
-		if w := ansi.StringWidth(line); w > 40 {
-			t.Errorf("a line of the diff is %d wide in a tab of 40: %q", w, line)
-		}
-		if strings.Contains(line, "xxxx") {
-			long++
-		}
-	}
-	if long < 5 {
-		t.Errorf("the long line was drawn on %d rows, want it wrapped to its end", long)
-	}
-	for _, line := range func() []string { lines, _ := m.pullFileLines(testPull(), 0, 30); return lines }() {
-		if w := ansi.StringWidth(line); w > 30 {
-			t.Errorf("a row of the files is %d wide in a tab of 30: %q", w, line)
+	ds := pullSource()
+	evil := "\x1b]8;;https://evil.example\x07click\x1b]8;;\x07 \x1b]52;c;cm0=\x07 \x1b[2J"
+	ds.pullDiffs["abc1234567890"] = "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -1 +1 @@\n-old\n+new " + evil + "\n"
+	d, m := openPullPane(t, ds)
+	d.key("f")
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "f.go") })
+	d.key(" ")
+	d.wait("the diff", func() bool { return strings.Contains(plainFrame(m), "new") })
+	raw := rawFrame(m)
+	for _, sequence := range []string{"\x1b]8;;https://evil", "\x1b]52", "\x1b[2J"} {
+		if strings.Contains(raw, sequence) {
+			t.Errorf("the diff's %q reached the terminal:\n%s", sequence, plainFrame(m))
 		}
 	}
 }
@@ -734,22 +702,20 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 	p := issueTabOf(m)
 	v := p.issue
 	d.key("f")
-	d.key("down")
-	d.key("enter")
-	if !v.fileOpen || v.issue.Pull.Files[v.fileCursor].Path != "reaper/reaper_test.go" {
-		t.Fatalf("the second file's diff is not open: cursor %d, open %v", v.fileCursor, v.fileOpen)
-	}
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	opened := v.review
 
 	pushed := readyPull()
 	pushed.Pull.HeadSHA = "fff9999000111"
-	pushed.Pull.Files = append([]PullFile{{Path: "a/first.go", Status: "added", Patch: "@@ -0,0 +1 @@\n+package a"}}, pushed.Pull.Files...)
 	ds.mu.Lock()
 	ds.issues["https://github.com/acme/foo#9"] = pushed
+	ds.pullDiffs["fff9999000111"] = "diff --git a/a/first.go b/a/first.go\nnew file mode 100644\n--- /dev/null\n+++ b/a/first.go\n@@ -0,0 +1 @@\n+package a\n"
 	ds.mu.Unlock()
 	d.dispatch(issueTickMsg{id: p.id})
 	d.wait("the push", func() bool { return strings.Contains(plainFrame(m), "commits were pushed since") })
-	if !v.fileOpen || v.issue.Pull.Files[v.fileCursor].Path != "reaper/reaper_test.go" {
-		t.Errorf("the open diff did not follow its file: cursor %d (%s), open %v", v.fileCursor, v.issue.Pull.Files[v.fileCursor].Path, v.fileOpen)
+	// A push nobody asked to see leaves the files being read where they are.
+	if v.review != opened || !strings.Contains(plainFrame(m), "reaper/reaper_test.go") {
+		t.Errorf("the push moved the files changed under the person reading them:\n%s", plainFrame(m))
 	}
 	// The merge is asked from the conversation.
 	d.key("f")
@@ -783,6 +749,72 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 	if v.pushed != "" || strings.Contains(plainFrame(m), "commits were pushed") {
 		t.Errorf("a read that was asked for left the notice up (pushed %q):\n%s", v.pushed, plainFrame(m))
 	}
+
+	// r is the tab's on the files changed too, and what it reads is what the
+	// person has now seen: the window opens over the new head.
+	d.key("f")
+	if v.review == opened {
+		t.Errorf("f after a read of a new head opened the old head's files")
+	}
+	ds.mu.Lock()
+	ds.issues["https://github.com/acme/foo#9"] = pushed
+	ds.mu.Unlock()
+	d.key("r")
+	d.wait("the new head's files", func() bool { return v.review != nil && v.review.head == "fff9999000111" })
+	d.wait("the new head's files drawn", func() bool { return strings.Contains(plainFrame(m), "a/first.go") })
+	if v.pushed != "" || !v.files {
+		t.Errorf("r on the files changed: files %v, pushed %q", v.files, v.pushed)
+	}
+	// The new head is still ready to merge, and the tab still says so.
+	if !strings.HasSuffix(p.title, " ●") {
+		t.Errorf("r on the files changed left the tab titled %q, want it marked ready", p.title)
+	}
+	// The window over the old head was replaced, and its reads end with it.
+	ds.mu.Lock()
+	replaced := ds.pullContexts[len(ds.pullContexts)-2]
+	ds.mu.Unlock()
+	if replaced.Err() == nil {
+		t.Errorf("the old head's window was replaced and its reads go on")
+	}
+}
+
+// Whatever takes the tab away ends the window's reads with it: closing the
+// tab, and leaving the workspace the tab is in.
+func TestTheFilesChangedEndWithTheirTab(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	d, m := openPullPane(t, ds)
+	d.key("f")
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	d.key(m.leader())
+	d.key("d")
+	d.wait("the workspace to close", func() bool { return !m.inPanes() })
+	ds.mu.Lock()
+	opened := slices.Clone(ds.pullContexts)
+	ds.mu.Unlock()
+	if len(opened) != 1 || opened[0].Err() == nil {
+		t.Errorf("leaving the workspace left the files changed reading GitHub (%d opened)", len(opened))
+	}
+}
+
+// A drag in the files changed is the window's to the end: it is held as a
+// terminal's is, and what was selected elsewhere goes.
+func TestTheFilesChangedHoldTheirDrag(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	d, m := openPullPane(t, ds)
+	p := issueTabOf(m)
+	d.key("f")
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	x, y := at(t, m, "reaper/reaper_test.go")
+	send(t, m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if m.mouseCapture != p.id {
+		t.Errorf("a press in the files changed is held by pane %d, want the tab's %d", m.mouseCapture, p.id)
+	}
+	send(t, m, tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if m.mouseCapture != 0 {
+		t.Errorf("the release left the drag held by %d", m.mouseCapture)
+	}
 }
 
 // While a comment is being written the keys are the field's: the ready band's
@@ -801,41 +833,6 @@ func TestTheReadyBandsKeyIsNotPressedWhileWriting(t *testing.T) {
 	tap(t, m, x, y)
 	if m.dialog != nil || v.composer.Value() != "" {
 		t.Errorf("a click on the band's key while writing: question up %v, field %q", m.dialog != nil, v.composer.Value())
-	}
-}
-
-// The files are a list, and a list scrolls by its cursor: the wheel and the
-// page keys move it, and the end of the list shows what is said under it.
-func TestTheFilesListScrollsByItsCursor(t *testing.T) {
-	t.Parallel()
-	ds := pullSource()
-	pull := testPull()
-	pull.Pull.Files = nil
-	for i := range 120 {
-		pull.Pull.Files = append(pull.Pull.Files, PullFile{Path: "pkg/file" + itoa(i) + ".go", Status: "modified", Additions: 1})
-	}
-	pull.Pull.ChangedFiles, pull.Pull.FilesTruncated = 150, true
-	ds.issues["https://github.com/acme/foo#9"] = pull
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.key("pgdown")
-	if v.fileCursor == 0 || !strings.Contains(plainFrame(m), "❯ M pkg/file"+itoa(v.fileCursor)+".go") {
-		t.Fatalf("page down left the cursor on %d:\n%s", v.fileCursor, plainFrame(m))
-	}
-	paged := v.fileCursor
-	x, y := at(t, m, "pkg/file"+itoa(paged)+".go")
-	send(t, m, tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
-	if v.fileCursor <= paged {
-		t.Errorf("the wheel left the cursor on %d", v.fileCursor)
-	}
-	d.key("G")
-	if v.fileCursor != 119 || !strings.Contains(plainFrame(m), "30 more files — o opens them on GitHub") {
-		t.Errorf("G: cursor on %d, and the list's end is not on screen:\n%s", v.fileCursor, plainFrame(m))
-	}
-	d.key("g")
-	if v.fileCursor != 0 || !strings.Contains(plainFrame(m), "Files changed #9") {
-		t.Errorf("g: cursor on %d, and the list's heading is not on screen:\n%s", v.fileCursor, plainFrame(m))
 	}
 }
 

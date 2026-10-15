@@ -6,8 +6,8 @@ replace github.com/discobox-ai/discobox => ..
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
-	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7
-	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be
+	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
 	github.com/coder/websocket v1.8.14
 	github.com/coreos/go-systemd/v22 v22.5.0

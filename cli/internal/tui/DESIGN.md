@@ -909,15 +909,24 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   them (`ChecksPartial`) says so, so a row of passes is not read as the whole. In the timeline a push is its commits, a review is its verdict,
   its summary, and each thread it started on the diff under the lines it is
   about, replies with it.
-- **Files changed is a second page of the tab** (`f`, and back), and a list
-  like every other in the window: a cursor the arrows, the page keys and the
-  wheel move — it scrolls by its cursor, never by an offset of its own —
-  `Enter` (or a second click on the row, `hitPullFile`) opening the diff of
-  the file under it, `Esc` back to the list. A diff is one file's, colored by its first
-  column in the header diffstat's colors, long lines run on rather than cut;
-  `n` and `p` turn to the next file's and the one before. Each page keeps its
-  own place (`issuePage`); the keys line offers the list's or the diff's keys
-  and nothing that answers.
+- **Files changed is discobox-review's window, embedded** (`pullreview.go`,
+  `github.com/discobox-ai/review/ui`), behind `f` and back: the same diff,
+  folds, split view, syntax and file reader as a discobox's diff tool, over a
+  `source.Source` the data source reads from GitHub (`DataSource.PullSource`).
+  It is measured between the two commits the tab last read (`BaseSHA`,
+  `HeadSHA`), three dots, as GitHub's own page is. The source keeps no review
+  and has no working tree, so the window offers no comment, approval,
+  checkout or editor. Its keys are its own but the leader, `f` and `r`
+  (`Reserved`); its commands come back tagged to the window that sent them
+  (`reviewMsg`), so a replaced window's are dropped; the pointer is read
+  against where it is drawn (`SetOrigin`). It is opened once per head: a push
+  read on the tab's clock leaves the files being read where they are, under
+  the notice, and `r` — or `f` from the conversation — opens the new head's.
+  Its gestures are held as a terminal pane's are (`mouseCapture`), and a press
+  in it clears every other selection. Two things are the window's own until
+  the module offers a way in: a copy goes out as OSC 52 written straight to the
+  terminal, not through `copyText` (no OS clipboard, no "copied" note), and a
+  press elsewhere cannot clear a selection made in it.
 - **Whether it can merge is the first thing under the title** (`mergeBanner`),
   in GitHub's own terms (`mergeable_state`): a band across the tab when it is ready —
   open, not a draft, and clean, which is no conflicts, checks passed and every
@@ -937,7 +946,7 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   rather than merged unseen — and since the tab reads itself again on its own
   clock, a read that brings a new head says so on the tab until the person asks
   for one (`pushed`, `r`), and the question names the commit it would merge.
-  The files' cursor follows its file across that push, by path. Only what GitHub could not do either is refused
+  Only what GitHub could not do either is refused
   here — a draft, a conflict; a pull request a rule blocks is GitHub's to
   refuse, with its own reason, since someone allowed to bypass the rule may.
 - **Closing is one question.** A pull request closes one way, unmerged, and a
@@ -979,7 +988,10 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   every five minutes; a change says how to log in.
 - **What GitHub says is display data.** The issue arrives in this package's own
   types (`Issue`), every string already escaped by the data source: a title or
-  a comment carrying an escape sequence is shown, not obeyed. What a page is
+  a comment carrying an escape sequence is shown, not obeyed. So does the
+  files changed' source: discobox-review's window draws the C0 and C1 controls
+  as pictures of them, but not the other invisible characters a terminal acts
+  on, a bidirectional override among them. What a page is
   written with is not escaped with it, in what is written to be read — a
   title, a body, a commit's message: the invisible hints at where a line may
   break are dropped, and the joiners in an emoji sequence kept. A name, a path,
@@ -3263,7 +3275,8 @@ the newest one where the busy line goes.
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `issue.go` | the issue tab: a GitHub issue or pull request as a pane of the shells column, its keys, the comment field, closing and reopening, and how the page is laid out as lines |
-| `pull.go` | what a pull request's page adds to the issue tab: the badge and branches, the merge bar and merging, reviewers, checks, pushes and reviews with their threads, and the files changed as a second page |
+| `pull.go` | what a pull request's page adds to the issue tab: the badge and branches, the merge bar and merging, reviewers, checks, and pushes and reviews with their threads |
+| `pullreview.go` | a pull request's files changed: discobox-review's window embedded over `DataSource.PullSource`, one per head, its messages and pointer routed to it and its keys but the tab's own |
 | `audit.go` | the audit screen: the followed timeline over the workspace, its search, and a record's card |
 | `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |

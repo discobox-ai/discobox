@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-// filePages bounds how much of a pull request's diff is read: 100 files a
-// page. GitHub itself stops listing them at 3,000.
-const filePages = 10
-
 // mergeSettleTries is how many more times a full read asks GitHub whether a
 // pull request can merge, when it has yet to say.
 const mergeSettleTries = 2
@@ -35,8 +31,10 @@ type Pull struct {
 	// Head and Base are the branches, as the page names them: the branch
 	// alone, or owner:branch for a head in a fork.
 	Head, Base string
-	// HeadSHA is the commit the checks are about.
+	// HeadSHA is the commit the checks are about, and BaseSHA where the base
+	// branch was when the pull request was read: the two its diff is between.
 	HeadSHA      string
+	BaseSHA      string
 	Commits      int
 	Additions    int
 	Deletions    int
@@ -56,10 +54,6 @@ type Pull struct {
 	// them failed, or there are more than are read.
 	Checks        []Check
 	ChecksPartial bool
-	// Files are the changes, in the order the page lists them, as far as
-	// they were read; FilesTruncated is set when ChangedFiles is more.
-	Files          []File
-	FilesTruncated bool
 }
 
 // Reviewer is one person or team in the page's Reviewers list. State is
@@ -76,19 +70,6 @@ type Check struct {
 	Name  string
 	State string
 	URL   string
-}
-
-// File is one changed file. Status is GitHub's: added, removed, modified,
-// renamed, copied. Patch is its unified diff, without the file header, and
-// empty for a binary file or a change too large for GitHub to send.
-type File struct {
-	Path string
-	// Previous is the path a renamed file had.
-	Previous  string
-	Status    string
-	Additions int
-	Deletions int
-	Patch     string
 }
 
 // Thread is one conversation a review started on a line of the diff: the
@@ -240,25 +221,6 @@ func (c *Client) readPull(ctx context.Context, owner, name string, issue *Issue,
 
 	pull.Checks, pull.ChecksPartial, _ = c.checks(ctx, repo, pull.HeadSHA)
 
-	next := base + "/files?per_page=100"
-	for page := 0; next != ""; page++ {
-		if page == filePages {
-			break
-		}
-		var files []rawFile
-		link, err := c.get(ctx, next, &files)
-		if err != nil {
-			return err
-		}
-		for _, file := range files {
-			pull.Files = append(pull.Files, File{
-				Path: file.Filename, Previous: file.PreviousFilename, Status: file.Status,
-				Additions: file.Additions, Deletions: file.Deletions, Patch: file.Patch,
-			})
-		}
-		next = nextPage(link)
-	}
-	pull.FilesTruncated = len(pull.Files) < pull.ChangedFiles
 	issue.Pull = &pull
 	return nil
 }
@@ -460,7 +422,7 @@ type rawBranch struct {
 func (r rawPull) pull() Pull {
 	pull := Pull{
 		Draft: r.Draft, Merged: r.Merged, MergedBy: r.MergedBy.login(),
-		Head: r.Head.Ref, Base: r.Base.Ref, HeadSHA: r.Head.SHA,
+		Head: r.Head.Ref, Base: r.Base.Ref, HeadSHA: r.Head.SHA, BaseSHA: r.Base.SHA,
 		Commits: r.Commits, Additions: r.Additions, Deletions: r.Deletions, ChangedFiles: r.ChangedFiles,
 		Mergeable: r.Mergeable,
 	}

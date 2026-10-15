@@ -305,9 +305,6 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitAuditRow:
 		return m.pressAuditRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
-	case hitPullFile:
-		return m.pressFile(what.idx, clicks), clicks > 1
-
 	case hitOptionRow:
 		m.opts.moveTo(what.idx)
 		if clicks > 1 {

@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/termpane"
 
 	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/review/source"
 )
 
 // The whole package renders colorless, so a frame is plain text a test can read
@@ -231,6 +232,15 @@ type fakeSource struct {
 	// $EDITOR would have written; nil leaves the file as it was.
 	toolFiles    map[string]string
 	editToolFile func(file ToolFile) string
+	// pullDiffs are the files changed of a pull request, by its head;
+	// pullSources the pull requests PullSource was asked for, as
+	// "repository#N: base...head", and pullSourceErr fails it.
+	pullDiffs     map[string]string
+	pullSources   []string
+	pullSourceErr error
+	// pullContexts are the contexts each source was opened with, which the
+	// tab cancels when it is done with the window.
+	pullContexts []context.Context
 	editToolErr  error
 	// terminalHarness is the harness the sandbox runs, which is what a
 	// terminal it creates is reported with — and what puts it in the
@@ -974,6 +984,32 @@ func (f *fakeSource) CommentOnIssue(_ context.Context, repository string, number
 	}
 	f.comments = append(f.comments, fmt.Sprintf("%s#%d: %s", repository, number, body))
 	return nil
+}
+
+// PullSource opens the files changed over the diff pullDiffs has for the
+// head, and records the head it was asked for.
+func (f *fakeSource) PullSource(ctx context.Context, repository string, number int, pull PullRequest) (source.Source, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pullSourceErr != nil {
+		return nil, f.pullSourceErr
+	}
+	f.pullContexts = append(f.pullContexts, ctx)
+	f.pullSources = append(f.pullSources, fmt.Sprintf("%s#%d: %s...%s", repository, number, pull.BaseSHA, pull.HeadSHA))
+	return fakeReview{head: pull.Head, base: pull.Base, diff: f.pullDiffs[pull.HeadSHA]}, nil
+}
+
+// fakeReview is a pull request's files changed: a diff and nothing else.
+type fakeReview struct{ head, base, diff string }
+
+func (r fakeReview) Scan(string, int) (source.Scan, error) {
+	return source.Scan{Branch: r.head, HasHEAD: true, Base: source.Base{Ref: r.base, SHA: "base000", Commit: "base000"}, Diff: r.diff}, nil
+}
+
+func (r fakeReview) CommitDiff(string, int) (string, error) { return "", nil }
+
+func (r fakeReview) FileContent(string, string) (string, error) {
+	return "", errors.New("no files here")
 }
 
 func (f *fakeSource) MergePullRequest(_ context.Context, repository string, number int, method, sha string) error {
