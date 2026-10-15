@@ -385,8 +385,9 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 // hookPayload is the part of a hook's payload that says what it was about.
 // Claude Code and Codex send tool_name and tool_input; the opencode image's
 // plugin sends tool and args, and only a title after the tool ran; Copilot
-// sends toolName with toolArgs, or toolInput on a permissionRequest. Claude
-// Code's PostToolBatch names every call of a batch in tool_calls. Claude Code
+// sends toolName with toolArgs, or toolInput on a permissionRequest; the omp
+// image's extension sends omp's own toolName with input. Claude Code's
+// PostToolBatch names every call of a batch in tool_calls. Claude Code
 // and Codex send a UserPromptSubmit's text as prompt.
 type hookPayload struct {
 	Prompt    string         `json:"prompt"`
@@ -403,8 +404,11 @@ type hookPayload struct {
 	CopilotToolName  string          `json:"toolName"`
 	CopilotToolArgs  json.RawMessage `json:"toolArgs"`
 	CopilotToolInput map[string]any  `json:"toolInput"`
-	Title            string          `json:"title"`
-	ToolCalls        []struct {
+	// omp's tool_call and tool_result: toolName, as Copilot spells it, and
+	// the arguments as input.
+	OmpInput  map[string]any `json:"input"`
+	Title     string         `json:"title"`
+	ToolCalls []struct {
 		ToolName string `json:"tool_name"`
 	} `json:"tool_calls"`
 }
@@ -451,6 +455,9 @@ func hookSummary(payload []byte) string {
 		tool, input = p.CopilotToolName, copilotToolArgs(p.CopilotToolArgs)
 		if input == nil {
 			input = p.CopilotToolInput
+		}
+		if input == nil {
+			input = p.OmpInput
 		}
 	}
 	if tool == "" {
