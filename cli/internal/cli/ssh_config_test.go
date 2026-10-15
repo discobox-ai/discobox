@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // sshConfigFakeServer serves the routes ssh-config drives: the SSH ingress
@@ -472,5 +474,72 @@ func TestSSHConfigSkipsASandboxWithNoUnambiguousPattern(t *testing.T) {
 		if strings.Contains(out, broken) {
 			t.Fatalf("emitted a Host line with no patterns, which breaks ssh_config:\n%s", out)
 		}
+	}
+}
+
+// The folder a host tool opens comes from the server's record, which a box can
+// write (it can create boxes) and an archive can carry. Joined to an SSH host
+// with no separator -- `ssh-remote+<host><folder>` -- one that is not an
+// absolute path names another host, so it is refused for every source and
+// every record (ADR 26-10-15-417). A path with a space in it is a path.
+func TestSandboxSSHFolderRefusesWhatIsNotAPathInTheSandbox(t *testing.T) {
+	sandbox := func(t *testing.T, platform, source, references string) *apimodel.Sandbox {
+		t.Helper()
+		doc := fmt.Sprintf(`{"id":"sbx_1","projectId":"project-1","createdByUserId":"user-1","displayName":"x",%s
+			"config":{"name":"x","image":"i"%s%s},
+			"runtime":{"desiredState":"present","state":"ready","runtimeState":"running","displayState":"running","generation":1,"observedGeneration":1},
+			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, platform, source, references)
+		var out apimodel.Sandbox
+		if err := out.UnmarshalJSON([]byte(doc)); err != nil {
+			t.Fatalf("decode sandbox: %v", err)
+		}
+		return &out
+	}
+	quote := func(v string) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	// An empty working directory is left out, so the directory is what the
+	// folder falls back to.
+	primary := func(directory, workingDirectory string) string {
+		destination := `"directory":` + quote(directory)
+		if workingDirectory != "" {
+			destination += `,"workingDirectory":` + quote(workingDirectory)
+		}
+		return `,"source":{"kind":"git","slug":"primary","url":"https://example.com/r.git","destination":{` + destination + `}}`
+	}
+	reference := func(directory string) string {
+		return `,"sourceCodeReferences":{"docs":{"kind":"git","slug":"docs","url":"https://example.com/d.git","destination":{"directory":` + quote(directory) + `}}}`
+	}
+	windows := `"platform":"windows/amd64",`
+	for _, tc := range []struct {
+		name, platform, source, references, slug, want string
+		refused                                        bool
+	}{
+		{name: "the primary's working directory", source: primary("/workspace/app", "/workspace/app/cmd"), want: "/workspace/app/cmd"},
+		{name: "a path with a space", source: primary("/Users/ada/My Projects/app", "/Users/ada/My Projects/app"), want: "/Users/ada/My Projects/app"},
+		{name: "a working directory naming a host", source: primary("/workspace/app", "@attacker.example/x"), refused: true},
+		{name: "a directory naming a host", source: primary("@attacker.example/x", ""), refused: true},
+		{name: "a reference naming a host", source: primary("/workspace/app", ""), references: reference("@attacker.example/x"), slug: "docs", refused: true},
+		{name: "a reference", source: primary("/workspace/app", ""), references: reference("/workspace/docs"), slug: "docs", want: "/workspace/docs"},
+		{name: "a control character", source: primary("/workspace/app", "/workspace/app/\u001b[2J"), refused: true},
+		{name: "windows drive path", platform: windows, source: primary(`C:\src\app`, `C:\src\app`), want: `C:\src\app`},
+		{name: "windows share naming a host", platform: windows, source: primary(`\\attacker\share`, `\\attacker\share`), refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sandboxSSHFolder(sandbox(t, tc.platform, tc.source, tc.references), tc.slug)
+			if tc.refused {
+				if err == nil {
+					t.Fatalf("folder = %q, want it refused", got)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("folder = %q, %v; want %q", got, err, tc.want)
+			}
+		})
 	}
 }

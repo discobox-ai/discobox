@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -205,6 +206,34 @@ func TestRemoteExpand(t *testing.T) {
 	}
 	if _, err := root.Expand([]string{"{git.url}"}); err == nil {
 		t.Error("a git url with no working tree expanded")
+	}
+}
+
+// A template joins the host and the path with nothing between them, so the
+// path must begin with `/` or the rest of it runs on into the URL's authority.
+// A Windows drive path does not: `C:\x@attacker.example` read as authority is
+// the host attacker.example (ADR 26-10-15-417). It is written the way a file
+// URL writes a drive path, and the host stays the box's.
+func TestRemoteURLPathNeverRunsIntoTheHost(t *testing.T) {
+	for _, tc := range []struct{ workdir, want string }{
+		{`C:\src\app`, "vscode-remote://ssh-remote+discobox.box/C:/src/app"},
+		{`C:\x@attacker.example`, "vscode-remote://ssh-remote+discobox.box/C:/x@attacker.example"},
+		{"/workspace/app", "vscode-remote://ssh-remote+discobox.box/workspace/app"},
+	} {
+		got, err := Remote{Host: "discobox.box", Workdir: tc.workdir}.Expand([]string{"vscode-remote://ssh-remote+{ssh.host}{workdir.urlpath}"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got[0] != tc.want {
+			t.Errorf("%s: folder uri = %q, want %q", tc.workdir, got[0], tc.want)
+		}
+		u, err := url.Parse(got[0])
+		if err != nil {
+			t.Fatalf("%s: %v", tc.workdir, err)
+		}
+		if u.Host != "ssh-remote+discobox.box" {
+			t.Errorf("%s: authority = %q, want the box's host alone", tc.workdir, u.Host)
+		}
 	}
 }
 

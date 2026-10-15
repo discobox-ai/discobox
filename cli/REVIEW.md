@@ -34,3 +34,21 @@
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.
+
+## Handing the sandbox's paths to host tools
+
+- **A folder from the server's record is checked before a host tool gets it**
+  (`sandboxSSHFolder`): absolute in the sandbox, not a Windows share, no
+  control character. A host tool reads it on the far side of an SSH host
+  (`ssh-remote+<host><folder>`), where `@attacker.example/x` is another host,
+  and the record is not the client's alone: a box can create boxes, and an
+  archive is anyone's (ADR 26-10-15-417). Anything new that puts a sandbox path
+  into a host-side URL or command goes through the same check.
+- **A URL joins a sandbox path to its host through `/`.** `tools.Remote`'s
+  `{workdir.urlpath}` always begins with one, a drive path written
+  `/C:/src/app`: a Windows path begins with its drive, and `C:\x@host` read as
+  authority is another host.
+- **A command printed for the user to paste is not guarded yet.** `apply`'s
+  next steps put a sandbox directory into `git -C <dir>` unquoted. Quote it for
+  the user's shell before adding another such command, and do not treat this
+  section as covering them.
