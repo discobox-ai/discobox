@@ -1497,6 +1497,9 @@ func TestPluginPublishesUnderTheDriverProvider(t *testing.T) {
 // grepping for constant names would not miss if they were deleted.
 func pluginPublishes(t *testing.T) []string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the harness image's plugin runs on Linux, and the driver stubs its publisher with a shell script")
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not on PATH; the plugin's behavior is not exercised")
