@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // Which discoboxes an approval rule is for is a list of repositories, compared
@@ -14,7 +14,7 @@ import (
 // with none is for every discobox in the project.
 //
 // A repository's identity is its host and path — github.com/org/repo — as
-// sourcecache.NormalizeRemote reduces a remote to: no scheme or user, the host
+// sourceref.NormalizeRemote reduces a remote to: no scheme or user, the host
 // lower-cased, no trailing slash or ".git", so the HTTPS and SSH spellings of
 // one repository are one. Both sides of the comparison are made here: what a
 // rule is given (ruleRepository) and what a discobox has (repositoryIdentity).
@@ -37,7 +37,7 @@ func repositoryIdentity(source *model.GitSource) string {
 	if source == nil {
 		return ""
 	}
-	return sourcecache.NormalizeRemote(source.RepositoryURL())
+	return sourceref.NormalizeRemote(source.RepositoryURL())
 }
 
 // ruleRepository is one repository as a rule stores it, from what a person
@@ -53,7 +53,7 @@ func ruleRepository(given string) (string, error) {
 		return "", fmt.Errorf("a rule's repository is at most %d bytes", maxRuleRepository)
 	}
 	if strings.Contains(given, "://") {
-		if identity := sourcecache.NormalizeRemote(given); identity != "" {
+		if identity := sourceref.NormalizeRemote(given); identity != "" {
 			return identity, nil
 		}
 		return "", fmt.Errorf("%q is not a repository's URL", given)
@@ -68,12 +68,12 @@ func ruleRepository(given string) (string, error) {
 			}
 			return "", fmt.Errorf("%q names no host: say which, as in github.com/%s", given, strings.Trim(given, "/"))
 		}
-		if identity := sourcecache.NormalizeRemote("https://" + given); identity != "" {
+		if identity := sourceref.NormalizeRemote("https://" + given); identity != "" {
 			return identity, nil
 		}
 		return "", fmt.Errorf("%q names no repository: say its host and path, as in github.com/org/repo", given)
 	}
-	if identity := sourcecache.NormalizeRemote(given); identity != "" {
+	if identity := sourceref.NormalizeRemote(given); identity != "" {
 		return identity, nil
 	}
 	return "", fmt.Errorf("%q is not a repository: give a URL, or host/path as in github.com/org/repo", given)

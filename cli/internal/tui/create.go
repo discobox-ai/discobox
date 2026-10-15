@@ -294,7 +294,7 @@ func (c *createCard) hint() string {
 		return opt.hint
 	}
 	if _, ok := c.source(); !ok {
-		return "-C · a path, URL or DIR@REF the listing has never seen"
+		return "-C · a path, URL or owner/repo, with @REF and //PATH, the listing has never seen"
 	}
 	return "-C · where the discobox is cut from"
 }

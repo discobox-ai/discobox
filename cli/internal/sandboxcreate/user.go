@@ -12,6 +12,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -142,12 +143,11 @@ func validRunHomeDirectory(value string) bool {
 // is set, and $USER@$(hostname) here would only relocate the wrong fallback this
 // exists to replace.
 func resolveGitIdentity(ctx context.Context, sourceArg string) apimodel.SandboxGitIdentity {
-	source, _, _ := splitRunSourceRef(sourceArg)
-	dir := strings.TrimSpace(source)
-	if dir == "" || IsRemoteGitSource(dir) {
-		// Empty means git runs in this process's own directory, which is the
-		// intended fallback -- no need to fail the create over a cwd lookup.
-		dir = ""
+	// Empty means git runs in this process's own directory, which is the
+	// intended fallback -- no need to fail the create over a cwd lookup.
+	dir := ""
+	if source, err := ParseSource(sourceArg); err == nil && source.Kind != sourceref.Git {
+		dir = SourceDirectory(source)
 	}
 	git := apimodel.SandboxGitIdentity{}
 	if name, ok := gitutil.ConfigValue(ctx, dir, "user.name"); ok {

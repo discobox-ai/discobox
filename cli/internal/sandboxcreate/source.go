@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 	"github.com/discobox-ai/x/id"
 )
@@ -238,16 +239,51 @@ type resolvedRunSourceDestination struct {
 }
 
 func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptions) (resolvedRunSource, error) {
-	source, ref, explicitRef := splitRunSourceRef(sourceArg)
-	if strings.TrimSpace(source) == "" {
-		return resolvedRunSource{}, fmt.Errorf("source directory or Git repository is required")
+	source, err := ParseSource(sourceArg)
+	if err != nil {
+		return resolvedRunSource{}, err
 	}
-	if IsRemoteGitSource(source) {
+	explicitRef := source.Ref != ""
+	if source.Kind == sourceref.Git {
 		// A remote repository has no working tree, so it has no uncommitted
 		// work for --include-dirty to decide about, whatever its value.
-		return resolveRemoteRunSource(ctx, source, ref, explicitRef, opts.Platform)
+		resolved, err := resolveRemoteRunSource(ctx, source.Location, source.Ref, explicitRef, opts.Platform)
+		if err != nil || source.Path == "" {
+			return resolved, err
+		}
+		// //PATH is where the harness starts, beneath where the repository is
+		// placed. Whether the commit holds it is asked where the commit is
+		// fetched: when the source is delivered (remoteWorkingPath).
+		paths := sandboxpath.For(opts.Platform)
+		resolved.Destination.WorkingDirectory = paths.Join(resolved.Destination.Directory, source.Path)
+		return resolved, nil
 	}
-	return resolveLocalRunSource(ctx, source, ref, explicitRef, opts)
+	// DIR//PATH is DIR/PATH: a directory inside the repository the harness
+	// starts in, which a local source has always been able to name.
+	return resolveLocalRunSource(ctx, SourceDirectory(source), source.Ref, explicitRef, opts)
+}
+
+// ParseSource reads a source argument (ADR 26-10-15-664) and settles it
+// on this machine: a GitHub shorthand that is not a directory here is the
+// repository, and a directory is made absolute.
+func ParseSource(sourceArg string) (sourceref.Ref, error) {
+	if strings.TrimSpace(sourceArg) == "" {
+		return sourceref.Ref{}, errors.New("source directory or Git repository is required")
+	}
+	source, err := sourceref.Parse(sourceArg)
+	if err != nil {
+		return sourceref.Ref{}, fmt.Errorf("source %s: %w", sourceArg, err)
+	}
+	return source.Resolve("")
+}
+
+// SourceDirectory is the directory a local source names: its location, and
+// its //PATH beneath that.
+func SourceDirectory(source sourceref.Ref) string {
+	if source.Path == "" {
+		return source.Location
+	}
+	return filepath.Join(source.Location, filepath.FromSlash(source.Path))
 }
 
 // OriginKeys are the origin keys `discobox ls` lists for sourceArg (ADR 0111
@@ -272,15 +308,17 @@ func OriginKeys(ctx context.Context, sourceArg string) (sourceKey, hostKey strin
 // key hashes: a remote URL in the form the request carries it, and a
 // directory's repository root, or the directory itself outside one.
 func SourceRoot(ctx context.Context, sourceArg string) (string, error) {
-	source, _, _ := splitRunSourceRef(sourceArg)
-	source = strings.TrimSpace(source)
-	if IsRemoteGitSource(source) {
-		return remoteSourceRoot(source), nil
+	if strings.TrimSpace(sourceArg) == "" {
+		sourceArg = "."
 	}
-	if source == "" {
-		source = "."
+	source, err := ParseSource(sourceArg)
+	if err != nil {
+		return "", err
 	}
-	return origin.ProjectPath(ctx, source)
+	if source.Kind == sourceref.Git {
+		return remoteSourceRoot(source.Location), nil
+	}
+	return origin.ProjectPath(ctx, SourceDirectory(source))
 }
 
 // remoteSourceRoot is a remote URL in the form the create request carries it:
@@ -302,9 +340,17 @@ func remoteSourceRoot(source string) string {
 // reads its branch from. It is not where a discobox is filed; that is its
 // origin key.
 func LocalProjectDirectory(ctx context.Context, sourceArg string) (string, error) {
-	source, _, _ := splitRunSourceRef(sourceArg)
-	dir := strings.TrimSpace(source)
-	if dir == "" || IsRemoteGitSource(dir) {
+	dir := ""
+	if strings.TrimSpace(sourceArg) != "" {
+		source, err := ParseSource(sourceArg)
+		if err != nil {
+			return "", err
+		}
+		if source.Kind != sourceref.Git {
+			dir = SourceDirectory(source)
+		}
+	}
+	if dir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", fmt.Errorf("resolve working directory: %w", err)
@@ -980,160 +1026,25 @@ func gitRefExists(ctx context.Context, repoRoot, ref string) bool {
 	return err == nil
 }
 
-// IsRemoteGitSource reports whether a source value names a repository to clone
-// rather than a directory on this machine.
-//
-// It is exported because a frontend asking about a source's working tree has to
-// know when there is not one to ask about: `discobox new -C https://…` has no
-// local checkout, so no uncommitted work, and no question to put to anybody.
-func IsRemoteGitSource(value string) bool {
-	if strings.Contains(value, "://") {
-		u, err := url.Parse(value)
-		return err == nil && u.Scheme != "" && (u.Host != "" || u.Scheme == "file")
-	}
-	return strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.HasPrefix(value, ".")
-}
-
-// ExpandGitHubShorthand spells a GitHub repository written short — `owner/repo`
-// or `github.com/owner/repo`, either optionally with @REF — as the URL it
-// stands for, `https://github.com/owner/repo.git`. Anything else comes back as
-// given.
-//
-// A directory wins. `owner/repo` is also a perfectly ordinary relative path,
-// so the shorthand applies only when nothing is there: a source that names a
-// directory on this machine keeps naming it, whichever way it was spelled.
-func ExpandGitHubShorthand(value string) string {
-	source, ref, explicitRef := splitRunSourceRef(strings.TrimSpace(value))
-	parts := strings.Split(source, "/")
-	if len(parts) == 3 && parts[0] == "github.com" {
-		parts = parts[1:]
-	}
-	if len(parts) != 2 || !githubOwner(parts[0]) || !githubRepository(strings.TrimSuffix(parts[1], ".git")) {
-		return value
-	}
-	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
-		return value
-	}
-	expanded := "https://github.com/" + parts[0] + "/" + strings.TrimSuffix(parts[1], ".git") + ".git"
-	if explicitRef {
-		expanded += "@" + ref
-	}
-	return expanded
-}
-
-// GitHubRepositoryURL is the web address of the GitHub repository a Git remote
-// names, `https://github.com/owner/repo`, or empty when it names something
-// else. Every spelling Git takes for one counts — https, ssh:// and git://
-// URLs and the scp-like `git@github.com:owner/repo.git` — since which of them
-// a source was written in says how it is reached, not what it is.
-func GitHubRepositoryURL(remote string) string {
-	remote = strings.TrimSpace(remote)
-	var host, repoPath string
-	if strings.Contains(remote, "://") {
-		// Only the transports GitHub serves: a file:// URL names a path on
-		// this machine whatever it spells as its host.
-		u, err := url.Parse(remote)
-		if err != nil {
-			return ""
-		}
-		switch u.Scheme {
-		case "https", "http", "ssh", "git", "git+ssh", "ssh+git":
-		default:
-			return ""
-		}
-		host, repoPath = u.Hostname(), u.Path
-	} else {
-		var ok bool
-		host, repoPath, ok = strings.Cut(remote, ":")
-		if !ok {
-			return ""
-		}
-		if at := strings.LastIndex(host, "@"); at >= 0 {
-			host = host[at+1:]
-		}
-	}
-	if host = strings.ToLower(host); host != "github.com" && host != "www.github.com" {
-		return ""
-	}
-	parts := strings.Split(strings.Trim(repoPath, "/"), "/")
-	if len(parts) != 2 {
-		return ""
-	}
-	owner, repo := parts[0], strings.TrimSuffix(parts[1], ".git")
-	if !githubOwner(owner) || !githubRepository(repo) {
-		return ""
-	}
-	return "https://github.com/" + owner + "/" + repo
-}
-
-// GitHubRepositoryKey is what tells one GitHub repository from another, for a
-// remote GitHubRepositoryURL recognizes: its `owner/repo`, lower-cased because
-// GitHub does not tell names apart by case. Empty for anything else. Every
-// spelling of one repository's remote — https or ssh, with or without `.git`,
-// in any case — has the one key.
-func GitHubRepositoryKey(remote string) string {
-	return strings.ToLower(strings.TrimPrefix(GitHubRepositoryURL(remote), "https://github.com/"))
-}
-
 // SourceGitHubRepository is the GitHub repository a discobox cut from
-// sourceArg now would belong to, as GitHubRepositoryURL spells it: the URL a
+// sourceArg now would belong to, as sourceref.GitHubURL spells it: the URL a
 // remote source names, or the remote a local one's checkout would record as
 // its upstream (localRemote). Empty when that is not on GitHub, and for a
-// directory that cannot be resolved — it answers what something is, and a
+// source that cannot be resolved — it answers what something is, and a
 // source nothing can be cut from is refused where it is cut.
 func SourceGitHubRepository(ctx context.Context, sourceArg string) string {
-	source, ref, _ := splitRunSourceRef(sourceArg)
-	if IsRemoteGitSource(strings.TrimSpace(source)) {
-		return GitHubRepositoryURL(source)
-	}
-	root, err := SourceRoot(ctx, sourceArg)
+	source, err := ParseSource(sourceArg)
 	if err != nil {
 		return ""
 	}
-	return GitHubRepositoryURL(localRemoteURL(ctx, root, localRunCheckout(ctx, root, ref, "")))
-}
-
-// githubOwner reports whether name can be a GitHub user or organization:
-// letters, digits and single hyphens, never at either end.
-func githubOwner(name string) bool {
-	if name == "" || strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") || strings.Contains(name, "--") {
-		return false
+	if source.Kind == sourceref.Git {
+		return sourceref.GitHubURL(source.Location)
 	}
-	for _, r := range name {
-		if !isASCIIAlphanumeric(r) && r != '-' {
-			return false
-		}
+	root, err := origin.ProjectPath(ctx, SourceDirectory(source))
+	if err != nil {
+		return ""
 	}
-	return true
-}
-
-// githubRepository reports whether name can be a GitHub repository: letters,
-// digits, '-', '_' and '.', but not a path's own "." or "..".
-func githubRepository(name string) bool {
-	if name == "" || name == "." || name == ".." {
-		return false
-	}
-	for _, r := range name {
-		if !isASCIIAlphanumeric(r) && r != '-' && r != '_' && r != '.' {
-			return false
-		}
-	}
-	return true
-}
-
-func isASCIIAlphanumeric(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-}
-
-func splitRunSourceRef(value string) (string, string, bool) {
-	at := strings.LastIndex(value, "@")
-	if at <= 0 || at == len(value)-1 {
-		return value, "", false
-	}
-	if !strings.Contains(value[:at], "@") && strings.Contains(value[at+1:], ":") {
-		return value, "", false
-	}
-	return value[:at], value[at+1:], true
+	return sourceref.GitHubURL(localRemoteURL(ctx, root, localRunCheckout(ctx, root, source.Ref, "")))
 }
 
 // resolvedReference is one extra source brought into the sandbox alongside the
@@ -1181,6 +1092,11 @@ type referencePlacement struct {
 // server's to resolve, and the client reads the resolved slug back off the
 // created sandbox rather than assuming it.
 func resolveRunSourceReference(ctx context.Context, arg string, placement referencePlacement, opts runSourceOptions, used map[string]struct{}) (resolvedReference, error) {
+	// //PATH says where the harness starts, which only the primary source
+	// does (ADR 26-10-15-664 §2).
+	if source, err := sourceref.Parse(arg); err == nil && source.Path != "" {
+		return resolvedReference{}, fmt.Errorf("source %s: //%s says where the harness starts, which only the primary source does", arg, source.Path)
+	}
 	resolved, err := resolveRunSource(ctx, arg, opts)
 	if err != nil {
 		return resolvedReference{}, err
@@ -1231,7 +1147,7 @@ func referenceDestination(sandbox platform.Platform, resolved resolvedRunSource,
 	name = placement.Name
 	if name == "" {
 		if resolved.URL != "" {
-			name = remoteSourceName(resolved.URL)
+			name = sourceref.Ref{Kind: sourceref.Git, Location: resolved.URL}.Name()
 		} else {
 			// Named after the directory it came from, which is the name it
 			// would have kept had its path been one a sandbox may hold.
@@ -1246,20 +1162,6 @@ func referenceDestination(sandbox platform.Platform, resolved resolvedRunSource,
 		root = paths.WorkingRoot()
 	}
 	return paths.Join(root, slugifySource(name)), name
-}
-
-// remoteSourceName is the repository name a remote URL ends in.
-func remoteSourceName(value string) string {
-	trimmed := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(value), "/"), ".git")
-	if u, err := url.Parse(trimmed); err == nil && u.Path != "" {
-		return path.Base(u.Path)
-	}
-	// An scp-style remote (git@host:owner/repo) is not a URL; its path is
-	// whatever follows the colon.
-	if _, rest, ok := strings.Cut(trimmed, ":"); ok {
-		return path.Base(rest)
-	}
-	return path.Base(trimmed)
 }
 
 // uniqueSlug settles a slug this client can guarantee: the name itself when it

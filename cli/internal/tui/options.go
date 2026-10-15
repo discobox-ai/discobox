@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // runOptions is every flag `discobox new` takes, laid out as one editable list.
@@ -160,6 +162,11 @@ type Source struct {
 	Value string
 	// Remote marks a repository URL rather than a directory on a client.
 	Remote bool
+	// Directory is the directory a local Value names, without its ref or
+	// path, as the data source resolved it; empty for a remote. It is not
+	// split off Value here: a directory's own name may hold `@` or `//`,
+	// which only its disk tells from a ref or a path (sourceref.Ref.Resolve).
+	Directory string
 	// OriginKey is where a discobox cut from Value on this machine is filed
 	// (ADR 0111), which is the folder the list follows the source to.
 	OriginKey string
@@ -184,7 +191,7 @@ const noSourceChoice = "no source"
 // source but a way to name one the listing has never seen. It is only in the
 // dropdown, never in the left-right cycle, because cycling onto it would mean
 // stopping on a value that is not one.
-const enterSourceChoice = "enter a directory, URL, or DIR@REF…"
+const enterSourceChoice = "enter a directory, URL, or owner/repo, with @REF and //PATH…"
 
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
@@ -280,7 +287,7 @@ func newOptions(session Session) *optionSet {
 		},
 		optInclude: {
 			label: "Additional sources", kind: optMulti,
-			hint:    "-i · another directory, URL, or DIR@REF brought into the same discobox",
+			hint:    "-i · another directory, URL, or owner/repo, with @REF, brought into the same discobox",
 			example: "../other-repo", checked: true,
 		},
 	}}
@@ -488,8 +495,9 @@ func (o *optionSet) rebuildSources() {
 		if strings.TrimSpace(value) == "" || value == sourceNone {
 			return
 		}
+		// One source is one choice, however each discobox spelled it.
 		for _, seen := range values {
-			if seen == value {
+			if sameSource(seen, value) {
 				return
 			}
 		}
@@ -515,7 +523,7 @@ func (o *optionSet) rebuildSources() {
 	opt.choices, opt.values, opt.unchanged = choices, values, o.sourceDir()
 	opt.idx = 0
 	for i, value := range values {
-		if value == o.source {
+		if sameSource(value, o.source) {
 			opt.idx = i
 			return
 		}
@@ -526,10 +534,10 @@ func (o *optionSet) rebuildSources() {
 // window is running in wears its branch, the way the header spells it; nothing
 // else has a branch that means anything here.
 func (o *optionSet) sourceChoiceLabel(value string) string {
-	if value == o.session.source() {
+	if sameSource(value, o.session.source()) {
 		return o.session.sourceLabel()
 	}
-	return value
+	return sourceref.Display(value, o.session.Home)
 }
 
 // cycleSource moves the Source row and records what it landed on, since the row
@@ -561,23 +569,23 @@ func (o *optionSet) chooseSource(value string) {
 // anywhere.
 func (o *optionSet) sourceFolder() (folder, bool) {
 	value := o.opts[optSource].selected()
-	if value == sourceNone || value == o.session.source() {
+	if value == sourceNone || sameSource(value, o.session.source()) {
 		return o.session.folder(), true
 	}
 	of := func(source Source) (folder, bool) {
-		if source.Value != value || source.OriginKey == "" {
+		if !sameSource(source.Value, value) || source.OriginKey == "" {
 			return folder{}, false
 		}
 		// A directory's folder is the directory, whatever ref was named with
 		// it: the ref is the source row's to say, not the folder's.
 		dir := value
-		if !source.Remote {
-			dir = sourceDirectory(value)
+		if !source.Remote && source.Directory != "" {
+			dir = source.Directory
 		}
 		if source.RepositoryKey != "" {
 			return folder{key: source.RepositoryKey, label: repositoryLabel(source.RepositoryKey), source: dir, local: true}, true
 		}
-		return folder{key: source.OriginKey, label: dir, source: dir, local: true}, true
+		return folder{key: source.OriginKey, label: sourceref.Display(dir, o.session.Home), source: dir, local: true}, true
 	}
 	if f, ok := of(o.named); ok {
 		return f, true
@@ -599,14 +607,15 @@ func (o *optionSet) nameSource(source Source) {
 
 // remoteSource reports whether a value is a repository URL rather than a
 // directory. The listing — or the check of a source typed by hand — says so
-// per source rather than this package parsing the string, because what counts
-// as a remote is the creation path's to decide and not the window's.
+// per source rather than this package resolving the string, because whether
+// a shorthand is a directory here is the creation path's to decide and not
+// the window's.
 func (o *optionSet) remoteSource(value string) bool {
-	if o.named.Value == value {
+	if sameSource(o.named.Value, value) {
 		return o.named.Remote
 	}
 	for _, source := range o.known {
-		if source.Value == value {
+		if sameSource(source.Value, value) {
 			return source.Remote
 		}
 	}
@@ -637,7 +646,7 @@ func (o *optionSet) typedSource() string {
 		return ""
 	}
 	for _, source := range o.known {
-		if source.Value == o.source {
+		if sameSource(source.Value, o.source) {
 			return ""
 		}
 	}
@@ -718,14 +727,23 @@ func (o *optionSet) sourceDetail(value string) string {
 	}
 }
 
-// sourceDirectory is the directory half of a `DIR@REF` value: the ref says
-// which commit to cut from, and the folder a discobox is filed under is the
-// directory either way.
-func sourceDirectory(value string) string {
-	if i := strings.LastIndex(value, "@"); i > 0 {
-		return value[:i]
+// sourceKey tells one thing to cut from from another however it is spelled
+// — a repository's https URL with or without .git, in any case on GitHub, is
+// one — so the row offers each once (sourceref.Ref.CloneKey, ADR 26-10-15-664
+// §4). The transport is part of it: an ssh, http or git:// spelling of the
+// same repository is fetched another way, with other credentials or none, so
+// merging it would run a URL nobody chose.
+func sourceKey(value string) string {
+	source, err := sourceref.Parse(value)
+	if value == sourceNone || err != nil {
+		return value
 	}
-	return value
+	return source.CloneKey()
+}
+
+// sameSource reports whether two values name one source.
+func sameSource(a, b string) bool {
+	return a == b || sourceKey(a) == sourceKey(b)
 }
 
 // sourceDir is what Enter creates from: the folder the header is on, or the
@@ -741,10 +759,10 @@ func (o *optionSet) sourceDir() string {
 // only where the branch means something — the directory this window is actually
 // running in.
 func (o *optionSet) sourceLabel() string {
-	if o.sourceDir() == o.session.source() {
+	if sameSource(o.sourceDir(), o.session.source()) {
 		return o.session.sourceLabel()
 	}
-	return o.sourceDir()
+	return sourceref.Display(o.sourceDir(), o.session.Home)
 }
 
 // source is what the window itself cuts from: the repository URL it was opened
@@ -765,11 +783,11 @@ func (s Session) source() string {
 func (s Session) sourceLabel() string {
 	switch {
 	case s.Remote != "":
-		return s.Remote
+		return sourceref.Display(s.Remote, s.Home)
 	case s.Branch == "":
-		return s.Directory
+		return sourceref.Display(s.Directory, s.Home)
 	}
-	return s.Directory + " @ " + s.Branch
+	return sourceref.Display(s.Directory, s.Home) + " @ " + s.Branch
 }
 
 func (o *optionSet) current() *option { return o.opts[o.cursor] }

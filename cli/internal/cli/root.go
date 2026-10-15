@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 const defaultProjectAlias = "default"
@@ -238,7 +239,7 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	// the -C every ADR does spell is unchanged, so nothing copied out of one
 	// breaks. --project above is the other answer to the same question — it
 	// stays because the launcher and scripts pass it.
-	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what new cuts a discobox from")
+	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source to act on, DIR, URL or GitHub OWNER/REPO, then optionally @REF and //PATH: what new cuts a discobox from, and the directory inside it the harness starts in")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
@@ -391,8 +392,11 @@ func (a *App) validate() error {
 	}
 	a.leaderKey = leaderKey
 	// Once, here, so every command that reads the source — run, ls, the
-	// launcher — takes `-C owner/repo` for the same repository.
-	a.source = sandboxcreate.ExpandGitHubShorthand(a.source)
+	// launcher — takes `-C owner/repo` for the same repository. A directory
+	// is left as written; it is settled where it is cut from.
+	if source, err := sandboxcreate.ParseSource(a.source); err == nil && source.Kind == sourceref.Git {
+		a.source = source.String()
+	}
 	return nil
 }
 

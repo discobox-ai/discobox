@@ -408,10 +408,11 @@ path the variable names: that location is the user's own.
   says "as configured" until it is set either way).
 - **Paths in the file are the file's.** A relative directory is relative to the
   file's directory and `~` is home, resolved at load. A `new.skills` entry that
-  is a Git URL (`sandboxcreate.IsSkillsRepository`, the same reading `--skills`
-  gets) names a skills source, not a path, and is kept as written; one whose
-  `//PATH` is refused is still kept, so the refusal names the PATH (ADR
-  26-10-14-294 §1).
+  names a repository (`sandboxcreate.ParseSkills`, the same reading `--skills`
+  gets, with a shorthand judged against the file's directory) names a skills
+  source, not a path, and is kept as the URL it stands for; one whose
+  `//PATH` or `@REF` is refused is kept as written, so the create refuses it
+  naming it and `skills rm` can still read the file (ADR 26-10-15-664).
 - **`new.skills` is written by `discobox skills add` and `rm`, and the
   console's skills screen** (`clientconfig.AddSkill`, `RemoveSkill`). The edit
   goes through the file's YAML node tree, so its comments and other settings
@@ -446,11 +447,17 @@ URL, or a directory outside the repository refuses the create, naming the
 entry, rather than reaching `git ls-remote`.
 
 `discobox skills` (`skills.go`) manages what every new discobox gets: `ls`
-lists the project's and client.yaml's, and `add`/`rm` file a value by what it
-is, read as `--skills` reads it — a Git URL with the project, a directory in
-`new.skills`. `rm` asks client.yaml first, for the value as a create reads it,
-so an entry there of any form or name comes out of the file; anything else is
-the project's, by its ID, a unique prefix of one, or its `URL[@REF][//PATH]`.
+lists the project's and client.yaml's, each in the short spelling it is typed
+back in (`sourceref.Display`), and `add`/`rm` file a value by what it is, read
+as `--skills` reads it — a repository, a Git URL or GitHub `owner/repo`, with
+the project, sent as its URL; a directory in `new.skills` (ADR 26-10-15-664).
+`rm` asks client.yaml first, for the value as a create reads it, so an entry
+there of any form or name comes out of the file; anything else is the
+project's, by its ID, a unique prefix of one, or its `LOCATION[@REF][//PATH]`.
+Both compare entries by key (`clientconfig.SkillKey`, `SkillsRepository.Key`),
+so any spelling of a repository names it. `new.skills` is read the same way:
+a shorthand entry is resolved against the file's directory and kept as the URL
+it stands for, so a create reads it alike from anywhere.
 The console's skills screen (`F5`) does the same through `apiDataSource.Skills`,
 `AddSkills` and `RemoveSkills` (`tui_skills.go`), except that a row already
 says which list it is in, so `RemoveSkills` takes it out of that one.

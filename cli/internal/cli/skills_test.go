@@ -92,7 +92,7 @@ func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "skills", "rm", "https://github.com/acme/tools//skills", "skills_shared"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "skills", "rm", "acme/tools//skills", "skills_shared"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("rm: %v\n%s", err, errOut.String())
 	}
@@ -149,8 +149,9 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 		return out.String()
 	}
 
-	run("add", "https://github.com/acme/tools@v2//agents/skills", "~/team-skills")
-	if posted["url"] != "https://github.com/acme/tools" || posted["ref"] != "v2" || posted["directory"] != "agents/skills" {
+	// GitHub shorthand is the repository, sent as its URL (ADR 26-10-15-664).
+	run("add", "acme/tools@v2//agents/skills", "~/team-skills")
+	if posted["url"] != "https://github.com/acme/tools.git" || posted["ref"] != "v2" || posted["directory"] != "agents/skills" {
 		t.Fatalf("posted = %#v", posted)
 	}
 	cfg, err := clientconfig.Load()
@@ -166,11 +167,13 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 	for _, line := range strings.Split(strings.TrimSpace(listed), "\n")[1:] {
 		rows = append(rows, strings.Join(strings.Fields(line), " "))
 	}
-	if want := []string{"project https://github.com/acme/tools@v2//agents/skills skills_abc", "client.yaml " + dir}; strings.Join(rows, "\n") != strings.Join(want, "\n") {
+	// Each is listed in the spelling it is typed back in.
+	if want := []string{"project acme/tools@v2//agents/skills skills_abc", "client.yaml " + filepath.Join("~", "team-skills")}; strings.Join(rows, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("ls = %q, want %q", rows, want)
 	}
 
-	run("rm", "https://github.com/acme/tools@v2//agents/skills", dir)
+	// Any spelling of the repository names the entry.
+	run("rm", "https://github.com/Acme/tools@v2//agents/skills", dir)
 	if len(sources) != 0 {
 		t.Fatalf("project sources = %v, want none", sources)
 	}

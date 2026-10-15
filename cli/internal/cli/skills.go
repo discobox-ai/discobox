@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/clientconfig"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // listProjectSkillsSources is the project's skills sources, in the order they
@@ -77,10 +78,11 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		Use:   "skills",
 		Short: "Manage the skills every new discobox gets",
 		Long: "Manage the skills every new discobox gets.\n\n" +
-			"A Git URL[@REF][//PATH] is the project's: every discobox of the project is\n" +
-			"created with it, whoever creates it, checked out under skill-sources with each\n" +
-			"skill in PATH linked in. A directory is this machine's, kept in client.yaml's\n" +
-			"new.skills, and copied into every discobox created from here.\n\n" +
+			"A repository, URL[@REF][//PATH] or GitHub's owner/repo[@REF][//PATH], is the\n" +
+			"project's: every discobox of the project is created with it, whoever creates\n" +
+			"it, checked out under skill-sources with each skill in PATH linked in. A\n" +
+			"directory is this machine's, kept in client.yaml's new.skills, and copied into\n" +
+			"every discobox created from here. owner/repo is the directory when one is there.\n\n" +
 			"A create adds the project's first, then client.yaml's or its own --skills, so\n" +
 			"yours win on a skill of the same name. --no-project-skills leaves the\n" +
 			"project's out of one create.",
@@ -93,7 +95,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error { return a.listSkills(cmd) },
 	}
 	add := &cobra.Command{
-		Use:   "add URL[@REF][//PATH]|DIR...",
+		Use:   "add URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|DIR...",
 		Short: "Add a skills repository to the project, or a directory to client.yaml",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,7 +105,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		},
 	}
 	remove := &cobra.Command{
-		Use:     "rm URL[@REF][//PATH]|ID|DIR...",
+		Use:     "rm URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|ID|DIR...",
 		Aliases: []string{"remove", "delete"},
 		Short:   "Remove a skills repository from the project, or a directory from client.yaml",
 		Args:    cobra.MinimumNArgs(1),
@@ -157,14 +159,15 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), listing)
 	}
+	home, _ := os.UserHomeDir()
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FROM\tSKILLS\tID")
 	for _, source := range project {
 		repo, _ := projectSkillsRepository(source)
-		fmt.Fprintf(tw, "project\t%s\t%s\n", repo.Arg, source.ID)
+		fmt.Fprintf(tw, "project\t%s\t%s\n", repo.Display(home), source.ID)
 	}
 	for _, skill := range cfg.New.Skills {
-		fmt.Fprintf(tw, "client.yaml\t%s\t\n", skill)
+		fmt.Fprintf(tw, "client.yaml\t%s\t\n", sourceref.Display(skill, home))
 	}
 	return tw.Flush()
 }
@@ -218,8 +221,8 @@ type skillsEdit struct {
 }
 
 // addSkills files one value where it belongs, read as --skills reads it: a
-// Git URL in the project's skills sources, a directory in client.yaml's
-// new.skills (ADR 26-10-14-894 §3).
+// Git URL or GitHub shorthand in the project's skills sources, a directory in
+// client.yaml's new.skills (ADR 26-10-14-894 §3, ADR 26-10-15-664).
 func addSkills(ctx context.Context, project projectClient, arg string) (skillsEdit, error) {
 	split, err := sandboxcreate.SplitSkills([]string{arg})
 	if err != nil {
@@ -231,7 +234,7 @@ func addSkills(ctx context.Context, project projectClient, arg string) (skillsEd
 		if err != nil {
 			return skillsEdit{}, err
 		}
-		url, ref := repo.URLAndRef()
+		url, ref := repo.Source.Location, repo.Source.Ref
 		// The server holds an entry to the same rule; asked here first, a
 		// refusal reads as itself rather than as a request that failed.
 		if err := sandboxconfig.ValidateSkillsRepository(url, ref); err != nil {
@@ -251,7 +254,7 @@ func addSkills(ctx context.Context, project projectClient, arg string) (skillsEd
 			return skillsEdit{}, err
 		}
 		added, _ := projectSkillsRepository(*source)
-		return skillsEdit{Project: true, ID: source.ID, Value: added.Arg}, nil
+		return skillsEdit{Project: true, ID: source.ID, Value: added.Value()}, nil
 	}
 	dir, err := skillsDirectory(arg)
 	if err != nil {
@@ -286,7 +289,10 @@ func removeSkills(ctx context.Context, project projectClient, arg string) (skill
 	if err != nil {
 		return skillsEdit{}, err
 	}
-	if slices.Contains(cfg.New.Skills, value) {
+	if key, err := clientconfig.SkillKey("", value); err == nil && slices.ContainsFunc(cfg.New.Skills, func(skill string) bool {
+		same, err := clientconfig.SkillKey("", skill)
+		return err == nil && same == key
+	}) {
 		return removeClientSkill(value)
 	}
 	client, projectID, err := project()
@@ -314,7 +320,7 @@ func removeProjectSkills(ctx context.Context, client *apiclientgen.Client, proje
 		return skillsEdit{}, err
 	}
 	repo, _ := projectSkillsRepository(source)
-	return skillsEdit{Project: true, ID: source.ID, Value: repo.Arg}, nil
+	return skillsEdit{Project: true, ID: source.ID, Value: repo.Value()}, nil
 }
 
 // removeClientSkill takes one entry, as a create reads it, out of
@@ -351,9 +357,9 @@ func matchProjectSkillsSource(sources []apimodel.ProjectSkillsSource, arg string
 		return byPrefix[0], true
 	}
 	if split, err := sandboxcreate.SplitSkills([]string{arg}); err == nil && len(split.Repositories) == 1 {
-		want := split.Repositories[0]
+		want := split.Repositories[0].Key()
 		for _, source := range sources {
-			if have, _ := projectSkillsRepository(source); have.Source == want.Source && have.Directory == want.Directory {
+			if have, _ := projectSkillsRepository(source); have.Key() == want {
 				return source, true
 			}
 		}

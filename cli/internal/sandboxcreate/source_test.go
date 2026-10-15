@@ -381,6 +381,41 @@ func TestResolveRunSourceIncludeDirtyAlwaysIgnoresARemoteSource(t *testing.T) {
 	}
 }
 
+// //PATH on the primary source is where the harness starts: a directory of a
+// local repository, as DIR/PATH always was, and beneath where a remote one is
+// placed (ADR 26-10-15-664 §3).
+func TestResolveRunSourceStartsInItsPath(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	subdir := filepath.Join(repo, "nested", "work")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(testWorkspace(t))
+	opts := runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto}
+
+	local, err := resolveRunSource(context.Background(), repo+"//nested/work", opts)
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if want := wantRunDestination(t, repo, subdir); local.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", local.Destination, want)
+	}
+	if _, err := resolveRunSource(context.Background(), repo+"//not/there", opts); err == nil {
+		t.Fatal("a local //PATH that is not there was accepted")
+	}
+
+	remote, err := resolveRunSource(context.Background(), "file://"+filepath.ToSlash(repo)+"@HEAD//nested/work", opts)
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if remote.Destination.Directory != "/workspace/source" || remote.Destination.WorkingDirectory != "/workspace/source/nested/work" {
+		t.Fatalf("destination = %#v, want the checkout with the harness in nested/work", remote.Destination)
+	}
+	if remote.Checkout.Commit == "" {
+		t.Fatalf("checkout = %#v, want HEAD resolved", remote.Checkout)
+	}
+}
+
 func TestIncludeDirtySetNormalizesAndRejects(t *testing.T) {
 	for value, want := range map[string]IncludeDirty{
 		"":      IncludeDirtyAuto,
@@ -1160,74 +1195,6 @@ func TestReferenceDestinationOnAWindowsSandbox(t *testing.T) {
 	}
 }
 
-func TestExpandGitHubShorthand(t *testing.T) {
-	t.Chdir(t.TempDir())
-	for _, dir := range []string{"local/repo", "github.com/local/checkout"} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, tc := range []struct{ in, want string }{
-		{"foo/bar", "https://github.com/foo/bar.git"},
-		{"foo/bar.git", "https://github.com/foo/bar.git"},
-		{"foo/bar@main", "https://github.com/foo/bar.git@main"},
-		{"github.com/foo/bar", "https://github.com/foo/bar.git"},
-		{"github.com/foo/bar@v1.2.3", "https://github.com/foo/bar.git@v1.2.3"},
-		{"my-org/my_repo.js", "https://github.com/my-org/my_repo.js.git"},
-		// A directory that is there is the directory.
-		{"local/repo", "local/repo"},
-		{"local/repo@main", "local/repo@main"},
-		{"github.com/local/checkout", "github.com/local/checkout"},
-		// Not the shorthand.
-		{".", "."},
-		{"bar", "bar"},
-		{"./foo/bar", "./foo/bar"},
-		{"../foo", "../foo"},
-		{"foo/..", "foo/.."},
-		{"/foo/bar", "/foo/bar"},
-		{"foo/bar/baz", "foo/bar/baz"},
-		{"-foo/bar", "-foo/bar"},
-		{"gitlab.com/foo/bar", "gitlab.com/foo/bar"},
-		{"https://github.com/foo/bar", "https://github.com/foo/bar"},
-		{"git@github.com:foo/bar.git", "git@github.com:foo/bar.git"},
-	} {
-		if got := ExpandGitHubShorthand(tc.in); got != tc.want {
-			t.Errorf("ExpandGitHubShorthand(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestGitHubRepositoryURL(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct{ in, want string }{
-		{"https://github.com/foo/bar.git", "https://github.com/foo/bar"},
-		{"https://github.com/foo/bar", "https://github.com/foo/bar"},
-		{"https://github.com/foo/bar/", "https://github.com/foo/bar"},
-		{"https://GitHub.com/foo/bar", "https://github.com/foo/bar"},
-		{"https://user@github.com/foo/bar.git", "https://github.com/foo/bar"},
-		{"ssh://git@github.com/foo/bar.git", "https://github.com/foo/bar"},
-		{"ssh://git@github.com:22/foo/bar.git", "https://github.com/foo/bar"},
-		{"git@github.com:foo/bar.git", "https://github.com/foo/bar"},
-		{"github.com:my-org/my_repo.js", "https://github.com/my-org/my_repo.js"},
-		// Not GitHub, or not a repository on it.
-		{"", ""},
-		{"https://gitlab.com/foo/bar.git", ""},
-		{"git@gitlab.com:foo/bar.git", ""},
-		{"https://github.com/foo", ""},
-		{"https://github.com/foo/bar/baz", ""},
-		{"https://github.com/-foo/bar", ""},
-		{"/src/foo/bar", ""},
-		{"file:///src/foo/bar", ""},
-		{"file://github.com/foo/bar.git", ""},
-		{"ftp://github.com/foo/bar.git", ""},
-		{"git://github.com/foo/bar.git", "https://github.com/foo/bar"},
-	} {
-		if got := GitHubRepositoryURL(tc.in); got != tc.want {
-			t.Errorf("GitHubRepositoryURL(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 // What a source is on GitHub is asked without creating anything: a URL names
 // its repository, a clone names the one its checkout's remote does, and a
 // directory with no remote there names none.
@@ -1252,24 +1219,5 @@ func TestSourceGitHubRepository(t *testing.T) {
 	git("remote", "set-url", "origin", "https://gitlab.com/example/project.git")
 	if got := SourceGitHubRepository(ctx, repoRoot); got != "" {
 		t.Fatalf("a clone of a repository somewhere else = %q, want none", got)
-	}
-}
-
-// Every spelling of one repository's remote has one key, whatever its case.
-func TestGitHubRepositoryKey(t *testing.T) {
-	for _, remote := range []string{
-		"https://github.com/discobox-ai/discobox",
-		"https://github.com/Discobox-AI/Discobox.git",
-		"git@github.com:discobox-ai/discobox.git",
-		"ssh://git@github.com/discobox-ai/DISCOBOX",
-	} {
-		if got := GitHubRepositoryKey(remote); got != "discobox-ai/discobox" {
-			t.Fatalf("GitHubRepositoryKey(%q) = %q, want discobox-ai/discobox", remote, got)
-		}
-	}
-	for _, remote := range []string{"", "/src/disco2", "https://gitlab.com/discobox-ai/discobox"} {
-		if got := GitHubRepositoryKey(remote); got != "" {
-			t.Fatalf("GitHubRepositoryKey(%q) = %q, want none", remote, got)
-		}
 	}
 }

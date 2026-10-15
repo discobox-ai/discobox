@@ -48,16 +48,35 @@ func TestLoadRefusesAKeyNothingDefines(t *testing.T) {
 }
 
 // A Git URL in new.skills names a skills source, not a path, and is kept as
-// written: one with a PATH --skills refuses too, so the refusal names it.
-func TestLoadKeepsSkillsRepositoriesAsWritten(t *testing.T) {
-	repos := []string{"https://github.com/acme/tools@main//agents/skills", "git@github.com:acme/tools//../up"}
-	writeConfig(t, "new:\n  skills: [\""+repos[0]+"\", \""+repos[1]+"\"]\n")
+// written; GitHub shorthand is the URL it stands for, unless the file's
+// directory holds that path (ADR 26-10-15-664).
+func TestLoadReadsSkillsRepositoriesAsSources(t *testing.T) {
+	path := writeConfig(t, "new:\n  skills: [\"https://github.com/acme/tools@main//agents/skills\", \"acme/tools//skills\", \"local/skills\"]\n")
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(path), "local", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !slices.Equal(cfg.New.Skills, repos) {
-		t.Fatalf("skills = %v, want %v as written", cfg.New.Skills, repos)
+	want := []string{
+		"https://github.com/acme/tools@main//agents/skills",
+		"https://github.com/acme/tools.git//skills",
+		filepath.Join(filepath.Dir(path), "local", "skills"),
+	}
+	if !slices.Equal(cfg.New.Skills, want) {
+		t.Fatalf("skills = %v, want %v", cfg.New.Skills, want)
+	}
+}
+
+// An entry --skills refuses is kept as written, so the create refuses it
+// naming it, and the file still loads for the command that removes it.
+func TestLoadKeepsASkillsEntryItCannotRead(t *testing.T) {
+	const entry = "git@github.com:acme/tools//../up"
+	writeConfig(t, "new:\n  skills: [\""+entry+"\"]\n")
+	cfg, err := Load()
+	if err != nil || !slices.Equal(cfg.New.Skills, []string{entry}) {
+		t.Fatalf("Load() = %v, %v; want %s kept as written", cfg.New.Skills, err, entry)
 	}
 }
 

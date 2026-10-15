@@ -34,6 +34,7 @@ COPY sandboxshell ./sandboxshell
 COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY sourcecache ./sourcecache
+COPY sourceref ./sourceref
 COPY tarsums ./tarsums
 COPY tools ./tools
 COPY vsock ./vsock
@@ -143,6 +144,7 @@ COPY secretformat ./secretformat
 COPY secretroute ./secretroute
 COPY serverstage ./serverstage
 COPY sourcecache ./sourcecache
+COPY sourceref ./sourceref
 COPY tools ./tools
 COPY version ./version
 COPY wellknown ./wellknown

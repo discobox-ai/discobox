@@ -343,7 +343,7 @@ flowchart LR
   (`rule_repositories.go`, §2). A rule with none is for every discobox in the
   project. One with some answers a discobox whose **primary source** is one
   of them, exactly: its additional sources never count.
-  - A repository's identity is `host/path` as `sourcecache.NormalizeRemote`
+  - A repository's identity is `host/path` as `sourceref.NormalizeRemote`
     reduces a remote: no scheme or userinfo, host lower-cased, no trailing
     slash or `.git`, the scp-like `git@host:org/repo.git` understood.
   - A discobox's is its source's `URL`, else the `UpstreamURL` its client

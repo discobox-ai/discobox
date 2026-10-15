@@ -660,7 +660,7 @@ remote.
 
 | The source | The key |
 | --- | --- |
-| Has a remote | `remote/<host>/<path>`: the remote, normalized (`sourcecache.NormalizeRemote`) |
+| Has a remote | `remote/<host>/<path>`: the remote, normalized (`sourceref.NormalizeRemote`) |
 | Has none, and its client reported a host identity | `directory/<sourceDataKey>` |
 | Neither | `sandbox/<sandboxID>/<slug>`: a cache of its own, removed with the sandbox |
 

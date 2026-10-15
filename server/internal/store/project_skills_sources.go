@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // ErrSkillsSourceConflict is a skills source the project's list already has,
@@ -28,9 +29,19 @@ func (s *Store) CreateProjectSkillsSource(ctx context.Context, source *model.Pro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, "id = ?", source.ProjectID).Error; err != nil {
 			return err
 		}
-		var existing []model.ProjectSkillsSource
-		if err := tx.Where("project_id = ? AND url = ?", source.ProjectID, source.URL).Find(&existing).Error; err != nil {
+		// One repository however its URL is spelled (ADR 26-10-15-664 §4):
+		// the client expands owner/repo to a spelling an earlier entry may
+		// not share, and a create checks every entry out alike.
+		var listed []model.ProjectSkillsSource
+		if err := tx.Where("project_id = ?", source.ProjectID).Find(&listed).Error; err != nil {
 			return err
+		}
+		repository := sourceref.Ref{Kind: sourceref.Git, Location: source.URL}.RepositoryKey()
+		var existing []model.ProjectSkillsSource
+		for _, other := range listed {
+			if (sourceref.Ref{Kind: sourceref.Git, Location: other.URL}).RepositoryKey() == repository {
+				existing = append(existing, other)
+			}
 		}
 		var last struct{ Position *int64 }
 		if err := tx.Model(&model.ProjectSkillsSource{}).Select("MAX(position) AS position").Where("project_id = ?", source.ProjectID).Scan(&last).Error; err != nil {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/review/source"
 	"github.com/discobox-ai/x/id"
@@ -313,7 +314,7 @@ type Sandbox struct {
 	SourceRemote bool
 	// RepositoryIdentity is the repository an approval rule names to be for
 	// this discobox: its source's URL, else the remote a local source tracks,
-	// as host/path (sourcecache.NormalizeRemote, as the server reduces it).
+	// as host/path (sourceref.NormalizeRemote, as the server reduces it).
 	// Empty for a local source with no remote, which no rule names. It is
 	// what a rule sends, in the text the source gave; RepositoryShown is it
 	// made safe to draw, since a source's remote is whatever whoever created
@@ -330,7 +331,7 @@ type Sandbox struct {
 	Repository string
 	// RepositoryKey tells Repository apart from every other GitHub
 	// repository, as `owner/repo` lower-cased: the same for a clone, the
-	// shorthand and every spelling of the URL (sandboxcreate.GitHubRepositoryKey).
+	// shorthand and every spelling of the URL (sourceref.GitHubKey).
 	// It is the folder the discobox is in when it is set (Sandbox.folder).
 	RepositoryKey string
 
@@ -394,6 +395,11 @@ type Sandbox struct {
 type Session struct {
 	Project        string
 	DefaultProject string
+
+	// Home is this user's home directory, which a directory under it is
+	// shown from as `~` (sourceref.Ref.Display); empty shows every path
+	// whole.
+	Home string
 
 	// Directory is the directory the window is running in — `-C`'s repository
 	// root, or the working directory's when -C names a repository URL — and
@@ -841,7 +847,7 @@ func (s Sandbox) folder(session Session) folder {
 	if s.OriginKey != "" && s.OriginKey == session.OriginKey {
 		return session.folder()
 	}
-	f := folder{key: s.OriginKey, label: s.Source, source: s.Source, local: local}
+	f := folder{key: s.OriginKey, label: sourceref.Display(s.Source, session.Home), source: s.Source, local: local}
 	if s.Source == "" {
 		// Nothing was cut from it, so there is nothing to cut from in it: the
 		// panel falls back to the window's own source, the way it does for
@@ -1866,6 +1872,9 @@ type SkillsEntry struct {
 	// Value is what it names, as --skills takes it: a Git URL[@REF][//PATH],
 	// or an absolute directory.
 	Value string
+	// Label is Value as the window shows it, in the short spelling the add
+	// form takes back (sourceref.Ref.Display); empty shows Value.
+	Label string
 	// Added is when the project entry was added; zero for client.yaml's.
 	Added time.Time
 }

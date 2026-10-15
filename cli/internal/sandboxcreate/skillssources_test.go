@@ -2,6 +2,7 @@ package sandboxcreate
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -28,6 +29,9 @@ func TestSplitSkillsReadsEachValueByItsForm(t *testing.T) {
 		{value: "git@github.com:acme/tools//skills", repo: true, source: "git@github.com:acme/tools", directory: "skills"},
 		{value: "git@github.com:acme/tools@v1//odd@name:dir", repo: true, source: "git@github.com:acme/tools@v1", directory: "odd@name:dir"},
 		{value: "ssh://git@example.com:2222/acme/tools.git//skills", repo: true, source: "ssh://git@example.com:2222/acme/tools.git", directory: "skills"},
+		// GitHub shorthand, when no such directory is here (ADR 26-10-15-664).
+		{value: "acme/tools@main//skills", repo: true, source: "https://github.com/acme/tools.git@main", directory: "skills"},
+		{value: "github.com/acme/tools", repo: true, source: "https://github.com/acme/tools.git", directory: "."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.value, func(t *testing.T) {
@@ -41,9 +45,12 @@ func TestSplitSkillsReadsEachValueByItsForm(t *testing.T) {
 				}
 				return
 			}
-			want := []SkillsRepository{{Arg: tc.value, Source: tc.source, Directory: tc.directory}}
-			if len(got.Directories) != 0 || !reflect.DeepEqual(got.Repositories, want) {
-				t.Fatalf("split = %+v, want %+v", got, want)
+			if len(got.Directories) != 0 || len(got.Repositories) != 1 {
+				t.Fatalf("split = %+v, want one repository", got)
+			}
+			repo := got.Repositories[0]
+			if repo.Arg != tc.value || repo.Source.String() != tc.source || repo.Directory != tc.directory {
+				t.Fatalf("split = %+v, want %s in %s", repo, tc.source, tc.directory)
 			}
 		})
 	}
@@ -59,6 +66,26 @@ func TestSplitSkillsRefusesAPathOutsideTheRepository(t *testing.T) {
 	} {
 		if _, err := SplitSkills([]string{value}); err == nil {
 			t.Fatalf("split %s: nil, want a refusal", value)
+		}
+	}
+}
+
+// A directory's skills are read as they are, so a ref or a path on one is
+// refused rather than ignored; shorthand that is a directory here is the
+// directory.
+func TestSplitSkillsReadsADirectoryAsItIs(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join("acme", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SplitSkills([]string{"acme/tools"})
+	if err != nil || !reflect.DeepEqual(got.Directories, []string{"acme/tools"}) {
+		t.Fatalf("split = %+v, %v; want the directory that is there", got, err)
+	}
+	for _, value := range []string{"acme/tools@main", "./skills//sub"} {
+		if _, err := SplitSkills([]string{value}); err == nil || !strings.Contains(err.Error(), "directory") {
+			t.Fatalf("split %s = %v, want a refusal of a ref or path on a directory", value, err)
 		}
 	}
 }
@@ -230,11 +257,11 @@ func TestProjectSkillsRepositoryIsItsSkillsValue(t *testing.T) {
 		if err != nil || repo.Arg != tc.arg || len(split.Repositories) != 1 {
 			t.Fatalf("%+v: arg %q (%v), want %q", tc, repo.Arg, err, tc.arg)
 		}
-		if got := split.Repositories[0]; got.Source != repo.Source || got.Directory != repo.Directory {
+		if got := split.Repositories[0]; got.Key() != repo.Key() {
 			t.Fatalf("%q reads back as %+v, want %+v", repo.Arg, got, repo)
 		}
-		if url, ref := repo.URLAndRef(); url != tc.url || ref != tc.ref {
-			t.Fatalf("%q: url, ref = %q, %q", repo.Arg, url, ref)
+		if repo.Source.Location != tc.url || repo.Source.Ref != tc.ref {
+			t.Fatalf("%q: url, ref = %q, %q", repo.Arg, repo.Source.Location, repo.Source.Ref)
 		}
 	}
 }

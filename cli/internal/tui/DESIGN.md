@@ -78,9 +78,11 @@ first, in the order a create adds them, then client.yaml's `new.skills`, which
 are this machine's whichever server the header is on. Each row says where it
 is kept. It is `discobox skills` folded into the window, and the secrets
 screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
-what it is, read as `--skills` reads it — a Git `URL[@REF][//PATH]` with the
-project, a directory in client.yaml — so there is one thing to type rather
-than a list to choose; `d` asks before `RemoveSkills` takes the row out of
+what it is, read as `--skills` reads it — a repository, a Git URL or GitHub
+`owner/repo` with `[@REF][//PATH]`, with the project, a directory in
+client.yaml — so there is one thing to type rather than a list to choose. Each
+row reads in its short spelling (`sourceref.Display`: `owner/repo//skills`, a
+directory from `~`), which is itself what `n` takes; `d` asks before `RemoveSkills` takes the row out of
 where it is kept, and says that discoboxes already made keep theirs. ←→ move
 the server as on the other two screens, and a listing read for a server the
 header has since left is dropped (`skillsLoaded`).
@@ -233,7 +235,7 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   (`newPickList`, `repositoryList`): every repository the console knows for
   the project — an edited rule's own first, chosen, then those of the
   project's discoboxes on the rule's server (`Sandbox.RepositoryIdentity`,
-  their primary source reduced by `sourcecache.NormalizeRemote` as the server
+  their primary source reduced by `sourceref.NormalizeRemote` as the server
   reduces it, and drawn through `terminalSafe` as `Sandbox.RepositoryShown`
   while the raw identity is what is sent) and of its other rules, each once,
   sorted. The picks are rows too: a press ticks or clears one. ↑ from the
@@ -841,7 +843,7 @@ offer.
 
 A discobox tagged `issue=N` or `pr=N` whose source is a GitHub repository —
 the URL a remote source clones, or the upstream a local one's branch tracked
-(`Sandbox.Repository`, from `sandboxcreate.GitHubRepositoryURL`) — links that
+(`Sandbox.Repository`, from `sourceref.GitHubURL`) — links that
 tag to the issue or pull request (`Sandbox.tagURL`). Without a GitHub
 repository the tag is plain: `issue=4` alone does not say whose issue 4.
 
@@ -1285,7 +1287,7 @@ origin keys and are one repository, so a discobox whose source resolved to one
 when it was cut (`Sandbox.Repository`: the URL a remote source clones, or the
 remote a local checkout recorded as its upstream) is in the repository's
 folder, named `owner/repo on github`. The key is the data source's
-(`sandboxcreate.GitHubRepositoryKey`, `owner/repo` lower-cased as GitHub
+(`sourceref.GitHubKey`, `owner/repo` lower-cased as GitHub
 compares it); this package compares it and derives none. That folder is what
 the filter's card offers and what a section is, on every machine and server at
 once. A source that resolved to none is in the folder it is filed under, as
@@ -2970,8 +2972,26 @@ reading.
 It offers what the project has actually been cut from — `sandboxList.sources()`,
 off the same listing the filter's folders are built from — plus `no source`.
 Left and right cycle in place and Enter opens the whole list, whose last row is
-the one entry that is not a source but the input field for a path, URL or
-`DIR@REF` the listing has never seen.
+the one entry that is not a source but the input field for a source the
+listing has never seen, written as `-C` takes it (`LOCATION[@REF][//PATH]`,
+ADR 26-10-15-664).
+
+**One source is one choice.** Discoboxes cut from one repository may have
+spelled it several ways — with or without `.git`, with or without a trailing
+slash, in any case on GitHub — and the row and `sources()` offer those once,
+comparing by
+`sourceref.Ref.CloneKey` (`sourceKey`, `sameSource`): only spellings fetched
+over one transport merge, so choosing the https one never runs another
+discobox's ssh, http or `git://` URL, which is a choice of its own. A ref is
+part of which source it is, so `owner/repo@dev` is its own choice too. A local
+source's folder is the directory the data source resolved (`Source.Directory`),
+never one split off its value here, since a directory's own name may hold `@`.
+Each
+choice reads in the short spelling `sourceref.Display` gives it, from
+`Session.Home` — `owner/repo` for GitHub over https, any other remote's URL
+without `.git`, a directory from `~` — which is a value the input field takes
+back. The skills screen's rows carry their label from the data source
+(`SkillsEntry.Label`). `on github` is the folder header's word alone.
 
 Sources and folders are not the same list. A folder is where a discobox is
 *listed* — a GitHub repository, or a machine and a source — so a repository is
@@ -2979,9 +2999,10 @@ one folder holding many sources, and any other source cut on two machines is
 two folders; a source is what can be *cut from here*. So the row carries
 `Source`/`SourceRemote`/`SourceOriginKey` beside `OriginKey` rather than one
 being worked out from the other, and the listing says which of the two a value
-is rather than this package parsing it. What counts as a remote belongs to the
-creation path, and so does a key — an origin key or a repository's: this
-package derives none. A repository's folder holds several sources, and the
+is rather than this package resolving it: whether `owner/repo` is a directory
+here belongs to the creation path, and so does a key — an origin key or a
+repository's: this package derives none. It parses a value only through
+`sourceref`, to compare and spell it. A repository's folder holds several sources, and the
 Source row still offers each: a clone and the URL are one place to list and
 two things to cut from.
 

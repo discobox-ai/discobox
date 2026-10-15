@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // Discobox is what the control plane recorded about a discobox a job
@@ -152,7 +153,7 @@ func (s Source) describe() string {
 	// A remote on a pool's origins host resolves only inside the discobox
 	// that has it, and names no repository a request could reach. One a fact
 	// could not repeat as a word names nothing it can state.
-	if remote := factWord(sourcecache.NormalizeRemote(s.Remote)); remote != "" && !sourcecache.OnPoolOriginsHost(s.Remote) {
+	if remote := factWord(sourceref.NormalizeRemote(s.Remote)); remote != "" && !sourcecache.OnPoolOriginsHost(s.Remote) {
 		what = "the Git repository " + remote
 	}
 	refName, commit := factWord(s.RefName), strings.ToLower(strings.TrimSpace(s.Commit))

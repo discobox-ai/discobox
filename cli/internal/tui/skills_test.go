@@ -12,7 +12,7 @@ func skillsFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
 	ds.skills = []SkillsEntry{
-		{Project: true, ID: "skills_1", Value: "https://github.com/acme/tools//agents/skills", Added: time.Now().Add(-time.Hour)},
+		{Project: true, ID: "skills_1", Value: "https://github.com/acme/tools//agents/skills", Label: "acme/tools//agents/skills", Added: time.Now().Add(-time.Hour)},
 		{Value: "/home/me/team-skills"},
 	}
 	m := newTestModel(t, ds)
@@ -27,7 +27,7 @@ func TestTheSkillsScreenListsWhereEachIsKept(t *testing.T) {
 	t.Parallel()
 	m, _ := skillsFixture(t)
 	body := strings.Join(frame(m), "\n")
-	for _, want := range []string{"Skills", "1 project", "1 client.yaml", "https://github.com/acme/tools//agents/skills", "/home/me/team-skills"} {
+	for _, want := range []string{"Skills", "1 project", "1 client.yaml", "acme/tools//agents/skills", "/home/me/team-skills"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frame does not carry %q:\n%s", want, body)
 		}
