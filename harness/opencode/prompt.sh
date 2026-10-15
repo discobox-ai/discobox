@@ -80,89 +80,23 @@ fi
 #
 # Both named sources are files the judged agent can write, which is the gap a
 # pinned model would close: the agent could point the judge at another model,
-# and with a provider key of its own in auth.json, at a provider it chose. The
+# and with a provider key of its own in the delivered credentials, at a provider it chose. The
 # agent has sudo, so no file in the sandbox holds against a deliberate one
 # (ADR 0090); what the tool-free run below does guarantee is that the judge
 # does not run inside configuration, plugins or instructions the agent wrote.
 # The choice is recorded in ADR 0127 §4.
+#
+# Every opencode here runs --standalone, with its own server rather than the
+# per-user background service, and with stdin closed: `opencode run` reads a
+# piped stdin as more of the message and waits while it stays open.
 SETTINGS="$HOME/.config/discobox/opencode-harness.json"
-MODEL_PREFERENCE="${XDG_STATE_HOME:-$HOME/.local/state}/opencode/model.json"
-# configured_model is opencode's `model` setting, read the way opencode layers
-# its global configuration: config.json, then opencode.json, then
-# opencode.jsonc, the later winning — so they are read in reverse, and the
-# first that names a model is the one. opencode reads them as JSONC, so they
-# are read the same way here: comments, line and block, and trailing commas
-# are allowed. A file that still is not JSON is skipped, as one that is not
-# there is. Only the model's name is taken from it.
-configured_model() {
-	dir="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
-	for file in "$dir/opencode.jsonc" "$dir/opencode.json" "$dir/config.json"; do
-		[ -f "$file" ] || continue
-		configured=$(read_config_model "$file") || configured=""
-		if [ -n "$configured" ]; then
-			printf '%s' "$configured"
-			return
-		fi
-	done
-}
-
-# read_config_model prints a JSONC file's top-level `model`, if it is a string.
-# Comments and trailing commas are dropped outside strings, by walking the text
-# rather than by pattern, so a URL or a "//" inside a string is left alone.
-# node is what the image has for this; without it, plain JSON still reads.
-read_config_model() {
-	if ! command -v node >/dev/null 2>&1; then
-		jq -r '.model // "" | strings' "$1" 2>/dev/null
-		return
-	fi
-	node -e '
-		// Two walks, each outside strings: comments out first, then trailing
-		// commas, so a comment between a comma and its bracket cannot hide it.
-		const walk = (src, visit) => {
-			let out = "", i = 0, inString = false;
-			while (i < src.length) {
-				const c = src[i];
-				if (inString) {
-					out += c;
-					if (c === "\\") { out += src[i + 1] ?? ""; i += 2; continue; }
-					if (c === "\"") inString = false;
-					i++;
-					continue;
-				}
-				if (c === "\"") { inString = true; out += c; i++; continue; }
-				const skip = visit(src, i);
-				if (skip > 0) { i += skip; continue; }
-				out += c;
-				i++;
-			}
-			return out;
-		};
-		const noComments = walk(require("fs").readFileSync(process.argv[1], "utf8"), (src, i) => {
-			if (src[i] === "/" && src[i + 1] === "/") { const end = src.indexOf("\n", i); return (end < 0 ? src.length : end) - i; }
-			if (src[i] === "/" && src[i + 1] === "*") { const end = src.indexOf("*/", i + 2); return (end < 0 ? src.length : end + 2) - i; }
-			return 0;
-		});
-		const json = walk(noComments, (src, i) => {
-			if (src[i] !== ",") return 0;
-			let j = i + 1;
-			while (j < src.length && /\s/.test(src[j])) j++;
-			return src[j] === "}" || src[j] === "]" ? 1 : 0;
-		});
-		const model = JSON.parse(json).model;
-		if (typeof model === "string") process.stdout.write(model);
-	' "$1" 2>/dev/null
-}
-
 judge_model() {
 	named=""
 	if [ -f "$SETTINGS" ]; then
 		named=$(jq -r '.judgeModel // "" | strings' "$SETTINGS" 2>/dev/null) || named=""
 	fi
 	if [ -z "$named" ]; then
-		named=$(configured_model)
-	fi
-	if [ -z "$named" ] && [ -f "$MODEL_PREFERENCE" ]; then
-		named=$(jq -r '.recent[0] // empty | "\(.providerID)/\(.modelID)"' "$MODEL_PREFERENCE" 2>/dev/null) || named=""
+		named=$(/usr/local/libexec/discobox/opencode-model 2>/dev/null) || named=""
 	fi
 	printf '%s' "$named"
 }
@@ -173,7 +107,7 @@ judge_model() {
 # rather than handing it to whoever asked.
 say_why() {
 	failed=$(printf '%s\n' "$1" | jq -rs '
-		[.[] | select(.type == "error") | .error.data.message // .error.name // "error"] | join("; ")
+		[.[] | select(.type == "error") | .error.message // .error.type // "error"] | join("; ")
 	' 2>/dev/null)
 	if [ -n "$failed" ]; then
 		printf '%s\n' "discobox-prompt: opencode answered nothing: $failed" >&2
@@ -225,7 +159,7 @@ assistant_text() {
 	printf '%s\n' "$said" | discobox-prompt-answer
 }
 
-set -- opencode run
+set -- opencode run --standalone
 case "$model" in
 judge)
 	named=$(judge_model)
@@ -246,47 +180,51 @@ if [ -n "$no_tools" ]; then
 	# opencode would otherwise read is one it could have written: a config
 	# file's permission rules (merged before ours, and the last matching rule
 	# wins), a plugin (code in this process, whatever the permissions say), an
-	# AGENTS.md or CLAUDE.md found from the working directory, a cached model
-	# catalog pointing a provider somewhere else, and any OPENCODE_* variable.
-	# claude-code's wrapper reaches the same place with --restricted.
+	# AGENTS.md or CLAUDE.md found from the working directory, a ~/.claude or
+	# ~/.agents directory found from HOME, a cached model catalog pointing a
+	# provider somewhere else, and any OPENCODE_* variable. claude-code's
+	# wrapper reaches the same place with --restricted.
 	#
-	# So opencode runs from an empty directory, with empty config, state and
-	# cache directories, project configuration and Claude Code files off,
-	# plugins off (--pure), and no inherited OPENCODE_* variable.
+	# So opencode runs from an empty directory, under an empty home with empty
+	# config, state and cache directories, project configuration off, and no
+	# inherited OPENCODE_* variable. Of the plugins, only the managed layer's
+	# own is left, and it publishes nothing without the hook socket.
 	#
-	# Its data directory is its own too, holding only the credentials: the api
-	# and oauth entries of auth.json. A `wellknown` entry is not a credential
-	# but a URL whose /.well-known/opencode opencode fetches and merges in as
-	# configuration — permission rules, providers, endpoints — past both
-	# switches above, so it is the one part of that file left out.
+	# Its database is its own too, holding only the credentials the harness
+	# configuration delivered (opencode-credentials delivered): the store a
+	# launch fills is not there to read in a judge discobox, which never
+	# launches the harness, and anything the agent connected by hand stays
+	# out. Read before HOME moves, since it is a file in the real home.
 	isolated=$(mktemp -d)
 	trap 'rm -rf "$isolated"' EXIT
-	mkdir -p "$isolated/cwd" "$isolated/config" "$isolated/state" "$isolated/cache" "$isolated/data/opencode"
-	auth="${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json"
-	if [ -f "$auth" ]; then
-		jq 'with_entries(select(.value.type == "api" or .value.type == "oauth"))' "$auth" \
-			>"$isolated/data/opencode/auth.json" 2>/dev/null || rm -f "$isolated/data/opencode/auth.json"
-	fi
+	mkdir -p "$isolated/cwd" "$isolated/home" "$isolated/config" "$isolated/state" "$isolated/cache" "$isolated/data"
+	credentials=$(/usr/local/libexec/discobox/opencode-credentials delivered 2>/dev/null |
+		jq -c '[.[] | select(.value.type == "key" or .value.type == "oauth")]' 2>/dev/null) || credentials="[]"
 	for name in $(env | sed -n 's/^\(OPENCODE_[A-Za-z0-9_]*\)=.*/\1/p'); do
 		unset "$name"
 	done
-	export XDG_CONFIG_HOME="$isolated/config" XDG_STATE_HOME="$isolated/state" XDG_CACHE_HOME="$isolated/cache" XDG_DATA_HOME="$isolated/data"
-	export OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_CLAUDE_CODE=1 OPENCODE_DISABLE_AUTOUPDATE=1
-	# With no configuration left to merge into, one rule denying every
-	# permission is the whole rule set.
-	export OPENCODE_PERMISSION='{"*":"deny"}'
+	unset DISCOBOX_HOOK_SOCKET
+	export HOME="$isolated/home" XDG_CONFIG_HOME="$isolated/config" XDG_STATE_HOME="$isolated/state" XDG_CACHE_HOME="$isolated/cache"
+	export OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 XDG_DATA_HOME="$isolated/data"
 	cd "$isolated/cwd"
+	if [ -n "$credentials" ] && [ "$credentials" != "[]" ]; then
+		printf '%s\n' "$credentials" | opencode auth import --standalone >/dev/null 2>&1 || true
+	fi
+	# With no configuration left to merge into, one rule denying every
+	# permission is the whole rule set, and a denied tool is not offered to
+	# the model at all (measured: no tools in the request).
+	export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"deny"}}'
 	# A session with no title gets one from a model call of its own, made
 	# before the answer and with the judge's own model when no small model is
 	# configured — which in this empty configuration none is. Measured, it was
 	# a second round trip on every ask. The session is gone when the run is.
-	set -- "$@" --pure --title=discobox-prompt
+	set -- "$@" --title=discobox-prompt
 	# Not exec: the isolated directory is removed when opencode exits.
 	if [ -n "$schema" ]; then
 		# Captured rather than piped: a pipeline reports the exit status of
 		# its last command, so opencode failing would arrive as this script
 		# succeeding at printing nothing.
-		if events=$("$@" --format json "$composed"); then
+		if events=$("$@" --format json "$composed" </dev/null); then
 			assistant_text "$events" || exit
 		else
 			status=$?
@@ -294,7 +232,7 @@ if [ -n "$no_tools" ]; then
 			exit "$status"
 		fi
 	else
-		"$@" "$composed"
+		"$@" "$composed" </dev/null
 	fi
 	exit
 else
@@ -303,7 +241,7 @@ else
 fi
 
 if [ -n "$schema" ]; then
-	if events=$("$@" --format json "$composed"); then
+	if events=$("$@" --format json "$composed" </dev/null); then
 		assistant_text "$events" || exit
 	else
 		# Read inside the else: after a compound `if` with no else branch, $?
@@ -315,4 +253,4 @@ if [ -n "$schema" ]; then
 	fi
 	exit
 fi
-exec "$@" "$composed"
+exec "$@" "$composed" </dev/null

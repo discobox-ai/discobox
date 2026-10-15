@@ -6,48 +6,54 @@
 # /run/discobox/configure/harness-configure.json for discobox to apply to the
 # HarnessConfig.
 #
-# opencode 1 keeps every provider credential in one file,
-# $XDG_DATA_HOME/opencode/auth.json, keyed by provider, and `/connect` already
-# offers every provider's own sign-in — API keys, and the OAuth sign-ins some
-# providers have (ChatGPT, GitHub Copilot, SuperGrok, ...). So this script
-# launches a bare `opencode` and afterwards reads that file:
+# opencode 2 keeps every provider credential as a row in its own database, and
+# `/connect` already offers every provider's own sign-in — API keys, and the
+# OAuth sign-ins some providers have (ChatGPT, GitHub Copilot, SuperGrok, ...).
+# So this script launches a bare `opencode` and afterwards reads the store with
+# `opencode auth export`, opencode's own interchange format (ADR 26-10-15-848):
 #   - Each provider becomes one secret, OPENCODE_<PROVIDER>_CREDENTIAL.
 #   - An API key is a `token` secret.
 #   - An OAuth sign-in the control plane knows how to renew (see oauthRefresh
 #     below) is an `oauth` secret with its refresh material.
 #   - Any other OAuth sign-in is a `token` secret holding the access token, and
 #     the script says when it expires, because nothing will renew it.
+#   - A credential opencode fetches from outside itself (an `external` one, such
+#     as a cloud CLI's login) holds no secret, and is not captured.
 # The default model is checked with a one-line `opencode run`, and a failure
 # is reported rather than refused (see verify_default_model).
 #
-# No credential is exported as an environment variable. The script returns
-# auth.json as a templated harness file with each provider's sentinel in place
-# of its secret — the same delivery the codex image uses for its own auth.json.
+# No credential is exported as an environment variable. The script returns the
+# export as a templated harness file with each provider's sentinel in place of
+# its secret, which the launcher imports into a sandbox's store
+# (opencode-credentials sync).
 #
-# It asks whether opencode may search the web with every provider, and records
-# the answer in Discobox's settings for this harness, beside the judge model.
+# It asks whether opencode may search the web, and records the answer in
+# Discobox's settings for this harness, beside the judge model.
 #
 # It also returns opencode's settings as the user left them — the global
-# opencode.json(c) and config.json, tui.json (theme, keybinds), and the model
+# opencode.json(c) and config.json, cli.json (theme, keybinds), and the model
 # picked with /models — so they become the harness's defaults.
 #
 # Reconfigure: /run/discobox/configure/harness-previous-config.json lists the
 # secrets a previous run stored, without their values. Each one's value is
 # available as $PREV_<ENV_NAME> — a sentinel the proxy swaps for the real
-# credential on the way out — so the previous auth.json is written back with
-# sentinels and the session opens already connected. A credential still
+# credential on the way out — so the previous credentials are imported back
+# with sentinels and the session opens already connected. A credential still
 # holding its sentinel afterwards was not replaced, and is reported back as
-# usePrevious rather than as a value.
+# usePrevious rather than as a value. A configuration made under ADR 0127
+# returned opencode 1's auth.json instead, which is read the way the launcher
+# reads it.
 set -eu
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
+CREDENTIALS_HELPER=/usr/local/libexec/discobox/opencode-credentials
 
 # Home-relative, like every harness file.
-AUTH_PATH=".local/share/opencode/auth.json"
-SETTINGS_PATHS=".config/opencode/opencode.json .config/opencode/opencode.jsonc .config/opencode/config.json .config/opencode/tui.json"
+CREDENTIALS_PATH=".config/discobox/opencode-credentials.json"
+LEGACY_AUTH_PATH=".local/share/opencode/auth.json"
+SETTINGS_PATHS=".config/opencode/opencode.json .config/opencode/opencode.jsonc .config/opencode/config.json .config/opencode/cli.json"
 MODEL_PREFERENCE_PATH=".local/state/opencode/model.json"
-AUTH_FILE="$HOME/$AUTH_PATH"
 # Discobox's own settings for this harness: the judge model and web search. The
 # image declares a baseline, and a configured harness delivers its own copy
 # into this sandbox, which is what a reconfigure starts from.
@@ -87,14 +93,43 @@ else
 	C_ERR=""
 fi
 
-# seed_previous_credentials writes the auth.json a previous run captured back
-# where opencode reads it, so the session below opens already connected.
+# previous_entries writes $WORK/previous.json: the credential entries a
+# previous run returned, as import entries with their template actions still
+# in them. They are read the way the launcher reads what a sandbox was
+# delivered — so a configuration made under ADR 0127, which returned opencode
+# 1's auth.json instead, is read as one too.
+previous_entries() {
+	OPENCODE_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
+		OPENCODE_CONFIGURE_PATHS="$CREDENTIALS_PATH $LEGACY_AUTH_PATH" \
+		OPENCODE_CONFIGURE_PREVIOUS_HOME="$WORK/previous-home" node <<-'NODE_EOF'
+		const fs = require('fs');
+		const path = require('path');
+		let previous = {};
+		try {
+			previous = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS, 'utf8')) || {};
+		} catch (err) {
+			previous = {};
+		}
+		for (const rel of process.env.OPENCODE_CONFIGURE_PATHS.split(' ')) {
+			const file = (previous.files || []).find((f) => f && f.path === rel && typeof f.content === 'string');
+			if (!file) continue;
+			const target = path.join(process.env.OPENCODE_CONFIGURE_PREVIOUS_HOME, rel);
+			fs.mkdirSync(path.dirname(target), { recursive: true });
+			fs.writeFileSync(target, file.content);
+		}
+	NODE_EOF
+	"$CREDENTIALS_HELPER" delivered "$WORK/previous-home" >"$WORK/previous.json" 2>/dev/null ||
+		echo '[]' >"$WORK/previous.json"
+}
+
+# seed_previous_credentials imports the credentials a previous run captured
+# into opencode's store, so the session below opens already connected.
 #
 # This is what lets a reconfigure be about anything else. Reconfigure is usually
 # about settings — a model, a theme, one more provider — and a flow that opened
 # signed out of everything would make changing a setting cost every sign-in.
 #
-# What is written is the PREV_ sentinel, not the credential: the proxy swaps it
+# What is imported is the PREV_ sentinel, not the credential: the proxy swaps it
 # on outbound requests, so the session is genuinely connected while this sandbox
 # never holds the real value. The sentinel is also how the change check works
 # afterwards — it is a value we know, so finding it still in place means the
@@ -103,72 +138,65 @@ fi
 # A provider whose sentinel is not set — its secret was deleted, say — is left
 # out, and opens signed out, which is the one case a sign-in is unavoidable.
 #
-# Whatever is not seeded is removed. A configured harness delivers its auth.json
-# into this sandbox like any other file, but its template renders against
-# secrets this sandbox does not have (they arrive PREV_-prefixed), so what lands
-# describes credentials with nothing behind them.
+# A configured harness delivers its files into this sandbox like any other,
+# but their templates render against secrets this sandbox does not have (they
+# arrive PREV_-prefixed), so what lands describes credentials with nothing
+# behind them. An opencode 1 auth.json among them is removed; opencode 2 does
+# not read it, and nothing should mistake it for a sign-in.
 seed_previous_credentials() {
-	OPENCODE_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
-		OPENCODE_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
-		OPENCODE_CONFIGURE_AUTH_FILE="$AUTH_FILE" \
+	rm -f "$HOME/$LEGACY_AUTH_PATH"
+	previous_entries
+	OPENCODE_CONFIGURE_PREVIOUS_ENTRIES="$WORK/previous.json" \
+		OPENCODE_CONFIGURE_SEED="$WORK/seed.json" \
 		OPENCODE_CONFIGURE_SEEDED="$WORK/seeded.txt" node <<-'NODE_EOF'
 		const fs = require('fs');
-		const nodePath = require('path');
-		let previous = {};
-		try {
-			previous = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS, 'utf8')) || {};
-		} catch (err) {
-			previous = {};
-		}
-		const kept = (previous.files || []).find((f) => f && f.path === process.env.OPENCODE_CONFIGURE_AUTH_PATH);
-		let template = {};
-		try {
-			template = JSON.parse(kept && typeof kept.content === 'string' ? kept.content : '{}') || {};
-		} catch (err) {
-			template = {};
-		}
+		const entries = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS_ENTRIES, 'utf8'));
 		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
-		const seeded = {};
-		for (const [provider, entry] of Object.entries(template)) {
+		const seeded = [];
+		for (const entry of entries) {
 			const text = JSON.stringify(entry);
 			const names = [...text.matchAll(action)].map((m) => m[1]);
 			if (names.length === 0 || names.some((name) => !process.env['PREV_' + name])) continue;
-			seeded[provider] = JSON.parse(text.replace(action, (_, name) => process.env['PREV_' + name]));
+			seeded.push(JSON.parse(text.replace(action, (_, name) => process.env['PREV_' + name])));
 		}
-		const file = process.env.OPENCODE_CONFIGURE_AUTH_FILE;
-		if (Object.keys(seeded).length === 0) {
-			fs.rmSync(file, { force: true });
-		} else {
-			fs.mkdirSync(nodePath.dirname(file), { recursive: true });
-			fs.writeFileSync(file, JSON.stringify(seeded, null, 2) + '\n', { mode: 0o600 });
-		}
-		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_SEEDED, Object.keys(seeded).join(', '));
+		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_SEED, JSON.stringify(seeded));
+		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_SEEDED, seeded.map((e) => e.integrationID).join(', '));
 	NODE_EOF
 	SEEDED_LABELS=$(cat "$WORK/seeded.txt")
+	if [ -n "$SEEDED_LABELS" ] && ! opencode auth import --standalone <"$WORK/seed.json" >/dev/null 2>&1; then
+		# Opening signed out is still a configure flow; it only costs the
+		# sign-ins again.
+		printf '%s\n' "Could not restore the providers already connected ($SEEDED_LABELS); connect them again." >&2
+		SEEDED_LABELS=""
+	fi
 }
 
-# classify_credentials turns auth.json into $WORK/plan.json: one entry per
-# provider, with the secret to store (or the note that the previous one is
-# kept) and the auth.json entry that delivers it. Prints how many there are.
+# classify_credentials turns opencode's store into $WORK/plan.json: one entry
+# per provider, with the secret to store (or the note that the previous one is
+# kept) and the import entry that delivers it. Prints how many there are.
 #
 # A credential whose secret material is still the PREV_ sentinel seeded for its
 # name was not replaced, and is kept with the entry the last run returned —
 # which carries whatever the real sign-in recorded, and which the seed was
 # rendered from. Anything else is a new credential and is captured.
 classify_credentials() {
-	OPENCODE_CONFIGURE_AUTH_FILE="$AUTH_FILE" \
+	if ! opencode auth export --standalone </dev/null >"$WORK/export.json" 2>/dev/null; then
+		echo '[]' >"$WORK/export.json"
+	fi
+	OPENCODE_CONFIGURE_EXPORT="$WORK/export.json" \
 		OPENCODE_CONFIGURE_PLAN="$WORK/plan.json" \
 		OPENCODE_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
-		OPENCODE_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
+		OPENCODE_CONFIGURE_PREVIOUS_ENTRIES="$WORK/previous.json" \
 		OPENCODE_CONFIGURE_FAR_FUTURE_EXPIRY="$FAR_FUTURE_EXPIRY" \
 		OPENCODE_CONFIGURE_REFRESH_PLACEHOLDER="$REFRESH_PLACEHOLDER" node <<-'NODE_EOF'
 		const fs = require('fs');
-		let auth = {};
+		let stored = [];
 		try {
-			auth = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_AUTH_FILE, 'utf8')) || {};
+			stored = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_EXPORT, 'utf8'));
 		} catch (err) {
-			auth = {};
+			stored = [];
 		}
+		if (!Array.isArray(stored)) stored = [];
 		let previous = {};
 		try {
 			previous = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS, 'utf8')) || {};
@@ -182,9 +210,8 @@ classify_credentials() {
 		// entry's template action names.
 		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
 		const previousEntries = new Map();
-		const kept = (previous.files || []).find((f) => f && f.path === process.env.OPENCODE_CONFIGURE_AUTH_PATH);
 		try {
-			for (const entry of Object.values(JSON.parse(kept ? kept.content : '{}') || {})) {
+			for (const entry of JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS_ENTRIES, 'utf8'))) {
 				const match = JSON.stringify(entry).match(action);
 				if (match) previousEntries.set(match[1], entry);
 			}
@@ -196,14 +223,24 @@ classify_credentials() {
 		// oauthRefresh: the providers whose OAuth sign-in the control plane can
 		// renew, and how. Each is a property of that provider's public OAuth
 		// client — its token endpoint, client id, and request encoding — not of
-		// any one sign-in, so they are fixed here rather than read from the file.
-		// A provider not listed is delivered as a plain token.
+		// any one sign-in, so they are fixed here rather than read from the
+		// store. opencode 2 signs in with the same clients opencode 1 did
+		// (measured on 2.0.29). A provider not listed is delivered as a plain
+		// token.
 		const oauthRefresh = {
 			// The same client and endpoint the codex image refreshes as JSON.
 			openai: { tokenUrl: 'https://auth.openai.com/oauth/token', clientId: 'app_EMoamEEZ73f0CkXaXp7hrann' },
 			// xAI's token endpoint takes the refresh request form-encoded.
 			xai: { tokenUrl: 'https://auth.x.ai/oauth2/token', clientId: 'b1a00492-073a-47ea-816f-4c329264a828', tokenRequestEncoding: 'form' },
 		};
+
+		const byIntegration = new Map();
+		for (const entry of stored) {
+			if (!entry || typeof entry.integrationID !== 'string' || !entry.value) continue;
+			if (!byIntegration.has(entry.integrationID)) byIntegration.set(entry.integrationID, []);
+			byIntegration.get(entry.integrationID).push(entry);
+		}
+		const materialOf = (value) => (value.type === 'key' ? value.key : value.access);
 
 		const envNames = new Set();
 		const envNameFor = (provider) => {
@@ -215,15 +252,21 @@ classify_credentials() {
 		};
 
 		const plan = [];
-		for (const key of Object.keys(auth).sort()) {
-			const value = auth[key];
-			if (!value || typeof value !== 'object') continue;
-			// opencode normalizes a provider key without its trailing slashes.
-			const provider = key.replace(/\/+$/, '');
-			const material = value.type === 'api' ? value.key : value.type === 'wellknown' ? value.token : value.type === 'oauth' ? value.access : undefined;
-			if (typeof material !== 'string' || !material) continue;
+		for (const provider of [...byIntegration.keys()].sort()) {
 			const envName = envNameFor(provider);
 			const sentinel = process.env['PREV_' + envName];
+			// One credential per provider: the one opencode uses, which is the
+			// active one when the user connected more than one account. A new
+			// sign-in beats the seeded sentinel if both read as active, since
+			// it is the one the user just made.
+			const rank = (entry) => (entry.active ? 2 : 0) + (sentinel && materialOf(entry.value) === sentinel ? 0 : 1);
+			const chosen = byIntegration.get(provider).reduce((best, entry) => (rank(entry) > rank(best) ? entry : best));
+			const value = chosen.value;
+			const material = materialOf(value);
+			if (typeof material !== 'string' || !material) {
+				envNames.delete(envName);
+				continue;
+			}
 			if (sentinel && material === sentinel && previousEntries.has(envName)) {
 				plan.push({ envName, provider, kept: true, type: previousTypes.get(envName) || 'token', entry: previousEntries.get(envName) });
 				continue;
@@ -235,14 +278,11 @@ classify_credentials() {
 			// always a valid template field name, so there is nothing to quote.
 			const template = `{{ .secrets.${envName} }}`;
 			const item = { envName, provider, kept: false };
-			if (value.type === 'api') {
+			let delivered;
+			if (value.type === 'key') {
 				item.type = 'token';
 				item.value = { token: value.key };
-				item.entry = { ...value, key: template };
-			} else if (value.type === 'wellknown') {
-				item.type = 'token';
-				item.value = { token: value.token };
-				item.entry = { ...value, token: template };
+				delivered = { ...value, key: template };
 			} else {
 				const spec = oauthRefresh[provider];
 				if (spec && value.refresh && value.refresh !== value.access) {
@@ -253,14 +293,15 @@ classify_credentials() {
 					// The refresh token stays in the control plane, so a refresh
 					// from inside a sandbox could not succeed — and does not need
 					// to, since a sentinel does not go stale.
-					item.entry = { ...value, access: template, refresh: placeholder, expires: farFuture };
+					delivered = { ...value, access: template, refresh: placeholder, expires: farFuture };
 				} else {
 					item.type = 'token';
 					item.value = { token: value.access };
 					// A provider that authenticates with the refresh field itself
-					// (GitHub Copilot stores its token in both) gets the sentinel
-					// there too; a real refresh token becomes the placeholder.
-					item.entry = {
+					// (GitHub Copilot stored its token in both under opencode 1)
+					// gets the sentinel there too; a real refresh token becomes
+					// the placeholder.
+					delivered = {
 						...value,
 						access: template,
 						refresh: value.refresh === value.access ? template : (value.refresh ? placeholder : value.refresh),
@@ -271,6 +312,9 @@ classify_credentials() {
 					}
 				}
 			}
+			// Made the image's own entry, under the id that tells it from one
+			// the user connects by hand, by opencode-credentials own.
+			item.entry = { integrationID: provider, value: delivered };
 			plan.push(item);
 		}
 		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_PLAN, JSON.stringify(plan));
@@ -287,9 +331,10 @@ plan_labels() {
 }
 
 # verify_default_model runs a trivial prompt on the model a sandbox's opencode
-# starts with — `opencode run` given no --model uses opencode's default: the
-# `model` setting, else the last model picked with /models, else opencode's
-# pick among what the connected providers offer.
+# starts with: the `model` setting, else the last model picked with /models
+# (opencode-model), else opencode's own pick among what the connected providers
+# offer. `opencode run` given no --model skips the /models pick, so the model
+# is named.
 #
 # Only that model is checked, and a failure is a warning rather than a gate.
 # Whether a request succeeds depends on the model as much as the credential —
@@ -299,8 +344,13 @@ plan_labels() {
 # does show is that the harness's first session would fail the same way, which
 # is worth fixing while opencode is one keystroke away.
 verify_default_model() {
+	model=$(/usr/local/libexec/discobox/opencode-model 2>/dev/null) || model=""
 	set +e
-	timeout 180 opencode run 'Reply with exactly: discobox-ok' >"$WORK/verify.log" 2>&1
+	if [ -n "$model" ]; then
+		timeout 180 opencode run --standalone "--model=$model" 'Reply with exactly: discobox-ok' </dev/null >"$WORK/verify.log" 2>&1
+	else
+		timeout 180 opencode run --standalone 'Reply with exactly: discobox-ok' </dev/null >"$WORK/verify.log" 2>&1
+	fi
 	verify_status=$?
 	set -e
 	if [ "$verify_status" -eq 0 ] && grep -qi 'discobox-ok' "$WORK/verify.log"; then
@@ -356,10 +406,10 @@ confirm_retry() {
 	return 0
 }
 
-# ask_web_search sets WEB_SEARCH to true or false. opencode searches the web
-# with keyless Exa and Parallel, but only for models from its own providers
-# (OpenCode Zen and Go) unless it is turned on for every provider. The previous
-# answer is the default, and yes is the default when there is none.
+# ask_web_search sets WEB_SEARCH to true or false. opencode 2 searches the web
+# with every provider by default, with a keyless search service, so the
+# question is whether to turn that off. The previous answer is the default,
+# and yes is the default when there is none.
 #
 # End of input is not an answer: nobody is there, and saving a choice nobody
 # made would be quietly deciding for them.
@@ -371,9 +421,9 @@ ask_web_search() {
 		hint="[Y/n]"
 	fi
 	echo
-	echo "opencode can search the web (Exa and Parallel, no key needed). Models from"
-	echo "OpenCode Zen and Go search by default; other providers only when this is on."
-	printf 'Let opencode search the web with every provider? %s ' "$hint"
+	echo "opencode can search the web with any provider, through a search service that"
+	echo "needs no key. Answering n takes the web search tool away from every model."
+	printf 'Let opencode search the web? %s ' "$hint"
 	if ! read -r web_search_choice; then
 		echo >&2
 		echo "No input; aborting without configuring opencode." >&2
@@ -385,8 +435,8 @@ ask_web_search() {
 	esac
 }
 
-# write_output records the result: one secret per provider, the auth.json that
-# delivers them, and opencode's settings files as the user left them. Secret
+# write_output records the result: one secret per provider, the import entries
+# that deliver them, and opencode's settings files as the user left them. Secret
 # shapes:
 #   - kept:          usePrevious marker, no value.
 #   - OAuth renewed: the access token plus refresh material, type oauth.
@@ -395,9 +445,11 @@ write_output() {
 	# sandbox-agent creates this directory for the sandbox user in config mode;
 	# /run/discobox itself is root-owned and stays that way.
 	mkdir -p "$(dirname "$OUTPUT")"
+	jq '[.[].entry]' "$WORK/plan.json" | "$CREDENTIALS_HELPER" own >"$WORK/delivered.json"
 	OPENCODE_CONFIGURE_PLAN="$WORK/plan.json" \
 		OPENCODE_CONFIGURE_HOME="$HOME" \
-		OPENCODE_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
+		OPENCODE_CONFIGURE_CREDENTIALS_PATH="$CREDENTIALS_PATH" \
+		OPENCODE_CONFIGURE_DELIVERED="$WORK/delivered.json" \
 		OPENCODE_CONFIGURE_SETTINGS_PATHS="$SETTINGS_PATHS" \
 		OPENCODE_CONFIGURE_MODEL_PREFERENCE_PATH="$MODEL_PREFERENCE_PATH" \
 		OPENCODE_CONFIGURE_SETTINGS_PATH="$SETTINGS_PATH" \
@@ -419,12 +471,10 @@ write_output() {
 		if (plan.length > 0) {
 			// The sentinel lands in the file, not the credential: the content is
 			// a template, and each sandbox renders its own sentinels into it.
-			const auth = {};
-			for (const item of plan) auth[item.provider] = item.entry;
 			files.push({
-				path: process.env.OPENCODE_CONFIGURE_AUTH_PATH,
+				path: process.env.OPENCODE_CONFIGURE_CREDENTIALS_PATH,
 				template: true,
-				content: JSON.stringify(auth, null, 2) + '\n',
+				content: JSON.stringify(JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_DELIVERED, 'utf8')), null, 2) + '\n',
 			});
 		}
 		// Settings are returned literally, as opencode wrote them: they are the
@@ -503,7 +553,9 @@ while :; do
 
 	# opencode needs a real TTY for its interactive UI; run it under script.
 	set +e
-	script -q -e -c 'opencode' /dev/null
+	# --standalone, as the launcher runs it: a background service would
+	# outlive this script and keep the store open behind it.
+	script -q -e -c 'opencode --standalone' /dev/null
 	opencode_status=$?
 	set -e
 	# opencode can leave its full-screen UI's contents behind when it exits,

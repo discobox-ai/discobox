@@ -25,6 +25,28 @@ elif [ "$#" -gt 0 ]; then
 	set -- --prompt "$prompt"
 fi
 
+# The configured credentials live in opencode's database, which only opencode
+# writes (ADR 26-10-15-848 §3). A failure is said and not fatal: opencode still
+# runs, on whatever it already holds or on its free models.
+if ! /usr/local/libexec/discobox/opencode-credentials sync; then
+	printf '%s\n' "discobox: could not load the configured opencode credentials; starting without them" >&2
+fi
+
+# Web search is Discobox's setting (.config/discobox/opencode-harness.json),
+# answered during configure. opencode 2 searches the web with every provider
+# by default, so only "off" needs saying, and a permission rule denying the
+# tool is what removes it from what the model is offered.
+SETTINGS="$HOME/.config/discobox/opencode-harness.json"
+if [ -f "$SETTINGS" ] && [ "$(jq -r '.webSearch == false' "$SETTINGS" 2>/dev/null || true)" = true ]; then
+	export OPENCODE_CONFIG_CONTENT='{"permission":{"websearch":"deny"}}'
+fi
+
+# --standalone runs opencode's server inside this process rather than in the
+# per-user background service. The service outlives the terminal that started
+# it, and the hook plugin publishes for the terminal whose environment it runs
+# in, so under a shared service every terminal's hooks would be the first's
+# (ADR 26-10-15-848 §2).
+#
 # --auto approves every tool use a rule does not deny. The sandbox is the
 # isolation boundary, so opencode's own prompts would only guard a machine that
 # exists to be written to — the same baseline the claude-code and codex images
@@ -32,22 +54,4 @@ fi
 # (/etc/opencode) is its *managed* configuration, which outranks a project's own
 # rules, and the user's global config is replaced by the configure flow's
 # capture.
-#
-# Web search is Discobox's setting (.config/discobox/opencode-harness.json),
-# answered during configure. opencode searches with keyless Exa and Parallel,
-# but only for models from its own providers unless these variables turn it on
-# for every provider; turning it off is a permission rule, since for those
-# providers nothing else does.
-SETTINGS="$HOME/.config/discobox/opencode-harness.json"
-if [ -f "$SETTINGS" ]; then
-	case "$(jq -r '.webSearch | if . == true then "on" elif . == false then "off" else "" end' "$SETTINGS" 2>/dev/null || true)" in
-	on)
-		export OPENCODE_ENABLE_EXA=1 OPENCODE_ENABLE_PARALLEL=1
-		;;
-	off)
-		export OPENCODE_PERMISSION='{"websearch":"deny"}'
-		;;
-	esac
-fi
-
-exec opencode --auto "$@"
+exec opencode --standalone --auto "$@"
