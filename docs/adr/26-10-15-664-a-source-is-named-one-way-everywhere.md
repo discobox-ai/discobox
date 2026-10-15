@@ -56,6 +56,10 @@ A **source reference** is written `LOCATION[@REF][//PATH]`.
   already does. Shorthand is GitHub's alone. A `host/path` form for other
   hosts would claim every relative path whose first segment holds a dot.
 
+The directory wins over `@REF` and `//PATH` too: an existing directory whose
+own name holds `@` or `//` (a synced folder named after an account, such as
+`GoogleDrive-me@example.com`) is that directory, not one at a ref or a path.
+
 **@REF** is a branch, tag or commit, split as `splitRunSourceRef` splits it
 now: at the last `@`, unless that `@` is the user part of an scp-like URL.
 
@@ -83,7 +87,14 @@ A skills directory is read as content, not as a checkout (ADR 26-10-14-294
 `//PATH` on the primary source is the directory inside it that the harness
 starts in: `destination.workingDirectory`, at PATH beneath where the source
 is placed. The create request already carries this field, so there is no API
-change.
+change. Until now nothing inside the sandbox read it, so even a local
+`-C repo/sub` started at the repository root. The pool agent passes it into
+`sandbox.json` as the primary source's `workingDirectory`, but only when it is
+inside the source. The sandbox agent starts execs there (terminals, the
+harness, `discobox shell`). It still reads what the repository declares
+(services, tools, `.discobox/skills`) from the source's own directory. A
+sandbox or pool from before this has no `workingDirectory` and starts at the
+source, as before.
 
 - **A local source**: `-C DIR//PATH` is `-C DIR/PATH`, which already starts the
   harness in that subdirectory of the repository that holds it. PATH must
@@ -102,22 +113,37 @@ A parsed reference has:
   `owner/repo` is also lower-cased, since GitHub does not distinguish names by
   case. A directory is keyed by its absolute path. The key includes `@REF` and
   `//PATH`.
-- **A repository key**: the key without `@REF` and `//PATH`. Folders group by
-  it (ADR 26-10-14-585).
+- **A repository key**: the key without `@REF` and `//PATH`. One repository
+  at two refs is refused by it, on the client and on the server. The console's
+  folders keep the key ADR 26-10-14-585 gave them, the lower-cased
+  `owner/repo`, because saved views already hold it.
 - **A clone URL**, kept as it was written. Transport is not identity: ssh and
   https name one repository but reach it with different credentials.
+- **A clone key**: the key with the transport (https, http, ssh, git, file).
+  Two references with one clone key are fetched the same way.
 - **A display form**, which is itself a valid reference that parses back to
-  the same key:
-  - A GitHub repository displays as `owner/repo[@REF][//PATH]`.
-  - Another remote displays as its URL without `.git`.
+  the same clone key:
+  - A GitHub repository reached over https displays as
+    `owner/repo[@REF][//PATH]`, which is the URL that shorthand stands for.
+  - Any other remote, including GitHub over ssh, http or `git://`, displays as
+    its URL without `.git`, so its transport stays visible.
   - A directory displays as an absolute path, with the home directory as `~`.
     A directory's display is always rooted, so it cannot be read as GitHub
     shorthand.
 
-Every listing of sources dedupes by key and shows the display form. That
-covers the console's Source row, its skills screen, `discobox skills list`
-and `list.sources()`. Matching a typed reference against stored ones, as
-`skills remove` does, compares keys.
+  A directory whose own name holds `@` or `//` reads back as itself only
+  through the resolve step (§6), since only the disk tells that name from a
+  ref or a path. A reader that does not resolve takes such a directory from
+  the one that did, and never splits it off a value itself.
+
+A list of sources to cut from, such as the console's Source row and
+`list.sources()`, dedupes by clone key. Deduping by key would offer the https
+spelling and run another discobox's ssh, http or `git://` one, which is a
+transport nobody chose. A list of stored entries, such as `discobox skills
+list` and the console's skills screen, shows each entry in its display form
+and dedupes nothing: each entry is a record of its own, removed by its own ID.
+Matching a typed reference against stored ones, as `skills remove` and the
+server's check for one repository at two refs do, compares keys.
 
 `on github` is a header's word. The console's folder header names a GitHub
 repository as `owner/repo on github` (ADR 26-10-14-585), and nothing else
@@ -166,7 +192,8 @@ a filesystem.
   `discobox skills add foo/bar//skills` work, and the console's skills screen
   takes them.
 - One repository is one choice in the console's Source row, however its
-  discoboxes spelled it.
+  discoboxes spelled it over one transport. The same repository over another
+  transport is a second choice, shown by its URL.
 - A `.discobox/sources.json` entry may be `owner/repo`. It resolves the same
   way on every machine, because a declared source is never a directory.
 - `-C https://github.com/o/r//sub` is new. A remote PATH that is missing is
