@@ -9,7 +9,10 @@
   §2's pool-assembled template, narrows its §1 with an image kind, and narrows
   its §5 for macOS; supersedes [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)'s
   consequence that a provider credential stays in the pool; builds on
-  ADR 26-10-09-143, [PR #105](https://github.com/discobox-ai/discobox/pull/105))
+  ADR 26-10-09-143, [PR #105](https://github.com/discobox-ai/discobox/pull/105);
+  §1's provider type `discovm` and §4's image kind spelling `discovm/<driver>`
+  superseded by [26-10-15-629](26-10-15-629-the-vm-provider-and-its-image-kind-are-spelled-vm.md),
+  which spells both `vm`)
 - **§5 superseded for Linux sandboxes, §4 narrowed, and its deferred account ids settled, by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — a provisioned bundle replaces the build spec, the image kind is the provider's, and §14 decides the account
 - **Proposed to be superseded, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
   (Proposed) — §1's boxd pool machine, §2 whole, §3's seam on the pool's
