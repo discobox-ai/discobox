@@ -12,6 +12,9 @@
 // as plain DNS. The stub carries each one to the pool as DNS over TLS
 // (RFC 7858), presenting the sandbox's client certificate and verifying the
 // pool's: another sandbox on the network can neither read nor answer it.
+//
+// The sandbox's nested Docker names the same address as its containers' name
+// server (the image's daemon.json), so they reach the stub across its bridges.
 package dnsstub
 
 import (
@@ -103,12 +106,15 @@ func (c Config) Material() (*bridge.Material, error) {
 
 // ClaimAddress puts addr on the sandbox's loopback, so the stub can listen on
 // it and Docker's embedded resolver, forwarding from inside the sandbox's
-// network namespace, delivers to it locally.
+// network namespace, delivers to it locally. The sandbox's nested Docker names
+// the same address as its containers' DNS server, so their queries arrive on
+// one of its bridges and are answered too.
 //
 // A local address answers on every interface, so it also drops whatever is
-// sent to addr from off the sandbox: a neighbor routing addr through this
-// sandbox would otherwise have its queries asked of the pool under this
-// sandbox's certificate. Both steps are idempotent across restarts.
+// sent to addr on the pool's network (pooledInterfaces): every sandbox of a pool
+// shares that bridge, and a neighbor routing addr through this sandbox would
+// otherwise have its queries asked of the pool under this sandbox's
+// certificate. Both steps are idempotent across restarts.
 func ClaimAddress(ctx context.Context, addr netip.Addr) error {
 	bits, iptables := 32, "iptables"
 	if addr.Is6() {
@@ -120,15 +126,23 @@ func ClaimAddress(ctx context.Context, addr netip.Addr) error {
 	}
 	// -w waits for the xtables lock rather than failing when something else in
 	// the sandbox, a starting dockerd say, holds it.
-	rule := []string{"INPUT", "-d", prefix, "!", "-i", "lo", "-j", "DROP"}
+	rule := []string{"INPUT", "-d", prefix, "-i", pooledInterfaces, "-j", "DROP"}
 	if run(ctx, iptables, append([]string{"-w", "-C"}, rule...)...) == nil {
 		return nil
 	}
 	if err := run(ctx, iptables, append([]string{"-w", "-I"}, rule...)...); err != nil {
-		return fmt.Errorf("keep %s local: %w", addr, err)
+		return fmt.Errorf("keep %s off the pool's network: %w", addr, err)
 	}
 	return nil
 }
+
+// pooledInterfaces matches the interfaces Docker gives a sandbox container:
+// eth0 on its pool's network, and any further network it is attached to — the
+// only sandbox the pool writes a DNS server into the bootstrap of. The rest are
+// lo, the bridges the sandbox's own nested Docker made, and whatever else the
+// sandbox's root adds itself (a VPN's tun, say), whose peers it chose and could
+// as well forward queries for.
+const pooledInterfaces = "eth+"
 
 func run(ctx context.Context, name string, args ...string) error {
 	//nolint:gosec // G204: fixed binaries (ip, iptables, ip6tables) with arguments built from a netip.Prefix and constants.

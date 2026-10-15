@@ -1067,6 +1067,7 @@ flowchart LR
     app["sandbox process"] -->|"127.0.0.11"| docker["Docker embedded DNS"]
     docker -->|"container names"| app
     docker -->|"everything else, to 169.254.53.53 on lo"| stub["sandbox proxy bridge (dnsstub)"]
+    nested["nested-Docker container"] -->|"169.254.53.53, over a nested bridge"| stub
     stub -->|"DNS over TLS, client cert = sandbox"| fwd["proxy unit :17085 (dnsforward)"]
     fwd -->|"UDP, TCP on truncation"| up["pool's resolver"]
 ```
@@ -1076,8 +1077,10 @@ flowchart LR
   the stub claims it on the sandbox's loopback, so Docker's resolver, which
   forwards from inside the sandbox's network namespace, delivers locally and
   nothing crosses the network in the clear. It drops anything for that address
-  arriving off `lo`, which a neighbor could otherwise route there. The sandbox's `nameserver` stays
-  `127.0.0.11`, so container names resolve as before.
+  arriving on the pool's network (`eth+`), which a neighbor could otherwise
+  route there. The sandbox's `nameserver` stays `127.0.0.11`, so container
+  names resolve as before. The sandbox's nested Docker names the same address
+  for its own containers ([ADR 26-10-15-760](../docs/adr/26-10-15-760-nested-docker-containers-resolve-through-the-sandboxs-stub.md)).
 - The stub's two settings are in `bridge.json` beside the credentials endpoint,
   since all three reach the pool with the same keypair: `dnsListenAddress` (that
   address, port 53 — the sandbox's own, `sandboxconfig.SandboxDNSListenAddress`)
