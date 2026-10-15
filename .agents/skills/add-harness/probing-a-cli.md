@@ -20,6 +20,12 @@ the CLI writes on first run, so reuse one home, or put homes in `/tmp`
   `src/` and its docs (`dist/docs-index.generated.txt`: a JSON list of names,
   then a base64 gzip of a JSON array of contents). Read those before a
   minified bundle.
+- A Bun-compiled single binary (opencode 2's 200 MB `bin/opencode.exe`)
+  carries its whole bundle as text: `strings -n 8` it to a file once and
+  search that with `python3 -I`, printing context. Schemas read as
+  `type:b("oauth")`, and migrations, config keys and error texts are all there.
+  The vendor's own SDK packages (`npm pack @opencode/plugin`) ship `.d.ts`
+  types for plugin and client APIs, which beat reading minified code.
 - **A string in the binary is not behavior.** It tells you what to test next.
   Never report an endpoint or flow as "the CLI does X" until a run showed it.
 
@@ -74,6 +80,14 @@ names the directories it looked in ("Policy directory /etc/github-copilot/policy
 not readable"). Check the layer survives the user's own "disable all hooks"
 setting. The payloads you log are the ones the audit summary must read.
 
+A CLI whose hooks are a plugin (opencode) gets a probe plugin that logs every
+event and every hook it can register. Run it in the TUI *and* the
+non-interactive mode, several times each: opencode 2's plugins subscribe to
+the bus after its server starts, so `run` missed `session.created` (and once
+everything) while the TUI never did. Count a turn's lifecycle in the mode the
+launcher actually uses. Force the failure events too: point the model at a
+closed port to see how retries and the final failure are reported.
+
 ## Interactive behavior
 
 Run the TUI in a detached tmux session and read the screen:
@@ -115,5 +129,20 @@ do not route around a vendor's access control by presenting as another client.
   box's checkout (`../../workspace/source/...`) or in generated code. Run
   `./build/tools/golangci-lint cache clean` and check again before believing
   them.
+- A non-interactive mode may read piped stdin as more of the prompt and wait
+  for it to close (opencode 2's `run`): give it `</dev/null`. A test of that
+  passes vacuously from Go, whose `exec` hands the child `/dev/null` unless
+  `cmd.Stdin` is set, so give the wrapper real stdin.
+- Check that the non-interactive mode runs on the model the TUI starts on.
+  opencode 2's `run` ignores the `/models` pick the TUI uses, so a configure
+  check with no `--model` tested a free model and reported success.
+- An isolation test with an empty `HOME` passes whatever `HOME` the wrapper
+  sets. Plant the files the isolation must shut out, then mutate the line
+  under test to a no-op and check the test fails.
+- `COPY --chmod=0644 file /new/dir/file` creates the missing `/new/dir` with
+  mode 0644 too, so only root can read inside it; `install -d -m 0755` the
+  directory first. Check a built image as the sandbox user, never only as
+  root: opencode 2 could not load the image's plugin directory and then loaded
+  no provider at all, which no root-run check showed.
 - `check-hooks` exiting with "hook daemon unsettled" is hooks still running —
   the Dockerfile builds take minutes — not a failure; check again.
