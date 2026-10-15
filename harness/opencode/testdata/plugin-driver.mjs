@@ -1,5 +1,5 @@
 // Drives hook-plugin/server.js with synthetic events and prints, as JSON, the
-// event names it published. Run by TestPluginPublishesTheRightEvents.
+// event names it published. Run by pluginPublishes in driver_test.go.
 //
 // The shapes here are the ones opencode 2 really uses, not invented: recorded
 // from opencode 2.0.29 by a plugin logging every bus event and tool hook, a
