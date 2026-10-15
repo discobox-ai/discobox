@@ -62,6 +62,9 @@ differs from omp, the closest harness, in ways that each change a decision:
   `CLAUDE.md`) are collected from the working directory **up to `/`**; an empty
   `.git` beside the run does not stop the walk, `--no-context-files` does.
 - `--system-prompt` reads a file when its value names an existing path.
+  pi has no `--flag=value` form: `--model=x` is taken for an extension's flag
+  `model`. `--model` and `--system-prompt` take the next argument as their
+  value whatever it starts with (read from the source).
 - **ChatGPT subscription logins cannot run on a sentinel.** pi's
   `openai-codex` provider reads the account id from the access token's JWT
   claims and fails locally — "Failed to extract accountId from token" —
@@ -174,7 +177,10 @@ access token, refresh token and expiry, and nothing else: no `env`, no
 command) — from an empty working directory, with no inherited `PI_*`, `XDG_*`
 or `*_BASE_URL` variable, `--system-prompt` set to the caller's system text,
 and stdin from `/dev/null`. The model's name is the one value read from the
-user's configuration, and it crosses as one `--model=NAME` word.
+user's configuration. pi has no `--model=NAME` form — it reads one as an
+extension's flag — but takes the word after `--model` as its value whatever it
+starts with, so the name crosses as that one word and never as a flag of its
+own; the system text likewise follows `--system-prompt`.
 
 ## Rejected alternatives
 
