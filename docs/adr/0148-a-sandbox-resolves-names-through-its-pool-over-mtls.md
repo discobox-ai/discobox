@@ -1,6 +1,6 @@
 # 0148 — A sandbox resolves names through its pool, over mTLS
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's drop of everything off `lo`, the default-bridge consequence and the deferred nested default bridge superseded by [26-10-15-760](26-10-15-760-nested-docker-containers-resolve-through-the-sandboxs-stub.md))
 - **Date**: 2026-09-24
 - **Relates to**: [ADR 0013](0013-local-linux-pools-use-libkrun-microvms.md),
   the internal network that makes the pool proxy a sandbox's only way out;
