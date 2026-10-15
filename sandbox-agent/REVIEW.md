@@ -114,6 +114,21 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   and to every implementation, including the test fakes; run the shared
   contract (`testUnitManagerContract`) against each.
 
+## Where execs start
+
+- **`DefaultWorkdir` is where execs start; `SourceRoot` is the repository.**
+  A create may name a directory inside the primary source to start in (ADR
+  26-10-15-664 §3), so the two differ. Anything that reads what the
+  repository declares (services, tools, `.discobox/skills`) asks
+  `SourceRoot`. Read from the start directory, a sandbox started in a
+  subdirectory would lose its services.
+- **A default workdir must exist when an exec starts.** systemd refuses a unit
+  whose `WorkingDirectory` is missing, so a default that is not there fails
+  every terminal, shell and judge run, not one exec. A start directory can be
+  missing: never committed, gitignored, or removed since. It falls back to
+  `SourceRoot` (`resolveWorkdir`). A new default must have a fallback that
+  always exists.
+
 ## Reading the working tree at boot
 
 - **Anything at boot that reads the sandbox's sources goes behind

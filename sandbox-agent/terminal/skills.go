@@ -80,8 +80,8 @@ func (s *Service) installSkills() error {
 	// The repository root, asked of the exec manager rather than derived here:
 	// it is the same answer `services` discovers its declarations under, and a
 	// second derivation of "which directory is the sandbox working on" drifts
-	// from the one execs actually start in.
-	source, err := s.execs.DefaultWorkdir()
+	// from the one execs actually use.
+	source, err := s.execs.SourceRoot()
 	if err != nil {
 		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
 	}

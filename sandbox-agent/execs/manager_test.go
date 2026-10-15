@@ -104,6 +104,60 @@ func TestManagerPreservesExecTermOverrides(t *testing.T) {
 	}
 }
 
+// A create that named a directory inside the source starts execs there, and
+// the source root — where its declarations are read — stays the source's own
+// directory (ADR 26-10-15-664 §3). A start directory the checkout does not
+// hold falls back to the source root rather than failing every exec. Without
+// one the two are the same.
+func TestManagerStartsInTheSourcesStartDirectory(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
+	uid, gid := int64(1000), int64(1001)
+	user := &User{Name: "darren", UID: &uid, GID: &gid, HomeDirectory: "/home/darren"}
+	root := filepath.ToSlash(t.TempDir())
+	start := root + "/cmd/tool"
+	if err := os.MkdirAll(start, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newManager := func(defaultWorkdir, sourceRoot string) *Manager {
+		t.Helper()
+		manager, err := NewManagerWithConfig(ManagerConfig{
+			WorkingRoot:    "/workspace",
+			DefaultWorkdir: defaultWorkdir,
+			SourceRoot:     sourceRoot,
+			DefaultUser:    user,
+			RuntimeDir:     t.TempDir(),
+			Env:            testEffectiveEnv(),
+			Units:          &fakeUnitManager{},
+		})
+		if err != nil {
+			t.Fatalf("new manager: %v", err)
+		}
+		return manager
+	}
+
+	manager := newManager(start, root)
+	if got, err := manager.DefaultWorkdir(); err != nil || got != start {
+		t.Fatalf("default workdir = %q, %v; want the start directory", got, err)
+	}
+	if got, err := manager.SourceRoot(); err != nil || got != root {
+		t.Fatalf("source root = %q, %v; want the source's directory", got, err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}})
+	if err != nil || created.Workdir != start {
+		t.Fatalf("exec workdir = %q, %v; want the start directory", created.Workdir, err)
+	}
+
+	missing := newManager(root+"/gone", root)
+	if got, err := missing.DefaultWorkdir(); err != nil || got != root {
+		t.Fatalf("default workdir with the start directory gone = %q, %v; want the source root", got, err)
+	}
+
+	plain := newManager(root, "")
+	if got, err := plain.SourceRoot(); err != nil || got != root {
+		t.Fatalf("source root with no start directory = %q, %v; want the default", got, err)
+	}
+}
+
 func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 	skipWithoutPOSIXIDs(t)
 	runner := &fakeUnitManager{}
