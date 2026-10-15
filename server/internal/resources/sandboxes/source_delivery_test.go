@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -419,6 +420,58 @@ func TestValidateSkillsSources(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if err := validateSkillsSources(build()); err == nil {
 				t.Fatal("validate skills sources: nil, want a refusal")
+			}
+		})
+	}
+}
+
+// A source's working directory reaches host tools as stored -- an editor's
+// `ssh-remote+<host><workdir>` URL above all -- so the server, which holds
+// the only copy, takes nothing but a path inside the source's own directory
+// (ADR 26-10-15-417). `@attacker.example/x` is the value that, joined to a
+// host with no separator, names another host.
+func TestValidateSourceWorkingDirectory(t *testing.T) {
+	linux := platform.Platform{OS: "linux", Arch: "amd64"}
+	windows := platform.Platform{OS: "windows", Arch: "amd64"}
+	str := func(v string) *string { return &v }
+	src := func(directory, workingDirectory *string) *model.GitSource {
+		return &model.GitSource{Destination: &model.GitSourceDestination{Directory: directory, WorkingDirectory: workingDirectory}}
+	}
+	for _, tc := range []struct {
+		name     string
+		source   *model.GitSource
+		platform platform.Platform
+		ok       bool
+	}{
+		{"no source", nil, linux, true},
+		{"no destination", &model.GitSource{}, linux, true},
+		{"no working directory", src(str("/workspace/app"), nil), linux, true},
+		{"the directory itself", src(str("/workspace/app"), str("/workspace/app")), linux, true},
+		{"a subdirectory", src(str("/home/dev/app"), str("/home/dev/app/services/api")), linux, true},
+		{"a path with a space, as the client mirrors one", src(str("/Users/ada/My Projects/app"), str("/Users/ada/My Projects/app/cmd")), linux, true},
+		{"absolute with no directory named", src(nil, str("/workspace/sub")), linux, true},
+		{"a host in disguise", src(str("/workspace/app"), str("@attacker.example/x")), linux, false},
+		{"a host in disguise with no directory named", src(nil, str("@attacker.example/x")), linux, false},
+		{"relative", src(str("/workspace/app"), str("app/cmd")), linux, false},
+		{"outside the directory", src(str("/workspace/app"), str("/etc")), linux, false},
+		{"a sibling sharing a prefix", src(str("/workspace/app"), str("/workspace/application")), linux, false},
+		{"climbing out", src(str("/workspace/app"), str("/workspace/app/../../etc")), linux, false},
+		{"leading space", src(str("/workspace/app"), str(" /workspace/app")), linux, false},
+		{"a control character", src(str("/workspace/app"), str("/workspace/app/\x1b[2J")), linux, false},
+		{"empty", src(str("/workspace/app"), str("")), linux, false},
+		{"windows drive path", src(str("C:/src/app"), str(`C:\src\app\cmd`)), windows, true},
+		{"POSIX path on windows", src(str("C:/src/app"), str("/src/app")), windows, false},
+		{"undeclared platform, POSIX", src(str("/workspace/app"), str("/workspace/app/cmd")), platform.Platform{}, true},
+		{"undeclared platform, windows", src(str("C:/src/app"), str(`C:\src\app\cmd`)), platform.Platform{}, true},
+		{"undeclared platform, a host in disguise", src(nil, str("@attacker.example/x")), platform.Platform{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSourceWorkingDirectory(tc.source, tc.platform)
+			if tc.ok && err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("accepted")
 			}
 		})
 	}
