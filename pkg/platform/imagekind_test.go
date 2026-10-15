@@ -30,6 +30,13 @@ func TestParseImageKindRefusesTheDiscoVMSpelling(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "vm/boxd") {
 		t.Fatalf("ParseImageKind(discovm/boxd) = %v, want a refusal naming vm/boxd", err)
 	}
+	// A driver that is no name is not echoed back as a spelling to use, and
+	// what it carries is quoted: a kind arrives from image labels, and the
+	// refusal is printed to a terminal.
+	_, err = ParseImageKind("discovm/\x1b]52;c;aGk=\a")
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\a") || strings.Contains(err.Error(), "spelled") {
+		t.Fatalf("ParseImageKind of a hostile old spelling = %q, want the quoted plain refusal", err)
+	}
 }
 
 func TestParseImageKindEmptyIsZero(t *testing.T) {
