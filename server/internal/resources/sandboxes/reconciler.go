@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -447,6 +448,13 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return secretState, err
 	}
+	// The create carried the routes as they were when it started. A route
+	// change since may have been delivered before it landed and overwritten by
+	// it; the check marks the delivery again. A check that cannot be made is
+	// logged rather than failing a sandbox whose container is in place.
+	if markErr := markSentinelsIfStale(ctx, r.store, r.engine, sb, createOpts.SentinelRoutes); markErr != nil {
+		slog.WarnContext(ctx, "check delivered sentinel routes", "sandboxId", sb.ID, "error", markErr)
+	}
 	if len(state) > 0 || secretState != nil {
 		sb.SecretState = state
 		secretState = state
@@ -570,7 +578,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 			opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
 		}
-		if opts.SentinelRoutes, err = r.store.SecretSentinelRoutes(ctx, sb, assignments); err != nil {
+		if opts.SentinelRoutes, err = sandboxSentinelRoutes(ctx, r.store, sb, assignments); err != nil {
 			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
 		}
 	}

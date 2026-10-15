@@ -11,7 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -386,7 +385,7 @@ func (s *Service) secretOwnUse(ctx context.Context, sandbox *model.Sandbox, cred
 			}
 		}
 	}
-	if sandbox.HarnessMode == sandboxconfig.HarnessModeJudge {
+	if !sandbox.HoldsInjectedSecretsToRoutes() {
 		return services.ApprovedUse{}, false, nil
 	}
 	injected, err := s.store.ListInjectedSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID)

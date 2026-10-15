@@ -351,6 +351,24 @@ rule (image and runtime entries merge by path, a matching path replaces):
   package; it only owns getting the two inputs to the one function that merges
   them.
 
+## Routes on configured secrets
+
+An image may declare routes on a secret (ADR 26-10-02-924 §2; see
+[`harness/DESIGN.md`](../../../../harness/DESIGN.md)). They are snapshotted
+with the secret declarations and written onto the secrets in
+`ConfiguredSecretIDs` only; a secret a person bound to the config keeps the
+routes that person gave it.
+
+- A secret configure mints is created with its routes, so the rebind that
+  follows hands running sandboxes a sentinel already held to them.
+- `syncConfiguredSecretRoutes` rewrites the routes of the secrets configure
+  updated in place or kept, and of every configured secret when the image is
+  re-read (`RefreshHarnessConfigImage`, `SeedBuiltIns`). It runs in one
+  transaction with the config's snapshot and marks the sentinel delivery of
+  the sandboxes holding a changed secret (`MarkSecretHoldersDirtyTx`), so the
+  routes, the snapshot and their delivery commit together; see
+  [`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md).
+
 ## Deconfigure
 
 Deconfigure deletes the secrets the configure flow created (cascading their

@@ -49,16 +49,16 @@ type Service struct {
 	// dirtier has approval rules tested against what is pending when a
 	// request is filed or a rule changes (ADR 26-10-12-330 §4).
 	dirtier Dirtier
-	// sentinels re-registers the sentinels of the running discoboxes holding
-	// a secret, so a change to its routes reaches the proxies enforcing them.
-	sentinels SentinelPusher
+	// holders marks the sentinel delivery of the discoboxes holding a secret,
+	// in the transaction that changes its routes, so each is sent them.
+	holders SecretHolders
 }
 
-// SentinelPusher re-registers, with their proxies, the sentinels of every
-// running discobox holding a secret. The sandbox service is one; it is set
-// after construction because it is built from this service.
-type SentinelPusher interface {
-	PushSecretSentinels(ctx context.Context, projectID, secretID string) error
+// SecretHolders marks the sentinel delivery of every discobox holding a
+// secret for reconcile, inside the caller's transaction (ADR 26-10-02-924). The sandbox service is one; it
+// is set after construction because it is built from this service.
+type SecretHolders interface {
+	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
 }
 
 func NewService(store *store.Store) *Service {
@@ -71,10 +71,10 @@ func (s *Service) SetJudge(judge services.JudgeService) {
 	s.judge = judge
 }
 
-// SetSentinelPusher gives the service what carries a change to a secret's
-// routes to the discoboxes holding it.
-func (s *Service) SetSentinelPusher(pusher SentinelPusher) {
-	s.sentinels = pusher
+// SetSecretHolders gives the service what marks a secret's holders for
+// reconcile when its routes change.
+func (s *Service) SetSecretHolders(holders SecretHolders) {
+	s.holders = holders
 }
 
 // replaceRoutes writes the routes a create or update names onto sec (ADR
@@ -336,15 +336,21 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	// replaced (ADR 0132 §4). The store does it, for every writer at once —
 	// this one and the harness configure flow's update-in-place — rather than
 	// each of them remembering to.
-	if err := s.store.UpdateSecret(ctx, sec); err != nil {
-		return nil, secretCollision(err, sec)
-	}
-	if routesChanged && s.sentinels != nil {
-		// A running discobox's proxy holds its swaps to the routes it was last
-		// handed; until this reaches it, it holds them to the old ones.
-		if err := s.sentinels.PushSecretSentinels(ctx, projectID, sec.ID); err != nil {
-			return nil, fmt.Errorf("deliver the secret's routes to the discoboxes holding it: %w", err)
+	//
+	// A running discobox's proxy holds its swaps to the routes it was last
+	// handed, so a change to them marks the sentinel delivery of every
+	// discobox holding the secret in the same transaction: each is sent the
+	// routes as written, and one that cannot be reached now is retried.
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdateSecret(ctx, sec); err != nil {
+			return secretCollision(err, sec)
 		}
+		if routesChanged && s.holders != nil {
+			return s.holders.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, projectID, sec.ID)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	// Through the service's own read, so a create and an update answer with the
 	// same summary a get does rather than a bare row.

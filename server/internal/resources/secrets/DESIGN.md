@@ -699,13 +699,17 @@ pool.
   dedupes. It keeps the ID of a route whose host, path and use did not
   change, so a verdict recorded against it stands, and mints IDs only for
   routes with a use.
-- **A change reaches running discoboxes.** `UpdateSecret` hands a changed set
-  to the `SentinelPusher` (the sandbox service). That re-pushes the sentinel
-  set, with `sentinelRoutes`, of every running discobox the secret is
-  injected into. An agent-requested credential needs no push: the pool lists
-  it, with `secretRoutes`, fresh for every activation.
-- **A judge discobox's own are exempt** (`store.SecretSentinelRoutes`,
-  `secretOwnUse`): its harness's requests would wait on its own verdict.
+- **A change reaches running discoboxes level-triggered.** `UpdateSecret`
+  writes a changed set and has `SecretHolders` (the sandbox service) mark
+  the sentinel delivery of every discobox the secret is injected into in the
+  same transaction; its reconciler re-sends the sentinel set with
+  `sentinelRoutes`, and retries a delivery the pool did not take (see
+  [`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)). An agent-requested credential needs no mark: the pool
+  lists it, with `secretRoutes`, fresh for every activation.
+- **A judge discobox's own are exempt**, by one rule
+  (`Sandbox.HoldsInjectedSecretsToRoutes`) that both what its pool is handed
+  and `secretOwnUse` ask: its harness's requests would wait on its own
+  verdict.
 
 ## A secret's grant limit is a ceiling, not a default
 

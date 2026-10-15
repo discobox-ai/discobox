@@ -12,11 +12,13 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
+	"gorm.io/gorm"
 )
 
 // prepareSandboxSecrets resolves each secret input to a project secret (creating
@@ -375,7 +377,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		sentinels = append(sentinels, assignment.Sentinel)
 		secretEnv[assignment.EnvName] = assignment.Sentinel
 	}
-	sentinelRoutes, err := s.store.SecretSentinelRoutes(ctx, sandboxModel, assignments)
+	sentinelRoutes, err := sandboxSentinelRoutes(ctx, s.store, sandboxModel, assignments)
 	if err != nil {
 		return err
 	}
@@ -386,30 +388,32 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelRoutes: sentinelRoutes, SecretEnv: secretEnv}); err != nil {
 		return err
 	}
-	return nil
+	return markSentinelsIfStale(ctx, s.store, s.engine, sandboxModel, sentinelRoutes)
 }
 
-// PushSecretSentinels re-registers the sentinel set of every running sandbox
-// holding a secret, so a change to the secret's routes (ADR 26-10-02-924)
-// reaches the proxy enforcing them without waiting for a restart.
-func (s *Service) PushSecretSentinels(ctx context.Context, projectID, secretID string) error {
-	sandboxIDs, err := s.store.ListSandboxIDsHoldingSecret(ctx, projectID, secretID)
+// sandboxSentinelRoutes are the routes a pool holds a discobox's injected
+// sentinels to: those of the secrets they stand for, or none for a discobox
+// whose injected secrets are not held to routes (a judge's).
+func sandboxSentinelRoutes(ctx context.Context, st *store.Store, sandboxModel *model.Sandbox, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
+	if !sandboxModel.HoldsInjectedSecretsToRoutes() {
+		return nil, nil
+	}
+	return st.SecretSentinelRoutes(ctx, sandboxModel.ProjectID, assignments)
+}
+
+// MarkSecretHoldersDirtyTx marks the sentinel delivery of every sandbox
+// holding a secret for reconcile, in the transaction that changed the secret's
+// routes (ADR 26-10-02-924). SentinelReconciler re-sends each sandbox's
+// sentinel set with their current routes, and retries a delivery its pool did
+// not take, so the routes as written reach every holder.
+func (s *Service) MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error {
+	sandboxIDs, err := txStore.ListSandboxIDsHoldingSecret(ctx, projectID, secretID)
 	if err != nil {
 		return err
 	}
 	for _, sandboxID := range sandboxIDs {
-		sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue
-			}
+		if err := s.engine.MarkDirtyTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
 			return err
-		}
-		if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning {
-			continue
-		}
-		if err := s.pushSandboxSentinels(ctx, sandboxModel); err != nil {
-			return fmt.Errorf("push sentinels to sandbox %s: %w", sandboxID, err)
 		}
 	}
 	return nil

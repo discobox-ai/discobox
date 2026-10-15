@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
 )
 
 func TestJobFromMarkStatus(t *testing.T) {
@@ -41,5 +42,23 @@ func TestJobFromMarkStatus(t *testing.T) {
 				t.Fatalf("id/resource = %q/%q", job.ID, job.ResourceID)
 			}
 		})
+	}
+}
+
+// A sandbox's sentinel delivery is served with the project's jobs, so one its
+// pool has not taken yet can be seen and forced; another project's is not.
+func TestMarkInProjectServesSandboxSentinelMarks(t *testing.T) {
+	for _, tc := range []struct {
+		mark reconcile.DirtyResource
+		want bool
+	}{
+		{reconcile.DirtyResource{ResourceType: sandboxes.SentinelsResourceType, ResourceID: "project-1/sb-1"}, true},
+		{reconcile.DirtyResource{ResourceType: sandboxes.SentinelsResourceType, ResourceID: "project-2/sb-1"}, false},
+		{reconcile.DirtyResource{ResourceType: sandboxes.SandboxResourceType, ResourceID: "project-1/sb-1"}, true},
+		{reconcile.DirtyResource{ResourceType: "harnessConfig", ResourceID: "project-1/hc-1"}, false},
+	} {
+		if got := markInProject(tc.mark, "project-1", nil); got != tc.want {
+			t.Fatalf("markInProject(%+v) = %v, want %v", tc.mark, got, tc.want)
+		}
 	}
 }

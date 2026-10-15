@@ -143,7 +143,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	sandboxService.SetSecrets(secretService)
 	// And back: a change to a secret's routes is carried to the running
 	// discoboxes holding it (ADR 26-10-02-924).
-	secretService.SetSentinelPusher(sandboxService)
+	secretService.SetSecretHolders(sandboxService)
 	// The project's judge is converged like any other resource (ADR 26-09-22-838 §1):
 	// it exists when the project has a pool for it and a configured default
 	// harness, and is replaced when that harness is — unless the server judges
