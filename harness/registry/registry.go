@@ -7,6 +7,7 @@ import (
 	"github.com/discobox-ai/discobox/harness/copilot"
 	"github.com/discobox-ai/discobox/harness/omp"
 	"github.com/discobox-ai/discobox/harness/opencode"
+	"github.com/discobox-ai/discobox/harness/pi"
 	"github.com/discobox-ai/discobox/harness/shell"
 )
 
@@ -17,6 +18,7 @@ func DefaultDrivers() []harness.Driver {
 		opencode.Driver{},
 		copilot.Driver{},
 		omp.Driver{},
+		pi.Driver{},
 		// Last because nobody picks it for an agent: its reserved slug withholds
 		// a run command. It is otherwise an ordinary registry harness (ADR
 		// 0043), and not a fallback (ADR 0048); the one path that ends at it is
