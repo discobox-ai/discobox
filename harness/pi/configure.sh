@@ -28,7 +28,7 @@
 #
 # No credential is exported as an environment variable. The script returns
 # auth.json as a templated harness file with each provider's sentinel in place
-# of its secret — the same delivery the opencode image uses for its own.
+# of its secret — the same delivery the codex image uses for its own.
 #
 # It also returns pi's settings as the user left them (settings.json: the
 # default model, theme and the rest; keybindings.json), and Discobox's own
