@@ -63,13 +63,17 @@ func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUse
 	return svc
 }
 
-// RegisterJobs installs the sandbox reconciler on the level-triggered
+// RegisterJobs installs the sandbox reconciler, and the one that delivers a
+// sandbox's sentinels when a secret's routes change, on the level-triggered
 // reconcile engine.
 func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
-	return s.engine.Register(SandboxResourceType, s.NewSandboxReconciler(), opts...)
+	if err := s.engine.Register(SandboxResourceType, s.NewSandboxReconciler(), opts...); err != nil {
+		return err
+	}
+	return s.engine.Register(SentinelsResourceType, s.NewSentinelReconciler())
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {

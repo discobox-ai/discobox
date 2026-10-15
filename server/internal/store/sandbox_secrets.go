@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -412,15 +411,11 @@ func (s *Store) ListSandboxIDsForHarnessConfig(ctx context.Context, projectID, h
 // SecretSentinelRoutes maps each of a discobox's injected sentinels to the
 // routes of the secret it stands for, when that secret carries routes (ADR
 // 26-10-02-924): every request the sentinel is sent in must fall on one.
-// assignments are the discobox's injected secrets. A judge discobox's own are
-// held to none, since its harness's requests would wait on its own verdict.
-func (s *Store) SecretSentinelRoutes(ctx context.Context, sandbox *model.Sandbox, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
-	if sandbox.HarnessMode == sandboxconfig.HarnessModeJudge {
-		return nil, nil
-	}
+// assignments are the discobox's injected secrets.
+func (s *Store) SecretSentinelRoutes(ctx context.Context, projectID string, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
 	var out map[string][]secretroute.Route
 	for _, assignment := range assignments {
-		secret, err := s.GetSecret(ctx, sandbox.ProjectID, assignment.SecretID)
+		secret, err := s.GetSecret(ctx, projectID, assignment.SecretID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				continue

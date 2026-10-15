@@ -26,8 +26,10 @@ flowchart LR
     (`Result.RequeueAt`, e.g. archive retention or a park deadline). Healthy.
   - `backoff` — future `not_before` with `attempts > 0`: the last reconcile
     failed; `error` carries the engine's `last_error` for that row.
-- Only `sandbox` and `pool` marks are served; their dirty ids carry the
-  `projectID/` prefix that scopes them to a project. Marks of other resource
+- Only `sandbox`, `sandboxSentinels` and `pool` marks are served; their dirty
+  ids carry the `projectID/` prefix that scopes them to a project. A
+  `sandboxSentinels` mark in backoff is a sandbox whose pool has not yet taken
+  a change to its secrets' routes. Marks of other resource
   types (`harnessConfig`) are not project-scoped and never appear.
 - `ForceJob` pulls a scheduled or backed-off mark forward (`MarkDirty`, which
   overrides backoff), making it claimable immediately; `attempts` is kept. A

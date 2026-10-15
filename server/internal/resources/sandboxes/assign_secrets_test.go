@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -18,6 +19,9 @@ import (
 // passed to Update.
 type recordingProvider struct {
 	updated [][]string
+	routes  []map[string][]secretroute.Route
+	// updateErrs fail the next updates, one each, in order.
+	updateErrs []error
 }
 
 func (p *recordingProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
@@ -37,7 +41,15 @@ func (p *recordingProvider) Create(context.Context, sandbox.SandboxRef, []byte, 
 	return nil, nil, nil
 }
 func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
+	if len(p.updateErrs) > 0 {
+		err := p.updateErrs[0]
+		p.updateErrs = p.updateErrs[1:]
+		if err != nil {
+			return nil, state, err
+		}
+	}
 	p.updated = append(p.updated, append([]string{}, opts.Sentinels...))
+	p.routes = append(p.routes, opts.SentinelRoutes)
 	return nil, state, nil
 }
 func (p *recordingProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {

@@ -956,10 +956,11 @@ Either way Copilot stores the token, and the script reads it back:
   the warning. A kept token that fails
   verification stops being offered.
 - **The token is held to Copilot's own traffic.** `COPILOT_GITHUB_TOKEN`
-  declares one use: Copilot's AI requests and light read-only GitHub queries,
-  nothing that creates, changes or deletes anything on GitHub. Where requests
-  are judged, every request carrying it is held to that; the agent needs a
-  grant of its own for anything else on GitHub (ADR 26-10-02-924).
+  declares routes (ADR 26-10-02-924), which configure writes onto the secret:
+  Copilot's own endpoints under `githubcopilot.com` and `api.github.com` go
+  unjudged; its MCP server, its agents and the rest of `github.com` are judged
+  against read-only uses where requests are judged; anything else is refused.
+  The agent needs a grant of its own to do more on GitHub.
 - Every path ends in a tool-free `copilot -p` with only the chosen token, in a
   `COPILOT_HOME` of its own so the stored login cannot stand in for it.
 - It returns `~/.copilot/settings.json` as the user left it (`/config model`,

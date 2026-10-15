@@ -11,11 +11,12 @@ import (
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
-type recordedPushes struct{ secretIDs []string }
+type recordedMarks struct{ secretIDs []string }
 
-func (r *recordedPushes) PushSecretSentinels(_ context.Context, _, secretID string) error {
+func (r *recordedMarks) MarkSecretHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, secretID string) error {
 	r.secretIDs = append(r.secretIDs, secretID)
 	return nil
 }
@@ -73,7 +74,10 @@ func sentinelRoutes(t *testing.T, st *store.Store, judge bool) map[string][]secr
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := st.SecretSentinelRoutes(ctx, sandbox, assignments)
+	if !sandbox.HoldsInjectedSecretsToRoutes() {
+		return nil
+	}
+	out, err := st.SecretSentinelRoutes(ctx, sandbox.ProjectID, assignments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +103,8 @@ func TestASecretsRoutesAreNormalizedAndOnlyUsesAreMinted(t *testing.T) {
 func TestASecretsRoutesKeepTheirUseIDsAcrossEdits(t *testing.T) {
 	ctx := context.Background()
 	svc, _, sec := secretRouteFixture(t)
-	pushes := &recordedPushes{}
-	svc.SetSentinelPusher(pushes)
+	marks := &recordedMarks{}
+	svc.SetSecretHolders(marks)
 	kept := sec.Routes[1]
 
 	updated, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{
@@ -116,16 +120,16 @@ func TestASecretsRoutesKeepTheirUseIDsAcrossEdits(t *testing.T) {
 	if len(updated.Routes) != 2 || updated.Routes[0] != kept || updated.Routes[1].UseID == sec.Routes[2].UseID {
 		t.Fatalf("routes = %+v, want the unchanged one kept, the repeat dropped and the new one minted", updated.Routes)
 	}
-	if len(pushes.secretIDs) != 1 || pushes.secretIDs[0] != sec.ID {
-		t.Fatalf("pushes = %v, want the change carried to the discoboxes holding it", pushes.secretIDs)
+	if len(marks.secretIDs) != 1 || marks.secretIDs[0] != sec.ID {
+		t.Fatalf("marks = %v, want the change to mark the discoboxes holding it for reconcile", marks.secretIDs)
 	}
 
-	// An edit that leaves the routes alone carries nothing.
+	// An edit that leaves the routes alone marks nothing.
 	if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Name: apigen.NewOptString("renamed")}); err != nil {
 		t.Fatal(err)
 	}
-	if len(pushes.secretIDs) != 1 {
-		t.Fatalf("pushes = %v, want none for an edit that left the routes alone", pushes.secretIDs)
+	if len(marks.secretIDs) != 1 {
+		t.Fatalf("marks = %v, want none for an edit that left the routes alone", marks.secretIDs)
 	}
 
 	cleared, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Routes: routes()})

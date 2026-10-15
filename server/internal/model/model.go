@@ -1032,6 +1032,15 @@ type AutomaticRepair struct {
 	LandedAt *time.Time `json:"landedAt,omitempty" doc:"When the repair landed. Absent while it runs, and when it failed." format:"date-time"`
 }
 
+// HoldsInjectedSecretsToRoutes reports whether the proxy holds this
+// discobox's injected secrets to their routes (ADR 26-10-02-924 §5). A
+// judge's are not: its harness's requests would wait on its own verdict, and
+// ADR 26-09-22-838 relies on its credential having no use. Both what a pool is
+// handed and what the control plane answers for a route's use ask this.
+func (s *Sandbox) HoldsInjectedSecretsToRoutes() bool {
+	return s.HarnessMode != sandboxconfig.HarnessModeJudge
+}
+
 // AutomaticRepairAllowed reports whether using this sandbox, found to have no
 // container, may record an automatic repair: it is meant to exist, it has
 // settled as failed, and that failure is not an automatic repair's own

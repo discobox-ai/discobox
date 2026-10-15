@@ -25,6 +25,7 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
+	"gorm.io/gorm"
 )
 
 // HarnessConfigResourceType is the reconcile engine resource type for harness
@@ -114,9 +115,10 @@ type SandboxRuntime interface {
 	// config's bindings now name. Configure is one of the two places a binding's
 	// secret changes, and the only one that can replace it outright.
 	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
-	// PushSecretSentinels carries a change to a secret's routes to the
-	// running sandboxes holding it (ADR 26-10-02-924).
-	PushSecretSentinels(ctx context.Context, projectID, secretID string) error
+	// MarkSecretHoldersDirtyTx marks the sandboxes holding a secret for
+	// reconcile in the transaction that changes its routes, so each converges
+	// on them (ADR 26-10-02-924).
+	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
 	// UpgradeHarnessConfigSandboxes moves this config's stopped sandboxes onto
 	// the image it now resolves to (ADR 0082). Called wherever this config's
 	// ImageDigest is written to a different value, through
@@ -514,6 +516,12 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			MaxGrantTTL:    0,
 			EncryptedValue: []byte(secret.Value),
 		}
+		// Born with the routes its image declares, so the rebind below hands
+		// running sandboxes a sentinel that is held to them from the first
+		// swap rather than one left to its grant until a second push.
+		if _, err := created.ReplaceRoutes(declaredRoutesByEnv(config)[envName]); err != nil {
+			return fmt.Errorf("routes of configured secret %q: %w", envName, err)
+		}
 		if err := s.store.CreateSecret(ctx, created); err != nil {
 			return fmt.Errorf("create configured secret %q: %w", name, err)
 		}
@@ -570,16 +578,23 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			return fmt.Errorf("rebind sandboxes after configure: %w", err)
 		}
 	}
-	return s.syncConfiguredSecretRoutes(ctx, config)
+	// A secret updated in place or kept may hold the routes of an image the
+	// config has since moved off; they are written, and their holders marked,
+	// in one transaction.
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
+	})
 }
 
 // syncConfiguredSecretRoutes writes the routes the config's image declares for
 // each secret onto the secret its configure flow created for it (ADR
 // 26-10-02-924), so every request the harness sends it in must fall on one.
 // Only configure-created secrets are written: one a person bound to the
-// config is theirs to describe. It runs after configure and whenever the
-// image is re-read, and carries a change to running sandboxes.
-func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, config *model.HarnessConfig) error {
+// config is theirs to describe. It runs in the caller's transaction, after
+// configure and wherever the image is re-read, and marks the sandboxes holding
+// a secret whose routes changed for reconcile in it: the routes and their
+// delivery commit together or not at all, so a retry finds them still to do.
+func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store.Store, txDB *gorm.DB, config *model.HarnessConfig) error {
 	configured := make(map[string]bool, len(config.ConfiguredSecretIDs))
 	for _, secretID := range config.ConfiguredSecretIDs {
 		configured[strings.TrimSpace(secretID)] = true
@@ -587,11 +602,8 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, config *model.
 	if len(configured) == 0 {
 		return nil
 	}
-	declared := make(map[string][]model.SecretRoute, len(config.Secrets))
-	for _, secret := range config.Secrets {
-		declared[secret.Name] = secret.Routes
-	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	declared := declaredRoutesByEnv(config)
+	bindings, err := txStore.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
 	if err != nil {
 		return err
 	}
@@ -599,7 +611,7 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, config *model.
 		if !configured[binding.SecretID] {
 			continue
 		}
-		secret, err := s.store.GetSecret(ctx, config.ProjectID, binding.SecretID)
+		secret, err := txStore.GetSecret(ctx, config.ProjectID, binding.SecretID)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				continue
@@ -613,16 +625,26 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, config *model.
 		if !changed {
 			continue
 		}
-		if err := s.store.UpdateSecret(ctx, secret); err != nil {
+		if err := txStore.UpdateSecret(ctx, secret); err != nil {
 			return fmt.Errorf("write routes of configured secret %q: %w", binding.EnvName, err)
 		}
 		if s.sandboxes != nil {
-			if err := s.sandboxes.PushSecretSentinels(ctx, config.ProjectID, secret.ID); err != nil {
-				return fmt.Errorf("deliver routes of configured secret %q: %w", binding.EnvName, err)
+			if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, config.ProjectID, secret.ID); err != nil {
+				return fmt.Errorf("mark the holders of configured secret %q: %w", binding.EnvName, err)
 			}
 		}
 	}
 	return nil
+}
+
+// declaredRoutesByEnv is the routes the config's image declares, by the
+// environment variable each secret is bound to.
+func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretRoute {
+	declared := make(map[string][]model.SecretRoute, len(config.Secrets))
+	for _, secret := range config.Secrets {
+		declared[secret.Name] = secret.Routes
+	}
+	return declared
 }
 
 // updateConfiguredGrantHost points this harness config's standing grant(s) for a

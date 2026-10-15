@@ -757,6 +757,21 @@ while the sandbox was down. Both repoint only injected assignments: an agent
 credential's binding may share a variable with one, and it keeps the secret it
 was granted.
 
+A change to a secret's routes (ADR 26-10-02-924) is delivered
+level-triggered by a reconciler of its own, `SentinelReconciler`
+(`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox
+the secret is injected into in its transaction (`MarkSecretHoldersDirtyTx`),
+and the reconciler sends the sandbox's sentinel set with their current routes
+as a provider `Update`. A delivery the pool does not take is returned and
+retried with backoff, and shows in the jobs API. It is not a mark on the
+sandbox, because a sandbox reconcile failing on a settled generation records
+the sandbox as failed. A sandbox no pool holds yet is skipped. Every send of a
+sentinel set — `ensure`'s create, a live push, this delivery — re-reads the
+routes once its pool has answered and marks the delivery again if they moved
+(`markSentinelsIfStale`), so a create that read the routes before a change and
+landed after its delivery cannot leave the old ones in place. A judge discobox's injected sentinels carry no routes
+(`Sandbox.HoldsInjectedSecretsToRoutes`).
+
 ## The Sandbox's Own Address
 
 The create options carry `DISCOBOX_ADDRESS` (`endpoint.EnvSandboxAddress`):

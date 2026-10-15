@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 type stubInspector struct {
@@ -719,12 +720,12 @@ type stubSandboxRuntime struct {
 	created   services.CreateSandboxBody
 	rebound   []string
 	upgraded  []string
-	pushed    []string
+	marked    []string
 	deleteErr error
 }
 
-func (s *stubSandboxRuntime) PushSecretSentinels(_ context.Context, _, secretID string) error {
-	s.pushed = append(s.pushed, secretID)
+func (s *stubSandboxRuntime) MarkSecretHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, secretID string) error {
+	s.marked = append(s.marked, secretID)
 	return nil
 }
 
@@ -1052,9 +1053,14 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 		t.Fatalf("routes = %+v, want the declared ones, the judged one with a minted use ID", secret.Routes)
 	}
 	kept := secret.Routes[1]
+	if got := runtime.marked; len(got) != 0 {
+		t.Fatalf("marked = %v, want none: the secret was minted with its routes, before anything held it", got)
+	}
 
 	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Host: "githubcopilot.com", Path: "/mcp", Use: "read-only MCP"})
-	if err := svc.syncConfiguredSecretRoutes(ctx, config); err != nil {
+	if err := st.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		return svc.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
+	}); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 	if secret, err = st.GetSecret(ctx, "project-1", secretID); err != nil {
@@ -1063,7 +1069,7 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 	if len(secret.Routes) != 3 || secret.Routes[1] != kept || secret.Routes[2].Path != "/mcp" {
 		t.Fatalf("routes = %+v, want the unchanged ones kept and the new one added", secret.Routes)
 	}
-	if got := runtime.pushed; len(got) != 2 || got[1] != secretID {
-		t.Fatalf("pushed = %v, want each change carried to the running sandboxes", got)
+	if got := runtime.marked; len(got) != 1 || got[0] != secretID {
+		t.Fatalf("marked = %v, want the change to mark the secret's holders for reconcile", got)
 	}
 }

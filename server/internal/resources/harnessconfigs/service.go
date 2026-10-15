@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 type Service struct {
@@ -209,10 +210,14 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
 	snapshotImageMetadata(config, metadata)
-	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
-		return nil, err
-	}
-	if err := s.syncConfiguredSecretRoutes(ctx, config); err != nil {
+	// The snapshot and the routes it declares onto configured secrets commit
+	// together, so a failed refresh leaves the old digest for a retry to move.
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
+		}
+		return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
+	}); err != nil {
 		return nil, err
 	}
 	slog.InfoContext(ctx, "refreshed harness config image",
@@ -444,15 +449,15 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
 		snapshotImageMetadata(existing, metadata)
-		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
+		// As at refresh: the snapshot and its routes commit together, so a
+		// seed that fails leaves the config for the next one to find unequal.
+		if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+			if err := txStore.UpdateHarnessConfig(ctx, existing); err != nil {
+				return err
+			}
+			return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, existing)
+		}); err != nil {
 			return err
-		}
-		if err := s.syncConfiguredSecretRoutes(ctx, existing); err != nil {
-			// The image is recorded; its routes reach the secrets on the next
-			// refresh or configure. A seed is not failed over a discobox that
-			// could not be reached.
-			slog.WarnContext(ctx, "sync harness secret routes after image update",
-				"harnessConfigId", existing.ID, "error", err)
 		}
 		slog.InfoContext(ctx, "updated built-in harness config image",
 			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image,
