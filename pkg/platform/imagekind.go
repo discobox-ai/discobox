@@ -53,8 +53,8 @@ func ParseImageKind(s string) (ImageKind, error) {
 		return ImageKind{}, nil
 	}
 	format, driver, _ := strings.Cut(s, "/")
-	if format == formatDiscoVM {
-		return ImageKind{}, fmt.Errorf("image kind %q is spelled %s/%s now", s, FormatVM, driver)
+	if format == formatDiscoVM && namePattern.MatchString(driver) {
+		return ImageKind{}, fmt.Errorf("image kind %q is spelled %q now", s, VM(driver).String())
 	}
 	k := ImageKind{Format: format, Driver: driver}
 	if err := k.Validate(); err != nil {

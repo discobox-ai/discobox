@@ -40,11 +40,15 @@ unchanged.
 
 The kinds a release has stored are rewritten when the server starts: every
 pool's and harness's `discovm/<driver>` becomes `vm/<driver>`. Only one
-spelling is read afterwards. A `discovm/<driver>` that arrives later — from a
-manifest file written for an earlier release, or an API client — is refused
-with a message that names `vm/<driver>`, as any other unreadable kind is,
-rather than read as an alias that a stored or declared kind could silently
-change into.
+spelling is read afterwards. A `discovm/<driver>` that arrives later is
+refused rather than read as an alias that a stored or declared kind could
+silently change into: from a manifest file written for an earlier release, with
+a message that names `vm/<driver>`; from a pool agent's report, by the API
+schema's pattern, as any other unreadable kind is.
+
+The kind a server returns on a harness or a pool carries no pattern in the API
+schema, so a client validates none: a client then reads a kind spelled by a
+server of another release, and only the server checks a kind it is sent.
 
 ## Alternatives rejected
 
@@ -61,4 +65,9 @@ change into.
   start; after the first it matches nothing.
 - A manifest file that declares `discovm/<driver>` is refused on refresh until
   it says `vm/<driver>`.
+- A CLI from v0.14.0 to v0.16.0 validates the kinds a server returns against
+  its own `discovm/<driver>` pattern, so against a server from this release it
+  fails to list harnesses, or pools, once one has a VM kind. Only a manifest-file
+  harness has one — a macOS template — and no released provider runs a VM
+  pool; such a CLI is upgraded with the server.
 - The provider's state root on a host is under `discobox/vm/<driver>`.
