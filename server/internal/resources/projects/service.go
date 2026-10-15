@@ -186,6 +186,12 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		if !egressChanged {
 			return nil
 		}
+		// Its own write: no whole-row save of a project writes the level, so a
+		// writer that loaded the row earlier cannot save it back
+		// (store.SetProjectEgress).
+		if err := txStore.SetProjectEgress(ctx, projectID, project.Egress); err != nil {
+			return err
+		}
 		return s.sandboxes.MarkEgressChangedTx(ctx, txStore, txDB, projectID, "", "")
 	}); err != nil {
 		return nil, err

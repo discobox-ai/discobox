@@ -40,15 +40,16 @@ true of it, and true *by rule* rather than by slug:
   the digest, run/relaunch/configure argv, configure reminder and ports, files,
   secret declarations, env, volumes, additional groups, and declared egress
   hosts onto the config (`snapshotImageMetadata`). Nothing re-reads the labels
-  afterward.
+  afterward. Configure ports (`harness.ConfigPort`) are validated as a port
+  number each, declared once, or as the single numberless ephemeral entry; the
+  forward they ask for is the CLI's, not this service's — see
+  `cli/internal/cli` → `forwardConfigurePorts`.
 - The harness's egress level is two fields: `ImageEgressHosts`, the hosts the
   image declares, replaced by every re-snapshot, and `Egress`, what a person
-  set, which a re-snapshot never touches (ADR 26-10-01-032 §3). A change to
-  either marks the config's discoboxes for reconcile in the transaction that
-  saves it (`updateHarnessConfig`), through `SandboxRuntime.MarkEgressChangedTx`. Configure
-  ports (`harness.ConfigPort`) are validated as a port number each, declared
-  once, or as the single numberless ephemeral entry; the forward they ask for is the CLI's, not this service's — see `cli/internal/cli` →
-  `forwardConfigurePorts`.
+  set, which a re-snapshot never touches (ADR 26-10-01-032 §3) and only
+  `store.SetHarnessConfigEgress` writes. A change to either marks the egress
+  push of the config's discoboxes in the transaction that saves it
+  (`updateHarnessConfig`), through `SandboxRuntime.MarkEgressChangedTx`.
 - The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
   can compare it on either image store: from a registry, the digest the tag is
   served under (an index digest for a multi-platform image), fetched with one

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"gorm.io/gorm"
 
@@ -16,10 +15,8 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// This file owns a sandbox's effective egress policy (ADR 26-10-01-032): the
-// merge of its project's, pool's, harness config's, and its own levels, which
-// is computed whenever it is needed and never stored, so there is no copy of
-// it to go stale.
+// This file delivers a sandbox's effective egress policy (ADR 26-10-01-032),
+// merged by store.EffectiveSandboxEgress whenever it is needed.
 //
 // It reaches the pool two ways. A create carries it, so a new container is
 // restricted from its first request. Every change after that is delivered by
@@ -32,7 +29,7 @@ import (
 
 // SandboxEgressResourceType is the reconcile-engine resource type that
 // delivers a sandbox's egress policy to its pool. Its IDs are SandboxDirtyID's.
-const SandboxEgressResourceType = "sandbox-egress"
+const SandboxEgressResourceType = "sandboxEgress"
 
 // sandboxEgressReconciler pushes a sandbox's merged policy to its pool.
 type sandboxEgressReconciler struct {
@@ -58,7 +55,7 @@ func (r *sandboxEgressReconciler) Reconcile(ctx context.Context, id string) (rec
 	if sb.DesiredState != model.DesiredStatePresent {
 		return reconcile.Result{}, nil
 	}
-	policy, err := effectiveEgress(ctx, r.store, sb)
+	policy, err := r.store.EffectiveSandboxEgress(ctx, sb)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -96,40 +93,6 @@ func (s *Service) MarkEgressChangedTx(ctx context.Context, txStore *store.Store,
 	return nil
 }
 
-// effectiveEgress merges the levels of sb as they stand now.
-func effectiveEgress(ctx context.Context, st *store.Store, sb *model.Sandbox) (egress.Policy, error) {
-	harnessConfigID := ""
-	if sb.HarnessConfigID != nil {
-		harnessConfigID = strings.TrimSpace(*sb.HarnessConfigID)
-	}
-	return mergeEgressLevels(ctx, st, sb.ProjectID, sb.PoolID, harnessConfigID, sb.Egress)
-}
-
-// mergeEgressLevels is §2's rule over a project, a pool, a harness config
-// (with the hosts its image declares), and a sandbox's own level. A harness
-// config that is gone contributes nothing.
-func mergeEgressLevels(ctx context.Context, st *store.Store, projectID, poolID, harnessConfigID string, own egress.Policy) (egress.Policy, error) {
-	project, err := st.GetProject(ctx, projectID)
-	if err != nil {
-		return egress.Policy{}, fmt.Errorf("read project egress: %w", err)
-	}
-	pool, err := st.GetPool(ctx, projectID, poolID)
-	if err != nil {
-		return egress.Policy{}, fmt.Errorf("read pool egress: %w", err)
-	}
-	levels := []egress.Policy{project.Egress, pool.Egress, own}
-	if harnessConfigID != "" {
-		harnessConfig, err := st.GetHarnessConfig(ctx, projectID, harnessConfigID)
-		switch {
-		case err == nil:
-			levels = append(levels, harnessConfig.Egress, egress.Policy{Allow: harnessConfig.ImageEgressHosts})
-		case !errors.Is(err, store.ErrNotFound):
-			return egress.Policy{}, fmt.Errorf("read harness config egress: %w", err)
-		}
-	}
-	return egress.Merge(levels...), nil
-}
-
 // refuseWiderThanCreator is §4's check on a create from the sandbox role: the
 // new discobox may reach nothing its creator cannot. The creator's policy is
 // read as it stands; the child's is what it would be created with.
@@ -138,11 +101,11 @@ func (s *Service) refuseWiderThanCreator(ctx context.Context, creatorID string, 
 	if err != nil {
 		return fmt.Errorf("read creating discobox: %w", err)
 	}
-	outer, err := effectiveEgress(ctx, s.store, creator)
+	outer, err := s.store.EffectiveSandboxEgress(ctx, creator)
 	if err != nil {
 		return err
 	}
-	inner, err := effectiveEgress(ctx, s.store, child)
+	inner, err := s.store.EffectiveSandboxEgress(ctx, child)
 	if err != nil {
 		return err
 	}

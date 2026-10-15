@@ -80,11 +80,14 @@ func ValidateEntry(entry string) error {
 	if entry == "" {
 		return errors.New("egress allow entry is empty")
 	}
-	if net.ParseIP(entry) != nil {
-		return nil
+	if ip := net.ParseIP(entry); ip != nil {
+		return refuseMappedIPv4(entry, ip)
 	}
-	if _, _, err := net.ParseCIDR(entry); err == nil {
-		return nil
+	if ip, _, err := net.ParseCIDR(entry); err == nil {
+		return refuseMappedIPv4(entry, ip)
+	}
+	if strings.Contains(entry, "://") {
+		return fmt.Errorf("egress allow entry %q is a URL; entries are hosts only", entry)
 	}
 	if strings.Contains(entry, "/") {
 		return fmt.Errorf("egress allow entry %q is not a valid CIDR", entry)
@@ -124,6 +127,19 @@ func notHostNameRune(r rune) bool {
 	return true
 }
 
+// refuseMappedIPv4 refuses an IPv4 address written in IPv6's mapped form
+// (::ffff:a.b.c.d). Its prefix length counts the 96 bits of the mapping, so
+// ::ffff:8.0.0.0/101 is 8.0.0.0/5: compared against IPv4 entries by length
+// it reads as narrower than it is, which is how a child could be judged
+// within a creator it is wider than (Covers). Written as IPv4, it is compared
+// as what it is.
+func refuseMappedIPv4(entry string, ip net.IP) error {
+	if ip.To4() != nil && strings.Contains(entry, ":") {
+		return fmt.Errorf("egress allow entry %q is an IPv4 address in IPv6 form; write it as IPv4", entry)
+	}
+	return nil
+}
+
 // Matcher answers whether a destination is in an allow list.
 type Matcher struct {
 	domains []string
@@ -136,6 +152,9 @@ type Matcher struct {
 func NewMatcher(allow []string) Matcher {
 	var m Matcher
 	for _, entry := range Normalize(allow) {
+		if ValidateEntry(entry) != nil {
+			continue
+		}
 		if ip := net.ParseIP(entry); ip != nil {
 			m.ips = append(m.ips, ip)
 		} else if _, cidr, err := net.ParseCIDR(entry); err == nil {
@@ -191,6 +210,11 @@ func Covers(outer, child Policy) bool {
 		return false
 	}
 	for _, entry := range Normalize(child.Allow) {
+		// An entry that is not valid matches nothing (NewMatcher), so it
+		// reaches nothing the outer policy could need to cover.
+		if ValidateEntry(entry) != nil {
+			continue
+		}
 		if !slices.ContainsFunc(Normalize(outer.Allow), func(o string) bool { return entryCovers(o, entry) }) {
 			return false
 		}

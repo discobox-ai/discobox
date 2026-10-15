@@ -16,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 // SandboxResourceType is the reconcile-engine resource type for sandboxes. The
@@ -274,7 +275,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
-		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+		if updateErr := r.updateAfterCreate(ctx, sandbox, generation); updateErr != nil {
 			return reconcile.Result{}, updateErr
 		}
 		return reconcile.Result{}, err
@@ -292,7 +293,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// in place, and reported as still provisioning.
 	if awaitingSourcePush(sandbox) {
 		sandbox.ObservedGeneration = generation
-		if err := r.update(ctx, sandbox, generation); err != nil {
+		if err := r.updateAfterCreate(ctx, sandbox, generation); err != nil {
 			return reconcile.Result{}, err
 		}
 		return armSourceAwaitTimeout(sandbox), nil
@@ -316,7 +317,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		landed := time.Now().UTC()
 		repair.LandedAt = &landed
 	}
-	if err := r.update(ctx, sandbox, generation); err != nil {
+	if err := r.updateAfterCreate(ctx, sandbox, generation); err != nil {
 		return reconcile.Result{}, err
 	}
 	return reconcile.Result{}, nil
@@ -362,6 +363,33 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 
 func (r *SandboxReconciler) softDelete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if err := r.store.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID, store.WithGeneration(generation)); err != nil {
+		if errors.Is(err, store.ErrGenerationConflict) {
+			return reconcile.Superseded("sandbox generation changed")
+		}
+		return err
+	}
+	return nil
+}
+
+// updateAfterCreate is update for the write that follows a create attempt, and
+// queues one more egress push in its transaction (ADR 26-10-01-032 §5). The
+// create carried the policy as it was merged when it started; a level change
+// committed since may have been pushed, and taken by the pool, before the
+// create's own write replaced it — so the last word has to be a push merged
+// after it. It is queued with this write, failed creates included, because
+// this is what saves the provider state the push finds the pool by: queued any
+// earlier, it could run first, find no provider state, and settle as though
+// the sandbox were not yet built.
+func (r *SandboxReconciler) updateAfterCreate(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+	if r.engine == nil {
+		return r.update(ctx, sandbox, generation)
+	}
+	if err := r.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
+			return err
+		}
+		return r.engine.MarkDirtyTx(ctx, txDB, SandboxEgressResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
+	}); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return reconcile.Superseded("sandbox generation changed")
 		}
@@ -445,7 +473,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		return secretState, err
 	}
 	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
-	r.markEgressAfterCreate(ctx, sb)
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return secretState, err
 	}
@@ -464,27 +491,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		setProviderState(sb, runtimeSandbox)
 	}
 	return secretState, nil
-}
-
-// markEgressAfterCreate queues one more egress push after a create attempt,
-// whatever it returned: the pool records a create's policy before anything that
-// can fail, and that policy was merged before this create was sent. A level
-// change committed since then may already have been pushed and taken, and this
-// create's write just replaced it, so the last word has to be a push merged
-// after it (ADR 26-10-01-032 §5).
-//
-// A mark that fails is logged and not returned. The container is what this
-// reconcile converges; recording it failed for a bookkeeping write would be
-// wrong about it, and a store that cannot take the mark cannot take the
-// reconcile's own write either, which retries the whole of it.
-func (r *SandboxReconciler) markEgressAfterCreate(ctx context.Context, sb *model.Sandbox) {
-	if r.engine == nil {
-		return
-	}
-	if err := r.engine.MarkDirty(ctx, SandboxEgressResourceType, SandboxDirtyID(sb.ProjectID, sb.ID)); err != nil {
-		slog.WarnContext(ctx, "could not queue the egress push after a create",
-			"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
-	}
 }
 
 func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
@@ -606,7 +612,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		// Merged from the levels as they stand, so a new container is restricted
 		// from its first request (ADR 26-10-01-032 §5). A failed read fails the
 		// reconcile rather than running unrestricted.
-		policy, err := effectiveEgress(ctx, r.store, sb)
+		policy, err := r.store.EffectiveSandboxEgress(ctx, sb)
 		if err != nil {
 			return CreateOptions{}, err
 		}

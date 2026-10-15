@@ -129,11 +129,11 @@ func (s *Service) findMark(ctx context.Context, projectID, jobID string) (*recon
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
-// markInProject scopes marks to a project: sandbox, sandbox sentinel and pool
+// markInProject scopes marks to a project: sandbox, sandbox sentinel, sandbox egress, and pool
 // ids carry a "projectID/" prefix.
 func markInProject(mark reconcile.DirtyResource, projectID string, _ map[string]struct{}) bool {
 	switch mark.ResourceType {
-	case sandboxes.SandboxResourceType, sandboxes.SentinelsResourceType, pools.PoolResourceType:
+	case sandboxes.SandboxResourceType, sandboxes.SentinelsResourceType, sandboxes.SandboxEgressResourceType, pools.PoolResourceType:
 		return strings.HasPrefix(mark.ResourceID, projectID+"/")
 	default:
 		return false

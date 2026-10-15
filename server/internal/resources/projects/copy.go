@@ -195,6 +195,12 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 		if err != nil {
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)
 		}
+		// A pool's egress level is one of its settings, and a copy of a pool
+		// restricted for the network it sits on is restricted the same
+		// (ADR 26-10-01-032).
+		if err := s.store.SetPoolEgress(ctx, project.ID, created.ID, sourcePool.Egress); err != nil {
+			return fmt.Errorf("%s: %w", sourcePool.Name, err)
+		}
 		// The copy's judge runs in the copy's own pool, not the one it was
 		// copied from (ADR 26-09-22-838 §1).
 		changed := false
@@ -221,6 +227,7 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 // The built-in harnesses are already seeded in the new project against the
 // server's current images, so a built-in copy overlays only what the configure
 // flow produced — files, the secrets it minted, and the Configured flag — and
+// the egress level a person set, and
 // never the image or its snapshotted label metadata, which would otherwise pin
 // the new project to whatever image the source happened to be seeded from.
 func (s *Service) copyHarnessConfigs(ctx context.Context, source *model.Project, projectID string) (string, error) {
@@ -283,6 +290,12 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 		config.ConfiguredFiles = sourceConfig.ConfiguredFiles
 		config.ConfiguredSecretIDs = configuredSecretIDs
 		if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
+			return nil, err
+		}
+		// The egress level a person set is theirs, like the configure flow's
+		// result; the hosts the image declares come with the new project's own
+		// seeding.
+		if err := s.store.SetHarnessConfigEgress(ctx, projectID, config.ID, sourceConfig.Egress); err != nil {
 			return nil, err
 		}
 	}

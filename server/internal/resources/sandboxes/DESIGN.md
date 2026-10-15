@@ -570,25 +570,31 @@ declares), and its own `Sandbox.Egress` — by the rule in
 `denyByDefault`, and then reaching the union of the allow lists
 ([ADR 26-10-01-032](../../../../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)).
 
-- **Merged, never stored.** `effectiveEgress` reads the levels as they stand
-  whenever it is needed: into `CreateOptions.Egress`, into each push, and for
-  the creator check. No copy exists to go stale.
+- **Merged, never stored.** `store.EffectiveSandboxEgress` reads the levels as
+  they stand whenever it is needed: into `CreateOptions.Egress`, into each
+  push, for the creator check, and in the sandbox role's authorizer, which
+  holds a discobox's writes to another to discoboxes within its policy
+  ([auth](../../auth/DESIGN.md)). No copy exists to go stale.
 - **A create carries it; a push delivers every change.** A level change —
   project, pool, harness config, or a sandbox's own — marks the
-  `sandbox-egress` resource of every sandbox in its scope that is meant to
+  `sandboxEgress` resource of every sandbox in its scope that is meant to
   exist (`MarkEgressChangedTx`), in the transaction that writes the level. Its
   reconciler (`sandboxEgressReconciler`) sends the merged policy alone through
   the provider's `Update`. It is separate from the sandbox's own reconcile on
   purpose: it reaches a settled failure, which ensure skips, and an
   unreachable pool is the engine's retry, never a failure recorded on the
   sandbox. A sandbox never built settles it: its create carries the policy.
-- **Every create is followed by a push.** `markEgressAfterCreate` marks the
-  delivery after each create attempt, failed ones included, so a push merged
-  before the create, and taken by the pool first, cannot be the policy left in
-  force. A mark that fails is logged, never recorded on the sandbox.
-- **The sandbox's own level is written by itself** (`store.SetSandboxEgress`)
-  and omitted from `UpdateSandbox`, whose generation guard a policy change does
-  not move: a reconcile that loaded the row first would put the old level back.
+- **Every create is followed by a push.** `updateAfterCreate`, the write
+  that ends each create attempt, failed ones included, marks the delivery in
+  its own transaction, so a push merged before the create, and taken by the
+  pool first, cannot be the policy left in force. It is marked with that write
+  and not before it, because that write saves the provider state the push
+  finds the pool by.
+- **A level is written by itself.** `store.SetSandboxEgress`,
+  `SetProjectEgress`, `SetPoolEgress` and `SetHarnessConfigEgress` write a
+  level and nothing else, and the whole-row saves of those rows omit it: a
+  level change moves no generation, so a writer that loaded the row first
+  would otherwise put the old level back.
 - **Not in the manifest.** The manifest's fingerprint rebuilds the container,
   and a policy change must not.
 

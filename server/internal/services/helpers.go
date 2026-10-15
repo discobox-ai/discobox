@@ -354,6 +354,10 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.CreatedBySandboxID != nil {
 		fields["createdBySandboxId"] = *sandbox.CreatedBySandboxID
 	}
+	// The discobox's own egress level (ADR 26-10-01-032), not its effective
+	// policy: what a person set here, and what `box update` keeps when it is
+	// given only one of its two flags.
+	fields["egress"] = sandbox.Egress
 	if sandbox.HarnessConfig != nil {
 		fields["harnessConfig"] = sandbox.HarnessConfig
 	}

@@ -2,9 +2,11 @@ package proxyagent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -98,5 +100,48 @@ func TestSandboxEgressRestrictsOnlyThatSandbox(t *testing.T) {
 	}
 	if _, ok := doc.Egress["sb-1"]; ok {
 		t.Fatal("removing the sandbox's policy left its egress entry")
+	}
+}
+
+// The proxy unit applies the policy file before it serves, and refuses to start
+// on one it cannot read: serving first would let every restricted sandbox out
+// unfiltered until the watcher caught up.
+func TestPolicyFileIsLoadedBeforeServing(t *testing.T) {
+	root := withTestRoot(t)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
+	if err != nil {
+		t.Fatalf("prepare bundle: %v", err)
+	}
+	cfg := proxy.DefaultConfig()
+	cfg.ListenAddress = "127.0.0.1:0"
+	cfg.CertDir = bundle.Dir
+	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
+	cfg.Recording.Enabled = false
+	server, err := proxy.NewServer(context.Background(), cfg, bundle, nil)
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	policy := newPolicyPublisher(server, cfg, newActivations(), nil)
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+
+	if err := policy.loadFile(path, nil); err != nil {
+		t.Fatalf("a pool with no policy file yet: %v", err)
+	}
+	if err := SetSandboxEgress(root, testProjectID, testPoolID, "sb-1", egress.Policy{DenyByDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.loadFile(path, nil); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, err := server.ProbeTLS(context.Background(), "sb-1", "example.com:443"); !errors.Is(err, proxy.ErrProbeHostDenied) {
+		t.Fatalf("probe for a restricted sandbox: %v, want the host denied by the loaded policy", err)
+	}
+
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.loadFile(path, nil); err == nil {
+		t.Fatal("a policy file that does not parse was loaded; the proxy would serve unfiltered")
 	}
 }
