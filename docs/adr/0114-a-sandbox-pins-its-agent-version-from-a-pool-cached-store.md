@@ -1,6 +1,6 @@
 # 0114 — A sandbox pins its agent version from a pool-cached store
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's "an existing pin is never rewritten" narrowed by [26-10-15-848](26-10-15-848-the-opencode-harness-runs-opencode-2.md) §7: a pin into another package's store directory is replaced)
 - **Date**: 2026-09-12
 
 ## Context
