@@ -201,7 +201,7 @@ func trustAskSections(req CredentialRequest, now time.Time) []section {
 
 	what := section{label: "what it will send there"}
 	for _, use := range req.Uses {
-		what.lines = append(what.lines, line{text: use, bullet: true})
+		what.lines = append(what.lines, useLines(use, tonePlain)...)
 	}
 	if req.Justification != "" {
 		if len(what.lines) > 0 {

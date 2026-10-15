@@ -1005,8 +1005,7 @@ func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() 
 		uses.lines = []line{{text: "none — a standing grant authorizes the credential without enumerating what it is for", tone: toneDim}}
 	}
 	for _, use := range grant.Uses {
-		uses.fields = append(uses.fields,
-			field{label: use.ID, value: use.Description})
+		uses.fields = append(uses.fields, useFields(use.ID, use.Description)...)
 	}
 	switch {
 	case len(grant.Uses) > 0 && grant.Delegate:

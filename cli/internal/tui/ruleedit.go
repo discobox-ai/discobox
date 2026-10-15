@@ -624,7 +624,7 @@ func (m *Model) ruleChangeSections(was, now Rule, c RuleChange, at time.Time) []
 	if c.Uses != nil {
 		before := section{label: "what it approved before"}
 		for _, use := range was.Uses {
-			before.lines = append(before.lines, line{text: use, bullet: true, tone: toneDim})
+			before.lines = append(before.lines, useLines(use, toneDim)...)
 		}
 		out = append(out, before)
 	}
