@@ -671,7 +671,7 @@ type RuleAsk struct {
 func (a RuleAsk) Job() judge.Job {
 	return judge.Job{
 		Kind:       judge.KindRule,
-		Purpose:    strings.Join(a.RuleUses, "\n"),
+		Purposes:   a.RuleUses,
 		Host:       strings.Join(a.Hosts, ", "),
 		Credential: a.Credential,
 		Round:      1,

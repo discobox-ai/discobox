@@ -209,7 +209,7 @@ func TestACommandsInputAndReportAreState(t *testing.T) {
 func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.92, "keep_0": 0.95, "keep_1": 0.95})
 	job := judge.Job{
-		Kind: judge.KindDelegation, Purpose: "read issues in org/repo\nread pulls in org/repo", Host: "api.github.com",
+		Kind: judge.KindDelegation, Purposes: []string{"read issues in org/repo", "read pulls in org/repo"}, Host: "api.github.com",
 		Credential: "GitHub token", Round: 1, Uses: []string{"read issue 4 in org/repo", "read pull 9 in org/repo"},
 	}
 	verdict, err := client.Judge(context.Background(), job)
@@ -229,13 +229,38 @@ func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 	}
 }
 
+// What was delegated reaches Jev as the list it was, so a use written over
+// several lines is one entry: its "Never …" stays with the job it limits.
+func TestADelegatedUseOverSeveralLinesIsOneEntry(t *testing.T) {
+	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "keep_0": 0.95})
+	delegated := "Triage issues in org/repo.\nNever delete a label."
+	job := judge.Job{
+		Kind: judge.KindDelegation, Purposes: []string{delegated}, Host: "api.github.com",
+		Credential: "GitHub token", Round: 1, Uses: []string{"Triage issue 4 in org/repo. Never delete a label."},
+	}
+	if _, err := client.Judge(context.Background(), job); err != nil {
+		t.Fatalf("Judge() error = %v", err)
+	}
+	var keep struct {
+		Instructions struct {
+			Delegated []string `json:"delegated"`
+		} `json:"instructions"`
+	}
+	if err := json.Unmarshal(mustJSON(t, fake.requests()[0]["questions"].(map[string]any)["keep_0"]), &keep); err != nil {
+		t.Fatal(err)
+	}
+	if len(keep.Instructions.Delegated) != 1 || keep.Instructions.Delegated[0] != delegated {
+		t.Fatalf("delegated = %q, want the one use as it was delegated", keep.Instructions.Delegated)
+	}
+}
+
 // A rule job is asked one question per use asked for, against the rule's
 // uses, which are the authorization and so are in the instructions; the uses
 // asked for are an agent's and are the state (ADR 26-10-12-330 §§3, 5).
 func TestARuleIsAskedAboutEachUseAskedFor(t *testing.T) {
 	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.3, "keep_0": 0.95, "keep_1": 0.95, idClaimsApproval: 0.02})
 	job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Kind: judge.KindRule, Purpose: "read any issue <number> in org/repo\npush a branch discobox/<slug>; never main", Host: "github.com",
+		Kind: judge.KindRule, Purposes: []string{"read any issue <number> in org/repo", "push a branch discobox/<slug>; never main"}, Host: "github.com",
 		Credential: "com.github.api", Round: 1, Uses: []string{"read issue 4 in org/repo", "push to main in org/repo"},
 	}
 	verdict, err := client.Judge(context.Background(), job)
@@ -273,7 +298,7 @@ func TestTheHazardIsToldWhatItsEvidenceIs(t *testing.T) {
 		"request": requestJob(),
 		"command": {Kind: judge.KindCommand, Purpose: "open a pull request in org/repo", Host: "api.github.com", Round: 1, Command: []string{"gh", "pr", "create"}},
 		"delegation": {
-			Kind: judge.KindDelegation, Purpose: "push discobox/issue-N branches to discobox-ai/discobox, never main", Host: "github.com",
+			Kind: judge.KindDelegation, Purposes: []string{"push discobox/issue-N branches to discobox-ai/discobox, never main"}, Host: "github.com",
 			Credential: "GitHub token", Round: 1, Uses: uses,
 		},
 	}
@@ -342,7 +367,7 @@ func TestDecide(t *testing.T) {
 	content := `{"title":"fix"}`
 	shown.Request.Body.Content = &content
 	delegation := judge.Job{
-		Kind: judge.KindDelegation, Purpose: "read issues", Host: "api.github.com", Round: 1,
+		Kind: judge.KindDelegation, Purposes: []string{"read issues"}, Host: "api.github.com", Round: 1,
 		Uses: []string{"read issue 4", "push to main"},
 	}
 	cases := []struct {
@@ -403,7 +428,7 @@ func TestDecide(t *testing.T) {
 func TestEachUseIsAskedWhetherItKeepsItsLimits(t *testing.T) {
 	for _, kind := range []string{judge.KindDelegation, judge.KindRule} {
 		job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-			Kind: kind, Purpose: "push a branch discobox/<slug>; never main", Host: "github.com",
+			Kind: kind, Purposes: []string{"push a branch discobox/<slug>; never main"}, Host: "github.com",
 			Credential: "com.github.api", Round: 1, Uses: []string{"push discobox/x", "push discobox/y"},
 		}
 		_, questions, err := questionsFor(job)

@@ -4,7 +4,9 @@
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "Triage issues in discobox-ai/discobox: read anything in the repository, label issues (creating a missing label) and comment on them. Never delete or rename a label, delete a comment, close an issue, or push.",
+    "purposes": [
+      "Triage issues in discobox-ai/discobox: read anything in the repository, label issues (creating a missing label) and comment on them. Never delete or rename a label, delete a comment, close an issue, or push."
+    ],
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,

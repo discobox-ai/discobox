@@ -26,7 +26,7 @@ func shown(content string) *string { return &content }
 // delegationJob is a discobox about to hand on read access it was delegated.
 func delegationJob() judge.Job {
 	return judge.Job{
-		Kind: judge.KindDelegation, Purpose: "read issues in org/repo, for the discoboxes I create",
+		Kind: judge.KindDelegation, Purposes: []string{"read issues in org/repo, for the discoboxes I create"},
 		Host: "api.github.com", Credential: "github", Round: 1,
 		Uses: []string{"gh api GET repos/org/repo/issues/43"},
 	}
@@ -41,7 +41,7 @@ func withDelegation(change func(*judge.Job)) judge.Job {
 // ruleJob is a discobox's ask read against a rule a person wrote.
 func ruleJob() judge.Job {
 	return judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Kind: judge.KindRule, Purpose: "read any issue <number> in org/repo\npush a branch discobox/<slug> to org/repo; never main",
+		Kind: judge.KindRule, Purposes: []string{"read any issue <number> in org/repo", "push a branch discobox/<slug> to org/repo; never main"},
 		Host: "github.com", Credential: "com.github.api", Round: 1,
 		Uses: []string{"gh api GET repos/org/repo/issues/43"},
 	}
@@ -182,6 +182,17 @@ func TestAJobIsJudgeableOrRefusedBeforeAModelReadsIt(t *testing.T) {
 		}), false},
 		{"a request carrying an input", withRequest(func(j *judge.Job) { j.Stdin = &judge.Input{Content: "x"} }), false},
 		{"a delegation saying where it runs", withDelegation(func(j *judge.Job) { j.Reported = &judge.Reported{WorkingDirectory: "/"} }), false},
+		// The uses a delegation or rule is judged against are a list, so one
+		// that runs over several lines is still one use.
+		{"a delegated use written over several lines", withDelegation(func(j *judge.Job) {
+			j.Purposes = []string{"Read issues in org/repo.\nNever close an issue."}
+		}), true},
+		{"a delegation with one purpose rather than its list", withDelegation(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "read issues in org/repo", nil
+		}), false},
+		{"a delegation with a purpose beside its list", withDelegation(func(j *judge.Job) { j.Purpose = "read issues in org/repo" }), false},
+		{"a rule with a blank use", withRule(func(j *judge.Job) { j.Purposes = append(j.Purposes, " ") }), false},
+		{"a command with a list of purposes", withCommand(func(j *judge.Job) { j.Purposes = []string{"open a pull request in org/repo"} }), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

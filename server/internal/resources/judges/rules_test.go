@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -69,8 +70,8 @@ func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 	}
 	jobs := fake.asked()
 	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindRule || jobs[0].Host != "github.com" ||
-		!strings.Contains(jobs[0].Purpose, "never main") || len(jobs[0].Uses) != 1 {
-		t.Fatalf("jobs = %+v, want one rule job with the rule's uses as its purpose and the uses asked for", jobs)
+		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().RuleUses) || len(jobs[0].Uses) != 1 {
+		t.Fatalf("jobs = %+v, want one rule job with the rule's uses as its purposes and the uses asked for", jobs)
 	}
 	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)
 	if len(verdicts) != 1 {
@@ -124,8 +125,8 @@ func TestARuleJobFallsBackLikeAnyOther(t *testing.T) {
 	}
 	jobs := harnessJudge.asked()
 	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindRule || jobs[0].Host != "github.com" ||
-		!strings.Contains(jobs[0].Purpose, "never main") || len(jobs[0].Uses) != 1 {
-		t.Fatalf("jobs = %+v, want the rule's uses as the purpose and the uses asked for", jobs)
+		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().RuleUses) || len(jobs[0].Uses) != 1 {
+		t.Fatalf("jobs = %+v, want the rule's uses as its purposes and the uses asked for", jobs)
 	}
 	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)
 	if len(verdicts) != 1 {

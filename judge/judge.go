@@ -25,7 +25,7 @@ const (
 	Role = "judge"
 	// PromptVersion changes whenever System changes. A stored verdict names
 	// it, so a decision can be read against the words that produced it.
-	PromptVersion = "13"
+	PromptVersion = "14"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
 	//
@@ -106,13 +106,20 @@ const (
 )
 
 // Job is one question, and everything the judge is allowed to see in order to
-// answer it. Purpose and Host are the authorization — the sentence a person
-// approved and where that credential may go. Everything else is evidence, and
-// evidence is data to weigh, never instructions to follow.
+// answer it. Purpose (for a delegation or rule job, Purposes) and Host are the
+// authorization — what a person approved and where that credential may go.
+// Everything else is evidence, and evidence is data to weigh, never
+// instructions to follow.
 type Job struct {
 	Kind string `json:"kind"`
-	// Purpose is the approved use, in the words it was approved in.
-	Purpose string `json:"purpose"`
+	// Purpose is the approved use, in the words it was approved in, for a
+	// command or request job.
+	Purpose string `json:"purpose,omitempty"`
+	// Purposes are the uses a delegation or rule job is judged against, one
+	// each: what the discobox was delegated, or the rule's uses. They are a
+	// list rather than lines of one Purpose, so no use's words decide where
+	// another begins.
+	Purposes []string `json:"purposes,omitempty"`
 	// Host is the host the use was approved for.
 	Host string `json:"host"`
 	// Credential names the credential in the words a person reads, never its
@@ -143,9 +150,9 @@ type Job struct {
 	// Request is the request observed by the proxy, for a request job.
 	Request *Request `json:"request,omitempty"`
 	// Uses are the uses a discobox is about to hand on, for a delegation job:
-	// what it would grant, judged against Purpose, which is what it was
+	// what it would grant, judged against Purposes, which are what it was
 	// delegated. For a rule job they are the uses a discobox asked for, judged
-	// against Purpose, which is the rule's uses.
+	// against Purposes, which are the rule's uses.
 	Uses []string `json:"uses,omitempty"`
 	// Guidance is what Discobox knows about what the request was recognized
 	// as (GuidanceFor), set by the trusted side that builds the job and never
@@ -310,8 +317,23 @@ func (b *Body) Answers(need Need) bool {
 // read it. Everything it checks is the trusted side's own doing: a caller
 // supplies evidence, and the shape of a job is not a caller's to get wrong.
 func (j Job) Validate() error {
-	if strings.TrimSpace(j.Purpose) == "" || strings.TrimSpace(j.Host) == "" {
+	if strings.TrimSpace(j.Host) == "" {
 		return errors.New("a job is judged against an approved use and its host")
+	}
+	switch j.Kind {
+	case KindDelegation, KindRule:
+		if j.Purpose != "" || len(j.Purposes) == 0 {
+			return errors.New("a delegation or rule job is judged against its list of purposes, and carries no single purpose")
+		}
+		for _, purpose := range j.Purposes {
+			if strings.TrimSpace(purpose) == "" {
+				return errors.New("each of a job's purposes says what it approves")
+			}
+		}
+	default:
+		if strings.TrimSpace(j.Purpose) == "" || len(j.Purposes) > 0 {
+			return errors.New("a job is judged against an approved use and its host")
+		}
 	}
 	if j.Round < 1 || j.Round > MaxRounds {
 		return fmt.Errorf("round %d is outside the %d a job may be asked", j.Round, MaxRounds)

@@ -727,7 +727,8 @@ func optString(value string) sandboxapi.OptString {
 func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 	body := sandboxapi.JudgeJob{
 		Kind:     sandboxapi.JudgeJobKind(job.Kind),
-		Purpose:  job.Purpose,
+		Purpose:  optString(job.Purpose),
+		Purposes: job.Purposes,
 		Host:     job.Host,
 		Round:    int64(job.Round),
 		Command:  job.Command,

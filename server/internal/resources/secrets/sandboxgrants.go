@@ -110,7 +110,11 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		if err := guardGrantTTL(secret, ttl); err != nil {
 			return SandboxGrants{}, err
 		}
-		uses, err := mintUseIDs(convertAPIUses(in.Uses))
+		given, err := convertAPIUses(in.Uses)
+		if err != nil {
+			return SandboxGrants{}, err
+		}
+		uses, err := mintUseIDs(given)
 		if err != nil {
 			return SandboxGrants{}, err
 		}

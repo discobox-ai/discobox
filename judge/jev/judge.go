@@ -141,7 +141,7 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 		}, nil
 	case judge.KindDelegation:
 		delegated := map[string]any{
-			"delegated":  strings.Split(job.Purpose, "\n"),
+			"delegated":  job.Purposes,
 			"credential": job.Credential,
 			"host":       job.Host,
 			"note":       "Each line of `delegated` is a use a person approved this discobox to hand the credential on for. It is the authorization.",
@@ -166,7 +166,7 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 		// The rule's uses are a person's, and name a class; the uses asked for
 		// are an agent's, and are the state (ADR 26-10-12-330 §3).
 		rule := map[string]any{
-			"rule_uses":  strings.Split(job.Purpose, "\n"),
+			"rule_uses":  job.Purposes,
 			"credential": job.Credential,
 			"host":       job.Host,
 			"note":       "Each line of `rule_uses` is something a person said may be approved without asking. It is the authorization. A line usually names a class, such as any issue in a repository or a branch named by a pattern like discobox/<slug>, where a placeholder in angle brackets stands for any one value of that kind, and states limits such as \"never main\".",

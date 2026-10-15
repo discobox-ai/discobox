@@ -2,6 +2,7 @@ package secrets_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -104,5 +105,17 @@ func TestADelegationGrantRefusesTheWrongShape(t *testing.T) {
 			_, err := svc.CreateSecretGrant(ctx, "project-1", tc.body)
 			requireStatus(t, err, tc.want)
 		})
+	}
+}
+
+// A grant a person makes names its uses on one line each, as an ask does.
+func TestAGrantsUseIsWrittenOnOneLine(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	body := delegationGrant(secret.ID)
+	body.Uses = serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "push a branch to org/repo\r\nnever main"}})
+	if _, err := svc.CreateSecretGrant(ctx, "project-1", body); err == nil || !strings.Contains(err.Error(), "one line") {
+		t.Fatalf("err = %v, want the use refused for running over several lines", err)
 	}
 }

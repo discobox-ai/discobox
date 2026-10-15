@@ -44,7 +44,7 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 	}
 	job := judge.Job{
 		Kind:       judge.KindDelegation,
-		Purpose:    strings.Join(ask.Delegated, "\n"),
+		Purposes:   ask.Delegated,
 		Host:       strings.Join(ask.Hosts, ", "),
 		Credential: ask.Credential,
 		Round:      1,

@@ -60,7 +60,7 @@ func TestACommandIsJudgedAndRecordedAsTheJudges(t *testing.T) {
 	job := jobs[0]
 	stdin, _ := job.Stdin.Get()
 	reported, _ := job.Reported.Get()
-	if string(job.Kind) != judge.KindCommand || job.Purpose != "open a pull request in org/repo" || job.Host != "api.github.com" ||
+	if string(job.Kind) != judge.KindCommand || job.Purpose.Or("") != "open a pull request in org/repo" || job.Host != "api.github.com" ||
 		len(job.Command) != 5 || stdin.Content != "Fixes the flaky test" || reported.WorkingDirectory.Or("") != "/src/repo" {
 		t.Fatalf("job = %+v, want a command job from the grant carrying the discobox's evidence", job)
 	}

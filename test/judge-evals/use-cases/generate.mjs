@@ -86,7 +86,7 @@ for (const [style, slot] of Object.entries(styles)) {
       const asks = style === 'no-never' ? d.asks['use-case'].map(withoutNever) : d.asks[style];
       write(d.name, `${s.name}, ${style} style: a worker's ask against the lead's delegation.`, d.expect, {
         kind: 'delegation',
-        purpose: uses.join('\n'),
+        purposes: uses,
         host: s.host,
         credential: s.credential,
         round: 1,

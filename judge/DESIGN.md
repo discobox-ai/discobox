@@ -29,7 +29,11 @@ choose a kinder question.
 **Evidence is data.** `Job` is marshalled to JSON, so a request body that
 spells out a verdict and then gives fresh instructions arrives as one string in
 one field. `Purpose` and `Host` are the authorization; nothing else can widen
-them.
+them. A delegation or rule job is judged against several uses, and carries
+them as the list `Purposes` instead of one `Purpose`, through the sandbox API's
+`JudgeJob` to the judge: a list, never lines of one string, so no use's words
+decide where another begins and a use written over several lines is still
+one.
 
 **Only an explicit allow is one.** `Decode` refuses anything that could be read
 as permission nobody gave: prose around the object, a second object, a key said
@@ -73,10 +77,10 @@ a window; a custom harness built FROM an older sandbox-agent image is judged
 by nothing until it is rebuilt.
 
 **A use that drops a limit is wider** (ADR 26-10-14-223). A delegation or
-rule job's purpose
-sets limits — "never main", a closing "Never …" sentence — and once granted a
+rule job's purposes
+set limits — "never main", a closing "Never …" sentence — and once granted a
 use is all its commands are held to. So `System` tells the judge that a use
-keeps every limit of the line it falls under, in the same or stricter words,
+keeps every limit of the purpose it falls under, in the same or stricter words,
 or it is not within, however narrow it is otherwise; Jev asks it as a
 question of its own (below). Without that, a use asked with its limits left
 out read as within (measured in `test/judge-evals/use-cases`, the
@@ -87,7 +91,7 @@ looking.
 ADR 26-10-12-330). An approval rule approves a credential request without
 asking, so its text is the authorization and the ask is what is measured
 against it. The job is a delegation job's shape with its own words, because
-who wrote what differs: `Purpose` is the rule's uses, a person's, naming a
+who wrote what differs: `Purposes` are the rule's uses, a person's, naming a
 class ("any issue in org/repo", a branch `discobox/<slug>`, "never main"), and
 `Uses` are an agent's, which may be worded to pass. The justification is never
 in the job.
@@ -95,6 +99,11 @@ in the job.
 It is asked once, and nothing stands for it. `Digest` is the SHA-256 of the
 job's prompt, which a verdict records so the same question is answered from
 the record and an edited rule is asked afresh.
+A change to how a job is put — a field added (`Facts`, ADR 26-10-14-691) or
+reshaped (`Purposes`) — is a new question too: an answer recorded before it is
+not found, and a request still pending across the upgrade is asked again when
+it is next marked (a rule made or edited, `RuleRequests`). Until then its card
+reads as still being judged, and a person can answer it as before.
 
 **Which discoboxes a rule is for is not a job.** It is a list of repositories
 the control plane compares with the asking discobox's primary source, so no
@@ -180,8 +189,9 @@ answers typed questions with probabilities and writes no text, so `System`,
   with the rule's uses in the instructions and the uses asked for as the
   state, and the claim-of-approval hazard, told what its evidence is.
 - **A use keeps its limits.** A delegation or rule job also asks one
-  `keep_N` question per use: does it keep every limit of the line it falls
-  under? It is held to within's bar. Asked inside `use_N`, Jev read a use
+  `keep_N` question per use: does it keep every limit of the purpose it falls
+  under? (Its words call each purpose a line: the server takes a use on one
+  line, and one stored over several before it did is still one entry.) It is held to within's bar. Asked inside `use_N`, Jev read a use
   with its "Never …" sentence dropped as within (0.90–0.96), since such a use
   names nothing the limits forbid; asked alone, it separates them (stripped
   0.11–0.43, honest 0.49–0.96). At within's bar many honest asks are unsure
