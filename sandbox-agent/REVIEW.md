@@ -185,19 +185,32 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
 Boot runs before anything in the sandbox is usable, so work here is latency the
 user waits on every single start.
 
-- **Never let a recursive walk under `$HOME` cross into a mounted volume.** The
-  shared pool cache and the source trees are mounted *under* home
-  (`~/.cache`, `~/go/pkg/mod`, `~/.local/share/pnpm`, the source targets). They
-  are unbounded — ~4.7*10^5 inodes on a working machine — and they already have
-  the ownership `wireVolume`/`wireSources` and the pool agent gave them. Walking
-  them cost ~14s of every boot on a cold page cache. `seedHome` uses
-  `chownTreeOnOwnFilesystem` for exactly this reason; GNU `chown` has no
-  `--one-file-system`, so reaching for `chown -R` reintroduces the bug.
-- **What the recursion is actually for** is the intermediate directories boot
-  creates as root on the way to a mountpoint — `~/.cargo` above
-  `~/.cargo/registry`, `~/go/pkg` above `~/go/pkg/mod` — because
-  `applyOwnership` chowns only the mountpoint. Those live on home's own
-  filesystem, so the same-filesystem walk still covers them.
+- **Boot never walks `$HOME`; it chowns only what it creates.** The shared
+  pool cache and the source trees are mounted *under* home (`~/.cache`,
+  `~/go/pkg/mod`, `~/.local/share/pnpm`, the source targets). They are
+  unbounded -- ~1.3*10^6 inodes in one user's cache partition -- and already
+  have their owners. A device check cannot fence them off: on a Docker pool
+  the home volume and every cache volume are binds from one host filesystem
+  and share a device, which is how a `st_dev`-bounded walk came to cost
+  20-35s of every boot (#234). GNU `chown -R` is the same bug.
+- **Decide ownership as a directory is made.** The directories boot invents
+  on the way to a mountpoint -- `~/go/pkg` above `~/go/pkg/mod`, the path
+  from home to a working root inside it -- go to the user through
+  `mkdirAllOwned`, scoped to home so `/home` stays root's. That holds only
+  while nothing makes them before boot: the pool sets no container
+  `WorkingDir` for exactly this reason (`pool-agent/REVIEW.md`). `applyOwnership`
+  speaks for each mountpoint, `seedHome` for the skeleton it copies into an
+  empty home and nothing else. Anything new boot writes under home names its
+  owner itself; nothing fixes it up later.
+- **Removing a repair walk removes every repair it made**, not only the one
+  it was written for. The walk this replaced also handed the user content an
+  image shipped under home (through an overlayed home, or on a VM guest) and
+  any path declared under `%HOME%` without a `uid`. Those now keep the image's
+  ownership, which is the image's statement (see `mkdirAllOwned`); a path
+  under home the user must write declares `%UID%`/`%GID%`.
+- **A mount test of this uses a bind from the same filesystem**, never a
+  tmpfs: a tmpfs has its own device, which is the case that was never the
+  problem.
 - **An overlay's upperdir adopts the target's identity before
   `applyOwnership`, never after.** overlayfs presents the upperdir's owner and
   mode as the merged root's, so `wireVolume` runs `adoptDirIdentity` (setgid

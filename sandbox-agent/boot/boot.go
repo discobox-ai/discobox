@@ -80,9 +80,8 @@ func Provision(logger *slog.Logger, path string) error {
 //
 // It runs once per sandbox, not on every start. The agent's start is not a
 // boot: a restart after a crash finds the sandbox user's processes running,
-// and seedHome's walk of a home with no volumes mounted under it -- module
-// caches, checkouts -- costs seconds and takes back files the user gave to
-// somebody else. provisionedPath records whose sandbox this disk was
+// and re-running account changes and re-seeding under them is a second boot
+// they did not ask for. provisionedPath records whose sandbox this disk was
 // provisioned for, on the disk itself, so a stopped and restarted machine is
 // not provisioned again either.
 func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
@@ -227,19 +226,19 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.seedHome(id); err != nil {
 		return fmt.Errorf("seed home: %w", err)
 	}
-	// After seedHome: it chowns the home tree recursively, so a .gitconfig
-	// written before it would be owned correctly only by coincidence.
+	// After seedHome: it fills only an empty home from /etc/skel, so a
+	// .gitconfig written before it would leave the sandbox with no skeleton.
 	if err := b.seedGitConfig(id, bootstrap.Git); err != nil {
 		return fmt.Errorf("seed git config: %w", err)
 	}
 	// After seedHome for the same reason, and before wireSources only
-	// because it reads the manifest's targets rather than the trees: it
-	// writes into home, which the recursive chown has already passed over.
+	// because it reads the manifest's targets rather than the trees. It
+	// writes straight to its final owner: nothing chowns home afterwards.
 	if err := b.seedDirenvConfig(id, bootstrap.Sources); err != nil {
 		return fmt.Errorf("seed direnv config: %w", err)
 	}
-	// After seedHome for the same reason: it chowns the home tree, and
-	// these are written straight to their final owner.
+	// After seedHome for the same reason, and written straight to their
+	// final owner.
 	if err := b.seedDesktopLaunchers(id, desktop.LauncherDir); err != nil {
 		return fmt.Errorf("seed desktop launchers: %w", err)
 	}

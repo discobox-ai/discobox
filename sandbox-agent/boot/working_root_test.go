@@ -10,7 +10,7 @@ import (
 
 // sandboxUID/sandboxGID stand in for the sandbox user: ids this process is not
 // running as, so a chown that never happened cannot pass for one that did.
-const sandboxUID, sandboxGID = 12345, 12345
+const sandboxUID, sandboxGID = 12345, 23456
 
 // The bug this pins: the image creates the working root as root, at a point
 // where the sandbox user does not exist yet, and wireSources chowns only the
@@ -70,6 +70,29 @@ func TestSeedWorkingRootGivesTheDirectoryToTheSandboxUser(t *testing.T) {
 	}
 }
 
+// A working root inside home has the directories between home and it made
+// here, as root, before home is wired. Nothing walks home afterwards, so they
+// are given away as they are made (#234).
+func TestSeedWorkingRootInsideHomeGivesAwayWhatItInvents(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("giving a directory to another user requires root")
+	}
+	home := filepath.Join(t.TempDir(), "home", "sandbox")
+	root := filepath.Join(home, "src", "discobox")
+	id := identity{uid: sandboxUID, gid: sandboxGID, name: "sandbox", home: home}
+	if err := newBooter().seedWorkingRoot(root, id); err != nil {
+		t.Fatalf("seedWorkingRoot: %v", err)
+	}
+	for _, p := range []string{home, filepath.Join(home, "src"), root} {
+		if uid, gid := ownerOf(t, p); uid != sandboxUID || gid != sandboxGID {
+			t.Errorf("%s owned by %d:%d, want %d:%d", p, uid, gid, sandboxUID, sandboxGID)
+		}
+	}
+	if uid, gid := ownerOf(t, filepath.Dir(home)); uid != 0 || gid != 0 {
+		t.Errorf("home's parent owned by %d:%d, want it left at 0:0", uid, gid)
+	}
+}
+
 // Creating the directory is the half that holds without root, so it is asserted
 // without it: the skip above must not be the only thing standing between a
 // working root that is never created and a green test run.
@@ -105,13 +128,13 @@ func TestMkdirAllOwnedGivesAwayOnlyWhatItCreated(t *testing.T) {
 	if err := os.MkdirAll(shipped, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	const imageUID, imageGID = 4321, 4321
+	const imageUID, imageGID = 4321, 8765
 	if err := os.Chown(shipped, imageUID, imageGID); err != nil {
 		t.Fatal(err)
 	}
 
 	target := filepath.Join(shipped, "repos", "api")
-	if err := mkdirAllOwned(target, sandboxUID, sandboxGID); err != nil {
+	if err := mkdirAllOwned(target, "/", sandboxUID, sandboxGID); err != nil {
 		t.Fatalf("mkdirAllOwned: %v", err)
 	}
 

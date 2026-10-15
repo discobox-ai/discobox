@@ -315,7 +315,15 @@ flowchart LR
   since the uid is resolved here and may exist only in the image (ADR 0025 §4). A
   data path is unpartitioned — it is this sandbox's alone. Sources are
   bind-mounted from `/.discobox/sources/<slug>` onto the targets named in the
-  manifest. See ADR 0007.
+  manifest. See ADR 0007. Boot never walks home to fix ownership: each
+  mountpoint is chowned as declared, the directories a nested path invents
+  inside home on the way to it (`~/go/pkg` above `~/go/pkg/mod`) are given to
+  the user as they are made (`mkdirAllOwned`), and `seedHome` chowns only the
+  `/etc/skel` copy it puts into an empty home. What boot did not create keeps
+  the owner it has: content an image ships under home, and a path declared
+  under home with no `uid`, stay as the image left them. On a Docker pool every
+  one of these volumes is a bind from one host filesystem, so a walk bounded by
+  device would cross into all of them (#234).
 - Homebrew ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)) is baked at
   `/home/linuxbrew/.linuxbrew` — the only prefix its
   bottles are built for, so any other makes every formula a source build — and
@@ -831,8 +839,8 @@ development images without a registry.
   opaquely, so clients just send this value.
 - Git authorship is seeded per key, never overwritten. `boot.seedGitConfig`
   applies `sandbox.json`'s `git` object to `<home>/.gitconfig` after `seedHome`
-  — after, because `seedHome` chowns the tree recursively, and because git's
-  lock-and-rename leaves a rewritten file owned by boot. It sets `user.name` and
+  — after, because `seedHome` fills only an empty home from `/etc/skel`, and
+  because git's lock-and-rename leaves a rewritten file owned by boot. It sets `user.name` and
   `user.email` independently, and only where `git config --get` resolves nothing;
   the unit is the key, not the file, since a `.gitconfig` holding only aliases
   has no identity and is exactly the case that needs seeding. The read is not
