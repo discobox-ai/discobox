@@ -1,6 +1,6 @@
 # 0147 — opencode publishes its lifecycle through an image-owned plugin
 
-- **Status**: Accepted
+- **Status**: Accepted (its plugin file and event list superseded by [26-10-15-848](26-10-15-848-the-opencode-harness-runs-opencode-2.md))
 - **Date**: 2026-09-23
 - **Relates to**: [ADR 0146](0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md),
   the canonical name a hook gains; [ADR 0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md),

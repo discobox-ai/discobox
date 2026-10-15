@@ -1,6 +1,6 @@
 # 0127 — The opencode harness runs opencode 1
 
-- **Status**: Accepted
+- **Status**: Accepted (§1, §2 and the rejection of opencode 2 superseded by [26-10-15-848](26-10-15-848-the-opencode-harness-runs-opencode-2.md))
 - **Date**: 2026-09-17
 
 ## Context
