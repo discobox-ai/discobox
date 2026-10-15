@@ -119,6 +119,16 @@ and that the process started after the build (no `ps` in the image: walk
   does, a build in the chain is failing and retried every 15s: read the
   `docker build` command from `/proc/<pid>/cmdline` and run it under a
   throwaway tag to see the error.
+- A secret's routes (ADR 26-10-02-924): `d secret create --token X --host
+  172.17.0.1 --route 172.17.0.1/PATH`, `d admin harnesses secrets bind <shell
+  harness id> ENV <secret>`, a `--scope harnessConfig` grant, then `d new -d
+  -H shell --no-source -p x`. A plain-HTTP origin on `0.0.0.0` echoing the
+  `Authorization` header shows swaps; `curl --path-as-is` keeps `..` and
+  `%2F` as sent. The pool's per-sentinel routes are in
+  `/var/lib/discobox/proxy/projects/<project>/pools/<pool>/secrets.json` in
+  the pool container. A route change shows as a `sandboxSentinels` job in `d
+  admin job ls`. `docker pause` of the pool makes deliveries hang rather than
+  fail, and the dev loop restarts a pool left paused (~25s).
 - Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
 - No dev pool up (the sandbox-agent image will not build), or the
   harness/sandbox-agent `:local` images missing (an isolated server then fails
