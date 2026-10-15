@@ -39,8 +39,10 @@ const stepStart = `{"type":"step_start","timestamp":1790119170476,"sessionID":"s
 const stepFinish = `{"type":"step_finish","timestamp":1790119170539,"sessionID":"ses_test",` +
 	`"part":{"id":"prt_finish","reason":"stop","messageID":"msg_test","sessionID":"ses_test","type":"step-finish"}}`
 
+// errorEvent is opencode 2's error event, as 2.0.29 printed it for a provider
+// it could not reach: the reason is error.message.
 const errorEvent = `{"type":"error","timestamp":1790119259408,"sessionID":"ses_test",` +
-	`"error":{"name":"APIError","data":{"message":"Error from provider (Console): free tier only"}}}`
+	`"error":{"type":"provider.http","message":"Error from provider (Console): free tier only"}}`
 
 func TestOpencodePromptTakesTheAnswerFromTheEventStream(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -165,6 +167,29 @@ func TestOpencodePromptFailsWhenOpencodeDoes(t *testing.T) {
 				t.Fatalf("stdout = %q, want nothing printed", out)
 			}
 		})
+	}
+}
+
+// Why a judge said nothing is the one thing worth knowing when it will not
+// answer, so the provider's own reason reaches stderr.
+func TestOpencodePromptSaysWhyItFailed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the image's scripts run on Linux")
+	}
+	dir := stubDir(t, "#!/bin/sh\ncat \"$DIR/stdout\"\nexit 1\n")
+	if err := os.WriteFile(filepath.Join(dir, "stdout"), []byte(errorEvent+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "sh", "prompt.sh", "--model", "judge", "--no-tools",
+		"--prompt", "judge this", "--output-schema", `{"type":"object"}`)
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir, "DIR="+dir)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Fatal("a failed run succeeded")
+	}
+	if !strings.Contains(stderr.String(), "opencode answered nothing: Error from provider (Console): free tier only") {
+		t.Fatalf("stderr = %q, want the provider's reason", stderr.String())
 	}
 }
 

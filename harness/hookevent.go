@@ -58,7 +58,8 @@ var canonicalHookEvents = map[string]map[string]string{
 	// while the turn goes on.
 	//
 	// agentStop is the root agent's alone: Copilot reports a subagent's end as
-	// subagentStop, so unlike opencode's session.idle no filter is needed.
+	// subagentStop, so unlike opencode's session.execution.succeeded no filter
+	// is needed.
 	"copilot": {
 		"sessionStart":        "SessionStart",
 		"sessionEnd":          "SessionEnd",
@@ -75,33 +76,37 @@ var canonicalHookEvents = map[string]map[string]string{
 	},
 	// opencode names its lifecycle in dot.lower.case and shares no spelling
 	// with Claude Code, so every entry here is a real translation rather than
-	// a recorded agreement. Its image publishes more events than appear here
-	// (ADR 0147): the ones left out — permission.replied, command.executed,
-	// todo.updated, session.deleted, server.connected, installation.updated —
-	// are opencode facts Claude Code has no word for, and are recorded under
-	// their own names alone.
+	// a recorded agreement. These are opencode 2's names (ADR 26-10-15-848);
+	// a hook recorded under an opencode 1 name keeps the canonical name it was
+	// stored with, since the backfill only fills empty ones. Its image
+	// publishes more events than appear here (ADR 0147): the ones left out —
+	// session.execution.started, session.execution.interrupted,
+	// permission.replied, session.deleted — are opencode facts Claude Code has
+	// no word for, and are recorded under their own names alone.
 	//
 	// session.deleted is deliberately not SessionEnd: Claude Code ends a
 	// session when it terminates, and opencode deletes one on an explicit
 	// removal, which is a different event that happens to sound alike.
+	// session.execution.failed is StopFailure because opencode reports a
+	// retried model error as session.retry.scheduled and fails the execution
+	// once, after the last retry.
 	//
-	// session.idle, session.created, session.error and session.compacted mean
-	// the root session's here, and only because the image's plugin publishes
-	// those four for the root alone. opencode publishes each of them per
-	// session, and its task tool runs sub-sessions, so unfiltered they would
-	// name a subagent's turn Stop — or its compaction PostCompact — and end a
-	// wait early (ADR 0147 §4). The name carries no session, so the
-	// distinction cannot be made here: if the plugin ever stops filtering,
-	// all four of these entries have to go.
+	// session.created, session.execution.succeeded, session.execution.failed
+	// and session.compaction.ended mean the root session's here, and only
+	// because the image's plugin publishes those four for the root alone.
+	// opencode publishes each of them per session, and its subagent tool runs
+	// child sessions, so unfiltered they would name a subagent's turn Stop —
+	// or its compaction PostCompact — and end a wait early (ADR 0147 §4). The
+	// name carries no session, so the distinction cannot be made here: if the
+	// plugin ever stops filtering, all four of these entries have to go.
 	"opencode": {
-		"tool.execute.before": "PreToolUse",
-		"tool.execute.after":  "PostToolUse",
-		"session.idle":        "Stop",
-		"session.error":       "StopFailure",
-		"session.created":     "SessionStart",
-		"permission.asked":    "PermissionRequest",
-		"session.compacted":   "PostCompact",
-		"file.edited":         "FileChanged",
+		"tool.execute.before":         "PreToolUse",
+		"tool.execute.after":          "PostToolUse",
+		"session.execution.succeeded": "Stop",
+		"session.execution.failed":    "StopFailure",
+		"session.created":             "SessionStart",
+		"permission.asked":            "PermissionRequest",
+		"session.compaction.ended":    "PostCompact",
 	},
 	// omp names its lifecycle in snake_case, so every entry is a translation.
 	// Its image's extension publishes three more events (ADR 26-10-14-718 §3)

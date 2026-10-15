@@ -89,7 +89,7 @@ func TestCanonicalHookEventsVersionChangesWithTheTable(t *testing.T) {
 			for k, v := range original["opencode"] {
 				changed[k] = v
 			}
-			changed["session.idle"] = "StopFailure"
+			changed["session.execution.succeeded"] = "StopFailure"
 			return map[string]map[string]string{"codex-cli": original["codex-cli"], "opencode": changed}
 		}()},
 		{"an entry removed", map[string]map[string]string{"codex-cli": original["codex-cli"]}},

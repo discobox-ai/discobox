@@ -18,16 +18,19 @@ layers:
     steps:
       - run: |
           set -eux
-          npm install -g opencode-ai
+          npm install -g @opencode/cli
           rm -rf /root/.npm
-          install -d -m 0755 /usr/local/libexec/discobox /etc/opencode
+          install -d -m 0755 /usr/local/libexec/discobox /usr/local/libexec/discobox/opencode-hook-plugin /etc/opencode
       - copy: {src: ., dst: /var/tmp/discobox-harness}
       - run: |
           set -eux
           s=/var/tmp/discobox-harness
           jq -c . $s/image.json > /usr/local/share/discobox/labels/io.discobox.image.v1
           install -m 0644 $s/agent.conf /usr/local/libexec/discobox/agent.conf
-          install -m 0644 $s/hook-plugin.js /usr/local/libexec/discobox/opencode-hook-plugin.js
+          install -m 0644 $s/hook-plugin/server.js /usr/local/libexec/discobox/opencode-hook-plugin/server.js
+          install -m 0644 $s/hook-plugin/package.json /usr/local/libexec/discobox/opencode-hook-plugin/package.json
+          install -m 0755 $s/credentials.sh /usr/local/libexec/discobox/opencode-credentials
+          install -m 0755 $s/model.sh /usr/local/libexec/discobox/opencode-model
           install -m 0644 $s/managed-config.json /etc/opencode/opencode.json
           install -m 0755 $s/configure.sh /usr/local/libexec/discobox/configure-opencode
           install -m 0755 $s/launch.sh /usr/local/bin/discobox-harness-run
