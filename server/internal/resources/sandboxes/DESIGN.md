@@ -47,7 +47,7 @@ flowchart LR
   every sandbox's fingerprint. An upgrade never moves a sandbox onto a harness
   config whose image is not published for its platform (`SandboxUpgradeTarget`).
 - A sandbox's pool must also run the kind of image its harness's image is
-  (`platform.ImageKind`, ADR 26-10-09-106 §4): a disco-vm harness for boxd is
+  (`platform.ImageKind`, ADR 26-10-09-106 §4): a VM harness for boxd is
   refused on a Docker pool of its own platform and placed on a boxd pool. Create
   and import refuse a pool whose agent has declared another kind with a 409
   naming both (`refuseOtherImageKind`), and placement makes the same check

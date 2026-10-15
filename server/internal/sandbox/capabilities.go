@@ -46,7 +46,7 @@ type ProviderConfigField struct {
 	// Immutable fields cannot change while the provider instance has pools.
 	// It is for a field that decides what made a pool's host, so that a new
 	// value would leave the hosts the old one made with nothing to remove
-	// them: a disco-vm pool's driver, whose machines only that driver can
+	// them: a vm pool's driver, whose machines only that driver can
 	// reach.
 	Immutable bool `json:"immutable,omitempty"`
 }

@@ -811,13 +811,13 @@ func TestImportWaitsOnAPoolThatHasNotDeclaredYet(t *testing.T) {
 func TestImportRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.DiscoVM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})
 	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
 	var status interface{ StatusCode() int }
-	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict || !strings.Contains(err.Error(), "the pool runs disco-vm images for the boxd driver") {
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict || !strings.Contains(err.Error(), "the pool runs VM images for the boxd driver") {
 		t.Fatalf("err = %v, want a 409 naming the pool's kind", err)
 	}
 	if provider.imported != nil {
@@ -826,16 +826,16 @@ func TestImportRefusesAPoolOfAnotherImageKind(t *testing.T) {
 }
 
 // An archive is a container discobox's tree, and a machine discobox is not
-// imported (ADR 26-10-09-106 defers it): a disco-vm harness is refused even on
+// imported (ADR 26-10-09-106 defers it): a VM harness is refused even on
 // a pool of its own driver, before the tree is read.
 func TestImportRefusesADiscoVMHarness(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
 	machine := configuredHarness(t, st, "machine", "Machine")
-	machine.ImageKind = platform.DiscoVM("boxd")
+	machine.ImageKind = platform.VM("boxd")
 	if err := st.UpdateHarnessConfig(ctx, machine); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.DiscoVM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})

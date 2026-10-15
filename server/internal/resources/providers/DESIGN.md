@@ -47,7 +47,7 @@ flowchart LR
   the pools. Delete the pools first.
 - For the same reason, update refuses (409, naming the fields) a config that
   changes a field the provider's definition marks `Immutable` while pools are
-  bound. Such a field decides what made a pool's host, as a disco-vm driver
+  bound. Such a field decides what made a pool's host, as a VM driver
   does, so a new value would leave hosts nothing can remove. Fields compare by
   compacted JSON value, and an absent field differs from a present one.
 - Startup reconciliation (`EnsureExistingSandboxProviderInstances`), run from

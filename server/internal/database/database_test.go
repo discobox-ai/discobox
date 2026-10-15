@@ -1737,7 +1737,7 @@ func TestMigrateGuessesNoPlatform(t *testing.T) {
 // kind of image to run (ADR 26-10-09-106 §4). A manifest-file harness is no OCI
 // image, and declared no driver, so it is left with no kind. A pool created afterwards has no
 // kind until its agent declares one, and a later start does not claim OCI for
-// it: a discovm pool runs no OCI image.
+// it: a vm pool runs no OCI image.
 func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
@@ -1811,6 +1811,75 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	}
 	if !gotFresh.ImageKind.IsZero() {
 		t.Errorf("pool created since: image kind = %q, want it left for its agent to declare", gotFresh.ImageKind)
+	}
+}
+
+// A kind a release before ADR 26-10-15-629 stored as discovm/<driver> is
+// respelled vm/<driver> on start, on pools and harnesses alike, and the rows
+// read back; other kinds are left as they are, and a second start is a no-op.
+func TestMigrateRespellsDiscoVMImageKinds(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, pool := range []model.Pool{
+		{ID: "pool-vm", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "vm"}},
+		{ID: "pool-oci", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "oci"}},
+	} {
+		if err := db.Write.Create(&pool).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "xcode", Name: "Xcode", Image: "file:///overlays/darwin-arm64/manifest.json"}
+	if err := db.Write.Create(&config).Error; err != nil {
+		t.Fatal(err)
+	}
+	// What a release before the respelling wrote, which no longer parses.
+	for table, rows := range map[string]map[string]string{
+		"pools":           {"pool-vm": "discovm/boxd", "pool-oci": "oci"},
+		"harness_configs": {"hc-1": "discovm/vz"},
+	} {
+		for id, kind := range rows {
+			if err := db.Write.Exec("UPDATE "+table+" SET image_kind = ? WHERE id = ?", kind, id).Error; err != nil {
+				t.Fatalf("store %s.%s: %v", table, id, err)
+			}
+		}
+	}
+
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for id, want := range map[string]platform.ImageKind{"pool-vm": platform.VM("boxd"), "pool-oci": platform.OCI} {
+		var got model.Pool
+		if err := db.Write.First(&got, "id = ?", id).Error; err != nil {
+			t.Fatalf("read %s: %v", id, err)
+		}
+		if got.ImageKind != want {
+			t.Errorf("%s image kind = %q, want %q", id, got.ImageKind, want)
+		}
+	}
+	var gotConfig model.HarnessConfig
+	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
+		t.Fatalf("read harness config: %v", err)
+	}
+	if gotConfig.ImageKind != platform.VM("vz") {
+		t.Errorf("harness config image kind = %q, want vm/vz", gotConfig.ImageKind)
 	}
 }
 

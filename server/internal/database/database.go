@@ -100,6 +100,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := unsetManifestFileImageKinds(write); err != nil {
 		return err
 	}
+	if err := respellDiscoVMImageKinds(write); err != nil {
+		return err
+	}
 	if err := widenSecretUniquenessIndex(write); err != nil {
 		return err
 	}
@@ -273,10 +276,27 @@ func addsImageKindColumn(db *gorm.DB, model any) bool {
 // It runs on every start rather than only the one that adds the column, so a
 // start that dies between the two cannot leave such a harness OCI for good:
 // nothing else would ever correct it. Repeating it touches nothing else,
-// because a manifest file registered since kinds always has a disco-vm kind.
+// because a manifest file registered since kinds always has a VM kind.
 func unsetManifestFileImageKinds(db *gorm.DB) error {
 	return db.Model(&model.HarnessConfig{}).Where("image LIKE ? AND image_kind = ?", "file://%", platform.OCI).
 		UpdateColumn("image_kind", "").Error
+}
+
+// respellDiscoVMImageKinds rewrites every pool's and harness's image kind
+// stored as `vm/<driver>`, the spelling releases before ADR 26-10-15-629
+// wrote, as `vm/<driver>`, the only spelling platform.ParseImageKind reads.
+// It runs on every start, before anything scans a kind; after the first it
+// matches nothing.
+func respellDiscoVMImageKinds(db *gorm.DB) error {
+	const old = "discovm/"
+	respelled := gorm.Expr("? || SUBSTR(image_kind, ?)", platform.FormatVM+"/", len(old)+1)
+	for _, table := range []any{&model.Pool{}, &model.HarnessConfig{}} {
+		if err := db.Model(table).Where("image_kind LIKE ?", old+"%").
+			UpdateColumn("image_kind", respelled).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // backfillPoolImageKinds records OCI for every pool that existed before image
@@ -284,8 +304,8 @@ func unsetManifestFileImageKinds(db *gorm.DB) error {
 //
 // It runs only on the start that adds the column, never again. The column's
 // default is empty rather than OCI because a pool created since is not known
-// to run OCI images until its agent says what it runs — a discovm pool runs a
-// driver's disco-vm images — and an idempotent rewrite of every empty kind
+// to run OCI images until its agent says what it runs — a vm pool runs a
+// driver's VM images — and an idempotent rewrite of every empty kind
 // would claim OCI for such a pool on every start until its agent reported. A
 // start that dies between AutoMigrate and here leaves some old pools empty;
 // each is given OCI by its agent's next report, as an agent from before kinds
