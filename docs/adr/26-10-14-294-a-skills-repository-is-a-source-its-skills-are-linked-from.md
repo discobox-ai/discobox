@@ -5,6 +5,9 @@
 - **Amends**: [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md)
   §3's install order and §4's reading of `--skills`, for a `--skills` that is
   a Git URL.
+- **Amended by**: [26-10-15-664](26-10-15-664-a-source-is-named-one-way-everywhere.md) — §1's
+  `URL[@REF][//PATH]` is the general source notation, and `--skills` takes
+  GitHub shorthand.
 - **Relates to**: [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md),
   [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md),
   [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md),
