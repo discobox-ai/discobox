@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -22,6 +23,11 @@ type recordingProvider struct {
 	routes  []map[string][]secretroute.Route
 	// updateErrs fail the next updates, one each, in order.
 	updateErrs []error
+	// egress records each egress policy pushed, and updateErr is what Update
+	// answers with.
+	egress    []egress.Policy
+	updateErr error
+	createErr error
 }
 
 func (p *recordingProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
@@ -38,7 +44,7 @@ func (p *recordingProvider) RemoveProject(context.Context, string) error {
 }
 func (p *recordingProvider) List(context.Context) ([]*sandbox.Sandbox, error) { return nil, nil }
 func (p *recordingProvider) Create(context.Context, sandbox.SandboxRef, []byte, sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
-	return nil, nil, nil
+	return nil, nil, p.createErr
 }
 func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
 	if len(p.updateErrs) > 0 {
@@ -48,8 +54,16 @@ func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, stat
 			return nil, state, err
 		}
 	}
-	p.updated = append(p.updated, append([]string{}, opts.Sentinels...))
-	p.routes = append(p.routes, opts.SentinelRoutes)
+	if p.updateErr != nil {
+		return nil, state, p.updateErr
+	}
+	if opts.Sentinels != nil {
+		p.updated = append(p.updated, append([]string{}, opts.Sentinels...))
+		p.routes = append(p.routes, opts.SentinelRoutes)
+	}
+	if opts.Egress != nil {
+		p.egress = append(p.egress, *opts.Egress)
+	}
 	return nil, state, nil
 }
 func (p *recordingProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {

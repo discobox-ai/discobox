@@ -62,7 +62,7 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
 		// An allowlist that admits nothing but an unrelated host: the origins
 		// host is not the allowlist's to refuse.
-		Allowlist: AllowlistConfig{Enabled: true, Domains: []string{"only.allowed.example.com"}},
+		Allowlist: AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
 		Origins:   OriginsConfig{Host: testOriginsHost, Upstream: upstream.URL + "/base/"},
 	}, prepared.Bundle, nil)
 	if err != nil {

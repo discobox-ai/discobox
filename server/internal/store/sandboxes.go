@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -367,8 +368,40 @@ var sandboxPlatformColumns = []string{"platform"}
 // only need their state.
 var sandboxSkillColumns = []string{"skills", "skill_names"}
 
+// sandboxEgressColumns are the sandbox's own egress level (ADR 26-10-01-032),
+// written by create and by SetSandboxEgress and by nothing else. A change to it
+// bumps no generation — it is not spec, and must not rebuild the container — so
+// a reconcile that loaded the row before the change would pass its generation
+// guard and put the old level back, silently loosening a policy a person had
+// just tightened.
+var sandboxEgressColumns = []string{"egress"}
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...)
+var sandboxOmittedColumns = append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...)
+
+// SetSandboxEgress writes a sandbox's own egress level, and nothing else.
+func (s *Store) SetSandboxEgress(ctx context.Context, projectID, sandboxID string, level egress.Policy) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	// Encoded here rather than left to the field's serializer, which a
+	// column-map update does not apply.
+	encoded, err := json.Marshal(level)
+	if err != nil {
+		return err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		Update("egress", string(encoded))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions
@@ -646,4 +679,27 @@ func (s *Store) SandboxNameTaken(ctx context.Context, projectID, name string) (b
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// ListPresentSandboxIDs lists the sandboxes of a project meant to exist —
+// neither archived nor deleted, nor on the way to either — optionally narrowed
+// to one pool and one harness config. These are the sandboxes an egress level
+// change has to reach (ADR 26-10-01-032 §5); one archived since picks the
+// policy up when it is recreated.
+func (s *Store) ListPresentSandboxIDs(ctx context.Context, projectID, poolID, harnessConfigID string) ([]string, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := read.Model(&model.Sandbox{}).
+		Where("project_id = ? AND desired_state = ?", projectID, model.DesiredStatePresent)
+	if poolID != "" {
+		query = query.Where("pool_id = ?", poolID)
+	}
+	if harnessConfigID != "" {
+		query = query.Where("harness_config_id = ?", harnessConfigID)
+	}
+	var out []string
+	err = query.Order("id ASC").Pluck("id", &out).Error
+	return out, err
 }

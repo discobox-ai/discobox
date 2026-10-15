@@ -79,13 +79,21 @@ nothing: the rule is symmetric.
 
 `harness.Image` (the `io.discobox.harness.v1` label) gains `egressHosts`,
 snapshotted into the harness config at registration like its other declared
-fields. The built-in harnesses declare their model APIs. A person's harness
-level `allow` is kept separately and is not overwritten by a re-registration.
-Declaring hosts never restricts anything (§2).
+fields. A person's harness level `allow` is kept separately and is not
+overwritten by a re-registration. Declaring hosts never restricts anything
+(§2).
+
+An image declares only what its agent needs to run, from its vendor's own
+documentation. `claude-code` declares the hosts Anthropic's network
+documentation lists for the API, sign-in, token refresh, and claude.ai
+connectors. `codex` and `opencode` declare none until theirs are established
+the same way; until then a restricted project lists their model hosts at a
+level itself, and a restricted codex or opencode discobox reaches none of them
+otherwise.
 
 The project's judge is an ordinary discobox on the project's default harness,
 so a restricted project's judge reaches the hosts that harness declares and
-no special case is needed for it.
+those the levels allow, and no special case is made for it.
 
 ### 4. Who may set what
 
@@ -101,24 +109,35 @@ no special case is needed for it.
   entry of the creator's (a domain by an equal or wider pattern, an IP or CIDR
   by a CIDR containing it). Checked at create only; later edits are a person's.
 
-### 5. Delivery: on every create, converged by the reconciler
+### 5. Delivery: carried by the create, then pushed until it lands
 
-The effective policy is computed on the server, on every reconcile, and is
-not in the sandbox manifest: it changes live, and a manifest change rebuilds
-the container (`SandboxManifest.Fingerprint`). `PoolSandboxCreateRequest`
-carries it, always, unrestricted included. The pool agent records it beside
-the sandbox's sentinels first thing on every create — before a new container
-exists, and before the early return for one that already matches its spec —
-and the proxy unit's policy publisher adds it as a fourth input to every
-`ApplyConfig`, so the policy is in force before the sandbox's first packet.
+The effective policy is computed on the server whenever it is delivered, and
+is not in the sandbox manifest: it changes live, and a manifest change
+rebuilds the container (`SandboxManifest.Fingerprint`).
 
-A change at any level marks every sandbox it affects that is meant to exist,
-in the transaction that writes the level. The mark's ensure sends the pool a
-create, which records the newly merged policy whether the sandbox is running
-or stopped; an archived one gets it when it is recreated. Tightening takes
-effect as soon as the mark is reconciled, not a poll interval later, and a
-lost push cannot leave a sandbox on an old policy: the mark is level-triggered
-and committed with the change.
+- **A create carries it.** `PoolSandboxCreateRequest.egress` is recorded at
+  the pool before the container is built, and the proxy unit's policy
+  publisher adds it as a fourth input to every `ApplyConfig`, so a new
+  sandbox is restricted from its first request.
+- **Every change after that is pushed on its own.** A change at any level
+  marks the egress delivery of every sandbox it affects that is meant to
+  exist, in the transaction that writes the level. That delivery is its own
+  reconcile, not the sandbox's: it merges the policy and sends it alone on
+  `PoolSandboxUpdateRequest.egress`, which the pool records for a sandbox
+  whose container exists; one not yet built gets the policy from its create. It retries with the engine's backoff while a pool is
+  unreachable, records nothing on the sandbox, and reaches one whatever its
+  lifecycle is doing — a settled failure included, whose container may still
+  be running.
+- **A create is always followed by a push.** A create merges its policy when
+  it runs, and a level change committed after that pushes a policy the pool
+  may take before the create lands. The sandbox reconciler marks the delivery
+  after every create attempt, failed ones included — the pool records the
+  create's policy before anything that can fail — so the last write is always
+  a push merged after it.
+- **A sandbox's own level is written by itself.** It is not spec and bumps no
+  generation, so the sandbox reconciler's generation-guarded row write never
+  writes it, or a reconcile that loaded the row first would put the old level
+  back.
 
 ### 6. The filter is per client
 
@@ -180,16 +199,22 @@ sandbox from its certificate and could ask the same filter.
 - **The pool proxy polls a per-pool route, as host trusts do.** No fan-out
   needed, but a new sandbox would run unrestricted until the first poll, and
   tightening would take up to the interval.
-- **Push the policy to a running sandbox through `PoolSandboxUpdateRequest`,
-  as rebound sentinels are.** A second path to the same file, and one a push
-  that failed or raced a reconcile's create could leave stale; the create
-  every ensure already sends is the one path that converges.
+- **Deliver changes through the sandbox's own ensure.** The first version of
+  §5. Ensure skips a settled failure, so a failed sandbox whose container
+  still ran kept the old policy; and an ensure against an unreachable pool
+  waits out the pool and records the sandbox failed, so a policy edit during
+  an outage broke every healthy sandbox on that pool.
+- **Treat a level change as intent on each sandbox.** Reaches a failed
+  sandbox, but still records a failure on every sandbox of a pool that is down
+  when the policy changes.
 - **Put the policy in the sandbox manifest.** Every change would rebuild the
   container.
 - **No pool level.** The project covers a project with one pool, but not a
   pool on a network the rest of the project is not on.
-- **Exempt the judge.** Unneeded once harness images declare their hosts (§3),
-  and an exemption is a hole in a project's restriction.
+- **Exempt the judge.** A judge on a harness that declares its hosts needs
+  nothing more (§3), one on a harness that declares none is in the same place
+  as every other discobox on it, and an exemption is a hole in a project's
+  restriction.
 
 ## Consequences
 

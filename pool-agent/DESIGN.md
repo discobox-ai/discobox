@@ -1498,10 +1498,23 @@ proxy would recognize it.
   translated to the stable sentinel and resolved normally. The control plane
   never learns ephemeral sentinels exist.
 - **`policyPublisher` owns the proxy's per-client policy**, merging the stable
-  sentinels from SecretsFile, live ephemeral ones, and the pool's host trusts.
+  sentinels and the restricted sandboxes' egress allow lists from SecretsFile,
+  live ephemeral sentinels, and the pool's host trusts.
   They have to be applied together because `ApplyConfig` replaces the whole of
   it, and each publish is one read-and-apply so two that race cannot land an
   older reading over a newer one.
+- **A sandbox's egress policy is recorded from create and update**
+  ([ADR 26-10-01-032](../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md) §5).
+  The control plane merges it and sends it on `PoolSandboxCreateRequest.egress`,
+  which `CreateSandbox` writes to SecretsFile (`SetSandboxEgress`) beside the
+  sentinels, before the container is built, so a new container is restricted
+  from its first request. A
+  change arrives on `PoolSandboxUpdateRequest.egress`, which `UpdateSandbox`
+  records under the sandbox's lock, and only while its container exists: a
+  sandbox with no container is answered not found, since its create carries
+  the policy, and a push that raced a delete cannot leave an entry behind. An unrestricted policy removes the
+  entry; archive and delete remove it with the sentinels
+  (`RemoveSandboxPolicy`).
 - **Host trust** (`trusts.go`, [ADR 0149](../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md))
   is the protocol's trust verb. `RequestTrust` probes the host through the
   proxy (`proxy.Server.ProbeTLS`), so the chain a person pins from is the one

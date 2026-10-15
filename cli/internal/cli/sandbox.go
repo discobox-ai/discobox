@@ -59,7 +59,8 @@ type sandboxCreateOptions struct {
 }
 
 type sandboxUpdateOptions struct {
-	name string
+	name   string
+	egress egressFlags
 }
 
 func (a *App) newSandboxCommand() *cobra.Command {
@@ -149,9 +150,15 @@ func (a *App) newSandboxGetCommand() *cobra.Command {
 
 func (a *App) newSandboxCreateCommand() *cobra.Command {
 	var opts sandboxCreateOptions
+	var egressOpts egressFlags
 	cmd := &cobra.Command{
 		Use:   "create --name NAME",
 		Short: "Create a discobox",
+		Long: `Create a discobox.
+
+--egress-allow and --egress-deny-by-default set the discobox's own egress level.
+
+` + egressHelp,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -183,6 +190,9 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if level, ok := egressOpts.create(cmd); ok {
+				body.Config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+			}
 			if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, body.Grants); err != nil {
 				return err
 			}
@@ -204,6 +214,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 		},
 	}
 	addCreateFlags(cmd, &opts)
+	addEgressFlags(cmd, &egressOpts, "the discobox")
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	_ = cmd.RegisterFlagCompletionFunc("harness-config", a.completeHarnessConfigs)
 	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
@@ -214,8 +225,14 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 func (a *App) newSandboxUpdateCommand() *cobra.Command {
 	var opts sandboxUpdateOptions
 	cmd := &cobra.Command{
-		Use:               "update DISCOBOX_ID",
-		Short:             "Update a discobox",
+		Use:   "update DISCOBOX_ID",
+		Short: "Update a discobox",
+		Long: `Update a discobox.
+
+--egress-allow and --egress-deny-by-default set the discobox's own egress level,
+which it converges onto while running.
+
+` + egressHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -226,6 +243,25 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 			body, err := updateSandboxBody(cmd, opts)
 			if err != nil {
 				return err
+			}
+			level, ok, err := opts.egress.update(cmd, func() (apimodel.EgressPolicy, error) {
+				res, err := client.GetSandbox(cmd.Context(), apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+				if err != nil {
+					return apimodel.EgressPolicy{}, err
+				}
+				sandbox, err := expectResponse[apimodel.Sandbox](res)
+				if err != nil {
+					return apimodel.EgressPolicy{}, err
+				}
+				return sandbox.Egress.Value, nil
+			})
+			if err != nil {
+				return err
+			}
+			if ok {
+				config, _ := body.Config.Get()
+				config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+				body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(config))
 			}
 			sandboxRes, err := client.UpdateSandbox(cmd.Context(), body, apiclientgen.UpdateSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 			if err != nil {
@@ -594,6 +630,7 @@ func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Clie
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
+	addEgressFlags(cmd, &opts.egress, "the discobox")
 }
 
 func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {

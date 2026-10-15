@@ -3523,6 +3523,41 @@ type DenyTrustRequestNoContent struct{}
 
 func (*DenyTrustRequestNoContent) denyTrustRequestRes() {}
 
+// One level's egress policy (ADR 26-10-01-032). A discobox is restricted when any
+// of its levels — project, pool, harness config, or its own — sets denyByDefault,
+// and then reaches only the union of every level's allow entries and its harness
+// image's declared hosts. An allow list alone restricts nothing.
+// Ref: #/components/schemas/EgressPolicy
+type EgressPolicy struct {
+	// Destinations a restricted discobox may reach. Each is a host name ("github.com" is that host
+	// alone), a wildcard ("*.github.com" every name beneath it, "registry.*", or "*"), an IP, or a CIDR.
+	// Hosts only, never a port.
+	Allow OptNilStringArray `json:"allow"`
+	// Restricts every discobox this level covers to the allow lists of its levels, even when they are
+	// empty.
+	DenyByDefault OptBool `json:"denyByDefault"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *EgressPolicy) GetAllow() OptNilStringArray {
+	return s.Allow
+}
+
+// GetDenyByDefault returns the value of DenyByDefault.
+func (s *EgressPolicy) GetDenyByDefault() OptBool {
+	return s.DenyByDefault
+}
+
+// SetAllow sets the value of Allow.
+func (s *EgressPolicy) SetAllow(val OptNilStringArray) {
+	s.Allow = val
+}
+
+// SetDenyByDefault sets the value of DenyByDefault.
+func (s *EgressPolicy) SetDenyByDefault(val OptBool) {
+	s.DenyByDefault = val
+}
+
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
 	// Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'.
@@ -5272,6 +5307,13 @@ func (s *HTTPAuditExchangeDetailResponseHeaders) init() HTTPAuditExchangeDetailR
 
 // Ref: #/components/schemas/HarnessConfig
 type HarnessConfig struct {
+	// The harness config's egress policy level, as a person set it (ADR 26-10-01-032). Its denyByDefault
+	// restricts every discobox on the harness; its allow list, with imageEgressHosts, is added to each
+	// restricted one's.
+	Egress OptEgressPolicy `json:"egress"`
+	// Hosts the registered image declares it needs, snapshotted from its label. Part of the harness
+	// level's allow list; they never restrict anything by themselves.
+	ImageEgressHosts OptNilStringArray `json:"imageEgressHosts"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Supplementary OS groups (already present in the image, e.g. "docker") the sandbox user is added to
@@ -5342,6 +5384,16 @@ type HarnessConfig struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Declarative volumes declared by the registered image label.
 	Volumes OptNilHarnessVolumeArray `json:"volumes"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *HarnessConfig) GetEgress() OptEgressPolicy {
+	return s.Egress
+}
+
+// GetImageEgressHosts returns the value of ImageEgressHosts.
+func (s *HarnessConfig) GetImageEgressHosts() OptNilStringArray {
+	return s.ImageEgressHosts
 }
 
 // GetSchema returns the value of Schema.
@@ -5477,6 +5529,16 @@ func (s *HarnessConfig) GetUpdatedAt() time.Time {
 // GetVolumes returns the value of Volumes.
 func (s *HarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 	return s.Volumes
+}
+
+// SetEgress sets the value of Egress.
+func (s *HarnessConfig) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
+}
+
+// SetImageEgressHosts sets the value of ImageEgressHosts.
+func (s *HarnessConfig) SetImageEgressHosts(val OptNilStringArray) {
+	s.ImageEgressHosts = val
 }
 
 // SetSchema sets the value of Schema.
@@ -9676,6 +9738,52 @@ func (o OptDateTime) Get() (v time.Time, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptDateTime) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptEgressPolicy returns new OptEgressPolicy with value set to v.
+func NewOptEgressPolicy(v EgressPolicy) OptEgressPolicy {
+	return OptEgressPolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptEgressPolicy is optional EgressPolicy.
+type OptEgressPolicy struct {
+	Value EgressPolicy
+	Set   bool
+}
+
+// IsSet returns true if OptEgressPolicy was set.
+func (o OptEgressPolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptEgressPolicy) Reset() {
+	var v EgressPolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptEgressPolicy) SetTo(v EgressPolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptEgressPolicy) Get() (v EgressPolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptEgressPolicy) Or(d EgressPolicy) EgressPolicy {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15918,6 +16026,9 @@ func (*Peer) createPeerRes() {}
 
 // Ref: #/components/schemas/Pool
 type Pool struct {
+	// The pool's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in
+	// the pool; its allow list is added to each restricted one's.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
@@ -16003,6 +16114,11 @@ type Pool struct {
 	RevokedAt OptDateTime `json:"revokedAt"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *Pool) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -16183,6 +16299,11 @@ func (s *Pool) GetRevokedAt() OptDateTime {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Pool) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// SetEgress sets the value of Egress.
+func (s *Pool) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.
@@ -18003,6 +18124,9 @@ func (s *ProcessConsumptionAdditional) init() ProcessConsumptionAdditional {
 
 // Ref: #/components/schemas/Project
 type Project struct {
+	// The project's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox
+	// in the project; its allow list is added to each restricted one's.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Harness configurations.
@@ -18041,6 +18165,11 @@ type Project struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Whether this project has already shown its introduction.
 	Welcomed bool `json:"welcomed"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *Project) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -18131,6 +18260,11 @@ func (s *Project) GetUpdatedAt() time.Time {
 // GetWelcomed returns the value of Welcomed.
 func (s *Project) GetWelcomed() bool {
 	return s.Welcomed
+}
+
+// SetEgress sets the value of Egress.
+func (s *Project) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.
@@ -19981,6 +20115,10 @@ func (*SSHKey) createSSHKeyRes() {}
 
 // Ref: #/components/schemas/Sandbox
 type Sandbox struct {
+	// The discobox's own egress policy level (ADR 26-10-01-032). It is restricted when this or its
+	// project, pool, or harness level sets denyByDefault, and then reaches the union of their allow
+	// lists.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Harness config.
@@ -20034,6 +20172,11 @@ type Sandbox struct {
 	MetaObservedAt OptDateTime `json:"metaObservedAt"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *Sandbox) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -20129,6 +20272,11 @@ func (s *Sandbox) GetMetaObservedAt() OptDateTime {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// SetEgress sets the value of Egress.
+func (s *Sandbox) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.
@@ -22217,6 +22365,9 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
+	// The new discobox's own egress policy level. A discobox creating another may not make one that can
+	// reach anything it cannot.
+	Egress OptEgressPolicy `json:"egress"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// What the sandbox exists for: run works in it, config runs the image-owned interactive
@@ -22263,6 +22414,11 @@ type SandboxCreateConfig struct {
 	SourceCodeReferences OptSandboxCreateConfigSourceCodeReferences `json:"sourceCodeReferences"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *SandboxCreateConfig) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetHarnessConfigId returns the value of HarnessConfigId.
@@ -22348,6 +22504,11 @@ func (s *SandboxCreateConfig) GetSourceCodeReferences() OptSandboxCreateConfigSo
 // GetUser returns the value of User.
 func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetEgress sets the value of Egress.
+func (s *SandboxCreateConfig) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetHarnessConfigId sets the value of HarnessConfigId.
@@ -26759,13 +26920,25 @@ func (s *SandboxTrustRequestStatusStatus) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
+	// Replaces the discobox's own egress policy level.
+	Egress OptEgressPolicy `json:"egress"`
 	// Sandbox name.
 	Name OptString `json:"name"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *SandboxUpdateConfig) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetName returns the value of Name.
 func (s *SandboxUpdateConfig) GetName() OptString {
 	return s.Name
+}
+
+// SetEgress sets the value of Egress.
+func (s *SandboxUpdateConfig) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetName sets the value of Name.
@@ -29585,6 +29758,9 @@ func (s *UpdateApprovalRuleBody) SetUses(val []string) {
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {
+	// Replaces the harness config's egress policy level. Every live discobox on the harness converges
+	// onto the result.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Configure-flow files to write into the harness's home directory, replacing the current set.
@@ -29593,6 +29769,11 @@ type UpdateHarnessConfigBody struct {
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Harness config name.
 	Name OptString `json:"name"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *UpdateHarnessConfigBody) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -29613,6 +29794,11 @@ func (s *UpdateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 // GetName returns the value of Name.
 func (s *UpdateHarnessConfigBody) GetName() OptString {
 	return s.Name
+}
+
+// SetEgress sets the value of Egress.
+func (s *UpdateHarnessConfigBody) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.
@@ -29637,6 +29823,8 @@ func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 
 // Ref: #/components/schemas/UpdatePoolBody
 type UpdatePoolBody struct {
+	// Replaces the pool's egress policy level. Every live discobox in the pool converges onto the result.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
@@ -29650,6 +29838,11 @@ type UpdatePoolBody struct {
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *UpdatePoolBody) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -29675,6 +29868,11 @@ func (s *UpdatePoolBody) GetName() OptString {
 // GetStorageBytes returns the value of StorageBytes.
 func (s *UpdatePoolBody) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
+}
+
+// SetEgress sets the value of Egress.
+func (s *UpdatePoolBody) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.
@@ -29825,6 +30023,9 @@ func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
 
 // Ref: #/components/schemas/UpdateProjectBody
 type UpdateProjectBody struct {
+	// Replaces the project's egress policy level. Every live discobox in the project converges onto the
+	// result.
+	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Project display name.
@@ -29840,6 +30041,11 @@ type UpdateProjectBody struct {
 	// Whether this project has already shown its introduction. The launcher sets it once, the first time
 	// it welcomes someone to the project; clearing it shows the welcome again.
 	Welcomed OptBool `json:"welcomed"`
+}
+
+// GetEgress returns the value of Egress.
+func (s *UpdateProjectBody) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSchema returns the value of Schema.
@@ -29865,6 +30071,11 @@ func (s *UpdateProjectBody) GetSandboxUpgradePolicy() OptUpdateProjectBodySandbo
 // GetWelcomed returns the value of Welcomed.
 func (s *UpdateProjectBody) GetWelcomed() OptBool {
 	return s.Welcomed
+}
+
+// SetEgress sets the value of Egress.
+func (s *UpdateProjectBody) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSchema sets the value of Schema.

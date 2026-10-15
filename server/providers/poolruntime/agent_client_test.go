@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -132,5 +133,26 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 	}
 	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Config.Skills.Set {
 		t.Fatal("skills set for a sandbox created without any")
+	}
+}
+
+// The effective egress policy is sent on every create, unrestricted included,
+// so a container built again never keeps a policy recorded for an earlier one.
+func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
+	restricted := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}},
+	})
+	got, ok := restricted.Egress.Get()
+	if !ok || !got.DenyByDefault.Or(false) {
+		t.Fatalf("restricted policy = %+v, set %v", got, ok)
+	}
+	if allow, _ := got.Allow.Get(); len(allow) != 1 || allow[0] != "github.com" {
+		t.Fatalf("allow = %v", allow)
+	}
+
+	open := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{})
+	got, ok = open.Egress.Get()
+	if !ok || got.DenyByDefault.Or(true) {
+		t.Fatalf("unrestricted policy = %+v, set %v; want it sent, unrestricted", got, ok)
 	}
 }

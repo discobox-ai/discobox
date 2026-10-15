@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wire"
 )
@@ -32,13 +33,17 @@ const (
 	resolveHTTPTimeout      = 10 * time.Second
 )
 
-// secretsDoc is the on-disk sentinel registry keyed by sandbox (proxy client) ID.
+// secretsDoc is the on-disk per-sandbox proxy policy, keyed by sandbox (proxy
+// client) ID: each sandbox's sentinel set, and the allow list of each
+// restricted sandbox (ADR 26-10-01-032). A sandbox absent from Egress is
+// unrestricted; one present reaches only its entries.
 type secretsDoc struct {
 	Clients map[string][]string `json:"clients"`
 	// Routes are, per sandbox, the routes of each injected stable sentinel
 	// whose secret carries routes (ADR 26-10-02-924): every request it is
 	// sent in must fall on one, with no activation.
 	Routes map[string]map[string][]secretroute.Route `json:"routes,omitempty"`
+	Egress map[string][]string                       `json:"egress,omitempty"`
 }
 
 // resolveContext is the on-disk resolve credential the proxy unit reads.
@@ -53,9 +58,55 @@ type resolveContext struct {
 var secretsFileMu sync.Mutex
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
-// updating SecretsFile, with the routes of those whose secret carries routes.
-// Passing an empty set removes the sandbox entry.
+// updating SecretsFile, with the routes of those whose secret carries routes
+// (ADR 26-10-02-924). Passing an empty set removes the sandbox entry.
 func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, routes map[string][]secretroute.Route) error {
+	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		if len(sentinels) == 0 {
+			delete(doc.Clients, sandboxID)
+		} else {
+			doc.Clients[sandboxID] = sentinels
+		}
+		held := map[string][]secretroute.Route{}
+		for _, sentinel := range sentinels {
+			if held[sentinel] = routes[sentinel]; len(held[sentinel]) == 0 {
+				delete(held, sentinel)
+			}
+		}
+		if len(held) == 0 {
+			delete(doc.Routes, sandboxID)
+		} else {
+			if doc.Routes == nil {
+				doc.Routes = map[string]map[string][]secretroute.Route{}
+			}
+			doc.Routes[sandboxID] = held
+		}
+	})
+}
+
+// SetSandboxEgress records a sandbox's effective egress policy for the proxy by
+// updating SecretsFile. An unrestricted policy removes the sandbox's entry.
+func SetSandboxEgress(root layout.Root, projectID, poolID string, sandboxID string, policy egress.Policy) error {
+	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		if !policy.DenyByDefault {
+			delete(doc.Egress, sandboxID)
+			return
+		}
+		doc.Egress[sandboxID] = append([]string{}, egress.Normalize(policy.Allow)...)
+	})
+}
+
+// RemoveSandboxPolicy drops a sandbox's sentinel set, its sentinels' routes,
+// and its egress policy from SecretsFile.
+func RemoveSandboxPolicy(root layout.Root, projectID, poolID string, sandboxID string) error {
+	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		delete(doc.Clients, sandboxID)
+		delete(doc.Routes, sandboxID)
+		delete(doc.Egress, sandboxID)
+	})
+}
+
+func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*secretsDoc)) error {
 	path := root.ProxySecretsFile(projectID, poolID)
 	secretsFileMu.Lock()
 	defer secretsFileMu.Unlock()
@@ -66,31 +117,11 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 	if doc.Clients == nil {
 		doc.Clients = map[string][]string{}
 	}
-	if len(sentinels) == 0 {
-		delete(doc.Clients, sandboxID)
-	} else {
-		doc.Clients[sandboxID] = sentinels
+	if doc.Egress == nil {
+		doc.Egress = map[string][]string{}
 	}
-	held := map[string][]secretroute.Route{}
-	for _, sentinel := range sentinels {
-		if held[sentinel] = routes[sentinel]; len(held[sentinel]) == 0 {
-			delete(held, sentinel)
-		}
-	}
-	if len(held) == 0 {
-		delete(doc.Routes, sandboxID)
-	} else {
-		if doc.Routes == nil {
-			doc.Routes = map[string]map[string][]secretroute.Route{}
-		}
-		doc.Routes[sandboxID] = held
-	}
+	update(&doc)
 	return writeJSONAtomic(path, doc)
-}
-
-// RemoveSandboxSentinels drops a sandbox's sentinel set from SecretsFile.
-func RemoveSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string) error {
-	return UpsertSandboxSentinels(root, projectID, poolID, sandboxID, nil, nil)
 }
 
 // WriteResolveContext writes the resolve credential the proxy unit reads.
@@ -778,8 +809,9 @@ func readResolveContext(path string) (resolveContext, error) {
 // Three sources feed it and none can be applied alone, because ApplyConfig
 // replaces the whole of it:
 //
-//   - SecretsFile, the sandbox's stable sentinels, written by the pool-agent
-//     process as sandboxes come and go.
+//   - SecretsFile, each sandbox's stable sentinels and the allow list of each
+//     restricted one, written by the pool-agent process as sandboxes come and
+//     go and as their egress policy changes (ADR 26-10-01-032).
 //   - live activations, the ephemeral sentinels this process mints per use.
 //   - host trusts, the pins people approved for this pool's sandboxes
 //     (hostTrusts, ADR 0149).
@@ -794,7 +826,7 @@ type policyPublisher struct {
 	onError func(error)
 
 	mu     sync.Mutex
-	file   map[string][]string
+	file   secretsDoc
 	trusts []proxy.HostTrust
 	// applyMu makes each publish one read-and-apply, so two that race cannot
 	// land an older reading of the sources over a newer one.
@@ -802,15 +834,16 @@ type policyPublisher struct {
 }
 
 func newPolicyPublisher(server *proxy.Server, base proxy.Config, live *activations, onError func(error)) *policyPublisher {
-	p := &policyPublisher{server: server, base: base, live: live, onError: onError, file: map[string][]string{}}
+	p := &policyPublisher{server: server, base: base, live: live, onError: onError}
 	live.setChangeHandler(p.publish)
 	return p
 }
 
-// setFileSentinels records the stable sentinel set and republishes.
-func (p *policyPublisher) setFileSentinels(clients map[string][]string) {
+// setFile records SecretsFile's sentinel sets and egress policies and
+// republishes.
+func (p *policyPublisher) setFile(doc secretsDoc) {
 	p.mu.Lock()
-	p.file = clients
+	p.file = doc
 	p.mu.Unlock()
 	p.publish()
 }
@@ -828,9 +861,13 @@ func (p *policyPublisher) publish() {
 	p.applyMu.Lock()
 	defer p.applyMu.Unlock()
 	p.mu.Lock()
-	merged := make(map[string][]string, len(p.file))
-	for clientID, sentinels := range p.file {
+	merged := make(map[string][]string, len(p.file.Clients))
+	for clientID, sentinels := range p.file.Clients {
 		merged[clientID] = append([]string(nil), sentinels...)
+	}
+	allowlist := make(map[string][]string, len(p.file.Egress))
+	for clientID, allow := range p.file.Egress {
+		allowlist[clientID] = append([]string(nil), allow...)
 	}
 	trusts := p.trusts
 	p.mu.Unlock()
@@ -844,6 +881,7 @@ func (p *policyPublisher) publish() {
 	cfg.Secrets = p.base.Secrets
 	cfg.Secrets.Clients = secretClients(merged)
 	cfg.Trusts = trusts
+	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
 	if err := p.server.ApplyConfig(cfg); err != nil && p.onError != nil {
 		p.onError(err)
 	}
@@ -881,7 +919,7 @@ func watchSecretsFile(ctx context.Context, publisher *policyPublisher, resolver 
 		// are those dropped. Either order alone leaves a moment in which a
 		// sentinel arriving, or one leaving, reads as having no routes.
 		resolver.stageSentinelRoutes(doc.Routes)
-		publisher.setFileSentinels(doc.Clients)
+		publisher.setFile(doc)
 		resolver.setSentinelRoutes(doc.Routes)
 		lastMod = info.ModTime()
 	}

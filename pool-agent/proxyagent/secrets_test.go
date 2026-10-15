@@ -31,7 +31,7 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 		t.Fatalf("unexpected doc: %#v", doc.Clients)
 	}
 
-	if err := RemoveSandboxSentinels(root, testProjectID, testPoolID, "sb-1"); err != nil {
+	if err := RemoveSandboxPolicy(root, testProjectID, testPoolID, "sb-1"); err != nil {
 		t.Fatalf("remove sb-1: %v", err)
 	}
 	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))

@@ -19,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/x/id"
@@ -262,9 +263,13 @@ type Project struct {
 	// launcher shows it once and never again. It is here rather than in client
 	// state because a person meets Discobox once, not once per machine they
 	// reach the same project from.
-	Welcomed  bool      `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	Welcomed bool `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
+	// Egress is the project's level of every one of its discoboxes' egress
+	// policy (ADR 26-10-01-032). Effective policy is merged when a discobox is
+	// reconciled, never stored, so a change here reaches each by marking it.
+	Egress    egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The project's egress policy level"`
+	CreatedAt time.Time     `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time     `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
 	Pools                    []Pool                    `gorm:"foreignKey:ProjectID" json:"pools,omitempty" doc:"Project pools"`
@@ -374,7 +379,12 @@ type HarnessConfig struct {
 	// harness from before kinds were recorded is, and what adding it
 	// backfills; a manifest-file harness from before kinds is left with none
 	// (database.unsetManifestFileImageKinds), which places nowhere.
-	ImageKind platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed."`
+	ImageKind        platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed."`
+	ImageEgressHosts []string           `gorm:"column:image_egress_hosts;type:text;serializer:json" json:"imageEgressHosts,omitempty" doc:"Hosts the registered image declares it needs, snapshotted from its label."`
+	// Egress is the harness level a person set (ADR 26-10-01-032). It is kept
+	// apart from ImageEgressHosts so registering a new image replaces what the
+	// image declares and leaves what a person chose alone.
+	Egress egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The harness config's egress policy level"`
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
@@ -724,6 +734,10 @@ type Pool struct {
 	ID           string `gorm:"primaryKey;type:text" json:"id" doc:"Stable pool ID"`
 	ProjectID    string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	PoolManifest `gorm:"embedded"`
+	// Egress is the pool's level of its discoboxes' egress policy
+	// (ADR 26-10-01-032). It is not in the manifest: a policy change converges
+	// at the proxy and must not rebuild the pool host.
+	Egress egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The pool's egress policy level"`
 
 	// Runtime host state, reported by the pool agent and the provider.
 	//
@@ -919,6 +933,10 @@ type Sandbox struct {
 	// (ADR 26-10-09-395 §2). Outside the manifest, so no fingerprint moves.
 	SkillNames        []string `gorm:"column:skill_names;type:text;serializer:json" json:"skillNames,omitempty" doc:"Names of the skills the sandbox was created with"`
 	ResourceLifecycle `gorm:"embedded"`
+	// Egress is the discobox's own level of its egress policy
+	// (ADR 26-10-01-032). It is not in the manifest, whose fingerprint rebuilds
+	// the container: a policy change converges at the pool proxy.
+	Egress            egress.Policy         `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
 	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`

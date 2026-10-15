@@ -422,6 +422,22 @@ components:
                 - path
                 - content
             type: object
+        EgressPolicy:
+            additionalProperties: false
+            description: |-
+                A sandbox's effective egress policy (ADR 26-10-01-032), merged by the
+                control plane. Unrestricted when denyByDefault is false, and allow is then
+                ignored; restricted, the sandbox reaches only the allow entries, so an
+                empty list reaches nothing. Entries are domain patterns, IPs, or CIDRs.
+            properties:
+                allow:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                denyByDefault:
+                    type: boolean
+            type: object
         PoolSandboxCreateRequest:
             additionalProperties: false
             properties:
@@ -433,6 +449,9 @@ components:
                     type: string
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
+                egress:
+                    "$ref": "#/components/schemas/EgressPolicy"
+                    description: The sandbox's effective egress policy, recorded with the pool proxy before the container is built so it is in force from the sandbox's first request. Absent means unrestricted.
                 resolvedHarnessConfig:
                     "$ref": "#/components/schemas/ResolvedHarnessConfig"
                 sandboxId:
@@ -941,6 +960,9 @@ components:
                     type: string
                 config:
                     "$ref": "#/components/schemas/SandboxUpdateConfig"
+                egress:
+                    "$ref": "#/components/schemas/EgressPolicy"
+                    description: Replacement effective egress policy, recorded with the pool proxy for a sandbox whose container exists; one with no container is answered not found and nothing is recorded, since its create carries the policy. This is how a policy change reaches a sandbox (ADR 26-10-01-032 §5); absent leaves the policy as it is.
                 sentinels:
                     description: Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the proxy so newly bound secrets resolve without a restart.
                     items:

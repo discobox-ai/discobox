@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
@@ -15,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
+	"gorm.io/gorm"
 )
 
 const testUserID = "user-1"
@@ -66,7 +68,22 @@ func (s stubHarnesses) SeedBuiltIns(ctx context.Context, projectID string) error
 	})
 }
 
+// stubSandboxes records which projects an egress change was converged for.
+type stubSandboxes struct{ marked *[]string }
+
+func (s stubSandboxes) MarkEgressChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
+	*s.marked = append(*s.marked, projectID+"/"+poolID+"/"+harnessConfigID)
+	return nil
+}
+
 func newService(t *testing.T) (*projects.Service, *store.Store, context.Context) {
+	t.Helper()
+	return newServiceMarking(t, new([]string))
+}
+
+// newServiceMarking is newService recording into marked which scopes an
+// egress change was converged for.
+func newServiceMarking(t *testing.T, marked *[]string) (*projects.Service, *store.Store, context.Context) {
 	t.Helper()
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeUser, UserID: testUserID})
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -78,7 +95,7 @@ func newService(t *testing.T) (*projects.Service, *store.Store, context.Context)
 		t.Fatalf("migrate db: %v", err)
 	}
 	st := store.New(db.Write, db.Read)
-	svc := projects.NewService(st, stubProviders{st}, stubPools{st}, stubHarnesses{st})
+	svc := projects.NewService(st, stubProviders{st}, stubPools{st}, stubHarnesses{st}, stubSandboxes{marked})
 	return svc, st, ctx
 }
 
@@ -570,6 +587,42 @@ func TestUpdateProjectSetsTheSandboxUpgradePolicy(t *testing.T) {
 	_, err = svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
 		SandboxUpgradePolicy: apigen.NewOptUpdateProjectBodySandboxUpgradePolicy("sometimes"),
 	})
+	statusOf(t, err, http.StatusBadRequest)
+}
+
+// A project's egress level is stored normalized, converges every discobox in
+// the project, and refuses an entry the proxy could not enforce.
+func TestUpdateProjectSetsTheEgressLevel(t *testing.T) {
+	var marked []string
+	svc, _, ctx := newServiceMarking(t, &marked)
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Fresh"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	level := func(allow ...string) services.UpdateProjectBody {
+		return services.UpdateProjectBody{Egress: apigen.NewOptEgressPolicy(apigen.EgressPolicy{
+			Allow: apigen.NewOptNilStringArray(allow), DenyByDefault: apigen.NewOptBool(true),
+		})}
+	}
+	updated, err := svc.UpdateProject(ctx, project.ID, level(" GitHub.com ", "*.googleapis.com"))
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if !updated.Egress.DenyByDefault || strings.Join(updated.Egress.Allow, ",") != "*.googleapis.com,github.com" {
+		t.Fatalf("egress = %+v", updated.Egress)
+	}
+	if strings.Join(marked, ";") != project.ID+"//" {
+		t.Fatalf("converged %v, want the whole project", marked)
+	}
+
+	if _, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{Name: apigen.NewOptString("Renamed")}); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if len(marked) != 1 {
+		t.Fatalf("a rename converged egress: %v", marked)
+	}
+
+	_, err = svc.UpdateProject(ctx, project.ID, level("https://github.com"))
 	statusOf(t, err, http.StatusBadRequest)
 }
 

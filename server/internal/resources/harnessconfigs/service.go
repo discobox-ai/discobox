@@ -12,6 +12,7 @@ import (
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 
@@ -168,7 +169,14 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if apiFiles, ok := input.ConfiguredFiles.Get(); ok {
 		config.ConfiguredFiles = services.HarnessConfigFilesToModel(apiFiles)
 	}
-	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
+	egressChanged := false
+	if level, ok := input.Egress.Get(); ok {
+		if config.Egress, err = services.EgressPolicyToModel(level); err != nil {
+			return nil, err
+		}
+		egressChanged = true
+	}
+	if err := s.updateHarnessConfig(ctx, config, egressChanged); err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetHarnessConfig(ctx, projectID, configID)
@@ -208,6 +216,7 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	previousDigest := config.ImageDigest
+	previousHosts := config.ImageEgressHosts
 	config.ImageDigest = metadata.Digest
 	snapshotImageMetadata(config, metadata)
 	// The snapshot and the routes it declares onto configured secrets commit
@@ -216,7 +225,10 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 		if err := txStore.UpdateHarnessConfig(ctx, config); err != nil {
 			return err
 		}
-		return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
+		if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config); err != nil {
+			return err
+		}
+		return s.markEgressChangedTx(ctx, txStore, txDB, config, !slices.Equal(previousHosts, config.ImageEgressHosts))
 	}); err != nil {
 		return nil, err
 	}
@@ -446,6 +458,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 			continue
 		}
 		previousDigest := existing.ImageDigest
+		previousHosts := existing.ImageEgressHosts
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
 		snapshotImageMetadata(existing, metadata)
@@ -455,7 +468,10 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 			if err := txStore.UpdateHarnessConfig(ctx, existing); err != nil {
 				return err
 			}
-			return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, existing)
+			if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, existing); err != nil {
+				return err
+			}
+			return s.markEgressChangedTx(ctx, txStore, txDB, existing, !slices.Equal(previousHosts, existing.ImageEgressHosts))
 		}); err != nil {
 			return err
 		}
@@ -520,6 +536,28 @@ func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) 
 		return fmt.Errorf("project %s has no harness, and no built-in harnesses are defined", projectID)
 	}
 	return fmt.Errorf("project %s has no harness to run: %s", projectID, strings.Join(reasons, "; "))
+}
+
+// updateHarnessConfig saves config and, when its egress level changed — what a
+// person set, or the hosts its image declares — marks its discoboxes for
+// reconcile in the same transaction, so each converges onto the newly merged
+// policy (ADR 26-10-01-032 §5).
+func (s *Service) updateHarnessConfig(ctx context.Context, config *model.HarnessConfig, egressChanged bool) error {
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
+		}
+		return s.markEgressChangedTx(ctx, txStore, txDB, config, egressChanged)
+	})
+}
+
+// markEgressChangedTx marks the egress push of config's discoboxes when its
+// egress level changed, in the caller's transaction (ADR 26-10-01-032 §5).
+func (s *Service) markEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, config *model.HarnessConfig, changed bool) error {
+	if !changed || s.sandboxes == nil {
+		return nil
+	}
+	return s.sandboxes.MarkEgressChangedTx(ctx, txStore, txDB, config.ProjectID, "", config.ID)
 }
 
 // applyResolvedImageDigest is the single place a harness config's resolved
@@ -628,6 +666,7 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 	}
 	config.Volumes = append([]harness.Volume{}, metadata.Volumes...)
 	config.AdditionalGroups = append([]string{}, metadata.AdditionalGroups...)
+	config.ImageEgressHosts = egress.Normalize(image.EgressHosts)
 }
 
 // declaredSecrets is an image's secret declarations as a config snapshots

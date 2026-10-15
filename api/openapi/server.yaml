@@ -3,6 +3,16 @@ components:
         HarnessConfig:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: The harness config's egress policy level, as a person set it (ADR 26-10-01-032). Its denyByDefault restricts every discobox on the harness; its allow list, with imageEgressHosts, is added to each restricted one's.
+                imageEgressHosts:
+                    description: Hosts the registered image declares it needs, snapshotted from its label. Part of the harness level's allow list; they never restrict anything by themselves.
+                    items:
+                        type: string
+                    nullable: true
+                    readOnly: true
+                    type: array
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/HarnessConfig.json
@@ -170,6 +180,24 @@ components:
             required:
                 - path
                 - volume
+            type: object
+        EgressPolicy:
+            additionalProperties: false
+            description: |-
+                One level's egress policy (ADR 26-10-01-032). A discobox is restricted when any
+                of its levels — project, pool, harness config, or its own — sets denyByDefault,
+                and then reaches only the union of every level's allow entries and its harness
+                image's declared hosts. An allow list alone restricts nothing.
+            properties:
+                allow:
+                    description: Destinations a restricted discobox may reach. Each is a host name ("github.com" is that host alone), a wildcard ("*.github.com" every name beneath it, "registry.*", or "*"), an IP, or a CIDR. Hosts only, never a port.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                denyByDefault:
+                    description: Restricts every discobox this level covers to the allow lists of its levels, even when they are empty.
+                    type: boolean
             type: object
         HarnessConfigPort:
             additionalProperties: false
@@ -2602,6 +2630,9 @@ components:
             # Response fields may differ across releases selected by the CLI.
             # Leave unknown fields ignorable, including retired staging fields.
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: The pool's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in the pool; its allow list is added to each restricted one's.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/Pool.json
@@ -2810,6 +2841,9 @@ components:
         UpdatePoolBody:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: Replaces the pool's egress policy level. Every live discobox in the pool converges onto the result.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/UpdatePoolBody.json
@@ -2901,6 +2935,9 @@ components:
         UpdateProjectBody:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: Replaces the project's egress policy level. Every live discobox in the project converges onto the result.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/UpdateProjectBody.json
@@ -2930,6 +2967,9 @@ components:
         Project:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: The project's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in the project; its allow list is added to each restricted one's.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/Project.json
@@ -3229,6 +3269,9 @@ components:
         SandboxCreateConfig:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: The new discobox's own egress policy level. A discobox creating another may not make one that can reach anything it cannot.
                 harnessConfigId:
                     description: Harness config ID
                     type: string
@@ -4335,6 +4378,9 @@ components:
         Sandbox:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: The discobox's own egress policy level (ADR 26-10-01-032). It is restricted when this or its project, pool, or harness level sets denyByDefault, and then reaches the union of their allow lists.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/Sandbox.json
@@ -6244,6 +6290,9 @@ components:
         UpdateHarnessConfigBody:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: Replaces the harness config's egress policy level. Every live discobox on the harness converges onto the result.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/UpdateHarnessConfigBody.json
@@ -6283,6 +6332,9 @@ components:
         SandboxUpdateConfig:
             additionalProperties: false
             properties:
+                egress:
+                    $ref: '#/components/schemas/EgressPolicy'
+                    description: Replaces the discobox's own egress policy level.
                 name:
                     description: Sandbox name
                     maxLength: 200

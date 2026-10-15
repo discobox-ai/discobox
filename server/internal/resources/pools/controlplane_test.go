@@ -43,7 +43,7 @@ func TestDeletePoolSucceedsWhenTheEngineRemovesTheRowFirst(t *testing.T) {
 	}
 	disarm := removePoolOnFirstReadAfterIntent(ctx, t, db, appStore, pool)
 
-	svc := NewService(appStore, nil, NewControlPlane(appStore, engine))
+	svc := NewService(appStore, nil, NewControlPlane(appStore, engine), &recordedEgress{})
 	if err := svc.DeletePool(ctx, pool.ProjectID, pool.ID); err != nil {
 		t.Fatalf("delete pool: %v, want success for a delete the engine finished first", err)
 	}

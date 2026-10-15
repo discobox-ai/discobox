@@ -166,12 +166,7 @@ func (s *Server) ApplyConfig(cfg Config) error {
 }
 
 func buildPolicy(cfg Config) (*filter.Filter, *rules.Rewriter) {
-	return filter.New(filter.Config{
-		Enabled: cfg.Allowlist.Enabled,
-		Domains: cfg.Allowlist.Domains,
-		IPs:     cfg.Allowlist.IPs,
-		Rules:   convertAllowlistRules(cfg.Allowlist.Rules),
-	}), rules.NewRewriter(convertHeaderRules(cfg.Headers))
+	return filter.New(filter.Config{Clients: cfg.Allowlist.Clients}), rules.NewRewriter(convertHeaderRules(cfg.Headers))
 }
 
 func swapperConfig(cfg Config) secrets.Config {
@@ -188,18 +183,6 @@ func swapperConfig(cfg Config) secrets.Config {
 		ResolveRetry:    time.Duration(cfg.Secrets.ResolveRetrySeconds) * time.Second,
 		GateHost:        cfg.Secrets.GateHost,
 	}
-}
-
-func convertAllowlistRules(rules []AllowlistRule) []filter.Rule {
-	converted := make([]filter.Rule, 0, len(rules))
-	for _, rule := range rules {
-		converted = append(converted, filter.Rule{
-			ClientIDs: rule.ClientIDs,
-			Domains:   rule.Domains,
-			IPs:       rule.IPs,
-		})
-	}
-	return converted
 }
 
 func convertHeaderRules(headerRules []HeaderRule) []rules.HeaderRule {

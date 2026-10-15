@@ -8,6 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -189,6 +190,10 @@ type CreateOptions struct {
 	// change (rotation, grant approval, OAuth refresh) without touching the
 	// sandbox's static config.
 	SecretEnv map[string]string
+	// Egress is the sandbox's effective egress policy (ADR 26-10-01-032),
+	// merged from its levels. The provider records it with the pool proxy
+	// before the container is built; a later change arrives by Update.
+	Egress egress.Policy
 
 	Name                 string
 	Description          *string
@@ -234,11 +239,15 @@ type CreateOptions struct {
 // fields present here may be updated after creation.
 type UpdateOptions struct {
 	// Sentinels replaces the placeholder secret set registered with the proxy for
-	// runtime swapping. It mirrors CreateOptions.Sentinels.
+	// runtime swapping. It mirrors CreateOptions.Sentinels. Nil leaves the set as
+	// it is; an empty, non-nil set removes it.
 	Sentinels []string
 	// SentinelRoutes replaces the sentinels' routes along with Sentinels. It
 	// mirrors CreateOptions.SentinelRoutes.
 	SentinelRoutes map[string][]secretroute.Route
+	// Egress replaces the sandbox's effective egress policy at the pool proxy,
+	// whether or not its container exists. Nil leaves it as it is.
+	Egress *egress.Policy
 	// SecretEnv replaces the sandbox's secret-bound env->sentinel map. It
 	// mirrors CreateOptions.SecretEnv.
 	SecretEnv map[string]string

@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
@@ -673,6 +674,14 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	sentinels, _ := req.Sentinels.Get()
 	sentinelRoutes, _ := req.SentinelRoutes.Get()
 	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
+		return nil, false, err
+	}
+	// Recorded beside the sentinels, before the container exists, so the proxy
+	// has it before the sandbox's first request (ADR 26-10-01-032 §5). Absent is
+	// unrestricted. A create that finds its container already built returns
+	// before this; a change reaches that sandbox through UpdateSandbox, which the
+	// control plane sends after every create attempt.
+	if err := proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, egressPolicy(req.Egress)); err != nil {
 		return nil, false, err
 	}
 	// The bootstrap: placed before the container exists, and the one thing the
@@ -1514,6 +1523,11 @@ func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[strin
 
 func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	if req != nil {
+		if req.Egress.IsSet() {
+			if err := r.updateSandboxEgress(ctx, sandboxID, egressPolicy(req.Egress)); err != nil {
+				return nil, err
+			}
+		}
 		if sentinels, ok := req.Sentinels.Get(); ok {
 			// Re-register the sandbox's sentinel set with the proxy so newly bound
 			// secrets resolve without a restart. Its sentinels' routes travel
@@ -1562,6 +1576,35 @@ func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandb
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
 }
 
+// updateSandboxEgress records a pushed egress policy for a sandbox whose
+// container exists, under the lock create, archive, and delete hold. A sandbox
+// with no container is answered ErrNotFound and nothing is written: its create
+// carries the policy (ADR 26-10-01-032 §5), and a push that raced a delete
+// must not leave an entry nothing would ever remove.
+func (r *DockerSandboxRuntime) updateSandboxEgress(ctx context.Context, sandboxID string, policy egress.Policy) error {
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
+		return err
+	}
+	if r.isArchived(sandboxID) {
+		return ErrNotFound
+	}
+	return proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, policy)
+}
+
+// egressPolicy reads the control plane's effective egress policy; absent is
+// unrestricted.
+func egressPolicy(opt workerclient.OptEgressPolicy) egress.Policy {
+	policy, ok := opt.Get()
+	if !ok {
+		return egress.Policy{}
+	}
+	allow, _ := policy.Allow.Get()
+	return egress.Policy{Allow: allow, DenyByDefault: policy.DenyByDefault.Or(false)}
+}
+
 // DeleteSandbox removes the sandbox's container, its proxy material, and its
 // durable tree, and returns only once all three are gone.
 //
@@ -1586,7 +1629,7 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	}
 	// Clean up proxy material even if the container was already gone, so a
 	// repeated delete still reclaims the client certificate and staged files.
-	if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
 	if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
@@ -1740,7 +1783,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, log
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
 	for _, sandboxID := range orphans {
-		if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+		if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
 		}
 		if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {

@@ -20,17 +20,25 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
+
+// SandboxEgress converges a pool's discoboxes onto its changed egress level
+// (ADR 26-10-01-032 §5), in the transaction that changes it.
+type SandboxEgress interface {
+	MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
+}
 
 type Service struct {
 	store           *store.Store
 	providers       *sandbox.ProviderManager
 	pools           *ControlPlane
 	sandboxReporter SandboxStateReporter
+	sandboxEgress   SandboxEgress
 }
 
-func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager, controlPlane *ControlPlane) *Service {
-	return &Service{store: appStore, providers: providerManager, pools: controlPlane}
+func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager, controlPlane *ControlPlane, sandboxEgress SandboxEgress) *Service {
+	return &Service{store: appStore, providers: providerManager, pools: controlPlane, sandboxEgress: sandboxEgress}
 }
 
 func (s *Service) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
@@ -118,7 +126,22 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	if value, ok := input.StorageBytes.Get(); ok {
 		pool.StorageBytes = value
 	}
-	if err := s.store.UpdatePool(ctx, pool); err != nil {
+	egressChanged := false
+	if level, ok := input.Egress.Get(); ok {
+		if pool.Egress, err = services.EgressPolicyToModel(level); err != nil {
+			return nil, err
+		}
+		egressChanged = true
+	}
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdatePool(ctx, pool); err != nil {
+			return err
+		}
+		if !egressChanged {
+			return nil
+		}
+		return s.sandboxEgress.MarkEgressChangedTx(ctx, txStore, txDB, projectID, pool.ID, "")
+	}); err != nil {
 		return nil, err
 	}
 	// Sizing policy may have changed; let the pool reconciler converge it.

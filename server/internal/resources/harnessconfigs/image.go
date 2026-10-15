@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -520,6 +521,11 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 			}
 			ports[port.Port] = struct{}{}
 		}
+	}
+	// A host the proxy could not match would be a harness that never reaches
+	// what it said it needs once a level restricts it, failing far from here.
+	if err := (egress.Policy{Allow: h.EgressHosts}).Validate(); err != nil {
+		return fmt.Errorf("%s label egressHosts: %w", harness.ImageLabel, err)
 	}
 	seen := map[string]struct{}{}
 	for _, secret := range h.Secrets {

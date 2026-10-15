@@ -38,8 +38,14 @@ true of it, and true *by rule* rather than by slug:
   `io.discobox.image.v1.<NN>-<name>` layer, then the image's own
   `io.discobox.image.v1` — before validating the merged result and snapshotting
   the digest, run/relaunch/configure argv, configure reminder and ports, files,
-  secret declarations, env, volumes, and additional groups onto the config
-  (`snapshotImageMetadata`). Nothing re-reads the labels afterward. Configure
+  secret declarations, env, volumes, additional groups, and declared egress
+  hosts onto the config (`snapshotImageMetadata`). Nothing re-reads the labels
+  afterward.
+- The harness's egress level is two fields: `ImageEgressHosts`, the hosts the
+  image declares, replaced by every re-snapshot, and `Egress`, what a person
+  set, which a re-snapshot never touches (ADR 26-10-01-032 §3). A change to
+  either marks the config's discoboxes for reconcile in the transaction that
+  saves it (`updateHarnessConfig`), through `SandboxRuntime.MarkEgressChangedTx`. Configure
   ports (`harness.ConfigPort`) are validated as a port number each, declared
   once, or as the single numberless ephemeral entry; the forward they ask for is the CLI's, not this service's — see `cli/internal/cli` →
   `forwardConfigurePorts`.

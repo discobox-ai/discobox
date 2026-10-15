@@ -34,6 +34,7 @@ type CreateSecretGrantBody = apigen.CreateSecretGrantBody
 type CreateSecretRequestBody = apigen.CreateSecretRequestBody
 type CredentialVerdict = apigen.CredentialVerdict
 type DNSAuditQuery = apigen.DNSAuditQuery
+type EgressPolicy = apigen.EgressPolicy
 type ErrorDetail = apigen.ErrorDetail
 type ErrorModel = apigen.ErrorModel
 type ErrorResponse = apigen.ErrorResponse

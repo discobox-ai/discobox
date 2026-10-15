@@ -15,6 +15,36 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// A sandbox's effective egress policy (ADR 26-10-01-032), merged by the
+// control plane. Unrestricted when denyByDefault is false, and allow is then
+// ignored; restricted, the sandbox reaches only the allow entries, so an
+// empty list reaches nothing. Entries are domain patterns, IPs, or CIDRs.
+// Ref: #/components/schemas/EgressPolicy
+type EgressPolicy struct {
+	Allow         OptNilStringArray `json:"allow"`
+	DenyByDefault OptBool           `json:"denyByDefault"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *EgressPolicy) GetAllow() OptNilStringArray {
+	return s.Allow
+}
+
+// GetDenyByDefault returns the value of DenyByDefault.
+func (s *EgressPolicy) GetDenyByDefault() OptBool {
+	return s.DenyByDefault
+}
+
+// SetAllow sets the value of Allow.
+func (s *EgressPolicy) SetAllow(val OptNilStringArray) {
+	s.Allow = val
+}
+
+// SetDenyByDefault sets the value of DenyByDefault.
+func (s *EgressPolicy) SetDenyByDefault(val OptBool) {
+	s.DenyByDefault = val
+}
+
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
 	// Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'.
@@ -933,6 +963,52 @@ func (o OptDateTime) Get() (v time.Time, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptDateTime) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptEgressPolicy returns new OptEgressPolicy with value set to v.
+func NewOptEgressPolicy(v EgressPolicy) OptEgressPolicy {
+	return OptEgressPolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptEgressPolicy is optional EgressPolicy.
+type OptEgressPolicy struct {
+	Value EgressPolicy
+	Set   bool
+}
+
+// IsSet returns true if OptEgressPolicy was set.
+func (o OptEgressPolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptEgressPolicy) Reset() {
+	var v EgressPolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptEgressPolicy) SetTo(v EgressPolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptEgressPolicy) Get() (v EgressPolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptEgressPolicy) Or(d EgressPolicy) EgressPolicy {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -3672,8 +3748,11 @@ func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/PoolSandboxCreateRequest
 type PoolSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema                OptURI                   `json:"$schema"`
-	Config                SandboxConfig            `json:"config"`
+	Schema OptURI        `json:"$schema"`
+	Config SandboxConfig `json:"config"`
+	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built
+	// so it is in force from the sandbox's first request. Absent means unrestricted.
+	Egress                OptEgressPolicy          `json:"egress"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
 	SandboxId             string                   `json:"sandboxId"`
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
@@ -3697,6 +3776,11 @@ func (s *PoolSandboxCreateRequest) GetSchema() OptURI {
 // GetConfig returns the value of Config.
 func (s *PoolSandboxCreateRequest) GetConfig() SandboxConfig {
 	return s.Config
+}
+
+// GetEgress returns the value of Egress.
+func (s *PoolSandboxCreateRequest) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
@@ -3732,6 +3816,11 @@ func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *PoolSandboxCreateRequest) SetConfig(val SandboxConfig) {
 	s.Config = val
+}
+
+// SetEgress sets the value of Egress.
+func (s *PoolSandboxCreateRequest) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
@@ -4150,6 +4239,11 @@ type PoolSandboxUpdateRequest struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI                 `json:"$schema"`
 	Config OptSandboxUpdateConfig `json:"config"`
+	// Replacement effective egress policy, recorded with the pool proxy for a sandbox whose container
+	// exists; one with no container is answered not found and nothing is recorded, since its create
+	// carries the policy. This is how a policy change reaches a sandbox (ADR 26-10-01-032 §5); absent
+	// leaves the policy as it is.
+	Egress OptEgressPolicy `json:"egress"`
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
@@ -4169,6 +4263,11 @@ func (s *PoolSandboxUpdateRequest) GetSchema() OptURI {
 // GetConfig returns the value of Config.
 func (s *PoolSandboxUpdateRequest) GetConfig() OptSandboxUpdateConfig {
 	return s.Config
+}
+
+// GetEgress returns the value of Egress.
+func (s *PoolSandboxUpdateRequest) GetEgress() OptEgressPolicy {
+	return s.Egress
 }
 
 // GetSentinels returns the value of Sentinels.
@@ -4194,6 +4293,11 @@ func (s *PoolSandboxUpdateRequest) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *PoolSandboxUpdateRequest) SetConfig(val OptSandboxUpdateConfig) {
 	s.Config = val
+}
+
+// SetEgress sets the value of Egress.
+func (s *PoolSandboxUpdateRequest) SetEgress(val OptEgressPolicy) {
+	s.Egress = val
 }
 
 // SetSentinels sets the value of Sentinels.
