@@ -224,7 +224,7 @@ Common writes and the neighbors to rule out:
 | comment and reply | — | delete a comment | comment on unrelated issues |
 | re-run its failed CI | start any other workflow | cancel or delete runs | — |
 | push tag vX.Y.Z | — | move or delete a tag, delete or edit a release | push another tag |
-| type into the workers' terminals | start a command in them | delete a worker | — |
+| type into the workers' terminals | start a command or run a service in them, reach their ports | delete, repair or upgrade a worker | a discobox you did not create |
 | approve or deny requests | create or change a secret | widen a request's uses | — |
 | read anything in the repository | read secrets | — | — |
 
@@ -368,8 +368,8 @@ discobox-access request --json <<'EOF'
   "id": "ai.discobox.sandbox",
   "justification": "the task asks me to split the work across worker discoboxes; I create them with no credentials and answer what they ask for",
   "uses": [
-    {"description": "Create worker discoboxes from <this directory>, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory's sources to them. Never give one a grant or secret, or create one from another directory or repository."},
-    {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them."},
+    {"description": "Create worker discoboxes from <this directory>, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory's sources to them. Never give one a grant or secret, create one from another directory or repository, or push sources to a discobox I did not create."},
+    {"description": "Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete, repair or upgrade them, start a command or run a service in them, reach their ports, deliver their source, or act on a discobox I did not create."},
     {"description": "Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never widen a request's uses, or create, change or delete a secret."}
   ],
   "grantTTLSeconds": 28800,
