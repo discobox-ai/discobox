@@ -76,6 +76,7 @@ var harnessImages = []harnessImage{
 	{name: "claude-code", dir: "claude-code"},
 	{name: "opencode", dir: "opencode"},
 	{name: "copilot", dir: "copilot"},
+	{name: "omp", dir: "omp"},
 	{name: "shell", dir: "shell"},
 }
 

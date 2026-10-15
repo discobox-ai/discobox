@@ -11,7 +11,7 @@ box, while your own checkout stays yours. Source moves the way it already does
 with git: a box clones your repository, the agent commits, and you merge those
 commits back to your machine or push them as a pull request.
 
-Claude Code, Codex, OpenCode, and GitHub Copilot are included; other terminal
+Claude Code, Codex, OpenCode, GitHub Copilot, and omp are included; other terminal
 agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
 and is under active development.
 

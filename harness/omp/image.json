@@ -1,0 +1,50 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "PI_CONFIG_FILES": "/etc/omp/discobox.yml",
+    "ONNXRUNTIME_NODE_INSTALL_CUDA": "skip"
+  },
+  "harness": {
+    "id": "omp",
+    "name": "omp",
+    "description": "omp (oh-my-pi) coding harness, with any provider it signs in to.",
+    "files": [
+      {
+        "path": ".omp/agent/extensions/discobox-hooks.js",
+        "content": "// Discobox's hooks for omp, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/omp-hook-extension.js\";\n"
+      },
+      {
+        "path": ".config/discobox/omp-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the omp harness. Edit with: discobox admin harnesses edit omp .config/discobox/omp-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
+      }
+    ],
+    "config": {
+      "reminder": "Sign in with /login, pick a default model with /model, then finish configuration with /exit.",
+      "ports": [
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so ChatGPT's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
+        },
+        {
+          "port": 54545,
+          "unavailable": "Port 54545 is taken on your machine, so Anthropic's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
+        },
+        {
+          "port": 8085,
+          "unavailable": "Port 8085 is taken on your machine, so Gemini CLI's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
+        },
+        {
+          "port": 51121,
+          "unavailable": "Port 51121 is taken on your machine, so Antigravity's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
+        },
+        {
+          "port": 54549,
+          "unavailable": "Port 54549 is taken on your machine, so OpenRouter's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
+        }
+      ],
+      "command": [
+        "/usr/local/libexec/discobox/configure-omp"
+      ]
+    }
+  }
+}

@@ -388,10 +388,12 @@ tasks:
       - task: build:harness-image
         vars: { HARNESS: copilot }
       - task: build:harness-image
+        vars: { HARNESS: omp }
+      - task: build:harness-image
         vars: { HARNESS: shell }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode|copilot, SANDBOX_AGENT_IMAGE defaults to the local base)
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode|copilot|omp, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:
@@ -432,6 +434,7 @@ tasks:
       - '{{.DISCO_VM}} --driver boxd build -t discobox/codex -f harness/codex-cli/boxd.yaml harness/codex-cli'
       - '{{.DISCO_VM}} --driver boxd build -t discobox/opencode -f harness/opencode/boxd.yaml harness/opencode'
       - '{{.DISCO_VM}} --driver boxd build -t discobox/copilot -f harness/copilot/boxd.yaml harness/copilot'
+      - '{{.DISCO_VM}} --driver boxd build -t discobox/omp -f harness/omp/boxd.yaml harness/omp'
 
   compile:
     desc: Alias for build
@@ -838,6 +841,7 @@ tasks:
           harness/codex-cli/Dockerfile:harness/codex-cli \
           harness/opencode/Dockerfile:harness/opencode \
           harness/copilot/Dockerfile:harness/copilot \
+          harness/omp/Dockerfile:harness/omp \
           harness/shell/Dockerfile:harness/shell; do
           dockerfile="${entry%:*}"
           context="${entry##*:}"
@@ -1847,10 +1851,12 @@ tasks:
       - task: release:harness-image
         vars: { HARNESS: copilot }
       - task: release:harness-image
+        vars: { HARNESS: omp }
+      - task: release:harness-image
         vars: { HARNESS: shell }
 
   release:harness-image:
-    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|copilot|shell)
+    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|copilot|omp|shell)
     requires:
       vars: [HARNESS]
     vars:

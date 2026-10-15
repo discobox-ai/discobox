@@ -1,0 +1,11 @@
+# omp's settings overlay for every discobox (ADR 26-10-14-718 §4), named by
+# PI_CONFIG_FILES in the image's env. An overlay outranks the user's and a
+# project's settings, and a list in it replaces theirs rather than adding to
+# it, so it holds scalars only.
+startup:
+  # The first-run wizard waits for keys, which an unattended launch never
+  # sends; omp is configured once, by `discobox admin harnesses configure omp`.
+  setupWizard: false
+  # The version a sandbox runs comes from the pool-cached store (ADR 0114), so
+  # "run omp update" is never the advice to give here.
+  checkUpdate: false

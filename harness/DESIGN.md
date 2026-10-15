@@ -214,7 +214,8 @@ launchers, and configure scripts.
   the version source, each image also turns its agent's own updater off:
   `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
   in codex's system config, `OPENCODE_DISABLE_AUTOUPDATE` in opencode's env
-  layer, `COPILOT_AUTO_UPDATE=false` in copilot's. `discobox-harness-upgrade` is the by-hand "newest, now".
+  layer, `COPILOT_AUTO_UPDATE=false` in copilot's, `startup.checkUpdate: false`
+  in omp's settings overlay (omp only ever announces an update). `discobox-harness-upgrade` is the by-hand "newest, now".
 - An image says what the discobox terminal can do when its agent will not
   infer it. An exec the console opens is given `TERM=xterm-256color` and
   nothing that says its terminal takes OSC 8 hyperlinks, which Claude Code
@@ -232,8 +233,8 @@ launchers, and configure scripts.
   `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
   answering on stdout and exiting 0 only when the model answered. `--model`
   names a *role* (`judge`, which pins a named model — except in the opencode
-  image, whose providers are the user's choice; see [OpenCode](#opencode) — or
-  `fast`), never a model id — the caller does not know
+  and omp images, whose providers are the user's choice; see
+  [OpenCode](#opencode) and [omp](#omp) — or `fast`), never a model id — the caller does not know
   what the image installed, so mapping the role is the wrapper's job, and it is
   version-coupled to a CLI the image pins the way the hook and launch wrappers
   are. `--no-tools` means the model answers from its prompt and executes
@@ -264,8 +265,8 @@ launchers, and configure scripts.
   prose mentioning a brace cannot swallow the answer. `codex-cli`
   prints the agent's last message alone (`--output-last-message`) and puts it
   through the helper; `opencode`, which has no such flag, puts its whole
-  transcript through it; `claude-code` and `copilot` print only what the model
-  said and put that through it too, since a model asked for JSON may fence it
+  transcript through it; `claude-code`, `copilot` and `omp` print only what
+  the model said and put that through it too, since a model asked for JSON may fence it
   anyway. Each
   captures its CLI's output rather than piping it, so a failed run is a failed
   wrapper rather than a successful print of nothing. The `shell`
@@ -286,6 +287,10 @@ launchers, and configure scripts.
   `copilot` checks an effort level against each model, so its judge too
   reasons as its model does until an eval measures the alternative
   ([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md) §5).
+  `omp`'s thinking levels are per model and some offer no `off`, so its judge
+  reasons as its model does as well; its wrapper turns off the session and
+  title omp would otherwise keep and generate (`--no-session --no-title`)
+  ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md) §5).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,
@@ -357,6 +362,9 @@ launchers, and configure scripts.
     install; opencode 2 (`@opencode/cli`) is a different program.
   - `copilot` — GitHub Copilot CLI (`@github/copilot`). Its slug, folder,
     image and hook provider are all `copilot`.
+  - `omp` — omp, "oh-my-pi" (`@oh-my-pi/pi-coding-agent`), a Bun script that
+    runs on the base image's Bun. Its slug, folder, image and hook provider
+    are all `omp`.
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the base image already ships the shell) and it
     has no `image.json` at all: no identity to declare beyond its reserved slug,
@@ -403,6 +411,21 @@ subject to repo trust prompts or user/project override:
   `/etc/github-copilot/managed-settings.json` is read too, but not for hooks.
   The file uses Copilot's own hook schema (`version: 1`, `bash` commands) and
   publishes all fifteen of its events.
+- omp: **no system layer** for hooks or settings
+  ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
+  Its lifecycle reaches JavaScript extensions alone, as opencode's does, so
+  `hook-extension.js` is the unit, installed beside the configure script; the
+  image's harness files put a one-line re-export of it in
+  `~/.omp/agent/extensions/discobox-hooks.js`. omp discovers that directory
+  beside the user's own `extensions:` setting rather than instead of it — an
+  overlay naming `extensions:` replaces the user's list, which is why the
+  extension is not named there. It publishes an allowlist of events, each
+  payload projected to its scalar fields and a tool event's `input`: omp's
+  payloads carry the system prompt, transcript, images and compaction entries
+  under many names. The home file can be removed and
+  `--no-extensions` skips it, which claude-code's and Copilot's hooks survive.
+  The policy baseline is the `PI_CONFIG_FILES` overlay `/etc/omp/discobox.yml`,
+  scalars only, and two launch flags (see [omp](#omp)).
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
@@ -437,7 +460,8 @@ or an audit filter then matches either.
   entry mapping a name to itself: two harnesses spelling an event the same way
   is a fact about how they were built, not a contract.
 - **An event with no Claude Code counterpart gets no canonical name**, never a
-  copy of its own. Codex's `Interrupt` is the only one today. Copying it in
+  copy of its own. Codex's `Interrupt` is one; omp's `before_subagent_spawn`,
+  `auto_retry_start` and `credential_disabled` are others. Copying it in
   would squat a name Claude Code has not chosen, so that when Claude Code does
   choose one, stored hooks already claim it.
 - **`Stop`, `StopFailure`, `SessionStart` and `PostCompact` on opencode depend
@@ -452,6 +476,12 @@ or an audit filter then matches either.
   a test in `harness/opencode` runs the plugin against the filtered set it
   declares and
   fails if the two drift apart.
+- **omp's session events are the main session's** for the same reason: omp
+  rebinds every extension into each subagent session, so the extension
+  publishes `session_start`, `session_shutdown`, `before_agent_start`, the two
+  compaction events and `session_stop` only when `ctx.agent.kind` is not
+  `sub`. Tool events are published for every session. `tool_result` is
+  `PostToolUse` for a failed tool too, with `isError` in the payload.
 - Each image's hook config and this table are kept together by a test in that
   harness's package: publishing an event without deciding what it is called
   across harnesses fails the build.
@@ -463,8 +493,9 @@ The runtime exposes opaque durable data for the primary source at
 or private to the sandbox when there is no key to share it under (see
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harness images
 interpret anything beneath it. Claude Code and Codex keep their memory there in
-separate namespaces; opencode has no memory feature to point at it, and
-Copilot's has no setting or variable that names where it keeps memories:
+separate namespaces; opencode has no memory feature to point at it,
+Copilot's has no setting or variable that names where it keeps memories, and
+omp's memory backends are off by default and are not pointed there:
 
 - **Memories are keyed by the sandbox user's uid**, as the pool cache is (ADR
   0094): each harness stores them under `.../users/<uid>/harnesses/<name>/`.
@@ -964,3 +995,83 @@ Either way Copilot stores the token, and the script reads it back:
 - Copilot unpacks itself under `~/.cache/copilot/pkg` on first run (about
   185 MB per version), which the base layer's `%HOME%/.cache` volume already
   makes per-user pool cache.
+
+### omp
+
+`omp/configure.sh` follows the opencode shape — a bare interactive `omp`,
+then a read of what it stored — for a harness whose credentials are any number
+of providers' ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
+The image declares no secrets.
+
+- **Credentials live in SQLite** (`~/.omp/agent/agent.db`), and omp moves them
+  with `omp auth export` and `omp auth import`: `{version: 1, credentials:
+  [{provider, credential}]}`, where a credential is `{type: api_key, key}` or
+  `{type: oauth, access, refresh, expires, …identity}`. An import replaces the
+  same provider's key and the same account's login, and keeps the rest.
+- **One secret per credential**, `OMP_<PROVIDER>_CREDENTIAL`, a second account
+  of one provider `_2`. omp exports several accounts in no fixed order, so a
+  credential is named by which secret it is: the one whose `PREV_` sentinel it
+  still holds, else the previous secret of the same account (provider,
+  `accountId`, `email`), else the provider's lowest free name. A key is a `token`; an OAuth login the control plane
+  can renew — Anthropic and ChatGPT with the clients the claude-code and codex
+  images are renewed with, xAI form-encoded — is an `oauth` secret; any other
+  login is a `token` holding its access token, and the script says when it
+  expires, or that it has — kept or new.
+- **Delivery is the export document as a templated harness file**,
+  `.config/discobox/omp-credentials.json`, with sentinels in place of keys and
+  access tokens, `refresh` a placeholder (or the sentinel, for GitHub Copilot,
+  which stores its token in both), and `expires` far future where the control
+  plane renews. `launch.sh` imports it before starting omp, on every launch.
+  An imported sentinel goes out as the request's credential and is never
+  refreshed. omp reads ChatGPT's `chatgpt-account-id` from the access token's
+  claims, which a sentinel does not carry.
+- **`PI_PROXY` follows `HTTPS_PROXY`** (`proxy-env.sh`, installed as
+  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher, configure command
+  and `discobox-prompt`). omp's Anthropic transport is its own client that
+  reads only `PI_PROXY`, and without it connects direct, which a sandbox's
+  egress does not allow: every Anthropic request hangs into "Connection
+  error.". It is derived rather than written into the manifest, where a build
+  in a discobox would rewrite the loopback address (ADR 26-10-01-425).
+- `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`, at build time and in the image's env
+  (the version store installs omp in the sandbox): omp's onnxruntime-node
+  dependency otherwise downloads onnxruntime's CUDA build from GitHub on
+  install, which no sandbox can use and which hung a build outright.
+- **Reconfigure imports the previous document** with each `PREV_` sentinel
+  substituted, after removing `agent.db`, so the session opens signed in to
+  exactly that. An entry whose key or access token is still that sentinel was
+  not replaced, and comes back as `usePrevious` with its previous entry
+  verbatim.
+- The session runs **without the image's overlay**, so a first configure gets
+  omp's own setup wizard (sign-in, default model, theme), and the default
+  model is then checked with a tool-free `omp -p`; a failure only warns. It
+  returns `.omp/agent/config.yml` as omp wrote it, and Discobox's
+  `.config/discobox/omp-harness.json` (`judgeModel`) as it arrived.
+- **The policy baseline** is `PI_CONFIG_FILES=/etc/omp/discobox.yml` in the
+  image's env — `startup.setupWizard: false`, whose wizard otherwise stalls an
+  unattended launch, and `startup.checkUpdate: false` — and the launcher's
+  `--auto-approve` and `--allow-home`. A launch prompt follows `--` as one
+  argument: omp sends each positional argument as its own message and reads
+  an `@`-led one as a file. Resume is `--continue`, which opens a new session
+  when there is none.
+- `discobox-prompt` runs `omp -p --no-session --no-title` with stdin from
+  `/dev/null` (given another stdin, `-p` waits for it). **`judge` is not
+  pinned**: `judgeModel`, else omp's `default` model role followed through its
+  `@` aliases (`omp config get modelRoles`), else omp's own pick; `fast` is
+  the `smol` role. **Tools-off is isolation**: `--no-tools` and discovery off,
+  in a `HOME` of its own holding only the harness's credentials, from an
+  empty directory with an empty `.git` — omp collects context files from the
+  working directory up to a repository root, or `/` without one — with no
+  inherited `PI_*`, `OMP_*`, `XDG_*` or `*_BASE_URL` variable (`PI_PROXY`
+  is set again from `HTTPS_PROXY`). The credentials
+  are rebuilt from the delivered file with each one's tokens, expiry, account,
+  email and project and nothing else, and no API key that is itself a JSON
+  document: an omp credential can name its endpoint (github-copilot's
+  `apiEndpoint`, `enterpriseUrl`, alibaba-token-plan's key), and the agent can
+  write that file. Custom providers in `models.yml` are out of the judge's
+  reach for the same reason, and so are providers that need an endpoint from
+  their credential. System text carries a newline, since omp
+  reads a one-line system prompt as a file path when such a file exists.
+- The configure image declares config ports 1455 (ChatGPT), 54545
+  (Anthropic), 8085 (Gemini CLI), 51121 (Antigravity) and 54549 (OpenRouter).
+  Every omp browser sign-in also takes the redirect URL pasted back, which is
+  the fallback when a port is taken.

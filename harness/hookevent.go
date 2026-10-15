@@ -103,6 +103,32 @@ var canonicalHookEvents = map[string]map[string]string{
 		"session.compacted":   "PostCompact",
 		"file.edited":         "FileChanged",
 	},
+	// omp names its lifecycle in snake_case, so every entry is a translation.
+	// Its image's extension publishes three more events (ADR 26-10-14-718 §3)
+	// that have no entry: before_subagent_spawn is not SubagentStart — it fires
+	// before the spawn, which another extension may still refuse — and
+	// auto_retry_start and credential_disabled are omp facts Claude Code has
+	// no word for.
+	//
+	// The session events mean the main session's, and only because the
+	// extension publishes them for the main session alone: omp rebinds every
+	// extension into each subagent session, whose copies would otherwise end
+	// a wait early. If that filter goes, those entries have to go with it.
+	//
+	// tool_result is PostToolUse for a failed tool too, as opencode's
+	// tool.execute.after is: omp reports both outcomes under the one name, with
+	// isError in the payload.
+	"omp": {
+		"session_start":           "SessionStart",
+		"session_shutdown":        "SessionEnd",
+		"before_agent_start":      "UserPromptSubmit",
+		"tool_call":               "PreToolUse",
+		"tool_result":             "PostToolUse",
+		"tool_approval_requested": "PermissionRequest",
+		"session_before_compact":  "PreCompact",
+		"session_compact":         "PostCompact",
+		"session_stop":            "Stop",
+	},
 }
 
 // CanonicalHookEvent answers the Claude Code name for one harness's hook
