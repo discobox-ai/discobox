@@ -4,12 +4,12 @@
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, or file an issue in another repository.",
+    "purpose": "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, file an issue in another repository, or read secrets.",
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,
     "uses": [
-      "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, or file an issue in another repository."
+      "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, file an issue in another repository, or read secrets."
     ]
   }
 }

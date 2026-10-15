@@ -158,7 +158,7 @@ discobox-access request --json <<'EOF'
   "hosts": ["github.com"],
   "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
   "uses": [
-    {"description": "Release vX.Y.Z of discobox-ai/discobox. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag vX.Y.Z. Never force-push, push any other branch or tag, delete or move a tag, or write to discobox-ai/homebrew-tap."}
+    {"description": "Release vX.Y.Z of discobox-ai/discobox. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag vX.Y.Z. Never force-push, push any other branch or tag, delete or move a tag, delete or edit a release, write to discobox-ai/homebrew-tap, or read secrets."}
   ],
   "wait": true,
   "timeoutSeconds": 3600

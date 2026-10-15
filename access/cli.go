@@ -151,9 +151,10 @@ func usage(w io.Writer) {
       issue #43 in acme/web as a pull request from branch fix-43 into main.
       Read anything in the repository; push that branch, open and update the
       pull request, and comment on it. Never push main or any other branch,
-      delete a branch, or merge or close the pull request." Rule out the
-      dangerous neighbor of each write: the same action wider, harsher, or
-      on the target beside yours.
+      force-push, delete a branch, merge or close the pull request, open one
+      in another repository, comment on unrelated issues, delete a comment,
+      or read secrets." Rule out the dangerous neighbor of each write: the
+      same action wider, harsher, or on the target beside yours.
 
       ID names a well-known credential (com.github.api), which says its own
       name, variable, and host; give only --use and --why. --hosts may still
@@ -173,7 +174,7 @@ func usage(w io.Writer) {
           "envVar": "GITHUB_TOKEN",
           "hosts": ["api.github.com"],
           "justification": "the user's task asks me to open a PR",
-          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, delete a branch, or merge or close the PR."}],
+          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, force-push, delete a branch, merge or close the PR, open one in another repository, or read secrets."}],
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600

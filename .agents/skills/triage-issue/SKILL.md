@@ -47,7 +47,7 @@ anything — ask first for any of those.
     "id": "com.github.api",
     "justification": "I triage issues in discobox-ai/discobox, one at a time as I am asked: read each one, reproduce it, label it, and post what I found on it",
     "uses": [
-      {"description": "Triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, delete a comment, close, assign, or retitle an issue, or push."}
+      {"description": "Triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, label another repository's issues, delete a comment, close, assign, or retitle an issue, push, or read secrets."}
     ],
     "grantTTLSeconds": 259200,
     "wait": true

@@ -81,7 +81,7 @@ this skill has already asked — rebase and force-push with a lease to
     "id": "com.github.api",
     "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green, answer review comments, and keep it mergeable until it is merged",
     "uses": [
-      {"description": "Deliver <change> as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, delete a branch, merge or close the pull request, delete a comment, or start any other workflow."}
+      {"description": "Deliver <change> as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."}
     ],
     "grantTTLSeconds": 259200,
     "wait": true
