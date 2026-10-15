@@ -16,6 +16,10 @@ the CLI writes on first run, so reuse one home, or put homes in `/tmp`
   needle; `grep` here is ugrep, whose `.{0,300}` context patterns hit a
   complexity limit. `strings -n 6` on native addons finds paths (`/etc/...`),
   setting schemas (`{"path":"hooks.sessionStart",...}`), and error texts.
+- npm packages often ship more than a bundle: omp shipped its TypeScript
+  `src/` and its docs (`dist/docs-index.generated.txt`: a JSON list of names,
+  then a base64 gzip of a JSON array of contents). Read those before a
+  minified bundle.
 - **A string in the binary is not behavior.** It tells you what to test next.
   Never report an endpoint or flow as "the CLI does X" until a run showed it.
 
@@ -103,7 +107,9 @@ do not route around a vendor's access control by presenting as another client.
   `mktemp -d` and remove them by literal path.
 - A full disk silently truncates writes and swallows command output; write
   diagnostics to `/dev/shm` and read them back with Read.
-- The login shell is zsh: a bare `=====` argument is an expansion error.
+- The login shell is zsh: a bare `=====` argument is an expansion error, and
+  an unquoted `$flags` holding several words is still one word — write each
+  case out or use an array.
 - golangci-lint's cache lives under `~/.cache`, which is pool cache shared by
   every discobox of the same uid: `ci:check` can report findings in another
   box's checkout (`../../workspace/source/...`) or in generated code. Run
