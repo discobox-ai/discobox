@@ -87,9 +87,8 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Read only to decide whether the refresh step runs; the step that uses it
-      # takes it as its own GH_TOKEN.
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      # brew:refresh's own credential; GH_TOKEN stays this repository's.
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
       # Both matrix legs land in one directory; release:publish uploads
@@ -99,35 +98,12 @@ jobs:
           pattern: release-bin-*
           merge-multiple: true
           path: build/release/bin
+      # Publishing, then the tap for a dot release: one target, so what the
+      # job does is the Taskfile's (ADR 0066 §1). This feeds
+      # `brew install discobox-dev` only; `brew install discobox` follows the
+      # newest release a human has marked stable, which is promote.yml's job.
+      # Nothing else updates the tap, so a dot release with no tap token fails
+      # here rather than leaving `brew install discobox-dev` a version behind.
       - uses: ./.github/actions/task
         with:
-          target: release:publish
-      # Nix is installed by the step above. Asked here rather than decided in
-      # YAML so the rule stays the Taskfile's (ADR 0066 §1). A dot release joins
-      # the latest channel the moment it is cut; an explicit prerelease exists
-      # only under its own tag (ADR 0105).
-      - id: dot
-        run: echo "dot=$(nix develop -c go tool task release:dot)" >> "$GITHUB_OUTPUT"
-
-      # A step here rather than a job of its own, which ADR 0066 §2 allows once
-      # Nix is installed: this is one API call, and standing up another runner
-      # to make it would cost minutes to save seconds.
-      #
-      # This feeds `brew install discobox-dev`. It cannot feed
-      # `brew install discobox`: what was just published is a prerelease, and
-      # the tap builds the stable formula from the newest release a human has
-      # marked stable. That is promote.yml's job, later and by hand.
-      #
-      # Nothing else updates the tap — it has no cron any more — so a missing
-      # token is a broken release, not a slow one, and fails here rather than
-      # leaving `brew install discobox-dev` on the previous version with nobody
-      # aware of it.
-      - if: steps.dot.outputs.dot == 'yes' && env.TAP_TOKEN == ''
-        run: |
-          echo "::error::HOMEBREW_TAP_TOKEN is not set, and nothing else will tell the tap about $RELEASE_TAG"
-          exit 1
-      - name: Tell the tap to update
-        if: steps.dot.outputs.dot == 'yes'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: nix develop -c go tool task brew:refresh
+          target: ci:release-publish

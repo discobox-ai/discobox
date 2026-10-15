@@ -78,6 +78,7 @@ the file belongs, listing every setting.`,
 	cmd.AddCommand(a.newServerStageCommand())
 	cmd.AddCommand(a.newServerManifestCommand())
 	cmd.AddCommand(a.newServerShutdownCommand())
+	cmd.AddCommand(a.newServerChooseProviderCommand())
 	cmd.AddCommand(a.newServerLogsCommand())
 	cmd.AddCommand(a.newStatusCommand())
 	return cmd

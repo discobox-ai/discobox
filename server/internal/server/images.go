@@ -2,13 +2,13 @@ package server
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/providers"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // Images is every image a first run on this machine will want, for the CLI that
@@ -25,10 +25,11 @@ func Images() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
+	providerType := providers.DefaultProviderType(cfg.DefaultProvider, version.Released())
 	if cfg.Release != nil {
-		return cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH), nil
+		return providers.ReleaseImages(cfg.Release.Images, providerType), nil
 	}
-	images := append([]string{}, providers.DefaultBootImages()...)
+	images := append([]string{}, providers.DefaultBootImages(providerType)...)
 	images = append(images, dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{PoolImage: cfg.DockerPoolImage}), cfg.DefaultSandboxImage)
 	for _, definition := range harnessdefs.Seeds(cfg.HarnessImages, false) {
 		images = append(images, definition.Image)

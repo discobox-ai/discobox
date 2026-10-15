@@ -149,8 +149,14 @@ machine, the client pushes your new commits into it while you are attached, and
 
 ## Isolation and credentials
 
-Discobox uses VM and container isolation. Agents can install packages and run
-commands inside the box without approval prompts. Outbound traffic passes
+Each box is a container inside a VM: every pool runs in its own virtual machine
+— Virtualization.framework on macOS, WSL Containers on Windows, and a libkrun
+microVM on Linux, which needs KVM and glibc 2.34 or newer (Ubuntu 22.04,
+Debian 12, RHEL 9 and later) and nothing installed. If a Linux host
+cannot run libkrun, the first `discobox` asks before falling back to Docker,
+which runs boxes as containers on the host's kernel with no VM boundary.
+Agents can install packages and run commands inside the box without approval
+prompts. Outbound traffic passes
 through a proxy with a separate mTLS identity for each box, destination policy,
 and request auditing.
 

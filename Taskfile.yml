@@ -73,9 +73,19 @@ vars:
   #
   # The last argument that is not a flag, so `-- --prerelease v1.2.3` still
   # names v1.2.3 (see ALLOW_PRERELEASE).
+  #
+  # Only what a tag can be spelled with survives. TAG is pasted into shell
+  # source all over this file (`tag="{{.TAG}}"`), and a task's arguments are
+  # not always a tag — `release:try` forwards a whole discobox command line —
+  # so anything else would be code: a word with a quote, a `$(...)`, or a
+  # backtick in it would run, on the host, while Task was still evaluating
+  # variables. Such a word is not a tag, so it leaves TAG empty and the task
+  # that needed one says so. Globbing is off for the same reason: `*` is an
+  # argument, not the directory's contents.
   TAG:
     sh: |
-      args="{{.CLI_ARGS}}"
+      set -f
+      args={{shellQuote .CLI_ARGS}}
       tag=""
       for word in $args; do
         case "$word" in
@@ -85,6 +95,7 @@ vars:
       done
       if [ -z "$tag" ]; then tag="${RELEASE_TAG:-}"; fi
       if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME:-}"; fi
+      case "$tag" in *[!A-Za-z0-9._/+-]*) tag="" ;; esac
       printf %s "$tag"
   # Publishing a prerelease to a package channel, said out loud: `task
   # brew:publish -- --prerelease v1.2.3-alpha.4`. Nothing automatic sets it,
@@ -92,7 +103,8 @@ vars:
   # the flag.
   ALLOW_PRERELEASE:
     sh: |
-      args="{{.CLI_ARGS}}"
+      set -f
+      args={{shellQuote .CLI_ARGS}}
       for word in $args; do
         case "$word" in
           --prerelease) printf yes ;;
@@ -102,7 +114,8 @@ vars:
   # v1.2.3` writes discobox-dev.rb rather than discobox.rb (ADR 0105).
   BREW_DEV:
     sh: |
-      args="{{.CLI_ARGS}}"
+      set -f
+      args={{shellQuote .CLI_ARGS}}
       for word in $args; do
         case "$word" in
           --dev) printf yes ;;
@@ -263,36 +276,104 @@ tasks:
     # machine picks it up. Delete the directory to go back to the published
     # image.
     #
-    # One image serves both backends, so this is one target: the platform only
-    # decides which architecture to build and which provider's local directory
-    # to stage it into.
+    # One guest serves both backends, but they take it differently. vz boots
+    # the guest image as it is. libkrun boots one image that carries the guest's
+    # root disk beside its runtime (ADR 26-09-23-473 §5), so on Linux this swaps the
+    # root disk into an already staged libkrun image rather than staging a
+    # guest on its own: a directory holding only a guest is not one libkrun can
+    # boot.
     vars:
-      GUEST_PLATFORM: '{{.GUEST_PLATFORM | default (printf "linux/%s" (eq OS "darwin" | ternary "arm64" ARCH))}}'
-      GUEST_DIR: '{{.GUEST_DIR | default (eq OS "darwin" | ternary "$HOME/Library/Application Support/discobox/vz/guest/local" "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/guest/local")}}'
+      GUEST_PLATFORM: '{{.GUEST_PLATFORM | default "linux/arm64"}}'
+      GUEST_DIR: '{{.GUEST_DIR | default "$HOME/Library/Application Support/discobox/vz/guest/local"}}'
     cmds:
       - task: stage-vm-artifacts
+        if: '[ "{{OS}}" = darwin ]'
         vars:
           STAGE_DOCKERFILE: vm-image/Dockerfile
           STAGE_PLATFORM: '{{.GUEST_PLATFORM}}'
           STAGE_DIR: '{{.GUEST_DIR}}'
           STAGE_WHAT: guest
-
-  build:vm-kernel:
-    desc: Build the libkrun guest kernel and stage it where the libkrun provider finds it
-    # Only libkrun needs this, and only libkrun can use it: it is the
-    # libkrunfw-patched kernel, which no other hypervisor boots. It compiles
-    # Linux, so it is slow the first time and a BuildKit cache hit afterwards —
-    # which is exactly why it is not a stage of the guest image.
-    platforms: [linux]
-    vars:
-      KERNEL_DIR: '{{.KERNEL_DIR | default "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/kernel/local"}}'
-    cmds:
-      - task: stage-vm-artifacts
+      - task: stage-vm-krun
+        if: '[ "{{OS}}" = linux ]'
         vars:
-          STAGE_DOCKERFILE: vm-image/kernel/Dockerfile
-          STAGE_PLATFORM: linux/amd64
-          STAGE_DIR: '{{.KERNEL_DIR}}'
-          STAGE_WHAT: kernel
+          KRUN_BUILD_RUNTIME: "false"
+
+  build:vm-krun:
+    desc: Build libkrun's runtime and the guest, and stage them where the libkrun provider finds them
+    # Only libkrun needs this, and only libkrun can use it: the runtime is the
+    # libkrunfw-patched kernel, libkrun, and passt, which no other hypervisor
+    # boots. It compiles Linux and libkrun, so it is slow the first time and a
+    # BuildKit cache hit afterwards — which is exactly why it is not a stage of
+    # the guest image. After the first run, `build:vm-guest` is the fast loop
+    # for a guest change.
+    #
+    # This builds from source rather than from vm-image/libkrun/package, which
+    # packages published digests: a local build is how a change to either input
+    # is tried before anything is published.
+    platforms: [linux]
+    cmds:
+      - task: stage-vm-krun
+        vars:
+          KRUN_BUILD_RUNTIME: "true"
+
+  stage-vm-krun:
+    internal: true
+    # The libkrun provider resolves one directory holding all five files
+    # (ADR 26-09-23-473 §5), so this assembles them aside and swaps the whole directory
+    # in: a pool may be booting from it right now, and a half-written one would
+    # pair one build's kernel with another's library. The staging directory is
+    # a sibling of the destination so the swap is a rename, not a copy.
+    requires:
+      vars: [KRUN_BUILD_RUNTIME]
+    vars:
+      KRUN_DIR: '{{.KRUN_DIR | default "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/vm/local"}}'
+    cmds:
+      - |
+        set -eu
+        dest="{{.KRUN_DIR}}"
+        runtime_files="vmlinux kernel.config libkrun.so.1 passt"
+        if [ "{{.KRUN_BUILD_RUNTIME}}" != true ]; then
+          for f in $runtime_files; do
+            if [ ! -s "$dest/$f" ]; then
+              echo "no libkrun runtime staged in $dest (missing $f); run \`go tool task build:vm-krun\` first" >&2
+              exit 1
+            fi
+          done
+        fi
+        mkdir -p "$(dirname "$dest")"
+        staging="$(mktemp -d "$(dirname "$dest")/.local-staging.XXXXXX")"
+        guest="$(mktemp -d "${TMPDIR:-/tmp}/discobox-vm-guest.XXXXXX")"
+        trap 'rm -rf "$staging" "$guest"' EXIT
+        # amd64 whatever this host is: it is the only architecture libkrun boots.
+        docker build \
+          --platform linux/amd64 \
+          --file vm-image/Dockerfile \
+          --output "type=local,dest=$guest" \
+          .
+        if [ "{{.KRUN_BUILD_RUNTIME}}" = true ]; then
+          docker build \
+            --platform linux/amd64 \
+            --file vm-image/libkrun/Dockerfile \
+            --output "type=local,dest=$staging" \
+            .
+        else
+          for f in $runtime_files; do
+            cp -p "$dest/$f" "$staging/$f"
+          done
+        fi
+        # libkrun boots the root disk alone; the guest's initrd is vz's.
+        mv "$guest/root.ext4" "$staging/root.ext4"
+        chmod 0755 "$staging"
+        if [ -e "$dest" ]; then
+          mv "$dest" "$staging.old"
+          mv "$staging" "$dest"
+          rm -rf "$staging.old"
+        else
+          mv "$staging" "$dest"
+        fi
+        trap 'rm -rf "$guest"' EXIT
+        ls -l "$dest"
+        echo "staged libkrun image in $dest; recreate a pool to boot it"
 
   stage-vm-artifacts:
     internal: true
@@ -703,18 +784,19 @@ tasks:
       - cd server && DISCOBOX_E2E=1 go test ./providers/poolruntime -count=1 -v
 
   test:e2e:libkrun:
-    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM, libkrun and passt on the path, plus the DISCOBOX_LIBKRUN_E2E_* variables"
+    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM plus the DISCOBOX_LIBKRUN_E2E_* variables"
     cmds:
-      # Unlike the other suites this one needs artifacts the repository does not
+      # Unlike the other suites this one needs artifacts `go test` does not
       # build, so it fails loudly listing what is missing rather than skipping
-      # silently and looking like a pass. The two directories are what
-      # `vm:build` and `vm:build-kernel` write on an amd64 Linux machine:
-      # build/vm and build/vm-kernel. Both have to be amd64 — that is the only
-      # architecture libkrun boots — and an override directory carries no
-      # platform, so nothing downstream can catch an arm64 root filesystem.
+      # silently and looking like a pass. The image directory is what
+      # `vm:build-krun` writes, build/vm-krun: the root disk, the kernel,
+      # libkrun and passt together (ADR 26-09-23-473 §5), and the launcher loads the
+      # last two from there rather than from the path. It is amd64 whatever the
+      # host, which matters: an override directory carries no platform, so
+      # nothing downstream can catch an arm64 root filesystem.
       - |
         missing=""
-        for v in DISCOBOX_LIBKRUN_E2E_GUEST_DIR DISCOBOX_LIBKRUN_E2E_KERNEL_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
+        for v in DISCOBOX_LIBKRUN_E2E_IMAGE_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
           eval "value=\${$v:-}"
           if [ -z "$value" ]; then missing="$missing $v"; fi
         done
@@ -836,7 +918,8 @@ tasks:
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
           vm-image/Dockerfile:. \
-          vm-image/kernel/Dockerfile:. \
+          vm-image/libkrun/Dockerfile:. \
+          vm-image/libkrun/package/Dockerfile:. \
           harness/claude-code/Dockerfile:harness/claude-code \
           harness/codex-cli/Dockerfile:harness/codex-cli \
           harness/opencode/Dockerfile:harness/opencode \
@@ -1070,6 +1153,194 @@ tasks:
       - task: check:darwin
       - task: release:build
 
+  # The release workflows' jobs, one target each, so a job body is the one
+  # task step ADR 0066 §1 asks for and the same sequence runs in a terminal.
+  ci:release-publish:
+    desc: "The release workflow's publish job: create the GitHub release, then tell the tap if it is a dot release"
+    cmds:
+      - task: release:publish
+      - task: release:tap
+
+  ci:promote:
+    desc: "The promote workflow's job: refuse a tag that cannot be marked stable, then tell the tap"
+    cmds:
+      - task: release:require-dot
+      - task: brew:refresh
+
+  # The VM image workflows' build jobs, one target each, for the same reason.
+  # Verification follows the build it checks and never runs alone: it reads
+  # the directory the build just wrote.
+  ci:vm-guest:
+    desc: "The VM guest workflow's build: build the guest for VM_PLATFORM= and verify it will boot"
+    cmds:
+      - task: vm:build
+        vars: { VM_PLATFORM: '{{.VM_PLATFORM}}' }
+      - task: vm:verify
+        vars: { VM_PLATFORM: '{{.VM_PLATFORM}}' }
+
+  ci:libkrun-runtime:
+    desc: "The libkrun runtime workflow's build: build the kernel, libkrun, and passt, and verify any host can load them"
+    cmds:
+      - task: vm:build-libkrun-runtime
+      - task: vm:verify-libkrun-runtime
+
+  ci:vm-krun:
+    desc: "The libkrun image workflow's build: package the pinned guest and runtime, and verify the image"
+    cmds:
+      - task: vm:build-krun
+      - task: vm:verify-krun
+
+  release:
+    desc: Build this checkout as a release for this machine, to try locally (task release -- v0.0.0-dev)
+    # What a release build is, minus everything that needs a release to exist:
+    # the version is stamped, so the binaries behave as a user's do (a Linux
+    # first start installs libkrun, ADR 26-09-23-473 §1; the CLI autolaunches its
+    # server), but nothing is published, no manifest names download URLs that
+    # would 404, and the images are pinned to the newest published release,
+    # because the tag given here has none. IMAGE_TAG= pins another, REGISTRY=
+    # another registry. `task release:try` runs the result.
+    #
+    # "Newest published" is GitHub's latest release: marked stable by a human,
+    # so its images job finished long ago. The newest tag is not the same
+    # thing — a release in flight has a tag before it has images, and one
+    # whose images job failed has a tag and never will.
+    vars:
+      UPSTREAM: '{{.RELEASE_REPO | default .ASSET_MIRROR_REPO}}'
+      IMAGE_TAG:
+        sh: |
+          if [ -n "{{.IMAGE_TAG}}" ]; then printf %s "{{.IMAGE_TAG}}"; exit 0; fi
+          curl -fsSI "https://github.com/{{.UPSTREAM}}/releases/latest" 2>/dev/null |
+            sed -n 's#^[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*#\1#p' | tail -n 1
+      LOCAL_REGISTRY: '{{.REGISTRY | default "ghcr.io/discobox-ai"}}'
+      EXT: '{{if eq OS "windows"}}.exe{{end}}'
+    preconditions:
+      - sh: '[ -n "{{.TAG}}" ]'
+        msg: "name the version to stamp: task release -- v0.0.0-dev"
+      - sh: 'case "{{.TAG}}" in v*) exit 0 ;; *) exit 1 ;; esac'
+        msg: "{{.TAG}} is not a version: it has to start with v, as in v0.0.0-dev"
+      - sh: '[ -n "{{.IMAGE_TAG}}" ]'
+        msg: "could not ask GitHub for the latest release of {{.UPSTREAM}} to take images from; name one with IMAGE_TAG=vX.Y.Z"
+    cmds:
+      - task: release:binary
+        vars:
+          TARGET_OS: '{{OS}}'
+          TARGET_ARCH: '{{ARCH}}'
+          IMAGE_TAG: '{{.IMAGE_TAG}}'
+          REGISTRY: '{{.LOCAL_REGISTRY}}'
+          # No manifest: it would name this version's downloads, which do not
+          # exist. A CLI without one starts the server beside it.
+          RELEASE_REPO: ""
+      - |
+        set -eu
+        rm -rf build/release/local && mkdir -p build/release/local
+        cp -p "build/release/bin/discobox-{{OS}}-{{ARCH}}{{.EXT}}" "build/release/local/discobox{{.EXT}}"
+        cp -p "build/release/bin/discobox-server-{{OS}}-{{ARCH}}{{.EXT}}" "build/release/local/discobox-server{{.EXT}}"
+        echo "built {{.TAG}} (images {{.LOCAL_REGISTRY}}/*:{{.IMAGE_TAG}}) into build/release/local"
+        echo "try it as a new user would: go tool task release:try"
+
+  release:try:
+    desc: Run the release `task release` built as a new user on this machine would (task release:try -- [discobox args])
+    # The CLI runs as a user with a home of their own under /tmp — short,
+    # because a pool VM's socket paths have a length limit — and starts its
+    # server there, as a user's does on first run: the prompt, the default
+    # provider, the first pool, all of it, and none of it shared with a server,
+    # data directory, or ~/.ssh/config already on this machine.
+    #
+    # HOME and every XDG directory move, not only discobox's own settings: a
+    # libkrun pool's disks and its control-plane socket follow XDG_DATA_HOME and
+    # XDG_RUNTIME_DIR, and the SSH config the CLI writes follows HOME. The
+    # session bus goes too, so the CLI starts the server itself rather than as
+    # a systemd user unit: a unit gets the server's settings and not this
+    # environment, and would put the pool's disks and socket back in the real
+    # ones. The directory lasts across runs, so a second run is a second start;
+    # `task release:try:reset` stops the server and deletes it.
+    platforms: [linux, darwin]
+    interactive: true
+    silent: true
+    vars:
+      TRY_DIR: '{{.TRY_DIR | default (printf "/tmp/dbx-try-%s" (env "USER"))}}'
+    preconditions:
+      - sh: '[ -x build/release/local/discobox ] && [ -x build/release/local/discobox-server ]'
+        msg: "nothing to try: build a release first with task release -- v0.0.0-dev"
+    cmds:
+      - task: release:try:own-dir
+        vars: { TRY_DIR: '{{.TRY_DIR}}', IF_MISSING: create }
+      - |
+        set -eu
+        dir="{{.TRY_DIR}}"
+        bin="$PWD/build/release/local"
+        mkdir -p "$dir/home" "$dir/data" "$dir/state" "$dir/cache" "$dir/config" \
+          "$dir/xdg-data" "$dir/xdg-state" "$dir/xdg-config" "$dir/xdg-cache" "$dir/run"
+        chmod 700 "$dir/run"
+        [ -e "$dir/env" ] || : > "$dir/env"
+        unset DISCOBOX_SERVER DBUS_SESSION_BUS_ADDRESS
+        export HOME="$dir/home" \
+          DISCOBOX_DATA_DIR="$dir/data" DISCOBOX_STATE_DIR="$dir/state" \
+          DISCOBOX_CACHE_DIR="$dir/cache" DISCOBOX_CONFIG_DIR="$dir/config" \
+          DISCOBOX_ENV_FILE="$dir/env" \
+          XDG_DATA_HOME="$dir/xdg-data" XDG_STATE_HOME="$dir/xdg-state" \
+          XDG_CONFIG_HOME="$dir/xdg-config" XDG_CACHE_HOME="$dir/xdg-cache" \
+          XDG_RUNTIME_DIR="$dir/run" \
+          DISCOBOX_SERVER_BINARY="$bin/discobox-server"
+        exec "$bin/discobox" {{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}
+
+  release:try:reset:
+    desc: Stop the server `task release:try` started and delete its directory, so the next try is a first start again
+    # It speaks to the try server's socket and to nothing else. The CLI's
+    # `admin server shutdown` falls back to 127.0.0.1:$PORT when the socket does
+    # not answer — which is exactly when a reset is wanted, after a crash left
+    # the file behind — and would stop whatever discobox listens there instead.
+    platforms: [linux, darwin]
+    vars:
+      TRY_DIR: '{{.TRY_DIR | default (printf "/tmp/dbx-try-%s" (env "USER"))}}'
+    cmds:
+      - task: release:try:own-dir
+        vars: { TRY_DIR: '{{.TRY_DIR}}', IF_MISSING: skip }
+      - |
+        set -eu
+        dir="{{.TRY_DIR}}"
+        [ -e "$dir" ] || { echo "nothing to reset at $dir"; exit 0; }
+        sock="$dir/run/discobox/server.sock"
+        if [ -S "$sock" ] && curl -fsS --max-time 5 --unix-socket "$sock" -X POST http://try/shutdown >/dev/null 2>&1; then
+          # Its pool VMs die with it; wait for the socket to stop answering so
+          # nothing is deleted from under a server still shutting down.
+          i=0
+          while curl -fsS --max-time 1 --unix-socket "$sock" http://try/healthz >/dev/null 2>&1 && [ "$i" -lt 30 ]; do
+            sleep 1; i=$((i + 1))
+          done
+          echo "stopped the try server"
+        fi
+        rm -rf "$dir"
+        echo "removed $dir"
+
+  release:try:own-dir:
+    internal: true
+    silent: true
+    # TRY_DIR is a predictable path in a shared /tmp, so release:try and its
+    # reset act on it only if it is this user's own and closed to everyone
+    # else: another user who made it first could hand the try server its env
+    # file and configuration, and through them libkrunPath or passtPath, which
+    # run as this user — or have a reset delete what it should not. A real
+    # directory, not a symlink, owned by this user, mode 700. IF_MISSING=create
+    # makes a missing one that way, without -p, so one created in between makes
+    # this fail rather than be adopted; IF_MISSING=skip leaves a missing one to
+    # the caller.
+    requires:
+      vars: [TRY_DIR, IF_MISSING]
+    cmds:
+      - |
+        set -eu
+        dir="{{.TRY_DIR}}"
+        if [ -e "$dir" ] || [ -L "$dir" ]; then
+          perm="$(stat -c %a "$dir" 2>/dev/null || stat -f %Lp "$dir")"
+          if [ -L "$dir" ] || [ ! -d "$dir" ] || [ ! -O "$dir" ] || [ "$perm" != 700 ]; then
+            echo "$dir is not a directory only you can use (owner, type or mode $perm); remove it or set TRY_DIR" >&2
+            exit 1
+          fi
+        elif [ "{{.IF_MISSING}}" = create ]; then
+          mkdir -m 700 "$dir"
+        fi
+
   release:build:
     desc: Build this platform's release binaries into build/release/bin
     # Release binaries are built on the platform they target because darwin has
@@ -1112,6 +1383,13 @@ tasks:
     desc: Build one platform's release binaries — the CLI and the server it stages (TARGET_OS=, TARGET_ARCH=)
     requires:
       vars: [TARGET_OS, TARGET_ARCH]
+    # A release that publishes (it names its downloads, below) runs the images
+    # cut with it and no others. Only `task release`, which publishes nothing,
+    # borrows another release's; an IMAGE_TAG that reached a real release from
+    # the environment would ship binaries pinned to the wrong images.
+    preconditions:
+      - sh: '[ -z "{{.PIN_TAG}}" ] || [ -z "{{.RELEASE_REPO}}" ] || [ "{{.IMAGE_TAG}}" = "{{.PIN_TAG}}" ]'
+        msg: "IMAGE_TAG={{.IMAGE_TAG}} but this release is {{.PIN_TAG}}: a published release pins its own images; unset IMAGE_TAG"
     deps:
       # The server embeds the guest relay.
       - build:cp-relay
@@ -1125,6 +1403,10 @@ tasks:
             v*) printf %s "$tag" ;;
             *) printf %s "" ;;
           esac
+      # The tag the images are pinned to: the release's own, unless a local
+      # release (`task release`) borrows a published one's, since a tag made up
+      # for trying a build has no images behind it.
+      IMAGE_TAG: '{{.IMAGE_TAG | default .PIN_TAG}}'
       EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
       OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
       # The server is published as its own asset and staged by the CLI on the
@@ -1157,10 +1439,10 @@ tasks:
       # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
       # can pull — into a binary that otherwise looks fine.
       SERVER_LDFLAGS: >-
-        {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
-        -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}
+        {{if and .IMAGE_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.IMAGE_TAG}}
+        -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.IMAGE_TAG}}
         -X github.com/discobox-ai/discobox/harness.ImageRegistry={{.REGISTRY}}
-        -X github.com/discobox-ai/discobox/harness.ImageTag={{.PIN_TAG}}{{end}}
+        -X github.com/discobox-ai/discobox/harness.ImageTag={{.IMAGE_TAG}}{{end}}
       # The ELF interpreter, named rather than inherited.
       #
       # iroh-go reaches its embedded cdylib through purego, which imports dlopen
@@ -1544,14 +1826,17 @@ tasks:
         fi
         go run ./internal/cmd/discobox-installers -version "$tag" -out build/release/bin "$@"
 
-  release:dot:
-    desc: Print yes when the release tag is a dot release, nothing otherwise
-    # So a workflow can ask the question the publish targets already ask, rather
-    # than a second copy of the rule in YAML — which could not express it
-    # anyway, since GitHub expressions have no pattern matching (ADR 0066 §1).
-    silent: true
+  release:tap:
+    desc: Tell the tap about the release just cut when it is a dot release, and say so when it is not
+    # A dot release joins the latest channel the moment it is cut; an explicit
+    # prerelease exists only under its own tag (ADR 0105). The rule and the
+    # branch on it both live here, so release.yml runs this one target rather
+    # than deciding in YAML whether to run brew:refresh (ADR 0066 §1).
     cmds:
-      - printf %s '{{.DOT_RELEASE}}'
+      - task: brew:refresh
+        if: '[ "{{.DOT_RELEASE}}" = yes ]'
+      - cmd: echo "{{.TAG}} is not a dot release, so the tap is not told about it"
+        if: '[ "{{.DOT_RELEASE}}" != yes ]'
 
   release:require-dot:
     desc: Fail unless the release tag is a dot release
@@ -1792,8 +2077,27 @@ tasks:
     vars:
       TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
       TAP_WORKFLOW: '{{.TAP_WORKFLOW | default "update-formula.yml"}}'
+    # The credential is HOMEBREW_TAP_TOKEN, named for what it may do, so a job
+    # that also holds a GH_TOKEN for its own repository — the release's
+    # publish job — hands this one over without the two colliding. A person
+    # with `gh` logged in, or a GH_TOKEN of their own, needs neither.
+    #
+    # Refused before the call rather than failing inside it, and here rather
+    # than as a step in each workflow: nothing else updates the tap, so a
+    # release that cannot tell it leaves `brew install` on the previous version
+    # with nobody the wiser (ADR 0066 §1). In CI only HOMEBREW_TAP_TOKEN will
+    # do: the job's own GH_TOKEN cannot start a workflow in another repository,
+    # and would fail later with a message about permissions instead of this.
+    preconditions:
+      - sh: |
+          if [ -n "${GITHUB_ACTIONS:-}" ]; then
+            [ -n "${HOMEBREW_TAP_TOKEN:-}" ]
+          else
+            [ -n "${HOMEBREW_TAP_TOKEN:-}${GH_TOKEN:-}" ] || gh auth status >/dev/null 2>&1
+          fi
+        msg: "no credential to tell {{.TAP_REPO}} about this release: set HOMEBREW_TAP_TOKEN (in CI, the secret of that name) or log in with `gh auth login`"
     cmds:
-      - gh workflow run {{.TAP_WORKFLOW}} --repo {{.TAP_REPO}}
+      - GH_TOKEN="${HOMEBREW_TAP_TOKEN:-${GH_TOKEN:-}}" gh workflow run {{.TAP_WORKFLOW}} --repo {{.TAP_REPO}}
       - echo "asked {{.TAP_REPO}} to update its formula"
 
   brew:formula:
@@ -1960,17 +2264,31 @@ tasks:
         --output type=local,dest=build/vm
         .
 
-  vm:build-kernel:
-    desc: Build the libkrun guest kernel into build/vm-kernel
+  vm:build-libkrun-runtime:
+    desc: Build libkrun's host runtime (patched kernel, libkrun, passt) into build/libkrun-runtime
     deps:
       - buildx:builder
     cmds:
-      - rm -rf build/vm-kernel
+      - rm -rf build/libkrun-runtime
       - >-
         docker buildx build --builder {{.BUILDX_BUILDER}}
         --platform linux/amd64
-        --file vm-image/kernel/Dockerfile
-        --output type=local,dest=build/vm-kernel
+        --file vm-image/libkrun/Dockerfile
+        --output type=local,dest=build/libkrun-runtime
+        .
+
+  vm:build-krun:
+    desc: Package the image a libkrun pool boots into build/vm-krun, from the pinned guest and runtime
+    # Compiles nothing: it pulls the two digests vm-image/libkrun/package pins.
+    deps:
+      - buildx:builder
+    cmds:
+      - rm -rf build/vm-krun
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}}
+        --platform linux/amd64
+        --file vm-image/libkrun/package/Dockerfile
+        --output type=local,dest=build/vm-krun
         .
 
   vm:verify:
@@ -1992,7 +2310,7 @@ tasks:
           test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
         done
         # Only arm64 publishes a kernel. amd64 is booted by libkrun, which needs
-        # the patched kernel from vm-image/kernel and would not load Debian's;
+        # the patched kernel from vm-image/libkrun and would not load Debian's;
         # see assemble-guest-image.
         if [ "$arch" = arm64 ]; then
           test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
@@ -2036,14 +2354,39 @@ tasks:
         fi
         echo "VM artifacts verified for $arch (hostname $hostname)"
 
-  vm:verify-kernel:
-    desc: Verify the built libkrun kernel is one libkrun can load
+  vm:verify-libkrun-runtime:
+    desc: Verify the built libkrun runtime is one any Linux host can load
+    cmds:
+      - task: verify-libkrun-runtime-files
+        vars: { VERIFY_DIR: build/libkrun-runtime }
+
+  vm:verify-krun:
+    desc: Verify the packaged libkrun image carries everything a libkrun pool boots
     cmds:
       - |
         set -eu
-        cd build/vm-kernel
+        cd build/vm-krun
         ls -l
-        test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
+        test -s root.ext4 || { echo "missing or empty: root.ext4" >&2; exit 1; }
+        dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root" \
+          || { echo "root.ext4 is not the discobox guest's root filesystem" >&2; exit 1; }
+      # The runtime half was verified when it was built, but this is the
+      # artifact that ships, and a pin to the wrong digest is what this catches.
+      - task: verify-libkrun-runtime-files
+        vars: { VERIFY_DIR: build/vm-krun }
+
+  verify-libkrun-runtime-files:
+    internal: true
+    requires:
+      vars: [VERIFY_DIR]
+    cmds:
+      - |
+        set -eu
+        cd {{.VERIFY_DIR}}
+        ls -l
+        for artifact in vmlinux kernel.config libkrun.so.1 passt; do
+          test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
+        done
         # libkrun loads this with KRUN_KERNEL_FORMAT_ELF, so an ELF header is
         # the difference between a VM that boots and one that dies with EINVAL.
         magic=$(dd if=vmlinux bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
@@ -2057,7 +2400,56 @@ tasks:
         for required in CONFIG_PACKET=y CONFIG_NFT_COMPAT=y CONFIG_BRIDGE=y CONFIG_VETH=y CONFIG_OVERLAY_FS=y; do
           grep -qx "$required" kernel.config || { echo "kernel is missing $required" >&2; exit 1; }
         done
-        echo "kernel verified"
+        # The launcher dlopens libkrun.so.1 by path, so it has to be a shared
+        # object that answers to that name.
+        readelf -h libkrun.so.1 | grep -q "Type:[[:space:]]*DYN" \
+          || { echo "libkrun.so.1 is not an ELF shared object" >&2; exit 1; }
+        readelf -d libkrun.so.1 | grep "(SONAME)" | grep -q "\[libkrun.so.1\]" \
+          || { echo "libkrun.so.1 does not carry the soname libkrun.so.1" >&2; exit 1; }
+        # The provider hands libkrun its own kernel, so libkrunfw is never
+        # needed — and a NEEDED entry for it makes the library refuse to load
+        # on every host that lacks it (ADR 26-09-23-473 §5).
+        if readelf -d libkrun.so.1 | grep "(NEEDED)" | grep -q libkrunfw; then
+          echo "libkrun.so.1 links libkrunfw; the runtime ships none" >&2
+          exit 1
+        fi
+        # libkrun is loaded into the host's launcher, so what it links is what
+        # a host must have: glibc 2.34 or newer and nothing beyond it
+        # (vm-image/libkrun/Dockerfile).
+        needed=$(readelf -d libkrun.so.1 | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | sort | tr '\n' ' ')
+        for lib in $needed; do
+          case "$lib" in
+            libc.so.6|libgcc_s.so.1|ld-linux-x86-64.so.2|libm.so.6|libdl.so.2|libpthread.so.0|librt.so.1) ;;
+            *) echo "libkrun.so.1 needs $lib, which a host is not guaranteed to have" >&2; exit 1 ;;
+          esac
+        done
+        floor=$(objdump -T libkrun.so.1 | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+        if [ "$(printf '%s\n2.34\n' "$floor" | sort -V | tail -1)" != 2.34 ]; then
+          echo "libkrun.so.1 needs glibc $floor; hosts from 2.34 have to load it" >&2
+          exit 1
+        fi
+        # passt is exec'd on whatever host boots the pool, so it brings no
+        # loader or library with it.
+        test -x passt || { echo "passt is not executable" >&2; exit 1; }
+        magic=$(dd if=passt bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
+        test "$magic" = "7f454c46" || { echo "passt is not an ELF executable" >&2; exit 1; }
+        if readelf -l passt | grep -q INTERP; then
+          echo "passt is dynamically linked; it has to be static" >&2
+          exit 1
+        fi
+        if readelf -d passt 2>/dev/null | grep -q "(NEEDED)"; then
+          echo "passt needs shared libraries; it has to be static" >&2
+          exit 1
+        fi
+        # A Nix store path is a machine that built this, not one that runs it:
+        # an RUNPATH or interpreter there loads nowhere else.
+        for artifact in vmlinux kernel.config libkrun.so.1 passt; do
+          if grep -qa /nix/store "$artifact"; then
+            echo "$artifact refers to /nix/store; it would not load outside the machine that built it" >&2
+            exit 1
+          fi
+        done
+        echo "libkrun runtime verified in {{.VERIFY_DIR}}"
 
   vm:publish:
     desc: Push the multi-architecture VM image for VM_TAG and report the digest to pin
@@ -2072,23 +2464,42 @@ tasks:
           PUSH_FILE: server/providers/guestimage/image.go
           PUSH_CONST: DefaultVMImage
 
-  vm:publish-kernel:
-    desc: Push the libkrun guest kernel for VM_TAG and report the digest to pin
+  vm:publish-libkrun-runtime:
+    desc: Push libkrun's host runtime for VM_TAG and report the digest to pin
     deps:
       - buildx:builder
     cmds:
       - task: vm:push
         vars:
-          PUSH_IMAGE: discobox-vm-kernel
-          PUSH_DOCKERFILE: vm-image/kernel/Dockerfile
+          PUSH_IMAGE: discobox-libkrun-runtime
+          PUSH_DOCKERFILE: vm-image/libkrun/Dockerfile
+          PUSH_PLATFORMS: linux/amd64
+          PUSH_FILE: vm-image/libkrun/package/Dockerfile
+          PUSH_ARG: RUNTIME_IMAGE
+
+  vm:publish-krun:
+    desc: Push the image a libkrun pool boots for VM_TAG and report the digest to pin
+    deps:
+      - buildx:builder
+    cmds:
+      - task: vm:push
+        vars:
+          PUSH_IMAGE: discobox-vm-krun
+          PUSH_DOCKERFILE: vm-image/libkrun/package/Dockerfile
           PUSH_PLATFORMS: linux/amd64
           PUSH_FILE: server/providers/libkrun/provider.go
-          PUSH_CONST: DefaultKernelImage
+          PUSH_CONST: DefaultImage
 
   vm:push:
     internal: true
+    # The digest is pinned in one of two places: a Go constant the server
+    # resolves (PUSH_CONST), or a Dockerfile ARG an image packaging this one
+    # pulls from (PUSH_ARG). Exactly one is set.
     requires:
-      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE, PUSH_CONST]
+      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE]
+    preconditions:
+      - sh: '{ [ -n "{{.PUSH_CONST}}" ] && [ -z "{{.PUSH_ARG}}" ]; } || { [ -z "{{.PUSH_CONST}}" ] && [ -n "{{.PUSH_ARG}}" ]; }'
+        msg: "vm:push: set exactly one of PUSH_CONST and PUSH_ARG"
     cmds:
       - |
         set -eu
@@ -2099,12 +2510,13 @@ tasks:
           # tag namespace; the image tag is the version alone.
           case "${GITHUB_REF_NAME:-}" in
             vm/v*) tag="${GITHUB_REF_NAME#vm/}" ;;
-            vm-kernel/v*) tag="${GITHUB_REF_NAME#vm-kernel/}" ;;
+            libkrun-runtime/v*) tag="${GITHUB_REF_NAME#libkrun-runtime/}" ;;
+            vm-krun/v*) tag="${GITHUB_REF_NAME#vm-krun/}" ;;
           esac
         fi
         case "$tag" in
           v*) ;;
-          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* or vm-kernel/v* tag)" >&2; exit 1 ;;
+          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v*, libkrun-runtime/v* or vm-krun/v* tag)" >&2; exit 1 ;;
         esac
         if [ -z "{{.REGISTRY}}" ]; then
           echo "vm:publish: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
@@ -2142,8 +2554,13 @@ tasks:
           echo
           echo 'Pin this in `{{.PUSH_FILE}}`:'
           echo
-          echo '```go'
-          echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
+          if [ -n "{{.PUSH_ARG}}" ]; then
+            echo '```dockerfile'
+            echo "ARG {{.PUSH_ARG}}={{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest"
+          else
+            echo '```go'
+            echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
+          fi
           echo '```'
         }
         report

@@ -244,11 +244,11 @@ flowchart TD
 - `flake.nix` owns the toolchain. `nix develop` (or direnv via `.envrc`) is the
   entry point; its `shellHook` exports the `DISCOBOX_*` environment and
   regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
-  Go and `go.mod` names the one that compiles. `devShells.libkrun` adds the two
-  things a machine running libkrun pools needs installed — libkrun and passt —
-  and stays out of the default shell because that libkrun build is not in
-  cache.nixos.org; `nix build .#libkrun-runtime` is the same closure for a
-  machine that is not in a dev shell.
+  Go and `go.mod` names the one that compiles. `devShells.libkrun` adds a
+  Nix-built libkrun and passt for a developer overriding the ones the libkrun
+  image carries (ADR 26-09-23-473 §5; a machine running libkrun pools installs
+  neither), and stays out of the default shell because that libkrun build is
+  not in cache.nixos.org.
 - `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
   `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
   by Nix.
@@ -258,6 +258,24 @@ flowchart TD
   `go tool task <target>` on Windows. Its Go and golangci-lint caches are keyed
   by commit and saved only by runs on `main`, so every run starts from the
   newest `main` rather than from whenever `go.sum` last changed.
+  The only other steps are runner setup (a registry login, Depot) and moving
+  artifacts. A job that has to do two things gets a `ci:*` target that does
+  both (`ci:vm-guest` builds and then verifies, `ci:release-publish` publishes
+  and then tells the tap), and a decision about whether to do something is its
+  target's to make, not a YAML `if:` on a step output (`release:tap` decides
+  whether a release reaches the tap, and `brew:refresh` refuses to run without
+  its credential).
+
+`task release -- v0.0.0-dev` is a release build of the checkout for this
+machine, to try: the version is stamped, so the binaries behave as a user's do,
+but nothing is published, no manifest names downloads that do not exist, and
+the images are pinned to GitHub's latest release, the newest one marked stable
+and so the newest whose images are certain to exist (`IMAGE_TAG=` names
+another). `task release:try -- [args]` runs its CLI as a new user on this
+machine would: HOME, every XDG directory, and discobox's own directories move
+under `/tmp`, so the server it starts, its pools' disks, and the SSH config it
+writes are all its own. `task release:try:reset` stops that server and starts
+over.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
@@ -414,7 +432,8 @@ a running development server.
 The pool VM guest — the kernel, initrd, and root filesystem a VM-backed pool
 boots — is built from [`vm-image/`](vm-image/DESIGN.md) and released on its own
 `vm/v*` line with its own workflow (ADR 0062 §3); the server pins its digest. It
-is one image for every VM backend: `vz` boots its `linux/arm64` variant and
-`libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
-needs is the one artifact it cannot take from there, so it has a third line of
-its own, `vm-kernel/v*`.
+is one guest for every VM backend: `vz` boots its `linux/arm64` variant and
+`libkrun` the `linux/amd64` one (ADR 0101). libkrun also needs a host runtime it
+cannot take from there — the libkrunfw-patched kernel, libkrun, and passt — built
+on its own `libkrun-runtime/v*` line, and boots one image packaging both,
+`vm-krun/v*` (ADR 26-09-23-473 §5).

@@ -2,7 +2,10 @@ package providers
 
 import (
 	"context"
+	"runtime"
+	"slices"
 
+	"github.com/discobox-ai/discobox/releasemanifest"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers/digitalocean"
@@ -44,7 +47,7 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(execvm.ProviderType, execvm.Validate)
 	manager.RegisterProviderDefinition(libkrun.ProviderType, libkrun.Definition())
-	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
+	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(libkrun.ProviderType, libkrun.Validate)
 	registerPlatformProviderFactories(manager, poolManager, options)
 }
@@ -60,4 +63,61 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 // rather than making each sandbox create discover it.
 func EnsurePlatformPrerequisites(ctx context.Context, options FactoryOptions) error {
 	return ensurePlatformPrerequisites(ctx, options)
+}
+
+// CheckDefaultProvider reports whether a first start can install providerType
+// as this host's default, and a *sandbox.ProviderUnavailableError when it
+// cannot (ADR 26-09-23-473 §2).
+//
+// Only libkrun has anything to check. It is the default that needs the host to
+// have something — KVM, and a runtime that loads — and a missing one is the
+// difference between the VM boundary a user was promised and none at all. The
+// platform backends are checked for the whole server by
+// EnsurePlatformPrerequisites, and the portable providers fail per instance.
+func CheckDefaultProvider(ctx context.Context, providerType string, options FactoryOptions) error {
+	if providerType == libkrun.ProviderType {
+		return libkrun.CheckHost(ctx, options.ServerDefaults)
+	}
+	return nil
+}
+
+// DefaultProviderType is the provider a first start installs on this host
+// (ADR 26-09-23-473 §1), and the one place that rule is decided: the service
+// installs it, and the boot and release images staged for a first start
+// follow it. Each OS has its VM backend, and Linux's is libkrun in a release
+// build. A development build on Linux installs the host's Docker instead: the
+// `task dev` loop converges the images it builds onto that daemon, and a
+// contributor's machine should not need KVM to run the product. configured is
+// the server's defaultProvider setting, which decides it on Linux, the only OS
+// with two to choose from.
+func DefaultProviderType(configured string, released bool) string {
+	switch runtime.GOOS {
+	case "linux":
+		if configured != "" {
+			return configured
+		}
+		if released {
+			return libkrun.ProviderType
+		}
+		return docker.ProviderType
+	case "darwin":
+		return "vz"
+	case "windows":
+		return "wslc"
+	default:
+		return "unsupported"
+	}
+}
+
+// ReleaseImages are the images of a release manifest a first start on this
+// host stages, for a first start that will install providerType
+// (DefaultProviderType). The libkrun image is left out unless libkrun is what
+// it installs: a host told to install Docker boots no libkrun VM, and staging
+// one is hundreds of megabytes downloaded for nothing.
+func ReleaseImages(images releasemanifest.Images, providerType string) []string {
+	refs := images.References(runtime.GOOS, runtime.GOARCH)
+	if providerType == libkrun.ProviderType || images.Libkrun == "" {
+		return refs
+	}
+	return slices.DeleteFunc(refs, func(ref string) bool { return ref == images.Libkrun })
 }

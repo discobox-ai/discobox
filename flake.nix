@@ -26,18 +26,25 @@
         };
     in
     {
-      # The only thing this flake builds is what a machine needs installed to
-      # run a libkrun pool: the library the launcher dlopens, and passt. There
-      # is no launcher package any more — the launcher is a hidden subcommand of
-      # the server binary (ADR 0062 §9) — and no image builders, because the
-      # guest image and its kernel are built by Docker from vm-image/ and pulled
-      # from a registry at run time (ADR 0062 §3, §5, §6).
+      # The only thing this flake builds is a Nix-built libkrun and passt, for
+      # a developer who wants the launcher to use them (the libkrun provider's
+      # libkrunPath and passtPath) instead of the ones the libkrun image
+      # carries. A machine running libkrun pools installs neither: the image
+      # brings both, built in vm-image/libkrun (ADR 26-09-23-473 §5). There is no
+      # launcher package — the launcher is a hidden subcommand of the server
+      # binary (ADR 0062 §9) — and no image builders, because the guest, the
+      # kernel, and the runtime are built by Docker and pulled from a registry
+      # at run time.
       packages = forBuildSystems (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          libkrun-runtime = pkgs.buildEnv {
-            name = "discobox-libkrun-runtime";
+          # Not the libkrun runtime a release ships — that is the
+          # discobox-libkrun-runtime image built by Docker in vm-image/libkrun,
+          # which a Nix store path could never be — but its developer
+          # override, for libkrunPath and passtPath.
+          libkrun-nix = pkgs.buildEnv {
+            name = "discobox-libkrun-nix";
             paths = [
               (overriddenLibkrun pkgs)
               pkgs.passt
@@ -45,13 +52,13 @@
           };
         in
         {
-          inherit libkrun-runtime;
-          default = libkrun-runtime;
+          inherit libkrun-nix;
+          default = libkrun-nix;
         }
       );
 
       checks = forBuildSystems (system: {
-        inherit (self.packages.${system}) libkrun-runtime;
+        inherit (self.packages.${system}) libkrun-nix;
       });
 
       devShells = forDevSystems (
@@ -143,18 +150,17 @@
         {
           default = mkDevShell baseShell;
         }
-        # Running a libkrun pool needs libkrun itself, built with block and
-        # network support, and passt. That override is not the derivation
-        # cache.nixos.org has, so it stays out of the default shell rather than
-        # making every CI job build libkrun from source (ADR 0066 §3): a
-        # developer who runs libkrun pools enters this shell, and everyone else
-        # never builds it.
+        # A Nix-built libkrun, with block and network support, and passt, for a
+        # developer trying the launcher against a libkrun other than the one
+        # the libkrun image carries. Running libkrun pools needs neither: the
+        # launcher loads the image's own by path (ADR 26-09-23-473 §5), and this shell
+        # changes that only when the provider's libkrunPath / passtPath name
+        # these. That override is not the derivation cache.nixos.org has, so it
+        # stays out of the default shell rather than making every CI job build
+        # libkrun from source (ADR 0066 §3).
         #
-        # LD_LIBRARY_PATH is how the launcher finds the library. It dlopens
-        # libkrun.so.1 by soname rather than linking it, so nothing resolves it
-        # at build time and the loader's search path is the whole mechanism. A
-        # machine outside this shell names the path in the provider's
-        # libkrunPath instead.
+        # LD_LIBRARY_PATH puts the library on the loader's path, for a
+        # libkrunPath that names it by soname.
         // nixpkgs.lib.optionalAttrs (builtins.elem system buildSystems) {
           libkrun = mkDevShell (
             baseShell

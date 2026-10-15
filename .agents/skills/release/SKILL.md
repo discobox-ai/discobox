@@ -60,10 +60,11 @@ git fetch upstream --tags
 git tag -l 'v[0-9]*' --sort=-v:refname | head -6
 ```
 
-The glob matters. `'v*'` also matches `vm/vN` and `vm-kernel/vN` — the VM guest
-image and libkrun kernel tags, on their own release lines, which sort above every
-CLI tag, so it returns a screen of the one thing this decision must ignore and no
-CLI version at all. `'v[0-9]*'` excludes them.
+The glob matters. `'v*'` also matches `vm/vN` and `vm-krun/vN` — the VM guest
+and libkrun image tags, on their own release lines, which sort above every CLI
+tag, so it returns a screen of the one thing this decision must ignore and no
+CLI version at all. `'v[0-9]*'` excludes them, and `libkrun-runtime/vN` with
+them.
 
 The scheme is plain `vMAJOR.MINOR.PATCH`.
 
@@ -337,8 +338,8 @@ release's installer, so once the release is up it should name this tag:
 curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
 ```
 
-`release:image` separately decides whether ghcr's `:latest` moves, from
-`release:dot` — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
+`release:image` separately decides whether ghcr's `:latest` moves, from the
+Taskfile's `DOT_RELEASE` rule — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
 `-rc`/`-alpha` tag does not.
 
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
@@ -347,9 +348,9 @@ Every step is a Taskfile target that also runs locally (ADR 0066 §1):
 ## 5. The Homebrew tap
 
 **For a dot release this is automatic, and it feeds `discobox-dev` only.** The
-release workflow's `publish` job dispatches `update-formula.yml` in
-`discobox-ai/homebrew-tap` as soon as the GitHub release exists (`brew:refresh`,
-using `HOMEBREW_TAP_TOKEN`). The tap regenerates **both** formulae with this
+release workflow's `publish` job runs `release:tap`, which for a dot release
+dispatches `update-formula.yml` in `discobox-ai/homebrew-tap` as soon as the
+GitHub release exists (`brew:refresh`, using `HOMEBREW_TAP_TOKEN`). The tap regenerates **both** formulae with this
 repository's `scripts/brew-formula.sh` and commits whichever changed:
 
 - `discobox-dev.rb` from the newest dot release — which is what you just cut.
