@@ -69,20 +69,23 @@ the techniques.
 | Does the token expire? Is there a refresh token, and a standard refresh endpoint? | `token` vs `oauth` secret | codex: OAuth refresh; copilot: OAuth App token, never expires |
 | Is there a system/managed config layer the user cannot override? Does it carry hooks? | `Managed Layers` | `/etc/claude-code/managed-settings.json`, `/etc/codex/hooks.json`, `/etc/opencode/opencode.json` plugin, `/etc/github-copilot/policy.d/*.json` |
 | What are the hook events, and their payloads? | `hooks.json`, canonical names, audit summary | read them off the CLI's own schema; record payloads with a recorder hook |
-| What blocks an unattended interactive launch? | policy baseline | trust dialogs survive `--allow-all`-style flags more often than not — test in tmux |
+| What blocks an unattended interactive launch? | policy baseline | trust dialogs survive `--allow-all`-style flags more often than not — test in tmux, in a directory shaped like a real source: pi asks about any repository holding `.agents/skills` (this one does) until `--approve`, and reads a discobox's `~/.agents/skills` as the user's own |
 | How is auto-update turned off? | the agent version store owns versions (ADR 0114) | env var or system config |
-| What does it write on first run, and where? | volumes, caches | copilot unpacks 185 MB under `~/.cache` (already pool cache) |
+| What does it write on first run, and where? | volumes, caches | copilot unpacks 185 MB under `~/.cache` (already pool cache); pi downloads `fd` from GitHub into its home unless `fd` or `fdfind` is on PATH — install the distribution's package in the image |
 | What is its tools-off switch, really? | `--no-tools` in the judge | an empty allowlist meant "no filter" in copilot; count the tools the fake model is sent |
 | Where does it copy to? | OSC 52 vs the box's own X clipboard | codex needed `SSH_CONNECTION`; copilot writes OSC 52 always |
 | Does it keep memories in a directory you can point elsewhere? | source-scoped memory | claude: managed setting; codex: bind mount; opencode/copilot: none |
 | Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — template that, import at launch |
 | Is there a system layer at all? Do settings layers merge lists or replace them? | where hooks and policy can live | omp: none; its `PI_CONFIG_FILES` overlay outranks the user but *replaces* any list it sets |
-| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`? | `prompt.sh`, `launch.sh` | omp `-p` waits for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--` |
-| Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
+| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `prompt.sh`, `launch.sh` | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
+| Does it take `--flag=value`? Does a flag consume a dash-led next word? | how the judge passes a model name the agent can write | copilot and omp take `--model=NAME`; pi has no `=` form (it reads one as an extension's flag) but its `--model` takes the next word whatever it starts with — read the argument parser, it decides which form keeps a value a value |
+| Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | pi installs undici's `EnvHttpProxyAgent` globally and every provider answered through the proxy; omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
 | What do its dependencies' install scripts fetch? | image build, version store | omp's onnxruntime-node downloads a CUDA build from GitHub on linux-x64 and hung the build: `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` at build time and in the image's env. A scratchpad install that takes minutes is the warning |
 | Does a first interactive run open a wizard? | unattended launch | omp's five-step setup wizard stalls a launch until `startup.setupWizard: false` |
-| Where does it collect context files (`AGENTS.md`) from? | judge isolation | omp walks up to a repository root, or `/` without one, so `/tmp/AGENTS.md` reached a judge in `/tmp` |
-| Can a stored credential name its own endpoint? | judge isolation | omp: `apiEndpoint`, `enterpriseUrl`, a JSON key with `baseUrl` — the judge rebuilds credentials from an allowlist of fields |
+| Where does it collect context files (`AGENTS.md`) from? What stops the walk? | judge isolation | omp walks up to a repository root, or `/` without one, so `/tmp/AGENTS.md` reached a judge in `/tmp`, and an empty `.git` stops it; pi walks to `/` past any `.git`, and only `--no-context-files` stops it — measure with a marker file above the judge's directory |
+| Can a stored credential name its own endpoint, or run something? | judge isolation | omp: `apiEndpoint`, `enterpriseUrl`, a JSON key with `baseUrl`; pi: `enterpriseUrl`, a Copilot token's own `proxy-ep`, an API key's `env` object, and a key starting `!`, which pi runs as a command — the judge rebuilds credentials from an allowlist of fields, each of token characters (an empty refresh token too: OpenRouter's) |
+| Does a provider read anything out of the token itself? | whether a sentinel can stand in for it | a sentinel copies a token's shape, not its contents: pi's ChatGPT provider reads the account from the access token's JWT claims and fails locally on a sentinel, so configure leaves that login out and says why |
+| Is a "refresh" a standard OAuth refresh, or an exchange? | `oauth` vs a sentinel the CLI exchanges itself | pi's Copilot login keeps a GitHub token as `refresh` and swaps it at `copilot_internal/v2/token` for a 30-minute Copilot token. The control plane cannot; read where the exchange sends the token (a header the proxy can swap, or a body it cannot) through a TLS-terminating proxy, and take the in-sandbox exchange to the user |
 
 ## 2. Decide
 
@@ -107,7 +110,14 @@ Write these down before writing scripts; most become ADR sections.
    provider's key and that account's login; opencode 2's import never updates
    an id it has, so its launcher imports under ids the image owns and changes
    only what differs. Never ship a baseline credential file: an empty one reads as
-   "signed in".
+   "signed in". A login the CLI exchanges for a short-lived token (pi's
+   Copilot) is delivered as the long-lived token's sentinel, bound to the one
+   host it is exchanged at, with the short-lived field a placeholder already
+   expired — only when the user accepts the short-lived token landing in the
+   sandbox. A login nothing in a sandbox can use (one read from its claims,
+   one with no key at all, like Bedrock's AWS profile, a key that is a
+   command) is left out, and configure says so: a silent drop reads as "No
+   provider is signed in".
 4. **Policy baseline**: auto-approve and trust, in a layer the configure
    capture cannot replace — a system config, an image env var, or a launcher
    flag. Not the user's settings file: configure replaces that wholesale.
@@ -131,9 +141,9 @@ Write these down before writing scripts; most become ADR sections.
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
 | `driver.go` | `ID()` and `Definition()` naming `harness.ImageRef("discobox-harness-<id>")` |
 | `launch.sh` | join prompt words into one prompt, passed so the CLI cannot read it as flags or files (omp: after `--`); `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
-| `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and an empty cwd that is its own repository root (an empty `.git`); stdin from `/dev/null`; credentials for the isolated home rebuilt from an allowlist of fields, never copied from a file the agent can write; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
+| `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and an empty cwd that is its own repository root (an empty `.git`, where that is what stops the CLI's context walk; otherwise its own switch, pi's `--no-context-files`); stdin from `/dev/null`; credentials for the isolated home rebuilt from an allowlist of fields, never copied from a file the agent can write; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
 | `configure.sh` | see below |
-| hook config | in the CLI's own schema, at its system layer. A JavaScript hook (opencode, omp) publishes an allowlist of events, each payload projected by shape (scalars, a tool's input), never by a list of field names to drop: the transcript travels under many names |
+| hook config | in the CLI's own schema, at its system layer. A JavaScript hook (opencode, omp, pi) publishes an allowlist of events, and each payload is an allowlist too, never a list of field names to drop: the transcript travels under many names. Projecting by shape (scalars, a tool's input) holds only while nothing large is a scalar — pi's `before_agent_start.systemPrompt` is a string, so pi's extension names the fields it keeps per event; check every scalar of every published event's type |
 
 **`configure.sh`** — copy the shape of `codex-cli` or `copilot`, which encode
 lessons that each cost a bug:
@@ -209,7 +219,11 @@ In `harness/<id>/`, mirroring the siblings:
   temp dir, stub the CLI with the storage shape you measured and `script` as
   `exec sh -c "$4"`, drive stdin. Cover first sign-in, keep, replace inside a
   kept session, revoked keep, refused credential retried only when asked,
-  end of input. Check each test fails when the behavior it names is broken.
+  end of input, and each login it leaves out saying why. Put the delivered
+  credentials file in the home rendered with sentinels the sandbox was *not*
+  given: rendered with none, its fields are empty and get skipped anyway, so a
+  missing reset passes. Check each test fails when the behavior it names is
+  broken — break it and run the test; most first drafts pass something.
 - **Synthetic events in their real shapes.** A driver that fires a hook event
   with `{}` cannot see a payload that leaks the transcript; take the shapes
   from a recorded session or the CLI's own types. A stub store mimics the
@@ -228,12 +242,15 @@ passed, is the template:
 
 1. **prep, no credential**: in a detached tmux pane, run the user's own
    command, `discobox admin harnesses configure <id>`, and drive it to the
-   point where the credential is entered (the CLI's own prompt). Waiting on a
-   pane's text is enough; save every pane to `/dev/shm` for the report.
-2. **run, under one `discobox-access run`**: type the credential into that
-   prompt, finish the flow (the CLI's TUI, `/exit`, the script's own
-   verification), then `discobox new --no-source -d -H <id> -p <one-line
-   question with a checkable answer>` and wait on its screen for the answer.
+   point where the CLI's TUI is up, ready for a sign-in. Waiting on a pane's
+   text is enough; save every pane to `/dev/shm` for the report.
+2. **run, under one `discobox-access run`** with a driver script on stdin:
+   write the credential into the CLI's store in the configure sandbox on
+   stdin (`discobox shell <configure-box> -- sh -c 'umask 077; cat > …'`,
+   below), never typed into the TUI; finish the flow (the CLI's quit key, the
+   script's own verification, its fixed status lines only), then `discobox
+   new --no-source -d -H <id> -p <one-line question with a checkable answer>`
+   and wait on its screen for the answer.
 3. Check the audit: `discobox admin audit hooks --discobox-id <box>` shows the
    image's hooks under its provider, and `--event Stop` (a canonical name)
    finds them.
@@ -250,12 +267,34 @@ What this needs, learned the hard way:
   id>`) and set `DISCOBOX_HARNESS_<ID>_IMAGE` in `.env` to that: the dev
   server seeds only what `.env` names, and re-reads a manifest only when the
   reference changes — a rebuilt `:local` keeps the label it first read.
-- **The box's own Claude login can stand in for a real one.** When the user
-  says so, the sentinel in `~/.claude/.credentials.json` works one level
-  down (`scripts/nested-claude-auth.sh` explains why). Put it where the CLI
+- **The box's own Claude login can stand in for a real one** — as far as
+  the request. When the user says so, the sentinel in
+  `~/.claude/.credentials.json` works one level down
+  (`scripts/nested-claude-auth.sh` explains why). Put it where the CLI
   stores a login from inside the configure session (omp: its `!` shell
   escape, `omp auth import`), as a credential nothing will refresh, and the
-  rest of the flow runs for real.
+  rest of the flow runs for real. Anthropic may still refuse the answer to a
+  third-party harness ("Third-party apps now draw from your extra usage",
+  a 400 — pi warns of it in its TUI first): then everything up to the model
+  is verified, and an answer needs an API key. Ask for a workspace-scoped
+  one: an organization-level key is refused without an
+  `anthropic-workspace-id` header most CLIs never send.
+- **A granted key goes into the configure sandbox on stdin**, never typed
+  into the CLI's TUI: typing echoes it into the pane and the configure log,
+  and the command judge refuses the run for it. `discobox --server … shell
+  <configure-box> -- sh -c 'umask 077; cat > <the CLI's credential file>'`
+  under `discobox-access run`, then the CLI's quit key in the pane; print
+  only the configure log's fixed status lines (`grep -o`), never the log.
+- **The grant's use is judged per request too.** The outer proxy judges each
+  request the nested discobox's CLI sends with the key against the use, and
+  refused pi's first model request (a 403 "blocked by proxy") under a use
+  worded as "one short question". Word the use for what the CLI sends: its
+  model requests from nested discoboxes, carrying its own system prompt and
+  tools.
+- **A model chosen in the configure session may not persist.** pi's
+  `/model NAME` sets the session's model; only its picker saves a default.
+  Read `settings.json` (or the CLI's equivalent) in the returned files, and
+  say in the banner which gesture saves.
 - **`terminal input` prints a resume point; pass it to `terminal wait
   --after`.** A one-line answer's `Stop` lands before a wait started after
   it, which then times out.
