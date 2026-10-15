@@ -192,6 +192,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot:    cfg.WorkingRoot,
 		DefaultWorkdir: cfg.ExecDefaults.Workdir,
+		SourceRoot:     cfg.ExecDefaults.SourceRoot,
 		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
 		RuntimeDir:     cfg.RuntimeDir,
 		DatabasePath:   cfg.DatabasePath,
@@ -243,9 +244,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		serviceManager = nil
 	}
 	// Tools are declared beside services, in the same working tree, so they
-	// are rooted at the same default (ADR 0125 §7).
+	// are rooted at the same source root (ADR 0125 §7).
 	var declaredTools toolDirs
-	if root, err := execManager.DefaultWorkdir(); err == nil {
+	if root, err := execManager.SourceRoot(); err == nil {
 		declaredTools = toolDirs{image: sandboxtools.ImageDir, source: filepath.Join(root, sandboxtools.SourceDirName)}
 	} else {
 		slog.Default().Warn("sandbox agent tools disabled", "error", err)
@@ -373,7 +374,7 @@ func gitCredentialHelper(runtimeDir string) string {
 // newServiceManager resolves where this sandbox's service declarations live
 // and wires the service layer to the exec primitive that runs them.
 func newServiceManager(execManager *execs.Manager) (*services.Manager, error) {
-	root, err := execManager.DefaultWorkdir()
+	root, err := execManager.SourceRoot()
 	if err != nil {
 		return nil, err
 	}

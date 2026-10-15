@@ -246,6 +246,7 @@ type LogSink interface {
 type Manager struct {
 	workingRoot    string
 	defaultWorkdir string
+	sourceRoot     string
 	defaultUser    *User
 	runtimeDir     string
 	databasePath   string
@@ -288,8 +289,12 @@ type recordLock struct {
 type ManagerConfig struct {
 	WorkingRoot    string
 	DefaultWorkdir string
-	DefaultUser    *User
-	RuntimeDir     string
+	// SourceRoot is the primary source's own directory, where its
+	// repository's declarations are; empty is DefaultWorkdir, which it is
+	// unless the create named a directory inside the source to start in.
+	SourceRoot  string
+	DefaultUser *User
+	RuntimeDir  string
 	// DatabasePath is threaded onto each StartRequest so the systemd runner
 	// can pass it to the exec-shim process, which opens its own connection
 	// to the same sqlite file to write log chunks (see LogSink).
@@ -320,6 +325,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		// a Windows runner and rebase it under the working root.
 		workingRoot:    path.Clean(workingRoot),
 		defaultWorkdir: strings.TrimSpace(cfg.DefaultWorkdir),
+		sourceRoot:     strings.TrimSpace(cfg.SourceRoot),
 		defaultUser:    cfg.DefaultUser.Clone(),
 		runtimeDir:     runtimeDir,
 		databasePath:   strings.TrimSpace(cfg.DatabasePath),
@@ -1042,6 +1048,24 @@ func (m *Manager) DefaultWorkdir() (string, error) {
 	return m.resolveWorkdir("", HomeDir(user, env))
 }
 
+// SourceRoot is the primary source's own directory, resolved as
+// DefaultWorkdir is: where the repository's `.discobox` declarations —
+// services, tools, skills — are read from. It is DefaultWorkdir unless the
+// create named a directory inside the source for execs to start in (ADR
+// 26-10-15-664 §3), which moves where they start and not what the
+// repository declares.
+func (m *Manager) SourceRoot() (string, error) {
+	if m.sourceRoot == "" {
+		return m.DefaultWorkdir()
+	}
+	user, err := m.ResolveUser(CreateRequest{})
+	if err != nil {
+		return "", err
+	}
+	env := EnvWithRuntimeDefaults(m.env, user)
+	return m.resolveWorkdir(m.sourceRoot, HomeDir(user, env))
+}
+
 // ResolveWorkdir resolves a requested workdir against the manager's working
 // root and default, expanding a leading `~` against home. It is exported so
 // the terminal layer resolves workdirs identically before harness resolution
@@ -1053,6 +1077,14 @@ func (m *Manager) ResolveWorkdir(requested, home string) (string, error) {
 func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 	if strings.TrimSpace(requested) == "" {
 		requested = m.defaultWorkdir
+		// A start directory named inside the source (ADR 26-10-15-664 §3)
+		// is only as present as the checkout makes it: never committed,
+		// ignored, or removed since. An exec that named no workdir then
+		// starts at the source root, which the checkout always has, rather
+		// than every terminal, shell and judge run failing to start.
+		if m.sourceRoot != "" && requested != m.sourceRoot && !isDirectory(requested) {
+			requested = m.sourceRoot
+		}
 	}
 	if strings.TrimSpace(requested) == "" {
 		return m.workingRoot, nil
@@ -1065,6 +1097,12 @@ func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 		requested = path.Join(m.workingRoot, requested)
 	}
 	return path.Clean(requested), nil
+}
+
+// isDirectory reports whether path is a directory in this sandbox.
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // expandHome expands a leading `~` or `~/` against home, leaving every other

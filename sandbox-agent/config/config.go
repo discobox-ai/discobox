@@ -72,7 +72,11 @@ type Identity struct {
 }
 
 type ExecDefaults struct {
+	// Workdir is where an exec that names none starts; SourceRoot is the
+	// primary source's own directory, which differs from it only when the
+	// create named a directory inside the source to start in.
 	Workdir       string `json:"workdir,omitempty"`
+	SourceRoot    string `json:"sourceRoot,omitempty"`
 	Username      string `json:"username,omitempty"`
 	UID           *int64 `json:"uid,omitempty"`
 	GID           *int64 `json:"gid,omitempty"`
@@ -223,14 +227,18 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 }
 
 // execDefaultsFromEffective derives the default exec workdir and user from
-// the effective config: the workdir is the primary source's target (falling
-// back to the runtime working root), matching how pool-agent resolves the
-// sandbox user for the same mount.
+// the effective config: the workdir is the directory the primary source was
+// created to start in, else its target (falling back to the runtime working
+// root), matching how pool-agent resolves the sandbox user for the same
+// mount.
 func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 	var out ExecDefaults
 	for _, source := range effective.Sources {
 		if source.Slug == "primary" {
-			out.Workdir = source.Target
+			out.Workdir, out.SourceRoot = source.Target, source.Target
+			if source.WorkingDirectory != "" {
+				out.Workdir = source.WorkingDirectory
+			}
 			break
 		}
 	}

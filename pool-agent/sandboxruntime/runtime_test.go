@@ -243,11 +243,16 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 		wantWorkDir string
 		wantRefused bool
 		wantRoot    string
+		// wantStart is the primary source's start directory in the
+		// sandbox's config: the working directory, cleaned, when it is
+		// inside the source.
+		wantStart string
 	}{
 		{
 			name: "windows drive paths", paths: windows,
 			directory: "C:/src/app", workingDir: `C:\src\app\cmd`,
 			wantPrimary: `C:\src\app`, wantTools: `C:\workspace\tools`, wantWorkDir: `C:\src\app\cmd`, wantRoot: `C:\workspace`,
+			wantStart: `C:\src\app\cmd`,
 		},
 		{
 			name: "windows POSIX paths name no place", paths: windows,
@@ -258,6 +263,17 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 			name: "darwin", paths: darwin,
 			directory: "/Users/ada/app/", workingDir: "/Users/ada/app/./cmd",
 			wantPrimary: "/Users/ada/app", wantTools: "/tools", wantWorkDir: "/Users/ada/app/./cmd", wantRoot: "/workspace",
+			wantStart: "/Users/ada/app/cmd",
+		},
+		{
+			name: "linux working directory outside the source", paths: linuxPaths,
+			directory: "/workspace/app", workingDir: "/workspace/other",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantWorkDir: "/workspace/other", wantRoot: "/workspace",
+		},
+		{
+			name: "linux working directory at the source", paths: linuxPaths,
+			directory: "/workspace/app", workingDir: "/workspace/app",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantWorkDir: "/workspace/app", wantRoot: "/workspace",
 		},
 		{
 			name: "linux relative working directory", paths: linuxPaths,
@@ -285,6 +301,9 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
 			if doc.Runtime.AgentRuntime.WorkingRoot != tc.wantRoot {
 				t.Fatalf("manifest working root = %q, want %q", doc.Runtime.AgentRuntime.WorkingRoot, tc.wantRoot)
+			}
+			if got := doc.Runtime.Sources[0].WorkingDirectory; got != tc.wantStart {
+				t.Fatalf("primary start directory = %q, want %q", got, tc.wantStart)
 			}
 		})
 	}

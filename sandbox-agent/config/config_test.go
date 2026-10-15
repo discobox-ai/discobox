@@ -170,6 +170,14 @@ func TestLoadDerivesExecDefaultsFromEffectiveConfig(t *testing.T) {
 	if cfg.ExecDefaults.Username != "darren" || cfg.ExecDefaults.HomeDirectory != "/home/darren" || cfg.ExecDefaults.UID == nil || *cfg.ExecDefaults.UID != 1000 || cfg.ExecDefaults.GID == nil || *cfg.ExecDefaults.GID != 1001 {
 		t.Fatalf("exec default user = %#v", cfg.ExecDefaults)
 	}
+	// A start directory the create named inside the source is where an exec
+	// that names none starts (ADR 26-10-15-664 §3).
+	started := execDefaultsFromEffective(sandboxconfig.Config{Sources: []sandboxconfig.Source{
+		{Slug: "primary", Target: "/workspace/project", WorkingDirectory: "/workspace/project/cmd/tool"},
+	}})
+	if started.Workdir != "/workspace/project/cmd/tool" || started.SourceRoot != "/workspace/project" {
+		t.Fatalf("exec defaults with a start directory = %q in %q", started.Workdir, started.SourceRoot)
+	}
 	sources, ok := cfg.SandboxConfig["sources"].([]any)
 	if !ok || len(sources) != 1 {
 		t.Fatalf("sandbox config sources = %#v, want the raw sources array as template data", cfg.SandboxConfig["sources"])

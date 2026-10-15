@@ -15,7 +15,7 @@ control plane's resolved harness config.
 - `RuntimeLayer`: control-plane/pool-agent-owned identity (`SandboxID`,
   `Provider` — which also carries the public keys the sandbox trusts and, as
   `Pool`, where its pool serves it), sandbox-agent daemon settings
-  (`AgentRuntime`), sources,
+  (`AgentRuntime`), sources (the primary one's `WorkingDirectory`, below),
   model/prompt/user/git, the create-time `Skills` (content, installed by the
   sandbox on its first launch; `Skills.Validate` is the one rule the server,
   the CLI and the sandbox all hold — a name is one directory, a file stays in
@@ -130,7 +130,20 @@ the manifest's, or its platform's default (`sandboxpath.Paths.WorkingRoot`:
 `/workspace` on Linux and macOS, `C:\workspace` on Windows) when it names none.
 Pool-agent writes the field and places sources under the same default; boot
 creates that directory and gives it to the sandbox user; sandbox-agent starts
-execs there; the CLI derives the source destinations it asks for from it. Two of them
+execs there when the sandbox has no primary source; the CLI derives the source
+destinations it asks for from it.
+
+An exec that names no directory starts at the primary source's
+`WorkingDirectory`, else its `Target`, else the working root (ADR
+26-10-15-664 §3). `WorkingDirectory` is the directory the create named inside
+the source, `-C DIR/SUB` or `-C SOURCE//PATH`. Only the primary source has
+one, and absent means `Target`. Pool-agent writes it only when the request's
+`destination.workingDirectory` is a clean absolute path strictly inside
+`Target` (`sourceStartDirectory`), and sandbox-agent takes it as written, as it
+takes `Target`, since both come from its pool. What it changes is where execs
+start, not what the repository declares. Services, tools and
+`.discobox/skills` are read from `Target` (`execs.Manager.SourceRoot`). A start
+directory the checkout does not hold falls back to `Target`. Two of them
 disagreeing means a sandbox working in a directory boot never chowned, or beside
 a checkout it cannot see — and the CLI is the one server-side defaults cannot
 correct, since the destination it names is explicit in the create request.

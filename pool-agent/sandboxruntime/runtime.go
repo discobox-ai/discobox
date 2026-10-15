@@ -1362,6 +1362,9 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
+				// Where the harness starts, when the create named a directory
+				// inside the source (ADR 26-10-15-664 §3).
+				WorkingDirectory: sourceStartDirectory(paths, source),
 				// Absent when the request gave no ids: boot then chowns with
 				// the identity it resolved, which it has in hand and which is
 				// the better answer anyway (ADR 0033 §5).
@@ -3137,6 +3140,36 @@ type sandboxSource struct {
 	// key is the source's SourceCodeReferences key, which a skills source
 	// directory names it by; empty for the primary source.
 	key string
+}
+
+// sourceStartDirectory is the directory beneath the primary source's target
+// that its create asked the harness to start in, or empty for the target
+// itself. Only a clean absolute path strictly inside the target counts: the
+// request is the control plane's, and a start directory elsewhere names no
+// place in this source.
+func sourceStartDirectory(paths sandboxpath.Paths, source sandboxSource) string {
+	if source.key != "" {
+		return ""
+	}
+	destination, ok := source.git.Destination.Get()
+	if !ok {
+		return ""
+	}
+	directory := strings.TrimSpace(optString(destination.WorkingDirectory))
+	if directory == "" || !paths.IsAbs(directory) {
+		return ""
+	}
+	if directory = paths.Clean(directory); directory == source.target {
+		return ""
+	}
+	for parent := paths.Dir(directory); ; parent = paths.Dir(parent) {
+		if parent == source.target {
+			return directory
+		}
+		if parent == paths.Dir(parent) {
+			return ""
+		}
+	}
 }
 
 func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {

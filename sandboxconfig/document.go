@@ -170,6 +170,11 @@ type AgentRuntime struct {
 type Source struct {
 	Slug   string `json:"slug"`
 	Target string `json:"target"`
+	// WorkingDirectory is where a terminal and the harness start, when the
+	// create named a directory beneath Target to start in: `-C DIR/SUB`, or
+	// `-C SOURCE//PATH` (ADR 26-10-15-664 §3). Only the primary source has
+	// one. Absent means Target.
+	WorkingDirectory string `json:"workingDirectory,omitempty"`
 	// UID and GID are the ownership the sandbox must give the mounted source.
 	// They are pointers because the pool agent frequently cannot know them --
 	// the account lives in the image and may not exist until boot creates it --
