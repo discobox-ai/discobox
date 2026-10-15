@@ -357,7 +357,8 @@ func ruleUsesProblem(uses []string) string {
 		return fmt.Sprintf("a rule names at most %d uses", maxRuleUses)
 	}
 	for _, use := range uses {
-		// Uses reach the judge one per line.
+		// A person writes a rule's uses one to a line, in the console's
+		// editor, so a use is one line; whatever shows a long one breaks it up.
 		if len(use) > maxRuleSentence || strings.ContainsAny(use, "\r\n") {
 			return fmt.Sprintf("each of a rule's uses is one sentence of at most %d bytes, on one line", maxRuleSentence)
 		}

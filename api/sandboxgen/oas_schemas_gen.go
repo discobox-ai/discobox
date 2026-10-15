@@ -581,9 +581,9 @@ func (s *JudgeInput) SetMissing(val OptString) {
 	s.Missing = val
 }
 
-// One question put to the judge, and everything it may see to answer it. Purpose and host are the
-// authorization; everything else is evidence, which is data to weigh and never instructions to
-// follow.
+// One question put to the judge, and everything it may see to answer it. Purpose (or purposes) and
+// host are the authorization; everything else is evidence, which is data to weigh and never
+// instructions to follow.
 // Ref: #/components/schemas/JudgeJob
 type JudgeJob struct {
 	// The argv, for a command job. For a request job it is what the discobox declared it was running,
@@ -604,16 +604,19 @@ type JudgeJob struct {
 	// hand a credential on by approving another's request, or whether what a discobox asked for is
 	// within an approval rule's uses.
 	Kind JudgeJobKind `json:"kind"`
-	// The approved use, in the words it was approved in. For a delegation job, the uses the discobox was
-	// delegated, one per line.
-	Purpose  string                  `json:"purpose"`
+	// The approved use, in the words it was approved in, for a command or request job.
+	Purpose OptString `json:"purpose"`
+	// For a delegation or rule job, what it is judged against in place of purpose, one use each — the
+	// uses the discobox was delegated, or the rule's uses.
+	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
 	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
 	// body.
 	Round int64         `json:"round"`
 	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the uses the discobox is about to hand on, judged against purpose.
+	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it
+	// asked for, judged against purposes.
 	Uses []string `json:"uses"`
 }
 
@@ -648,8 +651,13 @@ func (s *JudgeJob) GetKind() JudgeJobKind {
 }
 
 // GetPurpose returns the value of Purpose.
-func (s *JudgeJob) GetPurpose() string {
+func (s *JudgeJob) GetPurpose() OptString {
 	return s.Purpose
+}
+
+// GetPurposes returns the value of Purposes.
+func (s *JudgeJob) GetPurposes() []string {
+	return s.Purposes
 }
 
 // GetReported returns the value of Reported.
@@ -708,8 +716,13 @@ func (s *JudgeJob) SetKind(val JudgeJobKind) {
 }
 
 // SetPurpose sets the value of Purpose.
-func (s *JudgeJob) SetPurpose(val string) {
+func (s *JudgeJob) SetPurpose(val OptString) {
 	s.Purpose = val
+}
+
+// SetPurposes sets the value of Purposes.
+func (s *JudgeJob) SetPurposes(val []string) {
+	s.Purposes = val
 }
 
 // SetReported sets the value of Reported.

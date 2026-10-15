@@ -4,7 +4,9 @@
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "Deliver pull requests into main of discobox-ai/discobox, each from its own branch discobox/<slug>. Read anything in the repository; push that run's branch (with --force-with-lease after a rebase), open and update its pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or another run's branch, delete a branch, merge or close a pull request, delete a comment, or start any other workflow.",
+    "purposes": [
+      "Deliver pull requests into main of discobox-ai/discobox, each from its own branch discobox/<slug>. Read anything in the repository; push that run's branch (with --force-with-lease after a rebase), open and update its pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or another run's branch, delete a branch, merge or close a pull request, delete a comment, or start any other workflow."
+    ],
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,

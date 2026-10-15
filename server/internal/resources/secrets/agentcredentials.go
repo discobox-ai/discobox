@@ -219,21 +219,39 @@ func requestedUses(input []apimodel.SecretUse) ([]model.SecretUse, error) {
 		if description == "" {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "each declared use requires a description")
 		}
+		if strings.ContainsAny(description, "\r\n") {
+			return nil, errUseOverLines
+		}
 		uses = append(uses, model.SecretUse{Description: description})
 	}
 	return uses, nil
 }
 
-// convertAPIUses maps approver-edited uses onto the model. IDs are dropped here
-// too: mintUseIDs is the only thing that ever sets one.
-func convertAPIUses(input []apimodel.SecretUse) []model.SecretUse {
+// errUseOverLines refuses a use written over several lines, wherever a use
+// enters: an agent's ask, an approver's edit, a grant made by a person or
+// handed to a discobox a discobox creates. A use is one line, as a rule's
+// uses are, so any approved use can become a rule's and be edited where a
+// person writes them one to a line; a person reads a long one broken up by
+// whatever shows it. One stored before this was refused is still judged
+// whole: the judge is given uses as a list, never as lines.
+var errUseOverLines = apperrors.NewStatusError(http.StatusBadRequest, "each use is written on one line")
+
+// convertAPIUses maps uses an approver edited, or a grant names, onto the
+// model, dropping blank ones. IDs are dropped here too: mintUseIDs is the only
+// thing that ever sets one.
+func convertAPIUses(input []apimodel.SecretUse) ([]model.SecretUse, error) {
 	uses := make([]model.SecretUse, 0, len(input))
 	for _, use := range input {
-		if description := strings.TrimSpace(use.Description); description != "" {
-			uses = append(uses, model.SecretUse{Description: description})
+		description := strings.TrimSpace(use.Description)
+		if description == "" {
+			continue
 		}
+		if strings.ContainsAny(description, "\r\n") {
+			return nil, errUseOverLines
+		}
+		uses = append(uses, model.SecretUse{Description: description})
 	}
-	return uses
+	return uses, nil
 }
 
 // mintUseIDs stamps a fresh ID onto every approved use. It runs at approval for

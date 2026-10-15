@@ -116,10 +116,27 @@ func TestTheJudgeIsGivenTheFactsItWasSent(t *testing.T) {
 	t.Parallel()
 	facts := []string{"The discobox asking is sbx_worker.", "It was created with no source."}
 	job := judgeJob(&sandboxapi.JudgeJob{
-		Kind: sandboxapi.JudgeJobKindDelegation, Purpose: "read issues", Host: "api.github.com", Round: 1,
+		Kind: sandboxapi.JudgeJobKindDelegation, Purposes: []string{"read issues"}, Host: "api.github.com", Round: 1,
 		Uses: []string{"read issue 1"}, Facts: facts,
 	})
 	if !slices.Equal(job.Facts, facts) {
 		t.Fatalf("facts = %q, want %q", job.Facts, facts)
+	}
+}
+
+// What a delegation was delegated reaches the judge as the list the control
+// plane sent, each use whole however many lines it runs over.
+func TestTheJudgeIsGivenThePurposesItWasSent(t *testing.T) {
+	t.Parallel()
+	purposes := []string{"Triage issues in org/repo.\nNever delete a label.", "read pulls in org/repo"}
+	job := judgeJob(&sandboxapi.JudgeJob{
+		Kind: sandboxapi.JudgeJobKindDelegation, Purposes: purposes, Host: "api.github.com", Round: 1,
+		Uses: []string{"read issue 1"},
+	})
+	if job.Purpose != "" || !slices.Equal(job.Purposes, purposes) {
+		t.Fatalf("job = %+v, want the purposes as sent and no single purpose", job)
+	}
+	if err := job.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }

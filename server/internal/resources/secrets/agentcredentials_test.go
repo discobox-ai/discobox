@@ -43,6 +43,21 @@ func TestAgentCredentialRequestIsPendingAndRecordsWhatWasAsked(t *testing.T) {
 	}
 }
 
+// A use is one line, as a rule's are: one written over several is refused
+// with a reason the agent can act on, rather than approved and then unable
+// to become a rule.
+func TestAgentCredentialRequestRefusesAUseOverSeveralLines(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	_, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses: []apimodel.SecretUse{{Description: "Triage issues in org/repo.\nNever delete a label."}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "one line") {
+		t.Fatalf("err = %v, want the use refused for running over several lines", err)
+	}
+}
+
 // An agent that retries its ask must not fill the approval inbox with copies of
 // the same question.
 func TestAgentCredentialRequestReusesAnOpenAsk(t *testing.T) {
@@ -359,6 +374,23 @@ func TestApproverCanRewriteTheDeclaredUses(t *testing.T) {
 	}
 	if grant.Uses[0].UseID == "use_forged" {
 		t.Fatal("supplied use ID was kept; IDs must always be minted at approval")
+	}
+}
+
+// An approver's rewrite is held to what an agent's ask is: one line a use,
+// so the grant it makes can still become a rule.
+func TestApproverCannotRewriteAUseOverSeveralLines(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	req := createAgentRequest(ctx, t, svc)
+
+	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID),
+		Uses:     serverapi.NewOptNilSecretUseArray([]apimodel.SecretUse{{Description: "open a PR\nnever merge it"}}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "one line") {
+		t.Fatalf("err = %v, want the rewritten use refused for running over several lines", err)
 	}
 }
 

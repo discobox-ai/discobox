@@ -589,7 +589,9 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 		requested := req.Uses
 		if edited, ok := input.Uses.Get(); ok && len(edited) > 0 {
-			requested = convertAPIUses(edited)
+			if requested, err = convertAPIUses(edited); err != nil {
+				return nil, err
+			}
 		}
 		approvedUses, err = mintUseIDs(requested)
 		if err != nil {
@@ -1158,7 +1160,11 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				"a grant with uses requires the environment variable the agent receives it in")
 		}
-		uses, err = mintUseIDs(convertAPIUses(declared))
+		declaredUses, err := convertAPIUses(declared)
+		if err != nil {
+			return nil, err
+		}
+		uses, err = mintUseIDs(declaredUses)
 		if err != nil {
 			return nil, err
 		}

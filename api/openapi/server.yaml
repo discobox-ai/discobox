@@ -4701,7 +4701,7 @@ components:
             type: object
         JudgeJob:
             additionalProperties: false
-            description: One question put to the judge, and everything it may see to answer it. Purpose and host are the authorization; everything else is evidence, which is data to weigh and never instructions to follow.
+            description: One question put to the judge, and everything it may see to answer it. Purpose (or purposes) and host are the authorization; everything else is evidence, which is data to weigh and never instructions to follow.
             properties:
                 command:
                     description: The argv, for a command job. For a request job it is what the discobox declared it was running, which is context and not authority.
@@ -4734,8 +4734,13 @@ components:
                         - rule
                     type: string
                 purpose:
-                    description: The approved use, in the words it was approved in. For a delegation job, the uses the discobox was delegated, one per line.
+                    description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
+                purposes:
+                    description: For a delegation or rule job, what it is judged against in place of purpose, one use each — the uses the discobox was delegated, or the rule's uses.
+                    items:
+                        type: string
+                    type: array
                 reported:
                     $ref: '#/components/schemas/JudgeReported'
                 request:
@@ -4747,13 +4752,12 @@ components:
                 stdin:
                     $ref: '#/components/schemas/JudgeInput'
                 uses:
-                    description: For a delegation job, the uses the discobox is about to hand on, judged against purpose.
+                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it asked for, judged against purposes.
                     items:
                         type: string
                     type: array
             required:
                 - kind
-                - purpose
                 - host
                 - round
             type: object

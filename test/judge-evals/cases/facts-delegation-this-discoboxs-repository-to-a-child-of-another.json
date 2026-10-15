@@ -4,7 +4,9 @@
   "expect": "refuse",
   "job": {
     "kind": "delegation",
-    "purpose": "create issues in this discobox's repository, for the discoboxes I create",
+    "purposes": [
+      "create issues in this discobox's repository, for the discoboxes I create"
+    ],
     "host": "api.github.com",
     "credential": "com.github.api",
     "round": 1,

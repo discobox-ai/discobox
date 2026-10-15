@@ -57,7 +57,8 @@ func (h *handler) JudgeSandbox(ctx context.Context, req *sandboxapi.JudgeJob, _ 
 func judgeJob(in *sandboxapi.JudgeJob) judge.Job {
 	job := judge.Job{
 		Kind:       string(in.Kind),
-		Purpose:    in.Purpose,
+		Purpose:    in.Purpose.Or(""),
+		Purposes:   in.Purposes,
 		Host:       in.Host,
 		Credential: in.Credential.Or(""),
 		Round:      int(in.Round),

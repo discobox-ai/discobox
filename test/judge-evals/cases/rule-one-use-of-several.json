@@ -4,7 +4,10 @@
   "expect": "allow",
   "job": {
     "kind": "rule",
-    "purpose": "Deliver a change as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets.\nTriage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, label another repository's issues, delete a comment, close, assign, or retitle an issue, push, or read secrets.",
+    "purposes": [
+      "Deliver a change as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets.",
+      "Triage issues in discobox-ai/discobox. Read anything in the repository; add and remove issue labels (creating a missing triage label), and post and edit my triage comments. Never delete or rename a label, label another repository's issues, delete a comment, close, assign, or retitle an issue, push, or read secrets."
+    ],
     "host": "github.com",
     "credential": "com.github.api",
     "round": 1,

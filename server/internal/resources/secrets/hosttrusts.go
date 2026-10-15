@@ -161,7 +161,10 @@ func (s *Service) ApproveTrustRequest(ctx context.Context, projectID, requestID 
 	}
 	uses := req.Uses
 	if edited, ok := input.Uses.Get(); ok && edited != nil {
-		if uses = convertAPIUses(edited); len(uses) == 0 {
+		if uses, err = convertAPIUses(edited); err != nil {
+			return nil, err
+		}
+		if len(uses) == 0 {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "an approved trust needs at least one use")
 		}
 	}

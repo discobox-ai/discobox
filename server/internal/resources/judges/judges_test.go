@@ -776,7 +776,7 @@ func TestTheQuestionIsReadFromTheGrantAndNotFromTheAsk(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("the judge was asked %d times, want once", len(jobs))
 	}
-	if jobs[0].Purpose != "open a pull request in org/repo" || jobs[0].Host != "github.com" {
+	if jobs[0].Purpose.Or("") != "open a pull request in org/repo" || jobs[0].Host != "github.com" {
 		t.Fatalf("job = %+v, want the sentence and host from the grant", jobs[0])
 	}
 	if jobs[0].Credential.Or("") != "GitHub token" {
@@ -1346,9 +1346,10 @@ func TestADelegationIsJudgedAndRecordedAgainstItsGrant(t *testing.T) {
 		t.Fatalf("the judge was asked %d times, want once", len(jobs))
 	}
 	job := jobs[0]
-	if string(job.Kind) != judge.KindDelegation || job.Purpose != "read issues in org/repo\nread pull requests in org/repo" ||
+	if string(job.Kind) != judge.KindDelegation || job.Purpose.Set ||
+		!slices.Equal(job.Purposes, []string{"read issues in org/repo", "read pull requests in org/repo"}) ||
 		len(job.Uses) != 1 || job.Uses[0] != "push the branch fix-43 to org/repo" || job.Host != "api.github.com" || job.Round != 1 {
-		t.Fatalf("job = %+v, want a delegation job: the delegated uses as the purpose, the handed-on uses beside them", job)
+		t.Fatalf("job = %+v, want a delegation job: the delegated uses as its purposes, the handed-on uses beside them", job)
 	}
 	// The discobox asking is the one handing the credential on, and the one
 	// it would hand it to is stated beside it: "this discobox" in a use means

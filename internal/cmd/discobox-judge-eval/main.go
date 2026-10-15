@@ -440,7 +440,7 @@ func propose(ctx context.Context, command []string, model string, judging func(c
 	var checks []check
 	ruleJob := func(rule, uses []string) judge.Job {
 		return judge.Job{
-			Kind: judge.KindRule, Purpose: strings.Join(rule, "\n"), Host: strings.Join(c.Proposal.Hosts, ", "),
+			Kind: judge.KindRule, Purposes: rule, Host: strings.Join(c.Proposal.Hosts, ", "),
 			Credential: c.Proposal.Credential, Round: 1, Uses: uses,
 		}
 	}
