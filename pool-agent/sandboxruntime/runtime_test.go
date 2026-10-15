@@ -208,9 +208,9 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 // names in one — a source's target, the working root it writes into the
 // manifest, the directory the sandbox starts in — is judged that platform's
 // way (ADR 0145 §6). On Windows a path names its drive, and a source with none
-// lands under the working root by name. A working directory that names no
-// place in the sandbox fails the create, as the container runtime always made
-// it fail; one that does is passed on as asked.
+// lands under the working root by name. A working directory is a start
+// directory only when it is inside the source (ADR 26-10-15-664 §3); anything
+// else, a relative one included, starts the sandbox at the source.
 func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 	windows := sandboxpath.For(platform.Platform{OS: "windows", Arch: "amd64"})
 	darwin := sandboxpath.For(platform.Platform{OS: "darwin", Arch: "arm64"})
@@ -240,8 +240,6 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 		workingDir  string
 		wantPrimary string
 		wantTools   string
-		wantWorkDir string
-		wantRefused bool
 		wantRoot    string
 		// wantStart is the primary source's start directory in the
 		// sandbox's config: the working directory, cleaned, when it is
@@ -251,34 +249,34 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 		{
 			name: "windows drive paths", paths: windows,
 			directory: "C:/src/app", workingDir: `C:\src\app\cmd`,
-			wantPrimary: `C:\src\app`, wantTools: `C:\workspace\tools`, wantWorkDir: `C:\src\app\cmd`, wantRoot: `C:\workspace`,
+			wantPrimary: `C:\src\app`, wantTools: `C:\workspace\tools`, wantRoot: `C:\workspace`,
 			wantStart: `C:\src\app\cmd`,
 		},
 		{
 			name: "windows POSIX paths name no place", paths: windows,
 			directory: "/workspace/app", workingDir: "/workspace/app",
-			wantPrimary: `C:\workspace`, wantTools: `C:\workspace\tools`, wantRefused: true, wantRoot: `C:\workspace`,
+			wantPrimary: `C:\workspace`, wantTools: `C:\workspace\tools`, wantRoot: `C:\workspace`,
 		},
 		{
 			name: "darwin", paths: darwin,
 			directory: "/Users/ada/app/", workingDir: "/Users/ada/app/./cmd",
-			wantPrimary: "/Users/ada/app", wantTools: "/tools", wantWorkDir: "/Users/ada/app/./cmd", wantRoot: "/workspace",
+			wantPrimary: "/Users/ada/app", wantTools: "/tools", wantRoot: "/workspace",
 			wantStart: "/Users/ada/app/cmd",
 		},
 		{
 			name: "linux working directory outside the source", paths: linuxPaths,
 			directory: "/workspace/app", workingDir: "/workspace/other",
-			wantPrimary: "/workspace/app", wantTools: "/tools", wantWorkDir: "/workspace/other", wantRoot: "/workspace",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantRoot: "/workspace",
 		},
 		{
 			name: "linux working directory at the source", paths: linuxPaths,
 			directory: "/workspace/app", workingDir: "/workspace/app",
-			wantPrimary: "/workspace/app", wantTools: "/tools", wantWorkDir: "/workspace/app", wantRoot: "/workspace",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantRoot: "/workspace",
 		},
 		{
 			name: "linux relative working directory", paths: linuxPaths,
 			directory: "/workspace/app", workingDir: "app",
-			wantPrimary: "/workspace/app", wantTools: "/tools", wantRefused: true, wantRoot: "/workspace",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantRoot: "/workspace",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -289,14 +287,6 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 			}
 			if sources[0].target != tc.wantPrimary || sources[1].target != tc.wantTools {
 				t.Fatalf("targets = %q, %q; want %q, %q", sources[0].target, sources[1].target, tc.wantPrimary, tc.wantTools)
-			}
-			got, err := sourceWorkingDirectory(tc.paths, req)
-			if tc.wantRefused {
-				if err == nil {
-					t.Fatalf("working directory = %q, want it refused", got)
-				}
-			} else if err != nil || got != tc.wantWorkDir {
-				t.Fatalf("working directory = %q, %v; want %q", got, err, tc.wantWorkDir)
 			}
 			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
 			if doc.Runtime.AgentRuntime.WorkingRoot != tc.wantRoot {

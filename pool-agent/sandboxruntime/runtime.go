@@ -612,16 +612,9 @@ func createStarts(req *workerapimodel.PoolSandboxCreateRequest) bool {
 // with, and returns that container for the caller to replace.
 func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, replaced *Sandbox, replacedRunning bool) (*Sandbox, bool, error) {
 	normalizeSandboxConfig(r.paths, &req.Config)
-	// Before anything is stopped or pulled: a working directory that names no
-	// place in the sandbox fails the create as the container runtime would
-	// have, rather than after the running container is gone.
-	workingDir, err := sourceWorkingDirectory(r.paths, req)
-	if err != nil {
-		return nil, false, err
-	}
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
-	imageName, err = r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
+	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
 	if err != nil {
 		return nil, false, err
 	}
@@ -704,11 +697,17 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
-		Image:        imageName,
-		Hostname:     sandboxHostname(sandboxID),
-		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project), harnessModeOf(config)),
-		Env:          envList(envWithSandboxUser(baseEnv, user)),
-		WorkingDir:   workingDir,
+		Image:    imageName,
+		Hostname: sandboxHostname(sandboxID),
+		Labels:   r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project), harnessModeOf(config)),
+		Env:      envList(envWithSandboxUser(baseEnv, user)),
+		// No WorkingDir. Its PID 1 is systemd, which runs from /, and every
+		// exec is the sandbox agent's own; where the harness starts reaches it
+		// through sandbox.json (sourceStartDirectory, ADR 26-10-15-664 §3). A
+		// WorkingDir the image lacks is only a path Docker creates root-owned
+		// in the container's layer, under home for a checkout kept at its host
+		// path, where the sandbox user then cannot write and nothing in boot
+		// hands it over (#234, ADR 26-10-15-417).
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
@@ -3079,30 +3078,6 @@ func resolveSandboxUser(paths sandboxpath.Paths, req *workerapimodel.PoolSandbox
 		requested.GID = sandboxuser.ID(gid)
 	}
 	return sandboxuser.Merge(sandboxuser.Layers{Request: requested})
-}
-
-// sourceWorkingDirectory is the directory the primary source asks a sandbox
-// to start in, as it asked, when it is an absolute path in the sandbox: judged
-// by the sandbox's platform. One that is not names no place there — a
-// container runtime refuses a relative one outright — and is refused with the
-// platform as the reason, rather than quietly replaced by the image's default.
-func sourceWorkingDirectory(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) (string, error) {
-	if req == nil {
-		return "", nil
-	}
-	source, ok := req.Config.Source.Get()
-	if !ok {
-		return "", nil
-	}
-	destination, ok := source.Destination.Get()
-	if !ok {
-		return "", nil
-	}
-	directory := optString(destination.WorkingDirectory)
-	if directory != "" && !paths.IsAbs(directory) {
-		return "", fmt.Errorf("source working directory %q is not an absolute path in a %s sandbox", directory, paths.OS())
-	}
-	return directory, nil
 }
 
 // normalizeSandboxConfig applies provider-owned path defaults before the

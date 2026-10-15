@@ -32,12 +32,22 @@ Getting it wrong on the **data root is a correctness bug**: that tree is the
 sandbox's `$HOME`. Unarchiving is a create against a tree that is already full
 (ADR 0022 §6), so a `chown -R 0:0` there hands root every file the sandbox has
 ever written. Do not answer this with "the sandbox chowns it back on boot" —
-`seedHome`'s repair is a different component's walk with its own limits (it
-stops at home's own filesystem, and walks nothing for a sandbox that runs as
-root), and a rule that holds only while two passes agree exactly is not a
-rule.
+boot does not walk home at all: it chowns only what it creates
+(`sandbox-agent/REVIEW.md`, "Boot cost"), so nothing on the sandbox's side
+repairs what a walk here gets wrong.
 
 Rule of thumb: on the create path, walk only what this agent wrote.
+
+## A sandbox container has no `WorkingDir`
+
+- **Never set `container.Config.WorkingDir` for a sandbox.** Docker creates
+  a working directory the image lacks, root-owned, in the container's own
+  layer, before boot runs. For a checkout kept at its host path that is a path
+  under the user's home, which boot then leaves root's (it chowns only what it
+  creates) and which turns home's volume into an overlay. It is not how the
+  harness's start directory arrives: PID 1 is systemd, which runs from `/`,
+  and the sandbox agent starts every exec where `sandbox.json` says
+  (`sourceStartDirectory`, ADR 26-10-15-664 §3) (#234, ADR 26-10-15-417).
 
 ## Nothing is written into a sandbox after create
 

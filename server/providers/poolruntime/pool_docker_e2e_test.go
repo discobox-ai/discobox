@@ -115,8 +115,11 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	if inspect.Container.Config.Image != image {
 		t.Fatalf("container image = %q, want %q", inspect.Container.Config.Image, image)
 	}
-	if inspect.Container.Config.WorkingDir != "/tmp" {
-		t.Fatalf("working dir = %q, want /tmp", inspect.Container.Config.WorkingDir)
+	// The source's working directory reaches the sandbox through sandbox.json
+	// (ADR 26-10-15-664 §3), never as the container's: Docker would create it
+	// root-owned in the container's layer (#234, ADR 26-10-15-417).
+	if inspect.Container.Config.WorkingDir != "" {
+		t.Fatalf("working dir = %q, want none", inspect.Container.Config.WorkingDir)
 	}
 	if !containsContainerEnv(inspect.Container.Config.Env, "DISCOBOX_E2E=true") {
 		t.Fatalf("container env = %#v, missing DISCOBOX_E2E=true", inspect.Container.Config.Env)
