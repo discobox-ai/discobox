@@ -74,6 +74,14 @@ the techniques.
 | What is its tools-off switch, really? | `--no-tools` in the judge | an empty allowlist meant "no filter" in copilot; count the tools the fake model is sent |
 | Where does it copy to? | OSC 52 vs the box's own X clipboard | codex needed `SSH_CONNECTION`; copilot writes OSC 52 always |
 | Does it keep memories in a directory you can point elsewhere? | source-scoped memory | claude: managed setting; codex: bind mount; opencode/copilot: none |
+| Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — template that, import at launch |
+| Is there a system layer at all? Do settings layers merge lists or replace them? | where hooks and policy can live | omp: none; its `PI_CONFIG_FILES` overlay outranks the user but *replaces* any list it sets |
+| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`? | `prompt.sh`, `launch.sh` | omp `-p` waits for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--` |
+| Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
+| What do its dependencies' install scripts fetch? | image build, version store | omp's onnxruntime-node downloads a CUDA build from GitHub on linux-x64 and hung the build: `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` at build time and in the image's env. A scratchpad install that takes minutes is the warning |
+| Does a first interactive run open a wizard? | unattended launch | omp's five-step setup wizard stalls a launch until `startup.setupWizard: false` |
+| Where does it collect context files (`AGENTS.md`) from? | judge isolation | omp walks up to a repository root, or `/` without one, so `/tmp/AGENTS.md` reached a judge in `/tmp` |
+| Can a stored credential name its own endpoint? | judge isolation | omp: `apiEndpoint`, `enterpriseUrl`, a JSON key with `baseUrl` — the judge rebuilds credentials from an allowlist of fields |
 
 ## 2. Decide
 
@@ -91,16 +99,21 @@ Write these down before writing scripts; most become ADR sections.
 3. **Delivery.** `delivery: file` when the CLI reads metadata beside the token
    or prefers an env var that would defeat the file (claude-code, codex); the
    default env delivery when the CLI documents an env var for headless use
-   and the stored-login file is its own churned state (copilot). Never ship a
+   and the stored-login file is its own churned state (copilot). A store that
+   is not a file (omp's SQLite) is delivered as the CLI's own export document,
+   templated, and imported by the launcher on every launch. Never ship a
    baseline credential file: an empty one reads as "signed in".
 4. **Policy baseline**: auto-approve and trust, in a layer the configure
    capture cannot replace — a system config, an image env var, or a launcher
    flag. Not the user's settings file: configure replaces that wholesale.
-5. **Hooks**: which system layer, and which events. Publish every event with
+5. **Hooks**: which system layer, and which events. With none (omp), a
+   harness file in the CLI's user extension directory that re-exports a
+   module the image installs keeps the code the image's; never a settings
+   list in an overlay that would replace the user's. Publish every event with
    `discobox-hook-publish --provider <id> --event <name>` (silent on stdout,
    always exits 0, so it is safe in decision hooks).
 6. **Judge model** for `--model judge`: pinned (claude-code, codex, copilot)
-   or the user's choice (opencode, where providers vary). A pinned id the
+   or the user's choice (opencode, omp, where providers vary). A pinned id the
    account cannot reach refuses every judged command — say so in the ADR.
 
 ## 3. Build `harness/<id>/`
@@ -109,12 +122,13 @@ Write these down before writing scripts; most become ADR sections.
 | --- | --- |
 | `Dockerfile` | `FROM ${SANDBOX_AGENT_IMAGE}`; refuse an empty `HARNESS_METADATA`; `npm install -g` then `rm -rf /root/.npm`; install `agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>`, `launch.sh` → `/usr/local/bin/discobox-harness-run`, `prompt.sh` → `/usr/local/bin/discobox-prompt` |
 | `image.json` | `apiVersion`, `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,config.{command,reminder,ports}}`. No `runCommand` — the convention is the command. Every localhost callback port a sign-in uses goes in `config.ports` — its number when fixed, `{"ephemeral": true}` when it changes each run — with an `unavailable` message naming the fallback (device code, an API key) |
+| `boxd.yaml` | the Dockerfile's twin for disco-vm: the same install steps and paths; change the two together, and add it to `build:boxd-images` |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
 | `driver.go` | `ID()` and `Definition()` naming `harness.ImageRef("discobox-harness-<id>")` |
-| `launch.sh` | join prompt words into one prompt; `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
-| `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and empty cwd; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
+| `launch.sh` | join prompt words into one prompt, passed so the CLI cannot read it as flags or files (omp: after `--`); `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
+| `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and an empty cwd that is its own repository root (an empty `.git`); stdin from `/dev/null`; credentials for the isolated home rebuilt from an allowlist of fields, never copied from a file the agent can write; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
 | `configure.sh` | see below |
-| hook config | in the CLI's own schema, at its system layer |
+| hook config | in the CLI's own schema, at its system layer. A JavaScript hook (opencode, omp) publishes an allowlist of events, each payload projected by shape (scalars, a tool's input), never by a list of field names to drop: the transcript travels under many names |
 
 **`configure.sh`** — copy the shape of `codex-cli` or `copilot`, which encode
 lessons that each cost a bug:
@@ -133,6 +147,9 @@ lessons that each cost a bug:
   an isolated home so a stored login cannot stand in for it.
 - Return the user's settings file, minus anything the script set for its own
   sake; never return the CLI's state files or trust maps.
+- With several accounts of one provider (omp), name each secret by which
+  secret it is — its `PREV_` sentinel, then its account — never by its
+  position in what the CLI exported; a re-login moves it.
 - Template harness files with dotted access (`{{ .secrets.NAME }}`), never
   `index .secrets "NAME"` inside JSON.
 - Check what was *entered*, not which prompt it came in at. Copilot's PAT
@@ -181,6 +198,10 @@ In `harness/<id>/`, mirroring the siblings:
   `exec sh -c "$4"`, drive stdin. Cover first sign-in, keep, replace inside a
   kept session, revoked keep, refused credential retried only when asked,
   end of input. Check each test fails when the behavior it names is broken.
+- **Synthetic events in their real shapes.** A driver that fires a hook event
+  with `{}` cannot see a payload that leaks the transcript; take the shapes
+  from a recorded session or the CLI's own types. A stub store mimics the
+  CLI's ordering too (omp moves a replaced login to the end).
 
 Then: `go test ./harness/... ./internal/cmd/discobox-docker-image-watch/`,
 the CLI audit test, `go tool task build:harness-image HARNESS=<id>`,
@@ -206,6 +227,26 @@ passed, is the template:
    finds them.
 
 What this needs, learned the hard way:
+
+- **The running image watcher predates a new harness.** Its list is compiled
+  in, so it builds nothing for one it has never heard of, and the server
+  falls back to the definition's `discobox-harness-<id>:local`. Build that
+  with `go tool task build:harness-image HARNESS=<id>
+  SANDBOX_AGENT_IMAGE=<the dev sandbox-agent tag from
+  .tmp/discobox-dev-images.json>`: the `:local` base can be far older.
+  Then tag it by content (`discobox-harness-<id>:dev-<12 hex of its image
+  id>`) and set `DISCOBOX_HARNESS_<ID>_IMAGE` in `.env` to that: the dev
+  server seeds only what `.env` names, and re-reads a manifest only when the
+  reference changes — a rebuilt `:local` keeps the label it first read.
+- **The box's own Claude login can stand in for a real one.** When the user
+  says so, the sentinel in `~/.claude/.credentials.json` works one level
+  down (`scripts/nested-claude-auth.sh` explains why). Put it where the CLI
+  stores a login from inside the configure session (omp: its `!` shell
+  escape, `omp auth import`), as a credential nothing will refresh, and the
+  rest of the flow runs for real.
+- **`terminal input` prints a resume point; pass it to `terminal wait
+  --after`.** A one-line answer's `Stop` lands before a wait started after
+  it, which then times out.
 
 - **One run, five minutes.** `discobox-access run` mints a sentinel that
   lives about five minutes (`activationTTL`); the nested server stores *that*
