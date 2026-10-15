@@ -234,8 +234,8 @@ has declared what it hosts.
 ## A pool runs one kind of image
 
 Beside its platform, a pool runs one kind of image (`platform.ImageKind`, ADR
-26-10-09-106 §4): `oci` for a Docker pool, `discovm/<driver>` for a discovm
-pool on that driver. The platform alone cannot tell them apart — a boxd pool
+26-10-09-106 §4): `oci` for a Docker pool, `vm/<driver>` for a vm pool
+on that driver. The platform alone cannot tell them apart — a boxd pool
 and an amd64 Docker pool both host linux/amd64. Its agent declares the kind on
 registration and every heartbeat, beside the platform; one that is neither is
 refused with 400 (`declaredImageKind`). Unlike the platform, an agent that
@@ -244,12 +244,12 @@ images in containers, so OCI is recorded for it (`store.recordPoolImageKind`),
 and a registered pool always has a kind. A pool not yet registered has none.
 The migration that adds the column backfills OCI for every pool that existed
 then, and only on that start: a pool created since has no kind until its agent
-says, since it may be a discovm pool.
+says, since it may be a vm pool.
 
 `SchedulablePoolForSandbox` refuses a sandbox whose harness's image is another
 kind than the pool runs with a `*platform.KindMismatchError` naming both — a
-disco-vm harness on a Docker pool of its very platform, or an OCI one on a
-discovm pool — before the platform is settled, and never as `ErrNotFound`. A
+VM harness on a Docker pool of its very platform, or an OCI one on a
+vm pool — before the platform is settled, and never as `ErrNotFound`. A
 sandbox with no harness config, and an import's stand-in, are OCI: import takes
 only an OCI harness. A harness of no declared kind places nowhere.
 

@@ -90,7 +90,13 @@ writes OCI into the pools that existed, only on the start that adds the
 column, which `addsImageKindColumn` reads before `AutoMigrate`. The
 manifest-file repair runs on every start instead, since nothing else would
 correct a row a dead start left OCI, and it is idempotent: a manifest file
-registered since kinds always has a disco-vm kind.
+registered since kinds always has a VM kind.
+
+A VM kind was spelled `discovm/<driver>` until ADR 26-10-15-629 respelled it
+`vm/<driver>`, and only the new spelling is read, so a stored old one would
+fail every scan of its row. `respellDiscoVMImageKinds` rewrites them on pools
+and harness configs on every start, before anything reads a kind; after the
+first it matches nothing.
 
 `AutoMigrate` creates tables, adds and widens columns, and creates missing
 indexes, but never drops any of them, never alters an index that already exists

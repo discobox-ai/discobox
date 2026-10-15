@@ -398,12 +398,12 @@ type HarnessConfig struct {
 	Platforms platform.Set `gorm:"column:platforms;type:text;serializer:json" json:"platforms,omitempty" doc:"Platforms a manifest file's template runs on, as os/arch. A discobox on this harness is placed only on a pool that hosts one of them. Absent on a bundle, which rules no pool out."`
 	// ImageKind is the kind of box the harness runs on (ADR 26-10-09-106 §4),
 	// read when it is inspected: OCI for a bundle, which a Docker pool's
-	// sandbox base image applies, or the disco-vm kind a manifest file
+	// sandbox base image applies, or the VM kind a manifest file
 	// declares. A sandbox on it is placed only on a pool that runs that kind.
 	// The column defaults to OCI; a manifest-file harness from before kinds is
 	// left with none (database.unsetManifestFileImageKinds), which places
 	// nowhere.
-	ImageKind        platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of box the harness runs on: oci for a bundle, or discovm/<driver> for a manifest file's disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and it is refreshed."`
+	ImageKind        platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of box the harness runs on: oci for a bundle, or vm/<driver> for a manifest file's VM image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and it is refreshed."`
 	ImageEgressHosts []string           `gorm:"column:image_egress_hosts;type:text;serializer:json" json:"imageEgressHosts,omitempty" doc:"Hosts the registered bundle declares it needs, snapshotted from its label."`
 	// Egress is the harness level a person set (ADR 26-10-01-032). It is kept
 	// apart from ImageEgressHosts so registering a new bundle replaces what the
@@ -791,11 +791,11 @@ type Pool struct {
 	// the agent first declares it.
 	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first reports."`
 	// ImageKind is the kind of image the pool runs (ADR 26-10-09-106 §4):
-	// OCI for a Docker pool, a disco-vm driver's for a discovm pool. Its agent
+	// OCI for a Docker pool, a VM driver's for a vm pool. Its agent
 	// declares it beside the platform; an agent from before kinds declares
 	// none and runs OCI images, which is what is recorded for it. Empty until
 	// the agent first reports.
-	ImageKind             platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:''" json:"imageKind,omitzero" doc:"The kind of image the pool runs: oci, or discovm/<driver> for disco-vm images of that driver. Declared by its agent; empty until the agent first reports."`
+	ImageKind             platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:''" json:"imageKind,omitzero" doc:"The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its agent; empty until the agent first reports."`
 	PublicKey             string             `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
 	KeyType               string             `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
 	Ready                 bool               `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`

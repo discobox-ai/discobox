@@ -36,7 +36,7 @@ type ImageMetadata struct {
 	// at registration rather than read beside the registry's answer.
 	Platform platform.Platform `json:"platform,omitzero"`
 	// ImageKind is the kind of image a manifest file's template is built as:
-	// a disco-vm image for the driver it names (ADR 26-10-09-106 §4). Only a
+	// a VM image for the driver it names (ADR 26-10-09-106 §4). Only a
 	// manifest file declares it, as it does its platform: an image is an OCI
 	// image by being one, so an image label naming a kind is refused at
 	// registration.

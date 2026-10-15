@@ -469,9 +469,9 @@ func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) er
 }
 
 // refuseOtherImageKind refuses a sandbox on harness when pool runs another kind
-// of image, with the kinds as the reason (ADR 26-10-09-106 §4): a disco-vm
+// of image, with the kinds as the reason (ADR 26-10-09-106 §4): a VM
 // harness on a Docker pool of the same platform, or an OCI harness on a
-// discovm pool. It is the placement check as create and import make it,
+// vm pool. It is the placement check as create and import make it,
 // before anything is written. A pool whose agent has not declared what it
 // runs is a pool still coming up, and not refused here: the provider's
 // placement (store.SchedulablePoolForSandbox) checks the kind once the agent

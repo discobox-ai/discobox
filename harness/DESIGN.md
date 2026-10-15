@@ -40,7 +40,7 @@ launchers, and configure scripts.
 - **What a platform has is declared, and what it lacks is the declaration's
   absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
   A manifest file declares its `platform` (`os/arch`) and its `imageKind`
-  (`discovm/<driver>`, ADR 26-10-09-106 §4); a bundle declares neither,
+  (`vm/<driver>`, ADR 26-10-09-106 §4); a bundle declares neither,
   because its steps select the platform they run on and its kind is the
   provider's (ADR 26-10-16-423 §2). A non-Linux manifest
   names its one `account` by name alone (ADR 0145 §5) and the `shell` its

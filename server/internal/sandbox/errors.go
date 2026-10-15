@@ -94,14 +94,14 @@ var (
 
 	// ErrGuestImageRestartUnsupported indicates the backend builds its guest
 	// image but cannot restart a pool's host onto it (GuestImageBuildOptions
-	// RestartHost): a disco-vm machine is cloned from its image, so a new image
+	// RestartHost): a VM machine is cloned from its image, so a new image
 	// reaches a pool only when its machine is replaced.
 	ErrGuestImageRestartUnsupported = errors.New("this backend cannot restart a pool onto the image it builds")
 
 	// ErrPoolConsoleUnsupported indicates the backend hosting a pool has no
 	// administrative console to open on it. Like ErrPoolLogsUnsupported it is a
 	// settled answer about the backend: a pool agent running natively on the
-	// user's own machine (a disco-vm vz pool) has no separate host for a root
+	// user's own machine (a vm pool on vz) has no separate host for a root
 	// shell to be on.
 	ErrPoolConsoleUnsupported = errors.New("this backend has no pool host console to open")
 )

@@ -20,7 +20,7 @@ const overlayManifest = `{
 	"io.discobox.image.v1.10-sandbox-base": {
 		"apiVersion": "discobox.dev/image/v1",
 		"platform": "darwin/arm64",
-		"imageKind": "discovm/vz",
+		"imageKind": "vm/vz",
 		"account": "discobox",
 		"shell": "/bin/zsh",
 		"env": {"PATH": "/usr/local/bin:/usr/bin:/bin"}
@@ -66,8 +66,8 @@ func TestInspectReadsAManifestFile(t *testing.T) {
 	if len(inspected.Platforms) != 1 || !inspected.Platforms.Contains(darwin) {
 		t.Errorf("platforms = %v, want only %v", inspected.Platforms, darwin)
 	}
-	if inspected.ImageKind != platform.DiscoVM("vz") {
-		t.Errorf("image kind = %v, want the discovm/vz the file declares", inspected.ImageKind)
+	if inspected.ImageKind != platform.VM("vz") {
+		t.Errorf("image kind = %v, want the vm/vz the file declares", inspected.ImageKind)
 	}
 	if inspected.Account != "discobox" || inspected.Shell != "/bin/zsh" {
 		t.Errorf("account, shell = %q, %q; want the base layer's", inspected.Account, inspected.Shell)
@@ -159,7 +159,7 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 // container mechanisms may not, is refused at registration with the reason.
 func TestParseManifestFileRefuses(t *testing.T) {
 	base := func(fields string) string {
-		return `{"io.discobox.image.v1.10-sandbox-base": {"imageKind": "discovm/vz", ` + fields + `}}`
+		return `{"io.discobox.image.v1.10-sandbox-base": {"imageKind": "vm/vz", ` + fields + `}}`
 	}
 	for name, tc := range map[string]struct {
 		file string
@@ -169,9 +169,9 @@ func TestParseManifestFileRefuses(t *testing.T) {
 			"not built on the sandbox agent's overlay"},
 		"no platform": {base(`"account": "a", "shell": "/bin/zsh"`), "declares no platform"},
 		"no image kind": {`{"io.discobox.image.v1.10-sandbox-base": {"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh"}}`,
-			"declares no disco-vm image kind"},
+			"declares no VM image kind"},
 		"an OCI image kind": {`{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "imageKind": "oci"}}`,
-			"declares no disco-vm image kind"},
+			"declares no VM image kind"},
 		"no account": {base(`"platform": "darwin/arm64", "shell": "/bin/zsh"`), "must name the one account"},
 		"volumes": {base(`"platform": "darwin/arm64", "account": "a", "shell": "/bin/zsh", "volumes": [{"path": "/nix", "volume": "cache"}]`),
 			"manifest file: a darwin manifest declares no volumes"},
@@ -191,17 +191,17 @@ func TestParseManifestFileRefuses(t *testing.T) {
 	}
 }
 
-// A Linux template built as a disco-vm image — a boxd sandbox's — is a
+// A Linux template built as a VM image — a boxd sandbox's — is a
 // manifest file like any other platform's (ADR 26-10-09-106 §4): its kind,
 // not its platform, is what keeps it off a Docker pool of linux/arm64.
 func TestParseManifestFileReadsALinuxDiscoVMTemplate(t *testing.T) {
-	file := `{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "imageKind": "discovm/boxd", "features": {"docker": true}}}`
+	file := `{"io.discobox.image.v1.10-sandbox-base": {"platform": "linux/arm64", "imageKind": "vm/boxd", "features": {"docker": true}}}`
 	inspected, err := parseManifestFile("sha256:test", []byte(file))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inspected.ImageKind != platform.DiscoVM("boxd") {
-		t.Errorf("image kind = %v, want discovm/boxd", inspected.ImageKind)
+	if inspected.ImageKind != platform.VM("boxd") {
+		t.Errorf("image kind = %v, want vm/boxd", inspected.ImageKind)
 	}
 	if !slices.Equal(inspected.Platforms, platform.Set{{OS: "linux", Arch: "arm64"}}) {
 		t.Errorf("platforms = %v, want linux/arm64", inspected.Platforms)
@@ -217,7 +217,7 @@ func TestComposeBundleMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 		says string
 	}{
 		"a platform": {`{"platform": "darwin/arm64"}`, "declares platform darwin/arm64"},
-		"a kind":     {`{"imageKind": "discovm/boxd"}`, "declares image kind discovm/boxd"},
+		"a kind":     {`{"imageKind": "vm/boxd"}`, "declares image kind vm/boxd"},
 		"an account": {`{"account": "ada"}`, "names no account"},
 		"a shell":    {`{"shell": "/bin/zsh"}`, "names no shell"},
 	} {
