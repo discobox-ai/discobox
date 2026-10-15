@@ -48,6 +48,7 @@ var twins = []twin{
 	{Tag: "discobox/opencode", Dir: "harness/opencode", Context: "harness/opencode"},
 	{Tag: "discobox/copilot", Dir: "harness/copilot", Context: "harness/copilot"},
 	{Tag: "discobox/omp", Dir: "harness/omp", Context: "harness/omp"},
+	{Tag: "discobox/pi", Dir: "harness/pi", Context: "harness/pi"},
 }
 
 // driverTwins lists the twins a checkout holds a spec for, for a driver.
