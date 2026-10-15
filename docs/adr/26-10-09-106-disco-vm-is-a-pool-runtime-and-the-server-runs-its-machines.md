@@ -25,6 +25,27 @@
   longer extends 0144 §§3–6 to a boxd pool. Each boxd sandbox is still a
   machine of its own, driven through §2's seam, and §§2–4 and 6 are as
   accepted.
+- **Amended**: 2026-10-15, the Context, §§1–3, 5 and 6, Deferred and the
+  Consequences, before anything shipped against them (#224). This ADR was
+  written against disco-vm as it stood on 2026-10-09, when the engine reached
+  a guest through disco-vm's guest agent and offered `Dial(port)` to any guest
+  port. disco-vm's own
+  [ADR 0001](https://github.com/discobox-ai/vm/blob/main/docs/adr/0001-a-driver-runs-guest-operations-and-exposes-one-service-endpoint.md)
+  has since made guest operations (exec, copy in and out, orderly shutdown,
+  info) required methods of each driver's `Machine`, taken `Dial(port)` out of
+  the seam, and given an instance one endpoint, for the port its image
+  declares as its service. The owner adopted it: the provider places a
+  bootstrap with the driver's copy-in, and the address §2's seam returns is
+  the instance's endpoint for the agent's port, on vz as a transport the
+  server holds, which §3's route is built on rather than on the shim's
+  `/dial`; whatever that transport runs through, it never leaves the server.
+  disco-vm also gained a `docker` driver; it is recorded as a later `discovm`
+  driver, after boxd, and deferred. discobox-ai/vm#7, a boxd endpoint that is
+  the same across stop and start, is done and no longer owed. That a Linux
+  machine sandbox's guest may already hold the id ADR 0141 would give its
+  account (boxd's uid 1000) is noted, and its range deferred, not decided.
+  Nothing else changes: boxd is still the first driver, then vz, and
+  `discovm` is still beside `dockerworker`, not instead of it.
 - **Relates to**: [0006](0006-pool-is-the-runtime-host.md),
   [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md),
   [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md),
@@ -49,25 +70,38 @@ The VM half of that now exists outside discobox. **disco-vm**
 from a Dockerfile-shaped YAML spec and runs them as VMs: macOS guests on
 Virtualization.framework (`vz`), Windows guests on Host Compute Service (`hcs`),
 and Linux guests on boxd's cloud microVMs from any host. Its parts that matter
-here:
+here, as amended on 2026-10-15 to disco-vm's ADR 0001:
 
 - **`pkg/engine` is a library** an embedder opens on a state root: `Create`
-  (with a name, a size and guest-to-host `Forwards`), `Start`, `Stop` (orderly,
-  through its guest agent), `Remove`, `Get`/`List`/`State`, `Dial(port)` to any
-  guest port, and `Guest(inst).CopyTo` for files. Fast clones come from warm
+  (with a name, a size and guest-to-host `Forwards`), `Start`, `Stop`,
+  `Remove`, `Get`/`List`/`State`, and `Endpoint`. Fast clones come from warm
   stages and fall back to cold.
-- **A running VM is held by a shim process**, which an embedder runs as a
+- **Guest operations are the driver's.** Exec, copy in and out, orderly
+  shutdown and info are required methods of each driver's `Machine`. vz, hcs
+  and docker implement them over a private channel to a guest agent disco-vm
+  installs in the image; boxd implements them over its own API, so a boxd
+  image carries no disco-vm agent. No raw guest port is part of the seam.
+- **An instance has one endpoint.** An image declares one service port
+  (`service: {port: N}`), and `Engine.Endpoint` returns that port's one
+  address: on boxd, the machine's public HTTPS URL, the same across stop and
+  start, with no access control of its own; on vz and hcs, `http://guest` with
+  a transport that dials the port, which only the process holding it can use.
+- **A local VM is held by a shim process**, which an embedder runs as a
   hidden subcommand of its own binary (`Engine.ShimCommand`, `ShimMain`). The
-  shim serves `/dial` on loopback, splicing to a guest port, and forwards
-  guest-to-host connections to host Unix sockets. `Engine.State` is whether
-  that shim answers.
+  shim forwards guest-to-host connections to host Unix sockets, and holds
+  the host side of the driver's channel into the guest: on vz the endpoint's
+  transport runs through the shim's loopback `/dial`, which, with its token,
+  reaches any guest port, the guest agent's included. `Engine.State` is
+  whether that shim answers. A remote driver runs no shim.
 - **Drivers differ.** `machine.Capabilities` reports guest OS, clone modes,
   `MaxRunning` (two macOS guests per host on vz), display and forwarding. Other
   differences are in the drivers' own documents: hcs needs an elevated process;
-  vz uses the framework's NAT for install, boot and save/restore; boxd offers no
-  socket into a guest (its `Dial` is an authenticated Exec stream), no
+  vz uses the framework's NAT for install, boot and save/restore; boxd has no
   guest-to-host forward, is driven by an API key from any host, and does not
   report the org's machine quota.
+- **A `docker` driver** (disco-vm's ADR 0002, Proposed) runs Linux guests as
+  unprivileged containers that boot systemd in a user namespace of their own.
+  It is a remote driver, and its endpoint is a transport, as vz's is.
 - **Images are disco-vm's**: a layer's ID is a hash of its parent, driver,
   guest OS, resolved steps and copied files' digests; vendor media (an IPSW, a
   Windows ISO the user names) is fetched on the user's machine and never
@@ -98,7 +132,9 @@ What remains open is where disco-vm sits in that model.
 
 The server gains a **`discovm` pool runtime provider**: a
 `poolruntime.RuntimeProvider` next to `dockerworker.Engine`, and like it, one
-provider with drivers — `vz`, `hcs` and `boxd`, which are disco-vm's. A pool on
+provider with drivers — `vz`, `hcs` and `boxd`, which are disco-vm's; `boxd`
+comes first, then `vz`, and disco-vm's `docker` driver is a later one, after
+boxd (Deferred) *(amended 2026-10-15)*. A pool on
 it is a pool whose sandboxes are disco-vm machines, one per sandbox, named by
 its sandbox ID so a lost create is found by name rather than duplicated. A
 pool still hosts one platform (0145 §1). No `discovm` pool runs a sandbox as a
@@ -165,9 +201,10 @@ container in these ways:
 What the `boxd` driver asks of that machine is small: that it is created from
 that image and keeps its disk across stop and start, since the agent's
 identity key and state live on it; that the provider can place the bootstrap
-in it through disco-vm's guest agent; that it can dial the control plane; and
-that it serves one port, the agent's API, at an HTTPS URL (§3). It asks for no
-Docker socket, no nested virtualization and no credential of boxd's (§2).
+in it with the driver's copy-in; that it can dial the control plane; and that
+its image declares the agent's API as its service, so the machine's endpoint
+is that port's HTTPS URL (§3) *(amended 2026-10-15)*. It asks for no Docker
+socket, no nested virtualization and no credential of boxd's (§2).
 
 ### 2. The server runs the machines; the pool agent decides
 
@@ -183,9 +220,12 @@ by the server to that pool only, over the pool's authenticated connection to
 the control plane, scoped to the pool's own instances:
 
 - **Per instance**: 26-10-09-143 §2's boot contract — start, place the
-  bootstrap, and return the address of the agent's port — and the lifecycle
-  this ADR adds around it: create, stop, remove, and inspect and list with
-  power state.
+  bootstrap with the driver's copy-in, and return the address of the agent's
+  port — and the lifecycle this ADR adds around it: create, stop, remove, and
+  inspect and list with power state. The seam wraps the engine: the address
+  is the instance's endpoint (`Engine.Endpoint`), since the sandbox image
+  declares the sandbox agent's port as its service (§3) *(amended
+  2026-10-15)*.
 - **Per pool**: report the platform and limits the driver offers (§4), and
   build or confirm the sandbox image, reporting progress as the pool's own
   phase (§5).
@@ -199,11 +239,12 @@ an API, which 0144 §2's helper was forbidden to; it holds no pool state,
 resolves no secret, and is the one process that can hold a boxd key the pool
 agent's own machine must not.
 
-**Power state is the engine's.** A remote driver (`Capabilities.Remote`,
-boxd) runs no shim: each engine operation attaches to the machine and asks
-boxd (`GetVm`), so a running boxd machine is observed and reattached across
-server restarts as it is. A local machine is held by its shim, and dies with
-it, so the shim's answer is its state.
+**Power state is the engine's.** A remote driver (`Capabilities.Remote`:
+boxd, and disco-vm's docker driver) runs no shim: each engine operation
+attaches to the machine and asks its service (boxd's `GetVm`), so a running
+machine is observed and reattached across server restarts as it is. A local
+machine is held by its shim, and dies with it, so the shim's answer is its
+state.
 
 **A local machine lives no longer than its server.** Every VM-backed provider
 obeys "the VM dies with the server, the disks do not" (`server/providers` "VM
@@ -216,14 +257,21 @@ provider adopts it again.
 
 ### 3. How the pool and its sandboxes reach each other
 
-0126 §5 makes reachability the backend's. Per driver:
+0126 §5 makes reachability the backend's. The address the seam returns is
+built on the instance's endpoint (`Engine.Endpoint`), for the one port its
+image declares as its service: the sandbox agent's, or for a boxd pool
+machine the pool agent's. The seam offers no other guest port *(amended
+2026-10-15)*. Per driver:
 
-- **`vz`.** The address the seam returns is a route the server owns, one per
-  instance, that stays the same across stop and start and connects only to
-  the sandbox agent's guest port, through the instance's shim — 0144 §4's
-  guest socket, with the server in between. The shim's own loopback port,
-  token and `/dial`, which reach any guest port and change with every start,
-  never leave the server. The
+- **`vz`.** The endpoint is a transport that dials the agent's port and that
+  only the server holds. The address the seam returns is a route the server
+  owns, one per instance, built on that transport: it stays the same across
+  stop and start and reaches only the sandbox agent's port — 0144 §4's guest
+  socket, with the server in between. Only that route is given out. The
+  transport, the shim's own loopback port, token and `/dial` beneath it, and
+  whatever else of the engine's reaches a guest port — its `Dial` and guest
+  client while disco-vm still has them — reach any guest port, and never
+  leave the server *(amended 2026-10-15)*. The
   sandbox reaches the pool's proxy, credentials broker and origins as
   guest-to-host forwards (`Forwards`) to Unix sockets the host pool agent
   serves, through `proxy/bridge`'s `wire` scheme (#52). Nothing in that needs a
@@ -231,16 +279,17 @@ provider adopts it again.
   disco-vm's vz driver gives every guest the framework's NAT through install,
   boot and save/restore, so a macOS sandbox is not enabled until disco-vm runs
   one with no route off the machine, warm stages included.
-- **`boxd`.** The address is the sandbox machine's HTTPS URL for the agent's
-  port (26-10-09-143 §3). The pool agent and the server reach each other as a
-  DigitalOcean pools do: the pool agent dials the control plane at the
-  provider's explicit `controlPlaneUrl`, and the machine seam is served on that
-  connection; the server's lease to the pool-agent API is the pool machine's
-  HTTPS URL. A server with no URL a boxd machine can reach — one on a laptop —
-  cannot run a boxd pool, and the pool agent's API, now on a public URL, has
-  its unauthenticated surface audited as 26-10-09-143 §3 has the sandbox
-  agent's. The sandbox's way to its pool, and its egress, are
-  what 26-10-09-143 defers, and stay deferred: boxd terminates TLS at its
+- **`boxd`.** The address is the sandbox machine's endpoint, its HTTPS URL
+  for the agent's port (26-10-09-143 §3). The pool agent and the server reach
+  each other as DigitalOcean pools do: the pool agent dials the control plane
+  at the provider's explicit `controlPlaneUrl`, and the machine seam is served
+  on that connection; the server's lease to the pool-agent API is the pool
+  machine's endpoint, its HTTPS URL *(amended 2026-10-15)*. A server with no
+  URL a boxd machine can reach — one on a laptop — cannot run a boxd pool,
+  and the pool agent's API, now on a public URL, has its unauthenticated
+  surface audited as 26-10-09-143 §3 has the sandbox agent's. The sandbox's
+  way to its pool, and its egress, are what 26-10-09-143 defers, and stay
+  deferred: boxd terminates TLS at its
   proxy, so the client certificate 0126 §7 puts on that hop cannot ride it.
   A boxd sandbox is not enabled until its pool hop is mutually authenticated
   and its only egress is the pool's proxy.
@@ -323,6 +372,13 @@ From **0145**:
   the manifest names, but macOS has POSIX ids, so that account has one, given
   under ADR 0141, whose range becomes per guest OS. Windows keeps §5 as
   written.
+- **ADR 0141's range is not only a macOS question** *(added 2026-10-15)*. A
+  Linux machine sandbox's guest is the driver's own Linux, and an id in it may
+  already be taken: on boxd, uid 1000 is boxd's own `boxd` user, which its
+  exec runs as, so a `sandbox.json` whose account is uid 1000 fails at
+  `usermod` (PR #180). A range per guest OS cannot tell that guest from a
+  container sandbox's, which is Linux too. Which ids a Linux machine
+  sandbox's account may take is deferred (below), not decided here.
 - **§§3, 4, 6, 7 and 8 stand.**
 
 ### 6. How it builds on 26-10-09-143
@@ -331,11 +387,14 @@ From **0145**:
   sandbox agent as a service of the guest's init, waiting for its bootstrap.
 - Its **§2** is the seam's per-instance boot contract, which §2 above wraps
   in create, stop, remove and inspect, and the `discovm` provider is the
-  backend it describes. disco-vm's own guest agent places
-  `sandbox.json` (`CopyTo`) before the sandbox agent exists; after that,
-  nothing uses it, and the pool is given no other guest port.
-- Its **§3** decides a boxd sandbox's address. Its sentence that a local VM's
-  address is 0144's guest socket holds, through the shim.
+  backend it describes. The driver's copy-in places `sandbox.json` before the
+  sandbox agent exists; after that, the provider runs nothing in the guest,
+  and the pool is given no guest port but the endpoint's *(amended
+  2026-10-15)*.
+- Its **§3** decides a boxd sandbox's address: the instance's endpoint. Its
+  sentence that a local VM's address is 0144's guest socket holds, through the
+  endpoint's transport and the server's route on it (§3) *(amended
+  2026-10-15)*.
 
 Nothing here changes how a container boots or how a `dockerworker` pool runs.
 
@@ -385,6 +444,19 @@ Nothing here changes how a container boots or how a `dockerworker` pool runs.
 - **Export and import of a machine sandbox**; revisited when disco-vm can read
   a stopped instance's disk.
 - **A boxd sandbox's pool hop and egress**, as 26-10-09-143 defers them.
+- **The ids a Linux machine sandbox's account may take** *(added
+  2026-10-15)*, given that its guest may already hold some (§5: boxd's uid
+  1000); revisited with Linux machine sandboxes' accounts (#121).
+- **disco-vm's `docker` driver as a `discovm` driver** *(added 2026-10-15)*:
+  Linux machine sandboxes, and their pool's machine, as unprivileged
+  containers that boot systemd (disco-vm ADR 0002). It is a remote driver,
+  so it runs no shim and its machines are adopted across server restarts as
+  boxd's are; but its endpoint is a transport only the server holds, not a
+  public URL, so its reachability is vz's — server-owned routes on the
+  transport, for the sandbox agent and the pool agent's lease alike — and
+  not boxd's. It is a driver of `discovm`, beside
+  `dockerworker`; it does not replace `dockerworker`'s sandbox containers.
+  Revisited once the boxd driver runs a pool and its sandboxes (#127).
 
 ## Consequences
 
@@ -405,7 +477,12 @@ Nothing here changes how a container boots or how a `dockerworker` pool runs.
 - sandbox-agent is released for darwin as assets with digests, and a discobox
   build spec installs them; the pool assembles nothing.
 - disco-vm owes discobox, before the driver concerned is enabled: a vz run with
-  no route but the forwards, a shim that dies with its embedder, the base
-  version an install resolved, and an HTTPS address for a boxd instance's
-  port.
-- ADR 0141's uid range becomes per guest OS.
+  no route but the forwards, a shim that dies with its embedder, and the base
+  version an install resolved *(amended 2026-10-15: a boxd instance's HTTPS
+  endpoint, the same across stop and start, is done, discobox-ai/vm#7)*.
+- The provider reaches a guest only through the driver's guest operations
+  and the instance's endpoint, never a raw guest port or disco-vm's guest
+  agent's protocol; where a driver has an agent (vz, hcs, docker), it is that
+  driver's own detail *(added 2026-10-15)*.
+- ADR 0141's uid range becomes per guest OS. Which ids a Linux machine
+  sandbox's account may take is open (§5, Deferred) *(added 2026-10-15)*.
