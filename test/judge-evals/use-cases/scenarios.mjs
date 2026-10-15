@@ -249,8 +249,8 @@ const orchestrateCommand = [
 ];
 
 const orchestrateUseCase = [
-  'Create worker discoboxes from /workspace/source, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory\'s sources to them. Never give one a grant or secret, or create one from another directory or repository.',
-  'Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete them or start a command in them.',
+  'Create worker discoboxes from /workspace/source, each with any prompt and no grants or secrets. Read the discoboxes I create; create them and push this directory\'s sources to them. Never give one a grant or secret, create one from another directory or repository, or push sources to a discobox I did not create.',
+  'Supervise the discoboxes I created. Read their status and terminals; type into their terminals, and start, stop, restart and tag them. Never delete, repair or upgrade them, start a command or run a service in them, reach their ports, deliver their source, or act on a discobox I did not create.',
   'Answer pending credential requests. Read them and the secrets I was delegated; approve or deny them. Never widen a request\'s uses, or create, change or delete a secret.',
 ];
 
