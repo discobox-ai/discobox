@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -221,6 +222,39 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 	m.followSource()
 	if m.list.folder.key != m.session.OriginKey {
 		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.folder.label)
+	}
+}
+
+// One repository is one choice on the Source row, however each discobox
+// spelled its URL, and it reads as its short name (ADR 26-10-15-664 §4) —
+// but only spellings fetched alike: ssh is another choice, since choosing
+// https must never run another discobox's ssh, http or git:// URL.
+func TestTheSourceRowOffersARepositoryOnce(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(
+		cutFrom(Sandbox{ID: "sbx_a", Name: "a", State: StateRunning}, "https://github.com/acme/foo.git"),
+		cutFrom(Sandbox{ID: "sbx_b", Name: "b", State: StateRunning}, "https://github.com/acme/foo"),
+		cutFrom(Sandbox{ID: "sbx_c", Name: "c", State: StateRunning}, "git@github.com:Acme/Foo.git"),
+		cutFrom(Sandbox{ID: "sbx_d", Name: "d", State: StateRunning}, "https://github.com/acme/foo@dev"),
+	))
+	source := m.opts.opts[optSource]
+	var repos []string
+	for _, choice := range source.choices {
+		if strings.Contains(strings.ToLower(choice), "acme/foo") {
+			repos = append(repos, choice)
+		}
+	}
+	if want := []string{"acme/foo", "git@github.com:Acme/Foo", "acme/foo@dev"}; !slices.Equal(repos, want) {
+		t.Fatalf("choices = %v, want https once, ssh once, and the other ref once: %v", source.choices, want)
+	}
+
+	m.opts.chooseSource("https://GitHub.com/acme/foo")
+	if got := m.opts.opts[optSource].selected(); got != "https://github.com/acme/foo.git" {
+		t.Fatalf("choosing another https spelling selected %q, want the choice already offered", got)
+	}
+	m.opts.chooseSource("git@github.com:acme/foo.git")
+	if got := m.opts.opts[optSource].selected(); got != "git@github.com:Acme/Foo.git" {
+		t.Fatalf("choosing an ssh spelling selected %q, want the ssh choice", got)
 	}
 }
 

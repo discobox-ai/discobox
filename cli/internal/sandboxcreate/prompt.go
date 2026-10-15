@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/randomname"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // PromptOptions describes the client-side inputs used to create a sandbox for
@@ -29,8 +30,9 @@ type PromptOptions struct {
 	// judged by it (ADR 0145 §6), so a frontend reads it from the pool before
 	// building a request.
 	Platform platform.Platform
-	Source   string
-	Ref      string
+	// Source is the primary source, `LOCATION[@REF][//PATH]` (ADR
+	// 26-10-15-664): //PATH is the directory inside it the harness starts in.
+	Source string
 	// NoSource creates the sandbox with nothing materialized in it. Source is
 	// then only where the request came from — the origin the sandbox is filed
 	// under and the Git identity it commits as — and nothing is cut from it.
@@ -89,19 +91,11 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 		// A ref names a commit to check out, and there is nothing to check it
 		// out of. Saying both is a contradiction rather than a preference, so
 		// it is refused instead of one half being dropped silently.
-		_, _, hasRef := splitRunSourceRef(opts.Source)
-		if hasRef || opts.Ref != "" {
+		if source, err := sourceref.Parse(opts.Source); err == nil && source.Ref != "" {
 			return PromptOptions{}, errors.New("--no-source takes no ref: there is no source to check one out of")
 		}
 	} else if strings.TrimSpace(opts.Source) == "" {
 		return PromptOptions{}, errors.New("source directory or Git repository is required")
-	}
-	if opts.Ref == "" {
-		source, ref, ok := splitRunSourceRef(opts.Source)
-		if ok {
-			opts.Source = source
-			opts.Ref = ref
-		}
 	}
 	if opts.IncludeDirty == "" {
 		opts.IncludeDirty = IncludeDirtyAuto
@@ -171,9 +165,6 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		}
 	}
 	sourceArg := opts.Source
-	if opts.Ref != "" {
-		sourceArg += "@" + opts.Ref
-	}
 	sourceOptions := runSourceOptions{
 		Platform:     opts.Platform,
 		IncludeDirty: opts.IncludeDirty,

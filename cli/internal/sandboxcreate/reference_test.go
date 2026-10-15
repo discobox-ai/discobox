@@ -106,6 +106,21 @@ func TestBuildPromptSandboxBodyRefusesTheSameIncludedDirectoryTwice(t *testing.T
 	}
 }
 
+// //PATH says where the harness starts, which only the primary source does.
+func TestBuildPromptSandboxBodyRefusesAPathOnAnIncludedSource(t *testing.T) {
+	reference := newNamedRunSourceTestRepo(t, "foo")
+
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+		Source:       newRunSourceTestRepo(t),
+		Include:      []string{reference + "//sub"},
+		IncludeDirty: IncludeDirtyNever,
+	})
+	defer local.Close()
+	if err == nil || !strings.Contains(err.Error(), "//sub") || !strings.Contains(err.Error(), "primary source") {
+		t.Fatalf("error = %v, want a refusal naming the path", err)
+	}
+}
+
 // Including the source the sandbox already runs against would put two sources
 // on one directory, so it is the same mistake as including one twice.
 func TestBuildPromptSandboxBodyRefusesIncludingThePrimarySource(t *testing.T) {

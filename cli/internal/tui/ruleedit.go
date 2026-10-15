@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
@@ -393,13 +393,13 @@ func (m *Model) knownRepositories(server string, own []listLine) lineList {
 // repositoryIdentity is a repository as the server compares it, host/path,
 // from a URL, git's scp-like form, or host/path itself, so an entry typed is
 // known to be one of the picks however it was spelled. It is the server's own
-// reduction (sourcecache.NormalizeRemote); a typed entry it refuses matches
+// reduction (sourceref.NormalizeRemote); a typed entry it refuses matches
 // nothing here and is the server's to refuse.
 func repositoryIdentity(entry string) string {
-	if id := sourcecache.NormalizeRemote(entry); id != "" {
+	if id := sourceref.NormalizeRemote(entry); id != "" {
 		return id
 	}
-	return sourcecache.NormalizeRemote("https://" + strings.TrimSpace(entry))
+	return sourceref.NormalizeRemote("https://" + strings.TrimSpace(entry))
 }
 
 // ruleCapName is a row of the longest-grant step: forever is not forever

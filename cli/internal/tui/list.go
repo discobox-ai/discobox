@@ -556,11 +556,18 @@ func (l *sandboxList) sources() []Source {
 	seen := map[string]bool{}
 	out := []Source{}
 	for _, s := range l.all {
-		if s.Source == "" || seen[s.Source] {
+		// One source is one entry, however each discobox spelled it.
+		key := sourceKey(s.Source)
+		if s.Source == "" || seen[key] {
 			continue
 		}
-		seen[s.Source] = true
-		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey, RepositoryKey: s.RepositoryKey})
+		seen[key] = true
+		source := Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey, RepositoryKey: s.RepositoryKey}
+		if !s.SourceRemote {
+			// What a local discobox records is its directory alone.
+			source.Directory = s.Source
+		}
+		out = append(out, source)
 	}
 	return out
 }

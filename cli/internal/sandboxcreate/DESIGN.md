@@ -33,12 +33,14 @@ sandbox create requests.
   at the first file that takes the whole request past its byte or file limit
   (a skill this one replaces left out of the count), before reading it, and
   the refusal names the largest skills read before it.
-  A `--skills` Git URL is not read: `SplitSkills` takes `URL[@REF][//PATH]`
-  (the path from the first `//` after the scheme) as a skills source, resolved
+  A `--skills` repository is not read: `SplitSkills` (`ParseSkills`) takes a
+  Git URL or GitHub shorthand, `[@REF][//PATH]`, as a skills source, resolved
   like a remote `-i` but placed under `<working root>/skill-sources`, marked
   `purpose: skills`, and its paths filed in `skillsSources` in the order given;
-  one repository at one ref is one reference whatever its paths, and at two
-  refs is refused. A directory is content whether or not it is a checkout
+  one repository at one ref is one reference whatever its paths and however
+  its URL is spelled (`SkillsRepository.Key`), and at two refs is refused. A
+  directory takes no `@REF` or `//PATH`: its skills are read as they are, and
+  one whose own name holds `@` or `//` is that directory when it is there. A directory is content whether or not it is a checkout
   (ADR 26-10-14-294 §1).
   Both `discobox new` and `admin box create` take the flags; the frontend
   resolves `discobox new`'s against `client.yaml` before they reach here
@@ -111,12 +113,23 @@ sandbox create requests.
   `.discobox/sources.json`, the checkout beside the primary source — takes the
   first, while destinations and reference keys take the second.
 
-- A GitHub repository may be named short — `owner/repo` or
-  `github.com/owner/repo`, with or without `@REF` — and is expanded to
-  `https://github.com/owner/repo.git` (`ExpandGitHubShorthand`) only when no
-  such path exists locally: both spellings are valid relative paths, and a
-  directory that is there always wins. The CLI expands `-C` once, at flag
-  validation, and the console expands a source typed by hand the same way.
+- Every source argument — `-C`, `-i`, `--skills`, a `.discobox/sources.json`
+  entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
+  (`ParseSource`; ADR 26-10-15-664). A GitHub repository may be named short —
+  `owner/repo` or `github.com/owner/repo` — and is
+  `https://github.com/owner/repo.git` only when no such path exists locally:
+  both spellings are valid relative paths, and a directory that is there always
+  wins. A declared source never names a directory, so its shorthand is always
+  the repository (`sourceref.Ref.Expand`). The CLI expands `-C` once, at flag
+  validation, and the console's Source field reads a typed source the same way.
+  `//PATH` is where the harness starts, which only the primary source says: a
+  local `DIR//PATH` is `DIR/PATH`, and a remote one sets the destination's
+  working directory beneath where it is placed; `-i` and a declared source
+  refuse one, and on `--skills` it is the skills directory. A remote PATH is
+  checked at delivery (`checkRemoteWorkingPath`), against the commit in this
+  client's cache of the remote — fetched for it even when the pool needs
+  nothing sent — before the pool is pinned, so a missing one is refused rather
+  than left for the harness to fail to start in.
 
 - Whether a dirty workspace is snapshotted is the caller's policy
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI

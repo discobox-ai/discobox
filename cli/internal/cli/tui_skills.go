@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"os"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // Skills is the skills screen's listing: the project's skills sources on the
@@ -25,17 +27,19 @@ func (d *apiDataSource) Skills(ctx context.Context, server string) (tui.SkillsLi
 		return tui.SkillsListing{}, err
 	}
 	listing := tui.SkillsListing{ClientFile: cfg.Path}
+	home, _ := os.UserHomeDir()
 	for _, source := range sources {
 		repo, _ := projectSkillsRepository(source)
 		listing.Entries = append(listing.Entries, tui.SkillsEntry{
 			Project: true,
 			ID:      source.ID,
-			Value:   repo.Arg,
+			Value:   repo.Value(),
+			Label:   repo.Display(home),
 			Added:   source.CreatedAt,
 		})
 	}
 	for _, skill := range cfg.New.Skills {
-		listing.Entries = append(listing.Entries, tui.SkillsEntry{Value: skill})
+		listing.Entries = append(listing.Entries, tui.SkillsEntry{Value: skill, Label: sourceref.Display(skill, home)})
 	}
 	return listing, nil
 }
@@ -45,7 +49,8 @@ func (d *apiDataSource) AddSkills(ctx context.Context, server, value string) (tu
 	if err != nil {
 		return tui.SkillsEntry{}, err
 	}
-	return tui.SkillsEntry{Project: added.Project, ID: added.ID, Value: added.Value}, nil
+	home, _ := os.UserHomeDir()
+	return tui.SkillsEntry{Project: added.Project, ID: added.ID, Value: added.Value, Label: sourceref.Display(added.Value, home)}, nil
 }
 
 // RemoveSkills removes the row where the screen says it is kept: a project

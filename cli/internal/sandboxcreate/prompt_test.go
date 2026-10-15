@@ -223,7 +223,7 @@ func TestDeclinedIncludeIsLeftOut(t *testing.T) {
 // out of. Saying both is a contradiction rather than a preference.
 func TestNoSourceRefusesARef(t *testing.T) {
 	_, _, err := BuildPromptSandboxBody(context.Background(),
-		PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t), Ref: "main", NoSource: true})
+		PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t) + "@main", NoSource: true})
 	if err == nil || !strings.Contains(err.Error(), "no ref") {
 		t.Fatalf("err = %v, want a refusal naming the ref", err)
 	}

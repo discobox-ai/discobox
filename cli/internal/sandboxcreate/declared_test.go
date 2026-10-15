@@ -191,6 +191,26 @@ func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
 // The file states what the sandbox must contain. A file that cannot be read
 // means that statement is unknown, and creating a sandbox missing the sources
 // it names is worse than not creating one.
+// A declared source may be GitHub shorthand, which is always the repository:
+// a declaration never names a directory, so one that happens to be there is
+// not consulted. //PATH is refused, as on any source but the primary.
+func TestParseDeclaredSourcesTakesGitHubShorthand(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(filepath.Join("acme", "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseDeclaredSources([]byte(`{"lib": "acme/lib@v1", "tools": "github.com/acme/tools"}`), "sources.json")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got["lib"] != "https://github.com/acme/lib.git@v1" || got["tools"] != "https://github.com/acme/tools.git" {
+		t.Fatalf("declared = %v, want the shorthand as GitHub URLs", got)
+	}
+	if _, err := parseDeclaredSources([]byte(`{"lib": "acme/lib//sub"}`), "sources.json"); err == nil || !strings.Contains(err.Error(), "//sub") {
+		t.Fatalf("a declared //PATH = %v, want a refusal naming it", err)
+	}
+}
+
 func TestBuildPromptSandboxBodyRefusesAMalformedDeclaration(t *testing.T) {
 	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")

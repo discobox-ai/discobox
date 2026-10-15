@@ -96,6 +96,10 @@ func TestCreateProjectSkillsSourceRefuses(t *testing.T) {
 		{"the same entry twice", body("https://github.com/acme/tools", "main", "skills"), http.StatusConflict},
 		{"the repository at another ref", body("https://github.com/acme/tools", "dev", "other"), http.StatusConflict},
 		{"the repository at its default branch", body("https://github.com/acme/tools", "", "other"), http.StatusConflict},
+		// One repository however its URL is spelled (ADR 26-10-15-664 §4).
+		{"another spelling at another ref", body("https://github.com/Acme/tools.git", "dev", "other"), http.StatusConflict},
+		{"its ssh URL at another ref", body("git@github.com:acme/tools.git", "dev", "other"), http.StatusConflict},
+		{"another spelling of the same entry", body("https://github.com/acme/tools.git", "main", "skills"), http.StatusConflict},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := svc.CreateProjectSkillsSource(ctx, "project-1", tc.body)

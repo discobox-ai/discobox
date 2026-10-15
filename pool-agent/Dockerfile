@@ -32,6 +32,7 @@ COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat
 COPY secretroute ./secretroute
 COPY sourcecache ./sourcecache
+COPY sourceref ./sourceref
 COPY tarsums ./tarsums
 COPY vsock ./vsock
 COPY wellknown ./wellknown

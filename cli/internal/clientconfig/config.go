@@ -117,30 +117,40 @@ func (cfg *Config) resolvePaths() error {
 	return nil
 }
 
-// ResolveSkill is one skills entry as a create reads it: a Git URL as
-// written, and a directory made absolute against base — the file's directory
-// for an entry of new.skills, the working directory for one typed on a
-// command line — with ~ for the home directory.
+// ResolveSkill is one skills entry as a create reads it, judged against base
+// — the file's directory for an entry of new.skills, the working directory
+// for one typed on a command line (ADR 26-10-15-664): a skills source with
+// GitHub shorthand expanded, so a create reads it the same from any
+// directory, and a directory made absolute, with ~ for the home directory.
 func ResolveSkill(base, entry string) (string, error) {
+	resolved, _, err := resolveSkill(base, entry)
+	return resolved, err
+}
+
+// SkillKey tells one skills entry from another, as ResolveSkill reads both:
+// every spelling of one repository, ref and directory is one key, and a
+// directory is its absolute path.
+func SkillKey(base, entry string) (string, error) {
+	_, key, err := resolveSkill(base, entry)
+	return key, err
+}
+
+func resolveSkill(base, entry string) (resolved, key string, err error) {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
-		return "", errors.New("is empty; name a directory or a Git URL")
+		return "", "", errors.New("is empty; name a directory or a Git URL")
+	}
+	repo, dir, err := sandboxcreate.ParseSkills(entry, base)
+	switch {
+	case err != nil:
+		// Kept as written, so a create refuses it naming it, and every other
+		// command — the one that removes it among them — still reads the file.
+		return entry, entry, nil //nolint:nilerr // the refusal is the create's to make
+	case dir != "":
+		return dir, dir, nil
 	}
 	// A Git URL names a skills source, which is not on this machine.
-	if sandboxcreate.IsSkillsRepository(entry) {
-		return entry, nil
-	}
-	if entry == "~" || strings.HasPrefix(entry, "~/") || strings.HasPrefix(entry, "~"+string(filepath.Separator)) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		entry = filepath.Join(home, entry[1:])
-	}
-	if !filepath.IsAbs(entry) {
-		entry = filepath.Join(base, entry)
-	}
-	return filepath.Clean(entry), nil
+	return repo.Value(), repo.Key(), nil
 }
 
 // exampleHeader introduces the generated reference file.

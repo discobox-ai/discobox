@@ -14,9 +14,9 @@
 package sourcecache
 
 import (
-	"net/url"
-	"path"
 	"strings"
+
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 const (
@@ -58,7 +58,7 @@ const PoolOriginsHost = "git.discobox.internal"
 
 // OnPoolOriginsHost reports whether remote is on a pool's origins host.
 func OnPoolOriginsHost(remote string) bool {
-	normalized := NormalizeRemote(remote)
+	normalized := sourceref.NormalizeRemote(remote)
 	host, _, _ := strings.Cut(normalized, "/")
 	host, _, _ = strings.Cut(host, ":")
 	return host == PoolOriginsHost
@@ -68,7 +68,7 @@ func OnPoolOriginsHost(remote string) bool {
 // name a repository on a network: a path on the client's machine means
 // nothing on another, and is not a remote here.
 func RemoteKey(remote string) string {
-	normalized := NormalizeRemote(remote)
+	normalized := sourceref.NormalizeRemote(remote)
 	if normalized == "" || OnPoolOriginsHost(remote) {
 		return ""
 	}
@@ -94,63 +94,4 @@ func SandboxKey(sandboxID, slug string) string {
 // source alone, which nothing outlives.
 func ForOneSandbox(key string) bool {
 	return strings.HasPrefix(key, sandboxPrefix)
-}
-
-// defaultPorts are the ports a remote's scheme implies, which a URL may spell
-// out or leave off.
-var defaultPorts = map[string]string{"https": "443", "http": "80", "ssh": "22", "git": "9418"}
-
-// NormalizeRemote reduces a remote's URL to its host and path — lower-cased
-// host, no scheme, user, default port, trailing slash or ".git" — so the
-// HTTPS and SSH spellings of one repository are one remote. It is empty for
-// anything that is not a network remote.
-func NormalizeRemote(remote string) string {
-	remote = strings.TrimSpace(remote)
-	if remote == "" || strings.ContainsAny(remote, " \t\r\n\x00") {
-		return ""
-	}
-	var host, port, repository string
-	if strings.Contains(remote, "://") {
-		parsed, err := url.Parse(remote)
-		if err != nil {
-			return ""
-		}
-		scheme := strings.ToLower(parsed.Scheme)
-		// git+ssh and ssh+git are SSH by another name.
-		if scheme == "git+ssh" || scheme == "ssh+git" {
-			scheme = "ssh"
-		}
-		implied, ok := defaultPorts[scheme]
-		if !ok {
-			return ""
-		}
-		host, port, repository = parsed.Hostname(), parsed.Port(), parsed.Path
-		if port == implied {
-			port = ""
-		}
-	} else {
-		// git's scp-like form, [user@]host:path. A colon after the first
-		// slash is part of a path, and a one-letter host is a Windows drive.
-		colon := strings.IndexByte(remote, ':')
-		if colon <= 0 || strings.ContainsAny(remote[:colon], `/\`) {
-			return ""
-		}
-		host, repository = remote[:colon], remote[colon+1:]
-		if at := strings.LastIndexByte(host, '@'); at >= 0 {
-			host = host[at+1:]
-		}
-		if len(host) < 2 || strings.HasPrefix(repository, `\`) {
-			return ""
-		}
-	}
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	repository = strings.TrimSuffix(strings.Trim(path.Clean("/"+repository), "/"), ".git")
-	repository = strings.TrimRight(repository, "/")
-	if host == "" || repository == "" || repository == "." {
-		return ""
-	}
-	if port != "" {
-		host += ":" + port
-	}
-	return host + "/" + repository
 }

@@ -125,23 +125,6 @@ func TestToTUISandboxNamesTheGitHubRepository(t *testing.T) {
 	}
 }
 
-// The ref half of -C DIR@REF says which commit to cut from; the working tree
-// being asked about is the directory's either way.
-func TestSourceDirectoryDropsTheRef(t *testing.T) {
-	for source, want := range map[string]string{
-		"":                     ".",
-		"/src/disco2":          "/src/disco2",
-		"/src/disco2@main":     "/src/disco2",
-		"/src/disco2@HEAD~1":   "/src/disco2",
-		"@main":                "@main",
-		"https://x/y.git@main": "https://x/y.git",
-	} {
-		if got := sourceDirectory(source); got != want {
-			t.Errorf("sourceDirectory(%q) = %q, want %q", source, got, want)
-		}
-	}
-}
-
 // Run is the launcher's Enter, and it has to go through the same creation path
 // `discobox new` does rather than posting a body of its own.
 func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {

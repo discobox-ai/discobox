@@ -400,6 +400,80 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 	}
 }
 
+// A remote source asked to start in a //PATH is checked against its commit
+// before the pool is given it — fetched into the client's cache for that even
+// when the pool needs nothing sent — and refused when the commit has no such
+// directory (ADR 26-10-15-664 §3).
+func TestARemoteSourcesStartingDirectoryIsCheckedAtDelivery(t *testing.T) {
+	pool := newFakePool(t)
+	clientCacheRoot := useClientGitCache(t)
+	remoteWork := t.TempDir()
+	deliverGit(t, remoteWork, "init", "--quiet", "--initial-branch=main")
+	if err := os.MkdirAll(filepath.Join(remoteWork, "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commit := deliverCommit(t, remoteWork, filepath.Join("app", "main.go"))
+	remote := "file://" + filepath.ToSlash(remoteWork)
+	startingIn := func(dir string) apimodel.GitSource {
+		source := apimodel.GitSource{Checkout: branchCheckout(commit, "main")}
+		u, err := url.Parse(remote)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source.URL = apiclientgen.NewOptURI(*u)
+		source.Destination = apiclientgen.NewOptGitSourceDestination(apimodel.GitSourceDestination{
+			Directory:        apiclientgen.NewOptString("/workspace/source"),
+			WorkingDirectory: apiclientgen.NewOptString("/workspace/source/" + dir),
+		})
+		return source
+	}
+
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", startingIn("app")), nil, pool.server.URL, "token", nil); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if pool.pushes.Load() != 1 {
+		t.Fatalf("pushes = %d, want the one delivery", pool.pushes.Load())
+	}
+
+	// The pool holds the commit, but this client does not: it fetches to
+	// look, and sends nothing.
+	if err := os.RemoveAll(clientCacheRoot); err != nil {
+		t.Fatal(err)
+	}
+	var steps []Step
+	report := Report(func(step Step) { steps = append(steps, step) })
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", startingIn("app")), nil, pool.server.URL, "token", report); err != nil {
+		t.Fatalf("deliver a second sandbox: %v", err)
+	}
+	if !slices.Contains(steps, StepFetchingSource) || pool.pushes.Load() != 1 {
+		t.Fatalf("second delivery: steps %v, %d pushes; want a fetch to check and a pin", steps, pool.pushes.Load())
+	}
+
+	err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-three", startingIn("missing/dir")), nil, pool.server.URL, "token", nil)
+	if err == nil || !strings.Contains(err.Error(), "missing/dir") {
+		t.Fatalf("deliver into a directory the commit lacks = %v, want a refusal naming it", err)
+	}
+	if got := pool.refs("sbx-three", "primary"); len(got) != 0 {
+		t.Fatalf("a refused delivery reached the pool: %v", got)
+	}
+	err = DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-four", startingIn("app/main.go")), nil, pool.server.URL, "token", nil)
+	if err == nil || !strings.Contains(err.Error(), "app/main.go") {
+		t.Fatalf("deliver into a file = %v, want a refusal naming it", err)
+	}
+
+	// A link to a directory is one the checkout follows, as a local
+	// DIR//PATH's is.
+	if err := os.Symlink("app", filepath.Join(remoteWork, "current")); err != nil {
+		t.Fatal(err)
+	}
+	deliverGit(t, remoteWork, "add", "current")
+	deliverGit(t, remoteWork, "commit", "--quiet", "-m", "link")
+	commit = deliverGit(t, remoteWork, "rev-parse", "HEAD")
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-five", startingIn("current")), nil, pool.server.URL, "token", nil); err != nil {
+		t.Fatalf("deliver into a linked directory: %v", err)
+	}
+}
+
 // A delivery starts when the create returns, so it can beat its pool: a pool
 // that is not up yet is waited for, and is the only thing that is.
 func TestADeliveryWaitsOnlyForAPoolThatIsNotUpYet(t *testing.T) {

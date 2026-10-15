@@ -18,7 +18,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -217,25 +217,34 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 	for ref, object := range listed {
 		refs[ref] = object
 	}
+	// A source asked to start in a directory of its commit is refused here
+	// when the commit has none, before the pool is given anything: the
+	// harness would otherwise fail to start in it (ADR 26-10-15-664 §3).
+	fetched, err := d.checkRemoteWorkingPath(ctx, source, slug, remote, commit)
+	if err != nil {
+		return err
+	}
 	missing, err := d.pin(ctx, source, refs)
 	if err != nil || len(missing) == 0 {
 		return err
 	}
 
-	d.report.step(StepFetchingSource)
 	cache, err := clientCache(ctx, remote)
 	if err != nil {
 		return err
 	}
-	// What the pool already has, when it will say: a project member's to
-	// fetch and not a sandbox's, and worth nothing but bytes saved, so a
-	// refusal is not a failure.
-	if poolURL, err := sandboxgit.CacheRemoteURL(d.serverURL, d.projectID, d.sandboxID, source); err == nil {
-		_, _ = gitutil.Output(ctx, cache, nil, sandboxgit.NoPromptEnv,
-			sandboxgit.AuthArgs(d.token, []string{"fetch", "--quiet", "--no-tags", poolURL, poolTrackingRefspec})...)
-	}
-	if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
-		return fmt.Errorf("fetch source %q from %s: %w", slug, remote, err)
+	if !fetched {
+		d.report.step(StepFetchingSource)
+		// What the pool already has, when it will say: a project member's to
+		// fetch and not a sandbox's, and worth nothing but bytes saved, so a
+		// refusal is not a failure.
+		if poolURL, err := sandboxgit.CacheRemoteURL(d.serverURL, d.projectID, d.sandboxID, source); err == nil {
+			_, _ = gitutil.Output(ctx, cache, nil, sandboxgit.NoPromptEnv,
+				sandboxgit.AuthArgs(d.token, []string{"fetch", "--quiet", "--no-tags", poolURL, poolTrackingRefspec})...)
+		}
+		if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
+			return fmt.Errorf("fetch source %q from %s: %w", slug, remote, err)
+		}
 	}
 	d.report.step(StepPushingSource)
 	return d.push(ctx, cache, originURL, []string{
@@ -243,6 +252,54 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 		"+" + remoteTrackingPrefix + "*:" + remoteTrackingPrefix + "*",
 		"+refs/tags/*:refs/tags/*",
 	})
+}
+
+// checkRemoteWorkingPath refuses a remote source whose commit has no
+// directory at the //PATH it was asked to start in (remoteWorkingPath). The
+// commit is read from this client's cache of the remote, fetched into it
+// first when the cache does not hold it — even when the pool does, since the
+// pool is never asked what a commit contains. fetched reports that fetch, so
+// the delivery does not make it twice.
+func (d cacheDelivery) checkRemoteWorkingPath(ctx context.Context, source apimodel.GitSource, slug, remote, commit string) (fetched bool, err error) {
+	dir := remoteWorkingPath(source)
+	if dir == "" {
+		return false, nil
+	}
+	cache, err := clientCache(ctx, remote)
+	if err != nil {
+		return false, err
+	}
+	if _, err := gitutil.Output(ctx, cache, nil, nil, "cat-file", "-e", commit+"^{commit}"); err != nil {
+		d.report.step(StepFetchingSource)
+		if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
+			return false, fmt.Errorf("fetch source %q from %s: %w", slug, remote, err)
+		}
+		fetched = true
+	}
+	// A directory, or a link the checkout follows as a local DIR//PATH's
+	// would be: a link's target is the sandbox's to resolve.
+	entry, err := gitutil.Output(ctx, cache, nil, nil, "ls-tree", commit+"^{commit}", "--", dir)
+	if mode, _, _ := strings.Cut(strings.TrimSpace(entry), " "); err != nil || mode != "040000" && mode != "120000" {
+		return fetched, fmt.Errorf("source %q: %s at %s has no directory %s for the harness to start in", slug, remote, commit[:min(len(commit), 12)], dir)
+	}
+	return fetched, nil
+}
+
+// remoteWorkingPath is the //PATH a remote source asked the harness to start
+// in (ADR 26-10-15-664 §3): its working directory beneath the directory it is
+// placed in, slash-separated, or empty for its root. It is read off what the
+// server recorded, so whichever client delivers the source checks it.
+func remoteWorkingPath(source apimodel.GitSource) string {
+	destination, ok := source.Destination.Get()
+	if !ok {
+		return ""
+	}
+	dir, working := destination.Directory.Or(""), destination.WorkingDirectory.Or("")
+	rest, ok := strings.CutPrefix(working, dir)
+	if dir == "" || !ok || len(rest) < 2 || (rest[0] != '/' && rest[0] != '\\') {
+		return ""
+	}
+	return strings.ReplaceAll(rest[1:], `\`, "/")
 }
 
 // push sends refspecs into the source's namespace in one transaction: a
@@ -368,14 +425,14 @@ func remoteNamed(ctx context.Context, repoRoot, remoteURL string) string {
 	if err != nil {
 		return ""
 	}
-	want := sourcecache.NormalizeRemote(remoteURL)
+	want := sourceref.NormalizeRemote(remoteURL)
 	fallback := ""
 	for _, name := range strings.Fields(out) {
 		value := remoteFetchURL(ctx, repoRoot, name)
 		if value == remoteURL {
 			return name
 		}
-		if fallback == "" && want != "" && sourcecache.NormalizeRemote(value) == want {
+		if fallback == "" && want != "" && sourceref.NormalizeRemote(value) == want {
 			fallback = name
 		}
 	}
@@ -439,7 +496,7 @@ func clientCache(ctx context.Context, remote string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := sourcecache.NormalizeRemote(remote)
+	name := sourceref.NormalizeRemote(remote)
 	if name == "" {
 		name = strings.TrimSpace(remote)
 	}

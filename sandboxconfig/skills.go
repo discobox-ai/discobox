@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // SkillFileName is the file a skill directory is recognized by, and where a
@@ -263,22 +265,14 @@ func ValidateSkillsDirectory(dir string) error {
 	switch {
 	case dir == "":
 		return errors.New("a skills directory needs a path; the repository root is \".\"")
-	case dir == RootSkillsDirectory:
-		return nil
 	case len(dir) > MaxSkillPathBytes:
 		return fmt.Errorf("skills directory %q... is %d bytes; it holds at most %d", dir[:32], len(dir), MaxSkillPathBytes)
-	case strings.Contains(dir, `\`):
-		return fmt.Errorf("skills directory %q is not slash-separated", dir)
-	case path.IsAbs(dir), path.Clean(dir) != dir, dir == "..", strings.HasPrefix(dir, "../"):
-		return fmt.Errorf("skills directory %q is not a clean path inside the repository", dir)
 	}
 	// It names a directory the checkout already has, not one the sandbox
-	// writes, so it is held to no platform's file names: only a control
-	// character, which no path should carry, is refused.
-	for _, r := range dir {
-		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("skills directory %q holds the control character %q", dir, r)
-		}
+	// writes, so it is held to no platform's file names: only to being a
+	// source's //PATH (ADR 26-10-15-664 §1).
+	if err := sourceref.ValidatePath(dir); err != nil {
+		return fmt.Errorf("skills directory: %w", err)
 	}
 	return nil
 }
@@ -313,10 +307,15 @@ func validateSkillsRepositoryURL(rawURL string) error {
 	case strings.HasPrefix(rawURL, "-"):
 		return fmt.Errorf("the Git URL %q starts with -", rawURL)
 	}
+	// The form is a source's (ADR 26-10-15-664 §1): a scheme and a host, or
+	// the scp-like user@host:path. A file URL is a path on one machine.
+	if !sourceref.IsGitURL(rawURL) {
+		return fmt.Errorf("%q is not a remote Git URL", rawURL)
+	}
 	rest := rawURL
 	if scheme, after, ok := strings.Cut(rawURL, "://"); ok {
 		u, err := url.Parse(rawURL)
-		if err != nil || u.Host == "" || scheme == "file" {
+		if err != nil || u.Host == "" || u.Scheme == "file" {
 			return fmt.Errorf("%q is not a remote Git URL", rawURL)
 		}
 		if _, hasPassword := u.User.Password(); hasPassword || (u.User != nil && (scheme == "http" || scheme == "https")) {
@@ -330,10 +329,7 @@ func validateSkillsRepositoryURL(rawURL string) error {
 		}
 		rest = after
 	} else {
-		host, _, ok := strings.Cut(rawURL, ":")
-		if !ok || !strings.Contains(host, "@") || strings.HasPrefix(rawURL, ".") || strings.ContainsAny(host, `/\`) {
-			return fmt.Errorf("%q is not a remote Git URL", rawURL)
-		}
+		host, _, _ := strings.Cut(rawURL, ":")
 		if user, name, _ := strings.Cut(host, "@"); strings.HasPrefix(name, "-") || strings.HasPrefix(user, "-") {
 			return fmt.Errorf("the Git URL %q names a host or user starting with -", rawURL)
 		}

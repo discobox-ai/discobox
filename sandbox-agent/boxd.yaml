@@ -551,6 +551,7 @@ layers:
       - copy: {src: secretroute, dst: /var/tmp/discobox-src/secretroute}
       - copy: {src: serverstage, dst: /var/tmp/discobox-src/serverstage}
       - copy: {src: sourcecache, dst: /var/tmp/discobox-src/sourcecache}
+      - copy: {src: sourceref, dst: /var/tmp/discobox-src/sourceref}
       - copy: {src: tarsums, dst: /var/tmp/discobox-src/tarsums}
       - copy: {src: tools, dst: /var/tmp/discobox-src/tools}
       - copy: {src: version, dst: /var/tmp/discobox-src/version}

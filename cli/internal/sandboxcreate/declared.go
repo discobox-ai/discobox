@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -153,20 +153,30 @@ func parseDeclaredSources(data []byte, path string) (map[string]string, error) {
 		// the file's to say — the checkout beside the source is found by name —
 		// and a relative path here would otherwise be resolved against whatever
 		// directory the caller happened to run from, quietly bringing in some
-		// other repository entirely.
-		source, _, _ := splitRunSourceRef(url)
-		if !IsRemoteGitSource(source) {
+		// other repository entirely. GitHub shorthand is therefore always the
+		// repository, never a directory that happens to share its name.
+		source, err := sourceref.Parse(url)
+		if err != nil {
+			return nil, fmt.Errorf("%s: declared source %q: %w", path, name, err)
+		}
+		source = source.Expand()
+		if source.Kind != sourceref.Git {
 			return nil, fmt.Errorf("%s: declared source %q is %q, which is not a Git URL; the local checkout beside the source is found by name, so only the URL to fall back to belongs here",
 				path, name, url)
+		}
+		if source.Path != "" {
+			return nil, fmt.Errorf("%s: declared source %q is %q; //%s says where the harness starts, which only the primary source does",
+				path, name, url, source.Path)
 		}
 		// Nor a URL that names a path on this machine. A declared source is
 		// fetched by this client and delivered into the discobox, and the
 		// file naming it is repository content: it must not be able to name
 		// a repository on the disk of whoever happens to run the create.
-		if sourcecache.NormalizeRemote(ExpandGitHubShorthand(source)) == "" {
+		if sourceref.NormalizeRemote(source.Location) == "" {
 			return nil, fmt.Errorf("%s: declared source %q is %q, which names a path on this machine and not a repository on a network",
 				path, name, url)
 		}
+		declared[name] = source.String()
 	}
 	return declared, nil
 }

@@ -116,7 +116,7 @@ func (l *skillsList) view(st *styles, z *zones) string {
 
 	body := make([]string, 0, l.height)
 	if len(l.all) == 0 && l.loaded {
-		body = append(body, st.dimText.Render(pad("  no skills for new discoboxes — n adds a Git URL[@REF][//PATH] to the project, or a directory to client.yaml", l.width)))
+		body = append(body, st.dimText.Render(pad("  no skills for new discoboxes — n adds a Git URL or owner/repo[@REF][//PATH] to the project, or a directory to client.yaml", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
@@ -154,7 +154,7 @@ func (l *skillsList) row(st *styles, entry SkillsEntry, i int) string {
 	if atCursor {
 		style = st.cursorName
 	}
-	line := padANSI(head+padANSI(style.Render(truncateMiddle(entry.Value, valueW)), valueW)+tail, l.width)
+	line := padANSI(head+padANSI(style.Render(truncateMiddle(entry.label(), valueW)), valueW)+tail, l.width)
 	if atCursor {
 		return highlight(st, line, colHighlightBG)
 	}
@@ -254,10 +254,10 @@ func (m *Model) addSkillsForm() tea.Cmd {
 	if file == "" {
 		file = "client.yaml"
 	}
-	body := "A Git URL[@REF][//PATH] goes to the project: every discobox of it is created\n" +
-		"with the skills in PATH linked from a checkout, whoever creates it.\n" +
-		"A directory goes to " + file + ", for discoboxes created from here."
-	m.dialog = inputDialog("Add skills", body, "https://github.com/acme/tools//agents/skills", "", func(value string) tea.Cmd {
+	body := "A repository — a Git URL or owner/repo, [@REF][//PATH] — goes to the project:\n" +
+		"every discobox of it is created with the skills in PATH linked from a checkout,\n" +
+		"whoever creates it. A directory goes to " + file + ", for discoboxes created from here."
+	m.dialog = inputDialog("Add skills", body, "acme/tools//agents/skills", "", func(value string) tea.Cmd {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			return nil
@@ -268,7 +268,7 @@ func (m *Model) addSkillsForm() tea.Cmd {
 			if err != nil {
 				return skillsActionMsg{err: err}
 			}
-			return skillsActionMsg{did: "added " + entry.Value + " to " + entry.where()}
+			return skillsActionMsg{did: "added " + entry.label() + " to " + entry.where()}
 		}
 	})
 	return nil
@@ -281,26 +281,35 @@ func (m *Model) confirmRemoveSkills() tea.Cmd {
 	}
 	removed := *entry
 	goes := section{label: "what goes", fields: []field{
-		{label: "skills", value: removed.Value, tone: toneAccent},
+		{label: "skills", value: removed.label(), tone: toneAccent},
 		{label: "from", value: removed.where()},
 	}}
 	goes.lines = []line{{text: "discoboxes already created keep theirs; only new ones go without"}}
 	server := m.configServer()
 	d := confirmDialog("Remove skills", "", func(string) tea.Cmd {
-		m.dialog = statusDialog("Skills", "removing "+removed.Value+"…")
+		m.dialog = statusDialog("Skills", "removing "+removed.label()+"…")
 		return func() tea.Msg {
 			err := m.ds.RemoveSkills(m.ctx, server, removed)
-			return skillsActionMsg{did: "removed " + removed.Value + " from " + removed.where(), err: err}
+			return skillsActionMsg{did: "removed " + removed.label() + " from " + removed.where(), err: err}
 		}
 	})
 	d.sections = []section{goes}
-	d.answerLabel = "remove " + removed.Value + "?"
+	d.answerLabel = "remove " + removed.label() + "?"
 	d.defaultNo = true
 	m.dialog = d
 	return nil
 }
 
 // where is where an entry is kept, as the screen says it.
+// label is the entry as the window shows it: the short spelling of what it
+// names, which is itself a value the add form takes (ADR 26-10-15-664 §4).
+func (e SkillsEntry) label() string {
+	if e.Label != "" {
+		return e.Label
+	}
+	return e.Value
+}
+
 func (e SkillsEntry) where() string {
 	if e.Project {
 		return "the project"

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 
 	"github.com/discobox-ai/discobox/tools"
@@ -581,7 +582,11 @@ func (f *fakeSource) ResolveSource(_ context.Context, source string) (Source, er
 	}
 	// Filed under the directory the ref sits in, which is what the real one's
 	// repository root comes to for a directory that is one.
-	return Source{Value: source, OriginKey: testKey(sourceDirectory(source))}, nil
+	dir := source
+	if parsed, err := sourceref.Parse(source); err == nil {
+		dir = parsed.Location
+	}
+	return Source{Value: source, Directory: dir, OriginKey: testKey(dir)}, nil
 }
 
 // setSourceErr moves what ResolveSource answers while the window is up, so a

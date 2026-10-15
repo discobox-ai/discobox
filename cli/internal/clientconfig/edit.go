@@ -27,12 +27,12 @@ var ErrNoFile = fmt.Errorf("%s is set empty, so no client.yaml is read or writte
 // relative one in the file is relative to the file.
 func AddSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
-		resolved, err := ResolveSkill(filepath.Dir(path), entry)
+		key, err := SkillKey(filepath.Dir(path), entry)
 		if err != nil {
 			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
 		}
 		for _, existing := range skills {
-			if same, err := ResolveSkill(filepath.Dir(path), existing); err == nil && same == resolved {
+			if same, err := SkillKey(filepath.Dir(path), existing); err == nil && same == key {
 				return nil, fmt.Errorf("%s already names %s in new.skills", path, entry)
 			}
 		}
@@ -45,13 +45,13 @@ func AddSkill(entry string) (string, error) {
 // nothing there is refused.
 func RemoveSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
-		resolved, err := ResolveSkill(filepath.Dir(path), entry)
+		key, err := SkillKey(filepath.Dir(path), entry)
 		if err != nil {
 			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
 		}
 		kept := slices.DeleteFunc(slices.Clone(skills), func(existing string) bool {
-			same, err := ResolveSkill(filepath.Dir(path), existing)
-			return err == nil && same == resolved
+			same, err := SkillKey(filepath.Dir(path), existing)
+			return err == nil && same == key
 		})
 		if len(kept) == len(skills) {
 			return nil, fmt.Errorf("%s names no %s in new.skills", path, entry)

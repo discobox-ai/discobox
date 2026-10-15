@@ -2,36 +2,6 @@ package sourcecache
 
 import "testing"
 
-func TestEverySpellingOfARemoteIsOneCache(t *testing.T) {
-	const want = "github.com/Acme/widget"
-	for _, remote := range []string{
-		"https://github.com/Acme/widget",
-		"https://github.com/Acme/widget.git",
-		"https://GitHub.com/Acme/widget.git/",
-		"https://user:token@github.com:443/Acme/widget.git",
-		"http://github.com:80/Acme/widget",
-		"ssh://git@github.com/Acme/widget.git",
-		"ssh://git@github.com:22/Acme/widget.git",
-		"git+ssh://git@github.com/Acme/widget.git",
-		"git+ssh://git@github.com:22/Acme/widget.git",
-		"ssh+git://github.com:22/Acme/widget",
-		"git://github.com/Acme/widget.git",
-		"git@github.com:Acme/widget.git",
-		"github.com:Acme/widget",
-		"  git@github.com:/Acme//widget.git/ ",
-	} {
-		if got := NormalizeRemote(remote); got != want {
-			t.Errorf("NormalizeRemote(%q) = %q, want %q", remote, got, want)
-		}
-	}
-}
-
-func TestARemoteOnAnotherPortIsAnotherRemote(t *testing.T) {
-	if got, want := NormalizeRemote("ssh://git@git.example.com:2222/team/app.git"), "git.example.com:2222/team/app"; got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-}
-
 // A path names a repository only on the machine it is a path on, so it is not
 // a remote: two clients' /srv/git/app must not share a cache.
 func TestAPathIsNotARemote(t *testing.T) {
@@ -48,9 +18,6 @@ func TestAPathIsNotARemote(t *testing.T) {
 		"git@github.com:",
 		"has space@host:path",
 	} {
-		if got := NormalizeRemote(remote); got != "" {
-			t.Errorf("NormalizeRemote(%q) = %q, want none", remote, got)
-		}
 		if got := RemoteKey(remote); got != "" {
 			t.Errorf("RemoteKey(%q) = %q, want none", remote, got)
 		}

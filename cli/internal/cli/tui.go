@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -23,7 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/sandboxmeta"
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/tools"
 	"github.com/discobox-ai/x/gitutil"
 )
@@ -407,6 +406,8 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	// listing is compared against, hostname included — a row recording the
 	// hostname the window is already sitting on is not worth naming.
 	session.HostID = client.HostId
+	// Where a directory under it is shown from as ~; none shows paths whole.
+	session.Home, _ = os.UserHomeDir()
 	session.Host = strings.TrimSpace(client.Hostname.Or(""))
 	// Where the window's own source files its discoboxes, and where this
 	// machine files the ones with no source: the window's own folder when
@@ -416,7 +417,7 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	}
 	// The GitHub repository the window's own source belongs to, which is the
 	// folder its discoboxes are in whichever clone or URL they were cut from.
-	session.RepositoryKey = sandboxcreate.GitHubRepositoryKey(sandboxcreate.SourceGitHubRepository(ctx, d.app.source))
+	session.RepositoryKey = sourceref.GitHubKey(sandboxcreate.SourceGitHubRepository(ctx, d.app.source))
 	// A window opened on a repository URL cuts from that URL by default, and
 	// its header names it: the directory it happens to run in is only where
 	// its draft is kept.
@@ -425,8 +426,8 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	// window cuts from — not SourceRoot, which drops the ref on purpose: every
 	// ref of one repository is one place to file a discobox under (ADR 0111
 	// §1), and one of them is not the thing to hand back to a create.
-	if sandboxcreate.IsRemoteGitSource(sourceDirectory(d.app.source)) {
-		session.Remote = strings.TrimSpace(d.app.source)
+	if source, err := sandboxcreate.ParseSource(d.app.source); err == nil && source.Kind == sourceref.Git {
+		session.Remote = source.String()
 	}
 	if branch, ok := gitutil.CurrentBranch(ctx, dir); ok {
 		session.Branch = branch
@@ -925,13 +926,13 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// cut — its origin is the client's directory, which is no repository
 		// on GitHub.
 		if row.SourceRemote {
-			row.Repository = sandboxcreate.GitHubRepositoryURL(row.Source)
-			row.RepositoryIdentity = sourcecache.NormalizeRemote(row.Source)
+			row.Repository = sourceref.GitHubURL(row.Source)
+			row.RepositoryIdentity = sourceref.NormalizeRemote(row.Source)
 		} else {
-			row.Repository = sandboxcreate.GitHubRepositoryURL(source.UpstreamUrl.Or(""))
-			row.RepositoryIdentity = sourcecache.NormalizeRemote(source.UpstreamUrl.Or(""))
+			row.Repository = sourceref.GitHubURL(source.UpstreamUrl.Or(""))
+			row.RepositoryIdentity = sourceref.NormalizeRemote(source.UpstreamUrl.Or(""))
 		}
-		row.RepositoryKey = sandboxcreate.GitHubRepositoryKey(row.Repository)
+		row.RepositoryKey = sourceref.GitHubKey(row.Repository)
 		row.RepositoryShown = terminalSafe(row.RepositoryIdentity)
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
@@ -1009,15 +1010,16 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 	if strings.TrimSpace(source) == "" {
 		source = d.app.source
 	}
-	// A repository the discobox clones for itself has no working tree here, so
-	// there is nothing it could carry and nothing to ask about.
-	if sandboxcreate.IsRemoteGitSource(sourceDirectory(source)) {
-		return tui.SourceWorkspace{Directory: source}, nil
-	}
-	dir, err := filepath.Abs(sourceDirectory(source))
+	parsed, err := sandboxcreate.ParseSource(source)
 	if err != nil {
 		return tui.SourceWorkspace{}, err
 	}
+	// A repository the discobox clones for itself has no working tree here, so
+	// there is nothing it could carry and nothing to ask about.
+	if parsed.Kind == sourceref.Git {
+		return tui.SourceWorkspace{Directory: source}, nil
+	}
+	dir := sandboxcreate.SourceDirectory(parsed)
 	// Outside a repository there is no commit to fall back to, so what the
 	// directory carries is the whole of it — and an empty one carries nothing,
 	// which is the same discobox either answer would have produced.
@@ -1053,10 +1055,11 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 // the create a few seconds later, by which time the field it was typed into is
 // gone and the path has to be remembered rather than corrected.
 func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.Source, error) {
-	value, err := resolveSourceValue(source)
+	parsed, err := resolveSourceValue(source)
 	if err != nil {
 		return tui.Source{}, err
 	}
+	value := parsed.String()
 	// Where a discobox cut from it here is filed, so the list can follow the
 	// source there (ADR 0111). A directory's key is its repository root's,
 	// which what was typed need not be.
@@ -1064,54 +1067,47 @@ func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.S
 	if err != nil {
 		return tui.Source{}, err
 	}
-	return tui.Source{
+	resolved := tui.Source{
 		Value:         value,
-		Remote:        sandboxcreate.IsRemoteGitSource(sourceDirectory(value)),
+		Remote:        parsed.Kind == sourceref.Git,
 		OriginKey:     key,
-		RepositoryKey: sandboxcreate.GitHubRepositoryKey(sandboxcreate.SourceGitHubRepository(ctx, value)),
-	}, nil
+		RepositoryKey: sourceref.GitHubKey(sandboxcreate.SourceGitHubRepository(ctx, value)),
+	}
+	if !resolved.Remote {
+		resolved.Directory = parsed.Location
+	}
+	return resolved, nil
 }
 
-// resolveSourceValue is ResolveSource's check of the value itself: ~ expanded,
-// a directory made absolute and required to be there, and a ref carried
-// through untouched.
-func resolveSourceValue(source string) (string, error) {
-	value := strings.TrimSpace(source)
-	if value == "" {
-		return "", fmt.Errorf("name a directory, a repository URL, or DIR@REF")
+// resolveSourceValue is ResolveSource's check of the value itself, read as
+// -C reads it (ADR 26-10-15-664): GitHub shorthand expanded, ~ expanded, a
+// directory made absolute and required to be there — with its //PATH, which
+// is where the harness starts — and a ref carried through untouched.
+func resolveSourceValue(source string) (sourceref.Ref, error) {
+	if strings.TrimSpace(source) == "" {
+		return sourceref.Ref{}, fmt.Errorf("name a directory, a repository URL, or owner/repo, with @REF and //PATH as -C takes them")
 	}
-	// The same shorthand -C takes, so the field accepts what the flag does.
-	value = sandboxcreate.ExpandGitHubShorthand(value)
+	parsed, err := sandboxcreate.ParseSource(source)
+	if err != nil {
+		return sourceref.Ref{}, err
+	}
 	// The ref is carried through untouched: which commit to cut from is the
 	// create path's question, and asking it of a directory that is not there
 	// answers nothing.
-	dir := sourceDirectory(value)
-	ref := value[len(dir):]
-	if sandboxcreate.IsRemoteGitSource(dir) {
-		return value, nil
+	if parsed.Kind == sourceref.Git {
+		return parsed, nil
 	}
-	// No shell has been anywhere near this value, so ~ is still a tilde.
-	if dir == "~" || strings.HasPrefix(dir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve %s: %w", dir, err)
-		}
-		dir = filepath.Join(home, strings.TrimPrefix(dir, "~"))
-	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", dir, err)
-	}
-	info, err := os.Stat(abs)
+	dir := sandboxcreate.SourceDirectory(parsed)
+	info, err := os.Stat(dir)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("%s does not exist", abs)
+		return sourceref.Ref{}, fmt.Errorf("%s does not exist", dir)
 	case err != nil:
-		return "", err
+		return sourceref.Ref{}, err
 	case !info.IsDir():
-		return "", fmt.Errorf("%s is not a directory", abs)
+		return sourceref.Ref{}, fmt.Errorf("%s is not a directory", dir)
 	}
-	return abs + ref, nil
+	return parsed, nil
 }
 
 // MeasureDirectory is the shared create path's directory walk, in the shape the
@@ -1128,19 +1124,6 @@ func (d *apiDataSource) MeasureDirectory(ctx context.Context, dir string) (func(
 func gitRoot(ctx context.Context, dir string) (string, bool) {
 	root, err := gitutil.Root(ctx, dir)
 	return root, err == nil
-}
-
-// sourceDirectory is the directory half of a `-C DIR@REF` argument. The ref
-// says which commit to cut from; the working tree being asked about is the
-// directory's either way.
-func sourceDirectory(source string) string {
-	if i := strings.LastIndex(source, "@"); i > 0 {
-		return source[:i]
-	}
-	if source == "" {
-		return "."
-	}
-	return source
 }
 
 // Run creates the sandbox Enter asked for and delivers its source, which is

@@ -46,7 +46,7 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 		t.Fatal("enter on the Source row should open the whole list")
 	}
 	body := strings.Join(dialogLabels(m.dialog), "\n")
-	for _, want := range []string{"/src/obot", "https://github.com/acme/foo", noSourceChoice, enterSourceChoice} {
+	for _, want := range []string{"/src/obot", "acme/foo", noSourceChoice, enterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the dropdown is missing %q:\n%s", want, body)
 		}

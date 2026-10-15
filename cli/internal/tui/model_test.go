@@ -801,7 +801,7 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 
 	// And the folders something else was cut from: the repository URL's, a
 	// folder the way a directory is (ADR 0111), and the other directory's.
-	filterTo(t, m, "https://github.com/acme/foo")
+	filterTo(t, m, "acme/foo")
 	if m.list.folder.key != testKey("https://github.com/acme/foo") {
 		t.Fatalf("folder = %q, want the repository URL's", m.list.folder.label)
 	}
@@ -825,7 +825,7 @@ func TestTheFilterCardListsTheKnownFolders(t *testing.T) {
 		t.Fatal("enter on the filter should open its card")
 	}
 	view := m.dialog.view(m.st, &m.zones, 120, 40)
-	for _, want := range []string{"/src/disco2", "/src/obot", "https://github.com/acme/foo", allFolders, "where this window is running"} {
+	for _, want := range []string{"/src/disco2", "/src/obot", "acme/foo", allFolders, "where this window is running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the card is missing %q:\n%s", want, view)
 		}
