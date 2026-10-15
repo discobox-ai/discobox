@@ -37,7 +37,7 @@ func TestOpenPoolConsoleAnswersNotImplementedForABackendWithNoConsole(t *testing
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	svc := NewService(appStore, manager, NewControlPlane(appStore, nil))
+	svc := NewService(appStore, manager, NewControlPlane(appStore, nil), &recordedEgress{})
 
 	_, err := svc.OpenPoolConsole(ctx, "project-1", "pool-1", sandbox.ConsoleOptions{})
 	if status := statusOf(err); status != http.StatusNotImplemented {
