@@ -167,9 +167,17 @@ started at once. Each gets this brief with its own `<name>` filled in:
 > Read the change with `discobox-review diff --stat` then `discobox-review
 > diff`. The line numbers it prints are the ones a comment anchors to. Read the
 > surrounding code — a diff hides its own context. Read what the repository
-> tells agents about itself — `AGENTS.md`, `CLAUDE.md`, and any design or
-> review notes from the root down to each directory the change touches; a
+> tells agents about itself — `AGENTS.md`, `CLAUDE.md`, and every `DESIGN.md`
+> and `REVIEW.md` from the root down to each directory the change touches; a
 > change that contradicts the closest one of those is a finding.
+>
+> A `REVIEW.md` is review notes that earlier reviews and fixes left behind:
+> what to check in that code, and mistakes already made there. Check the
+> change against every note on its path, and quote the note in the finding it
+> gives. When you find something a later review of this code should check
+> and would not think to, a mistake made twice, or a regression, say in your
+> comment that it should become a `REVIEW.md` note. The author writes the
+> note; you do not.
 >
 > Leave every finding in the review, one conversation per concern:
 >
@@ -271,6 +279,15 @@ Sort every open conversation into one of three:
    Pushing back is a legitimate answer; pushing back without a reason is not.
 3. **A judgement that is not yours to make.** Take it to the user — see below.
 
+**Review notes.** A finding that a later review of this code should check
+and would not think to — a constraint the code cannot show, a mistake made a
+second time, a regression — or one the reviewer says should be a note, gets a
+bullet in a `REVIEW.md` as part of its fix: the rule, stated directively, then
+why. It goes in the closest directory that holds the code and has a
+`DESIGN.md`, which is the root's when no closer one does. Mention it in your
+reply on the thread. The note is part of the change, so the reviewers read it
+in the next round like any other line.
+
 Reply on **every** thread, whichever bucket it fell in, saying what you did:
 
 ```bash
@@ -320,6 +337,9 @@ brief for round *n*:
 > "..."`) and leave it open. If the author pushed back and the reason holds,
 > resolve it and say you accept the reason — being persuaded is a valid outcome.
 >
+> A `REVIEW.md` note the author added is part of the change: review it as
+> you would code — it should be true, directive, and say why.
+>
 > Then approve the files that are now right (`discobox-review approve --by
 > <name> <path>`), and raise anything the fixes newly broke as a new comment.
 > Editing a file nullifies every approval of it, yours included, so every file
@@ -368,8 +388,8 @@ is not going to be settled by another round: stop, summarise both positions, and
 put it to the user.
 
 Report at the end: how many rounds it took, which reviewers ran, what each
-found and you fixed, what you pushed back on and why, and anything the user
-decided. Say whose sign-off it is: the reviewers approved every file, and the
+found and you fixed, what you pushed back on and why, the `REVIEW.md` notes you
+added, and anything the user decided. Say whose sign-off it is: the reviewers approved every file, and the
 user has approved only what they approved themselves — `discobox-review status
 --by git-user` counts it.
 
