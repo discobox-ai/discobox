@@ -86,16 +86,34 @@ func Format(host, routePath, use string) string {
 	return host + routePath + "=" + use
 }
 
-// RequestPath is the path a request's URL is matched on: decoded, with dot
+// RequestPaths are the paths a request's URL is matched on, each with its dot
 // segments resolved, so a request cannot step out of the prefix it names
-// (/mcp/readonly/../write is /mcp/write). A URL that does not parse has the
-// root path, which only a whole-host route covers.
-func RequestPath(rawURL string) string {
+// (/mcp/readonly/../write is /mcp/write). The first is the path decoded. An
+// encoded "/" is data to a server that routes on the path as sent and a
+// separator to one that decodes it first, and the proxy cannot tell which the
+// upstream is, so a path holding one has a second reading that keeps it
+// inside its segment: /mcp/x%2F..%2Freadonly is /mcp/readonly decoded and
+// /mcp/x%2F..%2Freadonly as sent. A request is held to every reading. A URL
+// that does not parse has the root path, which only a whole-host route covers.
+func RequestPaths(rawURL string) []string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Path == "" {
-		return "/"
+		return []string{"/"}
 	}
-	return path.Clean("/" + u.Path)
+	decoded := path.Clean("/" + u.Path)
+	segments := strings.Split(u.EscapedPath(), "/")
+	for i, segment := range segments {
+		// Every escape but a "/" is read as the server would, so an encoded
+		// dot segment (%2e%2e) still resolves.
+		if unescaped, err := url.PathUnescape(segment); err == nil && !strings.Contains(unescaped, "/") {
+			segments[i] = unescaped
+		}
+	}
+	asSent := path.Clean("/" + strings.Join(segments, "/"))
+	if asSent == decoded {
+		return []string{decoded}
+	}
+	return []string{decoded, asSent}
 }
 
 // PathCovers reports whether a route's path prefix covers a request path, on

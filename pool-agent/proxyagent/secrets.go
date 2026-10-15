@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -158,6 +159,30 @@ func (r *secretResolver) setSentinelRoutes(routes map[string]map[string][]secret
 	r.routesMu.Lock()
 	defer r.routesMu.Unlock()
 	r.sentinelRoutes = routes
+}
+
+// stageSentinelRoutes installs next while keeping the current routes of every
+// sentinel next does not name, for the moment the sentinel set takes to catch
+// up with it. setSentinelRoutes(next) then drops them.
+func (r *secretResolver) stageSentinelRoutes(next map[string]map[string][]secretroute.Route) {
+	r.routesMu.Lock()
+	defer r.routesMu.Unlock()
+	staged := make(map[string]map[string][]secretroute.Route, len(next)+len(r.sentinelRoutes))
+	for sandboxID, sentinels := range next {
+		staged[sandboxID] = maps.Clone(sentinels)
+	}
+	for sandboxID, sentinels := range r.sentinelRoutes {
+		for sentinel, routes := range sentinels {
+			if _, ok := staged[sandboxID][sentinel]; ok {
+				continue
+			}
+			if staged[sandboxID] == nil {
+				staged[sandboxID] = map[string][]secretroute.Route{}
+			}
+			staged[sandboxID][sentinel] = routes
+		}
+	}
+	r.sentinelRoutes = staged
 }
 
 func (r *secretResolver) heldRoutes(sandboxID, sentinel string) []secretroute.Route {
@@ -639,19 +664,24 @@ func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) (groups [][]stri
 			groups = append(groups, fresh)
 		}
 	}
-	requestPath := secretroute.RequestPath(req.URL)
+	// A path with more than one reading is held to each: every reading must
+	// fall on a route, and the uses of every judged one must allow, so a
+	// request never lands on a less-judged route than the one it reaches.
+	requestPaths := secretroute.RequestPaths(req.URL)
 	route := func(routes []secretroute.Route) {
 		if len(routes) == 0 {
 			return
 		}
-		group, covered := routeUses(routes, req.Host, requestPath)
-		if !covered {
-			if refusal == "" {
-				refusal = fmt.Sprintf("this credential has no route to %s%s", req.Host, requestPath)
+		for _, requestPath := range requestPaths {
+			group, covered := routeUses(routes, req.Host, requestPath)
+			if !covered {
+				if refusal == "" {
+					refusal = fmt.Sprintf("this credential has no route to %s%s", req.Host, requestPath)
+				}
+				continue
 			}
-			return
+			add(group)
 		}
-		add(group)
 	}
 	for _, useID := range req.TrustUseIDs {
 		add([]string{useID})
@@ -844,6 +874,13 @@ func watchSecretsFile(ctx context.Context, publisher *policyPublisher, resolver 
 			}
 			return
 		}
+		// A sentinel's routes bound where it may be swapped, so it is never
+		// swappable without the ones it was written with (ADR 26-10-02-924):
+		// the new routes go in before the sentinel set moves — keeping the old
+		// routes of any sentinel on its way out — and only once it has moved
+		// are those dropped. Either order alone leaves a moment in which a
+		// sentinel arriving, or one leaving, reads as having no routes.
+		resolver.stageSentinelRoutes(doc.Routes)
 		publisher.setFileSentinels(doc.Clients)
 		resolver.setSentinelRoutes(doc.Routes)
 		lastMod = info.ModTime()

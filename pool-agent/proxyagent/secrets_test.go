@@ -329,3 +329,30 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 		t.Fatalf("routes = %#v, want them replaced with the set", doc.Routes)
 	}
 }
+
+// While the sentinel set moves, no sentinel reads as having no routes: one
+// arriving has its routes before it is swappable, and one leaving keeps its
+// own until it is gone.
+func TestStagedRoutesCoverSentinelsArrivingAndLeaving(t *testing.T) {
+	r := &secretResolver{}
+	leaving := []secretroute.Route{{Host: "github.com", UseID: "use_old"}}
+	r.setSentinelRoutes(map[string]map[string][]secretroute.Route{"sb-1": {"SENT-OLD": leaving}})
+
+	arriving := []secretroute.Route{{Host: "githubcopilot.com"}}
+	next := map[string]map[string][]secretroute.Route{"sb-1": {"SENT-NEW": arriving}}
+	r.stageSentinelRoutes(next)
+	if got := r.heldRoutes("sb-1", "SENT-NEW"); len(got) != 1 || got[0].Host != "githubcopilot.com" {
+		t.Fatalf("arriving routes = %#v, want them staged before the sentinel set moves", got)
+	}
+	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 1 || got[0].UseID != "use_old" {
+		t.Fatalf("leaving routes = %#v, want them kept until the sentinel set has moved", got)
+	}
+	if _, ok := next["sb-1"]["SENT-OLD"]; ok {
+		t.Fatal("staging wrote the leaving sentinel's routes into the caller's map")
+	}
+
+	r.setSentinelRoutes(next)
+	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 0 {
+		t.Fatalf("leaving routes = %#v, want them dropped once the set has moved", got)
+	}
+}

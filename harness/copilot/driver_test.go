@@ -284,7 +284,7 @@ func TestTheTokensRoutesSendCopilotsOwnTrafficUnjudged(t *testing.T) {
 		{"https://github.com/org/repo", true},
 	} {
 		u := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)
-		matched := secretroute.Match(routes, u[0], secretroute.RequestPath(tc.url))
+		matched := secretroute.Match(routes, u[0], secretroute.RequestPaths(tc.url)[0])
 		if len(matched) == 0 {
 			t.Fatalf("%s: no route covers it", tc.url)
 		}
