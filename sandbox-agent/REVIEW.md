@@ -1,5 +1,17 @@
 # Sandbox Agent Review Notes
 
+## The DNS stub's firewall
+
+- **A new way of putting a sandbox on a shared network keeps its interface
+  under `dnsstub.pooledInterfaces`.** The stub drops what arrives for its
+  address only on `eth+`, the names Docker gives a container sandbox; anything
+  else is let through, because the nested Docker's bridges must reach it. A
+  sandbox attached under another name — a boxd machine's `enp*`, an endpoint
+  given a `com.docker.network.container_iface_prefix`, an interface an image
+  unit renames — would answer its pool neighbours under its own certificate.
+  Check the boxd twin (`boxd.yaml`) too: it installs the same units
+  (ADR 26-10-15-760).
+
 ## Run identity
 
 Getting "which user does this run as" wrong is the most repeated mistake in this

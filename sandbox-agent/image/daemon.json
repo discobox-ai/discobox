@@ -1,4 +1,5 @@
 {
+  "dns": ["169.254.53.53"],
   "features": {
     "containerd-snapshotter": true
   },
