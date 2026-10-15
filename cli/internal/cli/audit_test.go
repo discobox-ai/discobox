@@ -591,6 +591,8 @@ func TestHookSummaryNamesThePromptOrTheToolAndWhatItRanOn(t *testing.T) {
 		"copilot args string": {`{"toolName":"bash","toolArgs":"{\"command\":\"go vet ./...\"}"}`, "bash: go vet ./..."},
 		"copilot args other":  {`{"toolName":"bash","toolArgs":42}`, "bash"},
 		"copilot permission":  {`{"hookName":"permissionRequest","toolName":"edit","toolInput":{"path":"/src/a.go"}}`, "edit: /src/a.go"},
+		"omp tool call":       {`{"type":"tool_call","toolName":"bash","toolCallId":"c1","input":{"command":"go test ./..."},"agent":{"kind":"main"}}`, "bash: go test ./..."},
+		"omp tool result":     {`{"type":"tool_result","toolName":"read","toolCallId":"c2","input":{"path":"/src/a.go"},"isError":false}`, "read: /src/a.go"},
 		"no subject":          {`{"tool_name":"TodoWrite","tool_input":{"todos":[]}}`, "TodoWrite"},
 		"prompt":              {`{"hook_event_name":"UserPromptSubmit","prompt":"fix the\n\n  audit\tlist"}`, "prompt: fix the audit list"},
 		"long prompt":         {`{"prompt":"` + strings.Repeat("a", 150) + `"}`, "prompt: " + strings.Repeat("a", hookSummaryMaxText-1) + "…"},
