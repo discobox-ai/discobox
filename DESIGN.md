@@ -105,6 +105,7 @@ module so provider adapters can use server-internal control-plane contracts.
 flowchart TD
     cli["github.com/discobox-ai/discobox/cli"] --> root["github.com/discobox-ai/discobox"]
     cli --> termpane["github.com/discobox-ai/discobox/termpane"]
+    cli --> review["github.com/discobox-ai/review"]
     server["github.com/discobox-ai/discobox/server"] --> root
     server --> poolAgent["github.com/discobox-ai/discobox/pool-agent"]
     poolAgent --> root
@@ -140,6 +141,10 @@ flowchart TD
   executable, or one staged from the manifest the release linked in — and runs
   it as a child, which is also what local auto-launch starts
   ([ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md)).
+  It imports discobox-review's window (`github.com/discobox-ai/review`) to draw
+  a pull request's files changed in the console. The sandbox image pins the
+  same module as a binary (`REVIEW_VERSION` in `sandbox-agent/Dockerfile`);
+  the two versions are chosen apart and need not match.
 - Server module: control plane implementation, persistence models, sandbox
   provider Go interfaces, provider manager, and Docker/VM/cloud/pool-backed
   provider implementations. It imports the pool-agent module for what the two

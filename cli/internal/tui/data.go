@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/termpane"
+	"github.com/discobox-ai/review/source"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -2123,9 +2124,12 @@ type PullRequest struct {
 	MergedBy string
 	MergedAt time.Time
 	// Head and Base are the branches as the page names them, and HeadSHA the
-	// commit that was read: the one a merge from here merges.
+	// commit that was read: the one a merge from here merges. BaseSHA is
+	// where the base was at the same read, which with HeadSHA is what the
+	// files changed are measured between.
 	Head, Base   string
 	HeadSHA      string
+	BaseSHA      string
 	Commits      int
 	Additions    int
 	Deletions    int
@@ -2141,10 +2145,6 @@ type PullRequest struct {
 	// them could be read: the ones here are not the whole list.
 	Checks        []PullCheck
 	ChecksPartial bool
-	// Files are the changes as far as they were read; FilesTruncated is set
-	// when ChangedFiles is more.
-	Files          []PullFile
-	FilesTruncated bool
 }
 
 // PullReviewer is one of the page's reviewers. State is "requested" for one
@@ -2162,19 +2162,6 @@ type PullCheck struct {
 	Name  string
 	State string
 	URL   string
-}
-
-// PullFile is one changed file. Status is GitHub's: added, removed, modified,
-// renamed, copied. Patch is its unified diff, empty for a binary file or a
-// change too large for GitHub to send.
-type PullFile struct {
-	Path string
-	// Previous is the path a renamed file had.
-	Previous  string
-	Status    string
-	Additions int
-	Deletions int
-	Patch     string
 }
 
 // ReviewThread is one conversation a review started on a line of the diff.
@@ -2459,6 +2446,14 @@ type DataSource interface {
 	// that was read (PullRequest.HeadSHA), so a branch that has moved on since
 	// is refused rather than merged unseen.
 	MergePullRequest(ctx context.Context, repository string, number int, method, sha string) error
+
+	// PullSource is a pull request's files changed as discobox-review's window
+	// reads them: the diff from where pull's head left its base to the head
+	// (PullRequest.BaseSHA, HeadSHA), the commits it was made in, and the text
+	// of any file at any of them, read from GitHub as the person at this
+	// machine, with every string made safe to draw. ctx bounds its reads, and
+	// is canceled when the window is done with it.
+	PullSource(ctx context.Context, repository string, number int, pull PullRequest) (source.Source, error)
 
 	// ServiceLogs is the transcript of a service's current or last run, as the
 	// bytes it wrote. It is read for a service that is not running, whose pane

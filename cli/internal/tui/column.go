@@ -91,7 +91,7 @@ func (c *column) close(i int) {
 	if i < 0 || i >= len(c.panes) {
 		return
 	}
-	_ = c.panes[i].term.Close()
+	c.panes[i].close()
 	c.panes = append(c.panes[:i], c.panes[i+1:]...)
 	if i < c.active {
 		c.active--
@@ -104,7 +104,7 @@ func (c *column) close(i int) {
 // as ending it.
 func (c *column) closeAll() {
 	for _, p := range c.panes {
-		_ = p.term.Close()
+		p.close()
 	}
 	c.panes, c.active = nil, 0
 }

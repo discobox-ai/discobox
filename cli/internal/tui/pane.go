@@ -184,6 +184,15 @@ type configurePane struct {
 	resume     *RunRequest
 }
 
+// close ends what the pane is drawing from: its stream, and for a pull
+// request's tab the files changed's reads.
+func (p *pane) close() {
+	_ = p.term.Close()
+	if p.issue != nil {
+		p.issue.closeReview()
+	}
+}
+
 // name is what to call a pane: what the application inside it says it is,
 // else what was asked for when it was opened.
 func (p *pane) name() string {
@@ -313,8 +322,13 @@ type paneMsg struct {
 }
 
 // fromPane tags a pane's commands so what comes back says where it came from.
-// A batch is tagged through to its parts, since each half arrives separately.
 func fromPane(id int, cmd tea.Cmd) tea.Cmd {
+	return tagCmd(cmd, func(msg tea.Msg) tea.Msg { return paneMsg{id: id, msg: msg} })
+}
+
+// tagCmd wraps what cmd sends in tag. A batch is tagged through to its parts,
+// since each half arrives separately.
+func tagCmd(cmd tea.Cmd, tag func(tea.Msg) tea.Msg) tea.Cmd {
 	if cmd == nil {
 		return nil
 	}
@@ -326,11 +340,11 @@ func fromPane(id int, cmd tea.Cmd) tea.Cmd {
 		if batch, ok := msg.(tea.BatchMsg); ok {
 			tagged := make([]tea.Cmd, 0, len(batch))
 			for _, sub := range batch {
-				tagged = append(tagged, fromPane(id, sub))
+				tagged = append(tagged, tagCmd(sub, tag))
 			}
 			return tea.BatchMsg(tagged)
 		}
-		return paneMsg{id: id, msg: msg}
+		return tag(msg)
 	}
 }
 
@@ -1210,6 +1224,26 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		// status line are buttons for their chords, and what is left drives
 		// the selection. See mouse.go.
 		return m.windowMouse(msg)
+	}
+	if p.issue != nil && p.issue.files && p.issue.review != nil {
+		// The files changed are a window with a pointer of its own, which
+		// reads where it is drawn (reviewView sets the origin). Its gestures
+		// are held as a terminal's are, so a drag let go outside the tab still
+		// reaches it, and a selection it starts is the only one on screen.
+		switch ev := msg.(type) {
+		case tea.MouseClickMsg:
+			if ev.Button == tea.MouseLeft {
+				m.mouseCapture = p.id
+				m.focusPane(p)
+				m.chromeSel.Clear()
+				m.clearPaneSelections(p)
+			}
+		case tea.MouseReleaseMsg:
+			if ev.Button == tea.MouseLeft {
+				m.mouseCapture = 0
+			}
+		}
+		return m.toReview(p, msg)
 	}
 	if p.issue != nil {
 		// No grid of its own to select over or send presses to: a press focuses
@@ -2206,14 +2240,10 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 	rows := []string{top}
 	lines := p.term.View()
 	if p.issue != nil {
-		lines = m.issueView(p.issue, grid, m.paneRows())
 		// The links the issue draws are controls (REVIEW.md), marked from the
 		// lines as drawn, at the origin the grid is drawn at.
 		x, y := m.paneOrigin(p)
-		// The files changed are a list, and a row of one is a control too.
-		for row, file := range p.issue.fileRows(len(lines)) {
-			m.zones.mark(hit{kind: hitPullFile, idx: file}, x, y+row, grid, 1)
-		}
+		lines = m.issueView(p.issue, grid, m.paneRows(), x, y)
 		// So is the key the ready band draws at its right end.
 		if row := p.issue.mergeAt; row >= 0 && row < len(lines) {
 			w := min(lipgloss.Width(pullMergeKey+mergeBandHint), grid)

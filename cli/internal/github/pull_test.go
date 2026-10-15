@@ -153,11 +153,6 @@ func (f *fakePull) serve(t *testing.T) *httptest.Server {
 		case repo + "/commits/abc1234567890/status":
 			fmt.Fprint(w, `{"state": "failure", "statuses": [
 				{"context": "license/cla", "state": "error", "target_url": "https://cla.example"}]}`)
-		case repo + "/pulls/9/files":
-			fmt.Fprint(w, `[
-				{"filename": "reaper.go", "status": "modified", "additions": 10, "deletions": 3, "patch": "@@ -1,3 +1,4 @@\n-all()\n+stopped()"},
-				{"filename": "new.go", "previous_filename": "old.go", "status": "renamed", "additions": 2, "deletions": 0}
-			]`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -240,14 +235,9 @@ func TestAPullRequestIsReadWithTheRestOfItsPage(t *testing.T) {
 		t.Errorf("checks = %+v, want %+v", pull.Checks, wantChecks)
 	}
 
-	if len(pull.Files) != 2 || pull.FilesTruncated {
-		t.Fatalf("files = %+v, truncated %v", pull.Files, pull.FilesTruncated)
-	}
-	if file := pull.Files[0]; file.Path != "reaper.go" || file.Status != "modified" || file.Additions != 10 || !strings.Contains(file.Patch, "-all()") {
-		t.Errorf("the first file = %+v", file)
-	}
-	if renamed := pull.Files[1]; renamed.Previous != "old.go" || renamed.Status != "renamed" || renamed.Patch != "" {
-		t.Errorf("the renamed file = %+v", renamed)
+	// The two commits its files changed are between.
+	if pull.HeadSHA != "abc1234567890" || pull.BaseSHA != "0000000" {
+		t.Errorf("head %q and base %q, want abc1234567890 and 0000000", pull.HeadSHA, pull.BaseSHA)
 	}
 }
 
@@ -284,8 +274,8 @@ func TestAnOpenPullRequestsChecksAreReadAgain(t *testing.T) {
 	if first.Pull.Checks[1].State != "pending" {
 		t.Errorf("the re-read changed the read handed out before it: lint is %q", first.Pull.Checks[1].State)
 	}
-	if len(again.Pull.Files) != 2 || len(again.Timeline) != len(first.Timeline) {
-		t.Errorf("the re-read lost what was read before: %d files, %d timeline items", len(again.Pull.Files), len(again.Timeline))
+	if again.Pull.BaseSHA != first.Pull.BaseSHA || len(again.Timeline) != len(first.Timeline) {
+		t.Errorf("the re-read lost what was read before: base %q, %d timeline items", again.Pull.BaseSHA, len(again.Timeline))
 	}
 
 	closed := &fakePull{state: "closed"}
@@ -303,7 +293,7 @@ func TestAnOpenPullRequestsChecksAreReadAgain(t *testing.T) {
 }
 
 // The checks are not the pull request: a token that may not read them leaves
-// the page without them, not unreadable. The diff is the pull request.
+// the page without them, not unreadable.
 func TestAPullRequestIsReadWithoutChecksItMayNotSee(t *testing.T) {
 	t.Parallel()
 	fake := &fakePull{refuse: "/commits/"}
@@ -311,13 +301,8 @@ func TestAPullRequestIsReadWithoutChecksItMayNotSee(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the pull request did not read without its checks: %v", err)
 	}
-	if len(issue.Pull.Checks) != 0 || len(issue.Pull.Files) != 2 {
-		t.Errorf("checks %v, %d files; want no checks and the diff", issue.Pull.Checks, len(issue.Pull.Files))
-	}
-
-	fake = &fakePull{refuse: "/pulls/9/files"}
-	if _, err := client(fake.serve(t), "tok").Issue(t.Context(), "acme", "foo", 9, false); err == nil {
-		t.Errorf("a pull request whose diff was refused read without saying so")
+	if len(issue.Pull.Checks) != 0 || issue.Pull.HeadSHA == "" {
+		t.Errorf("checks %v, head %q; want no checks and the rest", issue.Pull.Checks, issue.Pull.HeadSHA)
 	}
 }
 

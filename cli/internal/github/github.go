@@ -1,7 +1,8 @@
 // Package github reads an issue or a pull request the way its page on
 // github.com shows it — the issue, its sub-issues, and its timeline of comments
-// and events, and for a pull request its branches, reviewers, review threads,
-// checks and diff as well (pull.go) — posts a comment on one, and closes or
+// and events, and for a pull request its branches, reviewers, review threads
+// and checks as well (pull.go), and its files changed as discobox-review's
+// window reads them (review.go) — posts a comment on one, and closes or
 // reopens it. It is the console's issue tab's whole reach into GitHub.
 //
 // It talks to the REST API as the person at this machine: the token is the
@@ -245,7 +246,7 @@ var ErrNoToken = errors.New("not logged in to GitHub: run gh auth login, or set 
 
 // Issue reads one issue and everything its page shows: the issue itself, its
 // sub-issues, and the whole timeline — and, when the number is a pull
-// request's, the pull request with its review threads, checks and diff.
+// request's, the pull request with its review threads and checks.
 //
 // A re-read is cheap when nothing happened: the issue is read first, and when
 // GitHub says it has not been updated since a full read less than keptFor ago,
@@ -439,6 +440,37 @@ func (c *Client) get(ctx context.Context, path string, into any) (string, error)
 // header. A path that is already a whole URL — the next page a Link named —
 // is sent as it is.
 func (c *Client) do(ctx context.Context, method, path string, body []byte, into any) (string, error) {
+	resp, err := c.send(ctx, method, path, "application/vnd.github+json", body)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if into != nil {
+		if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
+			return "", fmt.Errorf("reading GitHub's answer: %w", err)
+		}
+	}
+	return resp.Header.Get("Link"), nil
+}
+
+// text reads one answer whole, in a media type of GitHub's that is not JSON:
+// a diff, or a file's raw bytes.
+func (c *Client) text(ctx context.Context, path, accept string) (string, error) {
+	resp, err := c.send(ctx, http.MethodGet, path, accept, nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading GitHub's answer: %w", err)
+	}
+	return string(out), nil
+}
+
+// send sends one request and hands back an answer GitHub accepted, for the
+// caller to read and close; a refusal is an error, its body already read.
+func (c *Client) send(ctx context.Context, method, path, accept string, body []byte) (*http.Response, error) {
 	target := path
 	if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") {
 		target = c.API + path
@@ -449,9 +481,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, into 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, reader)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -461,10 +493,10 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, into 
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
+		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusUnauthorized {
 			// A token refused is asked for again next time: it has been
 			// revoked, or replaced by a login since.
@@ -472,14 +504,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, into 
 			c.token, c.asked = "", time.Time{}
 			c.mu.Unlock()
 		}
-		return "", refusal(resp)
+		return nil, refusal(resp)
 	}
-	if into != nil {
-		if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
-			return "", fmt.Errorf("reading GitHub's answer: %w", err)
-		}
-	}
-	return resp.Header.Get("Link"), nil
+	return resp, nil
 }
 
 // bearer is the token, found once and kept until GitHub refuses it. No token

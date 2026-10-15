@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +51,10 @@ const (
 	// pullKey does the same for the pull request. P for pull request, and
 	// free in the same key map.
 	pullKey = "p"
+	// pullFilesKey turns a pull request's tab to its files changed, and back.
+	pullFilesKey = "f"
+	// issueReadKey reads the issue or pull request again, now.
+	issueReadKey = "r"
 	// issuePostKey posts the comment being written. Enter is a newline in a
 	// comment — a comment is paragraphs — so posting is a chord nobody types
 	// by accident: what it does is public.
@@ -94,21 +97,12 @@ type issuePane struct {
 	// posted is the thing to look at.
 	toEnd bool
 
-	// conversation is the page every issue has, and changes a pull request's
-	// files changed; files is which of the two is on screen. Each keeps its
-	// own place.
+	// conversation is the page every issue has. files is a pull request's
+	// files changed on screen in its place, which review draws (pullreview.go)
+	// once it has been opened.
 	conversation issuePage
-	changes      issuePage
 	files        bool
-	// The files changed are a list, and diff is the diff of the one under its
-	// cursor once it is opened (fileOpen). fileRow is the line of changes the
-	// first file is on, and fileTop the row of the tab it was last drawn on,
-	// which is where the pointer finds the files.
-	fileCursor int
-	fileOpen   bool
-	diff       issuePage
-	fileRow    int
-	fileTop    int
+	review       *reviewWindow
 	// pushed is the head the person was last shown, once a read of the tab's
 	// own brought a newer one: the tab says so until they ask for a read (r).
 	// asked is that read under way: the head it brings is one they asked to
@@ -148,16 +142,8 @@ type issuePage struct {
 	offset int
 }
 
-// shown is the page on screen.
-func (v *issuePane) shown() *issuePage {
-	switch {
-	case v.files && v.fileOpen:
-		return &v.diff
-	case v.files:
-		return &v.changes
-	}
-	return &v.conversation
-}
+// shown is the conversation, the one page the tab draws itself.
+func (v *issuePane) shown() *issuePage { return &v.conversation }
 
 // label is what the tab is called, and what the header calls it.
 func (v *issuePane) label() string {
@@ -365,42 +351,29 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 	issue := msg.issue
 	was := v.issue
 	v.issue, v.err = &issue, ""
-	v.conversation.lines, v.changes.lines, v.diff.lines = nil, nil, nil
+	v.conversation.lines = nil
 	v.pull = issue.PullRequest
 	v.url, p.title = v.address(), v.label()
 	if issue.Pull == nil {
 		v.files = false
+		v.closeReview()
 		return nil
 	}
 	if was != nil && was.Pull != nil && was.Pull.HeadSHA != issue.Pull.HeadSHA {
-		// A push: what was read here is no longer what would be merged, and
-		// the files are another list. The cursor follows its file by name, and
-		// a diff that was open is left only if its file is still there.
+		// A push: what was read here is no longer what would be merged. The
+		// files changed on screen stay the old head's, under the notice, until
+		// the person asks for the new one: one moved under them mid-read
+		// would lose their place for a reason they did not see.
 		if v.pushed == "" && !asked {
 			v.pushed = was.Pull.HeadSHA
 		}
-		at := -1
-		if v.fileCursor < len(was.Pull.Files) {
-			path := was.Pull.Files[v.fileCursor].Path
-			at = slices.IndexFunc(issue.Pull.Files, func(file PullFile) bool { return file.Path == path })
-		}
-		if at < 0 {
-			v.fileOpen = false
-		} else {
-			v.fileCursor = at
-		}
-		if v.fileOpen {
-			v.diff.offset = 0
-		}
-	}
-	// The files may be fewer than they were: a push took one out.
-	v.fileCursor = min(v.fileCursor, max(len(issue.Pull.Files)-1, 0))
-	if len(issue.Pull.Files) == 0 {
-		v.fileOpen = false
 	}
 	if pullReady(issue) {
 		// On the tab itself, so it is seen from whichever pane has the keys.
 		p.title += " ●"
+	}
+	if asked && v.files && v.review != nil && v.review.head != issue.Pull.HeadSHA {
+		return tea.Batch(m.openReview(p), m.pullSettle(p))
 	}
 	return m.pullSettle(p)
 }
@@ -490,8 +463,10 @@ func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 	if v.composing {
 		return m.composeKey(p, msg)
 	}
-	if v.files && v.filesKey(keyName(msg)) {
-		return nil
+	if v.files && v.review != nil {
+		if cmd, taken := m.reviewKey(p, msg); taken {
+			return cmd
+		}
 	}
 	switch keyName(msg) {
 	case "up", "k":
@@ -506,23 +481,18 @@ func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 		v.shown().offset = 0
 	case "end", "G":
 		v.scroll(len(v.shown().lines))
-	case "f":
+	case pullFilesKey:
 		if v.issue == nil || v.issue.Pull == nil {
 			return nil
 		}
-		v.files = !v.files
+		return m.openReview(p)
 	case "c":
-		if v.files {
-			// The files changed are read, not answered: f goes back to
-			// where the answering is.
-			return nil
-		}
 		if v.issue == nil {
 			return status("the %s has not been read yet", v.noun())
 		}
 		v.composing = true
 		return v.composer.Focus()
-	case "r":
+	case issueReadKey:
 		if v.loading {
 			return nil
 		}
@@ -532,12 +502,9 @@ func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 		v.asked = true
 		return tea.Batch(m.loadIssue(p, true), status("reading #%d again", v.number))
 	case "x":
-		if v.files {
-			return nil
-		}
 		return m.askIssueState(p)
 	case pullMergeKey:
-		if v.files || !v.pull {
+		if !v.pull {
 			return nil
 		}
 		return m.askMerge(p)
@@ -715,29 +682,24 @@ func issueHints(v *issuePane) []hint {
 	if v.pull {
 		what = "PR"
 	}
-	hints := []hint{says("↑↓ scroll")}
 	pull := v.issue != nil && v.issue.Pull != nil
+	if pull && v.files && v.review != nil {
+		// The window has its own keys, and its own bar that says them; the
+		// tab's are all elsewhere, on the conversation.
+		return []hint{keyed("f", pullFilesKey, "conversation"), keyed("r", issueReadKey, "reload"), keyed("?", "?", "the window's keys")}
+	}
+	hints := []hint{says("↑↓ scroll")}
 	switch {
-	case pull && v.files:
-		// The diff's own keys in place of the conversation's: nothing is
-		// answered from here.
-		if v.fileOpen {
-			hints = append(hints, keyed("n", "n", "next file"), keyed("p", "p", "previous"), keyed("Esc", "esc", "files"))
-		} else {
-			hints[0] = says("↑↓ move")
-			hints = append(hints, keyed("Enter", "enter", "diff"))
-		}
-		hints = append(hints, keyed("f", "f", "conversation"))
 	case pull:
 		if v.issue.State == "open" {
 			hints = append(hints, keyed(pullMergeKey, pullMergeKey, "merge"))
 		}
-		hints = append(hints, keyed("f", "f", "files changed"), keyed("c", "c", verb))
+		hints = append(hints, keyed("f", pullFilesKey, "files changed"), keyed("c", "c", verb))
 	default:
 		hints = append(hints, keyed("c", "c", verb))
 	}
 	switch {
-	case v.files || pull && v.issue.Pull.Merged:
+	case pull && v.issue.Pull.Merged:
 	case v.issue != nil && v.issue.State == "closed":
 		hints = append(hints, keyed("x", "x", "reopen "+what))
 	default:
@@ -750,10 +712,10 @@ func issueHints(v *issuePane) []hint {
 	)
 }
 
-// issueView is an issue tab's grid, width by height: the issue scrolled to
-// where it is being read, and under it the comment field while one is being
-// written.
-func (m *Model) issueView(v *issuePane, width, height int) []string {
+// issueView is an issue tab's grid, width by height, drawn from x, y on
+// screen: the issue scrolled to where it is being read, and under it the
+// comment field while one is being written; or a pull request's files changed.
+func (m *Model) issueView(v *issuePane, width, height, x, y int) []string {
 	v.mergeAt = -1
 	var foot []string
 	if v.composing && height > issueComposerRows+4 {
@@ -793,41 +755,22 @@ func (m *Model) issueView(v *issuePane, width, height int) []string {
 		}
 		return append(fitRows(body, height-len(foot)), foot...)
 	}
+	if v.files && v.review != nil {
+		return append(head, v.reviewView(width, room, x, y+len(head))...)
+	}
 	shown := v.shown()
 	if shown.lines == nil || shown.width != width {
-		switch {
-		case v.files && v.fileOpen:
-			shown.lines = m.pullDiffLines(*v.issue, v.fileCursor, width)
-		case v.files:
-			shown.lines, v.fileRow = m.pullFileLines(*v.issue, v.fileCursor, width)
-		default:
-			shown.lines = m.issueLines(v, *v.issue, width, time.Now())
-		}
+		shown.lines = m.issueLines(v, *v.issue, width, time.Now())
 		shown.width = width
 	}
 	v.page = room
 	if v.toEnd {
 		v.conversation.offset, v.toEnd = len(v.conversation.lines), false
 	}
-	if v.files && !v.fileOpen {
-		// The cursor is kept on screen, as a list keeps it. On the first file
-		// that is the top of the page, with the heading over the list, and on
-		// the last its end, with whatever is said under it.
-		row := v.fileRow + v.fileCursor
-		low, high := row-room+1, row
-		if v.fileCursor == 0 {
-			high = 0
-		}
-		if v.fileCursor >= len(v.issue.Pull.Files)-1 {
-			low = max(low, min(len(shown.lines)-room, row))
-		}
-		shown.offset = max(min(shown.offset, high), low)
-	}
 	v.scroll(0)
-	v.fileTop = len(head) + v.fileRow - shown.offset
 	// Not while a comment is being written: the keys are the field's then, and
 	// a press of this one would type into it.
-	if !v.files && !v.composing && v.mergeRow >= shown.offset && v.mergeRow < shown.offset+room {
+	if !v.composing && v.mergeRow >= shown.offset && v.mergeRow < shown.offset+room {
 		v.mergeAt = len(head) + v.mergeRow - shown.offset
 	}
 	end := min(shown.offset+room, len(shown.lines))

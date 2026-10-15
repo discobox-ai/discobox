@@ -101,10 +101,6 @@ const (
 	// issue.go.
 	hitIssue
 
-	// hitPullFile is a row of a pull request's files changed (idx is the
-	// file): a click points at it and a second opens its diff. See pull.go.
-	hitPullFile
-
 	// hitPull is the header's `PR #N`, which is the same link onto the same
 	// tab for the pull request.
 	hitPull

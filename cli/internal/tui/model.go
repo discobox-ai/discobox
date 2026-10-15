@@ -1326,6 +1326,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// screen does: a tab can connect while the primary is still opening.
 		return m.updatePaneMsg(msg)
 
+	case reviewMsg:
+		return m.updateReview(msg)
+
 	case runActionMsg:
 		return m.actOn(msg.key, msg.targets)
 

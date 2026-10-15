@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/discobox-ai/discobox/cli/internal/github"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/review/source"
 )
 
 // Issue reads a GitHub issue or pull request for the console's issue tab, as this machine's
@@ -54,6 +56,164 @@ func (d *apiDataSource) MergePullRequest(ctx context.Context, repository string,
 		return err
 	}
 	return githubClient().Merge(ctx, owner, name, number, method, sha)
+}
+
+// PullSource is the issue tab's files changed, read from GitHub between the two
+// commits the tab last read. A diff is as much a stranger's text as a comment
+// is, so every string the source hands the window is made safe on the way, as
+// tuiIssue makes the rest of the tab: discobox-review's window draws the C0 and
+// C1 controls as pictures of them, but lets the other invisible characters
+// through — a bidirectional override among them, which would draw a line of a
+// diff in another order than it reads to the compiler.
+func (d *apiDataSource) PullSource(ctx context.Context, repository string, number int, pull tui.PullRequest) (source.Source, error) {
+	owner, name, err := githubRepository(repository)
+	if err != nil {
+		return nil, err
+	}
+	if pull.BaseSHA == "" || pull.HeadSHA == "" {
+		return nil, fmt.Errorf("#%d has not said what it is between", number)
+	}
+	return newSafeSource(githubClient().PullSource(ctx, owner, name, number, pull.BaseSHA, pull.HeadSHA, pull.Base, pull.Head)), nil
+}
+
+// safeSource is a pull request's files changed with every string made safe to
+// draw: diffs and files keep their lines and tabs (codeBlock), names are one
+// line (terminalSafe), and a commit's subject is written to be read (pageSafe).
+// It is the boundary between GitHub's text and the console that tuiIssue is
+// for the conversation.
+//
+// The window asks for a file by the path it read in a diff, which is the path
+// as it was made safe. paths maps each one back to the path GitHub has, so a
+// file whose name carries an invisible character is drawn escaped and still
+// read.
+//
+// It reads a diff's file headers itself, which the window also does, because
+// the window lets a bidirectional override through what it draws of a path.
+// It is a stopgap: once the pinned discobox-review escapes format characters
+// itself, this goes back to escaping nothing the window does not draw, and the
+// header reading goes with it.
+type safeSource struct {
+	src source.Source
+
+	mu    sync.Mutex
+	paths map[string]string
+}
+
+func newSafeSource(src source.Source) *safeSource {
+	return &safeSource{src: src, paths: map[string]string{}}
+}
+
+func (s *safeSource) Scan(base string, context int) (source.Scan, error) {
+	scan, err := s.src.Scan(base, context)
+	safe := terminalSafe
+	scan.Branch, scan.Base.Ref, scan.Base.Err = safe(scan.Branch), safe(scan.Base.Ref), safe(scan.Base.Err)
+	scan.Base.SHA, scan.Base.Commit = safe(scan.Base.SHA), safe(scan.Base.Commit)
+	for i, c := range scan.Commits {
+		scan.Commits[i] = source.Commit{Hash: safe(c.Hash), Short: safe(c.Short), Subject: pageSafe(c.Subject), Author: safe(c.Author), When: safe(c.When)}
+	}
+	scan.Diff, scan.Pending, scan.Incomplete = s.diff(scan.Diff), s.diff(scan.Pending), safe(scan.Incomplete)
+	return scan, err
+}
+
+func (s *safeSource) CommitDiff(hash string, context int) (string, error) {
+	diff, err := s.src.CommitDiff(hash, context)
+	return s.diff(diff), err
+}
+
+// FileContent is the file made safe as the diff is, so the window's lines of
+// it line up with the diff's: escaping adds characters to a line, never lines.
+func (s *safeSource) FileContent(commit, path string) (string, error) {
+	s.mu.Lock()
+	if raw, ok := s.paths[path]; ok {
+		path = raw
+	}
+	s.mu.Unlock()
+	text, err := s.src.FileContent(commit, path)
+	return codeBlock(text), err
+}
+
+// diff is a diff made safe, with the paths its file headers name kept for
+// FileContent to find again.
+//
+// Git writes a path with a control character or a byte past ASCII in a header
+// quoted, C-style (`+++ "b/a\342\200\256b.go"`), which is printable as it
+// stands and which a diff's reader unquotes back into the raw name. So a quoted
+// path is unquoted first and written back made safe, unquoted, the way the
+// window will read it.
+func (s *safeSource) diff(diff string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Only a file's header names paths: from its `diff --git` line to its first
+	// hunk. A changed line can begin as a header does — a removed SQL comment
+	// is `--- …` — and is the file's text, not a path.
+	lines := strings.Split(diff, "\n")
+	inHeader := false
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "diff --git "):
+			inHeader = true
+		case strings.HasPrefix(line, "@@"):
+			inHeader = false
+		}
+		if inHeader {
+			lines[i] = s.header(line)
+		}
+	}
+	return codeBlock(strings.Join(lines, "\n"))
+}
+
+// headerPaths are the lines of a diff that name a path, by how they begin.
+var headerPaths = []string{"--- ", "+++ ", "rename from ", "rename to ", "copy from ", "copy to "}
+
+// header is one line of a diff with any path it names made safe: unchanged
+// when it names none.
+func (s *safeSource) header(line string) string {
+	if rest, ok := strings.CutPrefix(line, "diff --git "); ok && strings.Contains(rest, `"`) {
+		from, rest, ok := s.headerPath(rest)
+		if !ok || !strings.HasPrefix(rest, " ") {
+			return line
+		}
+		to, rest, ok := s.headerPath(rest[1:])
+		if !ok || rest != "" {
+			return line
+		}
+		return "diff --git " + from + " " + to
+	}
+	for _, lead := range headerPaths {
+		if rest, ok := strings.CutPrefix(line, lead); ok {
+			if path, tail, ok := s.headerPath(rest); ok && tail == "" {
+				return lead + path
+			}
+			return line
+		}
+	}
+	return line
+}
+
+// headerPath reads one path off the front of rest — quoted, or the rest of the
+// line — and returns it made safe, with what follows it. A path is one line
+// however it was quoted, so a newline or a tab in one is escaped too
+// (terminalSafe): unquoted into the diff, it would be a line of its own.
+func (s *safeSource) headerPath(rest string) (shown, tail string, ok bool) {
+	raw := strings.TrimSuffix(rest, "\r")
+	if strings.HasPrefix(raw, `"`) {
+		quoted, err := strconv.QuotedPrefix(raw)
+		if err != nil {
+			return "", "", false
+		}
+		if raw, err = strconv.Unquote(quoted); err != nil {
+			return "", "", false
+		}
+		tail = strings.TrimSuffix(rest, "\r")[len(quoted):]
+	}
+	shown = terminalSafe(raw)
+	// The window asks for a file without its side's a/ or b/.
+	for _, side := range []string{"a/", "b/"} {
+		if name, ok := strings.CutPrefix(raw, side); ok && terminalSafe(name) != name {
+			s.paths[terminalSafe(name)] = name
+		}
+	}
+	return shown, tail, true
 }
 
 func githubRepository(repository string) (owner, name string, err error) {
@@ -155,9 +315,9 @@ func tuiPull(in github.Pull) *tui.PullRequest {
 	safe := terminalSafe
 	out := &tui.PullRequest{
 		Draft: in.Draft, Merged: in.Merged, MergedBy: safe(in.MergedBy), MergedAt: in.MergedAt,
-		Head: safe(in.Head), Base: safe(in.Base), HeadSHA: safe(in.HeadSHA),
+		Head: safe(in.Head), Base: safe(in.Base), HeadSHA: safe(in.HeadSHA), BaseSHA: safe(in.BaseSHA),
 		Commits: in.Commits, Additions: in.Additions, Deletions: in.Deletions, ChangedFiles: in.ChangedFiles,
-		Mergeable: safe(in.Mergeable), ChecksPartial: in.ChecksPartial, FilesTruncated: in.FilesTruncated,
+		Mergeable: safe(in.Mergeable), ChecksPartial: in.ChecksPartial,
 	}
 	for _, method := range in.MergeMethods {
 		out.MergeMethods = append(out.MergeMethods, safe(method))
@@ -167,12 +327,6 @@ func tuiPull(in github.Pull) *tui.PullRequest {
 	}
 	for _, check := range in.Checks {
 		out.Checks = append(out.Checks, tui.PullCheck{Name: safe(check.Name), State: safe(check.State), URL: safe(check.URL)})
-	}
-	for _, file := range in.Files {
-		out.Files = append(out.Files, tui.PullFile{
-			Path: safe(file.Path), Previous: safe(file.Previous), Status: safe(file.Status),
-			Additions: file.Additions, Deletions: file.Deletions, Patch: codeBlock(file.Patch),
-		})
 	}
 	return out
 }
