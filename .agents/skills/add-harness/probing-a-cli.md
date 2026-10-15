@@ -71,6 +71,20 @@ same number — copilot's `listen(0, "127.0.0.1")` works because GitHub accepts
 any loopback port. One observed port is not evidence of a fixed one, and
 declaring it as fixed forwards a port the next run never uses.
 
+## A request over HTTPS
+
+When it matters what a request carries — a token in a header the proxy can
+swap, or in a body it cannot — and the host is fixed (pi's Copilot exchange
+at `api.github.com`), read it through a TLS-terminating proxy: an `openssl`
+CA and a leaf certificate for the hosts, a ~30-line node server that answers
+`CONNECT` and hands the socket to a `tls.TLSSocket` feeding an `http.Server`,
+and the CLI run with `NODE_EXTRA_CA_CERTS=ca.pem` and the proxy variables
+pointed at it. Unset the lowercase `https_proxy`/`http_proxy`/`no_proxy` the
+sandbox sets too: undici prefers them. Wrapping `globalThis.fetch` from a
+`--import` preload does not work on a CLI that calls `undici.install()`.
+Answer the exchange from the fake to follow the flow on to what the CLI
+writes back to its store.
+
 ## Hooks
 
 Install a hook file at the candidate system layer whose command appends
@@ -121,6 +135,9 @@ do not route around a vendor's access control by presenting as another client.
   `mktemp -d` and remove them by literal path.
 - A full disk silently truncates writes and swallows command output; write
   diagnostics to `/dev/shm` and read them back with Read.
+- A shell syntax error anywhere in a command line runs none of it: a
+  setup step earlier on the same line silently never happened, and what
+  follows measures a home you did not prepare.
 - The login shell is zsh: a bare `=====` argument is an expansion error, and
   an unquoted `$flags` holding several words is still one word — write each
   case out or use an array.
