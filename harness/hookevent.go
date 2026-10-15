@@ -134,6 +134,26 @@ var canonicalHookEvents = map[string]map[string]string{
 		"session_compact":         "PostCompact",
 		"session_stop":            "Stop",
 	},
+	// pi names its lifecycle in snake_case, as omp (its descendant) does, so
+	// every entry is a translation. Its image's extension publishes one more
+	// event (ADR 26-10-15-259 §3) with no entry: session_compact_failed, a pi
+	// fact Claude Code has no word for.
+	//
+	// pi has no subagents, so unlike omp's none of these needs a filter.
+	// agent_settled is Stop rather than agent_end: agent_end closes one loop,
+	// and a retry, an overflow compaction or a queued message continues after
+	// it, while agent_settled fires once the run will not continue. tool_result
+	// is PostToolUse for a failed tool too, with isError in the payload.
+	"pi": {
+		"session_start":          "SessionStart",
+		"session_shutdown":       "SessionEnd",
+		"before_agent_start":     "UserPromptSubmit",
+		"tool_call":              "PreToolUse",
+		"tool_result":            "PostToolUse",
+		"session_before_compact": "PreCompact",
+		"session_compact":        "PostCompact",
+		"agent_settled":          "Stop",
+	},
 }
 
 // CanonicalHookEvent answers the Claude Code name for one harness's hook

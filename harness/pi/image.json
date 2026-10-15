@@ -1,0 +1,46 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "PI_SKIP_VERSION_CHECK": "1",
+    "PI_CLIPBOARD_OSC52": "1"
+  },
+  "harness": {
+    "id": "pi",
+    "name": "pi",
+    "description": "pi coding harness, with any provider it signs in to.",
+    "files": [
+      {
+        "path": ".pi/agent/extensions/discobox-hooks.js",
+        "content": "// Discobox's hooks for pi, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/pi-hook-extension.js\";\n"
+      },
+      {
+        "path": ".config/discobox/pi-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the pi harness. Edit with: discobox admin harnesses edit pi .config/discobox/pi-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
+      }
+    ],
+    "config": {
+      "reminder": "Sign in with /login, pick a default model with /model, then finish configuration with /quit.",
+      "ports": [
+        {
+          "port": 53692,
+          "unavailable": "Port 53692 is taken on your machine, so Anthropic's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an API key."
+        },
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so OpenAI's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an API key."
+        },
+        {
+          "port": 1456,
+          "unavailable": "Port 1456 is taken on your machine, so Radius's browser sign-in cannot call back here. In /login choose Radius's device-code sign-in instead, or free the port and configure again."
+        },
+        {
+          "ephemeral": true,
+          "unavailable": "OpenRouter's browser sign-in calls back to a port pi picks fresh, and the one it picked is taken on your machine. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an OpenRouter API key."
+        }
+      ],
+      "command": [
+        "/usr/local/libexec/discobox/configure-pi"
+      ]
+    }
+  }
+}

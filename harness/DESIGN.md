@@ -231,7 +231,8 @@ launchers, and configure scripts.
   `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
   in codex's system config, `OPENCODE_DISABLE_AUTOUPDATE` in opencode's env
   layer, `COPILOT_AUTO_UPDATE=false` in copilot's, `startup.checkUpdate: false`
-  in omp's settings overlay (omp only ever announces an update). `discobox-harness-upgrade` is the by-hand "newest, now".
+  in omp's settings overlay (omp only ever announces an update),
+  `PI_SKIP_VERSION_CHECK=1` in pi's env layer (pi too only announces one). `discobox-harness-upgrade` is the by-hand "newest, now".
 - An image says what the discobox terminal can do when its agent will not
   infer it. An exec the console opens is given `TERM=xterm-256color` and
   nothing that says its terminal takes OSC 8 hyperlinks, which Claude Code
@@ -248,9 +249,9 @@ launchers, and configure scripts.
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
   `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
   answering on stdout and exiting 0 only when the model answered. `--model`
-  names a *role* (`judge`, which pins a named model — except in the opencode
-  and omp images, whose providers are the user's choice; see
-  [OpenCode](#opencode) and [omp](#omp) — or `fast`), never a model id — the caller does not know
+  names a *role* (`judge`, which pins a named model — except in the opencode,
+  omp and pi images, whose providers are the user's choice; see
+  [OpenCode](#opencode), [omp](#omp) and [pi](#pi) — or `fast`), never a model id — the caller does not know
   what the image installed, so mapping the role is the wrapper's job, and it is
   version-coupled to a CLI the image pins the way the hook and launch wrappers
   are. `--no-tools` means the model answers from its prompt and executes
@@ -281,7 +282,7 @@ launchers, and configure scripts.
   prose mentioning a brace cannot swallow the answer. `codex-cli`
   prints the agent's last message alone (`--output-last-message`) and puts it
   through the helper; `opencode`, which has no such flag, puts its whole
-  transcript through it; `claude-code`, `copilot` and `omp` print only what
+  transcript through it; `claude-code`, `copilot`, `omp` and `pi` print only what
   the model said and put that through it too, since a model asked for JSON may fence it
   anyway. Each
   captures its CLI's output rather than piping it, so a failed run is a failed
@@ -307,6 +308,9 @@ launchers, and configure scripts.
   reasons as its model does as well; its wrapper turns off the session and
   title omp would otherwise keep and generate (`--no-session --no-title`)
   ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md) §5).
+  `pi` clamps a thinking level to what the model offers, but its judge is
+  left at pi's default too, with the session off (`--no-session`)
+  ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md) §5).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,
@@ -382,6 +386,9 @@ launchers, and configure scripts.
   - `omp` — omp, "oh-my-pi" (`@oh-my-pi/pi-coding-agent`), a Bun script that
     runs on the base image's Bun. Its slug, folder, image and hook provider
     are all `omp`.
+  - `pi` — pi (`@earendil-works/pi-coding-agent`), the agent omp descends
+    from, a Node script that runs on the base image's Node. Its slug, folder,
+    image and hook provider are all `pi`.
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the base image already ships the shell) and it
     has no `image.json` at all: no identity to declare beyond its reserved slug,
@@ -450,6 +457,13 @@ subject to repo trust prompts or user/project override:
   `--no-extensions` skips it, which claude-code's and Copilot's hooks survive.
   The policy baseline is the `PI_CONFIG_FILES` overlay `/etc/omp/discobox.yml`,
   scalars only, and two launch flags (see [omp](#omp)).
+- pi: **no system layer** and no settings overlay either ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)).
+  The same shape as omp's: `hook-extension.js` installed beside the configure
+  script, reached from `~/.pi/agent/extensions/discobox-hooks.js`. Each
+  published event carries the fields named for it, not a projection by shape:
+  pi's `before_agent_start` carries the whole system prompt as a plain string.
+  The policy baseline is the image's env and the launcher's `--approve` (see
+  [pi](#pi)).
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
@@ -485,7 +499,8 @@ or an audit filter then matches either.
   is a fact about how they were built, not a contract.
 - **An event with no Claude Code counterpart gets no canonical name**, never a
   copy of its own. Codex's `Interrupt` is one; omp's `before_subagent_spawn`,
-  `auto_retry_start` and `credential_disabled` are others. Copying it in
+  `auto_retry_start` and `credential_disabled`, and pi's
+  `session_compact_failed`, are others. Copying it in
   would squat a name Claude Code has not chosen, so that when Claude Code does
   choose one, stored hooks already claim it.
 - **`Stop`, `StopFailure`, `SessionStart` and `PostCompact` on opencode depend
@@ -508,6 +523,9 @@ or an audit filter then matches either.
   compaction events and `session_stop` only when `ctx.agent.kind` is not
   `sub`. Tool events are published for every session. `tool_result` is
   `PostToolUse` for a failed tool too, with `isError` in the payload.
+- **pi's `Stop` is `agent_settled`**, not `agent_end`: `agent_end` closes one
+  agent loop, and a retry, an overflow compaction or a queued message
+  continues after it. pi has no subagents, so nothing is filtered by session.
 - Each image's hook config and this table are kept together by a test in that
   harness's package: publishing an event without deciding what it is called
   across harnesses fails the build.
@@ -520,8 +538,9 @@ or private to the sandbox when there is no key to share it under (see
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harness images
 interpret anything beneath it. Claude Code and Codex keep their memory there in
 separate namespaces; opencode has no memory feature to point at it,
-Copilot's has no setting or variable that names where it keeps memories, and
-omp's memory backends are off by default and are not pointed there:
+Copilot's has no setting or variable that names where it keeps memories,
+omp's memory backends are off by default and are not pointed there, and pi
+has no memory feature:
 
 - **Memories are keyed by the sandbox user's uid**, as the pool cache is (ADR
   0094): each harness stores them under `.../users/<uid>/harnesses/<name>/`.
@@ -1148,3 +1167,73 @@ The image declares no secrets.
   (Anthropic), 8085 (Gemini CLI), 51121 (Antigravity) and 54549 (OpenRouter).
   Every omp browser sign-in also takes the redirect URL pasted back, which is
   the fallback when a port is taken.
+
+### pi
+
+`pi/configure.sh` follows the opencode shape — a bare interactive `pi`, then a
+read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)). The image declares no secrets.
+
+- **Credentials live in `~/.pi/agent/auth.json`**, one entry per provider:
+  `{type: api_key, key, env?}` or `{type: oauth, access, refresh, expires, …}`.
+  pi leaves a valid file as it is, through a run and through a 401.
+- **One secret per provider**, `PI_<PROVIDER>_CREDENTIAL`. A key is a `token`;
+  an Anthropic or xAI login is an `oauth` secret, renewed with the clients the
+  claude-code and opencode images are renewed with; any other login is a
+  `token` holding its access token, and the script says when it expires, or
+  that it has — kept or new. Left out, and said: a key that is a `!` command
+  (pi runs it), a ChatGPT subscription (`openai-codex`), whose account pi
+  reads from the access token's claims and fails locally without, and an
+  entry with no key or token at all (Bedrock's AWS profile or credential
+  chain), which uses credentials kept on the machine pi runs on.
+- **A Copilot login's secret is its GitHub token**, bound to `api.github.com`
+  (or `api.<domain>` for GitHub Enterprise). pi exchanges it, at
+  `copilot_internal/v2/token` with the token as a bearer header, for a Copilot
+  token of about 30 minutes, which it keeps in `access`. That exchange runs in
+  the sandbox, through the proxy, so the real Copilot token lands in the
+  sandbox's `auth.json`; the GitHub token does not.
+- **Delivery is auth.json as a templated harness file**, with sentinels in
+  place of keys and access tokens, `refresh` a placeholder and `expires` far
+  future where the control plane renews; a Copilot entry carries the sentinel
+  in `refresh`, a placeholder `access` and `expires` zero, so pi exchanges
+  before its first request.
+- **Reconfigure writes the previous auth.json back** with each `PREV_`
+  sentinel substituted, replacing what the configured harness delivered, so
+  the session opens signed in to exactly that. An entry whose key, access
+  token or (for Copilot) refresh token is still that sentinel was not
+  replaced, and comes back as `usePrevious` with its previous entry verbatim.
+  The default model is checked with a tool-free `pi -p`; a failure only warns.
+  It returns `settings.json` and `keybindings.json` as pi wrote them, and
+  Discobox's `.config/discobox/pi-harness.json` (`judgeModel`) as it arrived;
+  not `models.json` or `mcp.json`, which hold literal keys and commands.
+- **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`, and
+  `PI_CLIPBOARD_OSC52=1` so a copy reaches the user's terminal as well as the
+  box's X clipboard — `fd-find` installed, since pi otherwise downloads `fd`
+  from GitHub on its first run, and the launcher's `--approve`: pi's
+  project-trust dialog otherwise stalls a launch in any repository with
+  `.agents/skills` or `.pi/`. pi asks no approval before a tool call, and
+  honors `HTTPS_PROXY` for every provider. A launch prompt follows `--` as one
+  argument, led by a space when it starts with `@`: pi sends each positional
+  argument as its own message, and reads an `@`-led one as a file to attach
+  even after `--`. Resume is `--continue`, which opens a new session when
+  there is none.
+- `discobox-prompt` runs `pi -p --no-session` with stdin from `/dev/null`.
+  **`judge` is not pinned**, and pi has no roles, so `judge` and `fast` are
+  one: `judgeModel`, else `defaultProvider`/`defaultModel` from pi's settings,
+  else pi's own pick. pi has no `--flag=value` form, and takes the word after
+  `--model` or `--system-prompt` as its value whatever it starts with.
+  **Tools-off is isolation**: `--no-tools`, discovery and project trust off,
+  `--no-context-files` (pi collects `AGENTS.md` from the working directory up
+  to `/`, a repository root or not) and `--offline`, in a `HOME` of its own
+  from an empty directory, with no inherited `PI_*`, `XDG_*` or `*_BASE_URL`
+  variable. Its `auth.json` is rebuilt from the delivered one with each
+  entry's key, or its access token, refresh token and expiry, each of token
+  characters (or an empty refresh token, as OpenRouter's login stores), and
+  nothing else: no `env`, no `enterpriseUrl`, no `!` command.
+  A Copilot entry keeps its refresh token alone, so the judge exchanges for a
+  Copilot token of its own — the access token names its endpoint
+  (`proxy-ep`). System text carries a newline, since pi reads a system prompt
+  as a file when one by that name exists.
+- The configure image declares config ports 53692 (Anthropic), 1455 (OpenAI),
+  1456 (Radius) and an ephemeral one for OpenRouter. Each browser sign-in also
+  takes the redirect URL pasted back; Copilot, xAI, Kimi and Meta sign in by
+  device code.
