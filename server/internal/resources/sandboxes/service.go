@@ -27,6 +27,7 @@ import (
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 // Service owns sandbox API behavior, orchestration, provider catalog state, and
@@ -73,7 +74,10 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	if err := s.engine.Register(SandboxResourceType, s.NewSandboxReconciler(), opts...); err != nil {
 		return err
 	}
-	return s.engine.Register(SentinelsResourceType, s.NewSentinelReconciler())
+	if err := s.engine.Register(SentinelsResourceType, s.NewSentinelReconciler()); err != nil {
+		return err
+	}
+	return s.engine.Register(SandboxEgressResourceType, &sandboxEgressReconciler{store: s.store, providers: s.sandboxProviders})
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -323,6 +327,16 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		SourceRoot: sourceRoot,
 		Origin:     origin,
 		OriginKey:  originKey,
+	}
+	if level, ok := config.Egress.Get(); ok {
+		if sandbox.Egress, err = services.EgressPolicyToModel(level); err != nil {
+			return nil, err
+		}
+	}
+	if createdBySandboxID != nil {
+		if err := s.refuseWiderThanCreator(ctx, *createdBySandboxID, sandbox); err != nil {
+			return nil, err
+		}
 	}
 	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
 	if err != nil {
@@ -634,13 +648,41 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 
+	egressChanged := false
 	if config, ok := input.Config.Get(); ok {
 		if name, ok := config.Name.Get(); ok {
 			sandbox.Name = name
 		}
+		if level, ok := config.Egress.Get(); ok {
+			if sandbox.Egress, err = services.EgressPolicyToModel(level); err != nil {
+				return nil, err
+			}
+			egressChanged = true
+		}
 	}
 
-	if err := s.store.UpdateSandbox(ctx, sandbox); err != nil {
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdateSandbox(ctx, sandbox); err != nil {
+			return err
+		}
+		if !egressChanged {
+			return nil
+		}
+		// Its own write: UpdateSandbox never writes the level, so no reconcile
+		// that loaded the row earlier can write it back (store.SetSandboxEgress).
+		if err := txStore.SetSandboxEgress(ctx, projectID, sandboxID, sandbox.Egress); err != nil {
+			return err
+		}
+		if sandbox.DesiredState != model.DesiredStatePresent {
+			return nil
+		}
+		// Delivered as any level's change is, by the egress reconcile
+		// (ADR 26-10-01-032 §5).
+		if s.engine == nil {
+			return errors.New("reconcile engine is required")
+		}
+		return s.engine.MarkDirtyTx(ctx, txDB, SandboxEgressResourceType, SandboxDirtyID(projectID, sandboxID))
+	}); err != nil {
 		return nil, err
 	}
 	return s.store.GetSandbox(ctx, projectID, sandboxID)

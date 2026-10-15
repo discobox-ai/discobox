@@ -717,11 +717,17 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 // stubSandboxRuntime records the create body the configure flow builds. Only
 // CreateSandbox is exercised; the rest satisfies the interface.
 type stubSandboxRuntime struct {
-	created   services.CreateSandboxBody
-	rebound   []string
-	upgraded  []string
-	marked    []string
-	deleteErr error
+	created       services.CreateSandboxBody
+	rebound       []string
+	upgraded      []string
+	marked        []string
+	egressChanged []string
+	deleteErr     error
+}
+
+func (s *stubSandboxRuntime) MarkEgressChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, _, harnessConfigID string) error {
+	s.egressChanged = append(s.egressChanged, harnessConfigID)
+	return nil
 }
 
 func (s *stubSandboxRuntime) MarkSecretHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, secretID string) error {

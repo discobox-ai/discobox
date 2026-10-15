@@ -1530,6 +1530,36 @@ func (s *DNSAuditQuery) Validate() error {
 	return nil
 }
 
+func (s *EgressPolicy) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Allow.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "allow",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *ErrorModel) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1962,6 +1992,42 @@ func (s *HarnessConfig) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ImageEgressHosts.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "imageEgressHosts",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.AdditionalGroups.Get(); ok {
 			if err := func() error {
@@ -3891,6 +3957,24 @@ func (s *Pool) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := (validate.Float{}).Validate(float64(s.CpuVcpus)); err != nil {
 			return errors.Wrap(err, "float")
 		}
@@ -4615,6 +4699,24 @@ func (s *Project) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.HarnessConfigs.Get(); ok {
 			if err := func() error {
@@ -5386,6 +5488,24 @@ func (s *Sandbox) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.HarnessConfig.Get(); ok {
 			if err := func() error {
@@ -6175,6 +6295,24 @@ func (s *SandboxCreateConfig) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.HarnessMode.Get(); ok {
 			if err := func() error {
@@ -7654,6 +7792,24 @@ func (s *SandboxUpdateConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {
 				if err := (validate.String{
@@ -8480,6 +8636,24 @@ func (s *UpdateHarnessConfigBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.ConfiguredFiles.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -8557,6 +8731,24 @@ func (s *UpdatePoolBody) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.CpuVcpus.Get(); ok {
 			if err := func() error {
@@ -8700,6 +8892,24 @@ func (s *UpdateProjectBody) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {

@@ -17,6 +17,7 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
+	"gorm.io/gorm"
 )
 
 // ProviderInstances, Pools, and HarnessConfigs are the writes project creation
@@ -36,15 +37,22 @@ type HarnessConfigs interface {
 	SeedBuiltIns(ctx context.Context, projectID string) error
 }
 
+// Sandboxes converges the project's discoboxes onto a changed egress level
+// (ADR 26-10-01-032 §5), in the transaction that changes it.
+type Sandboxes interface {
+	MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
+}
+
 type Service struct {
 	store     *store.Store
 	providers ProviderInstances
 	pools     Pools
 	harnesses HarnessConfigs
+	sandboxes Sandboxes
 }
 
-func NewService(store *store.Store, providers ProviderInstances, pools Pools, harnesses HarnessConfigs) *Service {
-	return &Service{store: store, providers: providers, pools: pools, harnesses: harnesses}
+func NewService(store *store.Store, providers ProviderInstances, pools Pools, harnesses HarnessConfigs, sandboxes Sandboxes) *Service {
+	return &Service{store: store, providers: providers, pools: pools, harnesses: harnesses, sandboxes: sandboxes}
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
@@ -120,7 +128,7 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 
 // UpdateProject edits a project's own settings — its name, how long its
 // archived sandboxes are kept, whether its stopped sandboxes follow their
-// harness image, and whether it has shown its introduction.
+// harness image, its egress level, and whether it has shown its introduction.
 // Membership and ownership are not editable here; they are their own resource.
 func (s *Service) UpdateProject(ctx context.Context, projectID string, input services.UpdateProjectBody) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
@@ -164,7 +172,22 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		// which is worth having for a screen that otherwise appears once.
 		project.Welcomed = welcomed
 	}
-	if err := s.store.UpsertProject(ctx, project); err != nil {
+	egressChanged := false
+	if level, ok := input.Egress.Get(); ok {
+		if project.Egress, err = services.EgressPolicyToModel(level); err != nil {
+			return nil, err
+		}
+		egressChanged = true
+	}
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpsertProject(ctx, project); err != nil {
+			return err
+		}
+		if !egressChanged {
+			return nil
+		}
+		return s.sandboxes.MarkEgressChangedTx(ctx, txStore, txDB, projectID, "", "")
+	}); err != nil {
 		return nil, err
 	}
 	return s.GetProject(ctx, projectID)

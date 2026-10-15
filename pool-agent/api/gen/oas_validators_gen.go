@@ -9,6 +9,36 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+func (s *EgressPolicy) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Allow.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "allow",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *ErrorModel) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -695,6 +725,24 @@ func (s *PoolSandboxCreateRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.ResolvedHarnessConfig.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -860,6 +908,24 @@ func (s *PoolSandboxUpdateRequest) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Egress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "egress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.Sentinels.Get(); ok {
 			if err := func() error {

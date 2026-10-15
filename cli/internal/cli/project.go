@@ -124,6 +124,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var archiveRetention time.Duration
 	var upgradePolicy string
 	var welcomed bool
+	var egressOpts egressFlags
 	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
 
 --archive-retention sets how long this project's archived discoboxes are kept
@@ -144,7 +145,12 @@ outside them -- which is the reason to hold one back.
 
 --welcomed=false shows the console's welcome screen again on this project's
 next "discobox" or "discobox console": it is otherwise shown once, the first time
-the console opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+the console opens on the project.
+
+--egress-allow and --egress-deny-by-default set the project's egress level, which
+every discobox in the project converges onto, running ones included.
+
+` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -180,6 +186,19 @@ the console opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction:
 		if cmd.Flags().Changed("welcomed") {
 			body.SetWelcomed(apiclientgen.NewOptBool(welcomed))
 		}
+		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
+			project, err := a.getProject(cmd.Context(), client, projectID)
+			if err != nil {
+				return apimodel.EgressPolicy{}, err
+			}
+			return project.Egress.Value, nil
+		})
+		if err != nil {
+			return err
+		}
+		if ok {
+			body.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+		}
 		res, err := client.UpdateProject(cmd.Context(), body, apiclientgen.UpdateProjectParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -196,6 +215,7 @@ the console opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction:
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
 	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again`)
+	addEgressFlags(cmd, &egressOpts, "the project")
 	return cmd
 }
 

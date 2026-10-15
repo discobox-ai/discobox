@@ -680,11 +680,24 @@ plus weight for each method, path regex, client ID, and header condition — the
 by pattern text. Audit records store applied header names and rule identifiers,
 not injected secret values.
 
-Destination policy (`Allowlist`) allows everything unless enabled. Enabled, a
-host passes only if it matches a global domain/IP/CIDR entry or an entry in a
-rule scoped to the requesting client, so an enabled allowlist with no entries
-denies everything. HTTP requests it denies are answered `403`; denied `CONNECT`s
-and SOCKS connects are refused. All are audited as `host denied`.
+Destination policy (`Allowlist`) is per client
+([ADR 26-10-01-032](../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)):
+it holds the allow list of each *restricted* client, keyed by client ID. A
+client absent from it is unrestricted; one present reaches only its entries,
+so a present client with no entries reaches nothing. What a sandbox's entry
+is — the merge of its project, pool, harness, and own levels — is decided by
+the control plane; the proxy only enforces it. HTTP requests it denies are
+answered `403`; denied `CONNECT`s and SOCKS connects are refused. All are
+audited as `host denied`.
+
+[`egress`](egress) is the policy's shared vocabulary: an entry is a domain
+pattern (matched as header rules match theirs, so `github.com` is that host
+alone and `*.github.com` every name beneath it), an IP, or a CIDR — never a
+port. An IP literal is matched against IP and CIDR entries only, never a
+domain, so a client that resolves names itself is held to the IPs it was
+allowed. It also owns the merge rule and the coverage check the control plane
+refuses a wider child with, so validation, merging, and enforcement cannot
+read an entry three ways.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
 header rules, the sentinel set with its swap tuning — installed in the running

@@ -6509,6 +6509,86 @@ func (s *DNSAuditQuery) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *EgressPolicy) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EgressPolicy) encodeFields(e *jx.Encoder) {
+	{
+		if s.Allow.Set {
+			e.FieldStart("allow")
+			s.Allow.Encode(e)
+		}
+	}
+	{
+		if s.DenyByDefault.Set {
+			e.FieldStart("denyByDefault")
+			s.DenyByDefault.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEgressPolicy = [2]string{
+	0: "allow",
+	1: "denyByDefault",
+}
+
+// Decode decodes EgressPolicy from json.
+func (s *EgressPolicy) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EgressPolicy to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "allow":
+			if err := func() error {
+				s.Allow.Reset()
+				if err := s.Allow.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"allow\"")
+			}
+		case "denyByDefault":
+			if err := func() error {
+				s.DenyByDefault.Reset()
+				if err := s.DenyByDefault.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"denyByDefault\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EgressPolicy")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EgressPolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EgressPolicy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ErrorDetail) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -9364,6 +9444,18 @@ func (s *HarnessConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
+		if s.ImageEgressHosts.Set {
+			e.FieldStart("imageEgressHosts")
+			s.ImageEgressHosts.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -9519,34 +9611,36 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [27]string{
-	0:  "$schema",
-	1:  "additionalGroups",
-	2:  "boundSecrets",
-	3:  "builtIn",
-	4:  "configCommand",
-	5:  "configReminder",
-	6:  "configPorts",
-	7:  "configureError",
-	8:  "configureSandboxId",
-	9:  "configured",
-	10: "configuredFiles",
-	11: "createdAt",
-	12: "env",
-	13: "files",
-	14: "id",
-	15: "image",
-	16: "imageDigest",
-	17: "imageKind",
-	18: "name",
-	19: "platforms",
-	20: "projectId",
-	21: "relaunchCommand",
-	22: "runCommand",
-	23: "secrets",
-	24: "slug",
-	25: "updatedAt",
-	26: "volumes",
+var jsonFieldsNameOfHarnessConfig = [29]string{
+	0:  "egress",
+	1:  "imageEgressHosts",
+	2:  "$schema",
+	3:  "additionalGroups",
+	4:  "boundSecrets",
+	5:  "builtIn",
+	6:  "configCommand",
+	7:  "configReminder",
+	8:  "configPorts",
+	9:  "configureError",
+	10: "configureSandboxId",
+	11: "configured",
+	12: "configuredFiles",
+	13: "createdAt",
+	14: "env",
+	15: "files",
+	16: "id",
+	17: "image",
+	18: "imageDigest",
+	19: "imageKind",
+	20: "name",
+	21: "platforms",
+	22: "projectId",
+	23: "relaunchCommand",
+	24: "runCommand",
+	25: "secrets",
+	26: "slug",
+	27: "updatedAt",
+	28: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -9558,6 +9652,26 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
+		case "imageEgressHosts":
+			if err := func() error {
+				s.ImageEgressHosts.Reset()
+				if err := s.ImageEgressHosts.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"imageEgressHosts\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -9589,7 +9703,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"boundSecrets\"")
 			}
 		case "builtIn":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Bool()
 				s.BuiltIn = bool(v)
@@ -9651,7 +9765,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configureSandboxId\"")
 			}
 		case "configured":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Configured = bool(v)
@@ -9673,7 +9787,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -9705,7 +9819,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -9747,7 +9861,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -9778,7 +9892,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platforms\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -9829,7 +9943,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -9841,7 +9955,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -9872,10 +9986,10 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [4]uint8{
-		0b00001000,
-		0b01001010,
-		0b00010100,
-		0b00000011,
+		0b00100000,
+		0b00101000,
+		0b01010001,
+		0b00001100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -18357,6 +18471,39 @@ func (s *OptDateTime) UnmarshalJSON(data []byte) error {
 	return s.Decode(d, json.DecodeDateTime)
 }
 
+// Encode encodes EgressPolicy as json.
+func (o OptEgressPolicy) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes EgressPolicy from json.
+func (o *OptEgressPolicy) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptEgressPolicy to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptEgressPolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptEgressPolicy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes ExchangeRecipe as json.
 func (o OptExchangeRecipe) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -23058,6 +23205,12 @@ func (s *Pool) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *Pool) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -23237,43 +23390,44 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [36]string{
-	0:  "$schema",
-	1:  "cpuVcpus",
-	2:  "createdAt",
-	3:  "id",
-	4:  "imageKind",
-	5:  "memoryBytes",
-	6:  "name",
-	7:  "platform",
-	8:  "projectId",
-	9:  "providerInstance",
-	10: "providerInstanceId",
-	11: "storageBytes",
-	12: "health",
-	13: "ready",
-	14: "schedulable",
-	15: "degraded",
-	16: "provisionProgress",
-	17: "provisionProgressAt",
-	18: "availableCpuVcpus",
-	19: "availableMemoryBytes",
-	20: "availableStorageBytes",
-	21: "conditions",
-	22: "resources",
-	23: "resourcesReportedAt",
-	24: "desiredState",
-	25: "state",
-	26: "stateChangedAt",
-	27: "generation",
-	28: "observedGeneration",
-	29: "errorMessage",
-	30: "keyType",
-	31: "publicKey",
-	32: "registeredAt",
-	33: "lastSeenAt",
-	34: "revokedAt",
-	35: "updatedAt",
+var jsonFieldsNameOfPool = [37]string{
+	0:  "egress",
+	1:  "$schema",
+	2:  "cpuVcpus",
+	3:  "createdAt",
+	4:  "id",
+	5:  "imageKind",
+	6:  "memoryBytes",
+	7:  "name",
+	8:  "platform",
+	9:  "projectId",
+	10: "providerInstance",
+	11: "providerInstanceId",
+	12: "storageBytes",
+	13: "health",
+	14: "ready",
+	15: "schedulable",
+	16: "degraded",
+	17: "provisionProgress",
+	18: "provisionProgressAt",
+	19: "availableCpuVcpus",
+	20: "availableMemoryBytes",
+	21: "availableStorageBytes",
+	22: "conditions",
+	23: "resources",
+	24: "resourcesReportedAt",
+	25: "desiredState",
+	26: "state",
+	27: "stateChangedAt",
+	28: "generation",
+	29: "observedGeneration",
+	30: "errorMessage",
+	31: "keyType",
+	32: "publicKey",
+	33: "registeredAt",
+	34: "lastSeenAt",
+	35: "revokedAt",
+	36: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -23286,6 +23440,16 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -23297,7 +23461,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
 		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Float64()
 				s.CpuVcpus = float64(v)
@@ -23309,7 +23473,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -23321,7 +23485,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -23343,7 +23507,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -23355,7 +23519,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -23377,7 +23541,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -23399,7 +23563,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -23411,7 +23575,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -23433,7 +23597,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"health\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -23445,7 +23609,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -23457,7 +23621,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -23489,7 +23653,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -23501,7 +23665,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -23513,7 +23677,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -23556,7 +23720,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -23566,7 +23730,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -23586,7 +23750,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -23598,7 +23762,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -23670,7 +23834,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 3
+			requiredBitSet[4] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -23691,11 +23855,11 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
-		0b01101110,
-		0b11101101,
-		0b00011100,
-		0b00011011,
-		0b00001000,
+		0b11011100,
+		0b11011010,
+		0b00111001,
+		0b00110110,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -27229,6 +27393,12 @@ func (s *Project) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *Project) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -27324,25 +27494,26 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProject = [18]string{
-	0:  "$schema",
-	1:  "harnessConfigs",
-	2:  "createdAt",
-	3:  "default",
-	4:  "defaultPoolId",
-	5:  "defaultHarnessConfigId",
-	6:  "archiveRetentionSeconds",
-	7:  "sandboxUpgradePolicy",
-	8:  "id",
-	9:  "members",
-	10: "name",
-	11: "owner",
-	12: "ownerUserId",
-	13: "pools",
-	14: "sandboxProviderInstances",
-	15: "sandboxes",
-	16: "updatedAt",
-	17: "welcomed",
+var jsonFieldsNameOfProject = [19]string{
+	0:  "egress",
+	1:  "$schema",
+	2:  "harnessConfigs",
+	3:  "createdAt",
+	4:  "default",
+	5:  "defaultPoolId",
+	6:  "defaultHarnessConfigId",
+	7:  "archiveRetentionSeconds",
+	8:  "sandboxUpgradePolicy",
+	9:  "id",
+	10: "members",
+	11: "name",
+	12: "owner",
+	13: "ownerUserId",
+	14: "pools",
+	15: "sandboxProviderInstances",
+	16: "sandboxes",
+	17: "updatedAt",
+	18: "welcomed",
 }
 
 // Decode decodes Project from json.
@@ -27354,6 +27525,16 @@ func (s *Project) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -27375,7 +27556,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessConfigs\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -27387,7 +27568,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "default":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.Default = bool(v)
@@ -27439,7 +27620,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxUpgradePolicy\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -27461,7 +27642,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"members\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -27483,7 +27664,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"owner\"")
 			}
 		case "ownerUserId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.OwnerUserId = string(v)
@@ -27525,7 +27706,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxes\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -27537,7 +27718,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
 		case "welcomed":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Welcomed = bool(v)
@@ -27558,9 +27739,9 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b00001100,
-		0b00010101,
-		0b00000011,
+		0b00011000,
+		0b00101010,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -31567,6 +31748,12 @@ func (s *Sandbox) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -31666,26 +31853,27 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [19]string{
-	0:  "$schema",
-	1:  "harnessConfig",
-	2:  "config",
-	3:  "createdAt",
-	4:  "createdBy",
-	5:  "createdBySandboxId",
-	6:  "createdByUserId",
-	7:  "displayName",
-	8:  "id",
-	9:  "origin",
-	10: "originKey",
-	11: "platform",
-	12: "projectId",
-	13: "pool",
-	14: "poolId",
-	15: "runtime",
-	16: "meta",
-	17: "metaObservedAt",
-	18: "updatedAt",
+var jsonFieldsNameOfSandbox = [20]string{
+	0:  "egress",
+	1:  "$schema",
+	2:  "harnessConfig",
+	3:  "config",
+	4:  "createdAt",
+	5:  "createdBy",
+	6:  "createdBySandboxId",
+	7:  "createdByUserId",
+	8:  "displayName",
+	9:  "id",
+	10: "origin",
+	11: "originKey",
+	12: "platform",
+	13: "projectId",
+	14: "pool",
+	15: "poolId",
+	16: "runtime",
+	17: "meta",
+	18: "metaObservedAt",
+	19: "updatedAt",
 }
 
 // Decode decodes Sandbox from json.
@@ -31697,6 +31885,16 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -31718,7 +31916,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessConfig\"")
 			}
 		case "config":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Config.Decode(d); err != nil {
 					return err
@@ -31728,7 +31926,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"config\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -31760,7 +31958,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdBySandboxId\"")
 			}
 		case "createdByUserId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.CreatedByUserId = string(v)
@@ -31772,7 +31970,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdByUserId\"")
 			}
 		case "displayName":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.DisplayName = string(v)
@@ -31784,7 +31982,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"displayName\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -31826,7 +32024,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -31858,7 +32056,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"poolId\"")
 			}
 		case "runtime":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				if err := s.Runtime.Decode(d); err != nil {
 					return err
@@ -31888,7 +32086,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"metaObservedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -31909,9 +32107,9 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b11001100,
-		0b10010001,
-		0b00000100,
+		0b10011000,
+		0b00100011,
+		0b00001001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -36220,6 +36418,12 @@ func (s *SandboxCreateConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.HarnessConfigId.Set {
 			e.FieldStart("harnessConfigId")
 			s.HarnessConfigId.Encode(e)
@@ -36333,24 +36537,25 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [17]string{
-	0:  "harnessConfigId",
-	1:  "harnessMode",
-	2:  "model",
-	3:  "modelReasoningLevel",
-	4:  "modelServiceTier",
-	5:  "description",
-	6:  "env",
-	7:  "git",
-	8:  "skills",
-	9:  "skillsSources",
-	10: "image",
-	11: "name",
-	12: "prompt",
-	13: "secrets",
-	14: "source",
-	15: "sourceCodeReferences",
-	16: "user",
+var jsonFieldsNameOfSandboxCreateConfig = [18]string{
+	0:  "egress",
+	1:  "harnessConfigId",
+	2:  "harnessMode",
+	3:  "model",
+	4:  "modelReasoningLevel",
+	5:  "modelServiceTier",
+	6:  "description",
+	7:  "env",
+	8:  "git",
+	9:  "skills",
+	10: "skillsSources",
+	11: "image",
+	12: "name",
+	13: "prompt",
+	14: "secrets",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -36362,6 +36567,16 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "harnessConfigId":
 			if err := func() error {
 				s.HarnessConfigId.Reset()
@@ -36480,7 +36695,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"image\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -36568,7 +36783,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00001000,
+		0b00010000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -45817,6 +46032,12 @@ func (s *SandboxUpdateConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Name.Set {
 			e.FieldStart("name")
 			s.Name.Encode(e)
@@ -45824,8 +46045,9 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUpdateConfig = [1]string{
-	0: "name",
+var jsonFieldsNameOfSandboxUpdateConfig = [2]string{
+	0: "egress",
+	1: "name",
 }
 
 // Decode decodes SandboxUpdateConfig from json.
@@ -45836,6 +46058,16 @@ func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "name":
 			if err := func() error {
 				s.Name.Reset()
@@ -50866,6 +51098,12 @@ func (s *UpdateHarnessConfigBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -50891,11 +51129,12 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateHarnessConfigBody = [4]string{
-	0: "$schema",
-	1: "configuredFiles",
-	2: "files",
-	3: "name",
+var jsonFieldsNameOfUpdateHarnessConfigBody = [5]string{
+	0: "egress",
+	1: "$schema",
+	2: "configuredFiles",
+	3: "files",
+	4: "name",
 }
 
 // Decode decodes UpdateHarnessConfigBody from json.
@@ -50906,6 +51145,16 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -50980,6 +51229,12 @@ func (s *UpdatePoolBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -51011,12 +51266,13 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolBody = [5]string{
-	0: "$schema",
-	1: "cpuVcpus",
-	2: "memoryBytes",
-	3: "name",
-	4: "storageBytes",
+var jsonFieldsNameOfUpdatePoolBody = [6]string{
+	0: "egress",
+	1: "$schema",
+	2: "cpuVcpus",
+	3: "memoryBytes",
+	4: "name",
+	5: "storageBytes",
 }
 
 // Decode decodes UpdatePoolBody from json.
@@ -51027,6 +51283,16 @@ func (s *UpdatePoolBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -51362,6 +51628,12 @@ func (s *UpdateProjectBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Egress.Set {
+			e.FieldStart("egress")
+			s.Egress.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -51393,12 +51665,13 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateProjectBody = [5]string{
-	0: "$schema",
-	1: "name",
-	2: "archiveRetentionSeconds",
-	3: "sandboxUpgradePolicy",
-	4: "welcomed",
+var jsonFieldsNameOfUpdateProjectBody = [6]string{
+	0: "egress",
+	1: "$schema",
+	2: "name",
+	3: "archiveRetentionSeconds",
+	4: "sandboxUpgradePolicy",
+	5: "welcomed",
 }
 
 // Decode decodes UpdateProjectBody from json.
@@ -51409,6 +51682,16 @@ func (s *UpdateProjectBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "egress":
+			if err := func() error {
+				s.Egress.Reset()
+				if err := s.Egress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"egress\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()

@@ -124,7 +124,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
-	poolService := pools.NewService(store, manager, poolControlPlane)
+	poolService := pools.NewService(store, manager, poolControlPlane, sandboxService)
 	poolService.SetSandboxStateReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
@@ -165,7 +165,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
 	secretService.SetDirtier(engine)
 	return &Service{
-		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
+		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService, sandboxService),
 		HarnessConfigService:           harnessConfigService,
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,

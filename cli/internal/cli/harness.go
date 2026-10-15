@@ -426,7 +426,15 @@ func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 
 func (a *App) newHarnessUpdateCommand() *cobra.Command {
 	var opts harnessUpdateOptions
-	cmd := &cobra.Command{Use: "update HARNESS_CONFIG_ID", Short: "Update a harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	var egressOpts egressFlags
+	cmd := &cobra.Command{Use: "update HARNESS_CONFIG_ID", Short: "Update a harness config", Long: `Update a harness config.
+
+--egress-allow and --egress-deny-by-default set the harness's egress level, which
+every discobox on the harness converges onto, running ones included. The hosts
+the harness image declares (imageEgressHosts) are part of this level already
+and need not be listed.
+
+` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -434,6 +442,23 @@ func (a *App) newHarnessUpdateCommand() *cobra.Command {
 		body, err := updateHarnessBody(cmd, opts)
 		if err != nil {
 			return err
+		}
+		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
+			res, err := client.GetHarnessConfig(cmd.Context(), apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+			if err != nil {
+				return apimodel.EgressPolicy{}, err
+			}
+			harness, err := expectResponse[apimodel.HarnessConfig](res)
+			if err != nil {
+				return apimodel.EgressPolicy{}, err
+			}
+			return harness.Egress.Value, nil
+		})
+		if err != nil {
+			return err
+		}
+		if ok {
+			body.SetEgress(apiclientgen.NewOptEgressPolicy(level))
 		}
 		harnessRes, err := client.UpdateHarnessConfig(cmd.Context(), body, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
 		if err != nil {
@@ -448,6 +473,7 @@ func (a *App) newHarnessUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
+	addEgressFlags(cmd, &egressOpts, "the harness")
 	return cmd
 }
 

@@ -111,7 +111,7 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 	}
 	// The proxy material is disposable: an unarchive recreates the container,
 	// and creation stages fresh material and a fresh client certificate for it.
-	if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
 	return proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)

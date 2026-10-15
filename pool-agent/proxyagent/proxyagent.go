@@ -448,7 +448,7 @@ func PruneOrphanedMaterial(root layout.Root, projectID, poolID string, liveSandb
 		if err := RemoveSandboxMaterial(root, projectID, poolID, id); err != nil {
 			errs = append(errs, err)
 		}
-		if err := RemoveSandboxSentinels(root, projectID, poolID, id); err != nil {
+		if err := RemoveSandboxPolicy(root, projectID, poolID, id); err != nil {
 			errs = append(errs, err)
 		}
 	}

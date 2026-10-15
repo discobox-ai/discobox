@@ -445,6 +445,7 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		return secretState, err
 	}
 	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
+	r.markEgressAfterCreate(ctx, sb)
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return secretState, err
 	}
@@ -463,6 +464,27 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		setProviderState(sb, runtimeSandbox)
 	}
 	return secretState, nil
+}
+
+// markEgressAfterCreate queues one more egress push after a create attempt,
+// whatever it returned: the pool records a create's policy before anything that
+// can fail, and that policy was merged before this create was sent. A level
+// change committed since then may already have been pushed and taken, and this
+// create's write just replaced it, so the last word has to be a push merged
+// after it (ADR 26-10-01-032 §5).
+//
+// A mark that fails is logged and not returned. The container is what this
+// reconcile converges; recording it failed for a bookkeeping write would be
+// wrong about it, and a store that cannot take the mark cannot take the
+// reconcile's own write either, which retries the whole of it.
+func (r *SandboxReconciler) markEgressAfterCreate(ctx context.Context, sb *model.Sandbox) {
+	if r.engine == nil {
+		return
+	}
+	if err := r.engine.MarkDirty(ctx, SandboxEgressResourceType, SandboxDirtyID(sb.ProjectID, sb.ID)); err != nil {
+		slog.WarnContext(ctx, "could not queue the egress push after a create",
+			"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
+	}
 }
 
 func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
@@ -581,6 +603,14 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		if opts.SentinelRoutes, err = sandboxSentinelRoutes(ctx, r.store, sb, assignments); err != nil {
 			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
 		}
+		// Merged from the levels as they stand, so a new container is restricted
+		// from its first request (ADR 26-10-01-032 §5). A failed read fails the
+		// reconcile rather than running unrestricted.
+		policy, err := effectiveEgress(ctx, r.store, sb)
+		if err != nil {
+			return CreateOptions{}, err
+		}
+		opts.Egress = policy
 	}
 	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences

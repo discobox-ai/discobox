@@ -41,8 +41,7 @@ func TestSOCKSProxyMTLSIdentityDeniedAudit(t *testing.T) {
 			QueueSize: 16,
 		},
 		Allowlist: AllowlistConfig{
-			Enabled: true,
-			Domains: []string{"example.com"},
+			Clients: map[string][]string{"sandbox-1": {"example.com"}},
 		},
 	}, prepared.Bundle, nil)
 	if err != nil {

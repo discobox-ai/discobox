@@ -124,6 +124,10 @@ type SandboxRuntime interface {
 	// ImageDigest is written to a different value, through
 	// applyResolvedImageDigest.
 	UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, harnessConfigID string) error
+	// MarkEgressChangedTx converges this config's discoboxes onto a changed
+	// egress level — a person's, or the hosts its image declares
+	// (ADR 26-10-01-032 §5) — in the transaction that changes it.
+	MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
 }
 
 // Dirtier schedules reconciliation.

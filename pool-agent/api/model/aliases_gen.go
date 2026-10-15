@@ -5,6 +5,7 @@ package model
 
 import poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 
+type EgressPolicy = poolagentapi.EgressPolicy
 type ErrorDetail = poolagentapi.ErrorDetail
 type ErrorModel = poolagentapi.ErrorModel
 type GitSource = poolagentapi.GitSource

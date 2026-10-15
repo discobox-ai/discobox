@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/proxy/egress"
 )
 
 // Config controls a pool proxy instance.
@@ -138,19 +140,12 @@ type RecordingConfig struct {
 	BodyHeadBytes int64
 }
 
-// AllowlistConfig controls destination filtering.
+// AllowlistConfig is the destination policy (ADR 26-10-01-032 §6): each
+// restricted client's allow list, keyed by client ID (the sandbox ID). A client
+// absent from Clients is unrestricted; one present reaches only its entries,
+// so an empty list reaches nothing. Entries are egress.ValidateEntry's.
 type AllowlistConfig struct {
-	Enabled bool
-	Domains []string
-	IPs     []string
-	Rules   []AllowlistRule
-}
-
-// AllowlistRule scopes destination allowlist entries to authenticated clients.
-type AllowlistRule struct {
-	ClientIDs []string
-	Domains   []string
-	IPs       []string
+	Clients map[string][]string
 }
 
 // HeaderRule defines deterministic request header rewrites.
@@ -294,9 +289,12 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
-	for _, rule := range c.Allowlist.Rules {
-		if err := validateAllowlistRule(rule); err != nil {
-			return err
+	for clientID, allow := range c.Allowlist.Clients {
+		if strings.TrimSpace(clientID) == "" {
+			return errors.New("allowlist has an empty client ID")
+		}
+		if err := (egress.Policy{Allow: allow}).Validate(); err != nil {
+			return fmt.Errorf("allowlist for client %q: %w", clientID, err)
 		}
 	}
 	for _, rule := range c.Headers {
@@ -322,18 +320,6 @@ func validateSecretClient(client SecretClient) error {
 	for _, sentinel := range client.Sentinels {
 		if strings.TrimSpace(sentinel) == "" {
 			return fmt.Errorf("secret client %q has empty sentinel", client.ClientID)
-		}
-	}
-	return nil
-}
-
-func validateAllowlistRule(rule AllowlistRule) error {
-	if len(rule.Domains) == 0 && len(rule.IPs) == 0 {
-		return errors.New("allowlist rule must include at least one domain or IP")
-	}
-	for _, clientID := range rule.ClientIDs {
-		if strings.TrimSpace(clientID) == "" {
-			return errors.New("allowlist rule has empty client ID")
 		}
 	}
 	return nil

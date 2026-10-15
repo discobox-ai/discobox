@@ -2,26 +2,32 @@ package filter
 
 import "testing"
 
-func TestFilterClientScopedRules(t *testing.T) {
-	filter := New(Config{
-		Enabled: true,
-		Rules: []Rule{{
-			ClientIDs: []string{"sandbox-1"},
-			Domains:   []string{"api.example.com"},
-			IPs:       []string{"10.0.0.0/24"},
-		}},
-	})
+func TestFilterRestrictsOnlyTheClientsItNames(t *testing.T) {
+	filter := New(Config{Clients: map[string][]string{
+		"sandbox-1": {"api.example.com", "10.0.0.0/24"},
+		"sandbox-2": nil,
+	}})
 
-	if !filter.AllowHostForClient("api.example.com", "sandbox-1") {
-		t.Fatal("expected sandbox-1 to reach scoped domain")
+	for _, tc := range []struct {
+		host, client string
+		want         bool
+	}{
+		{"api.example.com", "sandbox-1", true},
+		{"10.0.0.10:443", "sandbox-1", true},
+		{"other.example.com", "sandbox-1", false},
+		{"api.example.com", "sandbox-2", false},
+		{"api.example.com", "sandbox-3", true},
+		{"anything.example", "", true},
+	} {
+		if got := filter.AllowHostForClient(tc.host, tc.client); got != tc.want {
+			t.Errorf("AllowHostForClient(%q, %q) = %v, want %v", tc.host, tc.client, got, tc.want)
+		}
 	}
-	if filter.AllowHostForClient("api.example.com", "sandbox-2") {
-		t.Fatal("expected sandbox-2 to be denied scoped domain")
-	}
-	if !filter.AllowHostForClient("10.0.0.10:443", "sandbox-1") {
-		t.Fatal("expected sandbox-1 to reach scoped CIDR")
-	}
-	if filter.AllowHostForClient("10.0.0.10:443", "sandbox-2") {
-		t.Fatal("expected sandbox-2 to be denied scoped CIDR")
+}
+
+func TestNilFilterAllowsEverything(t *testing.T) {
+	var filter *Filter
+	if !filter.AllowHostForClient("example.com", "sandbox-1") {
+		t.Fatal("a nil filter denied a host")
 	}
 }

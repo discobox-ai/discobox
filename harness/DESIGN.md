@@ -9,8 +9,10 @@ launchers, and configure scripts.
 
 - One sandbox image contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
-  volumes, supplementary groups (`additionalGroups`), features, and any command
-  overrides are published in OCI image labels (`harness.ImageMetadata`) for
+  volumes, supplementary groups (`additionalGroups`), features, the
+  destinations it needs to reach (`harness.egressHosts`, joining the harness's
+  egress level and never restricting anything themselves, ADR 26-10-01-032 §3),
+  and any command overrides are published in OCI image labels (`harness.ImageMetadata`) for
   server-side registration. There is no baked-in
   file inside the image carrying this data — `image.json` is the build-time
   authoring source a label is compacted from (see `Taskfile.yml`), not a
@@ -45,6 +47,19 @@ launchers, and configure scripts.
   base layer from before `features` existed declares none though it ships
   both; nothing reads `features` yet, and the first thing that does has to
   read such a Linux image as the base it is.
+- **`egressHosts` is what the agent needs to run, not every host it can use.**
+  claude-code declares the four hosts its network documentation lists for the
+  API, sign-in, token refresh, and claude.ai connectors. Plugins, the
+  changelog, artifacts, and Chrome are optional and left to a level a person
+  sets. codex and opencode declare none until their hosts are established from
+  their own documentation (ADR 26-10-01-032 §3), so a restricted project lists
+  them itself.
+- **claude-code sends no nonessential traffic.** Its env layer sets
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` for every discobox on it,
+  restricted or not: telemetry, error reports, and `/bug` are off. It is a
+  product decision taken with egress, not a consequence of it — a restricted
+  discobox would otherwise spend refused requests on them, and Discobox does
+  not want them sent from an unrestricted one either.
 - **A manifest is a stack of layers** (ADR 0086 §2). An image's effective
   manifest is `harness.ResolveImageLabels`: every
   `io.discobox.image.v1.<NN>-<name>` label in ascending order of that suffix,
@@ -52,7 +67,7 @@ launchers, and configure scripts.
   parent's labels and a `LABEL` replaces only the key it names, so a layer set
   by `sandbox-agent/Dockerfile` is present on every image built from it at any
   depth. Layers merge by identity — `env` per key, `volumes`/`files` by path,
-  `secrets` by name, groups by union; a harness's scalar fields, commands, and
+  `secrets` by name, groups and egress hosts by union; a harness's scalar fields, commands, and
   `config` go to the last layer that sets them — and none of them may unset.
   A layer is a fragment: only the merged result is validated, at registration.
   `00`–`49` is reserved for layers Discobox ships (`LayerNumberReserved`).

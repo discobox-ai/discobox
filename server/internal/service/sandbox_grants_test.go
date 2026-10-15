@@ -108,10 +108,11 @@ func judgedBy(svc *service.Service, judging *grantJudge) {
 	svc.SecretService.(*secrets.Service).SetJudge(judging)
 }
 
-// delegateToLead gives the lead a delegation grant of secret to github.com,
-// lapsing after lifetime (none when zero). The lead is created the first time:
-// a grant names a discobox that exists.
-func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *model.Secret, lifetime time.Duration) *model.SecretGrant {
+// ensureLead creates the lead discobox, sbx-lead, the first time it is asked
+// for: a grant names a discobox that exists, and a create from the sandbox role
+// is bounded by its creator's egress policy, read off its row
+// (ADR 26-10-01-032 §4).
+func ensureLead(t *testing.T, st *store.Store, projectID string) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := st.GetSandbox(ctx, projectID, "sbx-lead"); errors.Is(err, store.ErrNotFound) {
@@ -127,6 +128,15 @@ func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *mod
 	} else if err != nil {
 		t.Fatalf("get lead sandbox: %v", err)
 	}
+}
+
+// delegateToLead gives the lead a delegation grant of secret to github.com,
+// lapsing after lifetime (none when zero). The lead is created the first time:
+// a grant names a discobox that exists.
+func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *model.Secret, lifetime time.Duration) *model.SecretGrant {
+	t.Helper()
+	ctx := context.Background()
+	ensureLead(t, st, projectID)
 	grant := &model.SecretGrant{
 		ProjectID: projectID, SecretID: secret.ID, Scope: model.SecretGrantScopeSandbox, ScopeKey: "sbx-lead",
 		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
@@ -366,7 +376,8 @@ func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 // filesystem, so a URL that names a path there is only a name.
 func TestASandboxsSourceIsDeliveredAsAPersonsIs(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
+	ensureLead(t, st, projectID)
 	// A real host path, so it is absolute on the machine running the test.
 	directory := t.TempDir()
 	lead := auth.WithPrincipal(ctx, auth.Principal{
@@ -424,6 +435,7 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 	secret := createGitHubSecret(ctx, t, svc, projectID)
+	ensureLead(t, st, projectID)
 	lead := auth.WithPrincipal(ctx, auth.Principal{
 		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: projectID, UserID: "user-lead",
 	})
@@ -463,5 +475,48 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 
 	if err := create(ctx, "a-persons"); err != nil {
 		t.Fatalf("a person's create with a grant: %v", err)
+	}
+}
+
+// A restricted discobox cannot create one that reaches more than it does
+// (ADR 26-10-01-032 §4); a person can.
+func TestARestrictedDiscoboxCannotCreateAWiderOne(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, projectID := newSandboxTestService(t, nil)
+	restricted := func(allow ...string) serverapi.OptEgressPolicy {
+		return serverapi.NewOptEgressPolicy(serverapi.EgressPolicy{
+			Allow: serverapi.NewOptNilStringArray(allow), DenyByDefault: serverapi.NewOptBool(true),
+		})
+	}
+	leadBox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
+		HarnessName: serverapi.NewOptString("shell"),
+		Config:      serverapi.SandboxCreateConfig{Name: "lead", Egress: restricted("github.com")},
+	})
+	if err != nil {
+		t.Fatalf("create lead: %v", err)
+	}
+	lead := auth.WithPrincipal(ctx, auth.Principal{
+		Type: auth.PrincipalTypeSandbox, SandboxID: leadBox.ID, ProjectID: projectID, UserID: service.DefaultUserID,
+	})
+	create := func(ctx context.Context, name string, egress serverapi.OptEgressPolicy) error {
+		_, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("shell"),
+			Config:      serverapi.SandboxCreateConfig{Name: name, Egress: egress},
+		})
+		return err
+	}
+
+	var statusErr interface{ StatusCode() int }
+	if err := create(lead, "open", serverapi.OptEgressPolicy{}); !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusForbidden {
+		t.Fatalf("an unrestricted child: err = %v, want forbidden", err)
+	}
+	if err := create(lead, "wider", restricted("github.com", "evil.example")); !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusForbidden {
+		t.Fatalf("a wider child: err = %v, want forbidden", err)
+	}
+	if err := create(lead, "within", restricted("github.com")); err != nil {
+		t.Fatalf("a child within the lead's policy: %v", err)
+	}
+	if err := create(ctx, "a-persons", serverapi.OptEgressPolicy{}); err != nil {
+		t.Fatalf("a person's create: %v", err)
 	}
 }

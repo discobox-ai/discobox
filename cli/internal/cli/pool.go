@@ -138,7 +138,14 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 
 func (a *App) newPoolUpdateCommand() *cobra.Command {
 	var opts poolOptions
-	cmd := &cobra.Command{Use: "update POOL_ID", Short: "Update a pool", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+	var egressOpts egressFlags
+	cmd := &cobra.Command{Use: "update POOL_ID", Short: "Update a pool", Long: `Update a pool.
+
+--egress-allow and --egress-deny-by-default set the pool's egress level, which
+every discobox in the pool converges onto, running ones included. A build's own
+base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
+
+` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -164,6 +171,23 @@ func (a *App) newPoolUpdateCommand() *cobra.Command {
 		if cmd.Flags().Changed("storage-bytes") {
 			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 		}
+		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
+			res, err := client.GetPool(cmd.Context(), apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
+			if err != nil {
+				return apimodel.EgressPolicy{}, err
+			}
+			pool, err := expectResponse[apimodel.Pool](res)
+			if err != nil {
+				return apimodel.EgressPolicy{}, err
+			}
+			return pool.Egress.Value, nil
+		})
+		if err != nil {
+			return err
+		}
+		if ok {
+			body.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+		}
 		poolRes, err := client.UpdatePool(cmd.Context(), body, apiclientgen.UpdatePoolParams{ProjectId: projectID, PoolId: poolID})
 		if err != nil {
 			return err
@@ -176,6 +200,7 @@ func (a *App) newPoolUpdateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Pool display name")
 	addPoolAttributeFlags(cmd, &opts)
+	addEgressFlags(cmd, &egressOpts, "the pool")
 	return cmd
 }
 

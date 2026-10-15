@@ -1,6 +1,7 @@
 {
   "apiVersion": "discobox.dev/image/v1",
   "env": {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_TMPDIR": "/var/lib/claude-code",
     "DISABLE_AUTOUPDATER": "1",
     "FORCE_HYPERLINK": "1"
@@ -12,6 +13,7 @@
     "id": "claude-code",
     "name": "Claude Code",
     "description": "Anthropic Claude Code coding harness.",
+    "egressHosts": ["api.anthropic.com", "claude.ai", "platform.claude.com", "mcp-proxy.anthropic.com"],
     "files": [
       {
         "path": ".claude.json",

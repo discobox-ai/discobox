@@ -263,7 +263,7 @@ func TestProbeTLSReturnsTheChainTheHostPresents(t *testing.T) {
 	}
 
 	cfg := f.cfg
-	cfg.Allowlist = AllowlistConfig{Enabled: true, Domains: []string{"example.com"}}
+	cfg.Allowlist = AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"example.com"}}}
 	if err := f.server.ApplyConfig(cfg); err != nil {
 		t.Fatal(err)
 	}

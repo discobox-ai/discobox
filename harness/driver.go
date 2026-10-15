@@ -138,6 +138,12 @@ type Image struct {
 	Files           []File     `json:"files,omitempty"`
 	Secrets         []Secret   `json:"secrets,omitempty"`
 	Config          *ImageMode `json:"config,omitempty"`
+	// EgressHosts are the destinations the harness needs to work at all — its
+	// model API, chiefly — in the egress allow-entry form ("api.anthropic.com",
+	// "*.example.com"). They join the harness level's allow list of every
+	// restricted discobox on it, and never restrict anything themselves
+	// (ADR 26-10-01-032 §3).
+	EgressHosts []string `json:"egressHosts,omitempty"`
 }
 
 // ImageMode describes the interactive configuration command supported by an

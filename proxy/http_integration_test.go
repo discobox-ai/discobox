@@ -746,7 +746,7 @@ func TestHTTPProxyRecordsAHostItRefusesOnce(t *testing.T) {
 		CertDir:       prepared.Bundle.Dir,
 		DatabaseDSN:   dbPath,
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
-		Allowlist:     AllowlistConfig{Enabled: true, Domains: []string{"only.allowed.example.com"}},
+		Allowlist:     AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)

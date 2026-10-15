@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
@@ -363,8 +364,12 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	req := &poolapimodel.PoolSandboxUpdateRequest{
-		Sentinels: poolclient.NewOptNilStringArray(opts.Sentinels),
+	req := &poolapimodel.PoolSandboxUpdateRequest{}
+	if opts.Sentinels != nil {
+		req.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
+	}
+	if opts.Egress != nil {
+		req.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(*opts.Egress))
 	}
 	if len(opts.SentinelRoutes) > 0 {
 		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
@@ -727,6 +732,7 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if len(opts.SentinelRoutes) > 0 {
 		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
+	out.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.Egress))
 	if len(opts.SecretEnv) > 0 {
 		out.SecretEnv = poolclient.NewOptNilPoolSandboxCreateRequestSecretEnv(poolclient.PoolSandboxCreateRequestSecretEnv(opts.SecretEnv))
 	}
@@ -1108,4 +1114,11 @@ func poolSentinelRoutes(in map[string][]secretroute.Route) map[string][]poolclie
 		}
 	}
 	return out
+}
+
+func poolEgressPolicy(policy egress.Policy) poolclient.EgressPolicy {
+	return poolclient.EgressPolicy{
+		Allow:         poolclient.NewOptNilStringArray(policy.Allow),
+		DenyByDefault: poolclient.NewOptBool(policy.DenyByDefault),
+	}
 }

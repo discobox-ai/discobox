@@ -198,7 +198,7 @@ func MergeImageMetadata(layers ...ImageMetadata) ImageMetadata {
 		}
 		out.Env = mergeEnv(out.Env, layer.Env)
 		out.Volumes = mergeVolumes(out.Volumes, layer.Volumes)
-		out.AdditionalGroups = mergeGroups(out.AdditionalGroups, layer.AdditionalGroups)
+		out.AdditionalGroups = mergeStringSet(out.AdditionalGroups, layer.AdditionalGroups)
 		out.Features.Desktop = out.Features.Desktop || layer.Features.Desktop
 		out.Features.Docker = out.Features.Docker || layer.Features.Docker
 		out.Harness = mergeHarness(out.Harness, layer.Harness)
@@ -238,7 +238,7 @@ func mergeVolumes(base, over []Volume) []Volume {
 	return base
 }
 
-func mergeGroups(base, over []string) []string {
+func mergeStringSet(base, over []string) []string {
 	for _, group := range over {
 		group = strings.TrimSpace(group)
 		if group == "" {
@@ -289,6 +289,9 @@ func mergeHarness(base, over *Image) *Image {
 	}
 	merged.Files = mergeFiles(merged.Files, over.Files)
 	merged.Secrets = mergeSecrets(merged.Secrets, over.Secrets)
+	// A host is its own identity, so egress hosts accumulate: a layer adds the
+	// hosts it needs and removes none the image beneath it needed.
+	merged.EgressHosts = mergeStringSet(append([]string(nil), merged.EgressHosts...), over.EgressHosts)
 	return &merged
 }
 

@@ -54,7 +54,7 @@ func newSizeFixture(t *testing.T) *Service {
 		PoolSizeFields: []sandbox.PoolSizeField{sandbox.PoolSizeCPU, sandbox.PoolSizeMemory},
 	})
 	manager.RegisterProviderDefinition(unsizedType, sandbox.ProviderDefinition{Name: unsizedType})
-	return NewService(appStore, manager, nil)
+	return NewService(appStore, manager, nil, &recordedEgress{})
 }
 
 func requireBadRequest(t *testing.T, err error, mentions ...string) {

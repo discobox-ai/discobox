@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -811,4 +812,15 @@ func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 	default:
 		return model.SecretRequestStatusPending
 	}
+}
+
+// EgressPolicyToModel reads an egress policy level off the API, refusing one
+// the proxy could not enforce as a bad request naming the entry.
+func EgressPolicyToModel(in apimodel.EgressPolicy) (egress.Policy, error) {
+	allow, _ := in.Allow.Get()
+	level := egress.Policy{Allow: egress.Normalize(allow), DenyByDefault: in.DenyByDefault.Or(false)}
+	if err := level.Validate(); err != nil {
+		return egress.Policy{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return level, nil
 }
