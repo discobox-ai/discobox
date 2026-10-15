@@ -16,7 +16,7 @@ import (
 // It is this binary re-executed, as the libkrun launcher is, so the server
 // ships no disco-vm binary beside itself (ADR 26-10-09-106 §2). The engine
 // appends the shim's own arguments to the ones shimCommand gives it.
-const shimSubcommand = "__discovm-shim"
+const shimSubcommand = "__vm-shim"
 
 func shimCommand(exe, root, driver string) []string {
 	return []string{exe, shimSubcommand, "--root", root, "--driver", driver}
@@ -33,7 +33,7 @@ func RunShimIfInvoked() {
 	err := runShim(ctx, os.Args[2:])
 	stop()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discobox disco-vm shim: %v\n", err)
+		fmt.Fprintf(os.Stderr, "discobox vm shim: %v\n", err)
 		os.Exit(1)
 	}
 	os.Exit(0)
