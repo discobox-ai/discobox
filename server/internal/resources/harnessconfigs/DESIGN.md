@@ -108,7 +108,7 @@ true of it, and true *by rule* rather than by slug:
   **image kind** is `oci` (`platform.ImageKind`, ADR 26-10-09-106 §4): a label
   cannot say otherwise — one declaring `imageKind` is refused — and it is the
   kind of box it is applied to, the Docker driver's sandbox base image. A
-  manifest file records the one platform and the `discovm/<driver>` kind it
+  manifest file records the one platform and the `vm/<driver>` kind it
   must declare. Seeding compares both. The kind column defaults to `oci`; a
   manifest-file config from before kinds is left with none, and runs on no
   pool until its file declares one and it is refreshed (`internal/database`).
@@ -126,7 +126,7 @@ true of it, and true *by rule* rather than by slug:
   `harness.ResolveImageLabels` (`harness.ReadManifestFile` turns the file into
   that label set). Its digest is the file's sha256, so a changed overlay moves
   the pin as a rebuilt tag does, its platforms are the one platform the
-  file declares, which it must, and its image kind is the disco-vm kind it
+  file declares, which it must, and its image kind is the VM kind it
   must declare as well: a manifest file is no OCI image. It requires the
   overlay's `10-sandbox-base` layer, its proof of lineage (ADR 0086 §1). Both
   sources judge the merged result by its platform

@@ -44,7 +44,7 @@ func TestPoolPlacementsRunOnlyWhatAPoolHosts(t *testing.T) {
 
 // A harness is offered only where one pool both hosts a platform its image is
 // published for and runs the kind of image it is (ADR 26-10-09-106 §4): a
-// disco-vm harness for boxd is not offered with only a Docker pool of its
+// VM harness for boxd is not offered with only a Docker pool of its
 // platform, and is offered beside a boxd pool. A harness from a server that
 // sends no kind is OCI, one sent with an empty kind has none and runs nowhere,
 // and a pool that has not said what it runs rules nothing out.
@@ -64,25 +64,25 @@ func TestPoolPlacementsRunOnlyWhatAPoolRuns(t *testing.T) {
 		return h
 	}
 	docker := placementsOf([]apimodel.Pool{pool("linux/amd64", "oci")})
-	if docker.run(harness("discovm/boxd")) {
-		t.Error("a disco-vm harness is offered with only a Docker pool")
+	if docker.run(harness("vm/boxd")) {
+		t.Error("a VM harness is offered with only a Docker pool")
 	}
 	if !docker.run(harness("oci")) || !docker.run(harness("")) {
 		t.Error("an OCI harness is not offered on a Docker pool")
 	}
-	both := placementsOf([]apimodel.Pool{pool("linux/amd64", "oci"), pool("linux/amd64", "discovm/boxd")})
-	if !both.run(harness("discovm/boxd")) {
-		t.Error("a disco-vm harness is not offered beside a pool of its driver")
+	both := placementsOf([]apimodel.Pool{pool("linux/amd64", "oci"), pool("linux/amd64", "vm/boxd")})
+	if !both.run(harness("vm/boxd")) {
+		t.Error("a VM harness is not offered beside a pool of its driver")
 	}
-	if placementsOf([]apimodel.Pool{pool("linux/amd64", "discovm/vz")}).run(harness("discovm/boxd")) {
-		t.Error("a disco-vm harness is offered on a pool of another driver")
+	if placementsOf([]apimodel.Pool{pool("linux/amd64", "vm/vz")}).run(harness("vm/boxd")) {
+		t.Error("a VM harness is offered on a pool of another driver")
 	}
 	// The kind and the platform must hold of the same pool.
-	split := placementsOf([]apimodel.Pool{pool("linux/arm64", "discovm/boxd"), pool("linux/amd64", "oci")})
-	if split.run(harness("discovm/boxd")) {
+	split := placementsOf([]apimodel.Pool{pool("linux/arm64", "vm/boxd"), pool("linux/amd64", "oci")})
+	if split.run(harness("vm/boxd")) {
 		t.Error("a harness is offered on the strength of two pools that each fail it")
 	}
-	if !placementsOf([]apimodel.Pool{pool("linux/amd64", "")}).run(harness("discovm/boxd")) {
+	if !placementsOf([]apimodel.Pool{pool("linux/amd64", "")}).run(harness("vm/boxd")) {
 		t.Error("a pool that has not said what it runs ruled a harness out")
 	}
 	undeclared := apimodel.HarnessConfig{Platforms: []string{"linux/amd64"}, ImageKind: apiclientgen.NewOptString("")}

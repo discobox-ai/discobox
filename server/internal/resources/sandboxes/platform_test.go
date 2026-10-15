@@ -104,15 +104,15 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 }
 
 // A pool runs one kind of image beside its one platform, and create refuses a
-// harness whose image is another kind (ADR 26-10-09-106 §4): a disco-vm harness
+// harness whose image is another kind (ADR 26-10-09-106 §4): a VM harness
 // for boxd on a Docker pool of the very platform its image is published for is
-// a 409 that names both kinds, and the same harness is created on a discovm
+// a 409 that names both kinds, and the same harness is created on a vm
 // pool of boxd. A pool whose agent has not said what it runs is still a target.
 func TestCreateRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	machine := configuredHarness(t, st, "machine", "Machine")
 	asManifestFile(t, st, machine)
-	machine.ImageKind = platform.DiscoVM("boxd")
+	machine.ImageKind = platform.VM("boxd")
 	if err := st.UpdateHarnessConfig(ctx, machine); err != nil {
 		t.Fatal(err)
 	}
@@ -142,16 +142,16 @@ func TestCreateRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
 		t.Fatalf("err = %v, want a 409", err)
 	}
-	if !strings.Contains(err.Error(), "a disco-vm image for the boxd driver, and the pool runs OCI images") {
+	if !strings.Contains(err.Error(), "a VM image for the boxd driver, and the pool runs OCI images") {
 		t.Fatalf("err = %v, want it to say both kinds", err)
 	}
 
-	if _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.DiscoVM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	created, err := create("on-boxd", "pool-boxd")
 	if err != nil {
-		t.Fatalf("create on a discovm pool of its driver: %v", err)
+		t.Fatalf("create on a vm pool of its driver: %v", err)
 	}
 	if created.PoolID != "pool-boxd" || created.Platform != platform.Pool() {
 		t.Fatalf("created on %q as %q, want pool-boxd as %q", created.PoolID, created.Platform, platform.Pool())

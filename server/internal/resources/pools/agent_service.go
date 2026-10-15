@@ -97,7 +97,7 @@ func declaredPlatform(declared services.OptString) (platform.Platform, error) {
 }
 
 // declaredImageKind reads the kind of image a pool agent says its pool runs
-// (ADR 26-10-09-106 §4). One that is neither OCI nor a disco-vm driver's is
+// (ADR 26-10-09-106 §4). One that is neither OCI nor a VM driver's is
 // refused. None at all is an agent from before kinds, which runs OCI images:
 // the zero kind it returns is resolved by store.recordPoolImageKind.
 func declaredImageKind(declared services.OptString) (platform.ImageKind, error) {

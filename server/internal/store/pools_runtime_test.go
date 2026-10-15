@@ -524,13 +524,13 @@ func TestAnUndeclaredPoolRefusesASandboxWithAPlatform(t *testing.T) {
 // A pool runs one kind of image, and a sandbox is placed only where its
 // harness's image is that kind as well as the pool's platform (ADR 26-10-09-106
 // §4). A boxd pool and a Docker pool both host linux on this architecture: a
-// disco-vm harness for boxd is refused on the Docker pool with the kinds as the
+// VM harness for boxd is refused on the Docker pool with the kinds as the
 // reason — never ErrNotFound, which a caller would wait on for good — and
 // placed on the boxd pool, and an OCI harness the other way round.
 func TestPlacementMatchesTheImageKind(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	boxd := platform.DiscoVM("boxd")
+	boxd := platform.VM("boxd")
 	schedulablePool(t, s, "docker", platform.Pool(), platform.OCI)
 	schedulablePool(t, s, "boxd", platform.Pool(), boxd)
 	for slug, kind := range map[string]platform.ImageKind{"machine": boxd, "container": platform.OCI, "undeclared": {}} {
@@ -560,16 +560,16 @@ func TestPlacementMatchesTheImageKind(t *testing.T) {
 	err := place("machine", "docker")
 	var mismatch *platform.KindMismatchError
 	if !errors.As(err, &mismatch) || errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("a disco-vm harness on a Docker pool of its platform: err = %v, want a kind mismatch", err)
+		t.Fatalf("a VM harness on a Docker pool of its platform: err = %v, want a kind mismatch", err)
 	}
 	if mismatch.Image != boxd || mismatch.Pool != platform.OCI {
 		t.Fatalf("mismatch = %+v", mismatch)
 	}
-	if !strings.Contains(err.Error(), "disco-vm image for the boxd driver, and the pool runs OCI images") {
+	if !strings.Contains(err.Error(), "VM image for the boxd driver, and the pool runs OCI images") {
 		t.Fatalf("err = %q, want it to say both kinds", err)
 	}
 	if err := place("machine", "boxd"); err != nil {
-		t.Fatalf("a disco-vm harness on a pool of its driver: %v", err)
+		t.Fatalf("a VM harness on a pool of its driver: %v", err)
 	}
 	if err := place("container", "boxd"); !errors.As(err, &mismatch) {
 		t.Fatalf("an OCI harness on a boxd pool: err = %v, want a kind mismatch", err)
@@ -609,12 +609,12 @@ func TestAnAgentThatDeclaresNoImageKindRunsOCI(t *testing.T) {
 	if pool.ImageKind != platform.OCI {
 		t.Fatalf("registered with no kind: image kind = %q, want oci", pool.ImageKind)
 	}
-	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.DiscoVM("boxd"), true, true, false, 1, 1, 1, nil)
+	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pool.ImageKind != platform.DiscoVM("boxd") {
-		t.Fatalf("reported discovm/boxd: image kind = %q", pool.ImageKind)
+	if pool.ImageKind != platform.VM("boxd") {
+		t.Fatalf("reported vm/boxd: image kind = %q", pool.ImageKind)
 	}
 	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, true, true, false, 1, 1, 1, nil)
 	if err != nil {

@@ -393,7 +393,7 @@ func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
 // An agent from before image kinds declares none (runs is zero). Unlike its
 // platform, what it runs is known: every agent before kinds ran OCI images in
 // containers, there being no other runtime, so OCI is recorded for it. A pool
-// is never left without a kind once its agent has reported, and a discovm
+// is never left without a kind once its agent has reported, and a vm
 // pool's agent always declares its driver's.
 func recordPoolImageKind(pool *model.Pool, runs platform.ImageKind) {
 	if runs.IsZero() {
@@ -421,7 +421,7 @@ func recordPoolImageKind(pool *model.Pool, runs platform.ImageKind) {
 //
 // The kind of image the pool runs must be the kind its harness's image is (ADR
 // 26-10-09-106 §4), or the sandbox is refused with a *platform.KindMismatchError
-// — a disco-vm harness on a Docker pool of the same platform, say. It is not
+// — a VM harness on a Docker pool of the same platform, say. It is not
 // ErrNotFound either, for the same reason.
 //
 // sandbox may stand in for a row not written yet — an import restores the tree
