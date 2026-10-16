@@ -771,6 +771,11 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   honor as root. That is why the configure sandbox runs as a non-root account
   (`harness.ConfigureUserName`, uid `ConfigureUserUID`) rather than the image's
   root — see `resources/harnessconfigs/DESIGN.md` → Configured lifecycle.
+  The `.claude.json` template also sets `hasSeenAutoDefaultNudge`. With that
+  default mode, Claude Code otherwise opens on an offer to make auto mode the
+  default, whose preselected answer switches bypass off;
+  `skipDangerousModePermissionPrompt` does not cover it. Like trust, it reaches
+  only a sandbox's first `.claude.json`.
 - Every path ends in a `claude -p` check with only the chosen variable in the
   environment (and the credentials file moved aside), so a credential that
   cannot actually talk to the API never reaches a `HarnessConfig`. The script
