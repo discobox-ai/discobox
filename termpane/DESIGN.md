@@ -406,6 +406,14 @@ can print inside the pane collect whatever the user last copied for something
 else. xterm ships it disabled, and a pane has no way to ask the host's
 permission, so the sequence is consumed and nothing is written back.
 
+**A host may watch an OSC number go past** (`WithOSC`). The pane hands it the
+data of each such sequence as the emulator parses it, inside the `Update` that
+fed the bytes, and declines it, so the emulator still does whatever it would
+have. It is how a host reads a protocol the pane has no reason to know — the
+console reads OSC 7501, a program's report of its own status — without the pane
+growing a dependency on it, or the host a second parser racing the emulator
+over split sequences.
+
 **A held Ctrl after the prefix is tolerated.** `afterPrefix` matches the second
 keystroke with or without Ctrl, because the prefix is a Ctrl chord and letting
 go precisely between the two keys is a skill nobody should need. GNU screen has

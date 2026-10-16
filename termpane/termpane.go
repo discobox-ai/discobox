@@ -148,6 +148,8 @@ type options struct {
 	wordChars *string
 	// listen wraps the command that waits for output; see WithListen.
 	listen func(tea.Cmd) tea.Cmd
+	// osc are the OSC commands the host watches go past; see WithOSC.
+	osc map[int][]func([]byte)
 }
 
 // prefixBinding is a key reserved behind the prefix and what it emits.
@@ -177,6 +179,24 @@ func WithScrollback(lines int) Option {
 // to its end, and this one has no end until the far end writes.
 func WithListen(wrap func(tea.Cmd) tea.Cmd) Option {
 	return func(o *options) { o.listen = wrap }
+}
+
+// WithOSC hands observe the data of every OSC sequence numbered code the far
+// end writes — the number, its `;` and the body, as the emulator parsed it —
+// in the order written. It watches rather than handles: the emulator does with
+// the sequence whatever it would have done anyway.
+//
+// observe runs inside the Update that fed the emulator the bytes, on the
+// host's update goroutine, so it may touch the host's state, and must not
+// block. It is called for each stream the pane attaches; a host that keeps
+// what it is told resets it when it attaches the pane.
+func WithOSC(code int, observe func(data []byte)) Option {
+	return func(o *options) {
+		if o.osc == nil {
+			o.osc = map[int][]func([]byte){}
+		}
+		o.osc[code] = append(o.osc[code], observe)
+	}
 }
 
 // WithReadOnly draws a stream nothing types at: keys, text and pastes are not
@@ -430,6 +450,14 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	m.emu.SetCallbacks(m.callbacks())
 	m.watchMouseModes()
 	m.watchClipboard()
+	for code, observers := range m.opts.osc {
+		m.emu.RegisterOscHandler(code, func(data []byte) bool {
+			for _, observe := range observers {
+				observe(data)
+			}
+			return false
+		})
+	}
 	m.emu.Focus()
 	m.sel = selection.New(emuGrid{m})
 	if m.opts.wordChars != nil {
