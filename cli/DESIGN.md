@@ -1296,6 +1296,20 @@ from it can never disagree.
 The sort happens before the output-mode branch, so `-o json` is ordered the same
 as the table: the order is the CLI's answer, not a table-rendering detail.
 
+## What a Discobox's Agent Reports
+
+`discobox ls`'s AGENT column, and the console row's agent glyph, are what the
+program in the discobox's primary terminal last reported of itself over
+OSC 7501 (`sandboxProgramStatus`, ADR 26-10-16-424 §5): `working`, `idle`,
+`done`, `error`, or `blocked`, with what it is blocked on (`blocked:permission`),
+and `-` with none. It is read from the agent status the listing already carries
+(`runtime.agentStatus.sessions[].programStatus`) through a local struct, for the
+reason the server's display name is: the payload is whatever the box's agent
+sent. It is none for a discobox that is not running, whose row keeps the last
+status it posted, and a state this client does not know reads as none. The
+program's text is made displayable before it is kept: no control characters,
+bidirectional overrides or invisible formatting.
+
 ## Sandbox Display Name
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the

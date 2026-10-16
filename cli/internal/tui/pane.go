@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -120,6 +121,11 @@ type pane struct {
 	// the screen whose ending ends the workspace. It is the first tab of the
 	// terminals column and always wears 0.
 	primary bool
+	// reported is what the primary's program has reported of itself over
+	// OSC 7501 since the pane attached, and reportedAt when it last did; see
+	// focusedProgramStatus. Only the primary watches.
+	reported   programstatus.Set
+	reportedAt time.Time
 
 	// service is the declared service this pane is drawing, empty for every
 	// other pane. It is what the lifecycle keys act on, and its presence is

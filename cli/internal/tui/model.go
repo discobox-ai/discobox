@@ -54,6 +54,11 @@ type Model struct {
 	unreachable          string
 	unreachableIsPrimary bool
 
+	// statusTerminal is whether the window's terminal answered the OSC 7501
+	// probe, and statusSent the record last sent to it; see programstatus.go.
+	statusTerminal bool
+	statusSent     string
+
 	// The three things the window re-reads on the beat, each one at a time:
 	// the listing, the machine readout, and the credential inbox. See poll.
 	//
@@ -593,7 +598,7 @@ func (m *Model) made() *Sandbox {
 // is heard the usual way. Closing that last gap is Bubble Tea's to do, by
 // listening before it first reads the size.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestWindowSize, textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer()}
+	cmds := []tea.Cmd{tea.RequestWindowSize, textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer()}
 	// An attach opens on its workspace rather than on the prompt, from the row
 	// the command already has: waiting for the listing to come back would hold
 	// the attach behind a request it does not need. The listing is still read,
@@ -871,6 +876,12 @@ func status(format string, args ...any) tea.Cmd {
 // in update below; what is here is what has to happen around every message
 // rather than in any handler.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The terminal's answer to the program-status probe is the window's, not
+	// input for anything on screen.
+	if isProgramStatusReply(msg) {
+		m.statusTerminal = true
+		return m, m.syncProgramStatus()
+	}
 	cmd := m.update(msg)
 	// Whatever just happened may have changed which pane is on screen, and a
 	// pane on screen is one being read. Doing it here rather than at each of
@@ -881,6 +892,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// can come and go. See armBannerPulse.
 	if pulse := m.armBannerPulse(); pulse != nil {
 		cmd = tea.Batch(cmd, pulse)
+	}
+	// And for what the window tells its terminal about the box it is on:
+	// focus and that box's status both move here, whichever way they moved.
+	if status := m.syncProgramStatus(); status != nil {
+		cmd = tea.Batch(cmd, status)
 	}
 	return m, cmd
 }

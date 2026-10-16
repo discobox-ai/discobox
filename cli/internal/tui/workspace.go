@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -705,7 +706,6 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(paneWorkspace, service)...),
 		stream:  msg.term,
 		action:  action,
 		sandbox: m.paneBox,
@@ -714,6 +714,16 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		primary: primary,
 		service: msg.exec.Service,
 	}
+	opts := m.paneOptions(paneWorkspace, service)
+	if primary {
+		// The primary is the box's agent, whose status the window speaks
+		// for while this box is the one it is on (programstatus.go).
+		opts = append(opts,
+			termpane.WithOSC(programstatus.Code, p.observeProgramStatus),
+			termpane.WithOSC(133, p.observePrompt),
+		)
+	}
+	p.term = termpane.New(opts...)
 
 	col := &m.shells
 	if terminal {

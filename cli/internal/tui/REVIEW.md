@@ -82,6 +82,14 @@
   own clock fires, so anything a frame is meant to *do* cannot be timed out
   with a pause of ours.
 
+- **What the window sets on its terminal that Bubble Tea does not reset, it
+  takes back twice**: on its own way out, once the program has ended
+  (`Run` → `clearProgramStatus`), and in `termguard`'s reset for a window that
+  died. `termguard` writes only after a crash, so a reset kept there alone is
+  missing from every ordinary quit — the OSC 7501 record the window speaks
+  for its box would stay on the user's tab, claiming the box is working long
+  after the window that knew is gone.
+
 - **Every frame is on the alternate screen.** Nothing is printed inline: rows
   left on the primary screen surface again on the way out or around a
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a

@@ -877,11 +877,44 @@ and asks nothing of anyone.
 A credential request waiting on a person lights the row red too
 (`Sandbox.standing`), tag or no tag: an agent asking for a credential is as
 stuck as a pull request waiting on somebody, and the `!` beside the harness is
-one cell that is easy to look past. Only credential requests count — the
-listing carries them per box (`PendingRequests`).
+one cell that is easy to look past. The listing carries the requests per box
+(`PendingRequests`). So does an agent that reports it is `blocked` (below).
+
+## What the agent reports is a glyph beside the state
+
+What the program in a box's primary terminal last reported of itself over
+OSC 7501 (`Sandbox.Agent`, ADR 26-10-16-424 §5) is the second glyph on a row,
+right after the box's own state dot: `▶` working, `◇` idle (dim), `◆` blocked
+(red), `✓` done, `×` failed (red), and a blank cell for no report, so the
+names stay in line. Each is a shape as well as a color, so working and blocked
+are told apart where the colors are close. Under the cursor, a blocked or
+failed agent's message takes the name's place, the way a box's error does.
+Without color the word takes `running`'s place in the state column, since
+every report implies a running box, and a failed agent is `failed` rather
+than the box's own `error`. The status is the client's reading of the
+listing's agent status (`cli.sandboxProgramStatus`): the primary session's,
+made displayable, and none for a box that is not running, whose row keeps the
+last status it posted.
+
+The window also speaks it to the terminal it runs in (`programstatus.go`, §6):
+once that terminal answers the probe `Init` sends, the status of the box the
+window is on — the workspace's box, or the list's cursor row while the list
+has focus — is sent as that terminal's root record, again whenever it changes,
+and as a clear when there is none. The workspace's box speaks from its primary
+pane's stream (`termpane.WithOSC`) while the last report it heard is newer
+than the poll, which lags nothing; a poll observed since then wins, since it
+carries the shim's lifetime rules — a record dropped because its process left
+the foreground — that the pane cannot keep. A repaint on attach carries no
+report, so until the pane hears one the poll stands in, and an OSC 133 `A`
+prompt or the session ending drops what the stream said. The
+record is re-encoded from the parsed fields, never relayed as bytes. The
+window clears it once the program has ended (`clearProgramStatus`, from
+`Run`), since Bubble Tea resets only what it set itself, and `termguard`
+clears it after a crash.
 
 The workspace header says it in the same colors (`paneHeaderFields`).
-`blocked` — the tag, or a request waiting — takes the git word's place, in
+`blocked` — the tag, a request waiting, or an agent reporting it is blocked
+(`Sandbox.standing`) — takes the git word's place, in
 red, whatever git says, since waiting on a person outranks the work's state. It
 is a field of its own ahead of the git summary rather than the word itself: a
 narrowing header gives the word up early, because its mark is on the git
@@ -2785,7 +2818,7 @@ rest rather than a second implementation that drifts from them.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
 `styles.color` carries it. Without color the state glyph gives way to the state
-spelled out in a column, the mark is dropped entirely (it is shading, not line
+spelled out in a column (the agent's glyph to its word, in the same column), the mark is dropped entirely (it is shading, not line
 art), and every style is the identity. `highlight` writes the row background
 escape by hand and re-asserts it after both spellings of the reset, because a
 style cannot paint across content that carries its own colors.

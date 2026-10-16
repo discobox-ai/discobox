@@ -951,6 +951,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	row.Pushable = pushable(sb, hostID)
 	row.AwaitsDelivery = deliverableHere(sb, hostID)
 	row.Ports = sandboxListeningPorts(sb)
+	if agent, ok := sandboxProgramStatus(sb); ok {
+		row.Agent = agent
+	}
+	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
 			Known:         true,

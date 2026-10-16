@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/review/source"
@@ -223,6 +224,16 @@ type Sandbox struct {
 	// model annotates it from the project's request listing, so one poll
 	// answers the list and the workspace both.
 	PendingRequests int
+
+	// Agent is what the program in the discobox's primary terminal last
+	// reported of itself over OSC 7501 (ADR 26-10-16-424): working, idle,
+	// blocked on a person, done, or failed. The zero State is no report, and
+	// a discobox that is not running carries none.
+	Agent programstatus.Status
+	// AgentObservedAt is when the discobox's agent took the status Agent was
+	// read from, on the sandbox's clock: what a fresher report heard on the
+	// stream is measured against.
+	AgentObservedAt time.Time
 
 	// HasRuntime is the power axis, carried beside State because State
 	// collapses it. The server keeps existence and power as two fields
@@ -975,12 +986,13 @@ const (
 )
 
 // standing is blocked when the discobox's pull request is (Sandbox.prStatus),
-// or when a credential request on it is waiting on a person — an agent asking
-// for a credential is as stuck as a pull request waiting on somebody — and
-// ready when its pull request is ready for a human merge.
+// when a credential request on it is waiting on a person — an agent asking
+// for a credential is as stuck as a pull request waiting on somebody — or
+// when its agent reports it is blocked on one, and ready when its pull
+// request is ready for a human merge.
 func (s Sandbox) standing() standing {
 	switch {
-	case s.PendingRequests > 0 || s.prStatus() == prBlocked:
+	case s.PendingRequests > 0 || s.prStatus() == prBlocked || s.Agent.State == programstatus.Blocked:
 		return standingBlocked
 	case s.prStatus() == prReady:
 		return standingReady
