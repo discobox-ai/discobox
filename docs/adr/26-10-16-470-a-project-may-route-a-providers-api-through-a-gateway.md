@@ -72,13 +72,20 @@ body of `PUT /projects/{projectId}/gateways/anthropic`:
   `remove` is names. A name that is hop-by-hop
   ([proxy: Hop-by-hop Headers](../../proxy/DESIGN.md#hop-by-hop-headers)) or
   `Host` is refused.
-- Validated when written, never when applied.
+- Validated when written, never when applied: a proxy skips a route it cannot
+  apply rather than refusing every other policy that arrives with it.
 
 ### 2. Matching and rewriting
 
 - **A prefix matches on segment boundaries**, as Gateway API's `PathPrefix`:
   `/v1` and `/v1/` both match `/v1` and `/v1/messages`, never `/v1beta`. A
   trailing slash is dropped when stored.
+- **The request is matched as it will be read.** The host as policy reads
+  it, without a trailing dot; the path with its dot and empty segments
+  resolved, and that cleaned path is what is forwarded — a discobox can
+  neither spell its way around a gateway nor out of its target's prefix. A
+  path under a gateway's origin with an encoded slash or a backslash is
+  refused, since a server may read it as another path after the match.
 - **The longest matching prefix wins.** Two gateways with the same `match`
   are refused, so a request matches at most one.
 - **The rest of the path and the query are kept.** `/v1/messages?beta=true`
@@ -102,16 +109,19 @@ In order:
    allowed the matched host, as it would be without a gateway; the target is
    never filtered, since the discobox never names it.
 2. The gateway rewrites the URL and the headers.
-3. The request is forwarded, cached, and audited. The audit row records the
-   URL as sent by the discobox and, beside it, the gateway's name and the URL
-   forwarded; headers set from the environment are redacted as a swapped
-   secret is.
+3. The request is forwarded and audited. The audit row records the URL as
+   sent by the discobox and, beside it, the gateway's name and the URL
+   forwarded; every header the gateway touches is redacted as a swapped
+   secret is. The response is never cached: it is the gateway's, which the
+   project can change or remove, and a key made from the request as sent
+   would outlive either.
 
 So a provider key swapped in by its sentinel — granted for
 `api.anthropic.com` — is sent to the gateway. That is deliberate: a gateway
 that passes the provider's key through needs it, and the project naming the
 gateway is the project vouching for it. A gateway that uses its own key
-removes or `set`s the provider's header.
+removes or `set`s the provider's header; the credential then never reaches the
+upstream, and a `401` is not read as its refusal.
 
 ### 4. Values from the server's environment, resolved on demand
 
@@ -124,13 +134,24 @@ The server never pushes a value. The pool's proxy asks for one when a request
 first needs it — `POST /api/pools/{poolId}/resolve-gateway-headers`, beside
 `resolve-sandbox-secret`, with the same pool assertion — naming the sandbox
 and the gateway. The server checks the sandbox is on that pool and in the
-gateway's project, and answers the resolved headers. The proxy keeps an
-answer for five minutes, keyed by the gateway's revision.
+gateway's project, and answers the resolved headers. The proxy keeps each
+value, per client, gateway, and variable, fresh for five minutes, and drops it
+when the gateway is removed. A stale value is asked for again under the
+outage rules ADR 26-10-14-482 gives a credential: asked again within the
+retry window, and served stale while the control plane does not answer.
 
-A variable that is not set is not an empty header. The proxy refuses the
-request with `502`, saying which variable, and audits it as blocked: sending
-it without the gateway's key would fail anyway, less legibly, and sending it
-to the original host would bypass the gateway the project asked for.
+A variable that is not set, or set empty, is not an empty header. The proxy
+refuses the request with `502`, saying which variable, and audits it as
+blocked: sending it without the gateway's key would fail anyway, less
+legibly, and sending it to the original host would bypass the gateway the
+project asked for. A control plane that does not answer, with no value held,
+is a `503` with `Retry-After`, for the same reasons.
+
+Any project member may name any `DISCOBOX_GATEWAY_*` variable, and so may
+send its value to a target of their choosing. That is accepted: Discobox has
+no role below a project member, and a member already holds the project's
+secrets and harness configs. When project roles exist, writing a gateway
+belongs to the role that administers the project.
 
 ### 5. Delivery
 
