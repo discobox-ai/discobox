@@ -52,7 +52,8 @@ machine, so a boxd sandbox never idles out.
 
 Idle and sleep are not the same claim. Idle is the sandbox's own inference that
 nothing is going on: no terminal changing, nobody connected, no lease. Nothing
-in it is worth keeping in memory. Sleep is an agent saying it will be back:
+in it is worth keeping in memory — except an agent that says it is blocked on
+a person: its prompt (see Deferred). Sleep is an agent saying it will be back:
 what it holds in memory — a harness session, a running build, a warm cache —
 is worth keeping if the runtime can keep it.
 
@@ -309,6 +310,11 @@ would make an idle sandbox resume instantly. Rejected because a frozen
 sandbox still holds its memory on the host, and an idle one has, by the
 policy's own evidence, nothing in it worth holding. Freezing is worth its cost
 only when someone has said they are coming back, and sleep is that statement.
+One idle sandbox does hold something worth keeping: one whose agent reports,
+over OSC 7501, that it is blocked on a person
+([26-10-16-424](26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md)
+§4 counts that as idle). Its prompt may be lost to a stop, if its harness does
+not restore it on relaunch. See Deferred.
 
 **The server acts on the stored status as it stands.** ADR 0108 rejected
 server reaping for reaping on stale data, and the objection holds: a person
@@ -388,6 +394,20 @@ while the sandbox is down, and a person's stop cancels it (§6).
 
 ## Deferred
 
+- **An idle sandbox whose agent is blocked is frozen, not stopped.** When
+  the idle policy finds the sandbox idle and its primary terminal's program
+  status is `blocked`
+  ([26-10-16-424](26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md)
+  §§3–4), it powers down for a third reason, `blocked`, so a runtime that can
+  freeze keeps the harness and its prompt for the person to answer. It is not
+  `sleep`: sleep's confirmation needs a pending request and consumes it (§5),
+  and skips the fresh idle check. `blocked` is confirmed as `idle` is — idle
+  now — and as still blocked now, so a person who attached since the report is
+  not frozen out; only the runtime's choice between freezing and stopping
+  follows sleep's. Until a runtime can freeze it would stop, as `idle` does.
+  Revisit with freeze (below), and decide then whether an agent reporting
+  `idle` (waiting for its next instruction) gets the same treatment.
+  This is the follow-on 26-10-16-424's Deferred names.
 - **Freeze.** Every runtime implements power-down for sleep as stop. Disco
   VM's freeze plugs in behind it. A frozen sandbox resumes without a boot, so
   §7's handover never runs there; how a resumed harness learns it was woken
