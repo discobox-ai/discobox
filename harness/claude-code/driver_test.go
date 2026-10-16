@@ -462,6 +462,34 @@ func TestEveryPublishedEventIsItsOwnCanonicalName(t *testing.T) {
 	}
 }
 
+// The image's settings open Claude Code in bypass mode, and a .claude.json that
+// has not seen Claude Code's offer to make auto mode the default opens on that
+// offer instead, whose first choice switches bypass off. The template marks it
+// seen, so a sandbox starts in the mode its settings say.
+func TestImageStartsPastTheAutoModeOffer(t *testing.T) {
+	raw, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image harness.ImageMetadata
+	if err := json.Unmarshal(raw, &image); err != nil {
+		t.Fatal(err)
+	}
+	if image.Harness == nil {
+		t.Fatal("image.json declares no harness")
+	}
+	for _, file := range image.Harness.Files {
+		if file.Path != ".claude.json" {
+			continue
+		}
+		if !strings.Contains(file.Content, `"hasSeenAutoDefaultNudge": true`) {
+			t.Fatalf(".claude.json template = %s, want hasSeenAutoDefaultNudge set", file.Content)
+		}
+		return
+	}
+	t.Fatal("image.json declares no .claude.json template")
+}
+
 // Anthropic's API takes one login at many endpoints, and only inference answers
 // for whether it is alive: the self-hosted runner poll refuses a subscription
 // login that works, and event logging accepts whatever it is sent. Both
