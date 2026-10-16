@@ -46,7 +46,7 @@ keeps its memory and its tmpfs: `/run` survives, the harness process is still
 the one that went to sleep, and nothing boots. Whether a sleep becomes a
 shutdown or a freeze is a property of the runtime, which only the control
 plane knows. Today the sandbox powers itself off (ADR 0108 §1), which can only
-ever be a shutdown — and on a boxd machine (`discobox-ai/disco-vm`) cannot
+ever be a shutdown — and on a boxd machine (`discobox-ai/vm`) cannot
 happen at all, because powering the guest off from inside does not stop the
 machine, so a boxd sandbox never idles out.
 
