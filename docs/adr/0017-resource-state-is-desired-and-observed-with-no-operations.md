@@ -5,7 +5,10 @@
   [ADR 0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) for
   sandboxes; §12's placement of the start-on-use *decision* in the pool agent
   superseded by [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md), which also lets an action lead to recorded intent
-  (§9); everything else stands.
+  (§9); §9 amended by
+  [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md),
+  which lets the server hold one scheduled start, sent once; everything else
+  stands.
 - **Date**: 2026-07-30
 - **Relates to**: [ADR 0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md),
   whose re-pin rule this model would have made correct by construction, and

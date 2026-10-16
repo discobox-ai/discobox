@@ -1,7 +1,9 @@
 # 0108 — A sandbox stops itself when its terminals go quiet
 
 - **Status**: Accepted (§2's title change superseded by
-  [ADR 0124](0124-a-terminal-is-active-while-what-it-shows-changes.md))
+  [ADR 0124](0124-a-terminal-is-active-while-what-it-shows-changes.md); §1's
+  power-off by the sandbox itself superseded by
+  [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md))
 - **Date**: 2026-09-11
 - **Relates to**: [ADR 0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §9, which removed desired power state so that idle-stop could exist, and

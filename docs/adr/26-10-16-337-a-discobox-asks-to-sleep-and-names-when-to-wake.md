@@ -1,6 +1,6 @@
 # 26-10-16-337 — A discobox asks to sleep and names when to wake, and the control plane powers it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-16
 - **Supersedes**: in [0108](0108-a-sandbox-stops-itself-when-its-terminals-go-quiet.md),
   §1's power-off by the sandbox itself, and its rejection of the server taking
@@ -129,8 +129,8 @@ discobox-power status
 ```
 
 Its only effect is writing the files of §§1–2 and ADR 0108 §4, each put in
-place with its time already set; `status` reads them back with the idle
-policy's view from the sandbox agent. The files remain the interface.
+place with its time already set; `status` reads them back. The files remain
+the interface.
 `discobox-power` is a convenience over them, so a shell with `touch` and `mv`
 can do everything it can, and nothing reads state that only it writes.
 `sleep --wake-in` writes the wake before the sleep.
@@ -157,7 +157,7 @@ printed, and nothing branches on them.
 ### 5. The runtime powers the sandbox down only on a fresh confirmation
 
 When a status reaches the server carrying `sleep` or `idle: true`, the server
-marks the sandbox dirty, and its reconciler sends the runtime **power-down**,
+marks the sandbox's power reconcile (§6), which sends the runtime **power-down**,
 a new instruction with a reason (ADR 0017 §9):
 
 - reason **sleep**, for a `sleep`. A runtime that can freeze freezes; every
@@ -201,7 +201,13 @@ The wake a power-down returns is the sandbox's scheduled start. The server
 records it on the sandbox's row as `wakeAt`, a new nullable column (null, as
 every existing row has, is no wake; no backfill).
 
-- **The sandbox reconciler sets it**, in the reconcile that sent the
+The power-down and the scheduled start are a **power reconcile** of their own
+(`sandboxPower`), beside the sandbox's as egress is: the sandbox reconcile
+ensures the container on every run, which is no work to repeat for every
+status an idle sandbox reports, and a timer on a dirty row of its own is one
+no other reconcile of the sandbox returns over.
+
+- **The power reconcile sets it**, in the reconcile that sent the
   power-down, and returns `Result.RequeueAt(wakeAt)`. That is not a mark: the
   reconciler does not mark the sandbox it is reconciling
   (`server/internal/reconcile` refuses a self-mark), and requeueing is how it
@@ -221,21 +227,19 @@ every existing row has, is no wake; no backfill).
   one writer, so both are omitted from `Store.UpdateSandbox`'s whole-row
   write and written only by their own guarded store methods
   (`server/internal/store/DESIGN.md`, field ownership on whole-row writes).
-- **Every sandbox reconcile keeps the timer.** A reconcile that returns plain
-  success drops the sandbox's dirty row, and one that requeues replaces its
-  time, so any reconcile of a sandbox with `wakeAt` set — a secret rebind, an
-  upgrade, a spec edit — requeues for the earlier of `wakeAt` and its own
-  deadline. The stored column is the wake; the requeue is only how the
-  reconciler is called at it.
-- **The sandbox reconciler acts on it** when requeued at that time: if the
-  sandbox is still powered down, it first claims the wake — clears `wakeAt`
-  on the condition that `wakeEpoch` is still the value it read — and only if
-  that write succeeds sends the start a person's `discobox start` sends. A
-  person's stop that lands between the read and the start moves the epoch,
-  so the claim fails and no start is sent. A sandbox already running at its
-  wake time has `wakeAt` cleared the same way and is not started: the timer
-  is spent, and a wake still due inside it reaches the server again through
-  the next power-down (§§5, 7). The start is sent once: a start that fails is recorded as any failed start is,
+- **Every power reconcile keeps the timer.** Any run of it for a sandbox with
+  `wakeAt` set requeues for `wakeAt`. The stored column is the wake; the
+  requeue is only how the reconcile is called at it.
+- **The power reconcile acts on it** when requeued at that time: it first
+  claims the wake — clears `wakeAt` on the condition that `wakeEpoch` is still
+  the value it read — and only if that write succeeds sends the start a
+  person's `discobox start` sends. A person's stop that lands between the read
+  and the start moves the epoch, so the claim fails and no start is sent. The
+  start is sent whatever the stored runtime state says: that state lags the
+  power-down this reconcile itself sent, so a sandbox it reads as running may
+  be on its way down, and one that really is running takes the start as a
+  no-op; a wake still due inside it reaches the server again through the next
+  power-down (§§5, 7). The start is sent once: a start that fails is recorded as any failed start is,
   and nothing retries it ([26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md)
   rejected a retrying start for the loop it makes of a start that keeps
   failing).
@@ -280,13 +284,16 @@ knows it:
 - The sandbox agent reports `autostop.controlPlanePower: true`, meaning it
   can hand its power to the control plane. Like every field added to the
   status object, it relies on servers accepting it before agents send it.
-- The server sets `agent.controlPlanePower` in the runtime config
-  (`sandboxconfig.RuntimeConfig`, where `agent.idleTimeout` travels, ADR
-  26-10-08-127) only for a sandbox whose last status advertised it. An older
-  agent is never sent a field it would refuse the delivery for.
+- The pool, which decides the runtime config's `agent` section, sets
+  `agent.controlPlanePower` (`sandboxconfig.RuntimeConfig`, where
+  `agent.idleTimeout` travels, ADR 26-10-08-127) only for a sandbox whose last
+  status it polled advertised it. An older agent is never sent a field it
+  would refuse the delivery for. The pool agent ships with the control plane
+  that acts on what the flag hands over.
 - The sandbox agent powers itself off as before until it receives the flag,
   and reports `sleep`, `idle` and `wakeAt` only after. A new agent behind a
-  server that does not act on them still idles out by itself.
+  server that does not act on them still idles out by itself, and honors a
+  sleep request the one way it can: a power-off now, with no wake.
 
 ## Alternatives rejected
 
@@ -368,6 +375,11 @@ while the sandbox is down, and a person's stop cancels it (§6).
   as today.
 - A wake that falls due while a person is using the sandbox is delivered
   after the next power-down, by an immediate start.
+- A wake handed to a boot whose container the pool then replaces — an
+  auto-upgraded image, or a project configuration the first boot's sources
+  changed — is lost: the first boot moved it aside and its harness was killed,
+  and the replacement's boot finds nothing due. Keeping a record of handed-over
+  wakes that outlives the boot is deferred (below).
 - The API contract gains `sleep`, `idle`, `wakeAt` and `controlPlanePower` on
   `SandboxAgentAutostopStatus` and a confirm route on the sandbox agent; the
   runtime config gains `agent.controlPlanePower`; the sandbox row gains
@@ -380,6 +392,8 @@ while the sandbox is down, and a person's stop cancels it (§6).
   VM's freeze plugs in behind it. A frozen sandbox resumes without a boot, so
   §7's handover never runs there; how a resumed harness learns it was woken
   is decided with the Disco VM runtime.
+- **A wake surviving a container replaced right after its boot.** Revisit
+  when a user loses a wake to a replacement.
 - **Waking a running harness.** A wake due while the sandbox runs is not
   delivered until after the next power-down. Revisit when a harness wants a
   signal rather than checking `~/.discobox/wake/` itself.
