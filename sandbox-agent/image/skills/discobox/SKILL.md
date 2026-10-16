@@ -1,6 +1,6 @@
 ---
 name: discobox
-description: You are running inside a discobox — a disposable sandbox holding the user's source, where you have root over everything inside and can reach nothing of theirs outside. Use when orienting, when something outside the box seems missing or unreachable, before telling the user how to reach what you built or ran, when asked to name, rename, describe, tag or label this box (its name, description and tags live in ~/.discobox/meta.json), or to answer a question about discobox itself.
+description: You are in a discobox — a disposable sandbox with the user's source, root inside, nothing of theirs reachable outside. Use when orienting or something outside seems unreachable, before telling the user how to reach what you ran, to name, describe or tag this box (~/.discobox/meta.json), to keep it running while work runs unwatched, to sleep it and be woken later — e.g. to check back on CI (discobox-power) — and for questions about discobox.
 ---
 
 # You are in a discobox
