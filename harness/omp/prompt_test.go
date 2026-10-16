@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -135,6 +136,43 @@ func TestPromptJudgesWithTheConfiguredModel(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("model argument = %q, want %q (argv %q)", got, tc.want, p.args(t))
+			}
+		})
+	}
+}
+
+// The judge answers with thinking off whatever its model, and a model's own
+// level suffix does not outrank it; other roles think as omp's settings say
+// (ADR 26-10-16-965).
+func TestPromptJudgesWithThinkingOff(t *testing.T) {
+	for _, tc := range []struct {
+		role, setting string
+		off           bool
+	}{
+		{"judge", "", true},
+		{"judge", `{"judgeModel":"openai-codex/gpt-6-astra:high"}`, true},
+		{"fast", "", false},
+	} {
+		t.Run(tc.role+tc.setting, func(t *testing.T) {
+			p := newPromptRun(t, "ok", 0)
+			if tc.setting != "" {
+				p.writeHome(t, settingsPath, tc.setting)
+			}
+			if _, err := p.run(t, nil, "--model", tc.role, "--no-tools", "--prompt", "q"); err != nil {
+				t.Fatal(err)
+			}
+			var thinking []string
+			for _, arg := range p.args(t) {
+				if strings.HasPrefix(arg, "--thinking") {
+					thinking = append(thinking, arg)
+				}
+			}
+			want := []string(nil)
+			if tc.off {
+				want = []string{"--thinking=off"}
+			}
+			if !slices.Equal(thinking, want) {
+				t.Fatalf("thinking arguments = %q, want %q (argv %q)", thinking, want, p.args(t))
 			}
 		})
 	}

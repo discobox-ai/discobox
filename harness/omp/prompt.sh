@@ -107,10 +107,20 @@ role_model() {
 # asked about (ADR 26-10-14-718 §5). omp's own `judge` role is not it: that
 # role picks judgment-API models, a different kind.
 #
+# The judge answers with thinking off, set here rather than left to the
+# settings, so neither the user's default level nor the agent decides how the
+# gate thinks: its verdict is a few dozen tokens, and omp's default level is
+# high. omp takes `off` for any model: one that must reason is sent the lowest
+# level it offers instead. configure.sh asks this judge a question before it
+# saves, so a model that still refuses is reported there, not on the first
+# judged command (ADR 26-10-16-965).
+#
 # "fast" is omp's smol role, else the default one.
 named=""
+thinking=""
 case "$model" in
 judge)
+	thinking=off
 	if [ -f "$SETTINGS" ]; then
 		named=$(jq -r '.judgeModel // "" | strings' "$SETTINGS" 2>/dev/null) || named=""
 	fi
@@ -133,6 +143,9 @@ if [ -n "$named" ]; then
 	# One word, so no value in a file the agent can write becomes a flag of its
 	# own on the judge's command line.
 	set -- "$@" "--model=$named"
+fi
+if [ -n "$thinking" ]; then
+	set -- "$@" "--thinking=$thinking"
 fi
 
 # omp reads a one-line value of its system-prompt flags as a file path when a
