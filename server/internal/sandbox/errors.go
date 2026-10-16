@@ -31,6 +31,12 @@ var (
 	// sandbox a container again.
 	ErrNoContainer = errors.New("sandbox has no container on its pool: it is being rebuilt, or it needs repair")
 
+	// ErrPowerDownRefused indicates a power-down the sandbox did not confirm,
+	// or one for a sandbox that was not running to confirm it
+	// (ADR 26-10-16-337 §5). Nothing changed: it is the instruction having
+	// nothing to do, not a failure.
+	ErrPowerDownRefused = errors.New("the sandbox does not confirm the power-down")
+
 	// ErrNotRunning indicates the runtime sandbox is not running.
 	ErrNotRunning = errors.New("sandbox not running")
 

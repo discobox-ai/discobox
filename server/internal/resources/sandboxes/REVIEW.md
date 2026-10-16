@@ -20,3 +20,19 @@
   the pool's placement reading: it refuses whitespace, so as a validity test it
   refuses every repository whose path has a space in it, which the client
   mirrors as is.
+
+## Power on a sandbox's own request
+
+- **What a status asks for is marked as drift (`MarkDirtyDrift`), never with
+  intent.** Status arrives every poll; an intent mark from it would cancel the
+  backoff of a power-down that keeps failing and retry it every 15 seconds
+  for every idle sandbox on the pool (ADR 26-10-16-337 §5).
+- **The stored runtime state lags an instruction this same reconcile just
+  sent.** A power-down returns before the pool reports `stopped`, so a
+  decision made on `RuntimeState` right after one reads the sandbox as still
+  running. The wake is spent on a start whatever the row says, because a start
+  on a running sandbox is a no-op and one skipped on a stopping sandbox loses
+  the wake (ADR 26-10-16-337 §6).
+- **A wake is written and claimed only on the `WakeEpoch` the reconcile read**,
+  and every outside power instruction moves it, wake or no wake. A write that
+  skips the guard lets a person's stop be undone by the wake it raced.

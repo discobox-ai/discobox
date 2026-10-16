@@ -97,6 +97,12 @@ save silently replays a stale value.
   the old level back, and the next egress push would deliver it. `UpdatePool`
   names its columns and writes the pool's level for the person's own update;
   `SetPoolEgress` is the copy's.
+- A sandbox's scheduled start (`wake_at`) and its guard (`wake_epoch`,
+  ADR 26-10-16-337 §6) have two writers — the power reconcile sets and claims
+  the wake, every outside power instruction cancels it — so `UpdateSandbox`
+  omits both (`sandboxWakeColumns`) and only `CancelSandboxWakeTx` and
+  `SetSandboxWakeIfEpoch` write them. The latter writes only on the epoch its
+  caller read, which every cancellation moves.
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.

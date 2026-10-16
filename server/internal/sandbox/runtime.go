@@ -43,6 +43,14 @@ type Provider interface {
 	Start(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
 	Restart(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
+	// PowerDown powers the sandbox down on its own request: it reported itself
+	// idle, or asked to sleep (ADR 26-10-16-337 §5). Unlike Stop it is
+	// conditional — the runtime asks the sandbox to confirm the reason under
+	// its power lock and answers ErrPowerDownRefused when it does not — and it
+	// is the runtime's to say what powering down is: a stop for idle always, a
+	// freeze for sleep where the runtime can freeze. It returns the sandbox's
+	// earliest pending wake, zero when it has none.
+	PowerDown(ctx context.Context, ref SandboxRef, state []byte, reason PowerDownReason) (Wake, []byte, error)
 
 	// Archive tears the sandbox's runtime down and keeps its data: no container
 	// and no runtime resources, but whatever durable state the provider holds
@@ -568,4 +576,23 @@ type Stream interface {
 	Resize(ctx context.Context, rows, cols int) error
 	CloseWrite() error
 	Wait(ctx context.Context) (int, error)
+}
+
+// PowerDownReason is why a sandbox is being powered down on its own request.
+type PowerDownReason string
+
+const (
+	// PowerDownIdle is a sandbox that reported itself idle for its timeout:
+	// always stopped, because nothing in it is worth keeping in memory.
+	PowerDownIdle PowerDownReason = "idle"
+	// PowerDownSleep is a sandbox an agent asked to sleep: frozen where the
+	// runtime can, stopped otherwise.
+	PowerDownSleep PowerDownReason = "sleep"
+)
+
+// Wake is when a sandbox asked to be started again, and the file that asked;
+// zero when it asked for nothing.
+type Wake struct {
+	At   time.Time
+	Name string
 }

@@ -644,10 +644,11 @@ away, so revisions are unchanged) distinct from an explicit `0` (which drops
 that term from the budget).
 
 `SandboxIdleTimeout` is how long a sandbox on the provider's pools runs with
-nothing happening in it before it powers itself off (ADR 0108). The pool agent
-reads it from `DISCOBOX_SANDBOX_IDLE_TIMEOUT` and writes it into a sandbox's
-`sandbox.json` as `agentRuntime.idleTimeout` at create and again before every
-start; the decision itself is the sandbox-agent's. Unset, the sandbox-agent's
+nothing happening in it before it is powered down (ADR 0108, ADR 26-10-16-337).
+The pool agent reads it from `DISCOBOX_SANDBOX_IDLE_TIMEOUT` and delivers it in
+the sandbox's runtime-config document as `agent.idleTimeout`; whether the
+sandbox is idle is the sandbox-agent's decision, and the power-down that
+follows is the control plane's. Unset, the sandbox-agent's
 default of 30 minutes applies. Like every pool policy field, a change reaches a
 pool at its next reconcile; saving the provider instance does not trigger one.
 

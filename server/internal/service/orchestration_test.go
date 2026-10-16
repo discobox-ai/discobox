@@ -640,6 +640,10 @@ func (noopSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, t
 	return nil, nil
 }
 
+func (noopSandboxProvider) PowerDown(_ context.Context, _ sandboxes.SandboxRef, state []byte, _ sandboxes.PowerDownReason) (sandboxes.Wake, []byte, error) {
+	return sandboxes.Wake{}, state, nil
+}
+
 func (noopSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }

@@ -414,6 +414,29 @@ func (p *poolAgentClient) Restart(ctx context.Context, ref sandbox.SandboxRef, s
 	})
 }
 
+// PowerDown asks the pool agent to power the sandbox down once the sandbox
+// confirms it (ADR 26-10-16-337 §5). The pool cannot freeze, so it stops; a
+// runtime that can freeze does so for a sleep behind this same call.
+func (p *poolAgentClient) PowerDown(ctx context.Context, ref sandbox.SandboxRef, state []byte, reason sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
+	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
+	if err != nil {
+		return sandbox.Wake{}, state, err
+	}
+	defer release()
+	result, err := client.PoolPowerDownSandbox(ctx,
+		&poolapimodel.PoolSandboxPowerDownRequest{Reason: poolclient.PoolSandboxPowerDownRequestReason(reason)},
+		poolclient.PoolPowerDownSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+	if err != nil {
+		return sandbox.Wake{}, state, mapPoolClientError(err)
+	}
+	wakeAt, ok := result.WakeAt.Get()
+	if !ok {
+		return sandbox.Wake{}, state, nil
+	}
+	name, _ := result.Wake.Get()
+	return sandbox.Wake{At: wakeAt.UTC(), Name: name}, state, nil
+}
+
 func (p *poolAgentClient) instruct(ctx context.Context, ref sandbox.SandboxRef, state []byte, call func(context.Context, *poolclient.Client) error) ([]byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {
@@ -1043,6 +1066,8 @@ func mapPoolClientError(err error) error {
 			return sandbox.ErrArchived
 		case poolapimodel.ErrorTypeSandboxNoContainer:
 			return sandbox.ErrNoContainer
+		case poolapimodel.ErrorTypeSandboxPowerDownRefused:
+			return sandbox.ErrPowerDownRefused
 		}
 		return sandbox.ErrAlreadyExists
 	}

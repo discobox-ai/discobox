@@ -104,6 +104,38 @@ pool calling the sandbox archived, which is read as the same answer. It waits fo
 once — and a `stop` is not a use. This is the one place an instruction leads to
 recorded intent, and what it records is existence, not power.
 
+## Sleep, idle, and the scheduled start
+
+A sandbox asks for its own power-down, and the control plane carries it out
+([ADR 26-10-16-337](../../../../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)).
+Its status reports `autostop.idle` or a pending `autostop.sleep` once its pool
+has handed its power over; recording such a status
+(`SandboxAgentStatusReported`, from the pools service's status ingest) marks
+the sandbox's **power reconcile** (`SandboxPowerResourceType`,
+`power_reconcile.go`) — a resource of its own, like egress, so the sandbox
+reconcile's ensure is not run on every idle report, and the wake timer lives on
+a dirty row no other reconcile returns over.
+
+- **Power-down.** The reconcile sends the provider `PowerDown` with the reason —
+  `sleep` wins over `idle` — for a sandbox observed running. The stored status
+  is never acted on as it stands: the runtime asks the sandbox to confirm under
+  its power lock, and `ErrPowerDownRefused` is the instruction having nothing
+  to do. Idle is always a stop; sleep is the runtime's to freeze if it can.
+- **The scheduled start.** The confirmation carries the sandbox's earliest
+  pending wake, recorded as `WakeAt` and armed as `RequeueAt`. At that time the
+  reconcile claims it — clears it on the `WakeEpoch` it read — and sends one
+  start whatever the row says the sandbox is doing; nothing retries a failed
+  one (ADR 26-10-12-711). The row lags the power-down this reconcile just sent,
+  so a sandbox reported running may be on its way down; a start on one that
+  really is running is a no-op at the pool.
+- **Outside instructions win.** Every start, stop or restart from a caller
+  (`instructSandboxOnce`, which repair goes through) and every archive or delete
+  (`recordSandboxIntent`) cancels the wake and moves `WakeEpoch`, wake or no
+  wake, in one transaction with the power reconcile's mark — before the
+  instruction is sent, so a power-down in flight cannot write its wake back.
+  `WakeAt` and `WakeEpoch` have two writers, so `UpdateSandbox` never writes
+  them (`sandboxWakeColumns`).
+
 ## A sandbox that is not running is read from its inventory
 
 `ReadSandboxInventory` (`inventory.go`) answers one read — the exec, service

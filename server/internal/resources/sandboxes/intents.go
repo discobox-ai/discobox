@@ -95,6 +95,17 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
 			return err
 		}
+		// An archive or a delete is an outside power instruction too: the
+		// sandbox will not come back on a wake it set before (ADR 26-10-16-337
+		// §6).
+		if desiredState != model.DesiredStatePresent {
+			if err := txStore.CancelSandboxWakeTx(ctx, txDB, projectID, sandboxID); err != nil {
+				return err
+			}
+			if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxPowerResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+				return err
+			}
+		}
 		recorded, err = txStore.GetSandbox(ctx, projectID, sandboxID)
 		return err
 	}); err != nil {

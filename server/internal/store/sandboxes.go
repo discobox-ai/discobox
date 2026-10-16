@@ -372,8 +372,44 @@ var sandboxSkillColumns = []string{"skills", "skill_names"}
 // SetSandboxEgress writes (see egressColumn).
 var sandboxEgressColumns = []string{egressColumn}
 
+// sandboxWakeColumns are the sandbox's scheduled start and its guard, which
+// two writers share — the power reconcile sets and claims the wake, and every
+// outside power instruction clears it — so only the guarded methods below
+// write them (ADR 26-10-16-337 §6). A whole-row save of a stale struct would
+// put back a wake a stop had canceled.
+var sandboxWakeColumns = []string{"wake_at", "wake_epoch"}
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...)
+var sandboxOmittedColumns = append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...)
+
+// CancelSandboxWakeTx is what every power instruction from outside writes: no
+// scheduled start, and a new epoch, whether or not a wake was set — the race
+// it closes is usually one where the power reconcile has not written the wake
+// yet (ADR 26-10-16-337 §6). It runs in the caller's transaction, beside the
+// dirty mark that has the power reconcile drop its timer.
+func (s *Store) CancelSandboxWakeTx(ctx context.Context, tx *gorm.DB, projectID, sandboxID string) error {
+	return tx.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")}).Error
+}
+
+// SetSandboxWakeIfEpoch records the wake a confirmed power-down carried, unless
+// an outside power instruction has moved the epoch since the caller read it.
+// It reports whether it wrote. A nil at clears the wake under the same guard,
+// which is how the reconcile spends one.
+func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID string, epoch int64, at *time.Time) (bool, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return false, err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).
+		UpdateColumn("wake_at", at)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
 
 // SetSandboxEgress writes a sandbox's own egress level, and nothing else.
 func (s *Store) SetSandboxEgress(ctx context.Context, projectID, sandboxID string, level egress.Policy) error {
