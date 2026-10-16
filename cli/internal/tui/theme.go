@@ -30,12 +30,6 @@ const (
 	colSelectedBG  = "24"  // a command will act on it
 	colBothBG      = "31"  // under the cursor and selected
 	colInactive    = "236"
-	// The bands behind a row ready or blocked (Sandbox.standing): the darkest
-	// green and red of the cube, dark enough that the row's own colors stay
-	// readable over them. The cursor and selection bands win over these — they
-	// say what a key will act on, and the tag still says the rest.
-	colReadyBG   = "22"
-	colBlockedBG = "52"
 	// The band behind the credential banner: a dark red the text keeps its own
 	// colors over, rather than the whole bar drawn in reverse video. Reversed
 	// red puts the terminal's background color on a red
@@ -153,9 +147,9 @@ type styles struct {
 	chipOn  lipgloss.Style
 	command lipgloss.Style
 	// Ready and blocked as words: a pull request status tag on a row, bold in
-	// the color of its band so it reads as the reason the row is lit, and the
-	// workspace header's word for the same (Sandbox.standing). Without color
-	// they are plain, like every other style.
+	// green or red where the row's other tags are dim, and the workspace
+	// header's word for the same (Sandbox.standing). Without color they are
+	// plain, like every other style.
 	readyText   lipgloss.Style
 	blockedText lipgloss.Style
 

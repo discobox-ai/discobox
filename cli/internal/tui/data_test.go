@@ -201,59 +201,37 @@ func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {
 	}
 }
 
-// A row tagged with its pull request's status is lit in its band, blocked over
-// ready, whether or not the tag itself fits — and the cursor's band still
-// wins, since it says what a key will act on.
-func TestARowTaggedWithAPullRequestStatusIsLit(t *testing.T) {
+// A row tagged with its pull request's status draws the tag in the status's
+// color, blocked over ready, and leaves the row itself unpainted — as it does
+// a row waiting on a credential request, which says so with its red `!`.
+func TestAPullRequestStatusColorsItsTagNotItsRow(t *testing.T) {
 	t.Parallel()
-	row := func(tags []string, width int, focused bool) string {
-		l := newSandboxList(Session{})
-		l.width = width
-		box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: tags}
-		line, _ := l.row(newStyles(true), &zones{}, box, 0, 0, focused)
-		return line
-	}
-	painted := func(line, bg string) bool { return strings.HasPrefix(line, "\x1b[48;5;"+bg+"m") }
+	st := newStyles(true)
 	for _, tc := range []struct {
-		tags []string
-		bg   string
+		tags    []string
+		pending int
+		want    string
 	}{
-		{[]string{"ready", "issue=4"}, colReadyBG},
-		{[]string{"blocked"}, colBlockedBG},
-		{[]string{"blocked", "ready"}, colBlockedBG},
+		{[]string{"ready", "issue=4"}, 0, st.readyText.Render("#ready")},
+		{[]string{"blocked"}, 0, st.blockedText.Render("#blocked")},
+		{[]string{"blocked", "ready"}, 0, st.blockedText.Render("#blocked")},
+		{nil, 1, st.statusER.Render("!")},
 	} {
-		for _, width := range []int{160, 40} {
-			if line := row(tc.tags, width, false); !painted(line, tc.bg) {
-				t.Errorf("tags %v at width %d: row = %q, want it painted %s", tc.tags, width, line, tc.bg)
-			}
-		}
-	}
-	if line := row([]string{"wip"}, 160, false); strings.HasPrefix(line, "\x1b[48;5;") {
-		t.Errorf("row = %q, want a row with no pull request status unpainted", line)
-	}
-	if line := row([]string{"ready"}, 160, true); !painted(line, colHighlightBG) {
-		t.Errorf("row = %q, want the cursor's band over the status's", line)
-	}
-}
-
-// A credential request waiting on a person lights the row blocked too, tag or
-// no tag, and over a ready pull request: the agent is stuck until it is
-// answered.
-func TestARowWaitingOnACredentialRequestIsLitBlocked(t *testing.T) {
-	t.Parallel()
-	for _, tags := range [][]string{nil, {"ready"}} {
 		l := newSandboxList(Session{})
 		l.width = 160
-		box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: tags, PendingRequests: 1}
-		line, _ := l.row(newStyles(true), &zones{}, box, 0, 0, false)
-		if !strings.HasPrefix(line, "\x1b[48;5;"+colBlockedBG+"m") {
-			t.Errorf("tags %v: row = %q, want it painted %s", tags, line, colBlockedBG)
+		box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: tc.tags, PendingRequests: tc.pending}
+		line, _ := l.row(st, &zones{}, box, 0, 0, false)
+		if strings.HasPrefix(line, "\x1b[48;5;") {
+			t.Errorf("tags %v: row = %q, want it unpainted", tc.tags, line)
+		}
+		if !strings.Contains(line, tc.want) {
+			t.Errorf("tags %v: row = %q, want it to draw %q", tc.tags, line, tc.want)
 		}
 	}
 }
 
-// The status is the last tag a narrowing row gives up: without color there is
-// no band to say it once the tag has gone.
+// The status is the last tag a narrowing row gives up: the tag is the only
+// place the row says it.
 func TestARowKeepsItsPullRequestStatusLongest(t *testing.T) {
 	t.Parallel()
 	box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: []string{"issue=4", "ticket=ENG-12", "ready"}}

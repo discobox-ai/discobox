@@ -56,8 +56,9 @@ func TestWithoutColorTheAgentsWordTakesRunningsPlace(t *testing.T) {
 	}
 }
 
-// An agent blocked on a person lights its row the way a waiting credential
-// request does, and under the cursor its row says what it is blocked on.
+// An agent blocked on a person makes its box blocked the way a waiting
+// credential request does, and under the cursor its row says what it is
+// blocked on.
 func TestABlockedAgentIsTheBoxsStandingAndSaysWhy(t *testing.T) {
 	boxes := agentBoxes()
 	if boxes[0].standing() != standingBlocked {
