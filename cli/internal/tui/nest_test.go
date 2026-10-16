@@ -51,7 +51,9 @@ func TestADiscoboxIsNestedUnderTheOneThatCreatedIt(t *testing.T) {
 	}
 
 	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
-	for _, line := range []string{"● lead", "● ├ newer child", "● └ older child", "●   └ grandchild"} {
+	// The state dot, then the agent's cell, blank for a box whose agent
+	// reports nothing, then the branch and the name.
+	for _, line := range []string{"●   lead", "●   ├ newer child", "●   └ older child", "●     └ grandchild"} {
 		if !strings.Contains(out, line) {
 			t.Errorf("view has no %q:\n%s", line, out)
 		}

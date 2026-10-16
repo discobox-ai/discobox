@@ -54,6 +54,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/programstatus"
 	"golang.org/x/term"
 )
 
@@ -318,6 +319,11 @@ var resetSequence = strings.Join([]string{
 	ansi.ResetModeNumericKeypad,
 	ansi.ResetStyle,
 	ansi.ResetProgressBar,
+	// The focused discobox's status the console re-emitted (ADR 26-10-16-424
+	// §6): a record the window leaves behind would go on claiming that box
+	// was working long after the window that knew it was gone. A terminal
+	// that never knew the protocol ignores it.
+	programstatus.ClearSequence,
 	ansi.ResetCursorColor,
 	ansi.ResetForegroundColor,
 	ansi.ResetBackgroundColor,

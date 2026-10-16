@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -19,7 +20,12 @@ import (
 func Run(ctx context.Context, ds DataSource, options ...Option) (*Sandbox, error) {
 	model := New(ctx, ds, options...)
 	program := tea.NewProgram(model, tea.WithContext(ctx))
-	if _, err := program.Run(); err != nil {
+	_, err := program.Run()
+	// The status the window spoke for its box is the window's to take back:
+	// Bubble Tea resets what it set itself, and this is not among it. A
+	// window that dies instead is cleared by termguard.
+	model.clearProgramStatus(os.Stdout)
+	if err != nil {
 		return model.made(), err
 	}
 	// A window opened as an attach ends with whatever ended the attach, so the

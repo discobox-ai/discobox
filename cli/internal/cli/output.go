@@ -100,7 +100,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	if serverOf != nil {
 		header = append(header, "SERVER")
 	}
-	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE")
+	header = append(header, "STATE", "AGENT", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
@@ -108,8 +108,9 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if serverOf != nil {
 			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandboxDisplayState(sandbox),
+			programStatusColumn(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
 			git.changes(sandboxSpawnCommit(sandbox)),

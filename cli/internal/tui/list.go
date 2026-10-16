@@ -9,6 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandboxservices"
 )
 
@@ -760,6 +761,41 @@ func (l *sandboxList) stateStyle(st *styles, s Sandbox) lipgloss.Style {
 	}
 }
 
+// agentGlyph draws what a discobox's agent reports (ADR 26-10-16-424 §5), a
+// blank cell for no report. Each is its own shape as well as its own color,
+// so working and blocked are told apart where the colors are close.
+func agentGlyph(st *styles, state programstatus.State) string {
+	switch state {
+	case programstatus.Working:
+		return st.name.Render("▶")
+	case programstatus.Idle:
+		return st.dimText.Render("◇")
+	case programstatus.Blocked:
+		return st.statusER.Render("◆")
+	case programstatus.Done:
+		return st.add.Render("✓")
+	case programstatus.Error:
+		return st.statusER.Render("×")
+	default:
+		return " "
+	}
+}
+
+// stateWord is the state as the row spells it without color, where the
+// glyphs are gone. What a discobox's agent reports takes the place of
+// `running`, which every report implies (a box that is not running carries
+// none), so it costs no column of its own; a failed agent is `failed`, not
+// the box's own `error`.
+func stateWord(s Sandbox) string {
+	if s.State != StateRunning || s.Agent.State == "" {
+		return string(s.State)
+	}
+	if s.Agent.State == programstatus.Error {
+		return "failed"
+	}
+	return string(s.Agent.State)
+}
+
 func stateDot(s Sandbox) string {
 	switch s.State {
 	case StateRunning:
@@ -1064,7 +1100,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 
 	if !glyph {
 		// As wide as the longest state, `repairing`.
-		addCol("  "+pad(string(s.State), 9), 11)
+		addCol("  "+pad(stateWord(s), 9), 11)
 	}
 
 	up := " "
@@ -1110,7 +1146,11 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 
 	head := marker
 	if glyph {
-		head += l.stateStyle(st, s).Render(stateDot(s)) + " "
+		// What the agent reports comes right after the box's own state, so
+		// the two read as one column pair; a box whose agent reports nothing
+		// leaves the cell blank rather than closing it up, so the names stay
+		// in line.
+		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
 	}
 	// The branch a discobox created by another hangs from, after the state so
 	// the glyphs stay one column the eye runs down. It is part of the head: it
@@ -1124,6 +1164,9 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// error a box settled on, or what a repair nobody typed is answering.
 	if (s.State == StateError || s.State == StateRepairing) && s.Message != "" && atCursor {
 		name = s.Message
+	} else if (s.Agent.State == programstatus.Blocked || s.Agent.State == programstatus.Error) && s.Agent.Msg != "" && atCursor {
+		// And to what an agent blocked on a person, or failed, said about it.
+		name = s.Agent.Msg
 	}
 
 	// A discobox created on another machine says so after its name, dim,
@@ -1563,10 +1606,11 @@ func (l *sandboxList) header(st *styles, glyph bool) string {
 }
 
 // headOffset and nameSpace are what row puts in front of the tail: the cursor
-// marker and, with color, the state dot, then the name filling the slack.
+// marker and, with color, the state dot and the agent's glyph, then the name
+// filling the slack.
 func (l *sandboxList) headOffset(glyph bool) int {
 	if glyph {
-		return 4
+		return 6
 	}
 	return 2
 }
