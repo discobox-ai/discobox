@@ -87,15 +87,18 @@ status, and nothing is guessed.
 
 ### 4. The idle stop reads it: only `working` is activity
 
-For an exec holding a record, the record replaces 0124's screen change as its
-activity:
+For an exec holding a live record (`working`, `blocked` or `idle`), the record
+replaces 0124's screen change as its activity:
 
 - While the effective state is `working`, the exec counts as active now.
-- `idle`, `blocked`, `done` and `error` are idle. **A box blocked on a person
-  is idle**, so it stops at the timeout like any other quiet box.
+- `idle` and `blocked` are idle. **A box blocked on a person is idle**, so it
+  stops at the timeout like any other quiet box.
 - Every report is activity at the time it arrived, so a fall from `working`
   starts the idle clock then.
 
+A `done` or `error` record is idle too, but it does not replace the screen. It
+is a result kept after the program that reported it is gone (§2), so whatever
+the terminal runs next reports nothing, and its screen counts as 0124 says.
 Attachers, last access, connections and leases count exactly as before. An exec
 with no record keeps 0124.
 
@@ -133,10 +136,13 @@ focused box's primary terminal.
   `state=clear`.
 - It re-emits as that box's status changes. The console reads a change from
   the stream it is attached to when it has one, so it lags nothing, and from
-  the polled status otherwise.
+  the polled status otherwise. Whichever is newer wins: a poll observed after
+  the stream last spoke carries the shim's lifetime rules (§2), which the
+  console cannot keep.
 - The record is the console's own: it is re-encoded from the parsed fields,
   never relayed as bytes, with the box's display name as `title`.
-- On exit the console clears it, beside the title reset in `termguard`.
+- On exit the console clears it, both on its own way out and in `termguard`'s
+  reset after a crash.
 
 Plain `discobox attach` passes the raw stream through as it does today, so a
 supporting outer terminal sees the program's own reports.
