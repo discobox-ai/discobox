@@ -13,6 +13,7 @@ import (
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
@@ -48,6 +49,7 @@ type Service struct {
 	services.HostTrustService
 	services.SSHKeyService
 	services.SkillsSourceService
+	services.GatewayService
 	services.PeerService
 
 	store            *store.Store
@@ -175,6 +177,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		HostTrustService:               secretService,
 		SSHKeyService:                  sshkeys.NewService(store),
 		SkillsSourceService:            skillssources.NewService(store),
+		GatewayService:                 gateways.NewService(store, sandboxService),
 		PeerService:                    peers.NewService(store),
 
 		jobs:            jobsService,

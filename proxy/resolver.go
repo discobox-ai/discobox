@@ -1,16 +1,26 @@
 package proxy
 
 import (
+	"context"
 	"io"
 
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 )
 
-// SecretResolver resolves a sentinel placeholder to its real credential value.
-// The pool agent implements it (pool-agent/proxyagent, calling the control
-// plane) and always passes one; the proxy stays server-agnostic. A nil
-// resolver passed to NewServer disables secret swapping.
-type SecretResolver = secrets.Resolver
+// SecretResolver is the proxy's way to the control plane for every value it
+// must not hold itself: a sentinel's real credential, and the header values a
+// gateway takes from the server's environment (ADR 26-10-16-470 §4). The pool
+// agent implements it (pool-agent/proxyagent, calling the control plane) and
+// always passes one; the proxy stays server-agnostic. A nil resolver passed to
+// NewServer disables secret swapping, and refuses every request whose gateway
+// takes a header from the environment.
+type SecretResolver interface {
+	secrets.Resolver
+	// ResolveGatewayHeaders returns the value of each variable req names, as
+	// the server's environment has it. A variable the environment does not
+	// set is absent from the map; an error is no answer at all.
+	ResolveGatewayHeaders(ctx context.Context, req GatewayHeadersRequest) (map[string]string, error)
+}
 
 // SecretResolveRequest is the input to a SecretResolver.
 type SecretResolveRequest = secrets.ResolveRequest

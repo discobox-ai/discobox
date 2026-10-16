@@ -19,9 +19,20 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | [secrets](secrets/DESIGN.md) | Credentials, their approval lifecycle, approval rules, and sandbox delivery | `ruleRequest` |
 | `skillssources` | A project's skills repositories, which the creating client copies into every create (ADR 26-10-14-894) | none |
 | `sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes | none |
+| `gateways` | A project's gateways (ADR 26-10-16-470), and the server environment values their headers take, which only a pool asks for | none |
 
 `peers`, `skillssources` and `sshkeys` are plain store-backed CRUD services with no design doc of
 their own.
+
+`gateways` is store-backed CRUD too, with two things the others lack. A put or
+delete marks the proxy policy push of every discobox in the project in its own
+transaction (`MarkProxyPolicyChangedTx`), which is how a change reaches running
+ones. And `ResolveGatewayHeaders` answers a pool's proxy
+(`/api/pools/{poolId}/resolve-gateway-headers`, the `secret:resolve` scope)
+with the values of `DISCOBOX_GATEWAY_*` variables of the server's environment:
+only for a sandbox on that pool, and only the variables the sandbox's project's
+gateway names as it now stands. Nothing else of the environment is reachable,
+and the values are never stored.
 
 `judges` has no API of its own: nothing a client calls creates, lists or deletes
 a judge. It converges one per project against what the project says — a pool for

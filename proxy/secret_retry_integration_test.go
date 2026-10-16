@@ -22,6 +22,7 @@ import (
 // re-resolves gets something new — the control plane having rotated the
 // credential behind the sentinel.
 type rotatingResolver struct {
+	noGatewayHeaders
 	reportLog
 	mu     sync.Mutex
 	values []string
@@ -102,7 +103,7 @@ func (r *rotatingResolver) resolveCount() int {
 
 // startSecretProxy brings up a proxy with one sandbox and one sentinel, and
 // returns it with an mTLS client for that sandbox.
-func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolver secrets.Resolver, tune ...func(*Config)) (*Server, *http.Client) {
+func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolver SecretResolver, tune ...func(*Config)) (*Server, *http.Client) {
 	t.Helper()
 	dir := t.TempDir()
 	prepared, err := PrepareCertificates(PrepareOptions{
@@ -341,6 +342,7 @@ func TestHTTPProxyDoesNotRetryUnswappedRequests(t *testing.T) {
 
 // settableResolver returns whatever the control plane currently holds.
 type settableResolver struct {
+	noGatewayHeaders
 	reportLog
 	mu    sync.Mutex
 	value string
@@ -438,6 +440,7 @@ func TestHTTPProxyRetriesWithTheDisplacedCredential(t *testing.T) {
 // revokingResolver allows the first request and refuses every one after it,
 // standing in for a grant revoked while the upstream was answering.
 type revokingResolver struct {
+	noGatewayHeaders
 	reportLog
 	mu       sync.Mutex
 	value    string
@@ -581,6 +584,7 @@ func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange
 // resolve, which is what leaves a sentinel in place on the first attempt and
 // resolvable on the retry: the retry's Invalidate drops the cached denial.
 type flakyResolver struct {
+	noGatewayHeaders
 	reportLog
 	mu         sync.Mutex
 	values     map[string][]string

@@ -31,7 +31,8 @@
 - [x] Add sandbox-local forwarding proxy mode that accepts localhost proxy traffic
   and forwards to the pool proxy with the sandbox client certificate.
 - [x] Add end-to-end mTLS HTTP proxy tests covering client identity, blocked
-  requests, CONNECT/MITM, cache hit/store, and header injection.
+  requests, CONNECT/MITM, cache hit/store, and header injection (since
+  replaced by gateways, ADR 26-10-16-470).
 - [x] Add SOCKS integration tests covering mTLS client identity and allow/deny audit
   records.
 - [x] Expand audit schema and tests for timing details, cache event details,

@@ -30,10 +30,11 @@ flag the `default` alias resolves.
   ADR 0082 §3). Membership and ownership are not editable here.
 - `UpdateProject` also sets the project's egress level (`Project.Egress`,
   ADR 26-10-01-032), written by `store.SetProjectEgress` alone, and in the
-  same transaction marks the egress push of every discobox in the project
-  through the sandbox service (`Sandboxes`), which is how the change reaches
-  running ones. Pools and harness configs do the same for their own levels;
-  see the sandboxes package's [DESIGN.md](../sandboxes/DESIGN.md#egress). A
+  same transaction marks the proxy policy push of every discobox in the
+  project through the sandbox service (`Sandboxes`), which is how the change
+  reaches running ones. Pools and harness configs do the same for their own
+  levels, and the project's gateways for theirs; see the sandboxes package's
+  [DESIGN.md](../sandboxes/DESIGN.md#proxy-policy). A
   copy carries each copied pool's level and the level a person set on each
   harness config.
 - `SetDefaultProject` moves the flag; there is no unset, since `default` is the

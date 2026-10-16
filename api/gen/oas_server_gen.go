@@ -248,6 +248,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}
 	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
+	// DeleteProjectGateway implements delete-project-gateway operation.
+	//
+	// Remove a gateway.
+	//
+	// DELETE /projects/{projectId}/gateways/{gatewayName}
+	DeleteProjectGateway(ctx context.Context, params DeleteProjectGatewayParams) (DeleteProjectGatewayRes, error)
 	// DeleteProjectSkillsSource implements delete-project-skills-source operation.
 	//
 	// Remove a skills repository from the project's list.
@@ -348,6 +354,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}
 	GetProject(ctx context.Context, params GetProjectParams) (GetProjectRes, error)
+	// GetProjectGateway implements get-project-gateway operation.
+	//
+	// Get a gateway.
+	//
+	// GET /projects/{projectId}/gateways/{gatewayName}
+	GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (GetProjectGatewayRes, error)
 	// GetSSHIngress implements get-ssh-ingress operation.
 	//
 	// Discover this server's SSH ingress endpoint and host key.
@@ -599,6 +611,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/pools
 	ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error)
+	// ListProjectGateways implements list-project-gateways operation.
+	//
+	// List the gateways every discobox of the project is routed through.
+	//
+	// GET /projects/{projectId}/gateways
+	ListProjectGateways(ctx context.Context, params ListProjectGatewaysParams) (ListProjectGatewaysRes, error)
 	// ListProjectSkillsSources implements list-project-skills-sources operation.
 	//
 	// List the skills repositories every discobox of the project is created with, in order.
@@ -778,6 +796,13 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
 	PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error)
+	// PutProjectGateway implements put-project-gateway operation.
+	//
+	// Every discobox of the project is routed through it from its next request; a discobox whose pool
+	// cannot be reached yet takes it when the pool can.
+	//
+	// PUT /projects/{projectId}/gateways/{gatewayName}
+	PutProjectGateway(ctx context.Context, req *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error)
 	// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
 	//
 	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
@@ -870,6 +895,12 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
+	// ResolveGatewayHeaders implements resolve-gateway-headers operation.
+	//
+	// Resolve the server environment values a sandbox's gateway sets headers from.
+	//
+	// POST /api/pools/{poolId}/resolve-gateway-headers
+	ResolveGatewayHeaders(ctx context.Context, req *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

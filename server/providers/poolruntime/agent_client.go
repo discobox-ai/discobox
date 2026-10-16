@@ -18,6 +18,7 @@ import (
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
@@ -286,6 +287,7 @@ func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sa
 		ResponseHeaders:      res.ResponseHeaders,
 		AppliedRuleID:        res.AppliedRuleId.Or(""),
 		AppliedPattern:       res.AppliedPattern.Or(""),
+		ForwardedURL:         res.ForwardedUrl.Or(""),
 		AppliedHeaders:       append([]string{}, res.AppliedHeaders...),
 		CacheKey:             res.CacheKey.Or(""),
 		CacheStored:          res.CacheStored.Or(false),
@@ -370,6 +372,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	}
 	if opts.Egress != nil {
 		req.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(*opts.Egress))
+	}
+	if opts.Gateways != nil {
+		req.Gateways = poolclient.NewOptNilGatewayArray(poolGateways(opts.Gateways))
 	}
 	if len(opts.SentinelRoutes) > 0 {
 		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
@@ -756,6 +761,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	out.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.Egress))
+	if len(opts.Gateways) > 0 {
+		out.Gateways = poolclient.NewOptNilGatewayArray(poolGateways(opts.Gateways))
+	}
 	if len(opts.SecretEnv) > 0 {
 		out.SecretEnv = poolclient.NewOptNilPoolSandboxCreateRequestSecretEnv(poolclient.PoolSandboxCreateRequestSecretEnv(opts.SecretEnv))
 	}
@@ -1137,6 +1145,41 @@ func poolSentinelRoutes(in map[string][]secretroute.Route) map[string][]poolclie
 			}
 			out[sentinel] = append(out[sentinel], item)
 		}
+	}
+	return out
+}
+
+// poolGateways is the pool's shape of a sandbox's gateways; never nil, so an
+// update carrying none removes what the pool holds.
+func poolGateways(routes []gateway.Route) []poolclient.Gateway {
+	out := make([]poolclient.Gateway, 0, len(routes))
+	for _, route := range routes {
+		headers := route.RequestHeaders
+		out = append(out, poolclient.Gateway{
+			Name:   route.Name,
+			Match:  route.Match,
+			Target: route.Target,
+			RequestHeaders: poolclient.NewOptGatewayHeaderModifier(poolclient.GatewayHeaderModifier{
+				Remove: headers.Remove,
+				Set:    poolGatewayHeaders(headers.Set),
+				Add:    poolGatewayHeaders(headers.Add),
+			}),
+		})
+	}
+	return out
+}
+
+func poolGatewayHeaders(headers []gateway.Header) []poolclient.GatewayHeader {
+	var out []poolclient.GatewayHeader
+	for _, header := range headers {
+		item := poolclient.GatewayHeader{Name: header.Name}
+		if header.Value != "" {
+			item.Value = poolclient.NewOptString(header.Value)
+		}
+		if header.Env != "" {
+			item.Env = poolclient.NewOptString(header.Env)
+		}
+		out = append(out, item)
 	}
 	return out
 }

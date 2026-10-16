@@ -15,7 +15,7 @@ import (
 // egress change was converged for.
 type recordedEgress struct{ marked []string }
 
-func (r *recordedEgress) MarkEgressChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
+func (r *recordedEgress) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
 	r.marked = append(r.marked, projectID+"/"+poolID+"/"+harnessConfigID)
 	return nil
 }

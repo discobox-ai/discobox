@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 )
 
 // Config controls a pool proxy instance.
@@ -23,7 +23,7 @@ type Config struct {
 	Cache         CacheConfig
 	Recording     RecordingConfig
 	Allowlist     AllowlistConfig
-	Headers       []HeaderRule
+	Gateways      GatewaysConfig
 	Secrets       SecretsConfig
 	// Origins is the host the pool serves its sandboxes' Git origins at,
 	// which the proxy answers by forwarding to the pool rather than sending to
@@ -148,22 +148,15 @@ type AllowlistConfig struct {
 	Clients map[string][]string
 }
 
-// HeaderRule defines deterministic request header rewrites.
-type HeaderRule struct {
-	ID          string
-	Pattern     string
-	Methods     []string
-	PathRegexes []string
-	ClientIDs   []string
-	Conditions  []HeaderCondition
-	Set         map[string]string
-	Append      map[string]string
-}
-
-// HeaderCondition requires an incoming request header value to match exactly.
-type HeaderCondition struct {
-	Header string
-	Equals string
+// GatewaysConfig is each client's gateways (ADR 26-10-16-470), keyed by client
+// ID (the sandbox ID): the routes its requests are forwarded by once every
+// other policy has judged them as the sandbox sent them. A client absent from
+// Clients has none. They are validated where they are written, never here
+// (§1): one route this proxy reads differently is skipped
+// (gateway.NewTable), where refusing it would stop every other client's policy
+// from being applied with it.
+type GatewaysConfig struct {
+	Clients map[string][]gateway.Route
 }
 
 const (
@@ -297,11 +290,6 @@ func (c Config) Validate() error {
 			return fmt.Errorf("allowlist for client %q: %w", clientID, err)
 		}
 	}
-	for _, rule := range c.Headers {
-		if err := validateHeaderRule(rule); err != nil {
-			return err
-		}
-	}
 	for _, client := range c.Secrets.Clients {
 		if err := validateSecretClient(client); err != nil {
 			return err
@@ -320,49 +308,6 @@ func validateSecretClient(client SecretClient) error {
 	for _, sentinel := range client.Sentinels {
 		if strings.TrimSpace(sentinel) == "" {
 			return fmt.Errorf("secret client %q has empty sentinel", client.ClientID)
-		}
-	}
-	return nil
-}
-
-func validateHeaderRule(rule HeaderRule) error {
-	if strings.TrimSpace(rule.Pattern) == "" {
-		return errors.New("header rule pattern is required")
-	}
-	if len(rule.Set) == 0 && len(rule.Append) == 0 {
-		return fmt.Errorf("header rule %q must set or append at least one header", rule.ID)
-	}
-	for _, condition := range rule.Conditions {
-		if strings.TrimSpace(condition.Header) == "" {
-			return fmt.Errorf("header rule %q has condition with empty header", rule.ID)
-		}
-	}
-	for _, method := range rule.Methods {
-		if strings.TrimSpace(method) == "" {
-			return fmt.Errorf("header rule %q has empty method", rule.ID)
-		}
-	}
-	for _, pattern := range rule.PathRegexes {
-		if strings.TrimSpace(pattern) == "" {
-			return fmt.Errorf("header rule %q has empty path regex", rule.ID)
-		}
-		if _, err := regexp.Compile(pattern); err != nil {
-			return fmt.Errorf("header rule %q has invalid path regex %q: %w", rule.ID, pattern, err)
-		}
-	}
-	for _, clientID := range rule.ClientIDs {
-		if strings.TrimSpace(clientID) == "" {
-			return fmt.Errorf("header rule %q has empty client ID", rule.ID)
-		}
-	}
-	for key := range rule.Set {
-		if strings.TrimSpace(key) == "" {
-			return fmt.Errorf("header rule %q has empty set header name", rule.ID)
-		}
-	}
-	for key := range rule.Append {
-		if strings.TrimSpace(key) == "" {
-			return fmt.Errorf("header rule %q has empty append header name", rule.ID)
 		}
 	}
 	return nil

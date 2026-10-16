@@ -9,6 +9,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -202,6 +203,10 @@ type CreateOptions struct {
 	// merged from its levels. The provider records it with the pool proxy
 	// before the container is built; a later change arrives by Update.
 	Egress egress.Policy
+	// Gateways are the sandbox's project's gateways (ADR 26-10-16-470),
+	// recorded with the pool proxy beside Egress; a later change arrives by
+	// Update.
+	Gateways []gateway.Route
 
 	Name                 string
 	Description          *string
@@ -256,6 +261,10 @@ type UpdateOptions struct {
 	// Egress replaces the sandbox's effective egress policy at the pool proxy,
 	// whether or not its container exists. Nil leaves it as it is.
 	Egress *egress.Policy
+	// Gateways replaces the sandbox's gateways at the pool proxy, as Egress
+	// is replaced. Nil leaves them as they are; an empty, non-nil list
+	// removes them.
+	Gateways []gateway.Route
 	// SecretEnv replaces the sandbox's secret-bound env->sentinel map. It
 	// mirrors CreateOptions.SecretEnv.
 	SecretEnv map[string]string
@@ -394,6 +403,7 @@ type HTTPAuditExchangeDetail struct {
 	ResponseHeaders      map[string][]string `json:"responseHeaders"`
 	AppliedRuleID        string              `json:"appliedRuleId,omitempty"`
 	AppliedPattern       string              `json:"appliedPattern,omitempty"`
+	ForwardedURL         string              `json:"forwardedUrl,omitempty"`
 	AppliedHeaders       []string            `json:"appliedHeaders"`
 	CacheKey             string              `json:"cacheKey,omitempty"`
 	CacheStored          bool                `json:"cacheStored"`

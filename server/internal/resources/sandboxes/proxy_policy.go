@@ -9,35 +9,38 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// This file delivers a sandbox's effective egress policy (ADR 26-10-01-032),
-// merged by store.EffectiveSandboxEgress whenever it is needed.
+// This file delivers a sandbox's proxy policy: its effective egress policy
+// (ADR 26-10-01-032), merged by store.EffectiveSandboxEgress, and its
+// project's gateways (ADR 26-10-16-470), each read whenever it is needed.
 //
 // It reaches the pool two ways. A create carries it, so a new container is
-// restricted from its first request. Every change after that is delivered by
-// its own reconcile (SandboxEgressResourceType), which pushes the policy alone
-// through the pool's update route: it retries with the engine's backoff while a
-// pool is unreachable, records nothing on the sandbox, and reaches a sandbox
-// whatever its lifecycle is doing — a settled failure included. The sandbox
-// reconciler marks it after every create, so a create that merged its policy
-// before a change committed cannot leave the old one in force.
+// restricted and routed from its first request. Every change after that is
+// delivered by its own reconcile (SandboxProxyPolicyResourceType), which pushes
+// the policy alone through the pool's update route: it retries with the
+// engine's backoff while a pool is unreachable, records nothing on the sandbox,
+// and reaches a sandbox whatever its lifecycle is doing — a settled failure
+// included. The sandbox reconciler marks it after every create, so a create
+// that read its policy before a change committed cannot leave the old one in
+// force.
 
-// SandboxEgressResourceType is the reconcile-engine resource type that
-// delivers a sandbox's egress policy to its pool. Its IDs are SandboxDirtyID's.
-const SandboxEgressResourceType = "sandboxEgress"
+// SandboxProxyPolicyResourceType is the reconcile-engine resource type that
+// delivers a sandbox's proxy policy to its pool. Its IDs are SandboxDirtyID's.
+const SandboxProxyPolicyResourceType = "sandboxProxyPolicy"
 
-// sandboxEgressReconciler pushes a sandbox's merged policy to its pool.
-type sandboxEgressReconciler struct {
+// sandboxProxyPolicyReconciler pushes a sandbox's proxy policy to its pool.
+type sandboxProxyPolicyReconciler struct {
 	store     *store.Store
 	providers *ProviderManager
 }
 
-func (r *sandboxEgressReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
+func (r *sandboxProxyPolicyReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
 	projectID, sandboxID, err := splitSandboxDirtyID(id)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -59,11 +62,15 @@ func (r *sandboxEgressReconciler) Reconcile(ctx context.Context, id string) (rec
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	gateways, err := sandboxGateways(ctx, r.store, sb.ProjectID)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 	provider, err := r.providers.ResolveForSandbox(ctx, sb)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	_, _, err = provider.Update(ctx, sandboxRefFromSandbox(sb), sb.ProviderState, UpdateOptions{Egress: &policy})
+	_, _, err = provider.Update(ctx, sandboxRefFromSandbox(sb), sb.ProviderState, UpdateOptions{Egress: &policy, Gateways: gateways})
 	if errors.Is(err, ErrNotFound) {
 		// Never built, so nothing at the pool knows it yet: its create carries
 		// the policy, and marks this again once it has run.
@@ -72,12 +79,28 @@ func (r *sandboxEgressReconciler) Reconcile(ctx context.Context, id string) (rec
 	return reconcile.Result{}, err
 }
 
-// MarkEgressChangedTx marks the egress delivery of every sandbox of projectID
-// meant to exist — narrowed to one pool, one harness config, or both when they
-// are given — in the transaction that changed an egress level
-// (ADR 26-10-01-032 §5). A sandbox archived since is not marked: its next
-// create carries the policy anyway.
-func (s *Service) MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error {
+// sandboxGateways is the gateways a sandbox of projectID is routed through,
+// never nil: an update carrying none replaces what the pool holds with
+// nothing, where nil would leave it.
+func sandboxGateways(ctx context.Context, appStore *store.Store, projectID string) ([]gateway.Route, error) {
+	rows, err := appStore.ListProjectGateways(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("read project gateways: %w", err)
+	}
+	routes := make([]gateway.Route, 0, len(rows))
+	for _, row := range rows {
+		routes = append(routes, row.Route())
+	}
+	return routes, nil
+}
+
+// MarkProxyPolicyChangedTx marks the proxy policy delivery of every sandbox
+// of projectID meant to exist — narrowed to one pool, one harness config, or
+// both when they are given — in the transaction that changed an egress level
+// (ADR 26-10-01-032 §5) or the project's gateways (ADR 26-10-16-470 §5). A
+// sandbox archived since is not marked: its next create carries the policy
+// anyway.
+func (s *Service) MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error {
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
@@ -86,7 +109,7 @@ func (s *Service) MarkEgressChangedTx(ctx context.Context, txStore *store.Store,
 		return err
 	}
 	for _, sandboxID := range ids {
-		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxEgressResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxProxyPolicyResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
 			return err
 		}
 	}

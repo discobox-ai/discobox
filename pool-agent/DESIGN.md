@@ -863,7 +863,7 @@ proxy's loopback control API, with a token it signs itself.
   sandbox is then carried into the proxy token, where the proxy narrows again.
 - **One exchange, in full.** `audit/http/{exchangeId}` relays every field the
   recorder wrote, which is what a list leaves out: headers (already redacted
-  where the recorder wrote them), the rewrite rule that applied, cache state,
+  where the recorder wrote them), the gateway that applied and where it sent the request, cache state,
   body formats and errors, upgrade byte counts, and the recorder's own
   `enqueuedAt`/`writtenAt`. It deliberately does not carry the spool file names:
   those are paths on the pool's disk, and what a caller can do with a body is
@@ -1516,7 +1516,8 @@ proxy would recognize it.
   translated to the stable sentinel and resolved normally. The control plane
   never learns ephemeral sentinels exist.
 - **`policyPublisher` owns the proxy's per-client policy**, merging the stable
-  sentinels and the restricted sandboxes' egress allow lists from SecretsFile,
+  sentinels, the restricted sandboxes' egress allow lists, and each sandbox's
+  gateways from SecretsFile,
   live ephemeral sentinels, and the pool's host trusts.
   They have to be applied together because `ApplyConfig` replaces the whole of
   it, and each publish is one read-and-apply so two that race cannot land an
@@ -1533,6 +1534,15 @@ proxy would recognize it.
   the policy, and a push that raced a delete cannot leave an entry behind. An unrestricted policy removes the
   entry; archive and delete remove it with the sentinels
   (`RemoveSandboxPolicy`).
+- **A sandbox's gateways are recorded the same way**
+  ([ADR 26-10-16-470](../docs/adr/26-10-16-470-a-project-may-route-a-providers-api-through-a-gateway.md) §5):
+  `gateways` on the create and update requests, written by
+  `SetSandboxGateways` beside the egress policy, under the same lock and the
+  same rule for a sandbox with no container. A header taken from the server's
+  environment is recorded by its variable's name; the proxy asks the control
+  plane for the value through `secretResolver.ResolveGatewayHeaders`
+  (`/api/pools/{poolId}/resolve-gateway-headers`), with the resolve token, so
+  no value is ever on the pool's disk.
 - **Host trust** (`trusts.go`, [ADR 0149](../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md))
   is the protocol's trust verb. `RequestTrust` probes the host through the
   proxy (`proxy.Server.ProbeTLS`), so the chain a person pins from is the one

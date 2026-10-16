@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wire"
 )
@@ -44,6 +47,9 @@ type secretsDoc struct {
 	// sent in must fall on one, with no activation.
 	Routes map[string]map[string][]secretroute.Route `json:"routes,omitempty"`
 	Egress map[string][]string                       `json:"egress,omitempty"`
+	// Gateways are, per sandbox, its project's gateways (ADR 26-10-16-470).
+	// A header value from the server's environment is its variable's name.
+	Gateways map[string][]gateway.Route `json:"gateways,omitempty"`
 }
 
 // resolveContext is the on-disk resolve credential the proxy unit reads.
@@ -96,13 +102,26 @@ func SetSandboxEgress(root layout.Root, projectID, poolID string, sandboxID stri
 	})
 }
 
+// SetSandboxGateways records a sandbox's gateways for the proxy by updating
+// SecretsFile. None removes the sandbox's entry.
+func SetSandboxGateways(root layout.Root, projectID, poolID string, sandboxID string, routes []gateway.Route) error {
+	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		if len(routes) == 0 {
+			delete(doc.Gateways, sandboxID)
+			return
+		}
+		doc.Gateways[sandboxID] = slices.Clone(routes)
+	})
+}
+
 // RemoveSandboxPolicy drops a sandbox's sentinel set, its sentinels' routes,
-// and its egress policy from SecretsFile.
+// its egress policy, and its gateways from SecretsFile.
 func RemoveSandboxPolicy(root layout.Root, projectID, poolID string, sandboxID string) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
 		delete(doc.Clients, sandboxID)
 		delete(doc.Routes, sandboxID)
 		delete(doc.Egress, sandboxID)
+		delete(doc.Gateways, sandboxID)
 	})
 }
 
@@ -119,6 +138,9 @@ func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*s
 	}
 	if doc.Egress == nil {
 		doc.Egress = map[string][]string{}
+	}
+	if doc.Gateways == nil {
+		doc.Gateways = map[string][]gateway.Route{}
 	}
 	update(&doc)
 	return writeJSONAtomic(path, doc)
@@ -371,6 +393,52 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		result.ExpiresAt = activationExpiry
 	}
 	return result, nil
+}
+
+type gatewayHeadersBody struct {
+	SandboxID string   `json:"sandboxId"`
+	Gateway   string   `json:"gateway"`
+	Env       []string `json:"env"`
+}
+
+type gatewayHeadersResponse struct {
+	Values map[string]string `json:"values"`
+}
+
+// ResolveGatewayHeaders asks the control plane for the server environment
+// values a sandbox's gateway sets headers from (ADR 26-10-16-470 §4). The
+// control plane checks the sandbox is this pool's and that its project's
+// gateway names each variable; any answer but 200 is no answer, which the
+// proxy holds the request on rather than sending it without its headers.
+func (r *secretResolver) ResolveGatewayHeaders(ctx context.Context, req proxy.GatewayHeadersRequest) (map[string]string, error) {
+	rc, err := readResolveContext(r.contextPath)
+	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
+		return nil, errors.New("resolve gateway headers: no control plane credential yet")
+	}
+	url := fmt.Sprintf("%s/api/pools/%s/resolve-gateway-headers", rc.ControlPlaneURL, rc.PoolID)
+	payload, err := json.Marshal(gatewayHeadersBody{SandboxID: req.ClientID, Gateway: req.Gateway, Env: req.Env})
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+rc.Token)
+	resp, err := r.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("resolve gateway headers: control plane returned %d", resp.StatusCode)
+	}
+	var out gatewayHeadersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Values, nil
 }
 
 // resolveStatusTransient reports whether a status below 500 says the resolve
@@ -907,6 +975,10 @@ func (p *policyPublisher) apply() error {
 	for clientID, allow := range p.file.Egress {
 		allowlist[clientID] = append([]string(nil), allow...)
 	}
+	gateways := make(map[string][]gateway.Route, len(p.file.Gateways))
+	for clientID, routes := range p.file.Gateways {
+		gateways[clientID] = slices.Clone(routes)
+	}
 	trusts := p.trusts
 	p.mu.Unlock()
 	for clientID, sentinels := range p.live.sentinelsByClient() {
@@ -920,6 +992,7 @@ func (p *policyPublisher) apply() error {
 	cfg.Secrets.Clients = secretClients(merged)
 	cfg.Trusts = trusts
 	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
+	cfg.Gateways = proxy.GatewaysConfig{Clients: gateways}
 	return p.server.ApplyConfig(cfg)
 }
 

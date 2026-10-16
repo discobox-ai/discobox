@@ -2104,6 +2104,7 @@ func AllModels() []any {
 		&SandboxInventory{},
 		&SSHKey{},
 		&ProjectSkillsSource{},
+		&ProjectGateway{},
 		&Peer{},
 		&CredentialVerdict{},
 		&SecretRejection{},

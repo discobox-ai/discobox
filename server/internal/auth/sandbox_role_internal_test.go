@@ -254,6 +254,12 @@ func TestSandboxRoleAnswersOnlyItsOwnDiscoboxesRequests(t *testing.T) {
 		{"list the project's skills sources", roleLead, http.MethodGet, "/projects/default/skills-sources", http.StatusOK},
 		{"add a skills source", roleLead, http.MethodPost, "/projects/default/skills-sources", http.StatusForbidden},
 		{"remove a skills source", roleLead, http.MethodDelete, "/projects/default/skills-sources/skills-1", http.StatusForbidden},
+		// A discobox that could read or rewrite its project's gateways could
+		// send its own credentials anywhere (ADR 26-10-16-470 §6).
+		{"list the project's gateways", roleLead, http.MethodGet, "/projects/default/gateways", http.StatusForbidden},
+		{"get a gateway", roleLead, http.MethodGet, "/projects/default/gateways/anthropic", http.StatusForbidden},
+		{"put a gateway", roleLead, http.MethodPut, "/projects/default/gateways/anthropic", http.StatusForbidden},
+		{"delete a gateway", roleLead, http.MethodDelete, "/projects/default/gateways/anthropic", http.StatusForbidden},
 		{"read a person's discobox's request", roleLead, http.MethodGet, "/projects/default/secret-requests/sreq-persons", http.StatusForbidden},
 		{"approve a person's discobox's request", roleLead, http.MethodPost, "/projects/default/secret-requests/sreq-persons/approve", http.StatusForbidden},
 		{"approve a gone discobox's request", roleLead, http.MethodPost, "/projects/default/secret-requests/sreq-gone/approve", http.StatusForbidden},

@@ -26,7 +26,7 @@ import (
 // SandboxEgress converges a pool's discoboxes onto its changed egress level
 // (ADR 26-10-01-032 §5), in the transaction that changes it.
 type SandboxEgress interface {
-	MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
+	MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
 }
 
 type Service struct {
@@ -140,7 +140,7 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 		if !egressChanged {
 			return nil
 		}
-		return s.sandboxEgress.MarkEgressChangedTx(ctx, txStore, txDB, projectID, pool.ID, "")
+		return s.sandboxEgress.MarkProxyPolicyChangedTx(ctx, txStore, txDB, projectID, pool.ID, "")
 	}); err != nil {
 		return nil, err
 	}

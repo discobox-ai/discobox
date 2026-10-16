@@ -16,6 +16,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// putGateway stores a gateway on project-1.
+func putGateway(t *testing.T, st *store.Store, name string) {
+	t.Helper()
+	gw := &model.ProjectGateway{ProjectID: "project-1", Name: name, Match: "https://api.anthropic.com/v1", Target: "https://gw.example.com/anthropic/v1"}
+	if err := st.PutProjectGateway(context.Background(), gw); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // egressFixture stores one level of each kind and returns a sandbox on them.
 func egressFixture(t *testing.T, st *store.Store, project, pool, harnessLevel, own egress.Policy, imageHosts ...string) *model.Sandbox {
 	t.Helper()
@@ -98,6 +107,16 @@ func TestCreateOptionsCarryTheEffectiveEgress(t *testing.T) {
 	if !opts.Egress.DenyByDefault || !slices.Equal(opts.Egress.Allow, []string{"api.anthropic.com"}) {
 		t.Fatalf("create options egress = %+v", opts.Egress)
 	}
+	if opts.Gateways == nil || len(opts.Gateways) != 0 {
+		t.Fatalf("create options gateways = %#v, want none", opts.Gateways)
+	}
+	putGateway(t, st, "anthropic")
+	if opts, err = reconciler.createOptionsFromSandbox(context.Background(), sb); err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.Gateways) != 1 || opts.Gateways[0].Name != "anthropic" {
+		t.Fatalf("create options gateways = %+v, want the project's", opts.Gateways)
+	}
 }
 
 func TestADiscoboxMayNotCreateOneWiderThanItself(t *testing.T) {
@@ -145,7 +164,7 @@ func TestMarkEgressChangedMarksOnlyPresentSandboxesInScope(t *testing.T) {
 	archived := eligibleSandbox(t, st, "", "image", "sha256:x", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived })
 
 	if err := st.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		return svc.MarkEgressChangedTx(ctx, txStore, txDB, "project-1", "pool-1", "")
+		return svc.MarkProxyPolicyChangedTx(ctx, txStore, txDB, "project-1", "pool-1", "")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +213,7 @@ func TestUpdateSandboxEgressMarksIt(t *testing.T) {
 
 func dirtySandboxIDs(t *testing.T, svc *Service) []string {
 	t.Helper()
-	rows, err := svc.engine.ListDirty(context.Background(), SandboxEgressResourceType)
+	rows, err := svc.engine.ListDirty(context.Background(), SandboxProxyPolicyResourceType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +271,7 @@ func TestEgressReconcilePushesTheMergedPolicy(t *testing.T) {
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)
 	}
-	reconciler := &sandboxEgressReconciler{store: st, providers: svc.sandboxProviders}
+	reconciler := &sandboxProxyPolicyReconciler{store: st, providers: svc.sandboxProviders}
 	id := SandboxDirtyID("project-1", "sb-1")
 
 	if _, err := reconciler.Reconcile(ctx, id); err != nil {
@@ -261,6 +280,18 @@ func TestEgressReconcilePushesTheMergedPolicy(t *testing.T) {
 	if len(rec.egress) != 1 || !rec.egress[0].DenyByDefault || !slices.Equal(rec.egress[0].Allow, []string{"github.com"}) {
 		t.Fatalf("pushed %+v, want the project's restriction", rec.egress)
 	}
+	// No gateways is pushed as none, which takes away any the pool holds.
+	if len(rec.gateways) != 1 || rec.gateways[0] == nil || len(rec.gateways[0]) != 0 {
+		t.Fatalf("pushed gateways %#v, want an empty list", rec.gateways)
+	}
+	putGateway(t, st, "anthropic")
+	if _, err := reconciler.Reconcile(ctx, id); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(rec.gateways) != 2 || len(rec.gateways[1]) != 1 || rec.gateways[1][0].Match != "https://api.anthropic.com/v1" {
+		t.Fatalf("pushed gateways %+v, want the project's", rec.gateways)
+	}
+	rec.egress = rec.egress[:1]
 	if len(rec.updated) != 0 {
 		t.Fatalf("an egress push touched the sentinels: %v", rec.updated)
 	}

@@ -72,7 +72,7 @@ func (s stubHarnesses) SeedBuiltIns(ctx context.Context, projectID string) error
 // stubSandboxes records which projects an egress change was converged for.
 type stubSandboxes struct{ marked *[]string }
 
-func (s stubSandboxes) MarkEgressChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
+func (s stubSandboxes) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
 	*s.marked = append(*s.marked, projectID+"/"+poolID+"/"+harnessConfigID)
 	return nil
 }

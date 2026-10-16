@@ -133,6 +133,10 @@ type DeletePoolRes interface {
 	deletePoolRes()
 }
 
+type DeleteProjectGatewayRes interface {
+	deleteProjectGatewayRes()
+}
+
 type DeleteProjectRes interface {
 	deleteProjectRes()
 }
@@ -195,6 +199,10 @@ type GetJobRes interface {
 
 type GetPoolRes interface {
 	getPoolRes()
+}
+
+type GetProjectGatewayRes interface {
+	getProjectGatewayRes()
 }
 
 type GetProjectRes interface {
@@ -345,6 +353,10 @@ type ListPoolsRes interface {
 	listPoolsRes()
 }
 
+type ListProjectGatewaysRes interface {
+	listProjectGatewaysRes()
+}
+
 type ListProjectSkillsSourcesRes interface {
 	listProjectSkillsSourcesRes()
 }
@@ -449,6 +461,10 @@ type PurgeSandboxRes interface {
 	purgeSandboxRes()
 }
 
+type PutProjectGatewayRes interface {
+	putProjectGatewayRes()
+}
+
 type PutSandboxRuntimeConfigRes interface {
 	putSandboxRuntimeConfigRes()
 }
@@ -495,6 +511,10 @@ type ReportSandboxInventoriesRes interface {
 
 type ReportSandboxSecretRejectionRes interface {
 	reportSandboxSecretRejectionRes()
+}
+
+type ResolveGatewayHeadersRes interface {
+	resolveGatewayHeadersRes()
 }
 
 type ResolveSandboxSecretRes interface {

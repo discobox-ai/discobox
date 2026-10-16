@@ -133,7 +133,7 @@ func (s *Service) findMark(ctx context.Context, projectID, jobID string) (*recon
 // ids carry a "projectID/" prefix.
 func markInProject(mark reconcile.DirtyResource, projectID string, _ map[string]struct{}) bool {
 	switch mark.ResourceType {
-	case sandboxes.SandboxResourceType, sandboxes.SentinelsResourceType, sandboxes.SandboxEgressResourceType, sandboxes.SandboxPowerResourceType, pools.PoolResourceType:
+	case sandboxes.SandboxResourceType, sandboxes.SentinelsResourceType, sandboxes.SandboxProxyPolicyResourceType, sandboxes.SandboxPowerResourceType, pools.PoolResourceType:
 		return strings.HasPrefix(mark.ResourceID, projectID+"/")
 	default:
 		return false

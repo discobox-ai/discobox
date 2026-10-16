@@ -589,11 +589,17 @@ is told about the discobox a call names. Nothing cascades by it: no archive,
 no purge, no inherited grant.
 
 It may not create one that can reach a destination it cannot
-(`refuseWiderThanCreator`, [Egress](#egress)): the new discobox's effective
+(`refuseWiderThanCreator`, [Proxy policy](#proxy-policy)): the new discobox's effective
 policy, merged from the project, the pool and harness it names, and the level
 in the body, must be covered by the creator's as it stands.
 
-## Egress
+## Proxy policy
+
+What a discobox's pool proxy holds for it beside its sentinels is its proxy
+policy: its effective egress policy, below, and its project's gateways
+([ADR 26-10-16-470](../../../../docs/adr/26-10-16-470-a-project-may-route-a-providers-api-through-a-gateway.md)),
+which `ListProjectGateways` reads as they stand. Both are delivered together,
+the same way (`proxy_policy.go`).
 
 A discobox's effective egress policy is the merge of four levels — its
 project's, its pool's, its harness config's (with the hosts the harness image
@@ -608,11 +614,13 @@ declares), and its own `Sandbox.Egress` — by the rule in
   holds a discobox's writes to another to discoboxes within its policy
   ([auth](../../auth/DESIGN.md)). No copy exists to go stale.
 - **A create carries it; a push delivers every change.** A level change —
-  project, pool, harness config, or a sandbox's own — marks the
-  `sandboxEgress` resource of every sandbox in its scope that is meant to
-  exist (`MarkEgressChangedTx`), in the transaction that writes the level. Its
-  reconciler (`sandboxEgressReconciler`) sends the merged policy alone through
-  the provider's `Update`. It is separate from the sandbox's own reconcile on
+  project, pool, harness config, or a sandbox's own — or a change to the
+  project's gateways marks the `sandboxProxyPolicy` resource of every sandbox
+  in its scope that is meant to exist (`MarkProxyPolicyChangedTx`), in the
+  transaction that writes it. Its reconciler (`sandboxProxyPolicyReconciler`)
+  sends the merged egress policy and the gateways alone through the
+  provider's `Update`; gateways are always sent as a list, empty when there
+  are none, so one removed is taken away. It is separate from the sandbox's own reconcile on
   purpose: it reaches a settled failure, which ensure skips, and an
   unreachable pool is the engine's retry, never a failure recorded on the
   sandbox. A sandbox never built settles it: its create carries the policy.

@@ -139,6 +139,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropPoolImageStaging(write); err != nil {
 		return err
 	}
+	if err := renameSandboxEgressReconcile(write); err != nil {
+		return err
+	}
 	if err := dropProjectEvents(write); err != nil {
 		return err
 	}
@@ -1106,6 +1109,26 @@ func rekeySandboxOrigins(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// renameSandboxEgressReconcile moves the pending pushes of a sandbox's egress
+// policy to the reconcile that now pushes its whole proxy policy, egress and
+// gateways together (ADR 26-10-16-470 §5). A mark carries no intent of its
+// own, only that the push is owed, so a sandbox marked under both names keeps
+// the new mark and drops the old one.
+func renameSandboxEgressReconcile(db *gorm.DB) error {
+	if !db.Migrator().HasTable("reconcile_dirty") {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE reconcile_dirty SET resource_type = ?
+			WHERE resource_type = ? AND resource_id NOT IN (
+				SELECT resource_id FROM reconcile_dirty WHERE resource_type = ?)`,
+			"sandboxProxyPolicy", "sandboxEgress", "sandboxProxyPolicy").Error; err != nil {
+			return err
+		}
+		return tx.Exec("DELETE FROM reconcile_dirty WHERE resource_type = ?", "sandboxEgress").Error
+	})
 }
 
 // dropPoolImageStaging retires the prepull condition and its queued work while

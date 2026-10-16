@@ -40,7 +40,7 @@ type HarnessConfigs interface {
 // Sandboxes converges the project's discoboxes onto a changed egress level
 // (ADR 26-10-01-032 §5), in the transaction that changes it.
 type Sandboxes interface {
-	MarkEgressChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
+	MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
 }
 
 type Service struct {
@@ -192,7 +192,7 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		if err := txStore.SetProjectEgress(ctx, projectID, project.Egress); err != nil {
 			return err
 		}
-		return s.sandboxes.MarkEgressChangedTx(ctx, txStore, txDB, projectID, "", "")
+		return s.sandboxes.MarkProxyPolicyChangedTx(ctx, txStore, txDB, projectID, "", "")
 	}); err != nil {
 		return nil, err
 	}

@@ -748,11 +748,21 @@ func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel 
 // transient failure and retryUntil has not passed. A denial is an answer and is
 // never asked again; a failure that outlasts the window is returned for the
 // caller to refuse the request on (ADR 26-10-14-482 §2).
+func (s *Swapper) resolveRetrying(ctx context.Context, req ResolveRequest, retryUntil time.Time) (ResolveResult, error) {
+	return RetryTransient(ctx, retryUntil, func(attempt context.Context) (ResolveResult, error) {
+		return s.resolver.Resolve(attempt, req)
+	}, func(err error) bool { return errors.Is(err, ErrDenied) })
+}
+
+// RetryTransient runs ask, and runs it again while it fails, the failure is
+// not an answer (answered), and retryUntil has not passed: the control plane's
+// outage rule for anything the proxy asks it for (ADR 26-10-14-482 §2). The
+// last failure is returned for the caller to refuse the request on.
 //
 // Each ask is bounded by the window too, so a control plane that hangs rather
 // than refusing holds the request no longer than one that refuses — except
 // that an ask is never given less than resolveAttemptFloor.
-func (s *Swapper) resolveRetrying(ctx context.Context, req ResolveRequest, retryUntil time.Time) (ResolveResult, error) {
+func RetryTransient[T any](ctx context.Context, retryUntil time.Time, ask func(context.Context) (T, error), answered func(error) bool) (T, error) {
 	pause := resolveRetryBackoff
 	for {
 		attemptUntil := retryUntil
@@ -760,9 +770,9 @@ func (s *Swapper) resolveRetrying(ctx context.Context, req ResolveRequest, retry
 			attemptUntil = floor
 		}
 		attempt, cancel := context.WithDeadline(ctx, attemptUntil)
-		result, err := s.resolver.Resolve(attempt, req)
+		result, err := ask(attempt)
 		cancel()
-		if err == nil || errors.Is(err, ErrDenied) {
+		if err == nil || answered(err) {
 			return result, err
 		}
 		remaining := time.Until(retryUntil)

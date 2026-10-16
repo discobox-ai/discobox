@@ -310,26 +310,32 @@ func (h *httpProxy) roundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.R
 	// and net/http keeps it in req.Close after dropHopByHopHeaders removed
 	// the header. Sent on, it would close the upstream connection, or retire
 	// an HTTP/2 one that other requests share.
-	if req.Close {
-		outbound := *req
-		outbound.Close = false
-		req = &outbound
+	outbound := req
+	if outbound.Close {
+		copied := *outbound
+		copied.Close = false
+		outbound = &copied
+	}
+	// A gateway forwards a copy; req stays as the sandbox sent it, which is
+	// what its audit row records (ADR 26-10-16-470 §3).
+	if meta != nil && meta.gateway != nil {
+		outbound = meta.gateway.outbound(outbound)
 	}
 	transport := ctx.Proxy.Tr
 	switch {
 	case meta != nil && meta.trust != nil:
 		transport = meta.trust.transport
-	case cleartextHTTP2(req):
+	case cleartextHTTP2(outbound):
 		transport = h.h2c
 	}
-	resp, err := transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(outbound)
 	switch {
 	case err == nil || meta == nil:
 		return resp, err
 	case untrustedCertificate(err):
-		return h.refuseUntrusted(req, meta, err), nil
+		return h.refuseUntrusted(req, outbound, meta, err), nil
 	default:
-		return upstreamFailed(req, transport, err), nil
+		return upstreamFailed(outbound, transport, err), nil
 	}
 }
 
@@ -363,8 +369,11 @@ func upstreamFailed(req *http.Request, transport *http.Transport, cause error) *
 
 // refuseUntrusted answers a request whose upstream certificate was refused.
 // Nothing was sent: the handshake is what failed.
-func (h *httpProxy) refuseUntrusted(req *http.Request, meta *requestMeta, cause error) *http.Response {
-	endpoint := requestEndpoint(req)
+//
+// req is the request as the sandbox sent it, which is what is recorded;
+// outbound is what was sent on, whose host is the one to trust.
+func (h *httpProxy) refuseUntrusted(req, outbound *http.Request, meta *requestMeta, cause error) *http.Response {
+	endpoint := requestEndpoint(outbound)
 	reason := "upstream certificate not trusted"
 	if meta.trust != nil {
 		reason = "upstream certificate does not match the pin this sandbox trusts it by"
@@ -372,20 +381,25 @@ func (h *httpProxy) refuseUntrusted(req *http.Request, meta *requestMeta, cause 
 	meta.answered = true
 	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusBadGateway))
 	h.audit.RecordHTTP(audit.HTTPEvent{
-		Context:          meta.ctx,
-		Time:             time.Now().UTC(),
-		ClientID:         meta.client.ID,
-		ClientSubject:    meta.client.Subject,
-		ClientSerial:     meta.client.Serial,
-		Method:           req.Method,
-		URL:              meta.url(req),
-		Host:             req.Host,
-		Status:           http.StatusBadGateway,
-		Blocked:          true,
-		BlockedReason:    reason + ": " + cause.Error(),
-		SwappedUseIDs:    meta.swappedUseIDs,
-		SwappedSecretIDs: meta.swappedSecretIDs,
-		RequestHeaders:   req.Header,
+		Context:              meta.ctx,
+		Time:                 time.Now().UTC(),
+		ClientID:             meta.client.ID,
+		ClientSubject:        meta.client.Subject,
+		ClientSerial:         meta.client.Serial,
+		Method:               req.Method,
+		URL:                  meta.url(req),
+		Host:                 req.Host,
+		Status:               http.StatusBadGateway,
+		Blocked:              true,
+		BlockedReason:        reason + ": " + cause.Error(),
+		AppliedRuleID:        meta.appliedRuleID,
+		AppliedPattern:       meta.appliedPattern,
+		AppliedHeaders:       meta.appliedHeaders,
+		ForwardedURL:         meta.forwardedURL,
+		SwappedUseIDs:        meta.swappedUseIDs,
+		SwappedSecretIDs:     meta.swappedSecretIDs,
+		RedactRequestHeaders: meta.redactRequestHeaders(),
+		RequestHeaders:       req.Header,
 	})
 	meta.span.End()
 	body := fmt.Sprintf("blocked by proxy: %s for %s (%v).\n"+
@@ -428,7 +442,7 @@ func (s *Server) ProbeTLS(ctx context.Context, clientID, endpoint string) (TLSPr
 	if endpoint == "" {
 		return TLSProbe{}, errors.New("probe needs a host:port")
 	}
-	flt, _ := s.http.policy()
+	flt := s.http.policy()
 	if !flt.AllowHostForClient(endpoint, clientID) {
 		return TLSProbe{}, ErrProbeHostDenied
 	}

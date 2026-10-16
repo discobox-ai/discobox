@@ -8,6 +8,9 @@ import poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 type EgressPolicy = poolagentapi.EgressPolicy
 type ErrorDetail = poolagentapi.ErrorDetail
 type ErrorModel = poolagentapi.ErrorModel
+type Gateway = poolagentapi.Gateway
+type GatewayHeader = poolagentapi.GatewayHeader
+type GatewayHeaderModifier = poolagentapi.GatewayHeaderModifier
 type GitSource = poolagentapi.GitSource
 type GitSourceCheckout = poolagentapi.GitSourceCheckout
 type GitSourceDestination = poolagentapi.GitSourceDestination

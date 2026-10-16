@@ -355,6 +355,15 @@ func (UnimplementedHandler) DeleteProject(ctx context.Context, params DeleteProj
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteProjectGateway implements delete-project-gateway operation.
+//
+// Remove a gateway.
+//
+// DELETE /projects/{projectId}/gateways/{gatewayName}
+func (UnimplementedHandler) DeleteProjectGateway(ctx context.Context, params DeleteProjectGatewayParams) (r DeleteProjectGatewayRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteProjectSkillsSource implements delete-project-skills-source operation.
 //
 // Remove a skills repository from the project's list.
@@ -500,6 +509,15 @@ func (UnimplementedHandler) GetPool(ctx context.Context, params GetPoolParams) (
 //
 // GET /projects/{projectId}
 func (UnimplementedHandler) GetProject(ctx context.Context, params GetProjectParams) (r GetProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetProjectGateway implements get-project-gateway operation.
+//
+// Get a gateway.
+//
+// GET /projects/{projectId}/gateways/{gatewayName}
+func (UnimplementedHandler) GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (r GetProjectGatewayRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -864,6 +882,15 @@ func (UnimplementedHandler) ListPools(ctx context.Context, params ListPoolsParam
 	return r, ht.ErrNotImplemented
 }
 
+// ListProjectGateways implements list-project-gateways operation.
+//
+// List the gateways every discobox of the project is routed through.
+//
+// GET /projects/{projectId}/gateways
+func (UnimplementedHandler) ListProjectGateways(ctx context.Context, params ListProjectGatewaysParams) (r ListProjectGatewaysRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListProjectSkillsSources implements list-project-skills-sources operation.
 //
 // List the skills repositories every discobox of the project is created with, in order.
@@ -1121,6 +1148,16 @@ func (UnimplementedHandler) PurgeSandbox(ctx context.Context, params PurgeSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// PutProjectGateway implements put-project-gateway operation.
+//
+// Every discobox of the project is routed through it from its next request; a discobox whose pool
+// cannot be reached yet takes it when the pool can.
+//
+// PUT /projects/{projectId}/gateways/{gatewayName}
+func (UnimplementedHandler) PutProjectGateway(ctx context.Context, req *PutProjectGatewayBody, params PutProjectGatewayParams) (r PutProjectGatewayRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
 //
 // Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
@@ -1246,6 +1283,15 @@ func (UnimplementedHandler) ReportSandboxInventories(ctx context.Context, req *R
 //
 // POST /api/pools/{poolId}/sandbox-secret-rejections
 func (UnimplementedHandler) ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (r ReportSandboxSecretRejectionRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ResolveGatewayHeaders implements resolve-gateway-headers operation.
+//
+// Resolve the server environment values a sandbox's gateway sets headers from.
+//
+// POST /api/pools/{poolId}/resolve-gateway-headers
+func (UnimplementedHandler) ResolveGatewayHeaders(ctx context.Context, req *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (r ResolveGatewayHeadersRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

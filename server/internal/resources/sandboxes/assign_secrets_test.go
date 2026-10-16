@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -25,7 +26,9 @@ type recordingProvider struct {
 	updateErrs []error
 	// egress records each egress policy pushed, and updateErr is what Update
 	// answers with.
-	egress    []egress.Policy
+	egress []egress.Policy
+	// gateways records each set of gateways pushed.
+	gateways  [][]gateway.Route
 	updateErr error
 	createErr error
 }
@@ -63,6 +66,9 @@ func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, stat
 	}
 	if opts.Egress != nil {
 		p.egress = append(p.egress, *opts.Egress)
+	}
+	if opts.Gateways != nil {
+		p.gateways = append(p.gateways, opts.Gateways)
 	}
 	return nil, state, nil
 }

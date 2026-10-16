@@ -564,7 +564,7 @@ func (s *Service) markEgressChangedTx(ctx context.Context, txStore *store.Store,
 	if !changed || s.sandboxes == nil {
 		return nil
 	}
-	return s.sandboxes.MarkEgressChangedTx(ctx, txStore, txDB, config.ProjectID, "", config.ID)
+	return s.sandboxes.MarkProxyPolicyChangedTx(ctx, txStore, txDB, config.ProjectID, "", config.ID)
 }
 
 // applyResolvedImageDigest is the single place a harness config's resolved

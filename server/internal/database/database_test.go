@@ -2061,3 +2061,44 @@ func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
 		t.Errorf("log = %q, want one line for each of the three deleted rules and none for the one kept", said)
 	}
 }
+
+// A sandbox's pending egress push becomes a pending proxy policy push, once,
+// however many times the server starts (ADR 26-10-16-470 §5).
+func TestMigrateMovesEgressPushesToProxyPolicy(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for _, sql := range []string{
+		"CREATE TABLE reconcile_dirty (resource_type text, resource_id text, PRIMARY KEY (resource_type, resource_id))",
+		"INSERT INTO reconcile_dirty VALUES ('sandboxEgress', 'project-1/sb-1'), ('sandboxEgress', 'project-1/sb-2'), ('sandboxProxyPolicy', 'project-1/sb-2'), ('pool', 'project-1/pool-1')",
+	} {
+		if err := db.Write.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows []struct{ ResourceType, ResourceID string }
+	if err := db.Write.Raw("SELECT resource_type, resource_id FROM reconcile_dirty ORDER BY resource_type, resource_id").Scan(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ ResourceType, ResourceID string }{
+		{"pool", "project-1/pool-1"},
+		{"sandboxProxyPolicy", "project-1/sb-1"},
+		{"sandboxProxyPolicy", "project-1/sb-2"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %+v", rows)
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Fatalf("rows = %+v, want %+v", rows, want)
+		}
+	}
+}

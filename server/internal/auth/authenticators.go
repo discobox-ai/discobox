@@ -266,6 +266,9 @@ var poolRuntimeActions = map[string]bool{
 	"sandbox-states":         false,
 	"status":                 false,
 	"resolve-sandbox-secret": false,
+	// A gateway's header values from the server's environment (ADR
+	// 26-10-16-470 §4). One call names its gateway in the body.
+	"resolve-gateway-headers": false,
 	// What an upstream made of a swapped credential (ADR 0132). One call
 	// reports one verdict, so it takes no trailing ID.
 	"sandbox-secret-rejections": false,

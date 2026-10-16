@@ -388,7 +388,7 @@ func (r *SandboxReconciler) updateAfterCreate(ctx context.Context, sandbox *mode
 		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
 			return err
 		}
-		return r.engine.MarkDirtyTx(ctx, txDB, SandboxEgressResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
+		return r.engine.MarkDirtyTx(ctx, txDB, SandboxProxyPolicyResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
 	}); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return reconcile.Superseded("sandbox generation changed")
@@ -617,6 +617,10 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			return CreateOptions{}, err
 		}
 		opts.Egress = policy
+		// Its project's gateways, for the same reason (ADR 26-10-16-470 §5).
+		if opts.Gateways, err = sandboxGateways(ctx, r.store, sb.ProjectID); err != nil {
+			return CreateOptions{}, err
+		}
 	}
 	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences

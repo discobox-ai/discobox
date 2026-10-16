@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/cache"
 	"github.com/discobox-ai/discobox/proxy/internal/filter"
-	"github.com/discobox-ai/discobox/proxy/internal/rules"
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 	"github.com/elazarl/goproxy"
 	"go.opentelemetry.io/otel/attribute"
@@ -28,10 +28,16 @@ import (
 )
 
 type httpProxy struct {
-	proxy    *goproxy.ProxyHttpServer
-	certs    *CertificateBundle
-	filter   *filter.Filter
-	rewriter *rules.Rewriter
+	proxy  *goproxy.ProxyHttpServer
+	certs  *CertificateBundle
+	filter *filter.Filter
+	// gateways is each client's gateways (ADR 26-10-16-470), replaced whole
+	// by ApplyConfig.
+	gateways map[string]*gateway.Table
+	// resolver is how a gateway's header values are asked of the control
+	// plane, and gatewayValues what it answered; nil asks nothing.
+	resolver      SecretResolver
+	gatewayValues *gatewayValues
 	// swapper is the proxy's one Swapper, set at construction and
 	// reconfigured in place (ADR 26-10-14-482 §1); nil swaps nothing.
 	swapper       *secrets.Swapper
@@ -69,12 +75,20 @@ type requestMeta struct {
 	// request to a trusted host that carried no sentinel was never asked
 	// about there, and is asked about on its own below; one that carried a
 	// sentinel was asked about against both, and must not be asked twice.
-	authorized           bool
-	cacheKey             string
-	cacheError           string
+	authorized bool
+	cacheKey   string
+	cacheError string
+	// gateway is the gateway the request falls under (ADR 26-10-16-470), and
+	// the applied fields its name, match, and the headers it touches, for the
+	// audit row; forwardedURL is where it sent the request.
+	gateway *appliedGateway
+	// credentialWithheld is a swapped credential the gateway removed or
+	// replaced before sending (appliedGateway.withholds).
+	credentialWithheld   bool
 	appliedRuleID        string
 	appliedPattern       string
 	appliedHeaders       []string
+	forwardedURL         string
 	requestBodyRecord    *audit.BodyRecord
 	requestBodySpool     *audit.BodySpool
 	requestBodyError     string
@@ -215,28 +229,32 @@ type requestBodyStream struct {
 	meta   *requestMeta
 }
 
-func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.Rewriter, swapper *secrets.Swapper, c *cache.Cache, recorder *audit.Recorder) *httpProxy {
+func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, gateways map[string]*gateway.Table, resolver SecretResolver, swapper *secrets.Swapper, c *cache.Cache, recorder *audit.Recorder) *httpProxy {
 	p := goproxy.NewProxyHttpServer()
 	p.Verbose = false
 	enableHTTP2(p)
-	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
+	h := &httpProxy{
+		proxy: p, certs: certs, filter: flt, gateways: gateways, resolver: resolver, gatewayValues: newGatewayValues(),
+		swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{},
+	}
 	h.reports = newCredentialReporter(swapper.Report)
 	h.setupMITM()
 	h.setupHandlers()
 	return h
 }
 
-func (h *httpProxy) setPolicy(flt *filter.Filter, rewriter *rules.Rewriter) {
+func (h *httpProxy) setPolicy(flt *filter.Filter, gateways map[string]*gateway.Table) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.filter = flt
-	h.rewriter = rewriter
+	h.gateways = gateways
+	h.mu.Unlock()
+	h.gatewayValues.retain(gateways)
 }
 
-func (h *httpProxy) policy() (*filter.Filter, *rules.Rewriter) {
+func (h *httpProxy) policy() *filter.Filter {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.filter, h.rewriter
+	return h.filter
 }
 
 func (h *httpProxy) setupMITM() {
@@ -274,7 +292,7 @@ func (h *httpProxy) setupHandlers() {
 			req = proxyCtx.Req
 		}
 		client := h.clientIdentity(req)
-		flt, _ := h.policy()
+		flt := h.policy()
 		if proxyCtx != nil {
 			proxyCtx.UserData = &connectTunnel{authority: host}
 		}
@@ -380,8 +398,9 @@ func (h *httpProxy) setupHandlers() {
 			return req, h.serveOrigin(req, meta, client)
 		}
 
-		flt, rewriter := h.policy()
-		if !flt.AllowHostForClient(req.Host, client.ID) {
+		// Every policy judges the request as the sandbox sent it; a gateway
+		// is only how it is forwarded (ADR 26-10-16-470 §3).
+		if !h.policy().AllowHostForClient(req.Host, client.ID) {
 			meta.answered = true
 			span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusForbidden))
 			h.audit.RecordHTTP(audit.HTTPEvent{
@@ -401,9 +420,25 @@ func (h *httpProxy) setupHandlers() {
 			span.End()
 			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "blocked by proxy")
 		}
-		meta.trust = h.trustTable().lookup(client.ID, requestEndpoint(req), time.Now())
+		endpoint := requestEndpoint(req)
+		applied, viaGateway, err := h.matchGateway(req, client.ID)
+		if err != nil {
+			meta.recordGateway(applied)
+			resp := h.refuseGateway(req, meta, client, http.StatusBadRequest,
+				fmt.Sprintf("gateway: %s: the request's %v, which a server could read as another path", applied.route.Name, err))
+			return req, resp
+		}
+		if viaGateway {
+			meta.recordGateway(applied)
+			// The pin that matters is the one for where the request goes.
+			endpoint = requestEndpoint(&http.Request{URL: applied.forwarded})
+		}
+		meta.trust = h.trustTable().lookup(client.ID, endpoint, time.Now())
 
-		if matcher := h.cache.Matcher(); matcher != nil && matcher.ShouldCache(req) {
+		// A gateway's response is not cached: it is the gateway's, which the
+		// project can change or remove, and a key made from what the sandbox
+		// sent would outlive either.
+		if matcher := h.cache.Matcher(); !viaGateway && matcher != nil && matcher.ShouldCache(req) {
 			key := matcher.GenerateKey(req)
 			meta.cacheKey = key
 			lookupCtx, lookupSpan := proxyTracer().Start(traceCtx, "proxy.cache.lookup",
@@ -442,21 +477,6 @@ func (h *httpProxy) setupHandlers() {
 			lookupSpan.End()
 		}
 
-		_, rewriteSpan := proxyTracer().Start(traceCtx, "proxy.header_rewrite")
-		match := rewriter.Apply(req, client.ID)
-		if match.Matched {
-			meta.appliedRuleID = match.RuleID
-			meta.appliedPattern = match.Pattern
-			meta.appliedHeaders = match.Headers
-			rewriteSpan.SetAttributes(
-				attribute.Bool("proxy.header_rewrite.matched", true),
-				attribute.String("proxy.header_rewrite.rule_id", match.RuleID),
-				attribute.String("proxy.header_rewrite.pattern", match.Pattern),
-			)
-		} else {
-			rewriteSpan.SetAttributes(attribute.Bool("proxy.header_rewrite.matched", false))
-		}
-		rewriteSpan.End()
 		if refused := h.swapSecrets(req, meta, client); refused != nil {
 			span.End()
 			return req, refused
@@ -470,6 +490,18 @@ func (h *httpProxy) setupHandlers() {
 				return req, refused
 			}
 			meta.authorized = true
+		}
+		if viaGateway {
+			if refused := h.resolveGateway(req, meta, client, applied); refused != nil {
+				return req, refused
+			}
+			// A credential the gateway removes or replaces never reaches the
+			// upstream, so its answer is no evidence about it: neither retried
+			// on a 401 nor reported either way.
+			if applied.withholds(meta.swappedHeaders) {
+				meta.credentialWithheld = true
+				meta.reportSentinels = nil
+			}
 		}
 		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
@@ -617,6 +649,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		AppliedRuleID:        meta.appliedRuleID,
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
+		ForwardedURL:         meta.forwardedURL,
 		SwappedUseIDs:        meta.swappedUseIDs,
 		SwappedSecretIDs:     meta.swappedSecretIDs,
 		RedactRequestHeaders: meta.redactRequestHeaders(),
@@ -1012,10 +1045,10 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	if resp.StatusCode != http.StatusUnauthorized || meta.retried {
 		return nil
 	}
-	if len(meta.swappedHeaders) == 0 || len(meta.swappedSentinels) == 0 {
-		// Not a request this proxy put a credential into: the 401 belongs to
-		// whatever the sandbox sent, and is neither ours to retry nor ours to
-		// report.
+	if len(meta.swappedHeaders) == 0 || len(meta.swappedSentinels) == 0 || meta.credentialWithheld {
+		// Not a request this proxy put a credential into, or one whose
+		// credential a gateway took out before it was sent: the 401 belongs to
+		// whatever was sent, and is neither ours to retry nor ours to report.
 		return nil
 	}
 	swapper := h.swapper
@@ -1344,6 +1377,7 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		AppliedRuleID:        s.meta.appliedRuleID,
 		AppliedPattern:       s.meta.appliedPattern,
 		AppliedHeaders:       s.meta.appliedHeaders,
+		ForwardedURL:         s.meta.forwardedURL,
 		SwappedUseIDs:        s.meta.swappedUseIDs,
 		SwappedSecretIDs:     s.meta.swappedSecretIDs,
 		RedactRequestHeaders: s.meta.redactRequestHeaders(),
@@ -1445,6 +1479,7 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			AppliedRuleID:        s.meta.appliedRuleID,
 			AppliedPattern:       s.meta.appliedPattern,
 			AppliedHeaders:       s.meta.appliedHeaders,
+			ForwardedURL:         s.meta.forwardedURL,
 			SwappedUseIDs:        s.meta.swappedUseIDs,
 			SwappedSecretIDs:     s.meta.swappedSecretIDs,
 			RedactRequestHeaders: s.meta.redactRequestHeaders(),
@@ -1524,8 +1559,8 @@ func (s *requestBodyStream) Close() error {
 	return err
 }
 
-// redactRequestHeaders returns the header names to redact in audit: rewrite-rule
-// headers plus any header whose value was secret-swapped.
+// redactRequestHeaders returns the header names to redact in audit: the
+// headers a gateway touches plus any header whose value was secret-swapped.
 func (m *requestMeta) redactRequestHeaders() []string {
 	if len(m.swappedHeaders) == 0 {
 		return m.appliedHeaders
