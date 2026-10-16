@@ -195,6 +195,25 @@ func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimode
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
 
+// PoolPowerDownSandbox powers a sandbox down on its own request, once it has
+// confirmed it (ADR 26-10-16-337 §5). A refusal is a typed 409: nothing
+// changed, and the control plane reads it as an instruction with nothing to do.
+func (s *sandboxService) PoolPowerDownSandbox(ctx context.Context, req *workerapimodel.PoolSandboxPowerDownRequest, params workerapi.PoolPowerDownSandboxParams) (*workerapimodel.PoolSandboxPowerDownResult, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	wake, err := s.runtime.PowerDownSandbox(ctx, params.SandboxId, sandboxruntime.PowerDownReason(req.Reason))
+	if err != nil {
+		return nil, mapRuntimeError(err)
+	}
+	out := &workerapimodel.PoolSandboxPowerDownResult{}
+	if !wake.At.IsZero() {
+		out.WakeAt = workerapi.NewOptDateTime(wake.At)
+		out.Wake = workerapi.NewOptString(wake.Name)
+	}
+	return out, nil
+}
+
 func (s *sandboxService) PoolRestartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolRestartSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err
@@ -341,6 +360,9 @@ func mapRuntimeError(err error) error {
 	// and the one that sends the caller to repair it.
 	if errors.Is(err, sandboxruntime.ErrNoContainer) {
 		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxNoContainer)
+	}
+	if errors.Is(err, sandboxruntime.ErrPowerDownRefused) {
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxPowerDownRefused)
 	}
 	if errors.Is(err, sandboxruntime.ErrImageUnavailable) {
 		return newTypedStatusError(http.StatusUnprocessableEntity, err.Error(), workerapimodel.ErrorTypeSandboxImageUnavailable)

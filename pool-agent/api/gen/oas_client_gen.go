@@ -107,6 +107,18 @@ type Invoker interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes
 	PoolListSandboxes(ctx context.Context, params PoolListSandboxesParams) (*PoolSandboxListResponse, error)
+	// PoolPowerDownSandbox invokes pool-power-down-sandbox operation.
+	//
+	// Powers a sandbox down on its own request (ADR 26-10-16-337 §5).
+	// Under the sandbox's power lock the pool asks the sandbox to confirm
+	// the reason, fresh; a sandbox that is not running or does not
+	// confirm is refused with a 409 of type sandbox-power-down-refused,
+	// and nothing changes. A confirmed idle stops the sandbox; a
+	// confirmed sleep freezes it where the runtime can, and stops it
+	// otherwise.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
+	PoolPowerDownSandbox(ctx context.Context, request *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (*PoolSandboxPowerDownResult, error)
 	// PoolRestartSandbox invokes pool-restart-sandbox operation.
 	//
 	// Restart pool sandbox.
@@ -2092,6 +2104,179 @@ func (c *Client) sendPoolListSandboxes(ctx context.Context, params PoolListSandb
 
 	stage = "DecodeResponse"
 	result, err := decodePoolListSandboxesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PoolPowerDownSandbox invokes pool-power-down-sandbox operation.
+//
+// Powers a sandbox down on its own request (ADR 26-10-16-337 §5).
+// Under the sandbox's power lock the pool asks the sandbox to confirm
+// the reason, fresh; a sandbox that is not running or does not
+// confirm is refused with a 409 of type sandbox-power-down-refused,
+// and nothing changes. A confirmed idle stops the sandbox; a
+// confirmed sleep freezes it where the runtime can, and stops it
+// otherwise.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
+func (c *Client) PoolPowerDownSandbox(ctx context.Context, request *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (*PoolSandboxPowerDownResult, error) {
+	res, err := c.sendPoolPowerDownSandbox(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPoolPowerDownSandbox(ctx context.Context, request *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (res *PoolSandboxPowerDownResult, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("pool-power-down-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PoolPowerDownSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/project/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pool/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/power-down"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePoolPowerDownSandboxRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	{
+		type bitset = [1]uint8
+		var satisfied bitset
+		{
+			stage = "Security:PoolBearerAuth"
+			switch err := c.securityPoolBearerAuth(ctx, PoolPowerDownSandboxOperation, r); {
+			case err == nil: // if NO error
+				satisfied[0] |= 1 << 0
+			case errors.Is(err, ogenerrors.ErrSkipClientSecurity):
+				// Skip this security.
+			default:
+				return res, errors.Wrap(err, "security \"PoolBearerAuth\"")
+			}
+		}
+
+		if ok := func() bool {
+		nextRequirement:
+			for _, requirement := range []bitset{
+				{0b00000001},
+			} {
+				for i, mask := range requirement {
+					if satisfied[i]&mask != mask {
+						continue nextRequirement
+					}
+				}
+				return true
+			}
+			return false
+		}(); !ok {
+			return res, ogenerrors.ErrSecurityRequirementIsNotSatisfied
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePoolPowerDownSandboxResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -126,7 +126,26 @@ var (
 	// pool does not have and cannot get, so the way forward is an upgrade that
 	// re-pins the sandbox, not another attempt.
 	ErrImageUnavailable = errors.New("sandbox image is not available")
+	// ErrPowerDownRefused is a power-down the sandbox did not confirm, or one
+	// for a sandbox that was not running to confirm it. Nothing changed.
+	ErrPowerDownRefused = errors.New("the sandbox does not confirm the power-down")
 )
+
+// PowerDownReason is why the control plane is powering a sandbox down: it
+// reported itself idle, or it asked to sleep (ADR 26-10-16-337 §5).
+type PowerDownReason string
+
+const (
+	PowerDownIdle  PowerDownReason = "idle"
+	PowerDownSleep PowerDownReason = "sleep"
+)
+
+// Wake is a sandbox's earliest pending wake, as its confirmation of a
+// power-down carried it; zero when it has none.
+type Wake struct {
+	At   time.Time
+	Name string
+}
 
 // Sandbox is the pool-local runtime view of a sandbox instance.
 type Sandbox struct {
@@ -247,6 +266,13 @@ type Runtime interface {
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
+	// PowerDownSandbox powers a sandbox down on its own request
+	// (ADR 26-10-16-337 §5): under the power lock it asks the sandbox to
+	// confirm reason, fresh, and refuses with ErrPowerDownRefused when the
+	// sandbox is not running or does not confirm. A confirmed idle stops it; a
+	// confirmed sleep freezes it where the runtime can and stops it otherwise.
+	// It returns the sandbox's earliest pending wake.
+	PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error)
 	// EnsureSandboxRunning starts a stopped sandbox on demand, for the
 	// sandbox-directed routes and the control plane's own ensure
 	// (ADR 0017 §12, ADR 26-10-12-711 §2), and returns once its agent answers.
@@ -286,8 +312,11 @@ type Runtime interface {
 	// pool has decided (ADR 0126 §3). The status poll calls it with what each
 	// sandbox reports, so a delivery that did not land is repaired rather than
 	// assumed, and a changed idle timeout or renewed credential reaches a
-	// sandbox that is already running.
-	ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64) error
+	// sandbox that is already running. controlPlanePower is whether the
+	// sandbox advertised that it can hand its power to the control plane: the
+	// document hands it over only then, because an agent that predates the
+	// field refuses a whole delivery over it (ADR 26-10-16-337 §8).
+	ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error
 
 	// The rest run until ctx ends, and the agent starts each once.
 	//
@@ -334,6 +363,11 @@ type DockerSandboxRuntime struct {
 	hostStateRoot string
 	// powerLocks serializes power operations per sandbox (see power.go).
 	powerLocks sync.Map
+	// powerHandover holds, per sandbox, whether its status last advertised
+	// that the control plane may hold its power (ADR 26-10-16-337 §8). A
+	// sandbox the poll has not reached since this agent started has no entry,
+	// and keeps what its recorded document says.
+	powerHandover sync.Map
 	// booting holds the boot under way of each sandbox whose container is
 	// started and whose sandbox agent has not answered yet (see beginBoot).
 	booting sync.Map
@@ -2704,6 +2738,22 @@ func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, 
 	return nil
 }
 
+// PowerDownSandbox stops a running memory sandbox: there is no agent to
+// confirm with, so it confirms itself, and has no wake.
+func (r *MemorySandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, _ PowerDownReason) (Wake, error) {
+	r.mu.Lock()
+	sb := r.sandboxes[sandboxID]
+	running := sb != nil && sb.Status == StatusRunning
+	r.mu.Unlock()
+	if sb == nil {
+		return Wake{}, ErrNotFound
+	}
+	if !running {
+		return Wake{}, ErrPowerDownRefused
+	}
+	return Wake{}, r.StopSandbox(ctx, sandboxID, nil)
+}
+
 func (r *MemorySandboxRuntime) RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	if err := r.StopSandbox(ctx, sandboxID, req); err != nil {
 		return err
@@ -2759,7 +2809,7 @@ func (r *MemorySandboxRuntime) SandboxServesWorktree(_ context.Context, sandboxI
 
 // ConvergeRuntimeConfig records what the poll reported: a memory sandbox has no
 // agent to deliver to.
-func (r *MemorySandboxRuntime) ConvergeRuntimeConfig(_ context.Context, sandboxID string, applied int64) error {
+func (r *MemorySandboxRuntime) ConvergeRuntimeConfig(_ context.Context, sandboxID string, applied int64, _ bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.appliedRuntimeConfig == nil {
