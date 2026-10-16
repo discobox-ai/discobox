@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
@@ -51,6 +51,35 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
   is not rebuilt by the loop: build the console yourself with `go build -o
   $S/discobox ./cli/cmd/discobox`, and expect the image watcher to fail on
   that path until the replace names a pushed version.
+
+# Verifying what a box's program reports (OSC 7501, terminal queries)
+
+No attach needed: drive a `d new -d -H shell --no-source` box's primary with
+`d admin terminal input primary --discobox-id <id> "<cmd>" Enter` and read it
+with `d admin terminal screen primary --discobox-id <id>`; the shim's record is
+`d admin box get <id> -o json | jq '.runtime.agentStatus.sessions[]'` (`ls`
+lags it by the 15s poll). `d cp` scripts into `/tmp`.
+
+- A report from a shell builtin or a script that exits is dropped at once: the
+  shim drops a group's live records when it leaves the foreground, and an
+  interactive shell makes every command its own job. Hold the foreground —
+  `bash -c 'printf "\e]7501;state=blocked\e\\\\"; sleep 3600'` — and quote by
+  writing a script file instead of nesting quotes through `input`.
+- A query's answer: in the box, `stty raw -echo; printf '\e]7501;?\e\\\e[c';
+  read -r -t 3 -d c r; stty sane; printf '%q\n' "$r"` shows what came back and
+  in what order. Attached from tmux, the DA1 part is tmux's (`?1;2;4`).
+- Real Claude Code: `d cp` this box's `claude` binary
+  (`/usr/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`),
+  `~/.claude/.credentials.json` (a sentinel the outer proxy swaps) and
+  `~/.claude.json` in, accept the trust dialog (`Down Enter`), and run with
+  `--permission-mode default` to get a permission prompt. Leave it with
+  `/exit` Enter: two `C-c` sent a second apart did not exit it, and the next
+  `input` became a prompt it acted on.
+- The console speaks OSC 7501 only to a terminal that answers its probe, and
+  tmux does not. Run it under a Python `pty.fork()` stand-in that answers
+  `\e]7501;?` (and DA1), logs every `\e]7501;` the console writes, and plays
+  timed keys (`\x1b[A` focuses the list, `\r` opens a box, `\x01q` quits)
+  and `os.system` calls (`d admin terminal input`) to change the box mid-run.
 
 # Verifying the runc wrapper (runcca, sandbox-agent/cmd/discobox-runc)
 
