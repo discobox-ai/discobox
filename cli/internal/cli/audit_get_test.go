@@ -46,7 +46,8 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 				"swappedUseIds":["use_x"],"swappedSecretIds":["sec_gh","sec_gone"],"durationMillis":340,
 				"requestHeaders":{"Authorization":["[REDACTED]"],"Accept":["application/json"]},
 				"responseHeaders":{"Content-Type":["application/json"]},
-				"appliedHeaders":["Authorization"],"appliedRuleId":"rule-1","appliedPattern":"api.github.com/*",
+				"appliedHeaders":["Authorization"],"appliedRuleId":"github","appliedPattern":"https://api.github.com",
+				"forwardedUrl":"https://gw.example.com/github/x",
 				"cacheKey":"key-1","cacheStored":true,
 				"responseBodyRecorded":true,"responseBodyFormat":"raw","responseBytes":2048}`))
 		default:
@@ -63,11 +64,12 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 	}
 	for _, want := range []string{
 		"record:", "http_10219", "201", "340ms", "use_x",
-		"rule-1 (api.github.com/*)", "stored, key key-1",
+		"github (https://api.github.com)", "forwarded to:    https://gw.example.com/github/x",
+		"gateway headers: Authorization", "stored, key key-1",
 		"2048 bytes, recorded as raw",
 		"request headers:", "Authorization: [REDACTED]", "response headers:",
 		// Each secret by ID and its name now; one deleted since by its ID.
-		"secrets:       sec_gh (GitHub token), sec_gone",
+		"secrets:         sec_gh (GitHub token), sec_gone",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("detail missing %q:\n%s", want, stdout)

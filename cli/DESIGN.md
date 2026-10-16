@@ -911,8 +911,13 @@ migrates what the old directories held.
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
 `terminal`, `exec`, `services`, `provider`, `pool`, `job`, `harnesses`,
-`hooks`, `server`, `remote`, `peer`, `ssh-key`, `ssh-config`, `ssh-proxy` and
-`uninstall` are not root commands.
+`hooks`, `server`, `remote`, `peer`, `gateway`, `ssh-key`, `ssh-config`,
+`ssh-proxy` and `uninstall` are not root commands.
+
+`admin gateway` manages the project's gateways (ADR 26-10-16-470 §6): `set`
+is the API's `PUT`, so it replaces a gateway whole from its flags, and `get`
+shows a header taken from the server's environment as `env:VAR` — the value is
+the server's and never reaches the CLI.
 
 `admin server` runs the API server process; `admin remote` is the registry of
 servers this client lists discoboxes from (ADR 0116 §3, spelled by ADR 0119).
