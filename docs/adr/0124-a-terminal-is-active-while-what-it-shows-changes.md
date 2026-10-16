@@ -1,6 +1,6 @@
 # 0124 — A terminal is active while what it shows changes
 
-- **Status**: Accepted
+- **Status**: Accepted (§1 superseded, for an exec holding a reported status, by [26-10-16-424](26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md))
 - **Date**: 2026-09-17
 - **Supersedes**: [ADR 0108](0108-a-sandbox-stops-itself-when-its-terminals-go-quiet.md)
   §2's first activity, a title change on any exec. The rest of §2 —
