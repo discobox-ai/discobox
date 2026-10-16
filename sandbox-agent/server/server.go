@@ -266,7 +266,22 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	//
 	// Its timeout is the pool's, from the runtime-config document the sandbox
 	// holds, and a later delivery changes it in place (ADR 26-10-08-127 §5).
-	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: appliedIdleTimeout(cfg.RuntimeConfig)})
+	//
+	// Wakes live in the run user's home, beside meta.json, because they have
+	// to outlive the stop they ask to come back from (ADR 26-10-16-337 §2). A
+	// sandbox whose run user does not resolve reads none and still stops.
+	appliedAgent := appliedRuntimeAgent(cfg.RuntimeConfig)
+	idleStopConfig := autostop.Config{Execs: execManager.List, IdleTimeout: appliedAgent.IdleTimeoutDuration()}
+	if home, owner, err := runUserHome(execManager); err != nil {
+		slog.Default().Warn("sandbox agent wakes disabled", "error", err)
+	} else {
+		idleStopConfig.WakeDir = filepath.Join(home, ".discobox", "wake")
+		if owner.UID != nil && owner.GID != nil {
+			idleStopConfig.WakeOwner = &autostop.Owner{UID: int(*owner.UID), GID: int(*owner.GID)}
+		}
+	}
+	idleStop := autostop.New(idleStopConfig)
+	idleStop.SetControlPlanePower(appliedAgent.ControlPlanePower)
 	metaFile, err := newMetaFile(execManager)
 	if err != nil {
 		// Like the port watcher: meta is not worth failing a boot over, and a
@@ -438,22 +453,33 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 // manifest that names nobody means an exec inherits this process's identity
 // (ADR 0025 §5), so the home is this process's own and nothing is chowned.
 func newMetaFile(execManager *execs.Manager) (*meta.File, error) {
-	user, err := execManager.ResolveUser(execs.CreateRequest{})
+	home, owner, err := runUserHome(execManager)
 	if err != nil {
 		return nil, err
+	}
+	return meta.New(home, owner), nil
+}
+
+// runUserHome is the run user's home and who owns what the agent writes in
+// it: this process's own home, owned by nobody in particular, when the
+// sandbox runs as whoever started the agent.
+func runUserHome(execManager *execs.Manager) (string, meta.Owner, error) {
+	user, err := execManager.ResolveUser(execs.CreateRequest{})
+	if err != nil {
+		return "", meta.Owner{}, err
 	}
 	if user == nil {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, err
+			return "", meta.Owner{}, err
 		}
-		return meta.New(home, meta.Owner{}), nil
+		return home, meta.Owner{}, nil
 	}
 	home := strings.TrimSpace(user.HomeDirectory)
 	if home == "" {
-		return nil, errors.New("the sandbox user has no home directory")
+		return "", meta.Owner{}, errors.New("the sandbox user has no home directory")
 	}
-	return meta.New(home, meta.Owner{UID: user.UID, GID: user.GID}), nil
+	return home, meta.Owner{UID: user.UID, GID: user.GID}, nil
 }
 
 // agentListenPorts are the TCP ports Discobox's own plumbing listens on inside
@@ -480,18 +506,18 @@ func agentListenPorts(listenAddress string) []int {
 	return out
 }
 
-// appliedIdleTimeout is the idle timeout of the runtime-config document the
-// sandbox holds, zero — the idle stop's default — when it holds none or the
-// document sets none.
-func appliedIdleTimeout(runtimeConfig *intake.Intake) time.Duration {
+// appliedRuntimeAgent is the agent section of the runtime-config document the
+// sandbox holds — its idle timeout, and whether the control plane holds its
+// power — and the zero section, the idle stop's defaults, when it holds none.
+func appliedRuntimeAgent(runtimeConfig *intake.Intake) sandboxconfig.RuntimeAgent {
 	if runtimeConfig == nil {
-		return 0
+		return sandboxconfig.RuntimeAgent{}
 	}
 	applied, ok := runtimeConfig.Applied()
 	if !ok {
-		return 0
+		return sandboxconfig.RuntimeAgent{}
 	}
-	return applied.Agent.IdleTimeoutDuration()
+	return applied.Agent
 }
 
 // listenPorts is the port a listen address binds, or nothing when the address
@@ -567,6 +593,16 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// A judge launches no terminal at all: it answers its pool and is worked in
 	// by nobody (ADR 26-09-22-838 §1).
 	if config.WorkedIn(cfg.HarnessMode) {
+		// The wakes that fell due while the sandbox was down are handed to the
+		// harness this boot launches, and nowhere else (ADR 26-10-16-337 §7).
+		// They are taken before the launch starts, so an attach that beats
+		// boot to the primary carries them as well as boot would.
+		if paths, err := built.autostop.TakeDueWakes(); err != nil {
+			logger.Warn("hand due wakes to the primary terminal", "error", err)
+		} else if len(paths) > 0 {
+			logger.Info("sandbox woken", "wakes", paths)
+			manager.HandWake(paths)
+		}
 		go func() {
 			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
 			case err == nil, errors.Is(err, context.Canceled):

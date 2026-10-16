@@ -48,6 +48,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-runc ./cmd/discobox-runc \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-power ./cmd/discobox-power \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C access build -trimpath -ldflags="-s -w" -o /out/discobox-access ./cmd/discobox-access
 
 # Built in its own layer so bumping the review version does not invalidate the
@@ -645,6 +646,10 @@ COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/dis
 # env injected into its OCI spec. See the shared runcca package.
 COPY --from=sandbox-agent-builder /out/discobox-runc /opt/discobox/bin/runc
 COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobox-ca-anchor
+# Keepalive, sleep and wake for an agent in the sandbox: it writes the files
+# the sandbox agent reads (ADR 0108 §4, ADR 26-10-16-337 §3), which the image's
+# discobox skill documents.
+COPY --from=sandbox-agent-builder /out/discobox-power /usr/local/bin/discobox-power
 # Its own binary, not an argv[0] alias of the agent: the credential CLI is a
 # client of a portable protocol and is meant to be liftable into another
 # repository, so it must not be welded to this image's runtime (ADR 0031).
@@ -679,6 +684,7 @@ COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /opt/discobox/bin/runc \
     && chmod 0755 /usr/local/bin/discobox-ca-anchor \
+    && chmod 0755 /usr/local/bin/discobox-power \
     && chmod 0755 /usr/local/bin/docker \
     && chmod 0755 /usr/local/bin/discobox-review \
     && chmod 0755 /usr/local/bin/fresh \

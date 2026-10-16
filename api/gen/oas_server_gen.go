@@ -101,6 +101,16 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
 	ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (ConfigureHarnessConfigRes, error)
+	// ConfirmSandboxAutostop implements confirm-sandbox-autostop operation.
+	//
+	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
+	// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
+	// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
+	// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
+	// carrying the pool-only autostop scope may call it.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
+	ConfirmSandboxAutostop(ctx context.Context, req *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error)
 	// CreateApprovalRule implements create-approval-rule operation.
 	//
 	// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every

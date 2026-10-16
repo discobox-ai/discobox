@@ -249,7 +249,7 @@ func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 	full := sandboxconfig.RuntimeConfig{
 		Revision:  7,
-		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s"},
+		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true},
 		SecretEnv: map[string]string{"A": "sentinel-a"},
 		Proxy: &sandboxconfig.RuntimeProxy{
 			MTLSCA:            "mtls",

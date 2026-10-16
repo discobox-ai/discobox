@@ -46,6 +46,11 @@ const (
 	// grants it and a token has to name it. The pool signs it with its own
 	// key (ADR 26-10-08-127 §3).
 	ScopeRuntimeConfig = sandboxconfig.RuntimeConfigScope
+	// ScopeAutostopConfirm gates the confirmation a pool asks for under its
+	// power lock before it powers the sandbox down (ADR 26-10-16-337 §5). It
+	// is the pool's alone, like the intake: a confirmed sleep consumes the
+	// sandbox's requests, and only the party about to power it down may ask.
+	ScopeAutostopConfirm = sandboxconfig.AutostopConfirmScope
 	// ScopeSandboxRead and ScopeSandboxWrite gate the sandbox's own Git
 	// repositories, as the pool's worktree route always has: a fetch reads,
 	// a push writes (ADR 0126 §4).
@@ -54,7 +59,7 @@ const (
 )
 
 // poolOnlyScopes are the scopes a "*" token does not carry.
-var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true}
+var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true, ScopeAutostopConfirm: true}
 
 type SignedTokenClaims struct {
 	ProjectID string
@@ -187,19 +192,20 @@ func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, 
 }
 
 // authorizePoolToken confines a pool-signed token to what the pool may sign
-// for: exactly the runtime-config scope, on a route whose required scope is
-// runtime-config, naming this sandbox's pool. Those routes are the pool's:
-// the document itself and a source's project layer, which the pool reads to
-// settle the spec. A route added under that scope is reachable by the pool
-// too, so putting one there is deciding that. The scope list is checked
+// for: exactly one pool-only scope — runtime-config or autostop-confirm — on a
+// route whose required scope is that one, naming this sandbox's pool. Those
+// routes are the pool's: the document itself and a source's project layer,
+// which the pool reads to settle the spec, and the confirmation it asks for
+// before a power-down. A route added under either scope is reachable by the
+// pool too, so putting one there is deciding that. The scope list is checked
 // whole, so a pool token can never carry a wildcard or a second scope that a
 // later check would honor.
 func (a *SignedTokenAuthenticator) authorizePoolToken(r *http.Request, claims SignedTokenClaims) error {
-	if len(claims.Scopes) != 1 || claims.Scopes[0] != ScopeRuntimeConfig {
-		return errors.New("a pool-signed token may carry only the runtime-config scope")
+	if len(claims.Scopes) != 1 || !poolOnlyScopes[claims.Scopes[0]] {
+		return errors.New("a pool-signed token may carry only one pool-only scope")
 	}
-	if requiredRequestScope(r) != ScopeRuntimeConfig {
-		return errors.New("a pool-signed token is accepted only on routes that require the runtime-config scope")
+	if requiredRequestScope(r) != claims.Scopes[0] {
+		return errors.New("a pool-signed token is accepted only on routes that require its scope")
 	}
 	if claims.PoolID == "" || claims.PoolID != a.identity.PoolID {
 		return errors.New("a pool-signed token must name this sandbox's pool")
@@ -261,6 +267,13 @@ func inventoryRoute(path string) bool {
 	return len(segments) == 6 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "inventory"
 }
 
+// autostopConfirmRoute is told by its whole route, like the inventory: its
+// scope is the pool's alone, and nothing else may be reachable with it.
+func autostopConfirmRoute(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 7 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "autostop" && segments[6] == "confirm"
+}
+
 func routeIdentity(path string) (string, string, bool) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) < 5 || segments[0] != "api" || segments[1] != "projects" || segments[3] != "sandboxes" {
@@ -288,6 +301,9 @@ func requiredRequestScope(r *http.Request) string {
 	// the tests below look for — a source named "execs" is not an exec.
 	if sourcesRoute(r.URL.EscapedPath()) {
 		return ScopeRuntimeConfig
+	}
+	if r.Method == http.MethodPost && autostopConfirmRoute(r.URL.EscapedPath()) {
+		return ScopeAutostopConfirm
 	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.

@@ -3370,6 +3370,39 @@ func (s *OptJudgeStanding) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxAgentAutostopSleep as json.
+func (o OptSandboxAgentAutostopSleep) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxAgentAutostopSleep from json.
+func (o *OptSandboxAgentAutostopSleep) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxAgentAutostopSleep to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxAgentAutostopSleep) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxAgentAutostopSleep) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxAgentAutostopStatus as json.
 func (o OptSandboxAgentAutostopStatus) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -4163,6 +4196,119 @@ func (s *ResourceSnapshot) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SandboxAgentAutostopSleep) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAgentAutostopSleep) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("request")
+		e.Str(s.Request)
+	}
+	{
+		e.FieldStart("requestedAt")
+		json.EncodeDateTime(e, s.RequestedAt)
+	}
+}
+
+var jsonFieldsNameOfSandboxAgentAutostopSleep = [2]string{
+	0: "request",
+	1: "requestedAt",
+}
+
+// Decode decodes SandboxAgentAutostopSleep from json.
+func (s *SandboxAgentAutostopSleep) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAgentAutostopSleep to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "request":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Request = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request\"")
+			}
+		case "requestedAt":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.RequestedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requestedAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAgentAutostopSleep")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxAgentAutostopSleep) {
+					name = jsonFieldsNameOfSandboxAgentAutostopSleep[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAgentAutostopSleep) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAgentAutostopSleep) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SandboxAgentAutostopStatus) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -4171,6 +4317,18 @@ func (s *SandboxAgentAutostopStatus) Encode(e *jx.Encoder) {
 
 // encodeFields encodes fields.
 func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
+	{
+		if s.ControlPlanePower.Set {
+			e.FieldStart("controlPlanePower")
+			s.ControlPlanePower.Encode(e)
+		}
+	}
+	{
+		if s.Idle.Set {
+			e.FieldStart("idle")
+			s.Idle.Encode(e)
+		}
+	}
 	{
 		e.FieldStart("idleTimeoutSeconds")
 		e.Int64(s.IdleTimeoutSeconds)
@@ -4190,17 +4348,40 @@ func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Sleep.Set {
+			e.FieldStart("sleep")
+			s.Sleep.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("stopsAt")
 		json.EncodeDateTime(e, s.StopsAt)
 	}
+	{
+		if s.Wake.Set {
+			e.FieldStart("wake")
+			s.Wake.Encode(e)
+		}
+	}
+	{
+		if s.WakeAt.Set {
+			e.FieldStart("wakeAt")
+			s.WakeAt.Encode(e, json.EncodeDateTime)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxAgentAutostopStatus = [5]string{
-	0: "idleTimeoutSeconds",
-	1: "lastActivity",
-	2: "lastActivityAt",
-	3: "leaseUntil",
-	4: "stopsAt",
+var jsonFieldsNameOfSandboxAgentAutostopStatus = [10]string{
+	0: "controlPlanePower",
+	1: "idle",
+	2: "idleTimeoutSeconds",
+	3: "lastActivity",
+	4: "lastActivityAt",
+	5: "leaseUntil",
+	6: "sleep",
+	7: "stopsAt",
+	8: "wake",
+	9: "wakeAt",
 }
 
 // Decode decodes SandboxAgentAutostopStatus from json.
@@ -4208,12 +4389,32 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxAgentAutostopStatus to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "controlPlanePower":
+			if err := func() error {
+				s.ControlPlanePower.Reset()
+				if err := s.ControlPlanePower.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"controlPlanePower\"")
+			}
+		case "idle":
+			if err := func() error {
+				s.Idle.Reset()
+				if err := s.Idle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"idle\"")
+			}
 		case "idleTimeoutSeconds":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Int64()
 				s.IdleTimeoutSeconds = int64(v)
@@ -4225,7 +4426,7 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"idleTimeoutSeconds\"")
 			}
 		case "lastActivity":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.LastActivity = string(v)
@@ -4237,7 +4438,7 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastActivity\"")
 			}
 		case "lastActivityAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.LastActivityAt = v
@@ -4258,8 +4459,18 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"leaseUntil\"")
 			}
+		case "sleep":
+			if err := func() error {
+				s.Sleep.Reset()
+				if err := s.Sleep.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sleep\"")
+			}
 		case "stopsAt":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.StopsAt = v
@@ -4270,6 +4481,26 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"stopsAt\"")
 			}
+		case "wake":
+			if err := func() error {
+				s.Wake.Reset()
+				if err := s.Wake.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wake\"")
+			}
+		case "wakeAt":
+			if err := func() error {
+				s.WakeAt.Reset()
+				if err := s.WakeAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wakeAt\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -4279,8 +4510,9 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00010111,
+	for i, mask := range [2]uint8{
+		0b10011100,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7275,6 +7507,220 @@ func (s *SandboxAgentStatusResponse) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SandboxAutostopConfirmRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAutostopConfirmRequest) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("reason")
+		s.Reason.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfSandboxAutostopConfirmRequest = [1]string{
+	0: "reason",
+}
+
+// Decode decodes SandboxAutostopConfirmRequest from json.
+func (s *SandboxAutostopConfirmRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAutostopConfirmRequest to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "reason":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAutostopConfirmRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxAutostopConfirmRequest) {
+					name = jsonFieldsNameOfSandboxAutostopConfirmRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAutostopConfirmRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAutostopConfirmRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxAutostopConfirmRequestReason as json.
+func (s SandboxAutostopConfirmRequestReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxAutostopConfirmRequestReason from json.
+func (s *SandboxAutostopConfirmRequestReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAutostopConfirmRequestReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxAutostopConfirmRequestReason(v) {
+	case SandboxAutostopConfirmRequestReasonIdle:
+		*s = SandboxAutostopConfirmRequestReasonIdle
+	case SandboxAutostopConfirmRequestReasonSleep:
+		*s = SandboxAutostopConfirmRequestReasonSleep
+	default:
+		*s = SandboxAutostopConfirmRequestReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxAutostopConfirmRequestReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAutostopConfirmRequestReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxAutostopConfirmation) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAutostopConfirmation) encodeFields(e *jx.Encoder) {
+	{
+		if s.Wake.Set {
+			e.FieldStart("wake")
+			s.Wake.Encode(e)
+		}
+	}
+	{
+		if s.WakeAt.Set {
+			e.FieldStart("wakeAt")
+			s.WakeAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxAutostopConfirmation = [2]string{
+	0: "wake",
+	1: "wakeAt",
+}
+
+// Decode decodes SandboxAutostopConfirmation from json.
+func (s *SandboxAutostopConfirmation) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAutostopConfirmation to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "wake":
+			if err := func() error {
+				s.Wake.Reset()
+				if err := s.Wake.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wake\"")
+			}
+		case "wakeAt":
+			if err := func() error {
+				s.WakeAt.Reset()
+				if err := s.WakeAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wakeAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAutostopConfirmation")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAutostopConfirmation) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAutostopConfirmation) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SandboxExec) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -9919,6 +10365,12 @@ func (s *SandboxRuntimeConfigAgent) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxRuntimeConfigAgent) encodeFields(e *jx.Encoder) {
 	{
+		if s.ControlPlanePower.Set {
+			e.FieldStart("controlPlanePower")
+			s.ControlPlanePower.Encode(e)
+		}
+	}
+	{
 		if s.IdleTimeout.Set {
 			e.FieldStart("idleTimeout")
 			s.IdleTimeout.Encode(e)
@@ -9926,8 +10378,9 @@ func (s *SandboxRuntimeConfigAgent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfigAgent = [1]string{
-	0: "idleTimeout",
+var jsonFieldsNameOfSandboxRuntimeConfigAgent = [2]string{
+	0: "controlPlanePower",
+	1: "idleTimeout",
 }
 
 // Decode decodes SandboxRuntimeConfigAgent from json.
@@ -9938,6 +10391,16 @@ func (s *SandboxRuntimeConfigAgent) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "controlPlanePower":
+			if err := func() error {
+				s.ControlPlanePower.Reset()
+				if err := s.ControlPlanePower.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"controlPlanePower\"")
+			}
 		case "idleTimeout":
 			if err := func() error {
 				s.IdleTimeout.Reset()

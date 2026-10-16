@@ -88,6 +88,13 @@ func (h *Handler) GetSandboxSourceStates(context.Context, serverapi.GetSandboxSo
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// ConfirmSandboxAutostop is what a pool asks the sandbox under its power lock
+// before it powers it down (ADR 26-10-16-337 §5). Like the intake beside it,
+// it is the pool's route, neither served nor proxied here.
+func (h *Handler) ConfirmSandboxAutostop(context.Context, *serverapi.SandboxAutostopConfirmRequest, serverapi.ConfirmSandboxAutostopParams) (serverapi.ConfirmSandboxAutostopRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 // JudgeSandbox is the judge runtime's own route, which the pool reaches
 // through its agent (ADR 26-09-22-838 §2). The control plane routes judging rather
 // than answering it, so this route is neither served nor proxied here.

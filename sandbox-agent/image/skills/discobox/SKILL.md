@@ -292,9 +292,11 @@ run you will not be watching, a server the user will come back to — take a
 lease:
 
 ```bash
-touch -d '+2 hours' /run/discobox/keepalive/build   # active until then
-touch /run/discobox/keepalive/build                 # or: active now
-rm /run/discobox/keepalive/build                    # release it early
+discobox-power keepalive build --for 2h             # active until then
+discobox-power keepalive rm build                   # release it early
+# the same, by hand:
+touch -d '+2 hours' /run/discobox/keepalive/build
+rm /run/discobox/keepalive/build
 ```
 
 A lease is any file in `/run/discobox/keepalive/`, and its modification time
@@ -306,6 +308,48 @@ one.
 
 Take a lease for as long as the work needs and no longer, and tell the user
 when you take one — a box held up keeps its share of the pool while it waits.
+
+### Sleep, and name when to wake
+
+When you are done for now but have to look again later — CI, a review, a job
+running somewhere else — do not hold the box up waiting. Put it to sleep and
+say when to wake it:
+
+```bash
+discobox-power sleep --wake-in 45m --note 'check CI on PR 412'
+discobox-power wake ci --at 14:00 --note 'look at the review'   # a wake on its own
+discobox-power wake ls                                          # what is scheduled
+discobox-power wake rm ci                                       # cancel one
+discobox-power status                                           # leases, sleep, wakes
+```
+
+- **Sleep powers the box down within a minute, whatever else is going on** —
+  a person attached is disconnected, and your own terminal goes with it. Say
+  so to the user before you sleep, and do it as the last thing you do.
+- **A wake is a file in `~/.discobox/wake/` whose modification time is when to
+  wake.** Discobox starts the box at that time; the note, if you left one, is
+  the file's contents. It survives the stop, and the box being started early
+  by use — someone attaching, a request to it — which does not cancel it.
+- **On waking, your harness is relaunched with `DISCOBOX_WAKE`** set to the
+  paths of the wakes that fell due — moved to `~/.discobox/wake/.done/`, one
+  per line, notes still in them. Whether the harness turns that into a turn
+  is the harness's business. If you wake with no prompt, read them.
+- **A person explicitly stopping, starting (`discobox start`) or archiving
+  the box cancels the scheduled start.** They decide. Your wake file stays where it is — `wake ls` still
+  lists it — and is scheduled again the next time the box powers down; it is
+  not a promise that the box will be started at that time.
+- **Not every pool wakes boxes yet.** Where the pool has not handed the box's
+  power to discobox, `sleep` still powers it off, but nothing starts it at the
+  wake time; `discobox-power` says so with a warning when you set one.
+
+By hand it is files, as leases are — set the time before the file is in the
+directory, or it is due the moment it lands:
+
+```bash
+touch /run/discobox/sleep/agent                     # sleep now
+echo 'check CI' > ~/.discobox/wake/.ci && touch -d '+45 min' ~/.discobox/wake/.ci \
+  && mv ~/.discobox/wake/.ci ~/.discobox/wake/ci    # wake in 45 minutes
+```
 
 ## Persistence
 

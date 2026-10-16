@@ -45,6 +45,10 @@ type ConfigureHarnessConfigRes interface {
 	configureHarnessConfigRes()
 }
 
+type ConfirmSandboxAutostopRes interface {
+	confirmSandboxAutostopRes()
+}
+
 type CreateApprovalRuleRes interface {
 	createApprovalRuleRes()
 }

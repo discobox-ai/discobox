@@ -56,6 +56,12 @@ type RuntimeConfig struct {
 // (PoolPublicKeyName; ADR 26-10-08-127 §3).
 const RuntimeConfigScope = "runtime-config"
 
+// AutostopConfirmScope is the sandbox-agent token scope that confirms a
+// power-down the pool is about to carry out (ADR 26-10-16-337 §5). Like
+// RuntimeConfigScope it is the pool's alone and signed with the pool's key:
+// the pool holds the power lock the confirmation is asked under.
+const AutostopConfirmScope = "autostop-confirm"
+
 // RuntimeAgent is the sandbox-agent configuration the pool may change while
 // the sandbox exists. It is applied to the running agent when delivered, not
 // written into sandbox.json, which is the static bootstrap and is never
@@ -64,6 +70,12 @@ type RuntimeAgent struct {
 	// IdleTimeout is the pool's idle timeout as a Go duration (ADR 0108);
 	// empty leaves the sandbox agent on its default.
 	IdleTimeout string `json:"idleTimeout,omitempty"`
+	// ControlPlanePower hands the sandbox's power to the control plane: the
+	// agent reports idle, sleep and wake on its status and no longer powers
+	// itself off (ADR 26-10-16-337 §8). The pool sets it only for a sandbox
+	// whose status advertised it, because an agent that predates it refuses a
+	// whole delivery over a field it does not know.
+	ControlPlanePower bool `json:"controlPlanePower,omitempty"`
 }
 
 // IdleTimeoutDuration is IdleTimeout parsed, zero when it is empty or does not
