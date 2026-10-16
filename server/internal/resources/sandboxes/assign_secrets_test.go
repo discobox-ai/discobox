@@ -73,6 +73,10 @@ func (p *recordingProvider) Stop(context.Context, sandbox.SandboxRef, []byte, ti
 	return nil, nil
 }
 
+func (p *recordingProvider) PowerDown(_ context.Context, _ sandbox.SandboxRef, state []byte, _ sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
+	return sandbox.Wake{}, state, nil
+}
+
 func (p *recordingProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }

@@ -18,6 +18,10 @@ type capturingReporter struct {
 	progress []store.SandboxProgressReport
 }
 
+func (c *capturingReporter) SandboxAgentStatusReported(context.Context, string, string, json.RawMessage) error {
+	return nil
+}
+
 func (c *capturingReporter) ReportSandboxStates(context.Context, store.SandboxStateReportBatch) error {
 	return nil
 }

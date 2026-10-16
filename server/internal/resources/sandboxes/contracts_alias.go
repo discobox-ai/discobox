@@ -24,11 +24,18 @@ type HTTPClientLease = transport.HTTPClientLease
 type PoolRuntime = contract.PoolRuntime
 type PoolManager = contract.PoolManager
 type ImageUnavailableError = contract.ImageUnavailableError
+type PowerDownReason = contract.PowerDownReason
+type Wake = contract.Wake
 
 var ErrNotFound = contract.ErrNotFound
 var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrArchived = contract.ErrArchived
 var ErrNoContainer = contract.ErrNoContainer
+var ErrPowerDownRefused = contract.ErrPowerDownRefused
+
+const PowerDownIdle = contract.PowerDownIdle
+const PowerDownSleep = contract.PowerDownSleep
+
 var ErrImageUnavailable = contract.ErrImageUnavailable
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning

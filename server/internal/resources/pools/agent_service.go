@@ -34,6 +34,11 @@ type SandboxStateReporter interface {
 	// separately: progress carries no observed state and takes no part in the
 	// complete-sync rule.
 	ReportSandboxProgress(ctx context.Context, poolID string, reportedAt time.Time, reports []store.SandboxProgressReport) error
+	// SandboxAgentStatusReported is told each sandbox status as it is
+	// recorded, for what the status asks the control plane to do: power the
+	// sandbox down when it reports itself idle or asks to sleep
+	// (ADR 26-10-16-337 §5).
+	SandboxAgentStatusReported(ctx context.Context, projectID, sandboxID string, status json.RawMessage) error
 }
 
 // SetSandboxStateReporter wires the sandbox service dependency for
@@ -230,6 +235,11 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		}
 		if meta, ok := reportedMeta(entry.Status); ok {
 			if err := s.store.UpdateSandboxMeta(ctx, pool.ProjectID, sandboxID, meta, entry.ObservedAt); err != nil {
+				return err
+			}
+		}
+		if s.sandboxReporter != nil {
+			if err := s.sandboxReporter.SandboxAgentStatusReported(ctx, pool.ProjectID, sandboxID, status); err != nil {
 				return err
 			}
 		}

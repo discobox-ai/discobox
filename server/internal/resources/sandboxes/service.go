@@ -77,7 +77,10 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	if err := s.engine.Register(SentinelsResourceType, s.NewSentinelReconciler()); err != nil {
 		return err
 	}
-	return s.engine.Register(SandboxEgressResourceType, &sandboxEgressReconciler{store: s.store, providers: s.sandboxProviders})
+	if err := s.engine.Register(SandboxEgressResourceType, &sandboxEgressReconciler{store: s.store, providers: s.sandboxProviders}); err != nil {
+		return err
+	}
+	return s.engine.Register(SandboxPowerResourceType, &sandboxPowerReconciler{store: s.store, providers: s.sandboxProviders, now: time.Now})
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -883,6 +886,14 @@ func (s *Service) instructSandboxOnce(ctx context.Context, projectID, sandboxID 
 	}
 	provider, err := s.resolveProvider(ctx, sandbox)
 	if err != nil {
+		return sandbox, err
+	}
+	// A start, stop or restart from outside — a person's, a lead's, a
+	// repair's — overrides the wake the sandbox asked for: it does not get
+	// back the run time a stop took away (ADR 26-10-16-337 §6). Canceled
+	// before the instruction is sent, so a power reconcile already in flight
+	// cannot record the wake afterwards.
+	if err := s.cancelSandboxWake(ctx, projectID, sandboxID); err != nil {
 		return sandbox, err
 	}
 	if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {

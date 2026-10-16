@@ -199,6 +199,10 @@ func (p *missingRuntimeProvider) Stop(context.Context, sandboxes.SandboxRef, []b
 	return []byte(`{"runtime":"stopped"}`), nil
 }
 
+func (p *missingRuntimeProvider) PowerDown(_ context.Context, _ sandboxes.SandboxRef, state []byte, _ sandboxes.PowerDownReason) (sandboxes.Wake, []byte, error) {
+	return sandboxes.Wake{}, state, nil
+}
+
 func (p *missingRuntimeProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
@@ -323,6 +327,10 @@ func (p failingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []by
 		return nil, p.stopErr
 	}
 	return []byte(`{"runtime":"stopped"}`), nil
+}
+
+func (p failingSandboxProvider) PowerDown(_ context.Context, _ sandboxes.SandboxRef, state []byte, _ sandboxes.PowerDownReason) (sandboxes.Wake, []byte, error) {
+	return sandboxes.Wake{}, state, nil
 }
 
 func (p failingSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {

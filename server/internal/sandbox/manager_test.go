@@ -244,6 +244,10 @@ func (p *fakeProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byt
 func (p *fakeProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
+
+func (p *fakeProvider) PowerDown(_ context.Context, _ sandbox.SandboxRef, state []byte, _ sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
+	return sandbox.Wake{}, state, nil
+}
 func (p *fakeProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
