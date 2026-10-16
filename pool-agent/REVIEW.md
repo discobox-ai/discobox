@@ -114,6 +114,14 @@ reasons.
   (`gitcache.readImportedRepository`), and keep refusing links and an
   alternates file in it, which would lend the cache another repository's
   objects.
+- Never bind state the pool owns or vouches for into a sandbox, not even
+  read-only: the build area, a blob or bundle store, an agent layer or bundle
+  tree. Sandbox containers are privileged, so the box's root can remount a
+  read-only bind writable, and a shared tree it rewrote runs as root in every
+  other box of the pool (ADR 0050). Copy what one box needs into that box
+  instead. The pool cache and per-source data are the deliberate exception:
+  shared on purpose and writable by every box (ADRs 0050, 0094), so nothing
+  may trust what is in them.
 
 ## Error responses
 
