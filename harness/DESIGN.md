@@ -310,12 +310,15 @@ launchers, and configure scripts.
   `copilot` checks an effort level against each model, so its judge too
   reasons as its model does until an eval measures the alternative
   ([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md) §5).
-  `omp`'s thinking levels are per model and some offer no `off`, so its judge
-  reasons as its model does as well; its wrapper turns off the session and
-  title omp would otherwise keep and generate (`--no-session --no-title`)
-  ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md) §5).
+  `omp`'s judge passes `--thinking=off`, which omp raises to the lowest level
+  a model that must reason offers, and its configure command asks that judge
+  one question before it saves, so a model that still refuses is found there;
+  its wrapper also turns off the session and title omp would otherwise keep
+  and generate (`--no-session --no-title`)
+  ([ADR 26-10-16-965](../docs/adr/26-10-16-965-the-omp-judge-answers-with-thinking-off-and-configure-proves-it-can.md)).
   `pi` clamps a thinking level to what the model offers, but its judge is
-  left at pi's default too, with the session off (`--no-session`)
+  still left at pi's default, as copilot's is, with the session off
+  (`--no-session`)
   ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md) §5).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
@@ -1141,9 +1144,13 @@ The image declares no secrets.
   verbatim.
 - The session runs **without the image's overlay**, so a first configure gets
   omp's own setup wizard (sign-in, default model, theme), and the default
-  model is then checked with a tool-free `omp -p`; a failure only warns. It
-  returns `.omp/agent/config.yml` as omp wrote it, and Discobox's
-  `.config/discobox/omp-harness.json` (`judgeModel`) as it arrived.
+  model is then checked with a tool-free `omp -p`, and the judge with the
+  image's own `discobox-prompt --model judge --no-tools` in a home holding
+  the exported credentials and both settings files; a failure of either only
+  warns. It returns `.omp/agent/config.yml` as omp wrote it, and Discobox's
+  `.config/discobox/omp-harness.json` (`judgeModel`) as it arrived; not
+  `models.yml`, which holds literal keys and `!` commands, as pi's
+  `models.json` does, so custom providers are configured in the sandbox.
 - **The policy baseline** is `PI_CONFIG_FILES=/etc/omp/discobox.yml` in the
   image's env — `startup.setupWizard: false`, whose wizard otherwise stalls an
   unattended launch, and `startup.checkUpdate: false` — and the launcher's
@@ -1154,8 +1161,9 @@ The image declares no secrets.
 - `discobox-prompt` runs `omp -p --no-session --no-title` with stdin from
   `/dev/null` (given another stdin, `-p` waits for it). **`judge` is not
   pinned**: `judgeModel`, else omp's `default` model role followed through its
-  `@` aliases (`omp config get modelRoles`), else omp's own pick; `fast` is
-  the `smol` role. **Tools-off is isolation**: `--no-tools` and discovery off,
+  `@` aliases (`omp config get modelRoles`), else omp's own pick, always with
+  `--thinking=off`, which outranks a `:level` on the name; `fast` is the
+  `smol` role, at omp's own level. **Tools-off is isolation**: `--no-tools` and discovery off,
   in a `HOME` of its own holding only the harness's credentials, from an
   empty directory with an empty `.git` — omp collects context files from the
   working directory up to a repository root, or `/` without one — with no

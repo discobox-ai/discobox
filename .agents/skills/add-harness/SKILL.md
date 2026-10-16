@@ -84,6 +84,7 @@ the techniques.
 | Does a first interactive run open a wizard? | unattended launch | omp's five-step setup wizard stalls a launch until `startup.setupWizard: false` |
 | Where does it collect context files (`AGENTS.md`) from? What stops the walk? | judge isolation | omp walks up to a repository root, or `/` without one, so `/tmp/AGENTS.md` reached a judge in `/tmp`, and an empty `.git` stops it; pi walks to `/` past any `.git`, and only `--no-context-files` stops it — measure with a marker file above the judge's directory |
 | Can a stored credential name its own endpoint, or run something? | judge isolation | omp: `apiEndpoint`, `enterpriseUrl`, a JSON key with `baseUrl`; pi: `enterpriseUrl`, a Copilot token's own `proxy-ep`, an API key's `env` object, and a key starting `!`, which pi runs as a command — the judge rebuilds credentials from an allowlist of fields, each of token characters (an empty refresh token too: OpenRouter's) |
+| Does it take a thinking level of `off` for every model? What does it do with a model that must reason? | whether the judge can answer without reasoning | omp's ADR assumed `off` would fail models with no `off`; omp's source raises it to the model's lowest level instead, and its default with no flag is `high` — read the CLI's level handling before leaving the judge at its default, and have configure ask the judge one question with the level it will run at |
 | Does a provider read anything out of the token itself? | whether a sentinel can stand in for it | a sentinel copies a token's shape, not its contents: pi's ChatGPT provider reads the account from the access token's JWT claims and fails locally on a sentinel, so configure leaves that login out and says why |
 | Is a "refresh" a standard OAuth refresh, or an exchange? | `oauth` vs a sentinel the CLI exchanges itself | pi's Copilot login keeps a GitHub token as `refresh` and swaps it at `copilot_internal/v2/token` for a 30-minute Copilot token. The control plane cannot; read where the exchange sends the token (a header the proxy can swap, or a body it cannot) through a TLS-terminating proxy, and take the in-sandbox exchange to the user |
 
@@ -130,6 +131,9 @@ Write these down before writing scripts; most become ADR sections.
 6. **Judge model** for `--model judge`: pinned (claude-code, codex, copilot)
    or the user's choice (opencode, omp, where providers vary). A pinned id the
    account cannot reach refuses every judged command — say so in the ADR.
+   With the user's choice, configure asks the judge one question through the
+   image's own `discobox-prompt`, in a home holding what a sandbox's would,
+   so a judge that cannot answer is found before it is saved (omp).
 
 ## 3. Build `harness/<id>/`
 
