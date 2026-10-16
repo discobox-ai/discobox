@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/programstatus"
 )
 
 func TestScreenSnapshotRepaintsContentAndModes(t *testing.T) {
@@ -305,5 +307,43 @@ func TestScreenChangedAtDatesBursts(t *testing.T) {
 	s.write([]byte(" going"))
 	if s.changedAt.Equal(last) {
 		t.Fatal("output that never paused was not compared after screenBurstMax")
+	}
+}
+
+// A program's live records end with the process group that reported them
+// leaving the foreground, a shell prompt beginning, or a reset; a result it
+// reported stays (ADR 26-10-16-424 §2).
+func TestProgramStatusLifetime(t *testing.T) {
+	foreground := 100
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.foreground = func() int { return foreground }
+
+	s.write([]byte("\x1b]7501;state=blocked:kind=permission\x1b\\"))
+	if status, ok := s.programStatusNow(); !ok || status.State != programstatus.Blocked || status.Kind != programstatus.Permission {
+		t.Fatalf("status = %+v, %v; want blocked on permission", status, ok)
+	}
+	foreground = 200 // the harness exited back to its shell
+	if status, ok := s.programStatusNow(); ok {
+		t.Fatalf("status = %+v once its group left the foreground, want none", status)
+	}
+
+	s.write([]byte("\x1b]7501;state=error:id=build\x1b\\\x1b]7501;state=working:id=test\x1b\\"))
+	s.write([]byte("\x1b]133;A\a"))
+	if status, ok := s.programStatusNow(); !ok || status.State != programstatus.Error {
+		t.Fatalf("status after a prompt = %+v, %v; want the error alone", status, ok)
+	}
+	s.write([]byte("\x1bc"))
+	if status, ok := s.programStatusNow(); ok {
+		t.Fatalf("status after RIS = %+v, want none", status)
+	}
+}
+
+// A report the spec discards is not stored, and a query asks nothing of a
+// bare buffer, which has no program to answer.
+func TestProgramStatusIgnoresWhatTheSpecDiscards(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.write([]byte("\x1b]7501;state=sleeping\x1b\\\x1b]7501;?\x1b\\"))
+	if status, ok := s.programStatusNow(); ok {
+		t.Fatalf("status = %+v, want none", status)
 	}
 }

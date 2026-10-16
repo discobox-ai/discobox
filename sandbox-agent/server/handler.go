@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -800,6 +801,32 @@ func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxA
 	}
 	if in.StartedAt != nil {
 		out.StartedAt = sandboxapi.NewOptDateTime(*in.StartedAt)
+	}
+	if in.ProgramStatus != nil {
+		out.ProgramStatus = sandboxapi.NewOptSandboxAgentProgramStatus(sandboxAgentProgramStatus(*in.ProgramStatus))
+	}
+	return out
+}
+
+func sandboxAgentProgramStatus(in programstatus.Status) sandboxapi.SandboxAgentProgramStatus {
+	out := sandboxapi.SandboxAgentProgramStatus{
+		State:      sandboxapi.SandboxAgentProgramStatusState(in.State),
+		ReportedAt: in.ReportedAt,
+	}
+	if in.Kind != "" {
+		out.Kind = sandboxapi.NewOptSandboxAgentProgramStatusKind(sandboxapi.SandboxAgentProgramStatusKind(in.Kind))
+	}
+	if in.Progress != nil {
+		out.Progress = sandboxapi.NewOptInt64(int64(*in.Progress))
+	}
+	if in.App != "" {
+		out.App = sandboxapi.NewOptString(in.App)
+	}
+	if in.Title != "" {
+		out.Title = sandboxapi.NewOptString(in.Title)
+	}
+	if in.Msg != "" {
+		out.Msg = sandboxapi.NewOptString(in.Msg)
 	}
 	return out
 }

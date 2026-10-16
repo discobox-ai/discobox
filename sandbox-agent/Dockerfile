@@ -24,6 +24,7 @@ COPY harness ./harness
 COPY hostscope ./hostscope
 COPY judge ./judge
 COPY platform ./platform
+COPY programstatus ./programstatus
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
@@ -132,6 +133,7 @@ COPY hostscope ./hostscope
 COPY imagecache ./imagecache
 COPY internal ./internal
 COPY platform ./platform
+COPY programstatus ./programstatus
 COPY randomname ./randomname
 COPY releasemanifest ./releasemanifest
 COPY sandboxconfig ./sandboxconfig

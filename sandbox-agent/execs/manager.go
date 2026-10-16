@@ -18,6 +18,7 @@ import (
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
@@ -94,6 +95,12 @@ type Exec struct {
 	// program being busy (ADR 0124). Absent for a program that has shown
 	// nothing, for pipe execs, and once the shim is gone.
 	ScreenChangedAt *time.Time `json:"screenChangedAt,omitempty"`
+	// ProgramStatus is what the program in the exec last reported of itself
+	// over OSC 7501, reported live by the shim like Title (ADR 26-10-16-424).
+	// Where it is present it is the exec's status, and the idle stop reads it
+	// in place of ScreenChangedAt. Absent for a program that reported nothing
+	// it still stands by, for pipe execs, and once the shim is gone.
+	ProgramStatus *programstatus.Status `json:"programStatus,omitempty"`
 	// LastAccessedAt is the last time a client acted on this exec — attached,
 	// typed, or is attached right now — reported live by the shim like
 	// AttacherCount. Absent when no client ever has, or once the shim is gone.
@@ -778,6 +785,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	}
 	current.AttacherCount = 0
 	current.ScreenChangedAt = nil
+	current.ProgramStatus = nil
 	current.LastAccessedAt = nil
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
@@ -871,6 +879,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.AttacherCount = 0
 	current.Title = ""
 	current.ScreenChangedAt = nil
+	current.ProgramStatus = nil
 	current.LastAccessedAt = nil
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
@@ -1511,6 +1520,7 @@ func mergeExecStatus(base, status Exec) Exec {
 	base.AttacherCount = status.AttacherCount
 	base.Title = status.Title
 	base.ScreenChangedAt = status.ScreenChangedAt
+	base.ProgramStatus = status.ProgramStatus
 	base.LastAccessedAt = status.LastAccessedAt
 	return base
 }
@@ -1636,7 +1646,7 @@ func writeRuntime(path string, exec Exec) error {
 //
 // Those fields change by construction — LastAccessedAt is time.Now() for as
 // long as any client is attached (shimRuntime.handleStatus), and a harness
-// at work moves ScreenChangedAt — so persisting them would make the
+// at work moves ScreenChangedAt and ProgramStatus — so persisting them would make the
 // runtime file differ on every single refresh. The directory is watched for the
 // shim's writes, so a file that always differs is a feedback loop: write,
 // inotify, refresh, write, forever, for as long as a terminal is open. They are
@@ -1646,6 +1656,7 @@ func runtimeFileState(exec Exec) Exec {
 	exec.AttacherCount = 0
 	exec.Title = ""
 	exec.ScreenChangedAt = nil
+	exec.ProgramStatus = nil
 	exec.LastAccessedAt = nil
 	return exec
 }

@@ -1,5 +1,5 @@
 // Package autostop powers the sandbox off once nothing has used it for the
-// idle timeout (ADR 0108, ADR 0124).
+// idle timeout (ADR 0108, ADR 0124, ADR 26-10-16-424).
 //
 // The decision is made here, inside the sandbox, because every fact it needs
 // is first-hand here and second-hand everywhere else: the shims hold what each
@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
@@ -226,7 +227,22 @@ func (p *Policy) Evaluate(now time.Time) State {
 		if e.LastAccessedAt != nil {
 			observed.consider(*e.LastAccessedAt, "client on exec "+e.ID)
 		}
-		if e.ScreenChangedAt != nil {
+		if e.ProgramStatus != nil {
+			observed.consider(e.ProgramStatus.ReportedAt, "status report on exec "+e.ID)
+		}
+		switch {
+		case e.ProgramStatus != nil && programstatus.Live(e.ProgramStatus.State):
+			// A program that says what it is doing replaces guessing it from
+			// its screen (ADR 26-10-16-424 §4): working is activity for as
+			// long as it lasts, and idle and blocked on a person are idle
+			// from the report that said so, however its screen moves.
+			if e.ProgramStatus.State == programstatus.Working {
+				observed.consider(now, "exec "+e.ID+" reports working")
+			}
+		case e.ScreenChangedAt != nil:
+			// No report, or only a result one (done, error) that outlives
+			// the program that reported it: whatever runs in the terminal
+			// now says nothing of itself, so its screen does.
 			observed.consider(*e.ScreenChangedAt, "screen change on exec "+e.ID)
 		}
 	}

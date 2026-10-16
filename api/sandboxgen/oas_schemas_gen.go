@@ -2342,6 +2342,98 @@ func (o OptSandboxAgentInventoryScreens) Or(d SandboxAgentInventoryScreens) Sand
 	return d
 }
 
+// NewOptSandboxAgentProgramStatus returns new OptSandboxAgentProgramStatus with value set to v.
+func NewOptSandboxAgentProgramStatus(v SandboxAgentProgramStatus) OptSandboxAgentProgramStatus {
+	return OptSandboxAgentProgramStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProgramStatus is optional SandboxAgentProgramStatus.
+type OptSandboxAgentProgramStatus struct {
+	Value SandboxAgentProgramStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProgramStatus was set.
+func (o OptSandboxAgentProgramStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProgramStatus) Reset() {
+	var v SandboxAgentProgramStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProgramStatus) SetTo(v SandboxAgentProgramStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProgramStatus) Get() (v SandboxAgentProgramStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProgramStatus) Or(d SandboxAgentProgramStatus) SandboxAgentProgramStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxAgentProgramStatusKind returns new OptSandboxAgentProgramStatusKind with value set to v.
+func NewOptSandboxAgentProgramStatusKind(v SandboxAgentProgramStatusKind) OptSandboxAgentProgramStatusKind {
+	return OptSandboxAgentProgramStatusKind{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProgramStatusKind is optional SandboxAgentProgramStatusKind.
+type OptSandboxAgentProgramStatusKind struct {
+	Value SandboxAgentProgramStatusKind
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProgramStatusKind was set.
+func (o OptSandboxAgentProgramStatusKind) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProgramStatusKind) Reset() {
+	var v SandboxAgentProgramStatusKind
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProgramStatusKind) SetTo(v SandboxAgentProgramStatusKind) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProgramStatusKind) Get() (v SandboxAgentProgramStatusKind, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProgramStatusKind) Or(d SandboxAgentProgramStatusKind) SandboxAgentProgramStatusKind {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -3779,6 +3871,215 @@ func (s *SandboxAgentProcessUsage) SetVirtualBytes(val int64) {
 	s.VirtualBytes = val
 }
 
+// One program's reported status (OSC 7501, the Program Status Protocol) - the terminal's root record,
+//
+//	or with none the most pressing of its others.
+//
+// Ref: #/components/schemas/SandboxAgentProgramStatus
+type SandboxAgentProgramStatus struct {
+	// The stable identifier of the program that reported, such as claude-code.
+	App OptString `json:"app"`
+	// What a blocked program needs from the person. Absent when the program did not say, and for every
+	// other state.
+	Kind OptSandboxAgentProgramStatusKind `json:"kind"`
+	// One line the program gave about what it is doing, waiting for, or produced. Control characters are
+	// never present.
+	Msg OptString `json:"msg"`
+	// Percent complete, 0 to 100, of a working or blocked program that said. Absent when indeterminate.
+	Progress OptInt64 `json:"progress"`
+	// When the terminal last took a report from the program.
+	ReportedAt time.Time `json:"reportedAt"`
+	// Idle is waiting for the next instruction, working is busy, done is finished with a result not yet
+	// seen, blocked is waiting on a person, error is failed and stopped.
+	State SandboxAgentProgramStatusState `json:"state"`
+	// A short label the program gave the record. Control characters are never present.
+	Title OptString `json:"title"`
+}
+
+// GetApp returns the value of App.
+func (s *SandboxAgentProgramStatus) GetApp() OptString {
+	return s.App
+}
+
+// GetKind returns the value of Kind.
+func (s *SandboxAgentProgramStatus) GetKind() OptSandboxAgentProgramStatusKind {
+	return s.Kind
+}
+
+// GetMsg returns the value of Msg.
+func (s *SandboxAgentProgramStatus) GetMsg() OptString {
+	return s.Msg
+}
+
+// GetProgress returns the value of Progress.
+func (s *SandboxAgentProgramStatus) GetProgress() OptInt64 {
+	return s.Progress
+}
+
+// GetReportedAt returns the value of ReportedAt.
+func (s *SandboxAgentProgramStatus) GetReportedAt() time.Time {
+	return s.ReportedAt
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentProgramStatus) GetState() SandboxAgentProgramStatusState {
+	return s.State
+}
+
+// GetTitle returns the value of Title.
+func (s *SandboxAgentProgramStatus) GetTitle() OptString {
+	return s.Title
+}
+
+// SetApp sets the value of App.
+func (s *SandboxAgentProgramStatus) SetApp(val OptString) {
+	s.App = val
+}
+
+// SetKind sets the value of Kind.
+func (s *SandboxAgentProgramStatus) SetKind(val OptSandboxAgentProgramStatusKind) {
+	s.Kind = val
+}
+
+// SetMsg sets the value of Msg.
+func (s *SandboxAgentProgramStatus) SetMsg(val OptString) {
+	s.Msg = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *SandboxAgentProgramStatus) SetProgress(val OptInt64) {
+	s.Progress = val
+}
+
+// SetReportedAt sets the value of ReportedAt.
+func (s *SandboxAgentProgramStatus) SetReportedAt(val time.Time) {
+	s.ReportedAt = val
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentProgramStatus) SetState(val SandboxAgentProgramStatusState) {
+	s.State = val
+}
+
+// SetTitle sets the value of Title.
+func (s *SandboxAgentProgramStatus) SetTitle(val OptString) {
+	s.Title = val
+}
+
+// What a blocked program needs from the person. Absent when the program did not say, and for every
+// other state.
+type SandboxAgentProgramStatusKind string
+
+const (
+	SandboxAgentProgramStatusKindPermission SandboxAgentProgramStatusKind = "permission"
+	SandboxAgentProgramStatusKindQuestion   SandboxAgentProgramStatusKind = "question"
+	SandboxAgentProgramStatusKindAuth       SandboxAgentProgramStatusKind = "auth"
+)
+
+// AllValues returns all SandboxAgentProgramStatusKind values.
+func (SandboxAgentProgramStatusKind) AllValues() []SandboxAgentProgramStatusKind {
+	return []SandboxAgentProgramStatusKind{
+		SandboxAgentProgramStatusKindPermission,
+		SandboxAgentProgramStatusKindQuestion,
+		SandboxAgentProgramStatusKindAuth,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProgramStatusKind) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProgramStatusKindPermission:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusKindQuestion:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusKindAuth:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProgramStatusKind) UnmarshalText(data []byte) error {
+	switch SandboxAgentProgramStatusKind(data) {
+	case SandboxAgentProgramStatusKindPermission:
+		*s = SandboxAgentProgramStatusKindPermission
+		return nil
+	case SandboxAgentProgramStatusKindQuestion:
+		*s = SandboxAgentProgramStatusKindQuestion
+		return nil
+	case SandboxAgentProgramStatusKindAuth:
+		*s = SandboxAgentProgramStatusKindAuth
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Idle is waiting for the next instruction, working is busy, done is finished with a result not yet
+// seen, blocked is waiting on a person, error is failed and stopped.
+type SandboxAgentProgramStatusState string
+
+const (
+	SandboxAgentProgramStatusStateIdle    SandboxAgentProgramStatusState = "idle"
+	SandboxAgentProgramStatusStateWorking SandboxAgentProgramStatusState = "working"
+	SandboxAgentProgramStatusStateDone    SandboxAgentProgramStatusState = "done"
+	SandboxAgentProgramStatusStateBlocked SandboxAgentProgramStatusState = "blocked"
+	SandboxAgentProgramStatusStateError   SandboxAgentProgramStatusState = "error"
+)
+
+// AllValues returns all SandboxAgentProgramStatusState values.
+func (SandboxAgentProgramStatusState) AllValues() []SandboxAgentProgramStatusState {
+	return []SandboxAgentProgramStatusState{
+		SandboxAgentProgramStatusStateIdle,
+		SandboxAgentProgramStatusStateWorking,
+		SandboxAgentProgramStatusStateDone,
+		SandboxAgentProgramStatusStateBlocked,
+		SandboxAgentProgramStatusStateError,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProgramStatusState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProgramStatusStateIdle:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusStateWorking:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusStateDone:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusStateBlocked:
+		return []byte(s), nil
+	case SandboxAgentProgramStatusStateError:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProgramStatusState) UnmarshalText(data []byte) error {
+	switch SandboxAgentProgramStatusState(data) {
+	case SandboxAgentProgramStatusStateIdle:
+		*s = SandboxAgentProgramStatusStateIdle
+		return nil
+	case SandboxAgentProgramStatusStateWorking:
+		*s = SandboxAgentProgramStatusStateWorking
+		return nil
+	case SandboxAgentProgramStatusStateDone:
+		*s = SandboxAgentProgramStatusStateDone
+		return nil
+	case SandboxAgentProgramStatusStateBlocked:
+		*s = SandboxAgentProgramStatusStateBlocked
+		return nil
+	case SandboxAgentProgramStatusStateError:
+		*s = SandboxAgentProgramStatusStateError
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // The sandbox's own resource consumption at one moment, as cumulative counters.
 // Ref: #/components/schemas/SandboxAgentResourceUsage
 type SandboxAgentResourceUsage struct {
@@ -3911,8 +4212,12 @@ type SandboxAgentSessionStatus struct {
 	// no client ever has.
 	LastAccessedAt OptDateTime `json:"lastAccessedAt"`
 	Primary        bool        `json:"primary"`
-	StartedAt      OptDateTime `json:"startedAt"`
-	TerminalId     string      `json:"terminalId"`
+	// What the program in the session last reported of itself over OSC 7501 (ADR 26-10-16-424). Where
+	// present it is the session's status, harness and all, and nothing is derived beside it. Absent when
+	// the program reported nothing it still stands by.
+	ProgramStatus OptSandboxAgentProgramStatus `json:"programStatus"`
+	StartedAt     OptDateTime                  `json:"startedAt"`
+	TerminalId    string                       `json:"terminalId"`
 	// Window title the program in the session last set (OSC 0/2), read from its terminal emulator.
 	// Absent when the session never titled itself - the sandbox's name and prompt are already on the
 	// record, so nothing is backfilled here.
@@ -3942,6 +4247,11 @@ func (s *SandboxAgentSessionStatus) GetLastAccessedAt() OptDateTime {
 // GetPrimary returns the value of Primary.
 func (s *SandboxAgentSessionStatus) GetPrimary() bool {
 	return s.Primary
+}
+
+// GetProgramStatus returns the value of ProgramStatus.
+func (s *SandboxAgentSessionStatus) GetProgramStatus() OptSandboxAgentProgramStatus {
+	return s.ProgramStatus
 }
 
 // GetStartedAt returns the value of StartedAt.
@@ -3982,6 +4292,11 @@ func (s *SandboxAgentSessionStatus) SetLastAccessedAt(val OptDateTime) {
 // SetPrimary sets the value of Primary.
 func (s *SandboxAgentSessionStatus) SetPrimary(val bool) {
 	s.Primary = val
+}
+
+// SetProgramStatus sets the value of ProgramStatus.
+func (s *SandboxAgentSessionStatus) SetProgramStatus(val OptSandboxAgentProgramStatus) {
+	s.ProgramStatus = val
 }
 
 // SetStartedAt sets the value of StartedAt.

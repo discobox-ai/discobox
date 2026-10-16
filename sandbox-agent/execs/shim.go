@@ -414,6 +414,9 @@ func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if changed := r.stream.ScreenChangedAt(); !changed.IsZero() {
 		status.ScreenChangedAt = &changed
 	}
+	if reported, ok := r.stream.ProgramStatus(); ok {
+		status.ProgramStatus = &reported
+	}
 	// A client that is attached right now is accessing the exec right now,
 	// even if it has not typed; otherwise access is the last time one
 	// connected or sent a frame.

@@ -22,6 +22,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/discobox-ai/discobox/execstream/frame"
 	"github.com/discobox-ai/discobox/execstream/host"
+	"github.com/discobox-ai/discobox/programstatus"
 )
 
 // Runtime owns the terminal side of one exec and delegates the stream to
@@ -72,6 +73,15 @@ func New(protocol string, done <-chan struct{}, onFrame func(frame.Frame) error)
 func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int, tty *os.File) {
 	r.mu.Lock()
 	screen := newScreenBuffer(rows, cols, scrollbackLines)
+	// Both run inside the emulator, so under r.mu: the foreground read may use
+	// the handle, which is only a handle until ReleaseTTY.
+	screen.foreground = func() int { return foregroundGroup(r.tty) }
+	// The reply goes out the way the emulator's own answers do, through its
+	// response pipe, so it reaches the program in the order the queries came:
+	// a program that follows its probe with DA1 and reads an answer to DA1
+	// arriving first as "not supported" must see this one first. The pump
+	// below drains the pipe, as it must for the emulator's answers.
+	screen.answer = func(reply []byte) { screen.emu.SendText(string(reply)) }
 	r.screen = screen
 	r.tty = tty
 	r.mu.Unlock()
@@ -89,6 +99,24 @@ func (r *Runtime) Title() string {
 		return ""
 	}
 	return r.screen.title
+}
+
+// ProgramStatus is what the program reported of itself over OSC 7501: the
+// record that stands for the terminal (ADR 26-10-16-424 §§2-3). It reports
+// false for a program that has reported nothing it still stands by, and
+// always for pipe execs, which have no screen to hear it on.
+func (r *Runtime) ProgramStatus() (programstatus.Status, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen == nil {
+		return programstatus.Status{}, false
+	}
+	var (
+		status programstatus.Status
+		ok     bool
+	)
+	r.runScreenLocked(func(screen *screenBuffer) { status, ok = screen.programStatusNow() })
+	return status, ok
 }
 
 // ScreenChangedAt is when what the program shows last changed — the text on
@@ -204,6 +232,10 @@ func (r *Runtime) runScreenLocked(fn func(*screenBuffer)) {
 // on a startup query (Claude Code waits on DA1) still comes up. While a client
 // is attached its real terminal sees the query in the raw output stream and
 // answers it, so the emulator's answer is dropped to avoid double responses.
+// The OSC 7501 feature reply is written either way: the client's terminal may
+// not know the protocol, and a program that probed unanswered never reports
+// (ADR 26-10-16-424 §1). It comes through the same pipe, as a write of its
+// own, so it is told apart by what it says.
 //
 // The pump lives for the process lifetime: vt.Emulator.Close races with the
 // writes Observe issues, so the pipe is intentionally never closed.
@@ -234,7 +266,10 @@ func (r *Runtime) pumpScreenResponses(screen *screenBuffer, input io.Writer) {
 		}
 	}()
 	for chunk := range responses {
-		if input == nil || r.stream.HasAttachers() {
+		if input == nil {
+			continue
+		}
+		if r.stream.HasAttachers() && string(chunk) != programstatus.ReplySequence {
 			continue
 		}
 		_, _ = input.Write(chunk)
@@ -311,7 +346,16 @@ func (u *upgradeConn) Close() error { return u.conn.Close() }
 func (r *Runtime) Broadcast(typ byte, payload []byte) { r.stream.Broadcast(typ, payload) }
 
 // MarkExited retains the encoded exit frame for clients that attach later.
-func (r *Runtime) MarkExited(payload []byte) { r.stream.MarkExited(payload) }
+// The process that reported anything is gone with the exec, so what it said
+// it was doing goes too; a result it reported (done, error) stays.
+func (r *Runtime) MarkExited(payload []byte) {
+	r.stream.MarkExited(payload)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen != nil {
+		r.runScreenLocked(func(screen *screenBuffer) { screen.dropLive(func(int) bool { return true }) })
+	}
+}
 
 // Attachers returns the current attacher set.
 func (r *Runtime) Attachers() []*host.Attacher { return r.stream.Attachers() }
