@@ -3,6 +3,7 @@ package agentstatus
 import (
 	"testing"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
@@ -50,5 +51,21 @@ func TestComputeSessionStatusReportsOnlyTerminals(t *testing.T) {
 	}
 	if execStatus["old-shell"] != string(execs.StatusExited) || execStatus["crashed"] != string(execs.StatusFailed) {
 		t.Fatalf("ended terminals should report the exec status they ended with, got %v", execStatus)
+	}
+}
+
+// A session's status is what its program reported, carried from the shim,
+// and nothing when it reported nothing.
+func TestComputeSessionStatusCarriesTheReportedStatus(t *testing.T) {
+	reported := &programstatus.Status{State: programstatus.Blocked, Kind: programstatus.Question, App: "claude-code"}
+	statuses := ComputeSessionStatus([]execs.Exec{
+		{ID: "exec-1", Status: execs.StatusRunning, ProgramStatus: reported, Metadata: map[string]string{"harnessId": "claude-code", "primary": "true"}},
+		{ID: "exec-2", Status: execs.StatusRunning, Metadata: map[string]string{"harnessId": "codex"}},
+	})
+	if statuses[0].ProgramStatus != reported {
+		t.Fatalf("status = %+v, want the reported one", statuses[0].ProgramStatus)
+	}
+	if statuses[1].ProgramStatus != nil {
+		t.Fatalf("status = %+v for a program that reported nothing", statuses[1].ProgramStatus)
 	}
 }

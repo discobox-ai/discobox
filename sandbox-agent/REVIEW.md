@@ -251,3 +251,23 @@ user waits on every single start.
   comparing on a write rather than when a burst ends: a frame split across PTY
   reads is a different screen part-way through. A burst settled by a
   `/status` read is dated to its last write, never to the read (ADR 0124).
+- **A live reported status replaces the screen, and only `working` is
+  activity.** For an exec whose program reports `working`, `blocked` or
+  `idle` over OSC 7501, `autostop` reads that status instead of its screen
+  changes: a blocked agent animating a prompt is still a box waiting on a
+  person, and counting its screen holds the sandbox up for nobody (ADR
+  26-10-16-424 §4). A `done` or `error` record does not replace the screen:
+  it is a result the shim keeps after the program that reported it is gone,
+  so whatever runs in that terminal next — a build started from the shell —
+  reports nothing, and gating on any record would power the box off under
+  it. Dropping a record is not activity either.
+- **The OSC 7501 probe is answered whatever is attached, in query order.**
+  The reply goes into the emulator's response pipe (`SendText` from the
+  handler) so it reaches the program before the DA1 answer that follows it —
+  Claude Code reads DA1 arriving first as "unsupported" and never reports —
+  and `pumpScreenResponses` lets it through while a client is attached, when
+  it drops the emulator's other answers, by matching the chunk to
+  `programstatus.ReplySequence`. That match holds only while each read of the
+  pipe returns exactly one write: a pump that buffers, coalesces, or reads
+  less than a whole reply drops it while attached. A second path for the
+  reply (a channel beside the pipe) reorders it against DA1.

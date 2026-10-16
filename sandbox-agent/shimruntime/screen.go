@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/vt"
+	"github.com/discobox-ai/discobox/programstatus"
 )
 
 // DefaultScrollbackLines bounds the history a repaint snapshot carries. A late
@@ -71,6 +72,17 @@ type screenBuffer struct {
 	// compared.
 	burstAt   time.Time
 	pendingAt time.Time
+
+	// status is what the program has reported of itself over OSC 7501, kept
+	// by the spec's rules (ADR 26-10-16-424 §2).
+	status programstatus.Set
+	// foreground reads the process group in the PTY's foreground, which each
+	// report is attributed to so its records can be dropped once that group
+	// has left; zero when it cannot be read, which never drops one. answer
+	// writes the reply to a feature query to the program. Both are the
+	// Runtime's, set when it enables the screen; nil in a bare buffer.
+	foreground func() int
+	answer     func([]byte)
 }
 
 func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
@@ -97,7 +109,74 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 		},
 		IconName: func(name string) { s.iconName = name },
 	})
+	emu.RegisterOscHandler(programstatus.Code, func(data []byte) bool {
+		s.programStatus(data)
+		return true
+	})
+	// A shell prompt beginning ends what the job before it reported as live.
+	// The emulator has no use for OSC 133 of its own, so declining it changes
+	// nothing else.
+	emu.RegisterOscHandler(133, func(data []byte) bool {
+		if bytes.HasPrefix(data, []byte("133;A")) {
+			s.dropLive(func(int) bool { return true })
+		}
+		return false
+	})
+	// RIS removes every record. The handler declines, so the emulator still
+	// resets the screen.
+	emu.RegisterEscHandler('c', func() bool {
+		s.status.Reset()
+		return false
+	})
 	return s
+}
+
+// programStatus takes one OSC 7501 sequence's data. A feature query is
+// answered whether or not a client is attached, unlike the emulator's other
+// answers (pumpScreenResponses): a program probes once, when it starts, and
+// one whose probe went unanswered never reports (ADR 26-10-16-424 §1).
+func (s *screenBuffer) programStatus(data []byte) {
+	report, ok := programstatus.Parse(data)
+	if !ok {
+		return
+	}
+	if report.Query {
+		if s.answer != nil {
+			s.answer([]byte(programstatus.ReplySequence))
+		}
+		return
+	}
+	s.status.Apply(report, time.Now().UTC(), s.foregroundGroup())
+}
+
+func (s *screenBuffer) foregroundGroup() int {
+	if s.foreground == nil {
+		return 0
+	}
+	return s.foreground()
+}
+
+// dropLive drops the live records — working, blocked and idle — of every
+// group gone reports true for.
+func (s *screenBuffer) dropLive(gone func(group int) bool) {
+	s.status.Drop(func(state programstatus.State, group int) bool {
+		return programstatus.Live(state) && gone(group)
+	})
+}
+
+// programStatusNow is the record that stands for the terminal, with the live
+// records of a process group no longer in the foreground dropped first: a
+// harness is a shell's typed-in job (ADR 0027), so the exec outliving it is
+// the normal case, and its leaving the foreground — exiting, suspended,
+// killed — is what ends what it said it was doing.
+func (s *screenBuffer) programStatusNow() (programstatus.Status, bool) {
+	if s.status.Len() == 0 {
+		return programstatus.Status{}, false
+	}
+	if fg := s.foregroundGroup(); fg > 0 {
+		s.dropLive(func(group int) bool { return group > 0 && group != fg })
+	}
+	return s.status.Effective()
 }
 
 func (s *screenBuffer) write(p []byte) {

@@ -12,6 +12,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/discobox-ai/discobox/execstream/frame"
 	"github.com/discobox-ai/discobox/execstream/host"
+	"github.com/discobox-ai/discobox/programstatus"
 )
 
 // screenPipe returns a pipe standing in for the PTY master: EnableScreen
@@ -254,5 +255,84 @@ func TestScreenChangedAtMovesOnlyOnANewTitle(t *testing.T) {
 	r.Broadcast(frame.Stdout, []byte("\x1b]0;⠙ fixing the reaper\x07"))
 	if got := r.ScreenChangedAt(); !got.After(first) {
 		t.Fatalf("screen changed at = %v after a new title, want later than %v", got, first)
+	}
+}
+
+// The OSC 7501 feature query is answered whether or not a client is attached:
+// a program probes once, when it starts, and an attached client's terminal may
+// not know the protocol (ADR 26-10-16-424 §1).
+func TestProgramStatusQueryAnsweredWhileAttached(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	r := New("test", done, nil)
+	input, tty := screenPipe(t)
+	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
+	_ = attachPipe(t, r)
+
+	r.Broadcast(frame.Stdout, []byte("\x1b]7501;?\x1b\\"))
+	if got := readWithTimeout(input, 5*time.Second); string(got) != programstatus.ReplySequence {
+		t.Fatalf("PTY input = %q, want the feature reply %q", got, programstatus.ReplySequence)
+	}
+}
+
+// What the program reports is the exec's status until it ends; a result it
+// reported outlives the process.
+func TestProgramStatusIsReportedUntilTheExecEnds(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	r := New("test", done, nil)
+	_, tty := screenPipe(t)
+	if _, ok := r.ProgramStatus(); ok {
+		t.Fatal("a runtime with no screen reported a status")
+	}
+	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
+	if _, ok := r.ProgramStatus(); ok {
+		t.Fatal("a program that reported nothing has a status")
+	}
+
+	r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=working:app=claude-code\a"))
+	status, ok := r.ProgramStatus()
+	if !ok || status.State != programstatus.Working || status.App != "claude-code" || status.ReportedAt.IsZero() {
+		t.Fatalf("status = %+v, %v; want working from claude-code", status, ok)
+	}
+	r.MarkExited([]byte("{}"))
+	if status, ok := r.ProgramStatus(); ok {
+		t.Fatalf("status after exit = %+v, want none: the process that was working is gone", status)
+	}
+
+	r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=done\x1b\\"))
+	r.MarkExited([]byte("{}"))
+	if status, ok := r.ProgramStatus(); !ok || status.State != programstatus.Done {
+		t.Fatalf("status after exit = %+v, %v; want done to stay", status, ok)
+	}
+}
+
+// The feature reply reaches the program in the order the queries came: one
+// that follows its probe with DA1 reads a DA1 answer arriving first as "not
+// supported".
+func TestProgramStatusReplyKeepsItsPlaceBeforeDA1(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	r := New("test", done, nil)
+	input, tty := screenPipe(t)
+	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
+
+	for i := range 20 {
+		r.Broadcast(frame.Stdout, []byte("\x1b]7501;?\x1b\\\x1b[c"))
+		var got []byte
+		for len(got) < len(programstatus.ReplySequence) {
+			chunk := readWithTimeout(input, 5*time.Second)
+			if chunk == nil {
+				t.Fatalf("round %d: no answer, got %q", i, got)
+			}
+			got = append(got, chunk...)
+		}
+		if !bytes.HasPrefix(got, []byte(programstatus.ReplySequence)) {
+			t.Fatalf("round %d: PTY input = %q, want the feature reply first", i, got)
+		}
+		// Drain the DA1 answer before the next round.
+		for !bytes.Contains(got, []byte("c")) {
+			got = append(got, readWithTimeout(input, 5*time.Second)...)
+		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
@@ -97,6 +98,41 @@ func TestEvaluateReadsScreenChangesAndClients(t *testing.T) {
 	state = p.Evaluate(now)
 	if !state.LastActivityAt.Equal(now) || state.LastActivity != "client attached to exec shell" {
 		t.Fatalf("last activity = %v %q, want the attached client now", state.LastActivityAt, state.LastActivity)
+	}
+}
+
+// A program reporting its status replaces its screen as the sign it is busy:
+// working holds the sandbox, and blocked on a person is idle from the report
+// that said so, however much the screen moved after it (ADR 26-10-16-424 §4).
+func TestEvaluateReadsReportedStatusInPlaceOfTheScreen(t *testing.T) {
+	c := &clock{now: epoch}
+	claude := execs.Exec{
+		ID:              "claude",
+		ScreenChangedAt: at(50 * time.Minute),
+		ProgramStatus:   &programstatus.Status{State: programstatus.Working, ReportedAt: *at(10 * time.Minute)},
+	}
+	execList := []execs.Exec{claude}
+	p := newPolicy(t, c, func() []execs.Exec { return execList })
+	now := epoch.Add(3 * time.Hour)
+	if state := p.Evaluate(now); !state.LastActivityAt.Equal(now) || state.LastActivity != "exec claude reports working" {
+		t.Fatalf("last activity = %v %q, want now while it reports working", state.LastActivityAt, state.LastActivity)
+	}
+
+	// A fresh policy, so what the first saw is not remembered.
+	execList[0].ProgramStatus = &programstatus.Status{State: programstatus.Blocked, Kind: programstatus.Permission, ReportedAt: *at(20 * time.Minute)}
+	p = newPolicy(t, c, func() []execs.Exec { return execList })
+	state := p.Evaluate(now)
+	if !state.LastActivityAt.Equal(*at(20 * time.Minute)) || state.LastActivity != "status report on exec claude" {
+		t.Fatalf("last activity = %v %q, want the blocked report, not the later screen change", state.LastActivityAt, state.LastActivity)
+	}
+
+	// A result outlives the program that reported it, and whatever the
+	// terminal runs after it reports nothing: its screen counts again.
+	execList[0].ProgramStatus = &programstatus.Status{State: programstatus.Done, ReportedAt: *at(20 * time.Minute)}
+	p = newPolicy(t, c, func() []execs.Exec { return execList })
+	state = p.Evaluate(now)
+	if !state.LastActivityAt.Equal(*at(50 * time.Minute)) || state.LastActivity != "screen change on exec claude" {
+		t.Fatalf("last activity = %v %q, want the screen change after the done report", state.LastActivityAt, state.LastActivity)
 	}
 }
 

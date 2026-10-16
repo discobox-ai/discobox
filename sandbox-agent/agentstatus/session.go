@@ -16,14 +16,12 @@ import (
 // holds one entry per terminal identity, showing its current run's status; an
 // ended entry means "not running, revivable by attach", not a dead sibling.
 //
-// What a session is *doing* — thinking, idle, waiting on the user — is not
-// reported. Deriving it meant reading each terminal's recorded harness hooks
-// and turning them into a state machine no client read. The hooks themselves
-// are still recorded, readable through `discobox admin audit hooks`, and
-// waitable by name (ADR 0137 §3); a harness's events now also carry the
-// canonical name for what they mean (`harness.CanonicalHookEvent`, ADR 0146),
-// so a reader that wants a session's activity can derive it without this
-// package guessing on every caller's behalf.
+// What a session is *doing* — working, idle, blocked on a person — is what
+// its program says over OSC 7501, and only that (ADR 26-10-16-424 §3). It is
+// never derived: deriving it once meant reading each terminal's recorded
+// harness hooks into a state machine per harness, and a program that knows
+// what it is doing does not need this package to guess. A session whose
+// program reports nothing carries no status.
 func ComputeSessionStatus(all []execs.Exec) []SessionStatus {
 	var out []SessionStatus
 	for _, exec := range all {
@@ -45,5 +43,6 @@ func sessionStatusForExec(exec execs.Exec) SessionStatus {
 		AttacherCount:  exec.AttacherCount,
 		ExecStatus:     string(exec.Status),
 		StartedAt:      exec.StartedAt,
+		ProgramStatus:  exec.ProgramStatus,
 	}
 }

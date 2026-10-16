@@ -13,6 +13,7 @@ package agentstatus
 import (
 	"time"
 
+	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 )
@@ -61,10 +62,14 @@ type SessionStatus struct {
 	LastAccessedAt *time.Time `json:"lastAccessedAt,omitempty"`
 	StartedAt      *time.Time `json:"startedAt,omitempty"`
 	AttacherCount  int        `json:"attacherCount"`
-	// ExecStatus is the underlying exec process's status, verbatim. It is the
-	// only liveness this payload carries: what the harness inside the session
-	// is doing is not reported (see ComputeSessionStatus).
+	// ExecStatus is the underlying exec process's status, verbatim: whether
+	// the session's process is running, not what it is doing.
 	ExecStatus string `json:"execStatus"`
+	// ProgramStatus is what the program in the session last reported of
+	// itself over OSC 7501. Where it is present it is the session's status;
+	// where it is not, nothing is said of what the session is doing (see
+	// ComputeSessionStatus).
+	ProgramStatus *programstatus.Status `json:"programStatus,omitempty"`
 }
 
 // Response is the full status payload sandbox-agent's status endpoint

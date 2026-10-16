@@ -150,6 +150,7 @@ type SandboxAgentListeningPort = apigen.SandboxAgentListeningPort
 type SandboxAgentMemoryUsage = apigen.SandboxAgentMemoryUsage
 type SandboxAgentMeta = apigen.SandboxAgentMeta
 type SandboxAgentProcessUsage = apigen.SandboxAgentProcessUsage
+type SandboxAgentProgramStatus = apigen.SandboxAgentProgramStatus
 type SandboxAgentResourceUsage = apigen.SandboxAgentResourceUsage
 type SandboxAgentSessionStatus = apigen.SandboxAgentSessionStatus
 type SandboxAgentSourceState = apigen.SandboxAgentSourceState

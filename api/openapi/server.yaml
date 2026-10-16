@@ -1513,11 +1513,55 @@ components:
                 execStatus:
                     description: Underlying exec process status.
                     type: string
+                programStatus:
+                    $ref: '#/components/schemas/SandboxAgentProgramStatus'
+                    description: What the program in the session last reported of itself over OSC 7501 (ADR 26-10-16-424). Where present it is the session's status, harness and all, and nothing is derived beside it. Absent when the program reported nothing it still stands by.
             required:
                 - terminalId
                 - primary
                 - attacherCount
                 - execStatus
+            type: object
+        SandboxAgentProgramStatus:
+            additionalProperties: false
+            description: One program's reported status (OSC 7501, the Program Status Protocol) - the terminal's root record, or with none the most pressing of its others.
+            properties:
+                state:
+                    description: idle is waiting for the next instruction, working is busy, done is finished with a result not yet seen, blocked is waiting on a person, error is failed and stopped.
+                    enum:
+                        - idle
+                        - working
+                        - done
+                        - blocked
+                        - error
+                    type: string
+                kind:
+                    description: What a blocked program needs from the person. Absent when the program did not say, and for every other state.
+                    enum:
+                        - permission
+                        - question
+                        - auth
+                    type: string
+                progress:
+                    description: Percent complete, 0 to 100, of a working or blocked program that said. Absent when indeterminate.
+                    format: int64
+                    type: integer
+                app:
+                    description: The stable identifier of the program that reported, such as claude-code.
+                    type: string
+                title:
+                    description: A short label the program gave the record. Control characters are never present.
+                    type: string
+                msg:
+                    description: One line the program gave about what it is doing, waiting for, or produced. Control characters are never present.
+                    type: string
+                reportedAt:
+                    description: When the terminal last took a report from the program.
+                    format: date-time
+                    type: string
+            required:
+                - state
+                - reportedAt
             type: object
         SandboxAgentInventory:
             additionalProperties: false
