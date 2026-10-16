@@ -1,16 +1,23 @@
 package sandboxruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Power operations are instructions (ADR 0017 §9). They act and return whether
@@ -67,6 +74,91 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 		return err
 	}
 	return r.startLocked(ctx, sandboxID)
+}
+
+// PowerDownSandbox carries out a power-down the sandbox asked for, on what the
+// sandbox confirms under the power lock rather than on what its last status
+// said: that status is a poll and a push old, and a client may have attached
+// since (ADR 26-10-16-337 §5). This runtime cannot freeze, so a confirmed sleep
+// stops the sandbox as a confirmed idle does.
+//
+// A sleep whose stop then fails leaves the sandbox up with its request
+// consumed; its idle stop puts it down in time.
+func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return Wake{}, err
+	}
+	if sb.Status != StatusRunning {
+		return Wake{}, ErrPowerDownRefused
+	}
+	wake, err := r.confirmPowerDown(ctx, sandboxID, reason)
+	if err != nil {
+		return Wake{}, err
+	}
+	slog.Default().Info("powering sandbox down on its own request", "sandboxId", sandboxID, "reason", reason, "wakeAt", wake.At)
+	if err := r.stopLocked(ctx, sandboxID); err != nil {
+		return Wake{}, err
+	}
+	return wake, nil
+}
+
+// confirmPowerDown asks the sandbox agent to confirm reason, with a token the
+// pool signs for that alone.
+func (r *DockerSandboxRuntime) confirmPowerDown(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
+	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
+	defer cancel()
+	token, err := r.poolToken(sandboxID, sandboxconfig.AutostopConfirmScope)
+	if err != nil {
+		return Wake{}, err
+	}
+	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	if err != nil {
+		return Wake{}, err
+	}
+	body, err := json.Marshal(map[string]string{"reason": string(reason)})
+	if err != nil {
+		return Wake{}, err
+	}
+	target := HTTPURL(SandboxAgentPort, fmt.Sprintf("/api/projects/%s/sandboxes/%s/autostop/confirm", r.projectID, sandboxID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return Wake{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// The connection is no credential: the sandbox agent decides on this token
+	// alone, whatever carried it (ADR 0126 §5).
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
+	if err != nil {
+		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: %w", sandboxID, err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return Wake{}, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusConflict:
+		return Wake{}, ErrPowerDownRefused
+	default:
+		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: status %d: %s", sandboxID, resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var confirmed struct {
+		WakeAt *time.Time `json:"wakeAt"`
+		Wake   string     `json:"wake"`
+	}
+	if err := json.Unmarshal(data, &confirmed); err != nil {
+		return Wake{}, fmt.Errorf("decode sandbox %s's confirmation: %w", sandboxID, err)
+	}
+	if confirmed.WakeAt == nil {
+		return Wake{}, nil
+	}
+	return Wake{At: confirmed.WakeAt.UTC(), Name: confirmed.Wake}, nil
 }
 
 // EnsureSandboxRunning starts a sandbox that is not running, and is a no-op for

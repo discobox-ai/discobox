@@ -595,11 +595,11 @@ func (r *DockerSandboxRuntime) readSourceProjectLayer(ctx context.Context, dial 
 }
 
 // getFromSandboxAgent reads one of the sandbox agent's runtime-config routes,
-// with the token the pool signs for them (runtimeConfigToken).
+// with the token the pool signs for them (poolToken).
 func (r *DockerSandboxRuntime) getFromSandboxAgent(ctx context.Context, dial Dialer, sandboxID, route string, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
-	token, err := r.runtimeConfigToken(sandboxID)
+	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)
 	if err != nil {
 		return err
 	}

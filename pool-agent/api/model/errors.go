@@ -43,3 +43,10 @@ const SandboxNotRunningHeader = "X-Discobox-Sandbox-Not-Running"
 // "already exists" does not: nothing is running, and repair is what gives the
 // sandbox a container again.
 const ErrorTypeSandboxNoContainer = "https://discobox.ai/errors/sandbox-no-container"
+
+// ErrorTypeSandboxPowerDownRefused is the RFC 7807 `type` a pool agent sets on
+// the 409 it returns for a power-down the sandbox did not confirm, or for a
+// sandbox that was not running to confirm it (ADR 26-10-16-337 §5). Nothing was
+// changed, and the control plane treats it as an instruction with nothing to
+// do rather than as a failure.
+const ErrorTypeSandboxPowerDownRefused = "https://discobox.ai/errors/sandbox-power-down-refused"

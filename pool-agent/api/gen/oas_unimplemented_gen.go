@@ -122,6 +122,21 @@ func (UnimplementedHandler) PoolListSandboxes(ctx context.Context, params PoolLi
 	return r, ht.ErrNotImplemented
 }
 
+// PoolPowerDownSandbox implements pool-power-down-sandbox operation.
+//
+// Powers a sandbox down on its own request (ADR 26-10-16-337 §5).
+// Under the sandbox's power lock the pool asks the sandbox to confirm
+// the reason, fresh; a sandbox that is not running or does not
+// confirm is refused with a 409 of type sandbox-power-down-refused,
+// and nothing changes. A confirmed idle stops the sandbox; a
+// confirmed sleep freezes it where the runtime can, and stops it
+// otherwise.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
+func (UnimplementedHandler) PoolPowerDownSandbox(ctx context.Context, req *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (r *PoolSandboxPowerDownResult, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolRestartSandbox implements pool-restart-sandbox operation.
 //
 // Restart pool sandbox.

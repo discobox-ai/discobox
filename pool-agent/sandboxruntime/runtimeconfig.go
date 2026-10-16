@@ -44,7 +44,7 @@ const (
 	// decided for a sandbox, in the sandbox's tree root.
 	runtimeConfigRecordName = "runtime-config.json"
 
-	// runtimeConfigTokenTTL bounds a delivery token. Each delivery signs its
+	// runtimeConfigTokenTTL bounds a pool-signed token. Each call signs its
 	// own, so it only has to outlive one request.
 	runtimeConfigTokenTTL = 5 * time.Minute
 	// runtimeConfigCallTimeout bounds one delivery, which includes the sandbox
@@ -160,7 +160,7 @@ func (r *DockerSandboxRuntime) decideRuntimeConfig(sandboxID string, change func
 	if change != nil {
 		change(&next)
 	}
-	next.Agent = sandboxconfig.RuntimeAgent{}
+	next.Agent = sandboxconfig.RuntimeAgent{ControlPlanePower: r.handsOverPower(sandboxID, recorded)}
 	if r.sandboxIdleTimeout > 0 {
 		next.Agent.IdleTimeout = r.sandboxIdleTimeout.String()
 	}
@@ -181,6 +181,20 @@ func (r *DockerSandboxRuntime) decideRuntimeConfig(sandboxID string, change func
 		}
 	}
 	return next, nil
+}
+
+// handsOverPower is whether the document hands the sandbox's power to the
+// control plane: what its status last advertised, or, before the poll has
+// reached it since this agent started, what the recorded document already
+// said — so a pool agent's restart does not take the power back and give it
+// again (ADR 26-10-16-337 §8).
+func (r *DockerSandboxRuntime) handsOverPower(sandboxID string, recorded sandboxconfig.RuntimeConfig) bool {
+	if advertised, ok := r.powerHandover.Load(sandboxID); ok {
+		if handed, ok := advertised.(bool); ok {
+			return handed
+		}
+	}
+	return recorded.Agent.ControlPlanePower
 }
 
 // recordRuntimeConfig settles a change to the sandbox's document without
@@ -221,7 +235,8 @@ func (r *DockerSandboxRuntime) deliverRuntimeConfig(ctx context.Context, sandbox
 // It steps aside for anything holding the sandbox's power lock — a create, a
 // start, an archive, a delete — rather than waiting on it or racing it: the
 // boot that work ends in delivers for itself, and the next poll looks again.
-func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64) error {
+func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error {
+	r.powerHandover.Store(sandboxID, controlPlanePower)
 	power := r.sandboxLock(sandboxID)
 	if !power.TryLock() {
 		return nil
@@ -346,7 +361,7 @@ func (r *DockerSandboxRuntime) putRuntimeConfig(ctx context.Context, dial Dialer
 func (r *DockerSandboxRuntime) sendRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
-	token, err := r.runtimeConfigToken(sandboxID)
+	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)
 	if err != nil {
 		return sandboxconfig.RuntimeConfig{}, false, err
 	}
@@ -401,12 +416,13 @@ func (r *DockerSandboxRuntime) sendRuntimeConfig(ctx context.Context, dial Diale
 	}
 }
 
-// runtimeConfigToken signs the token a delivery carries with the pool's
-// identity key, which the sandbox's bootstrap names: the runtime-config scope
-// and nothing else, for this sandbox and pool (ADR 26-10-08-127 §3).
-func (r *DockerSandboxRuntime) runtimeConfigToken(sandboxID string) (string, error) {
+// poolToken signs a token with the pool's identity key, which the sandbox's
+// bootstrap names: one pool-only scope and nothing else, for this sandbox and
+// pool — runtime-config for a delivery (ADR 26-10-08-127 §3), autostop-confirm
+// for the confirmation a power-down asks for (ADR 26-10-16-337 §5).
+func (r *DockerSandboxRuntime) poolToken(sandboxID, scope string) (string, error) {
 	if len(r.identityKey) != ed25519.PrivateKeySize {
-		return "", errors.New("the pool has no identity key to sign a runtime-config delivery with")
+		return "", errors.New("the pool has no identity key to sign a sandbox-agent token with")
 	}
 	secretKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(r.identityKey)
 	if err != nil {
@@ -421,7 +437,7 @@ func (r *DockerSandboxRuntime) runtimeConfigToken(sandboxID string) (string, err
 	token.SetString("project_id", r.projectID)
 	token.SetString("pool_id", r.poolID)
 	token.SetString("sandbox_id", sandboxID)
-	if err := token.Set("scopes", []string{sandboxconfig.RuntimeConfigScope}); err != nil {
+	if err := token.Set("scopes", []string{scope}); err != nil {
 		return "", err
 	}
 	return token.V4Sign(secretKey, nil), nil

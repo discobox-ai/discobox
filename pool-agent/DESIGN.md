@@ -306,8 +306,13 @@ flowchart LR
   sandbox's tree root beside — never inside — the volumes, so it survives an
   archive and leaves with a delete. `decideRuntimeConfig` applies a change
   (secrets from create or update, sources and their delivery) and refreshes what
-  the pool owns outright (the idle timeout, the proxy material, its sources'
-  origin tokens); only a different document is a new revision. The record never
+  the pool owns outright (the idle timeout, whether the control plane holds the
+  sandbox's power, the proxy material, its sources' origin tokens); only a
+  different document is a new revision. `agent.controlPlanePower` is set only
+  for a sandbox whose last status advertised `autostop.controlPlanePower`
+  (`handsOverPower`), because an agent that predates the field refuses the
+  whole document over it; before the poll has reached a sandbox since this
+  agent started, the recorded value stands ([ADR 26-10-16-337](../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §8). The record never
   holds the client key; delivery adds it from the proxy material.
   `project-layer.json` beside it is the project layer the pool decided for the
   bootstrap and the slug it is read from — never `_provenance` read back from a
@@ -526,6 +531,16 @@ Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
 serialise per sandbox on one mutex (the ones that can start a container also
 pass the pool's start gate first; see [Clearing the Pool's Caches](#clearing-the-pools-caches)). That is also what makes on-demand start safe:
 ten concurrent requests produce one start.
+
+`power-down` is the fourth, and the one that is conditional
+([ADR 26-10-16-337](../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)
+§5): the control plane sends it when a sandbox reported itself idle or asked
+to sleep, and under the same mutex the runtime asks the sandbox to confirm the
+reason, fresh — `POST .../autostop/confirm`, with a token the pool signs for the
+pool-only `autostop-confirm` scope alone. A sandbox that is not running, or
+does not confirm, is refused with a typed 409 (`sandbox-power-down-refused`)
+and nothing changes; a confirmed one is stopped (this runtime cannot freeze)
+and the answer carries the wake the sandbox's confirmation named.
 
 **The control plane decides what starts a sandbox, and this agent carries it
 out** (ADR 26-10-12-711 §2). Every sandbox-directed route — the HTTP proxy, the

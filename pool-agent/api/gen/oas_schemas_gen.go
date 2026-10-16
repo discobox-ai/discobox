@@ -4069,6 +4069,103 @@ func (s *PoolSandboxPort) SetProtocol(val string) {
 	s.Protocol = val
 }
 
+// Asks the pool to power a sandbox down because the sandbox asked for
+// it (ADR 26-10-16-337 §5). Unlike stop it is conditional: the pool
+// confirms the reason with the sandbox under its power lock first,
+// and refuses the instruction when the sandbox no longer confirms it.
+// Ref: #/components/schemas/PoolSandboxPowerDownRequest
+type PoolSandboxPowerDownRequest struct {
+	// Idle when the sandbox reported itself idle, which always
+	// stops it; sleep when it reported a sleep request, which a
+	// runtime that can freeze freezes and any other stops.
+	Reason PoolSandboxPowerDownRequestReason `json:"reason"`
+}
+
+// GetReason returns the value of Reason.
+func (s *PoolSandboxPowerDownRequest) GetReason() PoolSandboxPowerDownRequestReason {
+	return s.Reason
+}
+
+// SetReason sets the value of Reason.
+func (s *PoolSandboxPowerDownRequest) SetReason(val PoolSandboxPowerDownRequestReason) {
+	s.Reason = val
+}
+
+// Idle when the sandbox reported itself idle, which always
+// stops it; sleep when it reported a sleep request, which a
+// runtime that can freeze freezes and any other stops.
+type PoolSandboxPowerDownRequestReason string
+
+const (
+	PoolSandboxPowerDownRequestReasonIdle  PoolSandboxPowerDownRequestReason = "idle"
+	PoolSandboxPowerDownRequestReasonSleep PoolSandboxPowerDownRequestReason = "sleep"
+)
+
+// AllValues returns all PoolSandboxPowerDownRequestReason values.
+func (PoolSandboxPowerDownRequestReason) AllValues() []PoolSandboxPowerDownRequestReason {
+	return []PoolSandboxPowerDownRequestReason{
+		PoolSandboxPowerDownRequestReasonIdle,
+		PoolSandboxPowerDownRequestReasonSleep,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolSandboxPowerDownRequestReason) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolSandboxPowerDownRequestReasonIdle:
+		return []byte(s), nil
+	case PoolSandboxPowerDownRequestReasonSleep:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolSandboxPowerDownRequestReason) UnmarshalText(data []byte) error {
+	switch PoolSandboxPowerDownRequestReason(data) {
+	case PoolSandboxPowerDownRequestReasonIdle:
+		*s = PoolSandboxPowerDownRequestReasonIdle
+		return nil
+	case PoolSandboxPowerDownRequestReasonSleep:
+		*s = PoolSandboxPowerDownRequestReasonSleep
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The power-down was confirmed and carried out. It carries the
+// sandbox's earliest pending wake, at which the control plane starts
+// it again.
+// Ref: #/components/schemas/PoolSandboxPowerDownResult
+type PoolSandboxPowerDownResult struct {
+	// When the sandbox asks to be started again. Absent when it has no pending wake.
+	WakeAt OptDateTime `json:"wakeAt"`
+	// The file name of that wake. Text the sandbox chose.
+	Wake OptString `json:"wake"`
+}
+
+// GetWakeAt returns the value of WakeAt.
+func (s *PoolSandboxPowerDownResult) GetWakeAt() OptDateTime {
+	return s.WakeAt
+}
+
+// GetWake returns the value of Wake.
+func (s *PoolSandboxPowerDownResult) GetWake() OptString {
+	return s.Wake
+}
+
+// SetWakeAt sets the value of WakeAt.
+func (s *PoolSandboxPowerDownResult) SetWakeAt(val OptDateTime) {
+	s.WakeAt = val
+}
+
+// SetWake sets the value of Wake.
+func (s *PoolSandboxPowerDownResult) SetWake(val OptString) {
+	s.Wake = val
+}
+
 // Says the sandbox is running and its agent answers.
 // Ref: #/components/schemas/PoolSandboxRunning
 type PoolSandboxRunning struct {

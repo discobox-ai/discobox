@@ -110,6 +110,10 @@ func (r *refusingRuntime) EnsureSandboxRunning(context.Context, string) error {
 	return r.err
 }
 
+func (r *refusingRuntime) PowerDownSandbox(context.Context, string, sandboxruntime.PowerDownReason) (sandboxruntime.Wake, error) {
+	return sandboxruntime.Wake{}, r.err
+}
+
 // A refused power instruction answers with the runtime's own status, not a 500:
 // an id this pool does not hold is not found, and a sandbox with no container
 // or an archived one is a conflict that says what to do. The ensure the control
@@ -124,6 +128,9 @@ func TestPowerInstructionsMapRuntimeErrors(t *testing.T) {
 		sandboxruntime.ErrNotFound:    {status: http.StatusNotFound},
 		sandboxruntime.ErrNoContainer: {status: http.StatusConflict, errorType: workerapimodel.ErrorTypeSandboxNoContainer},
 		sandboxruntime.ErrArchived:    {status: http.StatusConflict, errorType: workerapimodel.ErrorTypeSandboxArchived},
+		// A power-down the sandbox did not confirm changed nothing, and the
+		// control plane must tell it from every other 409 to treat it so.
+		sandboxruntime.ErrPowerDownRefused: {status: http.StatusConflict, errorType: workerapimodel.ErrorTypeSandboxPowerDownRefused},
 	}
 	for cause, want := range cases {
 		service := &sandboxService{identity: identity, runtime: &refusingRuntime{err: cause}}
@@ -146,6 +153,10 @@ func TestPowerInstructionsMapRuntimeErrors(t *testing.T) {
 				_, err := service.PoolEnsureSandboxRunning(ctx, req, workerapi.PoolEnsureSandboxRunningParams{ProjectId: "proj_a", PoolId: "pool_a", SandboxId: "sbx_1"})
 				return err
 			},
+			"power-down": func() error {
+				_, err := service.PoolPowerDownSandbox(ctx, &workerapimodel.PoolSandboxPowerDownRequest{Reason: workerapi.PoolSandboxPowerDownRequestReasonSleep}, workerapi.PoolPowerDownSandboxParams{ProjectId: "proj_a", PoolId: "pool_a", SandboxId: "sbx_1"})
+				return err
+			},
 		}
 		for name, operate := range operations {
 			t.Run(name+"/"+cause.Error(), func(t *testing.T) {
@@ -159,5 +170,12 @@ func TestPowerInstructionsMapRuntimeErrors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A power-down stops a sandbox, so it needs the scope stop needs.
+func TestPowerDownNeedsSandboxWrite(t *testing.T) {
+	if got := requiredPoolOperationScope(workerapi.PoolPowerDownSandboxOperation); got != ScopeSandboxWrite {
+		t.Fatalf("power-down scope = %q, want %q", got, ScopeSandboxWrite)
 	}
 }
