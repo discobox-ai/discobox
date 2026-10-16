@@ -1,32 +1,59 @@
 # 26-10-16-423 — A harness is a provisioning bundle, and the sandbox agent provisions any box
 
-- **Status**: Proposed (would supersede
+- **Status**: Proposed. On acceptance it supersedes:
+  [0068](0068-container-images-share-one-base-image.md), whose Debian 13 and
+  Docker CE base becomes the Docker driver's Ubuntu sandbox image (§10);
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)
-  §1, whose base-layer proof becomes a bundle applied beside the platform's,
-  and narrow its §2, whose label stack now describes a bundle;
+  §1's required base layer;
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) §6's OCI
   label as the carrier of a *runnable* image's metadata;
-  [26-10-10-767](26-10-10-767-a-container-sandbox-boots-systemd-and-a-unit-wires-its-volumes.md)'s
-  agent installed at build time and never placed into a running machine; and
+  [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) §1's
+  separate `sources.json`; and, for Linux sandboxes only,
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)
-  §5's disco-vm build spec for a sandbox image. Would narrow
-  [0068](0068-container-images-share-one-base-image.md), whose shared base
-  becomes the Docker driver's sandbox image, and
+  §5's disco-vm build spec. It narrows:
+  [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)
+  §2, whose label stack the server composes across two bundles;
+  [0043](0043-shell-is-an-ordinary-harness-image.md)'s rejection of a
+  control-plane path that resolves the base;
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) §7, whose
-  project file becomes `.discobox/settings.json`)
+  project file becomes `.discobox/settings.json`;
+  [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) and
+  [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md), whose
+  explicit re-pin now covers the harness bundle and not the platform (§7);
+  [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §3,
+  [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md),
+  [0107](0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)
+  and [0114](0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)
+  §7, whose image content becomes provisioned content (§4);
+  [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
+  §3, whose bootstrap exception extends to the agent layer;
+  [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md)
+  §§1–2, whose image no longer has the agent installed and whose backend
+  places the agent layer and runs one command (§7); and
+  [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)
+  §4, whose image kind becomes the provider's (§2). It settles that ADR's
+  deferred ids for a Linux machine sandbox's account (§14).
 - **Date**: 2026-10-16
-- **Relates to**: [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
+- **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
+  [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
+  [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md),
   [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md),
+  [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
   [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md),
+  [0043](0043-shell-is-an-ordinary-harness-image.md),
   [0050](0050-pool-build-state-is-not-sandbox-visible.md),
+  [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md),
   [0068](0068-container-images-share-one-base-image.md),
+  [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md),
   [0082](0082-a-stopped-sandbox-tracks-its-harness-image.md),
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md),
   [0096](0096-the-server-reads-one-schema-checked-configuration-file.md),
+  [0107](0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md),
   [0113](0113-the-cli-stages-the-images-its-server-loads.md),
   [0114](0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md),
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md),
   [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md),
+  [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md),
   [0145](0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md),
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md),
   [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md),
@@ -68,7 +95,7 @@ neither needed at boot nor tied to a container.
 | **Provider** | exe.dev, boxd, … or Discobox's Docker driver | The OS a box boots: distro, kernel, init, login user, network, DNS, SSH |
 | **Platform** | The platform bundle | The agent, its core, and Discobox's features |
 | **Harness** | A harness bundle | The agent CLI, its wrappers, policy files, and manifest |
-| **Sandbox** | The agent, every boot | Account, sources, secrets, the intake |
+| **Sandbox** | The agent, every boot | Account, sudoers, sources, secrets, the intake |
 
 The platform and harness layers are **machine-scoped**: no step may depend on
 a sandbox's identity, account, uid, secrets or sources, and none may need
@@ -89,15 +116,25 @@ COPY . /features/claude-code/
 LABEL io.discobox.image.v1=${HARNESS_METADATA}
 ```
 
-- **The manifest stays in labels on the image config.** `ResolveImageLabels`,
-  layering by `<NN>-<name>`, merge by identity, the `discobox-harness-run`
-  convention, and registration reading only the config are unchanged — the
-  label stack now describes a bundle rather than a runnable image.
+- **The manifest stays in labels on the image config**, and within a bundle
+  `ResolveImageLabels`, layering by `<NN>-<name>`, merge by identity and the
+  `discobox-harness-run` convention are unchanged. What changes is where the
+  base layer comes from: a harness no longer inherits it, so the server
+  composes the platform bundle's `10-platform` layer under the harness
+  bundle's own, resolving the platform its release pins. That is a
+  control-plane path that resolves the base, which 0043 turned down when the
+  base was any image a harness was built `FROM`; here the base is one release
+  artifact, so there is exactly one to resolve. 0086 §1's proof of lineage
+  goes with it.
 - **One directory per feature** means a layer adds features rather than
   overwriting another's files. A bundle carrying a whiteout is refused.
 - **A harness bundle is platform-neutral** — one artifact, no per-architecture
   index — because its steps select by OS and architecture when they run, and
-  large downloads are steps with a sha256, never bundle content.
+  large downloads are steps with a sha256, never bundle content. It names no
+  image kind: the kind 26-10-09-106 §4 places by becomes the provider's
+  (`oci` for the Docker driver's containers, `discovm/<driver>` for a
+  machine), and a harness places on any provider whose platform its steps
+  select.
 - **A harness extends a harness, never the platform.** A third party builds
   `FROM ghcr.io/discobox-ai/discobox-harness-claude-code` and adds
   `/features/acme-claude/`, as harness images extend today. Building `FROM` the
@@ -128,9 +165,13 @@ discobox.ai/provision/v1`) and the files it names:
   the YAML: shellcheck, editors and `launchertest` keep working on it, and the
   YAML holds only what a script cannot say.
 - Each step is keyed by a digest of its definition and every file it names;
-  applied digests are recorded under `/var/lib/discobox/provision/`. A step
-  whose digest matches is skipped unless its `check` reports drift, so editing
+  applied digests are recorded under `/opt/discobox/provision/`. A step whose
+  digest matches is skipped unless its `check` reports drift, so editing
   `install-cli.sh` re-runs that step alone, as Docker's layer cache did.
+- **The records live on the filesystem they describe**: the root filesystem,
+  never a declared volume. A container recreated from an image or snapshot
+  then has the records of exactly what that filesystem holds, and a committed
+  snapshot, which keeps the root filesystem and no volume, keeps both.
 - Steps select on `os`, `arch`, and os-release `ID`/`ID_LIKE`. Only the Debian
   family (apt) is supported now; any other is refused by name.
 - The runner is the agent's own, not a configuration-management tool: it must
@@ -142,11 +183,14 @@ done. `boot.Provision` becomes its sandbox phase, and the
 
 ### 4. Everything but the core is a feature, and every feature is on
 
-**Core** is not optional and not a feature: the agent and what it serves
-through argv[0] (§7), the proxy bridge and DNS stub, trusting the egress CA,
-the rendered proxy env, the account and sudoers, systemd and the system bus,
-the shell harness, `discobox-prompt-answer`, and the `discobox` and
-`discobox-access` skills.
+**Core** is not optional and not a feature, and like every platform step it
+is machine-scoped: the agent and its `discobox-ca-anchor` and `discobox-power`
+personalities (§7), `discobox-access`, the proxy bridge and DNS stub, trusting
+the egress CA, the rendered proxy env, systemd, the system bus and sudo, the
+no-op `discobox-harness-run` 0086 §3 has the base ship,
+`discobox-prompt-answer`, and the `discobox` and `discobox-access` skills.
+The account and its sudoers drop-in are the sandbox phase's (§14), and `shell`
+stays an ordinary harness (0043 §1), a bundle with no features of its own.
 
 Everything else is a **feature** — `node`, `docker`, `browser`, `desktop`,
 `nix`, `brew`, `go`, `python`, `rust`, `bun`, `mise`, `build`, `cli`,
@@ -156,7 +200,7 @@ unless opted out**, and each resolves to one outcome:
 
 | Outcome | When | What provisioning does |
 |---|---|---|
-| `adopted` | The box already has a usable one | Installs nothing; wires ours on top (env, units, CA, a merged `daemon.json`) |
+| `adopted` | The box already has a usable one | Installs nothing; wires ours on top (env, units, CA, the runc and `docker` personalities, a merged `daemon.json`) |
 | `installed` | Not usable here, not opted out | Installs ours, into a prefix Discobox owns |
 | `off` | Opted out, and nothing requires it | Installs nothing and wires none of its integration |
 
@@ -164,12 +208,25 @@ unless opted out**, and each resolves to one outcome:
   reachability from a system PATH by every user, and writability where
   Discobox needs it. boxd's `/usr/local/bin/node`, a link into one user's nvm,
   fails it.
-- **Probed once, then declared.** Only provisioning inspects the box. Its
-  outcome is the box's declared feature set — what the manifest's `features`
-  becomes — and every runtime integration reads that set rather than probing
-  (0145 §3 stands). Boot steps that assume a feature today (direnv seeding,
-  desktop launchers, session-bus drop-ins, the desktop API) become conditional
-  on it.
+- **Probed once, then reported — never declared.** Only provisioning inspects
+  the box, and its outcomes are what `provision.json` reports (§6); every
+  runtime integration in the box reads that rather than probing (0145 §3
+  stands). Boot steps that assume a feature today (direnv seeding, desktop
+  launchers, session-bus drop-ins, the desktop API) become conditional on it.
+  The manifest's `features` stays the authored declaration of what a bundle
+  provides, and the document stays the pool agent's to write (0012 §§2, 8):
+  an outcome the box observed is not written into it.
+- **A reported feature grants nothing.** The pool and the server never decide
+  access — the pool's builder or registry among it — from what a box reports
+  it has; the box would be choosing its own access.
+- **Image content becomes provisioned content.** What 0107 (Homebrew), 0075
+  (the Nix seed), 0007 §3 (a data volume over image content becomes an
+  overlay) and 0114 §7 (the agent declared in a file) say of the image is
+  said of what provisioning installed. On a snapshot that content is in the
+  root filesystem, under any volume wired over it, as before; on a container
+  provisioned from scratch, content installed under a declared `data` path
+  lands in that volume, and stays excluded from export where the path says
+  so.
 - **Opting out never uninstalls.** A snapshot that has brew, used by a project
   that turns it off, leaves brew on disk and unwired. Uninstalling would make a
   snapshot depend on the last project to use it.
@@ -225,21 +282,27 @@ applied is the records of §3.
 `state` is `pending`, `provisioning`, `ready`, `failed` or `off`; `how` is
 `installed`, `adopted` or `snapshot`. The same document rides the agent's
 status report, so the console shows a feature still provisioning without
-entering the box. The `discobox` skill names the file, the `wait` command, and
-that an `off` feature was the user's choice and is not to be installed by hand.
+entering the box. Every string in it is written by the box, and the console
+escapes it as it does all text a discobox wrote (`cli/REVIEW.md`). The
+`discobox` skill names the file, the `wait` command, and that an `off` feature
+was the user's choice and is not to be installed by hand.
 
 ### 7. The agent is delivered on every boot, in the platform bundle
 
 **The platform bundle** is the release's multi-architecture `FROM scratch`
 index (`linux/amd64`, `linux/arm64`; darwin and windows later). It holds:
 
-- **one agent binary, multicall.** `discobox-runc`, `discobox-ca-anchor`,
-  `discobox-power`, `discobox-docker` and `discobox-access` become argv[0]
-  personalities of `discobox-sandbox-agent`, as `discobox-hook-publish`
-  already is; core lays their links (`/opt/discobox/bin/runc`,
-  `/usr/local/bin/docker`, …). They always ship at one version, and one static
-  Go runtime is far smaller than six. `access` keeps its own `main` for use
-  outside a discobox.
+- **the agent, multicall.** `discobox-runc`, `discobox-ca-anchor`,
+  `discobox-power` and `discobox-docker` become argv[0] personalities of
+  `discobox-sandbox-agent`, as `discobox-hook-publish` already is: they always
+  ship at one version, and one static Go runtime is far smaller than five.
+  Core lays the links of its own personalities; the `docker` feature lays
+  `/opt/discobox/bin/runc` and `/usr/local/bin/docker`, and an `off` docker
+  feature lays neither.
+- **`discobox-access`, separately.** It stays its own binary from its own
+  module: the root `DESIGN.md` and `access/DESIGN.md` keep it apart from the
+  runtime so it can run outside a discobox, and an argv[0] alias would weld
+  the two.
 - **the platform's features**, `/features/core/` and the rest of §4.
 - **the `discobox` CLI and `discobox-review`** in layers of their own, owned by
   the `discobox-cli` and `review` features. Third-party tools (`fresh`,
@@ -247,31 +310,43 @@ index (`linux/amd64`, `linux/arm64`; darwin and windows later). It holds:
 
 The platform bundle is pinned by the **server's release**: a compiled-in
 default a release overwrites at link time, the release manifest, and server
-and provider overrides, as `DefaultPoolImage` is resolved. A harness bundle is
-pinned by its harness config. Every box applies the two together.
+and provider overrides, as `DefaultPoolImage` is resolved. It is not part of
+a sandbox's pin: a box runs the platform its server ships, from its next
+start. A harness bundle is pinned by its harness config and follows 0016,
+0021 and 0082 as a harness image does: an explicit re-pin, and a stopped
+sandbox tracking its harness. Every box applies the two together.
 
-- **The pool places only the agent.** On every start it makes sure the box
-  holds the agent layer the release pins — bound into a container, copied onto
-  a machine through the provider (26-10-09-143 §2) — and skips it when the box
-  already holds that digest. Nothing else is the pool's to place.
+- **The pool places only the agent layer**, and only when the box lacks its
+  digest. A container gets it copied into its filesystem by the pool agent's
+  Docker sandbox runtime, which owns sandbox containers (`pool-agent/DESIGN.md`;
+  providers never touch them, `server/providers/DESIGN.md`), with the agent's
+  units, between create and start — the pre-boot placement 26-10-08-127 §2 and
+  0126 §3 already make for `sandbox.json` — so systemd stays PID 1 (26-10-10-767
+  §1) and `discobox-wire.service` still wires volumes before `sysinit.target`
+  (its §2), now a unit that runtime places. A machine gets it copied
+  through the provider, and the provider runs one command on its first boot,
+  which provisions core and installs the agent's unit (26-10-09-143 §2's
+  placement, widened). Nothing the pool owns or vouches for is ever bound
+  into a box — its build area (ADR 0050), its blob store, an agent layer or
+  bundle tree: a sandbox's root can remount a read-only bind, and a shared
+  tree it rewrote would run as root in every other box of the pool. The pool
+  cache and source data stay bound as they are (ADRs 0050, 0094): shared on
+  purpose, writable by every box, and trusted by nothing.
 - **The agent fetches the rest into a store of its own.** The box keeps a
-  content-addressed store, `/var/lib/discobox/bundles/`: layers by digest,
-  extracted once, and each bundle's tree by manifest digest. Given its pins,
-  the agent reads each manifest and fetches only the layers its store lacks
-  (§13), so an upgrade downloads what changed and nothing it already holds.
-- **Layers are looked up before they are fetched**: the box's own store, then
-  a read-only store its runtime offers — a container's pool binds its blob
-  store, so a container fetches nothing its pool already has — then
-  `assets.discobox.internal`.
+  content-addressed store, `/opt/discobox/bundles/`, on its root filesystem
+  for the reason §3's records are: layers by digest, extracted once, and each
+  bundle's tree by manifest digest. Given its pins, the agent reads each
+  manifest and fetches only the layers its store lacks from
+  `assets.discobox.internal` (§13), and checks every blob against its digest
+  before it extracts it. An upgrade downloads what changed and nothing it
+  already holds.
 - **The store is the box's.** It persists across restarts and is kept by a
   snapshot, so a box booted from one fetches nothing for the plan it was taken
-  with. It is `excludeFromExport`: every byte is refetchable by digest. The
-  agent keeps the trees its current and previous pins name, for rollback,
-  and removes layers no kept tree uses.
+  with. It is never exported: every byte is refetchable by digest. The agent
+  keeps the trees its current and previous pins name, for rollback, and
+  removes layers no kept tree uses.
 - **Run.** The agent runs from its layer through a stable
-  `/opt/discobox/current`. In a container it is the entrypoint, provisions
-  core, then execs `/sbin/init`; on a machine one exec on first boot provisions
-  core, which installs the agent's unit on that stable path.
+  `/opt/discobox/current`.
 
 Server–agent version skew goes away with it: the agent is always the release
 the server shipped with, and the capability labels that described an older
@@ -287,7 +362,8 @@ the reclaim label (ADR 0040). Its key is the provider image's digest and the
 digest of the resolved plan, feature set included, so one snapshot serves
 every sandbox wanting the same set. A snapshot holds no sandbox:
 `/etc/machine-id` is left empty, no SSH host key is kept, and the sandbox
-phase has never run in it.
+phase has never run in it. The step records and the bundle store are on the
+root filesystem (§§3, 7), so a commit keeps them with what they describe.
 
 ### 9. Providers meet a contract and declare what they own
 
@@ -297,49 +373,60 @@ The platform may assume only:
 2. Root by exec or passwordless sudo.
 3. A persistent writable root disk, overlayfs, and cgroup2; `/dev/kvm` optional.
 4. A way to place files and run one command, and one address reaching the
-   agent's port (26-10-09-143 §2).
-5. Outbound reach to package repositories, directly or through the pool.
+   agent's port (26-10-09-143 §2, widened by §7).
+5. Outbound reach to package repositories through the pool's proxy — the only
+   way out a sandbox has (0126 §6), provisioning included.
 
 A provider **declares** its login user; whether it owns DNS, the network,
-sshd, the trust store and egress; and its snapshot capability. Provisioning
-reads the declaration and never displaces what a provider owns: the DNS stub
-sits beside the provider's resolver, Discobox's CA joins the trust store
-beside the provider's, `daemon.json` is merged, and the runc personality
-resolves the real runc (Ubuntu's is `/usr/sbin/runc`) rather than assuming
-`/usr/bin/runc`.
+sshd and the trust store; any egress control of its own, which is an outer
+allowlist and never a path around the pool's proxy; and its snapshot
+capability. Provisioning reads the declaration and never displaces what a
+provider owns: the DNS stub sits beside the provider's resolver, Discobox's
+CA joins the trust store beside the provider's, `daemon.json` is merged, and
+the runc personality resolves the real runc (Ubuntu's is `/usr/sbin/runc`)
+rather than assuming `/usr/bin/runc`.
 
-**A box is dedicated to one sandbox.** Provisioning writes its account
+**A box is dedicated to one sandbox.** The sandbox phase writes its account
 database and sudoers, and idle stop powers it off.
 
-### 10. The Docker driver owns its sandbox image
+### 10. The Docker driver owns its sandbox base image
 
 `base-image/Dockerfile` moves to the Docker worker driver
 (`server/providers/dockerworker/sandbox-image/`) and becomes the image every
 sandbox container starts from. It is resolved as the pool-agent image is:
 
-| | Pool agent (today) | Sandbox image |
+| | Pool agent (today) | Sandbox base image |
 |---|---|---|
-| Compiled-in default | `DefaultPoolImage` | `DefaultSandboxImage`, overwritten at link time by a release |
-| Provider setting | `image` | `sandboxImage` |
-| Server override | `dockerPoolImage` | `dockerSandboxImage` (`DISCOBOX_DOCKER_SANDBOX_IMAGE`) |
+| Compiled-in default | `DefaultPoolImage` | `DefaultSandboxBaseImage`, overwritten at link time by a release |
+| Provider setting | `image` | `sandboxBaseImage` |
+| Server override | `dockerPoolImage` | `dockerSandboxBaseImage` (`DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE`) |
 | Release manifest | `Images.PoolAgent` | `Images.SandboxBase` |
 
 - **It is like the providers' images, and holds no special status.** Modelled
   on `exeuntu`, it holds what exe.dev and boxd have in common, not what either
-  alone has: Ubuntu 24.04; systemd; a uid-1000 login user with passwordless
-  sudo, in `docker`, lingering; Ubuntu's `docker.io`, buildx and compose-v2,
-  socket-activated; git, gh, build-essential, python3, pipx, uv, Go, curl, jq
-  and ripgrep; exeuntu's masks (udev, getty, ssh, modules-load, remount-fs,
-  sysusers, random-seed, apt-daily, unattended-upgrades); an empty
-  `machine-id` and no host keys. Node, a browser, Nix, brew and coding agents
-  stay out, so the platform cannot come to depend on them unnoticed.
+  alone has: Ubuntu 24.04; systemd; a uid-1000 login user named `discobox`
+  with passwordless sudo, in `docker`, lingering; Ubuntu's `docker.io`, buildx
+  and compose-v2, socket-activated; git, gh, build-essential, python3, pipx,
+  uv, Go, curl, jq and ripgrep; exeuntu's masks (udev, getty, ssh,
+  modules-load, remount-fs, sysusers, random-seed, apt-daily,
+  unattended-upgrades); an empty `machine-id` and no host keys. Node, a
+  browser, Nix, brew and coding agents stay out, so the platform cannot come
+  to depend on them unnoticed.
 - **Every driver that runs the pool agent in Docker uses it** — local Docker,
   DigitalOcean, execvm, and the pool VMs of libkrun, vz and wslc, whose
-  sandboxes are containers in the VM's daemon.
+  sandboxes are containers in the VM's daemon. `vm-image`, the pool VM's own
+  guest, is not this image and is unchanged.
 - **The pool-agent image builds `FROM` it**, keeping 0068's shared layers: the
-  pool host pulls both.
+  pool host pulls both. The pool agent therefore moves to Ubuntu 24.04 and
+  Ubuntu's `docker.io` with it.
+- **The settings that named images go.** `defaultSandboxImage` and
+  `harnessImages` in `server.yaml`, and the release manifest's
+  `Images.SandboxAgent` and `Images.Harnesses`, become the platform and
+  harness bundle references (`Bundles.Platform`, `Bundles.Harnesses`).
+  `server.yaml` is a user's file (ADR 0096): the old keys are read as the new
+  ones for one release, with a warning, then refused.
 - No harness is an image any more. A Docker sandbox is this image, or a
-  snapshot committed from it, with the platform and harness trees bound in.
+  snapshot committed from it, with the agent layer placed in it (§7).
 
 ### 11. A repository's settings are one file
 
@@ -357,11 +444,13 @@ sandbox container starts from. It is resolved as the pool-agent image is:
 }
 ```
 
-- The split was by reader, not by content: the client resolves `sources`
-  against its own disk, and the pool agent read the rest from the clone.
-  Readers can take their own keys from one file, and the client now needs
-  `features` too, before the box exists, to choose a snapshot or a plan. A
-  remote primary source then costs one fetch at its pinned commit, not two.
+- 0056 §1 kept `sources.json` apart because its reader is the client, before
+  the box exists, and `project.json`'s the pool, after. That still holds per
+  key, and each reader takes only its own: the client `sources` and
+  `features`, the pool agent the rest. What changed is that the client now
+  needs `features` too, to choose a snapshot or a plan, so a separate file per
+  reader would be two fetches of a remote primary source (26-10-10-545 §4)
+  where one does.
 - `features` is an object, so `false` opts out and a value can later carry a
   feature's settings without a schema change.
 - The schema is generated by `configfile` (ADR 0096), committed, and named by
@@ -376,34 +465,46 @@ sandbox container starts from. It is resolved as the pool-agent image is:
 
 0145 §3's manifest contract; 0114's agent version store, as part of the
 `node` feature; 0020's runc wrapper, as a personality in the `docker` feature;
-0126 whole; 26-10-09-143's bootstrap wait and VM contract; `boot.Wire`, as the
-Docker driver's volume wiring rather than the platform's; and the development
-sync of the two images that remain (the pool agent and the sandbox image).
+0050 and 0126 apart from §3's bootstrap exception; 26-10-09-143's bootstrap
+wait; 26-10-10-767's systemd as PID 1 and its wiring unit, now placed by
+the pool agent's Docker runtime; 0043 §1's `shell` as an ordinary harness; 0141's groups-only
+account, which keeps the box's account; and the development sync of the two
+images that remain (the pool agent and the sandbox base image).
 
 ### 13. Bundles come from the server, by blob, cached by the pool
 
 Neither a pool nor a box pulls a bundle from a registry. The server serves
-them, addressed by blob as OCI distribution addresses them, with only the two
-calls a fetch needs:
+them, addressed as OCI distribution addresses them, with only the calls a
+fetch needs:
 
 | Call | Answers |
 |---|---|
-| `GET /api/assets/{name}` | The bundle's index or manifest — small JSON naming config and layer digests |
+| `GET /api/assets/{name}/manifests/sha256:<digest>` | A pinned index or manifest — small JSON naming config and layer digests |
+| `GET /api/assets/{name}` | The manifest the server currently resolves for the name, for registration and re-pinning |
 | `GET /api/assets/blobs/sha256:<digest>` | One blob, immutable and cacheable forever |
 
 - **The server keeps one blob store** and fills it from any source: the
   release's bundles, pulled from the registry once; the CLI-staged image cache
-  (ADR 0113); and, in development, the watcher's output, unpacked once.
-  Registry credentials stay with the server.
+  (ADR 0113); and, in development, the watcher's output, unpacked once. The
+  server's registry credentials pull the release's bundles and nothing else;
+  a reference a project supplies is pulled anonymously or with registry
+  credentials that project configured.
+- **The asset API is a pool route, on the pool runtime's allow-list**
+  (`poolRuntimeActions`), and scoped: a pool is answered only manifests pinned
+  by the release or by sandboxes and harness configs of projects it serves,
+  and only blobs those manifests reference.
 - **The pool is a pull-through cache.** It answers from its own blob store in
   its build area (ADR 0050), fetches a blob it lacks from the server once, and
   shares one in-flight fetch among every request for the same digest. A
   sandbox's only way out is its pool (0126 §6); the cache is what lets one
   fetch serve every sandbox.
 - **`assets.discobox.internal`** joins `api.` and `git.discobox.internal`
-  (ADR 0140). The pool's proxy serves it to sandboxes read-only, for exactly
-  the manifests that sandbox's pins name and the blobs they reference, and it
-  is how the agent fills its store (§7). A bundle reference may name it,
+  (ADR 0140), and is how the agent fills its store (§7). The pool's proxy
+  serves it read-only, and only what one sandbox's pins name: the sandbox is
+  the one its mTLS client certificate names (`proxy/REVIEW.md`), its pins are
+  the pool's own record of them, never anything the box reports, and a
+  request for any other manifest or blob is refused there, never passed to
+  the server. A bundle reference may name the host,
   `https://assets.discobox.internal/<name>`, pinned by digest like any other.
 - **Layers stay disjoint**, since a layer adds feature directories and carries
   no whiteout (§2), so a tree is its layers side by side — no overlay merge in
@@ -416,26 +517,36 @@ calls a fetch needs:
   type=oci,dest=build/assets/<name>.tar`, records each digest in the
   development manifest (`devimage`) beside the two images it still syncs, and
   the server re-pins built-in harnesses when a digest moves, as `SeedBuiltIns`
-  does for images today. A box picks up a rebuilt agent or bundle on its next
-  start, since both are delivered on every boot.
+  does for images today (0082). A rebuilt agent reaches a box on its next
+  start; a rebuilt harness bundle, when that re-pin reaches its sandbox.
 
 ### 14. An account in the sandbox account's way is deleted
 
 The client still sends the account it wants (ADR 0141), and the sandbox phase
 still makes it inside the box (ADR 0025). Every provider image already has an
 account at uid 1000, the uid every macOS and Windows client sends, so a
-conflict is the ordinary case, and the box's account gives way entirely:
+conflict is the ordinary case, and the box's account gives way entirely. This
+settles the ids 26-10-09-106 deferred for a Linux machine sandbox's account:
+the client's, whatever the guest already has there.
 
-- **Any account holding the sandbox's uid or its name is deleted, home and
-  all**, then the sandbox's account is created fresh from `/etc/skel`, as if
-  the box had never had one. Nothing of the old account is renamed, adopted
-  or kept.
+- **Any account holding the sandbox's uid or its name is deleted**, then the
+  sandbox's account is created from `/etc/skel`, as if the box had never had
+  one. Nothing of the old account is renamed, adopted or kept.
+- **Its home goes with it, unless that home is the sandbox's.** The deletion
+  runs before volumes are wired, and it never removes a mount point or the
+  path that will be the sandbox's home: on the Docker driver that path is the
+  sandbox's persistent `data` volume, and the old account's files there are
+  the sandbox's own from an earlier boot. Seeding then fills that home only
+  where it is empty, as today.
 - **Its processes are ended first** (`loginctl terminate-user`, then any that
   remain), since a provider's login user has them — boxd's exec runs as
   `boxd` — and `userdel` refuses a user that is logged in (PR #180).
+- **Root is never deleted.** A client account of uid 0 is root (0141), which
+  needs no account; one that names `root` with another uid is refused.
 - **With no conflict, the account is created**, as today.
-- **The deletion runs once per box**, in the sandbox phase, before anything
-  runs as the account; a later boot finds the account it made and leaves it.
+- **It runs whenever the box has a conflicting account**: once on a machine,
+  whose root filesystem persists, and on every container create, since the
+  image brings its uid-1000 account back each time (26-10-10-767 §2).
 - **What it costs is the provider's, and it is recorded.** Tooling that names
   its user (exe.dev's `login-user`, boxd's `boxd connect`) finds no such user,
   and whatever the provider installed in that home (boxd's nvm) is gone, which
@@ -463,7 +574,13 @@ by, is the client's in every case.
 - **A harness built `FROM` the platform**, as a harness image is built `FROM`
   the sandbox agent today. It pins the agent the harness was built with.
 - **Separate helper binaries.** They always ship together, and each carries a
-  Go runtime of its own.
+  Go runtime of its own. `discobox-access` is the exception, for its own
+  module's reason (§7).
+- **The agent as a container's entrypoint, execing systemd.** It is the thin
+  entrypoint 26-10-10-767 turned down; placing the agent layer before start
+  keeps systemd PID 1.
+- **Writing a box's observed features into its manifest.** The document is
+  the pool agent's alone, and a declaration is authored, not discovered.
 - **Profiles.** A feature set with requirements expresses every profile, and
   a profile would be a second vocabulary for it.
 - **Opt-in features.** Every box has every feature today; opting in would
@@ -473,22 +590,22 @@ by, is the client's in every case.
 - **Block boot until provisioned.** A fresh box takes minutes (Docker,
   Chromium, Nix, Go and Homebrew dominate); most of it is not needed to start.
 - **Probe for features at runtime.** It contradicts 0145 §3; probing once in
-  provisioning and declaring the outcome keeps that rule.
+  provisioning and reporting the outcome keeps that rule.
 - **Bake the agent into the snapshot instead of delivering it.** Skew between
   server and agent returns, and so do the labels that described it.
 - **A sandbox image owned by the platform.** The image is the provider layer;
   exe.dev and boxd bring their own, and the Docker driver is the provider that
   brings ours.
-- **Debian 13 for the sandbox image.** Neither target provider runs it; a
+- **Debian 13 for the sandbox base image.** Neither target provider runs it; a
   self-hosted box would provision differently from theirs.
 - **Load development bundles into each Docker daemon**, as images are today.
   A bundle is never run, so a daemon's image store is the wrong place for it,
   and machine providers have no daemon to load into.
 - **One OCI layout tar per bundle from the asset API.** Nothing in it can be
   shared: a release that changed only the agent would resend every layer.
-- **The pool placing whole trees in every box.** An upgraded box would be
-  sent what it already holds; with a store of its own, it fetches only what
-  changed.
+- **The pool placing whole trees in every box**, or binding its store into
+  one. An upgraded box would be sent what it already holds, and a bind is
+  pool-shared state a sandbox's root can remount and rewrite.
 - **Pools pulling bundles from registries, or the server serving a registry
   API.** The first spreads registry credentials and a second fetch path to
   every pool; the second is a large surface for a fetch by name and digest.
@@ -514,14 +631,15 @@ by, is the client's in every case.
 
 ## Deferred
 
-- **One microVM per sandbox on a self-hosted pool**, booting the sandbox image
-  as its root filesystem as exe.dev and boxd run theirs. It is a future
+- **One microVM per sandbox on a self-hosted pool**, booting the sandbox base
+  image as its root filesystem as exe.dev and boxd run theirs. It is a future
   machine driver's; the existing VM drivers keep a pool VM of containers.
 - **Other distribution families.** Revisit when a provider we target ships one.
 - **Providers without systemd** (Sprites, Vercel, Daytona, Modal). Revisit
   with the agent's own supervisor, which darwin and Windows already use.
-- **macOS and Windows steps.** The selectors and the platform index reserve
-  them; revisit with 0145.
+- **macOS and Windows.** The selectors and the platform index reserve them,
+  and 26-10-09-106 §5's build spec stays their build path until they are
+  provisioned; revisit with 0145.
 - **Settings scopes** beyond the repository (`settings.local.json`, a user
   file). Feature resolution is a merge either way; revisit when an opt-out is
   wanted across repositories.
@@ -533,21 +651,25 @@ by, is the client's in every case.
 
 - The harness Dockerfiles become `FROM scratch` bundles; `sandbox-agent/Dockerfile`
   becomes the platform bundle; `base-image/Dockerfile` moves to the Docker
-  driver as its sandbox image; every `boxd.yaml`, `build:boxd-images` and the
-  labels directory go.
+  driver as its sandbox base image; every `boxd.yaml`, `build:boxd-images` and
+  the labels directory those specs write (`/usr/local/share/discobox/labels`)
+  go.
 - `HarnessConfig`'s image fields and platforms-from-index, `SandboxManifest`'s
   image pin, `imagereap` for harness images, `TreeExportLabel` and
   `WorktreeGitLabel` are replaced; stored harness configs and sandboxes are
   migrated, not recreated.
-- The server gains the blob-addressed asset API and its blob store; the pool
-  agent gains a pull-through blob cache, placing the agent layer on every
-  start, and the `assets.discobox.internal` route; the agent gains its own
-  content store; the Docker driver gains `sandboxImage` and its resolution
-  chain.
+- The server gains the scoped asset API, its blob store and the composition of
+  the platform's manifest layer under a harness's; the pool agent gains a
+  pull-through blob cache and the `assets.discobox.internal` route, and asks a
+  machine's provider to place the agent layer; the pool agent's Docker runtime
+  places the agent layer and `discobox-wire.service` into each container
+  before it starts; the agent gains its own content store; the Docker driver
+  gains `sandboxBaseImage` and its resolution chain.
 - The agent becomes multicall and gains the runner, the status file,
   `discobox-provision wait`, and placeholder commands; runtime integrations
-  read the declared feature set; `resources` stops reading `/sys/fs/cgroup` as
-  the container's own, and the DNS stub stops assuming `eth*` interface names.
+  read `provision.json`; `boot`'s account handling deletes instead of
+  renaming; `resources` stops reading `/sys/fs/cgroup` as the container's own,
+  and the DNS stub stops assuming `eth*` interface names.
 - `release:images` publishes bundles beside the two images; the watcher and
   `devimage` build and record bundles as OCI layout tars.
 - The CLI reads `.discobox/settings.json`, and the `discobox` skill teaches the
