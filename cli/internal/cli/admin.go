@@ -19,6 +19,7 @@ func (a *App) newAdminCommand() *cobra.Command {
 	cmd.AddCommand(a.newAuditCommand())
 	cmd.AddCommand(a.newServerCommand())
 	cmd.AddCommand(a.newServersCommand())
+	cmd.AddCommand(a.newGatewayCommand())
 	cmd.AddCommand(a.newSSHKeyCommand())
 	cmd.AddCommand(a.newSSHConfigCommand())
 	cmd.AddCommand(a.newSSHProxyCommand())
