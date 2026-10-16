@@ -621,3 +621,32 @@ exit status comes back as the client's (`d shell $id -- sh -c 'exit 7'; echo $?`
 - The dev server restarts whenever the image watcher finishes an image, which
   drops every `d shell` in flight. Run an in-box loop detached (`nohup sh
   script > /root/log &`) and read its log afterwards.
+
+# Verifying sleep and wake (autostop, discobox-power, the power reconcile)
+
+Drive it from a `-H shell` box of the dev pool (ADR 26-10-16-337). As the box's
+user: `docker exec -u <user> -e HOME=/home/<user> <discobox-sandbox-...>
+discobox-power sleep --wake-in 2m --note x`, then watch the row:
+`sqlite3 -readonly .tmp/discobox/discobox.db "select runtime_state,
+wake_at, wake_epoch from sandboxes where id='<sbx>'"` every 10s.
+
+- Handed over first: `admin box get <id> -o json | jq .runtime.agentStatus.autostop`
+  shows `controlPlanePower: true` *and* an `idle` field once the pool has
+  delivered `agent.controlPlanePower` (a second runtime-config revision); the
+  box has `/run/discobox/control-plane-power`.
+- Expected: `stopped` with `wake_at` set within ~20s (a status poll, a push,
+  a reconcile), `running` with
+  `wake_at` cleared a few seconds after it; in the box, `sandbox woken` in
+  `journalctl -u discobox-sandbox-agent`, the wake under
+  `~/.discobox/wake/.done/`, and `DISCOBOX_WAKE` in the primary shell's
+  `/proc/<pid>/environ`.
+- **Wait for the image watcher to settle first.** A sandbox image rebuilt while
+  the box sleeps makes the pool replace its container on the wake's start
+  ("replacing sandbox container ... a spec change" in the pool's log); a
+  replacement right after boot reboots past the primary the wake was handed to,
+  and the next boot finds nothing due — a known limitation, not only a
+  dev-loop one (ADR 26-10-16-337, Consequences).
+- Cancelling: while it sleeps, `discobox stop <id>` clears `wake_at` and moves
+  `wake_epoch`; nothing starts it at the wake time.
+- Idle is the same path with `reason=idle`, but the dev pool's 30-minute
+  timeout cannot be shortened in place (see the runtime-config section).
