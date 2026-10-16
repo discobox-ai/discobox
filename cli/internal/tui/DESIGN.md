@@ -857,28 +857,26 @@ repository the tag is plain: `issue=4` alone does not say whose issue 4.
   is for. A plain click on either opens it as a tab, below, rather than the
   browser (`hitIssue`, `hitPull`); Ctrl-click still follows the link.
 
-## A pull request's status lights its row
+## A pull request's status is a colored tag
 
 A discobox tagged `ready` or `blocked` — where its pull request stands, as the
 delivering skills tag it (`deliver-issue` and `develop`, "Ready, blocked,
-merged"): ready for a human merge, or waiting on somebody — is drawn on a band
-of its own, dark green or dark red (`Sandbox.standing`, `colReadyBG`,
-`colBlockedBG`), and the tag is bold in the band's color. This `ready` is
-the pull request's, not the work's `ready` to apply that the header and list
-already spell out. They are the tags somebody scans a list of boxes for, so the
-band goes on the row rather than relying on the tag, which a long name can push
-off it; and the tag is drawn first among the row's tags (`Sandbox.rowTags`), so
-it is the last to give way — without color there is no band, and the tag is
-all a plain terminal gets. `blocked` wins over `ready`: it is the one waiting
-on a person. The cursor and selection bands win over both, since they say what
-a key will act on. `merged`, the third of the set, is not lit: the work is done
-and asks nothing of anyone.
+merged"): ready for a human merge, or waiting on somebody — draws that tag bold,
+green or red, where the row's other tags are dim. This `ready` is the pull
+request's, not the work's `ready` to apply that the header and list already
+spell out. The row itself is not painted: a list of boxes banded green and red
+is too busy to read, and the cursor and selection are the only bands a row
+carries. The status is drawn first among the row's tags (`Sandbox.rowTags`), so
+it is the last a long name pushes off. `blocked` wins over `ready`: it is the
+one waiting on a person. `merged`, the third of the set, is not colored: the
+work is done and asks nothing of anyone.
 
-A credential request waiting on a person lights the row red too
-(`Sandbox.standing`), tag or no tag: an agent asking for a credential is as
-stuck as a pull request waiting on somebody, and the `!` beside the harness is
-one cell that is easy to look past. The listing carries the requests per box
-(`PendingRequests`). So does an agent that reports it is `blocked` (below).
+A credential request waiting on a person, or an agent that reports it is
+`blocked` (below), makes the box blocked too (`Sandbox.standing`), tag or no
+tag — an agent asking for a credential is as stuck as a pull request waiting on
+somebody. On the row that is the red `!` beside the harness (`PendingRequests`)
+and the agent's red `◆`; the workspace header says `blocked` in place of the git
+word.
 
 ## What the agent reports is a glyph beside the state
 

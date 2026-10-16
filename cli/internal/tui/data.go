@@ -975,8 +975,8 @@ func (s Sandbox) changes() string {
 	}
 }
 
-// standing is what a discobox is lit for, on its row and in the workspace
-// header (Sandbox.standing): nothing, ready for a person, or blocked on one.
+// standing is what a discobox's workspace header says of it
+// (Sandbox.standing): nothing, ready for a person, or blocked on one.
 type standing int
 
 const (

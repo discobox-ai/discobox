@@ -119,9 +119,9 @@ func tagsLabel(tags []string) string {
 // Where a discobox's pull request stands, as the delivering skills tag it
 // (deliver-issue and develop, "Ready, blocked, merged"): ready for a human
 // merge, or blocked on somebody. They are the tags somebody scans a list of
-// boxes for, so a row carrying one is lit (sandboxList.row) rather than left to
-// a dim tag that may not fit. `merged`, the third, is not among them: the work
-// is done and asks nothing of anyone.
+// boxes for, so they are drawn bold in color rather than dim, and first among a
+// row's tags so they are the last to give way (sandboxList.row). `merged`, the
+// third, is not among them: the work is done and asks nothing of anyone.
 const (
 	prReady   = "ready"
 	prBlocked = "blocked"
