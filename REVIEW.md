@@ -16,6 +16,12 @@ Global review expectations:
   not public control-plane API DTOs and may be used where pool-agent HTTP API
   calls or pool-local runtime contracts are the package responsibility.
 - Prefer short-lived tokens and explicit key ownership for auth flows.
+- An ADR names, in its `Status` and its index row, every section of an
+  accepted ADR whose decision it reverses or narrows, and its "what stays"
+  claims are checked against those sections. Read the ADRs that the touched
+  code and design docs cite before writing the header: a proposal that
+  reversed several accepted decisions without naming them was the most
+  common finding in its review (ADR 26-10-16-423).
 - A test server that counts what reaches it must ignore the sandbox-agent's
   port probe (`User-Agent: discobox-sandbox-agent (port probe)`). Every port
   that starts listening is asked `HEAD /` once, and this repository is worked
