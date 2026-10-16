@@ -2,6 +2,7 @@
   "apiVersion": "discobox.dev/image/v1",
   "env": {
     "PI_SKIP_VERSION_CHECK": "1",
+    "PI_TELEMETRY": "0",
     "PI_CLIPBOARD_OSC52": "1"
   },
   "harness": {

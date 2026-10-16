@@ -189,11 +189,12 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 }
 
 // The policy baseline (ADR 26-10-15-259 §4): pi has no system layer, so it is
-// the image's env and a launch flag — and fd on PATH, which pi otherwise
+// the image's env and a launch flag — telemetry off, which pi otherwise sends
+// on a first run and after each upgrade — and fd on PATH, which pi otherwise
 // downloads from GitHub into the home on its first interactive run.
 func TestImagePolicy(t *testing.T) {
 	image := readImage(t)
-	for key, want := range map[string]string{"PI_SKIP_VERSION_CHECK": "1", "PI_CLIPBOARD_OSC52": "1"} {
+	for key, want := range map[string]string{"PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0", "PI_CLIPBOARD_OSC52": "1"} {
 		if image.Env[key] != want {
 			t.Errorf("%s = %q, want %q", key, image.Env[key], want)
 		}

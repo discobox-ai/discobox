@@ -1219,8 +1219,10 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   It returns `settings.json` and `keybindings.json` as pi wrote them, and
   Discobox's `.config/discobox/pi-harness.json` (`judgeModel`) as it arrived;
   not `models.json` or `mcp.json`, which hold literal keys and commands.
-- **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`, and
-  `PI_CLIPBOARD_OSC52=1` so a copy reaches the user's terminal as well as the
+- **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`,
+  `PI_TELEMETRY=0`, since pi otherwise reports an install on a first run and
+  after each upgrade and adds attribution headers to some providers'
+  requests, and `PI_CLIPBOARD_OSC52=1` so a copy reaches the user's terminal as well as the
   box's X clipboard — `fd-find` installed, since pi otherwise downloads `fd`
   from GitHub on its first run, and the launcher's `--approve`: pi's
   project-trust dialog otherwise stalls a launch in any repository with
