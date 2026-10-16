@@ -56,7 +56,9 @@ by what it is looking for and is idempotent:
    its grants stand, as when a person deletes a rule; all of it runs only
    while one of the columns is still there),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
-   its `poolImages` dirty rows), the
+   its `poolImages` dirty rows), moving pending `sandboxEgress` reconcile
+   marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
+   gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
    sandbox state split (ADR 0034), deleting the secret grants scoped to a
    sandbox or harness config that no longer exists
    (`deleteOrphanedSecretGrants`), denying the open requests of a sandbox that

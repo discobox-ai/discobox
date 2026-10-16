@@ -200,6 +200,134 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
+// One of the sandbox's project's gateways (ADR 26-10-16-470), as proxy/gateway.Route reads it. A
+// request beneath match is forwarded to target, with match's path replaced by target's, once every
+// other policy has judged it as the sandbox sent it.
+// Ref: #/components/schemas/Gateway
+type Gateway struct {
+	Name           string                   `json:"name"`
+	Match          string                   `json:"match"`
+	Target         string                   `json:"target"`
+	RequestHeaders OptGatewayHeaderModifier `json:"requestHeaders"`
+}
+
+// GetName returns the value of Name.
+func (s *Gateway) GetName() string {
+	return s.Name
+}
+
+// GetMatch returns the value of Match.
+func (s *Gateway) GetMatch() string {
+	return s.Match
+}
+
+// GetTarget returns the value of Target.
+func (s *Gateway) GetTarget() string {
+	return s.Target
+}
+
+// GetRequestHeaders returns the value of RequestHeaders.
+func (s *Gateway) GetRequestHeaders() OptGatewayHeaderModifier {
+	return s.RequestHeaders
+}
+
+// SetName sets the value of Name.
+func (s *Gateway) SetName(val string) {
+	s.Name = val
+}
+
+// SetMatch sets the value of Match.
+func (s *Gateway) SetMatch(val string) {
+	s.Match = val
+}
+
+// SetTarget sets the value of Target.
+func (s *Gateway) SetTarget(val string) {
+	s.Target = val
+}
+
+// SetRequestHeaders sets the value of RequestHeaders.
+func (s *Gateway) SetRequestHeaders(val OptGatewayHeaderModifier) {
+	s.RequestHeaders = val
+}
+
+// One header a gateway sets or adds. Exactly one of value and env is given; env names a server
+// environment variable the proxy asks the control plane for, never its value.
+// Ref: #/components/schemas/GatewayHeader
+type GatewayHeader struct {
+	Name  string    `json:"name"`
+	Value OptString `json:"value"`
+	Env   OptString `json:"env"`
+}
+
+// GetName returns the value of Name.
+func (s *GatewayHeader) GetName() string {
+	return s.Name
+}
+
+// GetValue returns the value of Value.
+func (s *GatewayHeader) GetValue() OptString {
+	return s.Value
+}
+
+// GetEnv returns the value of Env.
+func (s *GatewayHeader) GetEnv() OptString {
+	return s.Env
+}
+
+// SetName sets the value of Name.
+func (s *GatewayHeader) SetName(val string) {
+	s.Name = val
+}
+
+// SetValue sets the value of Value.
+func (s *GatewayHeader) SetValue(val OptString) {
+	s.Value = val
+}
+
+// SetEnv sets the value of Env.
+func (s *GatewayHeader) SetEnv(val OptString) {
+	s.Env = val
+}
+
+// Headers a gateway removes, then sets, then adds.
+// Ref: #/components/schemas/GatewayHeaderModifier
+type GatewayHeaderModifier struct {
+	Remove []string        `json:"remove"`
+	Set    []GatewayHeader `json:"set"`
+	Add    []GatewayHeader `json:"add"`
+}
+
+// GetRemove returns the value of Remove.
+func (s *GatewayHeaderModifier) GetRemove() []string {
+	return s.Remove
+}
+
+// GetSet returns the value of Set.
+func (s *GatewayHeaderModifier) GetSet() []GatewayHeader {
+	return s.Set
+}
+
+// GetAdd returns the value of Add.
+func (s *GatewayHeaderModifier) GetAdd() []GatewayHeader {
+	return s.Add
+}
+
+// SetRemove sets the value of Remove.
+func (s *GatewayHeaderModifier) SetRemove(val []string) {
+	s.Remove = val
+}
+
+// SetSet sets the value of Set.
+func (s *GatewayHeaderModifier) SetSet(val []GatewayHeader) {
+	s.Set = val
+}
+
+// SetAdd sets the value of Add.
+func (s *GatewayHeaderModifier) SetAdd(val []GatewayHeader) {
+	s.Add = val
+}
+
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
 	Checkout OptGitSourceCheckout `json:"checkout"`
@@ -1015,6 +1143,52 @@ func (o OptEgressPolicy) Or(d EgressPolicy) EgressPolicy {
 	return d
 }
 
+// NewOptGatewayHeaderModifier returns new OptGatewayHeaderModifier with value set to v.
+func NewOptGatewayHeaderModifier(v GatewayHeaderModifier) OptGatewayHeaderModifier {
+	return OptGatewayHeaderModifier{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGatewayHeaderModifier is optional GatewayHeaderModifier.
+type OptGatewayHeaderModifier struct {
+	Value GatewayHeaderModifier
+	Set   bool
+}
+
+// IsSet returns true if OptGatewayHeaderModifier was set.
+func (o OptGatewayHeaderModifier) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGatewayHeaderModifier) Reset() {
+	var v GatewayHeaderModifier
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGatewayHeaderModifier) SetTo(v GatewayHeaderModifier) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGatewayHeaderModifier) Get() (v GatewayHeaderModifier, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGatewayHeaderModifier) Or(d GatewayHeaderModifier) GatewayHeaderModifier {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptGitSource returns new OptGitSource with value set to v.
 func NewOptGitSource(v GitSource) OptGitSource {
 	return OptGitSource{
@@ -1486,6 +1660,69 @@ func (o OptNilErrorDetailArray) Get() (v []ErrorDetail, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilGatewayArray returns new OptNilGatewayArray with value set to v.
+func NewOptNilGatewayArray(v []Gateway) OptNilGatewayArray {
+	return OptNilGatewayArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilGatewayArray is optional nullable []Gateway.
+type OptNilGatewayArray struct {
+	Value []Gateway
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilGatewayArray was set.
+func (o OptNilGatewayArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilGatewayArray) Reset() {
+	var v []Gateway
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilGatewayArray) SetTo(v []Gateway) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilGatewayArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilGatewayArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []Gateway
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilGatewayArray) Get() (v []Gateway, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilGatewayArray) Or(d []Gateway) []Gateway {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2888,7 +3125,8 @@ type PoolHTTPAuditExchange struct {
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
 	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve -- then the reason.
+	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
+	// could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -3113,19 +3351,23 @@ func (s *PoolHTTPAuditExchange) SetURL(val string) {
 type PoolHTTPAuditExchangeDetail struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Header names the proxy's rewrite rule set.
+	// Header names the gateway removed, set, or added; their values are redacted from requestHeaders.
 	AppliedHeaders []string `json:"appliedHeaders"`
-	// The destination pattern that matched.
+	// The match of the gateway the request fell under (ADR 26-10-16-470).
 	AppliedPattern OptString `json:"appliedPattern"`
-	// The proxy rewrite rule that applied.
+	// The name of the project gateway the request fell under (ADR 26-10-16-470); url is still what the
+	// sandbox sent, and forwardedUrl where the gateway sent it.
 	AppliedRuleId OptString `json:"appliedRuleId"`
+	// Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did.
+	ForwardedUrl OptString `json:"forwardedUrl"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
 	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
 	// credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
 	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve -- then the reason.
+	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
+	// could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
@@ -3219,6 +3461,11 @@ func (s *PoolHTTPAuditExchangeDetail) GetAppliedPattern() OptString {
 // GetAppliedRuleId returns the value of AppliedRuleId.
 func (s *PoolHTTPAuditExchangeDetail) GetAppliedRuleId() OptString {
 	return s.AppliedRuleId
+}
+
+// GetForwardedUrl returns the value of ForwardedUrl.
+func (s *PoolHTTPAuditExchangeDetail) GetForwardedUrl() OptString {
+	return s.ForwardedUrl
 }
 
 // GetBlocked returns the value of Blocked.
@@ -3424,6 +3671,11 @@ func (s *PoolHTTPAuditExchangeDetail) SetAppliedPattern(val OptString) {
 // SetAppliedRuleId sets the value of AppliedRuleId.
 func (s *PoolHTTPAuditExchangeDetail) SetAppliedRuleId(val OptString) {
 	s.AppliedRuleId = val
+}
+
+// SetForwardedUrl sets the value of ForwardedUrl.
+func (s *PoolHTTPAuditExchangeDetail) SetForwardedUrl(val OptString) {
+	s.ForwardedUrl = val
 }
 
 // SetBlocked sets the value of Blocked.
@@ -3752,7 +4004,10 @@ type PoolSandboxCreateRequest struct {
 	Config SandboxConfig `json:"config"`
 	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built
 	// so it is in force from the sandbox's first request. Absent means unrestricted.
-	Egress                OptEgressPolicy          `json:"egress"`
+	Egress OptEgressPolicy `json:"egress"`
+	// The sandbox's project's gateways (ADR 26-10-16-470), recorded with the pool proxy beside the
+	// egress policy. Absent or empty is none.
+	Gateways              OptNilGatewayArray       `json:"gateways"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
 	SandboxId             string                   `json:"sandboxId"`
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
@@ -3781,6 +4036,11 @@ func (s *PoolSandboxCreateRequest) GetConfig() SandboxConfig {
 // GetEgress returns the value of Egress.
 func (s *PoolSandboxCreateRequest) GetEgress() OptEgressPolicy {
 	return s.Egress
+}
+
+// GetGateways returns the value of Gateways.
+func (s *PoolSandboxCreateRequest) GetGateways() OptNilGatewayArray {
+	return s.Gateways
 }
 
 // GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
@@ -3821,6 +4081,11 @@ func (s *PoolSandboxCreateRequest) SetConfig(val SandboxConfig) {
 // SetEgress sets the value of Egress.
 func (s *PoolSandboxCreateRequest) SetEgress(val OptEgressPolicy) {
 	s.Egress = val
+}
+
+// SetGateways sets the value of Gateways.
+func (s *PoolSandboxCreateRequest) SetGateways(val OptNilGatewayArray) {
+	s.Gateways = val
 }
 
 // SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
@@ -4341,6 +4606,9 @@ type PoolSandboxUpdateRequest struct {
 	// carries the policy. This is how a policy change reaches a sandbox (ADR 26-10-01-032 §5); absent
 	// leaves the policy as it is.
 	Egress OptEgressPolicy `json:"egress"`
+	// Replacement gateways, sent with egress and recorded the same way (ADR 26-10-16-470 §5); absent
+	// leaves them as they are, and an empty list removes them.
+	Gateways OptNilGatewayArray `json:"gateways"`
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
@@ -4365,6 +4633,11 @@ func (s *PoolSandboxUpdateRequest) GetConfig() OptSandboxUpdateConfig {
 // GetEgress returns the value of Egress.
 func (s *PoolSandboxUpdateRequest) GetEgress() OptEgressPolicy {
 	return s.Egress
+}
+
+// GetGateways returns the value of Gateways.
+func (s *PoolSandboxUpdateRequest) GetGateways() OptNilGatewayArray {
+	return s.Gateways
 }
 
 // GetSentinels returns the value of Sentinels.
@@ -4395,6 +4668,11 @@ func (s *PoolSandboxUpdateRequest) SetConfig(val OptSandboxUpdateConfig) {
 // SetEgress sets the value of Egress.
 func (s *PoolSandboxUpdateRequest) SetEgress(val OptEgressPolicy) {
 	s.Egress = val
+}
+
+// SetGateways sets the value of Gateways.
+func (s *PoolSandboxUpdateRequest) SetGateways(val OptNilGatewayArray) {
+	s.Gateways = val
 }
 
 // SetSentinels sets the value of Sentinels.

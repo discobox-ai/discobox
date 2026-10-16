@@ -69,7 +69,7 @@ func TestUpstreamProxyURL(t *testing.T) {
 // one and not the other leaves half of the traffic dialing origins directly,
 // which is exactly what fails inside a sandbox.
 func TestApplyUpstreamProxySetsBothPaths(t *testing.T) {
-	h := newHTTPProxy(nil, nil, nil, nil, nil, nil)
+	h := newHTTPProxy(nil, nil, nil, nil, nil, nil, nil)
 	u, err := upstreamProxyURL(Config{UpstreamProxy: "http://172.30.0.1:17008"})
 	if err != nil {
 		t.Fatalf("upstreamProxyURL: %v", err)
@@ -94,7 +94,7 @@ func TestApplyUpstreamProxySetsBothPaths(t *testing.T) {
 // A pool with direct egress must be left exactly as goproxy configured it,
 // rather than being pointed at an upstream that does not exist.
 func TestApplyUpstreamProxyNilLeavesDirect(t *testing.T) {
-	h := newHTTPProxy(nil, nil, nil, nil, nil, nil)
+	h := newHTTPProxy(nil, nil, nil, nil, nil, nil, nil)
 	beforeDial := h.proxy.ConnectDial
 	var beforeProxy bool
 	if h.proxy.Tr != nil {
@@ -126,7 +126,7 @@ func mustURL(t *testing.T, raw string) *url.URL {
 // it is what made the existing proxy tests fail, since they talk to 127.0.0.1
 // while the surrounding sandbox sets NO_PROXY=127.0.0.1,localhost.
 func TestApplyUpstreamProxyHonoursNoProxy(t *testing.T) {
-	h := newHTTPProxy(nil, nil, nil, nil, nil, nil)
+	h := newHTTPProxy(nil, nil, nil, nil, nil, nil, nil)
 	u, err := upstreamProxyURL(Config{UpstreamProxy: "http://172.30.0.1:17008"})
 	if err != nil {
 		t.Fatalf("upstreamProxyURL: %v", err)

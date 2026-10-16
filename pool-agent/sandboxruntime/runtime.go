@@ -28,6 +28,7 @@ import (
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
@@ -709,6 +710,12 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	// before this; a change reaches that sandbox through UpdateSandbox, which the
 	// control plane sends after every create attempt.
 	if err := proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, egressPolicy(req.Egress)); err != nil {
+		return nil, false, err
+	}
+	// Its project's gateways go beside it, for the same reason (ADR
+	// 26-10-16-470 §5).
+	gateways, _ := req.Gateways.Get()
+	if err := proxyagent.SetSandboxGateways(r.root, r.projectID, r.poolID, sandboxID, gatewayRoutes(gateways)); err != nil {
 		return nil, false, err
 	}
 	// The bootstrap: placed before the container exists, and the one thing the
@@ -1560,7 +1567,17 @@ func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[strin
 func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	if req != nil {
 		if req.Egress.IsSet() {
-			if err := r.updateSandboxEgress(ctx, sandboxID, egressPolicy(req.Egress)); err != nil {
+			policy := egressPolicy(req.Egress)
+			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
+				return proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, policy)
+			}); err != nil {
+				return nil, err
+			}
+		}
+		if gateways, ok := req.Gateways.Get(); ok {
+			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
+				return proxyagent.SetSandboxGateways(r.root, r.projectID, r.poolID, sandboxID, gatewayRoutes(gateways))
+			}); err != nil {
 				return nil, err
 			}
 		}
@@ -1612,12 +1629,13 @@ func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandb
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
 }
 
-// updateSandboxEgress records a pushed egress policy for a sandbox whose
-// container exists, under the lock create, archive, and delete hold. A sandbox
-// with no container is answered ErrNotFound and nothing is written: its create
-// carries the policy (ADR 26-10-01-032 §5), and a push that raced a delete
-// must not leave an entry nothing would ever remove.
-func (r *DockerSandboxRuntime) updateSandboxEgress(ctx context.Context, sandboxID string, policy egress.Policy) error {
+// updateSandboxProxyPolicy records a pushed part of a sandbox's proxy policy —
+// its egress policy or its gateways — for a sandbox whose container exists,
+// under the lock create, archive, and delete hold. A sandbox with no container
+// is answered ErrNotFound and nothing is written: its create carries the
+// policy (ADR 26-10-01-032 §5, ADR 26-10-16-470 §5), and a push that raced a
+// delete must not leave an entry nothing would ever remove.
+func (r *DockerSandboxRuntime) updateSandboxProxyPolicy(ctx context.Context, sandboxID string, write func() error) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -1627,7 +1645,34 @@ func (r *DockerSandboxRuntime) updateSandboxEgress(ctx context.Context, sandboxI
 	if r.isArchived(sandboxID) {
 		return ErrNotFound
 	}
-	return proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, policy)
+	return write()
+}
+
+// gatewayRoutes reads the control plane's gateways as the proxy applies them.
+func gatewayRoutes(in []workerapimodel.Gateway) []gateway.Route {
+	var out []gateway.Route
+	for _, route := range in {
+		headers, _ := route.RequestHeaders.Get()
+		out = append(out, gateway.Route{
+			Name:   route.Name,
+			Match:  route.Match,
+			Target: route.Target,
+			RequestHeaders: gateway.HeaderModifier{
+				Remove: headers.Remove,
+				Set:    gatewayHeaders(headers.Set),
+				Add:    gatewayHeaders(headers.Add),
+			},
+		})
+	}
+	return out
+}
+
+func gatewayHeaders(in []workerapimodel.GatewayHeader) []gateway.Header {
+	var out []gateway.Header
+	for _, header := range in {
+		out = append(out, gateway.Header{Name: header.Name, Value: header.Value.Or(""), Env: header.Env.Or("")})
+	}
+	return out
 }
 
 // egressPolicy reads the control plane's effective egress policy; absent is

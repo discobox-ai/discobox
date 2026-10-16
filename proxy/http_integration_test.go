@@ -33,6 +33,7 @@ import (
 )
 
 type stubResolver struct {
+	noGatewayHeaders
 	value string
 	host  string
 	useID string
@@ -112,158 +113,6 @@ func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (se
 		return secrets.ResolveResult{}, secrets.ErrDenied
 	}
 	return secrets.ResolveResult{Value: r.value, UseID: r.useID, SecretID: r.secretID, ExpiresAt: time.Now().Add(time.Hour)}, nil
-}
-
-func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var sawAuthorization string
-	var sawInjectedSecret string
-	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
-		sawAuthorization = r.Header.Get("Authorization")
-		sawInjectedSecret = r.Header.Get("X-Injected-Secret")
-		_, _ = io.WriteString(w, "ok")
-	})
-	defer origin.Close()
-
-	originURL, err := url.Parse(origin.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	originHost := originURL.Hostname()
-
-	dir := t.TempDir()
-	prepared, err := PrepareCertificates(PrepareOptions{
-		Dir:         filepath.Join(dir, "certs"),
-		ProxyURL:    "https://127.0.0.1:0",
-		ServerHosts: []string{"127.0.0.1", "localhost"},
-		ClientIDs:   []string{"sandbox-1"},
-	})
-	if err != nil {
-		t.Fatalf("PrepareCertificates() error = %v", err)
-	}
-
-	dbPath := filepath.Join(dir, "audit.db")
-	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording: RecordingConfig{
-			Enabled:   true,
-			QueueSize: 16,
-		},
-		Headers: []HeaderRule{{
-			ID:      "origin-auth",
-			Pattern: originHost,
-			Set: map[string]string{
-				"Authorization":        "Bearer injected",
-				"X-Injected-Secret":    "super-secret",
-				"X-Injected-Nonsecret": "non-secret",
-			},
-		}},
-	}, prepared.Bundle, nil)
-	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.ListenAndServe()
-	}()
-	var closeOnce sync.Once
-	closeServer := func() {
-		closeOnce.Do(func() {
-			if err := server.Close(); err != nil {
-				t.Fatalf("Close() error = %v", err)
-			}
-			select {
-			case err := <-errCh:
-				if err != nil {
-					t.Fatalf("ListenAndServe() error = %v", err)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("timed out waiting for proxy shutdown")
-			}
-		})
-	}
-	t.Cleanup(closeServer)
-	addr := waitForAddr(t, server)
-
-	clientMaterial := prepared.Clients["sandbox-1"]
-	clientCert, err := tls.LoadX509KeyPair(clientMaterial.ClientCertPath, clientMaterial.ClientKeyPath)
-	if err != nil {
-		t.Fatalf("load client certificate: %v", err)
-	}
-	caBytes, err := os.ReadFile(clientMaterial.MTLSCAPath)
-	if err != nil {
-		t.Fatalf("read mTLS CA: %v", err)
-	}
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caBytes) {
-		t.Fatal("failed to parse mTLS CA")
-	}
-	proxyURL, err := url.Parse("https://" + addr.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Transport: &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-		TLSClientConfig: &tls.Config{
-			RootCAs:      caPool,
-			Certificates: []tls.Certificate{clientCert},
-			MinVersion:   tls.VersionTLS12,
-		},
-	}}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("client.Get() error = %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-	if sawAuthorization != "Bearer injected" {
-		t.Fatalf("Authorization = %q", sawAuthorization)
-	}
-	if sawInjectedSecret != "super-secret" {
-		t.Fatalf("X-Injected-Secret = %q", sawInjectedSecret)
-	}
-
-	closeServer()
-
-	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
-	if err != nil {
-		t.Fatalf("open audit db: %v", err)
-	}
-	t.Cleanup(func() { _ = pools.Close() })
-	var exchange audit.HTTPExchange
-	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
-		t.Fatalf("read audit exchange: %v", err)
-	}
-	if exchange.AppliedRuleID != "origin-auth" {
-		t.Fatalf("AppliedRuleID = %q", exchange.AppliedRuleID)
-	}
-	if exchange.Status != http.StatusOK {
-		t.Fatalf("audit status = %d", exchange.Status)
-	}
-	if strings.Contains(exchange.RequestHeaders, "Bearer injected") || strings.Contains(exchange.RequestHeaders, "super-secret") || strings.Contains(exchange.RequestHeaders, "non-secret") {
-		t.Fatalf("audit request headers leaked injected values: %s", exchange.RequestHeaders)
-	}
-	var headers map[string][]string
-	if err := json.Unmarshal([]byte(exchange.RequestHeaders), &headers); err != nil {
-		t.Fatalf("unmarshal request headers: %v", err)
-	}
-	for _, header := range []string{"Authorization", "X-Injected-Secret", "X-Injected-Nonsecret"} {
-		values := headers[header]
-		if len(values) != 1 || values[0] != "[REDACTED]" {
-			t.Fatalf("%s audit values = %#v", header, values)
-		}
-	}
 }
 
 // A swapped request's row names the secret it spent whatever stood in for it:
@@ -2497,4 +2346,12 @@ func TestConnectTunnelUpgradesOnlyPort443(t *testing.T) {
 			t.Errorf("%s: upgraded = %v, want %v", tc.url, got, tc.upgraded)
 		}
 	}
+}
+
+// noGatewayHeaders completes a test resolver for the tests that configure no
+// gateway: it answers that the environment sets nothing.
+type noGatewayHeaders struct{}
+
+func (noGatewayHeaders) ResolveGatewayHeaders(context.Context, GatewayHeadersRequest) (map[string]string, error) {
+	return nil, nil
 }

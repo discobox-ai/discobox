@@ -77,7 +77,7 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	if err := s.engine.Register(SentinelsResourceType, s.NewSentinelReconciler()); err != nil {
 		return err
 	}
-	if err := s.engine.Register(SandboxEgressResourceType, &sandboxEgressReconciler{store: s.store, providers: s.sandboxProviders}); err != nil {
+	if err := s.engine.Register(SandboxProxyPolicyResourceType, &sandboxProxyPolicyReconciler{store: s.store, providers: s.sandboxProviders}); err != nil {
 		return err
 	}
 	return s.engine.Register(SandboxPowerResourceType, &sandboxPowerReconciler{store: s.store, providers: s.sandboxProviders, now: time.Now})
@@ -687,7 +687,7 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		if s.engine == nil {
 			return errors.New("reconcile engine is required")
 		}
-		return s.engine.MarkDirtyTx(ctx, txDB, SandboxEgressResourceType, SandboxDirtyID(projectID, sandboxID))
+		return s.engine.MarkDirtyTx(ctx, txDB, SandboxProxyPolicyResourceType, SandboxDirtyID(projectID, sandboxID))
 	}); err != nil {
 		return nil, err
 	}

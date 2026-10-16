@@ -31,7 +31,7 @@ flowchart LR
 
 The pool proxy requires client certificates. Client identity is the verified
 mTLS certificate's CommonName (the sandbox ID; the serial when the CN is empty)
-and is attached to every HTTP audit row, SOCKS connect row, header injection
+and is attached to every HTTP audit row, SOCKS connect row, gateway
 decision, destination policy decision, cache event, and upgraded-stream audit
 row. The listener sniffs each connection's first byte: `0x05` is served as
 SOCKS5, an ASCII capital letter as HTTP, and anything else (SOCKS4 included) is
@@ -39,7 +39,7 @@ closed. Every allowed `CONNECT` is MITM'd with a per-host certificate from the
 MITM CA; there is no passthrough tunnel.
 
 A request read from a tunnel is for the `CONNECT` authority, while policy —
-the filter, header rules, and the secret swap — judges its `Host`. So a
+the filter, the gateways, and the secret swap — judges its `Host`. So a
 tunneled request whose `Host` or absolute URL names any other host is answered
 `421` and audited as blocked, never sent: otherwise a credential bound to one
 host could be sent to another. A tunnel whose client skips TLS is served in
@@ -490,7 +490,7 @@ Key properties:
   else of where it was sent — to `Origins.Upstream`, with `OriginClientHeader`
   set to the client the certificate names, replacing whatever the sandbox sent
   under that name. Its own `Authorization` goes with it: that is the token the
-  upstream decides on. No swap, no cache, no header rule; the response is
+  upstream decides on. No swap, no cache, no gateway; the response is
   audited on the ordinary response path, and an unreachable upstream is a 502.
   The pool points it at its agent's loopback origin listener.
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
@@ -610,7 +610,7 @@ Key properties:
   [ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md).
 
 Audit redaction covers every header whose value was swapped, in addition to
-rewrite-rule headers and credential-like header names.
+the headers a gateway touches and credential-like header names.
 
 ## Response Cache
 
@@ -673,13 +673,6 @@ ceiling does not go on evicting live entries to make room for deleted ones.
 
 ## Runtime Policy
 
-Header rewrite rules are deterministic, and at most one applies per request:
-the first match in a fixed order. Rules sort by a specificity score — exact
-hosts far above wildcards (`*.suffix`, `prefix.*`, `*`), longer patterns higher,
-plus weight for each method, path regex, client ID, and header condition — then
-by pattern text. Audit records store applied header names and rule identifiers,
-not injected secret values.
-
 Destination policy (`Allowlist`) is per client
 ([ADR 26-10-01-032](../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)):
 it holds the allow list of each *restricted* client, keyed by client ID. A
@@ -691,7 +684,7 @@ answered `403`; denied `CONNECT`s and SOCKS connects are refused. All are
 audited as `host denied`.
 
 [`egress`](egress) is the policy's shared vocabulary: an entry is a domain
-pattern (matched as header rules match theirs, so `github.com` is that host
+pattern (matched by `egress`'s own domain rule, so `github.com` is that host
 alone and `*.github.com` every name beneath it), an IP, or a CIDR — never a
 port. An IP literal is matched against IP and CIDR entries only, never a
 domain, so a client that resolves names itself is held to the IPs it was
@@ -700,7 +693,7 @@ refuses a wider child with, so validation, merging, and enforcement cannot
 read an entry three ways.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
-header rules, the sentinel set with its swap tuning — installed in the running
+the gateways ([Gateways](#gateways)), the sentinel set with its swap tuning — installed in the running
 `Swapper`, so its cache survives — and the host trusts
 ([Host Trust](#host-trust)). Pool-agent calls it directly to publish
 sentinel sets and trusts. The proxy does not expose an HTTP configuration API; listener,
@@ -708,8 +701,72 @@ certificate, audit database, recording, cache, control, and upstream settings
 remain startup-only.
 
 Header audit redaction covers both credential-like header names and every header
-name touched by a rewrite rule. This prevents injected secret values from being
-persisted even when a configured header name does not look sensitive.
+name a gateway touches. This keeps a gateway's key out of the trail even when
+its header name does not look sensitive.
+
+## Gateways
+
+A gateway routes a provider's API through another origin
+([ADR 26-10-16-470](../docs/adr/26-10-16-470-a-project-may-route-a-providers-api-through-a-gateway.md)):
+a request beneath its match — an origin and a path prefix, matched on whole
+segments, the longest winning — is sent to its target, the matched prefix
+replaced by the target's path and the rest of the path and the query kept,
+with request headers removed, then set, then added. [`gateway`](gateway) is the
+vocabulary the control plane validates with, the pool agent records, and the
+proxy applies, as [`egress`](egress) is for the allow list. `Config.Gateways`
+holds each client's routes, keyed by client ID.
+
+```mermaid
+flowchart LR
+    req["request as the sandbox sent it"] --> policy["filter, tunnel Host check,\nsentinel authorization and swap"]
+    policy --> match{"a gateway matches?"}
+    match -->|no| send["roundTrip: sent as is"]
+    match -->|yes| values["header values from the\nserver's environment\n(resolver, kept 5 min)"]
+    values -->|unset: 502 / no answer: 503| refuse["refused, audited as blocked"]
+    values --> copy["roundTrip: a copy, rewritten\nto the target"]
+```
+
+- **Policy judges the request as the sandbox sent it.** The filter, the
+  tunnel's `Host` check, sentinel authorization and routes, and the swap all
+  see the original; the gateway is applied last, in `roundTrip`, to the copy
+  it sends. So the credential a sentinel stands for, authorized for the
+  provider, goes to the gateway, and a target is never filtered. The 401
+  retry goes through `roundTrip` too.
+- **The request stays as sent.** Its audit row's `URL` and `Host` are the
+  original; `AppliedRuleID` is the gateway's name, `AppliedPattern` its match,
+  `ForwardedURL` where it went, and `AppliedHeaders` the headers it touched,
+  which are redacted. A credential report names the original host, which is
+  the one the credential was granted for.
+- **Pins are the target's.** `meta.trust` is looked up for the forwarded
+  endpoint, since that is where the handshake goes.
+- **Never cached.** A gateway's response is the gateway's, which the project
+  can change; a key made from the request as sent would outlive it.
+- **Matched as policy and the upstream read the request.** The host without a
+  trailing dot, the path with unreserved escapes decoded and dot and empty
+  segments resolved, and the cleaned
+  path is what is forwarded: a sandbox can neither spell its way around a
+  gateway nor `..` its way out of the target's prefix. A path under a
+  gateway's origin with an encoded slash or a backslash is refused `400`,
+  since a server may read it as another path after the match.
+- **A credential the gateway withholds is not judged by the answer.** When
+  the gateway removes or sets a header a credential was swapped into, the
+  upstream never saw the credential: a 401 is not retried and nothing is
+  reported for it.
+- **Validated where written.** The control plane validates a route; the proxy
+  skips one it cannot apply (`gateway.NewTable`) rather than refusing the whole
+  `ApplyConfig`, which carries every client's policy.
+- They replace the header rewrite rules the proxy once had, which nothing in
+  Discobox ever configured.
+- **A header from the server's environment** is asked of the control plane
+  through `SecretResolver.ResolveGatewayHeaders` the first time a request
+  needs it, per client, gateway, and variable, and fresh for five minutes.
+  A stale value is asked for again with the swap's outage rules
+  ([ADR 26-10-14-482](../docs/adr/26-10-14-482-a-sentinel-the-control-plane-could-not-resolve-is-never-sent.md)):
+  `secrets.RetryTransient` within `ResolveRetrySeconds`, then the stale value
+  is served. A variable the server does not set refuses the request `502`;
+  no answer with nothing held is a `503` with `Retry-After` and
+  `X-Should-Retry`. Either is audited blocked with a reason starting
+  `gateway:`. It is never sent without its header, nor to the original host.
 
 A swapped request records which approved uses it spent. `secrets.ResolveResult`
 carries a `UseID` that the resolver fills from the activation behind an

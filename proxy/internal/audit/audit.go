@@ -48,6 +48,7 @@ type HTTPEvent struct {
 	AppliedRuleID        string
 	AppliedPattern       string
 	AppliedHeaders       []string
+	ForwardedURL         string
 	SwappedUseIDs        []string
 	SwappedSecretIDs     []string
 	RedactRequestHeaders []string
@@ -133,6 +134,10 @@ type HTTPExchange struct {
 	AppliedRuleID  string
 	AppliedPattern string
 	AppliedHeaders string
+	// ForwardedURL is where a gateway sent the request (ADR 26-10-16-470 §3);
+	// URL stays what the sandbox sent. AppliedRuleID is the gateway's name,
+	// AppliedPattern its match, and AppliedHeaders the headers it touched.
+	ForwardedURL string
 	// SwappedUseIDs names the approved credential uses this request spent, as
 	// a comma-joined list (ADR 0130 §3). It is the join to the control plane's
 	// credential_verdicts rows: one ID reaches both the verdict that authorized
@@ -705,6 +710,7 @@ func (r *Recorder) write(event any) {
 			AppliedRuleID:       e.AppliedRuleID,
 			AppliedPattern:      e.AppliedPattern,
 			AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
+			ForwardedURL:        e.ForwardedURL,
 			SwappedUseIDs:       strings.Join(e.SwappedUseIDs, ","),
 			SwappedSecretIDs:    strings.Join(e.SwappedSecretIDs, ","),
 			RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),

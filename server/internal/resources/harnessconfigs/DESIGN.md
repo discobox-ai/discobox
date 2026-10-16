@@ -47,9 +47,9 @@ true of it, and true *by rule* rather than by slug:
 - The harness's egress level is two fields: `ImageEgressHosts`, the hosts the
   image declares, replaced by every re-snapshot, and `Egress`, what a person
   set, which a re-snapshot never touches (ADR 26-10-01-032 §3) and only
-  `store.SetHarnessConfigEgress` writes. A change to either marks the egress
+  `store.SetHarnessConfigEgress` writes. A change to either marks the proxy policy
   push of the config's discoboxes in the transaction that saves it
-  (`updateHarnessConfig`), through `SandboxRuntime.MarkEgressChangedTx`.
+  (`updateHarnessConfig`), through `SandboxRuntime.MarkProxyPolicyChangedTx`.
 - The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
   can compare it on either image store: from a registry, the digest the tag is
   served under (an index digest for a multi-platform image), fetched with one

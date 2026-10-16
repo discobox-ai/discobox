@@ -204,6 +204,7 @@ func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.Poo
 		row.CacheError:         &detail.CacheError,
 		row.AppliedRuleID:      &detail.AppliedRuleId,
 		row.AppliedPattern:     &detail.AppliedPattern,
+		row.ForwardedURL:       &detail.ForwardedUrl,
 		row.RequestBodyFormat:  &detail.RequestBodyFormat,
 		row.RequestBodyError:   &detail.RequestBodyError,
 		row.ResponseBodyFormat: &detail.ResponseBodyFormat,

@@ -18,6 +18,7 @@ import (
 // every resolve the way an unreachable control plane does: not a denial, just
 // no answer.
 type outageResolver struct {
+	noGatewayHeaders
 	reportLog
 	value string
 	mu    sync.Mutex
@@ -229,6 +230,7 @@ func TestHTTPProxyStopsResolvingASentinelAtThePublishThatRemovesIt(t *testing.T)
 // so the first is kept as A's displaced value, and B a long-lived one; until it
 // is taken down, after which nothing resolves.
 type rotationResolver struct {
+	noGatewayHeaders
 	outageResolver
 	a, b string
 	n    int

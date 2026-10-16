@@ -384,6 +384,20 @@ func encodeProposeSandboxRuleRequest(
 	return nil
 }
 
+func encodePutProjectGatewayRequest(
+	req *PutProjectGatewayBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodePutSandboxRuntimeConfigRequest(
 	req *SandboxRuntimeConfig,
 	r *http.Request,
@@ -484,6 +498,20 @@ func encodeReportSandboxInventoriesRequest(
 
 func encodeReportSandboxSecretRejectionRequest(
 	req *ReportSandboxSecretRejectionBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeResolveGatewayHeadersRequest(
+	req *ResolveGatewayHeadersBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

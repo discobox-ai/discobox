@@ -358,6 +358,415 @@ func (s *ErrorModel) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *Gateway) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *Gateway) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("name")
+		e.Str(s.Name)
+	}
+	{
+		e.FieldStart("match")
+		e.Str(s.Match)
+	}
+	{
+		e.FieldStart("target")
+		e.Str(s.Target)
+	}
+	{
+		if s.RequestHeaders.Set {
+			e.FieldStart("requestHeaders")
+			s.RequestHeaders.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfGateway = [4]string{
+	0: "name",
+	1: "match",
+	2: "target",
+	3: "requestHeaders",
+}
+
+// Decode decodes Gateway from json.
+func (s *Gateway) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode Gateway to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "name":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Name = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "match":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Match = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"match\"")
+			}
+		case "target":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Target = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target\"")
+			}
+		case "requestHeaders":
+			if err := func() error {
+				s.RequestHeaders.Reset()
+				if err := s.RequestHeaders.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requestHeaders\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode Gateway")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfGateway) {
+					name = jsonFieldsNameOfGateway[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *Gateway) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *Gateway) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *GatewayHeader) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *GatewayHeader) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("name")
+		e.Str(s.Name)
+	}
+	{
+		if s.Value.Set {
+			e.FieldStart("value")
+			s.Value.Encode(e)
+		}
+	}
+	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfGatewayHeader = [3]string{
+	0: "name",
+	1: "value",
+	2: "env",
+}
+
+// Decode decodes GatewayHeader from json.
+func (s *GatewayHeader) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GatewayHeader to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "name":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Name = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "value":
+			if err := func() error {
+				s.Value.Reset()
+				if err := s.Value.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"value\"")
+			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode GatewayHeader")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfGatewayHeader) {
+					name = jsonFieldsNameOfGatewayHeader[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GatewayHeader) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GatewayHeader) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *GatewayHeaderModifier) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *GatewayHeaderModifier) encodeFields(e *jx.Encoder) {
+	{
+		if s.Remove != nil {
+			e.FieldStart("remove")
+			e.ArrStart()
+			for _, elem := range s.Remove {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Set != nil {
+			e.FieldStart("set")
+			e.ArrStart()
+			for _, elem := range s.Set {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Add != nil {
+			e.FieldStart("add")
+			e.ArrStart()
+			for _, elem := range s.Add {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfGatewayHeaderModifier = [3]string{
+	0: "remove",
+	1: "set",
+	2: "add",
+}
+
+// Decode decodes GatewayHeaderModifier from json.
+func (s *GatewayHeaderModifier) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GatewayHeaderModifier to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "remove":
+			if err := func() error {
+				s.Remove = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Remove = append(s.Remove, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remove\"")
+			}
+		case "set":
+			if err := func() error {
+				s.Set = make([]GatewayHeader, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem GatewayHeader
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Set = append(s.Set, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"set\"")
+			}
+		case "add":
+			if err := func() error {
+				s.Add = make([]GatewayHeader, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem GatewayHeader
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Add = append(s.Add, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"add\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode GatewayHeaderModifier")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GatewayHeaderModifier) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GatewayHeaderModifier) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *GitSource) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -1736,6 +2145,39 @@ func (s *OptEgressPolicy) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes GatewayHeaderModifier as json.
+func (o OptGatewayHeaderModifier) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes GatewayHeaderModifier from json.
+func (o *OptGatewayHeaderModifier) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGatewayHeaderModifier to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGatewayHeaderModifier) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGatewayHeaderModifier) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes GitSource as json.
 func (o OptGitSource) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -2059,6 +2501,67 @@ func (s OptNilErrorDetailArray) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilErrorDetailArray) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes []Gateway as json.
+func (o OptNilGatewayArray) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.ArrStart()
+	for _, elem := range o.Value {
+		elem.Encode(e)
+	}
+	e.ArrEnd()
+}
+
+// Decode decodes []Gateway from json.
+func (o *OptNilGatewayArray) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilGatewayArray to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v []Gateway
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make([]Gateway, 0)
+	if err := d.Arr(func(d *jx.Decoder) error {
+		var elem Gateway
+		if err := elem.Decode(d); err != nil {
+			return err
+		}
+		o.Value = append(o.Value, elem)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilGatewayArray) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilGatewayArray) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3888,6 +4391,12 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ForwardedUrl.Set {
+			e.FieldStart("forwardedUrl")
+			s.ForwardedUrl.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("blocked")
 		e.Bool(s.Blocked)
 	}
@@ -4097,48 +4606,49 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [41]string{
+var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [42]string{
 	0:  "$schema",
 	1:  "appliedHeaders",
 	2:  "appliedPattern",
 	3:  "appliedRuleId",
-	4:  "blocked",
-	5:  "blockedReason",
-	6:  "cacheError",
-	7:  "cacheHit",
-	8:  "cacheKey",
-	9:  "cacheStored",
-	10: "createdAt",
-	11: "durationMillis",
-	12: "enqueuedAt",
-	13: "host",
-	14: "id",
-	15: "method",
-	16: "requestBodyBytes",
-	17: "requestBodyError",
-	18: "requestBodyFormat",
-	19: "requestBodyRecorded",
-	20: "requestHeaders",
-	21: "responseBodyError",
-	22: "responseBodyFormat",
-	23: "responseBodyRecorded",
-	24: "responseBytes",
-	25: "responseHeaders",
-	26: "sandboxId",
-	27: "status",
-	28: "streamDroppedBytes",
-	29: "streamDroppedChunks",
-	30: "streamFormat",
-	31: "streamRecorded",
-	32: "streamSessionId",
-	33: "swappedSecretIds",
-	34: "swappedUseIds",
-	35: "upgrade",
-	36: "upgradeC2sBytes",
-	37: "upgradeS2cBytes",
-	38: "upgradeType",
-	39: "url",
-	40: "writtenAt",
+	4:  "forwardedUrl",
+	5:  "blocked",
+	6:  "blockedReason",
+	7:  "cacheError",
+	8:  "cacheHit",
+	9:  "cacheKey",
+	10: "cacheStored",
+	11: "createdAt",
+	12: "durationMillis",
+	13: "enqueuedAt",
+	14: "host",
+	15: "id",
+	16: "method",
+	17: "requestBodyBytes",
+	18: "requestBodyError",
+	19: "requestBodyFormat",
+	20: "requestBodyRecorded",
+	21: "requestHeaders",
+	22: "responseBodyError",
+	23: "responseBodyFormat",
+	24: "responseBodyRecorded",
+	25: "responseBytes",
+	26: "responseHeaders",
+	27: "sandboxId",
+	28: "status",
+	29: "streamDroppedBytes",
+	30: "streamDroppedChunks",
+	31: "streamFormat",
+	32: "streamRecorded",
+	33: "streamSessionId",
+	34: "swappedSecretIds",
+	35: "swappedUseIds",
+	36: "upgrade",
+	37: "upgradeC2sBytes",
+	38: "upgradeS2cBytes",
+	39: "upgradeType",
+	40: "url",
+	41: "writtenAt",
 }
 
 // Decode decodes PoolHTTPAuditExchangeDetail from json.
@@ -4200,8 +4710,18 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"appliedRuleId\"")
 			}
+		case "forwardedUrl":
+			if err := func() error {
+				s.ForwardedUrl.Reset()
+				if err := s.ForwardedUrl.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"forwardedUrl\"")
+			}
 		case "blocked":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Bool()
 				s.Blocked = bool(v)
@@ -4263,7 +4783,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cacheStored\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -4295,7 +4815,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"enqueuedAt\"")
 			}
 		case "host":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Host = string(v)
@@ -4307,7 +4827,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"host\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -4319,7 +4839,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "method":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Method = string(v)
@@ -4371,7 +4891,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"requestBodyRecorded\"")
 			}
 		case "requestHeaders":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.RequestHeaders.Decode(d); err != nil {
 					return err
@@ -4421,7 +4941,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"responseBytes\"")
 			}
 		case "responseHeaders":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				if err := s.ResponseHeaders.Decode(d); err != nil {
 					return err
@@ -4431,7 +4951,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"responseHeaders\"")
 			}
 		case "sandboxId":
-			requiredBitSet[3] |= 1 << 2
+			requiredBitSet[3] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -4443,7 +4963,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
 		case "status":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int()
 				s.Status = int(v)
@@ -4524,7 +5044,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"swappedSecretIds\"")
 			}
 		case "swappedUseIds":
-			requiredBitSet[4] |= 1 << 2
+			requiredBitSet[4] |= 1 << 3
 			if err := func() error {
 				s.SwappedUseIds = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -4584,7 +5104,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"upgradeType\"")
 			}
 		case "url":
-			requiredBitSet[4] |= 1 << 7
+			requiredBitSet[5] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.URL = string(v)
@@ -4615,12 +5135,12 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [6]uint8{
-		0b00010010,
-		0b11100100,
-		0b00010000,
-		0b00001110,
-		0b10000100,
-		0b00000000,
+		0b00100010,
+		0b11001000,
+		0b00100001,
+		0b00011100,
+		0b00001000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -4951,6 +5471,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Gateways.Set {
+			e.FieldStart("gateways")
+			s.Gateways.Encode(e)
+		}
+	}
+	{
 		if s.ResolvedHarnessConfig.Set {
 			e.FieldStart("resolvedHarnessConfig")
 			s.ResolvedHarnessConfig.Encode(e)
@@ -4980,15 +5506,16 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [8]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [9]string{
 	0: "$schema",
 	1: "config",
 	2: "egress",
-	3: "resolvedHarnessConfig",
-	4: "sandboxId",
-	5: "sentinels",
-	6: "sentinelRoutes",
-	7: "secretEnv",
+	3: "gateways",
+	4: "resolvedHarnessConfig",
+	5: "sandboxId",
+	6: "sentinels",
+	7: "sentinelRoutes",
+	8: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -4996,7 +5523,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode PoolSandboxCreateRequest to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -5030,6 +5557,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"egress\"")
 			}
+		case "gateways":
+			if err := func() error {
+				s.Gateways.Reset()
+				if err := s.Gateways.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"gateways\"")
+			}
 		case "resolvedHarnessConfig":
 			if err := func() error {
 				s.ResolvedHarnessConfig.Reset()
@@ -5041,7 +5578,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -5091,8 +5628,9 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00010010,
+	for i, mask := range [2]uint8{
+		0b00100010,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -6624,6 +7162,12 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Gateways.Set {
+			e.FieldStart("gateways")
+			s.Gateways.Encode(e)
+		}
+	}
+	{
 		if s.Sentinels.Set {
 			e.FieldStart("sentinels")
 			s.Sentinels.Encode(e)
@@ -6643,13 +7187,14 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [6]string{
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [7]string{
 	0: "$schema",
 	1: "config",
 	2: "egress",
-	3: "sentinels",
-	4: "sentinelRoutes",
-	5: "secretEnv",
+	3: "gateways",
+	4: "sentinels",
+	5: "sentinelRoutes",
+	6: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -6689,6 +7234,16 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"egress\"")
+			}
+		case "gateways":
+			if err := func() error {
+				s.Gateways.Reset()
+				if err := s.Gateways.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"gateways\"")
 			}
 		case "sentinels":
 			if err := func() error {

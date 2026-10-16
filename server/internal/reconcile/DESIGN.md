@@ -196,7 +196,7 @@ resource forever.
 | --- | --- | --- |
 | `sandbox` | [sandboxes](../resources/sandboxes/DESIGN.md) | generation mismatch, plus archived sandboxes past retention |
 | `pool` | [pools](../resources/pools/DESIGN.md) | every pool |
-| `sandboxEgress` | [sandboxes](../resources/sandboxes/DESIGN.md#egress) | none: marked with every level change and every write after a create |
+| `sandboxProxyPolicy` | [sandboxes](../resources/sandboxes/DESIGN.md#proxy-policy) | none: marked with every egress level or gateway change and every write after a create |
 | `sandboxPower` | [sandboxes](../resources/sandboxes/DESIGN.md#sleep-idle-and-the-scheduled-start) | none: marked as drift by a status that asks for a power-down, and with intent by every outside power instruction and archive; the wake is a `RequeueAt` timer on its own dirty row, with `wake_at` as the durable copy |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
 | `judge` | [judges](../resources/DESIGN.md) | every project |

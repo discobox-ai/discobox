@@ -30,7 +30,7 @@
   does. The sandbox DNS stub is the one exception: it exists to answer Docker's
   embedded resolver, which only a networked sandbox has.
 - Policy and audit behavior must remain client-scoped. Destination rules,
-  header injection rules, upgraded-stream metadata, and audit query surfaces
+  gateways, upgraded-stream metadata, and audit query surfaces
   must preserve the authenticated client ID.
 - Runtime policy changes go through `ApplyConfig` only; do not add an HTTP
   config API to the proxy without revisiting the design.
@@ -44,10 +44,28 @@
   and drop counters.
 - Do not mutate `goproxy` package-level CONNECT actions or CA state. Keep MITM
   actions on the proxy instance.
-- Redact credential-like headers and every header name touched by a rewrite
-  rule. Never persist injected secret values in audit rows.
+- Redact credential-like headers and every header name a gateway touches.
+  Never persist a gateway's header values in audit rows.
 - Keep certificate preparation callable without starting the proxy listener.
-- Header rewrite rule evaluation must remain deterministic across process runs.
+- A gateway rewrites only the copy `roundTrip` sends. Nothing before it — the
+  filter, the swap, the authorizer, the cache key, the audit row, a credential
+  report — may see the gateway's URL or headers: they judge and record the
+  request as the sandbox sent it (ADR 26-10-16-470 §3).
+- Never send a gateway's request without a header it takes from the server's
+  environment, and never fall back to the original host. Unset is a 502; no
+  answer is a 503.
+- Anything the proxy asks the control plane for on the request path follows
+  ADR 26-10-14-482's outage rules — retry within the window
+  (`secrets.RetryTransient`), serve what is held, then a 503 with
+  `X-Should-Retry` — or a server restart fails every such request.
+- A gateway matches the host and path the way policy and the upstream read
+  them: no trailing dot, unreserved escapes decoded (`/%761` is `/v1`), dot
+  and empty segments resolved, the cleaned path forwarded, an encoded slash
+  refused. Matching the raw URL lets a sandbox
+  step around a gateway or out of its target's prefix with the gateway's key.
+- A 401 is evidence about a swapped credential only if the credential reached
+  the upstream. A gateway that removes or sets the header it was swapped into
+  makes the answer the gateway's: never retry or report it.
 - Avoid importing server internals. The package lives in the root module and
   is consumed through root-module contracts: `pool-agent/proxyagent` runs the
   pool proxy, and sandbox-agent imports only `proxy/bridge`.

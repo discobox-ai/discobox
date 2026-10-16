@@ -26,6 +26,7 @@ const testGateHost = "api.discobox.internal"
 // gateResolver admits a request carrying "Bearer live-use" and answers it
 // itself, the way the pool's gate answers from the control plane.
 type gateResolver struct {
+	noGatewayHeaders
 	stubResolver
 	mu   sync.Mutex
 	seen []string

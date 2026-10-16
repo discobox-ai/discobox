@@ -3846,7 +3846,7 @@ components:
                     description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -3928,21 +3928,24 @@ components:
                     readOnly: true
                     type: string
                 appliedHeaders:
-                    description: Header names the proxy's rewrite rule set
+                    description: Header names the gateway removed, set, or added; their values are redacted from requestHeaders
                     items:
                         type: string
                     type: array
                 appliedPattern:
-                    description: The destination pattern that matched
+                    description: The match of the gateway the request fell under (ADR 26-10-16-470)
                     type: string
                 appliedRuleId:
-                    description: The proxy rewrite rule that applied
+                    description: The name of the project gateway the request fell under (ADR 26-10-16-470); url is still what the sandbox sent, and forwardedUrl where the gateway sent it
+                    type: string
+                forwardedUrl:
+                    description: Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did
                     type: string
                 blocked:
                     description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used
@@ -7043,6 +7046,183 @@ components:
             required:
                 - skillsSources
             type: object
+        ProjectGateway:
+            additionalProperties: false
+            description: A gateway every discobox of the project is routed through (ADR 26-10-16-470). A request beneath match goes to target instead, with match's path replaced by target's and the rest of the path and the query kept, once every other policy has judged it as the discobox sent it. The pool proxy applies it; the discobox cannot see or bypass it.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ProjectGateway.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                name:
+                    description: The gateway's name, unique in the project; a DNS label
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                match:
+                    description: The requests it routes, as an http(s) URL of an origin and a path prefix, matched on whole path segments; the longest match wins
+                    example: https://api.anthropic.com/v1
+                    type: string
+                target:
+                    description: Where they go, as an http(s) URL of an origin and a path that replaces match's
+                    example: https://gateway.example.com/anthropic/v1
+                    type: string
+                requestHeaders:
+                    $ref: '#/components/schemas/GatewayHeaderModifier'
+                createdBy:
+                    description: Principal ID that first wrote the gateway
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - name
+                - projectId
+                - match
+                - target
+                - requestHeaders
+                - createdAt
+                - updatedAt
+            type: object
+        PutProjectGatewayBody:
+            additionalProperties: false
+            description: A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PutProjectGatewayBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                match:
+                    description: The requests it routes, as an http(s) URL of an origin and a path prefix, matched on whole path segments. No user, query, or fragment; no other gateway of the project may have the same match.
+                    example: https://api.anthropic.com/v1
+                    type: string
+                target:
+                    description: Where they go, as an http(s) URL of an origin and a path that replaces match's. No user, query, or fragment.
+                    example: https://gateway.example.com/anthropic/v1
+                    type: string
+                requestHeaders:
+                    $ref: '#/components/schemas/GatewayHeaderModifier'
+            required:
+                - match
+                - target
+            type: object
+        GatewayHeaderModifier:
+            additionalProperties: false
+            description: The headers a gateway changes on each request it routes, in this order -- remove, then set (replacing any value the discobox sent), then add (appending). Hop-by-hop headers and Host may not be named. Every header named here is redacted from the audit trail.
+            properties:
+                remove:
+                    description: Header names to remove
+                    items:
+                        type: string
+                    type: array
+                set:
+                    description: Headers to set, replacing any value the request has
+                    items:
+                        $ref: '#/components/schemas/GatewayHeader'
+                    type: array
+                add:
+                    description: Headers to add beside any value the request has
+                    items:
+                        $ref: '#/components/schemas/GatewayHeader'
+                    type: array
+            type: object
+        GatewayHeader:
+            additionalProperties: false
+            description: One header a gateway sets or adds, with exactly one of value or valueFrom.
+            properties:
+                name:
+                    description: Header name
+                    type: string
+                value:
+                    description: The header's value
+                    type: string
+                valueFrom:
+                    $ref: '#/components/schemas/GatewayHeaderValueSource'
+            required:
+                - name
+            type: object
+        GatewayHeaderValueSource:
+            additionalProperties: false
+            description: Where a header's value comes from when it is not written in the gateway.
+            properties:
+                env:
+                    description: An environment variable of the Discobox server, named DISCOBOX_GATEWAY_<NAME>. The pool's proxy asks the server for its value when a request needs it and keeps it for five minutes; the value is never stored, listed, or sent to a discobox. A request whose variable the server does not set is refused with 502.
+                    example: DISCOBOX_GATEWAY_CF_TOKEN
+                    type: string
+            required:
+                - env
+            type: object
+        ListProjectGatewaysBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListProjectGatewaysBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                gateways:
+                    description: The project's gateways, by name
+                    items:
+                        $ref: '#/components/schemas/ProjectGateway'
+                    type: array
+            required:
+                - gateways
+            type: object
+        ResolveGatewayHeadersBody:
+            additionalProperties: false
+            description: Worker request for the server environment values a sandbox's gateway sets headers from (ADR 26-10-16-470 §4).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveGatewayHeadersBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox whose request the gateway routes
+                    type: string
+                gateway:
+                    description: The gateway's name
+                    type: string
+                env:
+                    description: The variables to resolve; each must be one the gateway takes a header from
+                    items:
+                        type: string
+                    type: array
+            required:
+                - sandboxId
+                - gateway
+                - env
+            type: object
+        ResolveGatewayHeadersResponse:
+            additionalProperties: false
+            description: The values of the variables asked for. One the server's environment does not set is absent.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveGatewayHeadersResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                values:
+                    additionalProperties:
+                        type: string
+                    description: Value by variable name
+                    type: object
+            required:
+                - values
+            type: object
         ProjectSkillsSource:
             additionalProperties: false
             description: A skills repository every discobox of the project is created with. The creating client reads the project's list and adds each entry to the create request as a --skills URL[@REF][//PATH] would be, ahead of its own, so a discobox holds a copy made at create.
@@ -8276,6 +8456,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Report what an upstream made of a swapped credential
+            tags:
+                - Pools
+    /api/pools/{poolId}/resolve-gateway-headers:
+        post:
+            operationId: resolve-gateway-headers
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer worker assertion with the secret:resolve scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion with the secret:resolve scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveGatewayHeadersBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResolveGatewayHeadersResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Resolve the server environment values a sandbox's gateway sets headers from
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:
@@ -12992,6 +13211,140 @@ paths:
             summary: List sandbox provider catalog
             tags:
                 - Providers
+    /projects/{projectId}/gateways:
+        get:
+            operationId: list-project-gateways
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListProjectGatewaysBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the gateways every discobox of the project is routed through
+            tags:
+                - Gateways
+    /projects/{projectId}/gateways/{gatewayName}:
+        get:
+            operationId: get-project-gateway
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Gateway name
+                  in: path
+                  name: gatewayName
+                  required: true
+                  schema:
+                    description: Gateway name
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectGateway'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a gateway
+            tags:
+                - Gateways
+        put:
+            operationId: put-project-gateway
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Gateway name
+                  in: path
+                  name: gatewayName
+                  required: true
+                  schema:
+                    description: Gateway name
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PutProjectGatewayBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectGateway'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Create a gateway, or replace the one of that name
+            description: Every discobox of the project is routed through it from its next request; a discobox whose pool cannot be reached yet takes it when the pool can.
+            tags:
+                - Gateways
+        delete:
+            operationId: delete-project-gateway
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Gateway name
+                  in: path
+                  name: gatewayName
+                  required: true
+                  schema:
+                    description: Gateway name
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Remove a gateway
+            tags:
+                - Gateways
     /projects/{projectId}/skills-sources:
         get:
             operationId: list-project-skills-sources

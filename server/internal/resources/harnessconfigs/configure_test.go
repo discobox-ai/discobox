@@ -725,7 +725,7 @@ type stubSandboxRuntime struct {
 	deleteErr     error
 }
 
-func (s *stubSandboxRuntime) MarkEgressChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, _, harnessConfigID string) error {
+func (s *stubSandboxRuntime) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, _, harnessConfigID string) error {
 	s.egressChanged = append(s.egressChanged, harnessConfigID)
 	return nil
 }

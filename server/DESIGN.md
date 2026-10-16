@@ -933,6 +933,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/peers` | Enrolled iroh peers (ADR 0095): the managed half of peer admission. |
 | `internal/resources/skillssources` | A project's skills repositories, which the creating client copies into every create; the server validates and keeps the list and never adds it to a create itself (ADR 26-10-14-894). |
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |
+| `internal/resources/gateways` | A project's gateways, which every discobox of the project is routed through by its pool's proxy, and the server environment values their headers take (ADR 26-10-16-470). |
 | `internal/harnessdefs` | Seed data for the built-in harness images and the dev image env overrides. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |

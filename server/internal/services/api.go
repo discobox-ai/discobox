@@ -11,6 +11,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -519,6 +520,17 @@ type SkillsSourceService interface {
 	DeleteProjectSkillsSource(ctx context.Context, projectID, sourceID string) error
 }
 
+// GatewayService manages a project's gateways (ADR 26-10-16-470): routes the
+// pool proxy sends a provider's API through, and the server environment values
+// their headers take, which only a pool asks for.
+type GatewayService interface {
+	ListProjectGateways(ctx context.Context, projectID string) ([]model.ProjectGateway, error)
+	GetProjectGateway(ctx context.Context, projectID, name string) (*model.ProjectGateway, error)
+	PutProjectGateway(ctx context.Context, projectID, name string, route gateway.Route) (*model.ProjectGateway, error)
+	DeleteProjectGateway(ctx context.Context, projectID, name string) error
+	ResolveGatewayHeaders(ctx context.Context, poolID, sandboxID, name string, env []string) (map[string]string, error)
+}
+
 // PeerService manages the iroh endpoint IDs enrolled on this server (ADR
 // 0095). It is server-scoped rather than project-scoped: an iroh connection
 // carries the entire control-plane API, so an enrolled ID authenticates as a
@@ -621,6 +633,7 @@ type Services struct {
 	HostTrusts     HostTrustService
 	SSHKeys        SSHKeyService
 	SkillsSources  SkillsSourceService
+	Gateways       GatewayService
 	Peers          PeerService
 	// Judges answers a pool asking for a verdict from the project's judge
 	// (ADR 26-09-22-838 §2). It has no other route: nothing a person calls reaches it.

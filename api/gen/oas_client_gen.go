@@ -267,6 +267,12 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}
 	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
+	// DeleteProjectGateway invokes delete-project-gateway operation.
+	//
+	// Remove a gateway.
+	//
+	// DELETE /projects/{projectId}/gateways/{gatewayName}
+	DeleteProjectGateway(ctx context.Context, params DeleteProjectGatewayParams) (DeleteProjectGatewayRes, error)
 	// DeleteProjectSkillsSource invokes delete-project-skills-source operation.
 	//
 	// Remove a skills repository from the project's list.
@@ -367,6 +373,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}
 	GetProject(ctx context.Context, params GetProjectParams) (GetProjectRes, error)
+	// GetProjectGateway invokes get-project-gateway operation.
+	//
+	// Get a gateway.
+	//
+	// GET /projects/{projectId}/gateways/{gatewayName}
+	GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (GetProjectGatewayRes, error)
 	// GetSSHIngress invokes get-ssh-ingress operation.
 	//
 	// Discover this server's SSH ingress endpoint and host key.
@@ -618,6 +630,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/pools
 	ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error)
+	// ListProjectGateways invokes list-project-gateways operation.
+	//
+	// List the gateways every discobox of the project is routed through.
+	//
+	// GET /projects/{projectId}/gateways
+	ListProjectGateways(ctx context.Context, params ListProjectGatewaysParams) (ListProjectGatewaysRes, error)
 	// ListProjectSkillsSources invokes list-project-skills-sources operation.
 	//
 	// List the skills repositories every discobox of the project is created with, in order.
@@ -797,6 +815,13 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
 	PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error)
+	// PutProjectGateway invokes put-project-gateway operation.
+	//
+	// Every discobox of the project is routed through it from its next request; a discobox whose pool
+	// cannot be reached yet takes it when the pool can.
+	//
+	// PUT /projects/{projectId}/gateways/{gatewayName}
+	PutProjectGateway(ctx context.Context, request *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error)
 	// PutSandboxRuntimeConfig invokes put-sandbox-runtime-config operation.
 	//
 	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
@@ -889,6 +914,12 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
+	// ResolveGatewayHeaders invokes resolve-gateway-headers operation.
+	//
+	// Resolve the server environment values a sandbox's gateway sets headers from.
+	//
+	// POST /api/pools/{poolId}/resolve-gateway-headers
+	ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -4766,6 +4797,117 @@ func (c *Client) sendDeleteProject(ctx context.Context, params DeleteProjectPara
 	return result, nil
 }
 
+// DeleteProjectGateway invokes delete-project-gateway operation.
+//
+// Remove a gateway.
+//
+// DELETE /projects/{projectId}/gateways/{gatewayName}
+func (c *Client) DeleteProjectGateway(ctx context.Context, params DeleteProjectGatewayParams) (DeleteProjectGatewayRes, error) {
+	res, err := c.sendDeleteProjectGateway(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteProjectGateway(ctx context.Context, params DeleteProjectGatewayParams) (res DeleteProjectGatewayRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-project-gateway"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/gateways/{gatewayName}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteProjectGatewayOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/gateways/"
+	{
+		// Encode "gatewayName" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "gatewayName",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.GatewayName))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteProjectGatewayResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteProjectSkillsSource invokes delete-project-skills-source operation.
 //
 // Remove a skills repository from the project's list.
@@ -6601,6 +6743,117 @@ func (c *Client) sendGetProject(ctx context.Context, params GetProjectParams) (r
 
 	stage = "DecodeResponse"
 	result, err := decodeGetProjectResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetProjectGateway invokes get-project-gateway operation.
+//
+// Get a gateway.
+//
+// GET /projects/{projectId}/gateways/{gatewayName}
+func (c *Client) GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (GetProjectGatewayRes, error) {
+	res, err := c.sendGetProjectGateway(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (res GetProjectGatewayRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-project-gateway"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/gateways/{gatewayName}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetProjectGatewayOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/gateways/"
+	{
+		// Encode "gatewayName" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "gatewayName",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.GatewayName))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetProjectGatewayResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -11328,6 +11581,99 @@ func (c *Client) sendListPools(ctx context.Context, params ListPoolsParams) (res
 	return result, nil
 }
 
+// ListProjectGateways invokes list-project-gateways operation.
+//
+// List the gateways every discobox of the project is routed through.
+//
+// GET /projects/{projectId}/gateways
+func (c *Client) ListProjectGateways(ctx context.Context, params ListProjectGatewaysParams) (ListProjectGatewaysRes, error) {
+	res, err := c.sendListProjectGateways(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListProjectGateways(ctx context.Context, params ListProjectGatewaysParams) (res ListProjectGatewaysRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-project-gateways"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/gateways"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListProjectGatewaysOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/gateways"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListProjectGatewaysResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListProjectSkillsSources invokes list-project-skills-sources operation.
 //
 // List the skills repositories every discobox of the project is created with, in order.
@@ -14394,6 +14740,121 @@ func (c *Client) sendPurgeSandbox(ctx context.Context, params PurgeSandboxParams
 	return result, nil
 }
 
+// PutProjectGateway invokes put-project-gateway operation.
+//
+// Every discobox of the project is routed through it from its next request; a discobox whose pool
+// cannot be reached yet takes it when the pool can.
+//
+// PUT /projects/{projectId}/gateways/{gatewayName}
+func (c *Client) PutProjectGateway(ctx context.Context, request *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error) {
+	res, err := c.sendPutProjectGateway(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPutProjectGateway(ctx context.Context, request *PutProjectGatewayBody, params PutProjectGatewayParams) (res PutProjectGatewayRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("put-project-gateway"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/gateways/{gatewayName}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PutProjectGatewayOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/gateways/"
+	{
+		// Encode "gatewayName" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "gatewayName",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.GatewayName))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePutProjectGatewayRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePutProjectGatewayResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // PutSandboxRuntimeConfig invokes put-sandbox-runtime-config operation.
 //
 // Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
@@ -15642,6 +16103,102 @@ func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *
 
 	stage = "DecodeResponse"
 	result, err := decodeReportSandboxSecretRejectionResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ResolveGatewayHeaders invokes resolve-gateway-headers operation.
+//
+// Resolve the server environment values a sandbox's gateway sets headers from.
+//
+// POST /api/pools/{poolId}/resolve-gateway-headers
+func (c *Client) ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error) {
+	res, err := c.sendResolveGatewayHeaders(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (res ResolveGatewayHeadersRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("resolve-gateway-headers"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-gateway-headers"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResolveGatewayHeadersOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/resolve-gateway-headers"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeResolveGatewayHeadersRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResolveGatewayHeadersResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

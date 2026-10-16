@@ -15,15 +15,13 @@ import (
 	"net"
 	"slices"
 	"strings"
-
-	"github.com/discobox-ai/discobox/proxy/internal/rules"
 )
 
 // Policy is one level's egress policy, or the effective policy of a sandbox.
 //
 // Allow entries are domain patterns ("github.com", "*.googleapis.com",
 // "registry.*", "*"), IPs, or CIDRs: host only, never a port. A pattern
-// matches as the proxy's header rules do, so "github.com" is that host alone
+// matches as matchDomain reads it, so "github.com" is that host alone
 // and "*.github.com" every name beneath it.
 //
 // On a level, DenyByDefault turns restriction on and Allow adds the hosts a
@@ -177,9 +175,27 @@ func (m Matcher) Allows(host string) bool {
 		return m.allowsIP(ip)
 	}
 	for _, pattern := range m.domains {
-		if rules.MatchDomain(pattern, host) {
+		if matchDomain(pattern, host) {
 			return true
 		}
+	}
+	return false
+}
+
+// matchDomain checks whether host matches pattern: "*" matches every host,
+// "*.suffix" every name beneath suffix, "prefix.*" every name beginning
+// prefix and a dot, and anything else that host alone.
+func matchDomain(pattern, host string) bool {
+	pattern = strings.ToLower(pattern)
+	host = strings.ToLower(host)
+	if pattern == "*" || pattern == host {
+		return true
+	}
+	if strings.HasPrefix(pattern, "*.") {
+		return strings.HasSuffix(host, pattern[1:])
+	}
+	if strings.HasSuffix(pattern, ".*") {
+		return strings.HasPrefix(host, strings.TrimSuffix(pattern, ".*")+".")
 	}
 	return false
 }

@@ -3473,6 +3473,11 @@ type DeletePoolNoContent struct{}
 
 func (*DeletePoolNoContent) deletePoolRes() {}
 
+// DeleteProjectGatewayNoContent is response for DeleteProjectGateway operation.
+type DeleteProjectGatewayNoContent struct{}
+
+func (*DeleteProjectGatewayNoContent) deleteProjectGatewayRes() {}
+
 // DeleteProjectNoContent is response for DeleteProject operation.
 type DeleteProjectNoContent struct{}
 
@@ -3742,6 +3747,7 @@ func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deletePeerRes()                       {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
+func (*ErrorModelStatusCode) deleteProjectGatewayRes()             {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
 func (*ErrorModelStatusCode) deleteProjectSkillsSourceRes()        {}
 func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
@@ -3757,6 +3763,7 @@ func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
+func (*ErrorModelStatusCode) getProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
@@ -3782,6 +3789,7 @@ func (*ErrorModelStatusCode) listPeersRes()                        {}
 func (*ErrorModelStatusCode) listPoolHeldSandboxesRes()            {}
 func (*ErrorModelStatusCode) listPoolHostTrustsRes()               {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
+func (*ErrorModelStatusCode) listProjectGatewaysRes()              {}
 func (*ErrorModelStatusCode) listProjectSkillsSourcesRes()         {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
@@ -3800,6 +3808,7 @@ func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
+func (*ErrorModelStatusCode) putProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
@@ -3811,6 +3820,7 @@ func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
 func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
 func (*ErrorModelStatusCode) reportSandboxInventoriesRes()         {}
 func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()     {}
+func (*ErrorModelStatusCode) resolveGatewayHeadersRes()            {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -4039,6 +4049,109 @@ func (s *ExchangeRecipeHeader) init() ExchangeRecipeHeader {
 		*s = m
 	}
 	return m
+}
+
+// One header a gateway sets or adds, with exactly one of value or valueFrom.
+// Ref: #/components/schemas/GatewayHeader
+type GatewayHeader struct {
+	// Header name.
+	Name string `json:"name"`
+	// The header's value.
+	Value     OptString                   `json:"value"`
+	ValueFrom OptGatewayHeaderValueSource `json:"valueFrom"`
+}
+
+// GetName returns the value of Name.
+func (s *GatewayHeader) GetName() string {
+	return s.Name
+}
+
+// GetValue returns the value of Value.
+func (s *GatewayHeader) GetValue() OptString {
+	return s.Value
+}
+
+// GetValueFrom returns the value of ValueFrom.
+func (s *GatewayHeader) GetValueFrom() OptGatewayHeaderValueSource {
+	return s.ValueFrom
+}
+
+// SetName sets the value of Name.
+func (s *GatewayHeader) SetName(val string) {
+	s.Name = val
+}
+
+// SetValue sets the value of Value.
+func (s *GatewayHeader) SetValue(val OptString) {
+	s.Value = val
+}
+
+// SetValueFrom sets the value of ValueFrom.
+func (s *GatewayHeader) SetValueFrom(val OptGatewayHeaderValueSource) {
+	s.ValueFrom = val
+}
+
+// The headers a gateway changes on each request it routes, in this order -- remove, then set
+// (replacing any value the discobox sent), then add (appending). Hop-by-hop headers and Host may not
+// be named. Every header named here is redacted from the audit trail.
+// Ref: #/components/schemas/GatewayHeaderModifier
+type GatewayHeaderModifier struct {
+	// Header names to remove.
+	Remove []string `json:"remove"`
+	// Headers to set, replacing any value the request has.
+	Set []GatewayHeader `json:"set"`
+	// Headers to add beside any value the request has.
+	Add []GatewayHeader `json:"add"`
+}
+
+// GetRemove returns the value of Remove.
+func (s *GatewayHeaderModifier) GetRemove() []string {
+	return s.Remove
+}
+
+// GetSet returns the value of Set.
+func (s *GatewayHeaderModifier) GetSet() []GatewayHeader {
+	return s.Set
+}
+
+// GetAdd returns the value of Add.
+func (s *GatewayHeaderModifier) GetAdd() []GatewayHeader {
+	return s.Add
+}
+
+// SetRemove sets the value of Remove.
+func (s *GatewayHeaderModifier) SetRemove(val []string) {
+	s.Remove = val
+}
+
+// SetSet sets the value of Set.
+func (s *GatewayHeaderModifier) SetSet(val []GatewayHeader) {
+	s.Set = val
+}
+
+// SetAdd sets the value of Add.
+func (s *GatewayHeaderModifier) SetAdd(val []GatewayHeader) {
+	s.Add = val
+}
+
+// Where a header's value comes from when it is not written in the gateway.
+// Ref: #/components/schemas/GatewayHeaderValueSource
+type GatewayHeaderValueSource struct {
+	// An environment variable of the Discobox server, named DISCOBOX_GATEWAY_<NAME>. The pool's proxy
+	// asks the server for its value when a request needs it and keeps it for five minutes; the value is
+	// never stored, listed, or sent to a discobox. A request whose variable the server does not set is
+	// refused with 502.
+	Env string `json:"env"`
+}
+
+// GetEnv returns the value of Env.
+func (s *GatewayHeaderValueSource) GetEnv() string {
+	return s.Env
+}
+
+// SetEnv sets the value of Env.
+func (s *GatewayHeaderValueSource) SetEnv(val string) {
+	s.Env = val
 }
 
 // Ref: #/components/schemas/GitSource
@@ -4532,7 +4645,8 @@ type HTTPAuditExchange struct {
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
 	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve -- then the reason.
+	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
+	// could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -4769,19 +4883,23 @@ func (s *HTTPAuditExchange) SetURL(val string) {
 type HTTPAuditExchangeDetail struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Header names the proxy's rewrite rule set.
+	// Header names the gateway removed, set, or added; their values are redacted from requestHeaders.
 	AppliedHeaders []string `json:"appliedHeaders"`
-	// The destination pattern that matched.
+	// The match of the gateway the request fell under (ADR 26-10-16-470).
 	AppliedPattern OptString `json:"appliedPattern"`
-	// The proxy rewrite rule that applied.
+	// The name of the project gateway the request fell under (ADR 26-10-16-470); url is still what the
+	// sandbox sent, and forwardedUrl where the gateway sent it.
 	AppliedRuleId OptString `json:"appliedRuleId"`
+	// Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did.
+	ForwardedUrl OptString `json:"forwardedUrl"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
 	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
 	// credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
 	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve -- then the reason.
+	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
+	// could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
@@ -4878,6 +4996,11 @@ func (s *HTTPAuditExchangeDetail) GetAppliedPattern() OptString {
 // GetAppliedRuleId returns the value of AppliedRuleId.
 func (s *HTTPAuditExchangeDetail) GetAppliedRuleId() OptString {
 	return s.AppliedRuleId
+}
+
+// GetForwardedUrl returns the value of ForwardedUrl.
+func (s *HTTPAuditExchangeDetail) GetForwardedUrl() OptString {
+	return s.ForwardedUrl
 }
 
 // GetBlocked returns the value of Blocked.
@@ -5088,6 +5211,11 @@ func (s *HTTPAuditExchangeDetail) SetAppliedPattern(val OptString) {
 // SetAppliedRuleId sets the value of AppliedRuleId.
 func (s *HTTPAuditExchangeDetail) SetAppliedRuleId(val OptString) {
 	s.AppliedRuleId = val
+}
+
+// SetForwardedUrl sets the value of ForwardedUrl.
+func (s *HTTPAuditExchangeDetail) SetForwardedUrl(val OptString) {
+	s.ForwardedUrl = val
 }
 
 // SetBlocked sets the value of Blocked.
@@ -8395,6 +8523,36 @@ func (s *ListPoolsBody) SetPools(val []Pool) {
 
 func (*ListPoolsBody) listPoolsRes() {}
 
+// Ref: #/components/schemas/ListProjectGatewaysBody
+type ListProjectGatewaysBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The project's gateways, by name.
+	Gateways []ProjectGateway `json:"gateways"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListProjectGatewaysBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetGateways returns the value of Gateways.
+func (s *ListProjectGatewaysBody) GetGateways() []ProjectGateway {
+	return s.Gateways
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListProjectGatewaysBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetGateways sets the value of Gateways.
+func (s *ListProjectGatewaysBody) SetGateways(val []ProjectGateway) {
+	s.Gateways = val
+}
+
+func (*ListProjectGatewaysBody) listProjectGatewaysRes() {}
+
 // Ref: #/components/schemas/ListProjectSkillsSourcesBody
 type ListProjectSkillsSourcesBody struct {
 	// A URL to the JSON Schema for this object.
@@ -9982,6 +10140,98 @@ func (o OptFloat64) Get() (v float64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGatewayHeaderModifier returns new OptGatewayHeaderModifier with value set to v.
+func NewOptGatewayHeaderModifier(v GatewayHeaderModifier) OptGatewayHeaderModifier {
+	return OptGatewayHeaderModifier{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGatewayHeaderModifier is optional GatewayHeaderModifier.
+type OptGatewayHeaderModifier struct {
+	Value GatewayHeaderModifier
+	Set   bool
+}
+
+// IsSet returns true if OptGatewayHeaderModifier was set.
+func (o OptGatewayHeaderModifier) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGatewayHeaderModifier) Reset() {
+	var v GatewayHeaderModifier
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGatewayHeaderModifier) SetTo(v GatewayHeaderModifier) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGatewayHeaderModifier) Get() (v GatewayHeaderModifier, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGatewayHeaderModifier) Or(d GatewayHeaderModifier) GatewayHeaderModifier {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGatewayHeaderValueSource returns new OptGatewayHeaderValueSource with value set to v.
+func NewOptGatewayHeaderValueSource(v GatewayHeaderValueSource) OptGatewayHeaderValueSource {
+	return OptGatewayHeaderValueSource{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGatewayHeaderValueSource is optional GatewayHeaderValueSource.
+type OptGatewayHeaderValueSource struct {
+	Value GatewayHeaderValueSource
+	Set   bool
+}
+
+// IsSet returns true if OptGatewayHeaderValueSource was set.
+func (o OptGatewayHeaderValueSource) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGatewayHeaderValueSource) Reset() {
+	var v GatewayHeaderValueSource
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGatewayHeaderValueSource) SetTo(v GatewayHeaderValueSource) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGatewayHeaderValueSource) Get() (v GatewayHeaderValueSource, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGatewayHeaderValueSource) Or(d GatewayHeaderValueSource) GatewayHeaderValueSource {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18518,6 +18768,125 @@ func (*Project) unsetDefaultHarnessConfigRes() {}
 func (*Project) unsetDefaultPoolRes()          {}
 func (*Project) updateProjectRes()             {}
 
+// A gateway every discobox of the project is routed through (ADR 26-10-16-470). A request beneath
+// match goes to target instead, with match's path replaced by target's and the rest of the path and
+// the query kept, once every other policy has judged it as the discobox sent it. The pool proxy
+// applies it; the discobox cannot see or bypass it.
+// Ref: #/components/schemas/ProjectGateway
+type ProjectGateway struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The gateway's name, unique in the project; a DNS label.
+	Name string `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// The requests it routes, as an http(s) URL of an origin and a path prefix, matched on whole path
+	// segments; the longest match wins.
+	Match string `json:"match"`
+	// Where they go, as an http(s) URL of an origin and a path that replaces match's.
+	Target         string                `json:"target"`
+	RequestHeaders GatewayHeaderModifier `json:"requestHeaders"`
+	// Principal ID that first wrote the gateway.
+	CreatedBy OptString `json:"createdBy"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ProjectGateway) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetName returns the value of Name.
+func (s *ProjectGateway) GetName() string {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *ProjectGateway) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetMatch returns the value of Match.
+func (s *ProjectGateway) GetMatch() string {
+	return s.Match
+}
+
+// GetTarget returns the value of Target.
+func (s *ProjectGateway) GetTarget() string {
+	return s.Target
+}
+
+// GetRequestHeaders returns the value of RequestHeaders.
+func (s *ProjectGateway) GetRequestHeaders() GatewayHeaderModifier {
+	return s.RequestHeaders
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *ProjectGateway) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *ProjectGateway) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *ProjectGateway) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *ProjectGateway) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetName sets the value of Name.
+func (s *ProjectGateway) SetName(val string) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *ProjectGateway) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetMatch sets the value of Match.
+func (s *ProjectGateway) SetMatch(val string) {
+	s.Match = val
+}
+
+// SetTarget sets the value of Target.
+func (s *ProjectGateway) SetTarget(val string) {
+	s.Target = val
+}
+
+// SetRequestHeaders sets the value of RequestHeaders.
+func (s *ProjectGateway) SetRequestHeaders(val GatewayHeaderModifier) {
+	s.RequestHeaders = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *ProjectGateway) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *ProjectGateway) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *ProjectGateway) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*ProjectGateway) getProjectGatewayRes() {}
+func (*ProjectGateway) putProjectGatewayRes() {}
+
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {
 	// Creation timestamp.
@@ -18886,6 +19255,60 @@ func (s *ProviderStatus) SetState(val string) {
 type PurgeSandboxNoContent struct{}
 
 func (*PurgeSandboxNoContent) purgeSandboxRes() {}
+
+// A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470).
+// Ref: #/components/schemas/PutProjectGatewayBody
+type PutProjectGatewayBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The requests it routes, as an http(s) URL of an origin and a path prefix, matched on whole path
+	// segments. No user, query, or fragment; no other gateway of the project may have the same match.
+	Match string `json:"match"`
+	// Where they go, as an http(s) URL of an origin and a path that replaces match's. No user, query, or
+	// fragment.
+	Target         string                   `json:"target"`
+	RequestHeaders OptGatewayHeaderModifier `json:"requestHeaders"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PutProjectGatewayBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetMatch returns the value of Match.
+func (s *PutProjectGatewayBody) GetMatch() string {
+	return s.Match
+}
+
+// GetTarget returns the value of Target.
+func (s *PutProjectGatewayBody) GetTarget() string {
+	return s.Target
+}
+
+// GetRequestHeaders returns the value of RequestHeaders.
+func (s *PutProjectGatewayBody) GetRequestHeaders() OptGatewayHeaderModifier {
+	return s.RequestHeaders
+}
+
+// SetSchema sets the value of Schema.
+func (s *PutProjectGatewayBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetMatch sets the value of Match.
+func (s *PutProjectGatewayBody) SetMatch(val string) {
+	s.Match = val
+}
+
+// SetTarget sets the value of Target.
+func (s *PutProjectGatewayBody) SetTarget(val string) {
+	s.Target = val
+}
+
+// SetRequestHeaders sets the value of RequestHeaders.
+func (s *PutProjectGatewayBody) SetRequestHeaders(val OptGatewayHeaderModifier) {
+	s.RequestHeaders = val
+}
 
 // Ref: #/components/schemas/RefreshSecretBody
 type RefreshSecretBody struct {
@@ -19500,6 +19923,103 @@ func (s *ReportSandboxSecretRejectionBodyOutcome) UnmarshalText(data []byte) err
 type ReportSandboxSecretRejectionNoContent struct{}
 
 func (*ReportSandboxSecretRejectionNoContent) reportSandboxSecretRejectionRes() {}
+
+// Worker request for the server environment values a sandbox's gateway sets headers from (ADR
+// 26-10-16-470 §4).
+// Ref: #/components/schemas/ResolveGatewayHeadersBody
+type ResolveGatewayHeadersBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox whose request the gateway routes.
+	SandboxId string `json:"sandboxId"`
+	// The gateway's name.
+	Gateway string `json:"gateway"`
+	// The variables to resolve; each must be one the gateway takes a header from.
+	Env []string `json:"env"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveGatewayHeadersBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ResolveGatewayHeadersBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetGateway returns the value of Gateway.
+func (s *ResolveGatewayHeadersBody) GetGateway() string {
+	return s.Gateway
+}
+
+// GetEnv returns the value of Env.
+func (s *ResolveGatewayHeadersBody) GetEnv() []string {
+	return s.Env
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveGatewayHeadersBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ResolveGatewayHeadersBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetGateway sets the value of Gateway.
+func (s *ResolveGatewayHeadersBody) SetGateway(val string) {
+	s.Gateway = val
+}
+
+// SetEnv sets the value of Env.
+func (s *ResolveGatewayHeadersBody) SetEnv(val []string) {
+	s.Env = val
+}
+
+// The values of the variables asked for. One the server's environment does not set is absent.
+// Ref: #/components/schemas/ResolveGatewayHeadersResponse
+type ResolveGatewayHeadersResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Value by variable name.
+	Values ResolveGatewayHeadersResponseValues `json:"values"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveGatewayHeadersResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetValues returns the value of Values.
+func (s *ResolveGatewayHeadersResponse) GetValues() ResolveGatewayHeadersResponseValues {
+	return s.Values
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveGatewayHeadersResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetValues sets the value of Values.
+func (s *ResolveGatewayHeadersResponse) SetValues(val ResolveGatewayHeadersResponseValues) {
+	s.Values = val
+}
+
+func (*ResolveGatewayHeadersResponse) resolveGatewayHeadersRes() {}
+
+// Value by variable name.
+type ResolveGatewayHeadersResponseValues map[string]string
+
+func (s *ResolveGatewayHeadersResponseValues) init() ResolveGatewayHeadersResponseValues {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.

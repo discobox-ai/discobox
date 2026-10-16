@@ -13,7 +13,6 @@ import (
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/cache"
 	"github.com/discobox-ai/discobox/proxy/internal/filter"
-	"github.com/discobox-ai/discobox/proxy/internal/rules"
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -27,7 +26,6 @@ type Server struct {
 	audit       *audit.Recorder
 	cache       *cache.Cache
 	filter      *filter.Filter
-	rewriter    *rules.Rewriter
 	http        *httpProxy
 	socks       *socksProxy
 	controlAuth *controlAuthenticator
@@ -42,7 +40,7 @@ type Server struct {
 // NewServer creates a pool-scoped proxy server. A nil resolver disables
 // sentinel secret swapping; the resolver is a stable dependency preserved across
 // ApplyConfig reloads.
-func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolver secrets.Resolver) (*Server, error) {
+func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolver SecretResolver) (*Server, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -82,7 +80,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	if err != nil {
 		return nil, fmt.Errorf("control auth: %w", err)
 	}
-	flt, rewriter := buildPolicy(cfg)
+	flt := buildFilter(cfg)
 	var swapper *secrets.Swapper
 	if resolver != nil {
 		swapper = secrets.New(resolver, swapperConfig(cfg))
@@ -94,12 +92,11 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		audit:       recorder,
 		cache:       c,
 		filter:      flt,
-		rewriter:    rewriter,
 		controlAuth: controlAuth,
 		conns:       map[net.Conn]struct{}{},
 		closed:      make(chan struct{}),
 	}
-	s.http = newHTTPProxy(certs, s.filter, s.rewriter, swapper, c, recorder)
+	s.http = newHTTPProxy(certs, s.filter, buildGatewayTables(cfg.Gateways), resolver, swapper, c, recorder)
 	if s.http.origins, err = newOriginForwarder(cfg.Origins); err != nil {
 		return nil, err
 	}
@@ -147,26 +144,26 @@ func (s *Server) ApplyConfig(cfg Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	flt, rewriter := buildPolicy(cfg)
+	flt := buildFilter(cfg)
+	gateways := buildGatewayTables(cfg.Gateways)
 	trusts, err := buildTrustTable(cfg.Trusts, s.http.proxy.Tr, s.http.trustTable())
 	if err != nil {
 		return err
 	}
 	s.filter = flt
-	s.rewriter = rewriter
 	s.cfg.Allowlist = cfg.Allowlist
-	s.cfg.Headers = cfg.Headers
+	s.cfg.Gateways = cfg.Gateways
 	s.cfg.Secrets = cfg.Secrets
 	s.cfg.Trusts = cfg.Trusts
-	s.http.setPolicy(flt, rewriter)
+	s.http.setPolicy(flt, gateways)
 	s.http.swapper.Reconfigure(swapperConfig(cfg))
 	s.http.setTrusts(trusts)
 	s.socks.setFilter(flt)
 	return nil
 }
 
-func buildPolicy(cfg Config) (*filter.Filter, *rules.Rewriter) {
-	return filter.New(filter.Config{Clients: cfg.Allowlist.Clients}), rules.NewRewriter(convertHeaderRules(cfg.Headers))
+func buildFilter(cfg Config) *filter.Filter {
+	return filter.New(filter.Config{Clients: cfg.Allowlist.Clients})
 }
 
 func swapperConfig(cfg Config) secrets.Config {
@@ -183,27 +180,6 @@ func swapperConfig(cfg Config) secrets.Config {
 		ResolveRetry:    time.Duration(cfg.Secrets.ResolveRetrySeconds) * time.Second,
 		GateHost:        cfg.Secrets.GateHost,
 	}
-}
-
-func convertHeaderRules(headerRules []HeaderRule) []rules.HeaderRule {
-	converted := make([]rules.HeaderRule, 0, len(headerRules))
-	for _, rule := range headerRules {
-		conditions := make([]rules.HeaderCondition, 0, len(rule.Conditions))
-		for _, condition := range rule.Conditions {
-			conditions = append(conditions, rules.HeaderCondition{Header: condition.Header, Equals: condition.Equals})
-		}
-		converted = append(converted, rules.HeaderRule{
-			ID:          rule.ID,
-			Pattern:     rule.Pattern,
-			Methods:     rule.Methods,
-			PathRegexes: rule.PathRegexes,
-			ClientIDs:   rule.ClientIDs,
-			Conditions:  conditions,
-			Set:         rule.Set,
-			Append:      rule.Append,
-		})
-	}
-	return converted
 }
 
 // ListenAndServe starts the mTLS listener.
