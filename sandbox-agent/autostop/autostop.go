@@ -295,7 +295,7 @@ func (p *Policy) SetControlPlanePower(on bool) {
 		// /run is fresh at every boot, and this runs before anything else
 		// may have made the directory.
 		if err = os.MkdirAll(filepath.Dir(p.controlPlaneMarker), 0o755); err == nil {
-			err = os.WriteFile(p.controlPlaneMarker, nil, 0o644)
+			err = os.WriteFile(p.controlPlaneMarker, nil, 0o600)
 		}
 	} else {
 		err = os.Remove(p.controlPlaneMarker)
@@ -480,7 +480,7 @@ func (p *Policy) TakeDueWakes() ([]string, error) {
 	if err := os.MkdirAll(filepath.Dir(p.handoverMarker), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(p.handoverMarker, nil, 0o644); err != nil {
+	if err := os.WriteFile(p.handoverMarker, nil, 0o600); err != nil {
 		return nil, err
 	}
 	now := p.now().UTC()
