@@ -2204,6 +2204,52 @@ func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOr
 	return d
 }
 
+// NewOptSandboxAgentAutostopSleep returns new OptSandboxAgentAutostopSleep with value set to v.
+func NewOptSandboxAgentAutostopSleep(v SandboxAgentAutostopSleep) OptSandboxAgentAutostopSleep {
+	return OptSandboxAgentAutostopSleep{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentAutostopSleep is optional SandboxAgentAutostopSleep.
+type OptSandboxAgentAutostopSleep struct {
+	Value SandboxAgentAutostopSleep
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentAutostopSleep was set.
+func (o OptSandboxAgentAutostopSleep) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentAutostopSleep) Reset() {
+	var v SandboxAgentAutostopSleep
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentAutostopSleep) SetTo(v SandboxAgentAutostopSleep) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentAutostopSleep) Get() (v SandboxAgentAutostopSleep, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentAutostopSleep) Or(d SandboxAgentAutostopSleep) SandboxAgentAutostopSleep {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentAutostopStatus returns new OptSandboxAgentAutostopStatus with value set to v.
 func NewOptSandboxAgentAutostopStatus(v SandboxAgentAutostopStatus) OptSandboxAgentAutostopStatus {
 	return OptSandboxAgentAutostopStatus{
@@ -3007,11 +3053,53 @@ func (s *ResourceSnapshot) SetTerminalId(val string) {
 	s.TerminalId = val
 }
 
-// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. The sandbox powers
-// itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request
-// starts it again.
+// A pending request to sleep - a file in /run/discobox/sleep. Present only once the pool has handed
+// the sandbox's power to the control plane, which then powers the sandbox down - freezing it where
+// its runtime can - after the sandbox confirms the request is still pending (ADR 26-10-16-337 §§1,
+// 5).
+// Ref: #/components/schemas/SandboxAgentAutostopSleep
+type SandboxAgentAutostopSleep struct {
+	// The latest pending request's file name. Text the sandbox chose; escape it before printing it.
+	Request string `json:"request"`
+	// The latest pending request's modification time.
+	RequestedAt time.Time `json:"requestedAt"`
+}
+
+// GetRequest returns the value of Request.
+func (s *SandboxAgentAutostopSleep) GetRequest() string {
+	return s.Request
+}
+
+// GetRequestedAt returns the value of RequestedAt.
+func (s *SandboxAgentAutostopSleep) GetRequestedAt() time.Time {
+	return s.RequestedAt
+}
+
+// SetRequest sets the value of Request.
+func (s *SandboxAgentAutostopSleep) SetRequest(val string) {
+	s.Request = val
+}
+
+// SetRequestedAt sets the value of RequestedAt.
+func (s *SandboxAgentAutostopSleep) SetRequestedAt(val time.Time) {
+	s.RequestedAt = val
+}
+
+// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. Until its pool hands its
+// power to the control plane the sandbox powers itself off once nothing has happened in it for the
+// idle timeout; after, it reports idle, sleep and its next wake and the control plane powers it (ADR
+// 26-10-16-337). The next sandbox-directed request starts it again. Every string in it is text the
+// sandbox chose.
 // Ref: #/components/schemas/SandboxAgentAutostopStatus
 type SandboxAgentAutostopStatus struct {
+	// Always true from a sandbox agent that can hand its power to the control plane - report idle, sleep
+	// and wake rather than power itself off. The pool hands it over only to a sandbox that says so (ADR
+	// 26-10-16-337 §8).
+	ControlPlanePower OptBool `json:"controlPlanePower"`
+	// Present once the pool has handed the sandbox's power to the control plane, and true when the
+	// sandbox has been idle for its timeout - the point at which it used to power itself off. The
+	// control plane stops it after the sandbox confirms, fresh, that it still is.
+	Idle OptBool `json:"idle"`
 	// How long the sandbox runs with nothing happening in it before it powers itself off.
 	IdleTimeoutSeconds int64 `json:"idleTimeoutSeconds"`
 	// What lastActivityAt was, for example "screen change on exec <id>" or "lease
@@ -3022,10 +3110,26 @@ type SandboxAgentAutostopStatus struct {
 	// it the observation time, and a lease dated in the future makes it that date.
 	LastActivityAt time.Time `json:"lastActivityAt"`
 	// The latest keepalive lease's time, when one is in the future.
-	LeaseUntil OptDateTime `json:"leaseUntil"`
+	LeaseUntil OptDateTime                  `json:"leaseUntil"`
+	Sleep      OptSandboxAgentAutostopSleep `json:"sleep"`
 	// LastActivityAt plus the idle timeout - the earliest the sandbox powers itself off if nothing else
 	// happens.
 	StopsAt time.Time `json:"stopsAt"`
+	// The file name of the wake at wakeAt. Text the sandbox chose; escape it before printing it.
+	Wake OptString `json:"wake"`
+	// The earliest wake in the future, from ~/.discobox/wake. Present only once the pool has handed the
+	// sandbox's power to the control plane.
+	WakeAt OptDateTime `json:"wakeAt"`
+}
+
+// GetControlPlanePower returns the value of ControlPlanePower.
+func (s *SandboxAgentAutostopStatus) GetControlPlanePower() OptBool {
+	return s.ControlPlanePower
+}
+
+// GetIdle returns the value of Idle.
+func (s *SandboxAgentAutostopStatus) GetIdle() OptBool {
+	return s.Idle
 }
 
 // GetIdleTimeoutSeconds returns the value of IdleTimeoutSeconds.
@@ -3048,9 +3152,34 @@ func (s *SandboxAgentAutostopStatus) GetLeaseUntil() OptDateTime {
 	return s.LeaseUntil
 }
 
+// GetSleep returns the value of Sleep.
+func (s *SandboxAgentAutostopStatus) GetSleep() OptSandboxAgentAutostopSleep {
+	return s.Sleep
+}
+
 // GetStopsAt returns the value of StopsAt.
 func (s *SandboxAgentAutostopStatus) GetStopsAt() time.Time {
 	return s.StopsAt
+}
+
+// GetWake returns the value of Wake.
+func (s *SandboxAgentAutostopStatus) GetWake() OptString {
+	return s.Wake
+}
+
+// GetWakeAt returns the value of WakeAt.
+func (s *SandboxAgentAutostopStatus) GetWakeAt() OptDateTime {
+	return s.WakeAt
+}
+
+// SetControlPlanePower sets the value of ControlPlanePower.
+func (s *SandboxAgentAutostopStatus) SetControlPlanePower(val OptBool) {
+	s.ControlPlanePower = val
+}
+
+// SetIdle sets the value of Idle.
+func (s *SandboxAgentAutostopStatus) SetIdle(val OptBool) {
+	s.Idle = val
 }
 
 // SetIdleTimeoutSeconds sets the value of IdleTimeoutSeconds.
@@ -3073,9 +3202,24 @@ func (s *SandboxAgentAutostopStatus) SetLeaseUntil(val OptDateTime) {
 	s.LeaseUntil = val
 }
 
+// SetSleep sets the value of Sleep.
+func (s *SandboxAgentAutostopStatus) SetSleep(val OptSandboxAgentAutostopSleep) {
+	s.Sleep = val
+}
+
 // SetStopsAt sets the value of StopsAt.
 func (s *SandboxAgentAutostopStatus) SetStopsAt(val time.Time) {
 	s.StopsAt = val
+}
+
+// SetWake sets the value of Wake.
+func (s *SandboxAgentAutostopStatus) SetWake(val OptString) {
+	s.Wake = val
+}
+
+// SetWakeAt sets the value of WakeAt.
+func (s *SandboxAgentAutostopStatus) SetWakeAt(val OptDateTime) {
+	s.WakeAt = val
 }
 
 // Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
@@ -4596,6 +4740,98 @@ func (s *SandboxAgentStatusResponse) SetSources(val []SandboxAgentGitSourceStatu
 	s.Sources = val
 }
 
+// Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees
+// now.
+// Ref: #/components/schemas/SandboxAutostopConfirmRequest
+type SandboxAutostopConfirmRequest struct {
+	// Idle when the sandbox reported itself idle; sleep when it reported a pending sleep request.
+	Reason SandboxAutostopConfirmRequestReason `json:"reason"`
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxAutostopConfirmRequest) GetReason() SandboxAutostopConfirmRequestReason {
+	return s.Reason
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxAutostopConfirmRequest) SetReason(val SandboxAutostopConfirmRequestReason) {
+	s.Reason = val
+}
+
+// Idle when the sandbox reported itself idle; sleep when it reported a pending sleep request.
+type SandboxAutostopConfirmRequestReason string
+
+const (
+	SandboxAutostopConfirmRequestReasonIdle  SandboxAutostopConfirmRequestReason = "idle"
+	SandboxAutostopConfirmRequestReasonSleep SandboxAutostopConfirmRequestReason = "sleep"
+)
+
+// AllValues returns all SandboxAutostopConfirmRequestReason values.
+func (SandboxAutostopConfirmRequestReason) AllValues() []SandboxAutostopConfirmRequestReason {
+	return []SandboxAutostopConfirmRequestReason{
+		SandboxAutostopConfirmRequestReasonIdle,
+		SandboxAutostopConfirmRequestReasonSleep,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAutostopConfirmRequestReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAutostopConfirmRequestReasonIdle:
+		return []byte(s), nil
+	case SandboxAutostopConfirmRequestReasonSleep:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAutostopConfirmRequestReason) UnmarshalText(data []byte) error {
+	switch SandboxAutostopConfirmRequestReason(data) {
+	case SandboxAutostopConfirmRequestReasonIdle:
+		*s = SandboxAutostopConfirmRequestReasonIdle
+		return nil
+	case SandboxAutostopConfirmRequestReasonSleep:
+		*s = SandboxAutostopConfirmRequestReasonSleep
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The sandbox's confirmation of a power-down, carrying its earliest pending wake - one in the future,
+//
+//	or one already due that no boot has yet handed to the harness.
+//
+// Ref: #/components/schemas/SandboxAutostopConfirmation
+type SandboxAutostopConfirmation struct {
+	// The file name of that wake. Text the sandbox chose.
+	Wake OptString `json:"wake"`
+	// When the sandbox asks to be started again. Absent when it has no pending wake.
+	WakeAt OptDateTime `json:"wakeAt"`
+}
+
+// GetWake returns the value of Wake.
+func (s *SandboxAutostopConfirmation) GetWake() OptString {
+	return s.Wake
+}
+
+// GetWakeAt returns the value of WakeAt.
+func (s *SandboxAutostopConfirmation) GetWakeAt() OptDateTime {
+	return s.WakeAt
+}
+
+// SetWake sets the value of Wake.
+func (s *SandboxAutostopConfirmation) SetWake(val OptString) {
+	s.Wake = val
+}
+
+// SetWakeAt sets the value of WakeAt.
+func (s *SandboxAutostopConfirmation) SetWakeAt(val OptDateTime) {
+	s.WakeAt = val
+}
+
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
 	// Command argv executed in the sandbox.
@@ -5696,14 +5932,28 @@ func (s *SandboxRuntimeConfig) SetSources(val []SandboxRuntimeConfigSource) {
 // running agent.
 // Ref: #/components/schemas/SandboxRuntimeConfigAgent
 type SandboxRuntimeConfigAgent struct {
+	// True when the control plane powers the sandbox - it reports idle, sleep and wake rather than
+	// powering itself off (ADR 26-10-16-337 §8). Sent only to a sandbox whose status advertised
+	// controlPlanePower, because an older agent refuses the whole document over a field it does not know.
+	ControlPlanePower OptBool `json:"controlPlanePower"`
 	// The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect
 	// when applied.
 	IdleTimeout OptString `json:"idleTimeout"`
 }
 
+// GetControlPlanePower returns the value of ControlPlanePower.
+func (s *SandboxRuntimeConfigAgent) GetControlPlanePower() OptBool {
+	return s.ControlPlanePower
+}
+
 // GetIdleTimeout returns the value of IdleTimeout.
 func (s *SandboxRuntimeConfigAgent) GetIdleTimeout() OptString {
 	return s.IdleTimeout
+}
+
+// SetControlPlanePower sets the value of ControlPlanePower.
+func (s *SandboxRuntimeConfigAgent) SetControlPlanePower(val OptBool) {
+	s.ControlPlanePower = val
 }
 
 // SetIdleTimeout sets the value of IdleTimeout.

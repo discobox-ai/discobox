@@ -138,7 +138,11 @@ type Service struct {
 	// the mapper projects these as the "installing" phase to callers. Terminal is
 	// an exec plus this layer, so install belongs here rather than in execs.
 	installingMu sync.Mutex
-	installing   map[string]struct{}
+	// wake is the DISCOBOX_WAKE value the next launch of the primary carries:
+	// the due wakes boot handed over (HandWake), given to one launch only.
+	wakeMu     sync.Mutex
+	wake       string
+	installing map[string]struct{}
 
 	// launchMu guards launches, the in-flight terminal launches keyed by what
 	// is being launched. See singleFlightLaunch for why bringing a terminal up
@@ -448,6 +452,14 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	if err := s.installer.EnsureInstalled(ctx, harness, exec.Workdir, env); err != nil {
 		return execs.Exec{}, err
 	}
+	// Taken only now, and given back if the relaunch fails, so a failed
+	// launch does not cost the wakes boot handed over.
+	var wake string
+	if IsPrimary(exec) {
+		if wake = s.takeWake(); wake != "" {
+			env[WakeEnv] = wake
+		}
+	}
 	revived, err := s.execs.Relaunch(ctx, execs.RelaunchRequest{
 		ID:             id,
 		Env:            env,
@@ -455,9 +467,14 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		StartupCommand: reviveStartupCommand(harness, harnessID, s.harnessMode, s.bootPrompt),
 	})
 	if err != nil {
+		s.returnWake(wake)
 		return execs.Exec{}, err
 	}
-	return s.execs.Start(ctx, revived.ID)
+	started, err := s.execs.Start(ctx, revived.ID)
+	if err != nil {
+		s.returnWake(wake)
+	}
+	return started, err
 }
 
 // reviveStartupCommand is the command a revived terminal types into its fresh
@@ -492,6 +509,45 @@ func resumeStartupCommand(harness config.Harness) []string {
 		return append([]string{}, harness.RelaunchCommand...)
 	}
 	return append([]string{}, harness.Command...)
+}
+
+// WakeEnv is the variable a primary launched by a wake carries: the paths of
+// the wakes that fell due, oldest first, one per line (ADR 26-10-16-337 §7).
+// What the harness's wrapper does with them is its own business; an
+// environment variable, unlike an argument, is ignored by a program that does
+// not know it.
+const WakeEnv = "DISCOBOX_WAKE"
+
+// HandWake sets the wakes the next launch of the primary terminal carries in
+// WakeEnv. Boot calls it before it ensures the primary, which is the only
+// place a wake is handed over; whichever launches the primary first — boot or
+// an attach that beat it — takes them.
+func (s *Service) HandWake(paths []string) {
+	s.wakeMu.Lock()
+	s.wake = strings.Join(paths, "\n")
+	s.wakeMu.Unlock()
+}
+
+// takeWake returns the wakes the primary's launch carries, once.
+func (s *Service) takeWake() string {
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	wake := s.wake
+	s.wake = ""
+	return wake
+}
+
+// returnWake gives back the wakes a launch took and did not complete, for the
+// next launch of the primary to carry.
+func (s *Service) returnWake(wake string) {
+	if wake == "" {
+		return
+	}
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	if s.wake == "" {
+		s.wake = wake
+	}
 }
 
 // markInstalling records that an exec's harness setup is running.
@@ -770,6 +826,10 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 		}
 	}
 	request := primaryCreateRequest(harness, harnessID, prompt, launched)
+	wake := s.takeWake()
+	if wake != "" {
+		request.Env = map[string]string{WakeEnv: wake}
+	}
 	if s.harnessMode == config.HarnessModeConfig {
 		// The image-owned config command is exact: never append the normal prompt
 		// and never replace it with the normal relaunch command.
@@ -777,10 +837,12 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 	}
 	created, err := s.Create(ctx, request)
 	if err != nil {
+		s.returnWake(wake)
 		return execs.Exec{}, err
 	}
 	started, err := s.Start(ctx, created.ID)
 	if err != nil {
+		s.returnWake(wake)
 		return execs.Exec{}, err
 	}
 	if s.primaryState != nil {

@@ -572,6 +572,7 @@ layers:
           install -d /opt/discobox/bin
           go -C sandbox-agent build -ldflags="-s -w" -o /opt/discobox/bin/runc ./cmd/discobox-runc
           go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-ca-anchor ./cmd/discobox-ca-anchor
+          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-power ./cmd/discobox-power
           go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/docker ./cmd/discobox-docker
           go -C access build -ldflags="-s -w" -o /usr/local/bin/discobox-access ./cmd/discobox-access
           go -C cli build -ldflags="-s -w" -o /usr/local/bin/discobox ./cmd/discobox

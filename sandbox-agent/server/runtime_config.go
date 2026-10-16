@@ -30,7 +30,8 @@ func (h *handler) GetSandboxRuntimeConfig(_ context.Context, _ sandboxapi.GetSan
 // one the sandbox now holds, which is older than the delivery only when the
 // delivery was itself out of date. Neither route answers with the client key:
 // it is delivered, never read back. The idle timeout the held document carries
-// is the one the idle stop runs on from here (ADR 26-10-08-127 §5).
+// is the one the idle stop runs on from here (ADR 26-10-08-127 §5), and so is
+// whether the control plane holds the sandbox's power (ADR 26-10-16-337 §8).
 //
 // The apply runs detached from the request: it starts units and publishes
 // readiness, and a caller that goes away part way must not leave it half done.
@@ -61,6 +62,7 @@ func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.S
 		return nil, err
 	}
 	h.autostop.SetIdleTimeout(held.Agent.IdleTimeoutDuration())
+	h.autostop.SetControlPlanePower(held.Agent.ControlPlanePower)
 	// The sources converge on what the sandbox now holds, which is this
 	// document unless it was out of date; converging on the held one again is
 	// a no-op for every source already materialized.

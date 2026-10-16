@@ -36,11 +36,16 @@ var epoch = time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
 
 func newPolicy(t *testing.T, c *clock, list func() []execs.Exec) *Policy {
 	t.Helper()
+	dir := t.TempDir()
 	return New(Config{
-		Execs:       list,
-		LeaseDir:    filepath.Join(t.TempDir(), "keepalive"),
-		IdleTimeout: 30 * time.Minute,
-		Now:         c.Now,
+		Execs:              list,
+		LeaseDir:           filepath.Join(dir, "keepalive"),
+		SleepDir:           filepath.Join(dir, "sleep"),
+		WakeDir:            filepath.Join(dir, "wake"),
+		ControlPlaneMarker: filepath.Join(dir, "control-plane-power"),
+		HandoverMarker:     filepath.Join(dir, "wakes-handed-over"),
+		IdleTimeout:        30 * time.Minute,
+		Now:                c.Now,
 	})
 }
 
@@ -178,7 +183,7 @@ func TestActivityOutlivesTheExecThatReportedIt(t *testing.T) {
 func TestRemovingALeaseReleasesIt(t *testing.T) {
 	c := &clock{now: epoch}
 	p := newPolicy(t, c, nil)
-	if err := p.prepareLeaseDir(); err != nil {
+	if err := prepareSharedDir(p.leaseDir); err != nil {
 		t.Fatal(err)
 	}
 	lease := filepath.Join(p.leaseDir, "build")
@@ -203,7 +208,7 @@ func TestRemovingALeaseReleasesIt(t *testing.T) {
 func TestLeaseMtimeIsActivityIncludingTheFuture(t *testing.T) {
 	c := &clock{now: epoch}
 	p := newPolicy(t, c, nil)
-	if err := p.prepareLeaseDir(); err != nil {
+	if err := prepareSharedDir(p.leaseDir); err != nil {
 		t.Fatal(err)
 	}
 	build := filepath.Join(p.leaseDir, "build")
@@ -249,7 +254,7 @@ func TestPrepareLeaseDirIsStickyAndWorldWritable(t *testing.T) {
 		t.Skip("the sticky bit is POSIX-only; the lease dir lives in the Linux guest")
 	}
 	p := newPolicy(t, &clock{now: epoch}, nil)
-	if err := p.prepareLeaseDir(); err != nil {
+	if err := prepareSharedDir(p.leaseDir); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(p.leaseDir)
@@ -265,12 +270,17 @@ func TestPrepareLeaseDirIsStickyAndWorldWritable(t *testing.T) {
 func runPolicy(t *testing.T, c *clock, list func() []execs.Exec, powerOff func() error) (*Policy, <-chan struct{}, context.CancelFunc) {
 	t.Helper()
 	calls := make(chan struct{}, 16)
+	dir := t.TempDir()
 	p := New(Config{
-		Execs:       list,
-		LeaseDir:    filepath.Join(t.TempDir(), "keepalive"),
-		IdleTimeout: 30 * time.Minute,
-		Interval:    time.Millisecond,
-		Now:         c.Now,
+		Execs:              list,
+		LeaseDir:           filepath.Join(dir, "keepalive"),
+		SleepDir:           filepath.Join(dir, "sleep"),
+		WakeDir:            filepath.Join(dir, "wake"),
+		ControlPlaneMarker: filepath.Join(dir, "control-plane-power"),
+		HandoverMarker:     filepath.Join(dir, "wakes-handed-over"),
+		IdleTimeout:        30 * time.Minute,
+		Interval:           time.Millisecond,
+		Now:                c.Now,
 		PowerOff: func(context.Context) error {
 			calls <- struct{}{}
 			return powerOff()

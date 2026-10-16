@@ -1775,6 +1775,172 @@ func (s *Server) handleConfigureHarnessConfigRequest(args [2]string, argsEscaped
 	}
 }
 
+// handleConfirmSandboxAutostopRequest handles confirm-sandbox-autostop operation.
+//
+// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
+// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
+// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
+// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
+// carrying the pool-only autostop scope may call it.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
+func (s *Server) handleConfirmSandboxAutostopRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("confirm-sandbox-autostop"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ConfirmSandboxAutostopOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ConfirmSandboxAutostopOperation,
+			ID:   "confirm-sandbox-autostop",
+		}
+	)
+	params, err := decodeConfirmSandboxAutostopParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+	request, rawBody, close, err := s.decodeConfirmSandboxAutostopRequest(r)
+	if err != nil {
+		err = &ogenerrors.DecodeRequestError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeRequest", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+	defer func() {
+		if err := close(); err != nil {
+			recordError("CloseRequest", err)
+		}
+	}()
+
+	var response ConfirmSandboxAutostopRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ConfirmSandboxAutostopOperation,
+			OperationSummary: "Confirm a power-down the pool is about to carry out.",
+			OperationID:      "confirm-sandbox-autostop",
+			Body:             request,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "sandboxId",
+					In:   "path",
+				}: params.SandboxId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = *SandboxAutostopConfirmRequest
+			Params   = ConfirmSandboxAutostopParams
+			Response = ConfirmSandboxAutostopRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackConfirmSandboxAutostopParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ConfirmSandboxAutostop(ctx, request, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ConfirmSandboxAutostop(ctx, request, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeConfirmSandboxAutostopResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleCreateApprovalRuleRequest handles create-approval-rule operation.
 //
 // Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every

@@ -6162,6 +6162,40 @@ func (s *SandboxAgentStatusResponse) Validate() error {
 	return nil
 }
 
+func (s *SandboxAutostopConfirmRequest) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Reason.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "reason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SandboxAutostopConfirmRequestReason) Validate() error {
+	switch s {
+	case "idle":
+		return nil
+	case "sleep":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SandboxCPUConsumption) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

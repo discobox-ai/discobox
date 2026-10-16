@@ -240,6 +240,20 @@ user waits on every single start.
   no shim at all, and a shim's record of access ends with its exec, so a client
   that just finished a long command would count for nothing. Forgetting is
   silent until the sandbox powers off under someone (ADR 0108 §2).
+- **Report idle, sleep and wake only once the pool has handed the power
+  over** (`ControlPlanePower`). Before that the sandbox powers itself off, and
+  a status reporting `idle` to a server that does not act on it describes a
+  stop that is not coming; `controlPlanePower: true` is the one field always
+  reported, because it is how the pool knows it may hand the power over
+  (ADR 26-10-16-337 §8).
+- **A boot hands its due wakes over once, and a replaced container loses
+  them.** The pool replacing the container right after the wake's boot (an
+  upgrade, a changed project configuration) kills the harness that took them,
+  and the next boot finds nothing due (ADR 26-10-16-337, Consequences). A
+  change that makes replacement after boot more common makes this worse.
+- **A confirmed sleep consumes its requests before anything powers down.** A
+  frozen sandbox keeps `/run`, and an unconsumed request would put it straight
+  back to sleep when it resumes.
 - **Reading is never activity.** A status poll, a listing, a title re-sent
   unchanged: none of them may move the idle clock. The pool agent polls every
   sandbox's status every 15 seconds, so anything a read counts as activity

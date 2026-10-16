@@ -120,6 +120,16 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
 	ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (ConfigureHarnessConfigRes, error)
+	// ConfirmSandboxAutostop invokes confirm-sandbox-autostop operation.
+	//
+	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
+	// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
+	// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
+	// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
+	// carrying the pool-only autostop scope may call it.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
+	ConfirmSandboxAutostop(ctx context.Context, request *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error)
 	// CreateApprovalRule invokes create-approval-rule operation.
 	//
 	// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every
@@ -2424,6 +2434,125 @@ func (c *Client) sendConfigureHarnessConfig(ctx context.Context, params Configur
 
 	stage = "DecodeResponse"
 	result, err := decodeConfigureHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ConfirmSandboxAutostop invokes confirm-sandbox-autostop operation.
+//
+// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
+// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
+// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
+// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
+// carrying the pool-only autostop scope may call it.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
+func (c *Client) ConfirmSandboxAutostop(ctx context.Context, request *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error) {
+	res, err := c.sendConfirmSandboxAutostop(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendConfirmSandboxAutostop(ctx context.Context, request *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (res ConfirmSandboxAutostopRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("confirm-sandbox-autostop"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ConfirmSandboxAutostopOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/autostop/confirm"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeConfirmSandboxAutostopRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeConfirmSandboxAutostopResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

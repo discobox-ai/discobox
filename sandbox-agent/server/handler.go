@@ -652,7 +652,46 @@ func sandboxAgentAutostopStatus(in autostop.State) sandboxapi.SandboxAgentAutost
 	if !in.LeaseUntil.IsZero() {
 		out.LeaseUntil = sandboxapi.NewOptDateTime(in.LeaseUntil)
 	}
+	// Advertised always, so the pool knows it may hand the power over; the
+	// rest only once it has, because a server that does not act on them would
+	// otherwise be shown a sandbox reporting idle that never stops
+	// (ADR 26-10-16-337 §8).
+	out.ControlPlanePower = sandboxapi.NewOptBool(true)
+	if !in.ControlPlanePower {
+		return out
+	}
+	out.Idle = sandboxapi.NewOptBool(in.Idle)
+	if !in.Sleep.IsZero() {
+		out.Sleep = sandboxapi.NewOptSandboxAgentAutostopSleep(sandboxapi.SandboxAgentAutostopSleep{
+			RequestedAt: in.Sleep.At,
+			Request:     in.Sleep.Name,
+		})
+	}
+	if !in.NextWake.IsZero() {
+		out.WakeAt = sandboxapi.NewOptDateTime(in.NextWake.At)
+		out.Wake = sandboxapi.NewOptString(in.NextWake.Name)
+	}
 	return out
+}
+
+// ConfirmSandboxAutostop answers the pool, under its power lock, about a
+// power-down it is about to carry out (ADR 26-10-16-337 §5): 409 when the
+// sandbox no longer sees the reason it reported, and otherwise its earliest
+// pending wake.
+func (h *handler) ConfirmSandboxAutostop(_ context.Context, req *sandboxapi.SandboxAutostopConfirmRequest, _ sandboxapi.ConfirmSandboxAutostopParams) (*sandboxapi.SandboxAutostopConfirmation, error) {
+	wake, err := h.autostop.Confirm(autostop.Reason(req.Reason))
+	switch {
+	case errors.Is(err, autostop.ErrNotConfirmed):
+		return nil, statusError{status: http.StatusConflict, message: err.Error()}
+	case err != nil:
+		return nil, err
+	}
+	out := &sandboxapi.SandboxAutostopConfirmation{}
+	if !wake.IsZero() {
+		out.WakeAt = sandboxapi.NewOptDateTime(wake.At)
+		out.Wake = sandboxapi.NewOptString(wake.Name)
+	}
+	return out, nil
 }
 
 // sandboxAgentListeningPort carries one port onto the wire.

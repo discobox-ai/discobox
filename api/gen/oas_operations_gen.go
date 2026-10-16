@@ -17,6 +17,7 @@ const (
 	CompleteSandboxApplyOperation             OperationName = "CompleteSandboxApply"
 	CompleteSandboxSourcePushOperation        OperationName = "CompleteSandboxSourcePush"
 	ConfigureHarnessConfigOperation           OperationName = "ConfigureHarnessConfig"
+	ConfirmSandboxAutostopOperation           OperationName = "ConfirmSandboxAutostop"
 	CreateApprovalRuleOperation               OperationName = "CreateApprovalRule"
 	CreateHarnessConfigOperation              OperationName = "CreateHarnessConfig"
 	CreatePeerOperation                       OperationName = "CreatePeer"

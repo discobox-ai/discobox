@@ -8,6 +8,7 @@ type OperationName = string
 const (
 	AttachSandboxExecOperation              OperationName = "AttachSandboxExec"
 	AttachSandboxExecOnceOperation          OperationName = "AttachSandboxExecOnce"
+	ConfirmSandboxAutostopOperation         OperationName = "ConfirmSandboxAutostop"
 	CreateSandboxExecOperation              OperationName = "CreateSandboxExec"
 	DeleteSandboxExecOperation              OperationName = "DeleteSandboxExec"
 	GetSandboxAgentInventoryOperation       OperationName = "GetSandboxAgentInventory"
