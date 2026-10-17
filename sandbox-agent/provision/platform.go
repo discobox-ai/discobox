@@ -29,26 +29,31 @@ type Platform struct {
 var osReleasePaths = []string{"etc/os-release", "usr/lib/os-release"}
 
 // DetectPlatform is this box's platform, reading os-release under root
-// (normally "/").
+// (normally "/") on Linux, the only system that has one.
 func DetectPlatform(root string) (Platform, error) {
 	platform := Platform{OS: runtime.GOOS, Arch: runtime.GOARCH}
 	if platform.OS != "linux" {
 		return platform, nil
 	}
+	var err error
+	platform.ID, platform.IDLike, err = readOSRelease(root)
+	return platform, err
+}
+
+// readOSRelease is the os-release ID and ID_LIKE under root.
+func readOSRelease(root string) (string, []string, error) {
 	for _, rel := range osReleasePaths {
 		data, err := os.ReadFile(filepath.Join(root, rel))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return platform, err
+			return "", nil, err
 		}
 		fields := parseOSRelease(data)
-		platform.ID = fields["ID"]
-		platform.IDLike = strings.Fields(fields["ID_LIKE"])
-		return platform, nil
+		return fields["ID"], strings.Fields(fields["ID_LIKE"]), nil
 	}
-	return platform, errors.New("no os-release: the box's distribution cannot be told")
+	return "", nil, errors.New("no os-release: the box's distribution cannot be told")
 }
 
 // parseOSRelease reads os-release's shell-compatible assignments.

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -35,6 +36,9 @@ type box struct {
 func newBox(t *testing.T) *box {
 	t.Helper()
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Skip("the runner provisions Linux: its steps run sh scripts and set POSIX modes")
+	}
 	t.Cleanup(runuser.FixedDatabase())
 	b := &box{t: t, root: filepath.Join(dir, "root"), tree: filepath.Join(dir, "tree"), served: map[string]string{}}
 	b.runner = &Runner{
@@ -432,14 +436,14 @@ func TestDetectPlatformReadsOSRelease(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "usr/lib/os-release"), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, err := DetectPlatform(root)
+	id, like, err := readOSRelease(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.ID != "ubuntu" || !slices.Equal(p.IDLike, []string{"debian"}) {
-		t.Errorf("platform = %+v", p)
+	if id != "ubuntu" || !slices.Equal(like, []string{"debian"}) {
+		t.Errorf("os-release = %q %q", id, like)
 	}
-	if _, err := DetectPlatform(t.TempDir()); err == nil {
+	if _, _, err := readOSRelease(t.TempDir()); err == nil {
 		t.Error("a root with no os-release was read")
 	}
 }
