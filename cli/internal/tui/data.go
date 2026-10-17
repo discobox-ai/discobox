@@ -2525,6 +2525,13 @@ type DataSource interface {
 	// view of one.
 	EndExec(ctx context.Context, sandboxID, execID string) error
 
+	// PutImage writes an image pasted on this machine into the sandbox, under
+	// a fresh name built from name, and answers with the absolute path it is
+	// at there. It is how a pasted screenshot reaches an agent that cannot see
+	// this machine's clipboard or files (imagepaste.go): the path is what is
+	// pasted in its place.
+	PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error)
+
 	// ToolFilePath is where a tool file's copy lives on this machine, whether
 	// or not it exists yet. The picker shows it, so the file is findable and
 	// editable from outside this window too. Empty when there is no path to be

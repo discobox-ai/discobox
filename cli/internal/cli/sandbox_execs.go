@@ -905,6 +905,51 @@ func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, wo
 	return stdout, stderr, exitCode, nil
 }
 
+// sandboxCommandInput runs a command in the sandbox with input on its stdin,
+// and answers with what it wrote to stdout. It is sandboxCommandOutput for a
+// command that has to be given something too big for its argv.
+//
+// The stream is attached by hand rather than through attachSandboxExec, because
+// what calls it is the console: there is no terminal to lend this session and
+// no signal it may take, so the session gets no Console at all.
+func (a *App) sandboxCommandInput(ctx context.Context, projectID, sandboxID string, command []string, input io.Reader) (string, error) {
+	body := &apimodel.CreateSandboxExecRequest{}
+	body.SetCommand(append([]string{}, command...))
+	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body, false)
+	if err != nil {
+		return "", err
+	}
+	conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, exec.ID, false)
+	if err != nil {
+		return "", a.execAttachError(ctx, projectID, sandboxID, exec.ID, err)
+	}
+	defer conn.Close()
+	var stdout, stderr bytes.Buffer
+	session := client.New(client.Options{
+		Conn:   conn,
+		Stdin:  input,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Kind:   "discobox exec",
+		Action: "attach exec",
+		CopyInput: func(ctx context.Context, s *client.Session) error {
+			return copySandboxExecInput(ctx, s, true)
+		},
+	})
+	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, exec.ID); err != nil {
+		return "", err
+	}
+	if err := session.Run(ctx); err != nil {
+		// The discobox wrote it, and it goes to a status line on the user's
+		// terminal.
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return "", fmt.Errorf("%w: %s", err, terminalSafe(detail))
+		}
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
 // waitSandboxExecExitPollInterval paces polling an exec's status. The commands
 // that are captured rather than attached are short ones, so a short interval
 // keeps their callers responsive without hammering the API.

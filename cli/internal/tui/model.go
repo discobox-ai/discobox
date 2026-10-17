@@ -25,6 +25,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
 )
@@ -408,6 +409,11 @@ type Model struct {
 	// a test copy must not clobber the developer's actual clipboard.
 	copyOS func(string) error
 
+	// readClipboard reads the images on the OS clipboard, for an image paste
+	// (imagepaste.go). A field for the same reason copyOS is: a test paste
+	// must not read the developer's actual clipboard.
+	readClipboard func(context.Context) ([]clipimage.Image, error)
+
 	// openOS hands a URL to this machine's URL handler, for the header's
 	// links. A field for the same reason copyOS is: a test press must not
 	// open a browser on the developer's screen.
@@ -512,27 +518,28 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 
 	session := Session{DefaultProject: "default"}
 	m := &Model{
-		ctx:         ctx,
-		ds:          ds,
-		st:          st,
-		list:        newSandboxList(session),
-		harnesses:   newHarnessList(),
-		secrets:     newSecretList(),
-		skills:      newSkillsList(),
-		requestRows: newRequestList(),
-		rules:       newRuleList(),
-		prompt:      ta,
-		logo:        newLogo(color),
-		focus:       focusPrompt,
-		session:     session,
-		exec:        tea.Exec,
-		copyOS:      func(text string) error { return osClipboard(ctx, text) },
-		openOS:      func(url string) error { return openURL(context.WithoutCancel(ctx), url) },
-		chromeGrid:  &frameGrid{},
-		noise:       newNoise(),
-		now:         time.Now,
-		hoverX:      -1,
-		hoverY:      -1,
+		ctx:           ctx,
+		ds:            ds,
+		st:            st,
+		list:          newSandboxList(session),
+		harnesses:     newHarnessList(),
+		secrets:       newSecretList(),
+		skills:        newSkillsList(),
+		requestRows:   newRequestList(),
+		rules:         newRuleList(),
+		prompt:        ta,
+		logo:          newLogo(color),
+		focus:         focusPrompt,
+		session:       session,
+		exec:          tea.Exec,
+		copyOS:        func(text string) error { return osClipboard(ctx, text) },
+		readClipboard: clipimage.Clipboard,
+		openOS:        func(url string) error { return openURL(context.WithoutCancel(ctx), url) },
+		chromeGrid:    &frameGrid{},
+		noise:         newNoise(),
+		now:           time.Now,
+		hoverX:        -1,
+		hoverY:        -1,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
@@ -1199,6 +1206,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case runVerbMsg:
 		return m.runVerb(msg.verb, msg.ids)
+
+	case imageReadMsg:
+		return m.imagesRead(msg)
+
+	case imagePutMsg:
+		return m.imagesPut(msg)
 
 	case imageOfferListedMsg:
 		m.imageOfferListed(msg)
@@ -4461,6 +4474,10 @@ func (m *Model) helpText() string {
 		"",
 		"  Every other key goes to the focused pane, Ctrl-C included: there it",
 		"  belongs to the program, in a harness as much as in a shell.",
+		"",
+		"  Images paste from this machine. Ctrl-V or Alt-V in a harness",
+		"  terminal with an image on the clipboard, or a dragged image file,",
+		"  copies the image into the discobox and pastes its path there.",
 		"",
 		"  apply runs in the screen itself, and the terminals underneath stay",
 		"  connected and running. Every other command runs against the server",

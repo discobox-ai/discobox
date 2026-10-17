@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -24,6 +26,7 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	// test press on a header link must not open a browser on their screen.
 	m.copyOS = func(string) error { return nil }
 	m.openOS = func(string) error { return nil }
+	m.readClipboard = func(context.Context) ([]clipimage.Image, error) { return nil, nil }
 	// The runtime is what releases the terminal around an action; there is none
 	// here, so the action is simply run and its result handed back.
 	m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {

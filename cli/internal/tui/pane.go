@@ -165,6 +165,12 @@ type pane struct {
 	// tools.go.
 	tool string
 
+	// imageBusy is set while a paste into this pane that meant an image is
+	// being read and carried into the discobox, and imageHeld is the input
+	// that arrived meanwhile, delivered after it. See imagepaste.go.
+	imageBusy bool
+	imageHeld []tea.Msg
+
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
@@ -763,6 +769,15 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	}
+	return m.paneInput(p, msg)
+}
+
+// paneInput delivers a key or a paste to a live terminal pane, by way of the
+// image paste that may take it first (imagepaste.go).
+func (m *Model) paneInput(p *pane, msg tea.Msg) tea.Cmd {
+	if cmd, taken := m.imageInput(p, msg); taken {
+		return cmd
+	}
 	// Ctrl-L asks the sandbox for the screen at this pane's size before the key
 	// itself goes on to the program. Two panes onto one terminal — this window
 	// and another attach — leave it the size whichever of them resized last, so
@@ -775,6 +790,11 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	if key, ok := msg.(tea.KeyPressMsg); ok && keyName(key) == repaintKey && !p.term.PrefixPending() {
 		p.term.Repaint()
 	}
+	return m.toTerm(p, msg)
+}
+
+// toTerm hands msg to the pane's terminal.
+func (m *Model) toTerm(p *pane, msg tea.Msg) tea.Cmd {
 	term, cmd := p.term.Update(msg)
 	p.term = term
 	return fromPane(p.id, cmd)
