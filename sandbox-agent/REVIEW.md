@@ -12,6 +12,16 @@
   Check the boxd twin (`boxd.yaml`) too: it installs the same units
   (ADR 26-10-15-760).
 
+## Provisioning
+
+- **An env step's `path` goes ahead of `/usr/local/bin`.** Its script sorts
+  after the box's own profile scripts (`zz-discobox-…`), so every directory
+  it lists shadows the `docker` and `nix` shims there (ADR 0044 §8, ADR 0075
+  §4). A feature that moves a toolchain onto an env step must not list a
+  directory holding a `docker` or `nix` of its own; and since the script
+  reaches login shells only, a variable a non-login exec needs still belongs
+  in the manifest's env.
+
 ## Run identity
 
 Getting "which user does this run as" wrong is the most repeated mistake in this
@@ -48,6 +58,12 @@ missing — so it survives review easily. Rules, and why each exists:
   Code running on the pool host or in the control plane cannot resolve a name and
   must not guess a number for it; it leaves the value unset (`-1` for a chown)
   and lets the sandbox decide.
+- **Provisioning asks `runuser` too.** A step that makes a group
+  (`provision`) decides whether it is already there with
+  `runuser.LookupGroupID`, not by reading `/etc/group` itself: one reader
+  means its rules (a numeric entry is a gid) hold for every caller,
+  `runuser.FixedDatabase()` fakes the database for every test, and two parsers
+  of one file drift.
 - **A group the image never created is skipped, not fatal.** `runuser.Groups`
   drops it from the credential, the same way boot's `ensureAdditionalGroups`
   skips it, so the two cannot disagree about the same image. A harness Dockerfile

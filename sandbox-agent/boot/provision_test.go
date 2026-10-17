@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
@@ -86,18 +87,15 @@ func TestBootstrapIdentityRejectsGidAndGroupTogether(t *testing.T) {
 }
 
 // A sandbox is provisioned once: an agent restarted after a crash, or a machine
-// stopped and started, finds the marker naming its own sandbox and runs nothing
-// -- no account changes under the user's running processes, no re-seeding.
+// stopped and started, finds the records naming its own sandbox and runs
+// nothing -- no account changes under the user's running processes, no
+// re-seeding.
 func TestProvisionRunsOncePerSandbox(t *testing.T) {
 	dir := t.TempDir()
-	saved := provisionedPath
-	provisionedPath = filepath.Join(dir, "provisioned")
-	t.Cleanup(func() { provisionedPath = saved })
-	bootstrap := filepath.Join(dir, "sandbox.json")
-	if err := os.WriteFile(bootstrap, []byte(`{"sandboxId":"sbx_1"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := markProvisioned(provisionedPath, "sbx_1"); err != nil {
+	useRecords(t, dir)
+	bootstrap := writeBootstrap(t, dir, "sbx_1")
+	records := provision.Records{Dir: recordsDir}
+	if err := records.RecordSandbox("sbx_1"); err != nil {
 		t.Fatal(err)
 	}
 	b := &booter{
@@ -109,7 +107,50 @@ func TestProvisionRunsOncePerSandbox(t *testing.T) {
 	if err := b.provisionOnce(slog.Default(), bootstrap); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
-	if got := provisionedFor(provisionedPath); got != "sbx_1" {
+	if got := records.Sandbox(); got != "sbx_1" {
 		t.Fatalf("provisioned for %q, want sbx_1", got)
 	}
+}
+
+// A disk provisioned by an agent that kept the marker the records replaced is
+// not provisioned again: the marker is carried into the records and removed.
+func TestProvisionCarriesTheLegacyMarkerIntoTheRecords(t *testing.T) {
+	dir := t.TempDir()
+	useRecords(t, dir)
+	bootstrap := writeBootstrap(t, dir, "sbx_1")
+	if err := os.WriteFile(legacyProvisionedPath, []byte("sbx_1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := &booter{
+		run: func(name string, args ...string) error {
+			t.Fatalf("ran %s %v on a sandbox the legacy marker names", name, args)
+			return nil
+		},
+	}
+	if err := b.provisionOnce(slog.Default(), bootstrap); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if got := (provision.Records{Dir: recordsDir}).Sandbox(); got != "sbx_1" {
+		t.Fatalf("records name %q, want sbx_1", got)
+	}
+	if _, err := os.Stat(legacyProvisionedPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy marker still there: %v", err)
+	}
+}
+
+func useRecords(t *testing.T, dir string) {
+	t.Helper()
+	savedRecords, savedLegacy := recordsDir, legacyProvisionedPath
+	recordsDir = filepath.Join(dir, "provision")
+	legacyProvisionedPath = filepath.Join(dir, "provisioned")
+	t.Cleanup(func() { recordsDir, legacyProvisionedPath = savedRecords, savedLegacy })
+}
+
+func writeBootstrap(t *testing.T, dir, sandboxID string) string {
+	t.Helper()
+	path := filepath.Join(dir, "sandbox.json")
+	if err := os.WriteFile(path, []byte(`{"sandboxId":"`+sandboxID+`"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

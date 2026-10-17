@@ -537,6 +537,7 @@ layers:
       - copy: {src: judge, dst: /var/tmp/discobox-src/judge}
       - copy: {src: platform, dst: /var/tmp/discobox-src/platform}
       - copy: {src: programstatus, dst: /var/tmp/discobox-src/programstatus}
+      - copy: {src: provisionspec, dst: /var/tmp/discobox-src/provisionspec}
       - copy: {src: proxy, dst: /var/tmp/discobox-src/proxy}
       - copy: {src: randomname, dst: /var/tmp/discobox-src/randomname}
       - copy: {src: releasemanifest, dst: /var/tmp/discobox-src/releasemanifest}

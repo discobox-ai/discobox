@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
+	"github.com/discobox-ai/discobox/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/boot"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -27,6 +29,7 @@ import (
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
 	"github.com/discobox-ai/discobox/sandbox-agent/server"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
@@ -89,6 +92,12 @@ func run(name string, args []string) int {
 			return 1
 		}
 		return 0
+	}
+	// Applies the features of bundle trees to this box (ADR 26-10-16-423 §3).
+	if len(args) > 0 && args[0] == "provision" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runProvision(ctx, args[1:])
 	}
 	if len(args) > 0 && args[0] == "export" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -355,6 +364,41 @@ func runRenderProxyEnv(args []string) int {
 	}
 	if err := proxyenv.WriteFile(sandboxJSON, out); err != nil {
 		slog.Error("render proxy env", "error", err)
+		return 1
+	}
+	return 0
+}
+
+// runProvision applies every feature of the bundle trees it is given, each
+// holding features/<name>/provision.yaml, skipping the steps already recorded
+// as applied. See the provision package.
+func runProvision(ctx context.Context, args []string) int {
+	runner := provision.Runner{Root: "/"}
+	flags := flag.NewFlagSet("discobox-sandbox-agent provision", flag.ContinueOnError)
+	flags.StringVar(&runner.Records.Dir, "records", provision.RecordsDir, "directory of the box's step records")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: discobox-sandbox-agent provision [--records DIR] TREE...")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() == 0 {
+		flags.Usage()
+		return 2
+	}
+	features, err := provisionspec.Load(flags.Args()...)
+	if err != nil {
+		slog.Error("provision", "error", err)
+		return 1
+	}
+	runner.Platform, err = provision.DetectPlatform("/")
+	if err != nil {
+		slog.Error("provision", "error", err)
+		return 1
+	}
+	if _, err := runner.Apply(ctx, features); err != nil {
+		slog.Error("provision", "error", err)
 		return 1
 	}
 	return 0
