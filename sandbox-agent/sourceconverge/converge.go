@@ -398,29 +398,28 @@ var ErrUnknownSource = errors.New("no such source")
 // ErrNotMaterialized is a source the sandbox has not materialized yet.
 var ErrNotMaterialized = errors.New("source is not materialized")
 
-// ErrInvalidProjectLayer is a project layer file that is not a JSON object of
-// a sane size.
+// ErrInvalidProjectLayer is a settings file that does not decode, or is over
+// a sane size, or a repository holding settings.json beside a file it
+// replaces.
 var ErrInvalidProjectLayer = errors.New("invalid project layer")
 
-// projectLayerPath is the project layer inside a source's working tree, and
-// maxProjectLayer the most of it that is read.
-const (
-	projectLayerPath = ".discobox/project.json"
-	maxProjectLayer  = 1 << 20
-)
+// maxProjectLayer is the most of a settings file that is read.
+const maxProjectLayer = 1 << 20
 
 // ProjectLayer is a materialized source's project layer as the sandbox read it.
 type ProjectLayer struct {
 	Slug   string
 	Commit string
-	// Layer is the file's JSON object, nil when the source has none.
+	// Layer is the project layer the settings file sets, as JSON, nil when
+	// it sets none.
 	Layer json.RawMessage
 }
 
-// ProjectLayer reads slug's .discobox/project.json from its working tree, for
-// the pool to settle the sandbox's spec on (ADR 0055). It is read through an
-// os.Root at the checkout, so a symlink in the repository cannot point this
-// root-run read anywhere outside it.
+// ProjectLayer reads slug's settings from its working tree — its
+// .discobox/settings.json, or the project.json it replaces when it has none
+// (ADR 26-10-16-423 §11) — for the pool to settle the sandbox's spec on (ADR
+// 0055). It is read through an os.Root at the checkout, so a symlink in the
+// repository cannot point this root-run read anywhere outside it.
 func (c *Converger) ProjectLayer(ctx context.Context, slug string) (ProjectLayer, error) {
 	c.mu.Lock()
 	var source *sandboxconfig.RuntimeSource
@@ -450,26 +449,41 @@ func (c *Converger) ProjectLayer(ctx context.Context, slug string) (ProjectLayer
 		return ProjectLayer{}, err
 	}
 	defer root.Close()
-	file, err := root.Open(projectLayerPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return out, nil
-	}
+	settings, err := sandboxconfig.ReadSettings(func(path string) ([]byte, error) {
+		file, err := root.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, maxProjectLayer+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > maxProjectLayer {
+			return nil, fmt.Errorf("over %d bytes", maxProjectLayer)
+		}
+		return data, nil
+	}, sandboxconfig.LegacyProjectFile)
 	if err != nil {
 		return ProjectLayer{}, fmt.Errorf("%w: %w", ErrInvalidProjectLayer, err)
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxProjectLayer+1))
+	if warning := settings.LegacyWarning(); warning != "" {
+		c.cfg.Logger.Warn("legacy repository settings", "slug", slug, "warning", warning)
+	}
+	parsed, err := settings.Settings()
 	if err != nil {
 		return ProjectLayer{}, fmt.Errorf("%w: %w", ErrInvalidProjectLayer, err)
 	}
-	if len(data) > maxProjectLayer {
-		return ProjectLayer{}, fmt.Errorf("%w: %s is over %d bytes", ErrInvalidProjectLayer, projectLayerPath, maxProjectLayer)
+	// The project layer alone, and none when it sets nothing: a settings
+	// file holding only the client's keys is a repository with no project
+	// layer, as it was before it had the file.
+	layer, err := json.Marshal(parsed.ProjectLayer)
+	if err != nil {
+		return ProjectLayer{}, err
 	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(data, &object); err != nil || object == nil {
-		return ProjectLayer{}, fmt.Errorf("%w: %s is not a JSON object", ErrInvalidProjectLayer, projectLayerPath)
+	if string(layer) != "{}" {
+		out.Layer = layer
 	}
-	out.Layer = data
 	return out, nil
 }
 

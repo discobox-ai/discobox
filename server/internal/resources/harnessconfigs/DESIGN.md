@@ -353,8 +353,8 @@ rule (image and runtime entries merge by path, a matching path replaces):
   `sandboxconfig.Document.Image.Files` and the configured overlay to
   `Document.Runtime.Files` — **not** the same field — so `sandboxconfig.Effective`'s
   existing `mergeFiles(image, runtime, project)` does the actual overlay-by-path,
-  the same function that already merges a project's `.discobox/project.json`
-  `FilesAdd` in (`sandboxconfig/effective.go`). No merge logic lives in this
+  the same function that already merges a project's `.discobox/settings.json`
+  `filesAdd` in (`sandboxconfig/effective.go`). No merge logic lives in this
   package; it only owns getting the two inputs to the one function that merges
   them.
 

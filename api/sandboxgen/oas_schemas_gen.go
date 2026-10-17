@@ -6415,13 +6415,13 @@ func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
 	s.Services = val
 }
 
-// A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox
-// read it.
+// A materialized source's project layer, its settings file in its working tree (.discobox/settings.
+// json, or .discobox/project.json in a repository without one), as the sandbox read it.
 // Ref: #/components/schemas/SandboxSourceProjectLayer
 type SandboxSourceProjectLayer struct {
 	// The commit checked out in the source when it was read.
 	Commit string `json:"commit"`
-	// The file's JSON object. Absent when the source has no project layer.
+	// The project layer the settings file sets. Absent when the source sets none.
 	ProjectLayer OptSandboxSourceProjectLayerProjectLayer `json:"projectLayer"`
 	Slug         string                                   `json:"slug"`
 }
@@ -6456,7 +6456,7 @@ func (s *SandboxSourceProjectLayer) SetSlug(val string) {
 	s.Slug = val
 }
 
-// The file's JSON object. Absent when the source has no project layer.
+// The project layer the settings file sets. Absent when the source sets none.
 type SandboxSourceProjectLayerProjectLayer map[string]jx.Raw
 
 func (s *SandboxSourceProjectLayerProjectLayer) init() SandboxSourceProjectLayerProjectLayer {

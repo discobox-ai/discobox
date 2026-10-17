@@ -589,7 +589,7 @@ func (r *DockerSandboxRuntime) readSourceProjectLayer(ctx context.Context, dial 
 	}
 	var layer sandboxconfig.ProjectLayer
 	if err := json.Unmarshal(body.ProjectLayer, &layer); err != nil {
-		return nil, fmt.Errorf("parse source %q .discobox/project.json: %w", slug, err)
+		return nil, fmt.Errorf("parse source %q project layer: %w", slug, err)
 	}
 	return &layer, nil
 }
