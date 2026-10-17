@@ -39,10 +39,6 @@ Global review expectations:
   a page's oldest record skips the rest of that second; a lower bound truncated
   below a page's newest re-reads the page, and when one second holds more than
   a page the reader never gets past it (the audit lists' `until` and `since`).
-- A change to `base-image/Dockerfile`, `sandbox-agent/Dockerfile`, or a
-  harness Dockerfile makes the same change to the `boxd.yaml` beside it. No
-  build or check covers the twins, so nothing else will notice that they have
-  drifted.
 - A binary embedded from a gitignored `artifacts/` directory (the server's
   guest relay, the Linux CLI's clipboard helper) builds without it by design,
   so a fresh checkout compiles. That makes a release without it silent:

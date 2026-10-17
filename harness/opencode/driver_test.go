@@ -136,22 +136,20 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if !slices.Equal(ports, []int{1455, 1456}) {
 		t.Fatalf("config ports = %v, want [1455 1456]", ports)
 	}
-	for _, file := range []string{"Dockerfile", "boxd.yaml"} {
-		recipe, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, want := range []string{
-			"npm install -g @opencode/cli",
-			"launch.sh /usr/local/bin/" + harness.RunCommand,
-			"prompt.sh /usr/local/bin/discobox-prompt",
-			"configure.sh " + image.Harness.Config.Command[0],
-			"credentials.sh " + credentialsHelper,
-			"model.sh " + modelHelper,
-		} {
-			if !strings.Contains(string(recipe), want) {
-				t.Errorf("%s does not install %q", file, want)
-			}
+	recipe, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"npm install -g @opencode/cli",
+		"launch.sh /usr/local/bin/" + harness.RunCommand,
+		"prompt.sh /usr/local/bin/discobox-prompt",
+		"configure.sh " + image.Harness.Config.Command[0],
+		"credentials.sh " + credentialsHelper,
+		"model.sh " + modelHelper,
+	} {
+		if !strings.Contains(string(recipe), want) {
+			t.Errorf("Dockerfile does not install %q", want)
 		}
 	}
 	conf, err := os.ReadFile("agent.conf")
@@ -1451,27 +1449,25 @@ func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
 		t.Fatalf("managed config plugins = %v, want it to name %s", config.Plugins, want)
 	}
 	// The path the config names and the path the image installs are the same
-	// directory, and only the Dockerfile and boxd.yaml say so.
-	for _, file := range []string{"Dockerfile", "boxd.yaml"} {
-		recipe, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(recipe), "hook-plugin/server.js "+want+"/server.js") {
-			t.Errorf("%s does not install the plugin's server module under %s", file, want)
-		}
-		if !strings.Contains(string(recipe), "hook-plugin/package.json "+want+"/package.json") {
-			t.Errorf("%s does not install the plugin's package.json under %s", file, want)
-		}
-		if !strings.Contains(string(recipe), "managed-config.json /etc/opencode/opencode.json") {
-			t.Errorf("%s does not install the managed config at /etc/opencode/opencode.json", file)
-		}
-		// Made searchable before anything is copied in: a COPY --chmod into a
-		// missing directory creates it with the file's 0644, and only root can
-		// then read the plugin (measured: opencode loaded no provider at all).
-		if !regexp.MustCompile(`install -d -m 0755 [^\n]*` + regexp.QuoteMeta(want) + `\b`).Match(recipe) {
-			t.Errorf("%s does not create %s 0755 before installing into it", file, want)
-		}
+	// directory, and only the Dockerfile says so.
+	recipe, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(recipe), "hook-plugin/server.js "+want+"/server.js") {
+		t.Errorf("Dockerfile does not install the plugin's server module under %s", want)
+	}
+	if !strings.Contains(string(recipe), "hook-plugin/package.json "+want+"/package.json") {
+		t.Errorf("Dockerfile does not install the plugin's package.json under %s", want)
+	}
+	if !strings.Contains(string(recipe), "managed-config.json /etc/opencode/opencode.json") {
+		t.Error("Dockerfile does not install the managed config at /etc/opencode/opencode.json")
+	}
+	// Made searchable before anything is copied in: a COPY --chmod into a
+	// missing directory creates it with the file's 0644, and only root can
+	// then read the plugin (measured: opencode loaded no provider at all).
+	if !regexp.MustCompile(`install -d -m 0755 [^\n]*` + regexp.QuoteMeta(want) + `\b`).Match(recipe) {
+		t.Errorf("Dockerfile does not create %s 0755 before installing into it", want)
 	}
 }
 
