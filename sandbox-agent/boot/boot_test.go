@@ -127,3 +127,42 @@ func resolveEnvIdentity() (identity, error) {
 	}
 	return resolveIdentity(manifest)
 }
+
+// A manifest naming someone the uid's account is not takes no home from that
+// account: it is in the way and ensureUser deletes it (ADR 26-10-16-423 §14),
+// so the sandbox's account is made where a fresh one goes.
+func TestResolveIdentityTakesNoHomeFromAnAccountInTheWay(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
+	t.Cleanup(runuser.FixedDatabase())
+	t.Setenv("DISCOBOX_USER_UID", "1000")
+	t.Setenv("DISCOBOX_USER_GID", "1700")
+	t.Setenv("DISCOBOX_USER_GROUP", "")
+	t.Setenv("DISCOBOX_USER_NAME", "alice")
+	t.Setenv("DISCOBOX_USER_HOME", "")
+	id, err := resolveEnvIdentity()
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if id.name != "alice" || id.home != "/home/alice" {
+		t.Fatalf("identity = %#v, want alice at /home/alice, not dev's home", id)
+	}
+}
+
+// A manifest naming only the uid is asking for the account already there, and
+// takes its name and home.
+func TestResolveIdentityTakesNameAndHomeFromTheUidsAccount(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
+	t.Cleanup(runuser.FixedDatabase())
+	t.Setenv("DISCOBOX_USER_UID", "1000")
+	t.Setenv("DISCOBOX_USER_GID", "1700")
+	t.Setenv("DISCOBOX_USER_GROUP", "")
+	t.Setenv("DISCOBOX_USER_NAME", "")
+	t.Setenv("DISCOBOX_USER_HOME", "")
+	id, err := resolveEnvIdentity()
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if id.name != "dev" || id.home != "/home/dev" {
+		t.Fatalf("identity = %#v, want dev at /home/dev", id)
+	}
+}
