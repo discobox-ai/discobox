@@ -19,12 +19,14 @@ COPY api ./api
 COPY auditid ./auditid
 COPY declared ./declared
 COPY execstream ./execstream
+COPY fsdurable ./fsdurable
 COPY gitbackend ./gitbackend
 COPY harness ./harness
 COPY hostscope ./hostscope
 COPY judge ./judge
 COPY platform ./platform
 COPY programstatus ./programstatus
+COPY provisionspec ./provisionspec
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

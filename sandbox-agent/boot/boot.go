@@ -1,14 +1,16 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
@@ -22,8 +24,9 @@ import (
 // are read.
 //
 // It runs on every boot, unlike Provision: a container's mounts do not survive
-// a restart, nor its account a rebuild, while the record Provision keeps is on
-// /var/lib/discobox, a data volume that survives both.
+// a restart, nor its account a rebuild. Provision runs only on a machine whose
+// disk persists across its stops, and keeps its record there; Wire has no such
+// disk under it.
 //
 // An error fails the unit, and the unit's failure ends the container: a sandbox
 // whose wiring failed would write its state into the image layer.
@@ -81,9 +84,9 @@ func Provision(logger *slog.Logger, path string) error {
 // It runs once per sandbox, not on every start. The agent's start is not a
 // boot: a restart after a crash finds the sandbox user's processes running,
 // and re-running account changes and re-seeding under them is a second boot
-// they did not ask for. provisionedPath records whose sandbox this disk was
-// provisioned for, on the disk itself, so a stopped and restarted machine is
-// not provisioned again either.
+// they did not ask for. The box's provisioning records (provision.Records)
+// keep whose sandbox this disk was provisioned for, on the disk itself, so a
+// stopped and restarted machine is not provisioned again either.
 func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 	bootstrap, err := loadEffectiveConfig(path)
 	if err != nil {
@@ -92,8 +95,17 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 	if bootstrap.SandboxID == "" {
 		return fmt.Errorf("bootstrap %s names no sandbox", path)
 	}
-	if provisionedFor(provisionedPath) == bootstrap.SandboxID {
+	records := provision.Records{Dir: recordsDir}
+	if records.Sandbox() == bootstrap.SandboxID {
 		return nil
+	}
+	// A disk provisioned before the records were kept says so with the
+	// marker that preceded them; it is carried into the records once.
+	if provisionedFor(legacyProvisionedPath) == bootstrap.SandboxID {
+		if err := records.RecordSandbox(bootstrap.SandboxID); err != nil {
+			return err
+		}
+		return removeLegacyMarker(legacyProvisionedPath)
 	}
 	id, err := bootstrapIdentity(bootstrap)
 	if err != nil {
@@ -122,7 +134,10 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 			}
 		}
 	}
-	return markProvisioned(provisionedPath, bootstrap.SandboxID)
+	if err := records.RecordSandbox(bootstrap.SandboxID); err != nil {
+		return err
+	}
+	return removeLegacyMarker(legacyProvisionedPath)
 }
 
 // bootstrapIdentity is who the sandbox runs as, from the bootstrap's own user:
@@ -140,12 +155,18 @@ func bootstrapIdentity(bootstrap sandboxconfig.Config) (identity, error) {
 	return id, nil
 }
 
-// provisionedPath records the sandbox this disk was provisioned for. A
-// variable so a test does not write the machine's own.
-var provisionedPath = "/var/lib/discobox/provisioned"
+// recordsDir holds the box's provisioning records, the sandbox phase's among
+// them (ADR 26-10-16-423 §3). A variable so a test does not write the
+// machine's own.
+var recordsDir = provision.RecordsDir
 
-// provisionedFor is the sandbox ID provisionedPath records, or "" when it
-// records none.
+// legacyProvisionedPath is the marker that named the sandbox a disk was
+// provisioned for before the records did. A variable so a test does not read
+// the machine's own.
+var legacyProvisionedPath = "/var/lib/discobox/provisioned"
+
+// provisionedFor is the sandbox ID the legacy marker at path records, or ""
+// when it records none.
 func provisionedFor(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -154,11 +175,11 @@ func provisionedFor(path string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func markProvisioned(path, sandboxID string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+func removeLegacyMarker(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return os.WriteFile(path, []byte(sandboxID+"\n"), 0o600)
+	return nil
 }
 
 // writeUnitDropins binds the image's per-user units -- the session bus and the
