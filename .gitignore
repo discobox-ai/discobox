@@ -46,6 +46,11 @@ devenv.local.yaml
 # committed so `go build` works without it.
 server/providers/wslc/relay/artifacts/*.gz
 
+# Cross-compiled Windows clipboard helper embedded in the Linux CLI. Built by
+# `task build:clipwatch` (which `task build:cli` runs); the directory's README
+# is committed so `go build` works without it.
+cli/internal/clipwatch/artifacts/*.gz
+
 # Editor swap and backup files. A vim session on any tracked file leaves one
 # beside it, and `git add -A` will otherwise commit it.
 *.swp

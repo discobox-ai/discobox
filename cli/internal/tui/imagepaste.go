@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
+	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
 )
 
 // An agent in a discobox asked to take a screenshot has nowhere to take it
@@ -24,6 +25,9 @@ import (
 // Three things mean an image:
 //
 //   - Ctrl-V, or Alt-V, on a harness terminal, with an image on the clipboard.
+//     Or with text that reached the clipboard a moment before, which is a
+//     dictation tool pasting what it heard: that is pasted as the text it is
+//     (readKey).
 //     Those are the keys the agents bind to "paste an image": Ctrl-V where the
 //     terminal's own paste is Cmd-V or Ctrl-Shift-V, Alt-V on Windows, where
 //     the terminal takes Ctrl-V. With no image there, the key goes through as
@@ -54,6 +58,11 @@ type imageReadMsg struct {
 	pane     int
 	original tea.Msg
 	images   []clipimage.Image
+	// text is a dictation tool's text, pasted in place of its Ctrl-V.
+	text string
+	// watchErr is why the clipboard watch is not running where it should be,
+	// for the console to say once (Model.clipWatchReported).
+	watchErr error
 	err      error
 }
 
@@ -127,9 +136,48 @@ func (m *Model) imageInput(p *pane, msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// readKey holds the pane's input and reads the clipboard for an image key.
+// dictationWindow is how recently text must have reached the clipboard for a
+// Ctrl-V to be taken as a dictation tool pasting it. The tools press the key
+// tens of milliseconds after writing; a second is far past that, and short
+// enough that a Ctrl-V pressed by hand is not suddenly a paste of whatever
+// was last copied.
+const dictationWindow = time.Second
+
+// dictationWait is how long a Ctrl-V waits for the clipboard watch to report a
+// change it has not reported yet: the key can overtake the notice of the write
+// that came before it.
+const dictationWait = 150 * time.Millisecond
+
+// readKey holds the pane's input and works out what an image key meant.
+//
+// Where the Windows clipboard is watched (clipwatch), the watch answers first,
+// from what it saw when the clipboard last changed. Text that arrived just
+// before the key is a dictation tool's, pasted by pressing Ctrl-V, and it is
+// pasted as text: the tool puts the old clipboard back within half a second,
+// so a read started now would find that instead. An image goes on to be read
+// and carried in. Anything else is a key pressed by hand, which goes through
+// at once — without the PowerShell read that would find nothing.
 func (m *Model) readKey(p *pane, original tea.KeyPressMsg) tea.Cmd {
-	return m.readImages(p, original, m.readClipboard)
+	p.imageBusy = true
+	ctx, id, watch, readClipboard, pressed := m.ctx, p.id, m.clipWatch, m.readClipboard, m.now()
+	return func() tea.Msg {
+		if watch.Live() {
+			snap, fresh := watch.Await(ctx, pressed.Add(-dictationWindow), dictationWait)
+			switch {
+			case snap.Image:
+			case fresh && snap.Text != "":
+				return imageReadMsg{pane: id, original: original, text: snap.Text}
+			default:
+				return imageReadMsg{pane: id, original: original}
+			}
+		}
+		var watchErr error
+		if err := watch.Err(); !errors.Is(err, clipwatch.ErrUnsupported) {
+			watchErr = err
+		}
+		images, err := readClipboard(ctx)
+		return imageReadMsg{pane: id, original: original, images: images, watchErr: watchErr, err: err}
+	}
 }
 
 // readImages holds the pane's input and asks read what original meant.
@@ -148,6 +196,14 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 	p := m.paneByID(msg.pane)
 	if p == nil {
 		return nil
+	}
+	if msg.watchErr != nil && !m.clipWatchReported {
+		m.clipWatchReported = true
+		cmd := m.imagesRead(imageReadMsg{pane: msg.pane, original: msg.original, images: msg.images, text: msg.text, err: msg.err})
+		return tea.Batch(cmd, m.report(true, "dictation through Ctrl-V is off: %v", msg.watchErr))
+	}
+	if msg.text != "" {
+		return m.releaseImageInput(p, tea.PasteMsg{Content: msg.text})
 	}
 	if msg.err != nil || len(msg.images) == 0 {
 		cmd := m.releaseImageInput(p, msg.original)

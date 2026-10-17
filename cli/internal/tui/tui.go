@@ -5,6 +5,8 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
 )
 
 // Run starts the launcher against the given data source and blocks until the
@@ -19,6 +21,8 @@ import (
 // it is what is left to say which discobox it was.
 func Run(ctx context.Context, ds DataSource, options ...Option) (*Sandbox, error) {
 	model := New(ctx, ds, options...)
+	// For as long as the window is open: see Model.clipWatch.
+	model.clipWatch = clipwatch.Start(ctx)
 	program := tea.NewProgram(model, tea.WithContext(ctx))
 	_, err := program.Run()
 	// The status the window spoke for its box is the window's to take back:
