@@ -750,7 +750,7 @@ func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID
 		return false, nil
 	}
 	switch sandbox.Runtime.RuntimeState.Or("") {
-	case sandboxRuntimeStateStopped, sandboxRuntimeStateStopping:
+	case sandboxRuntimeStateStopped, sandboxRuntimeStateStopping, sandboxRuntimeStateSuspended:
 		return true, fmt.Errorf("discobox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.RuntimeState.Or(""))
 	}
 	if sandbox.Runtime.State == sandboxStateFailed {
@@ -791,7 +791,10 @@ const (
 	// (ADR 0034).
 	sandboxRuntimeStateStopped  = "stopped"
 	sandboxRuntimeStateStopping = "stopping"
-	sandboxStateFailed          = "failed"
+	// A suspended discobox is detached from as a stopped one is: a reconnect
+	// would thaw what was just frozen (ADR 26-10-16-420 §5).
+	sandboxRuntimeStateSuspended = "suspended"
+	sandboxStateFailed           = "failed"
 )
 
 // attachPingInterval paces websocket keepalive pings on an exec attach. The

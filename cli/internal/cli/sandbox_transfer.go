@@ -273,7 +273,7 @@ func waitForSandboxStopped(ctx context.Context, client *apiclientgen.Client, pro
 // container writing to the tree, which is the only thing that matters here.
 func sandboxIsRunning(sandbox *apimodel.Sandbox) bool {
 	switch sandbox.Runtime.RuntimeState.Or("") {
-	case "running", "starting", "stopping":
+	case "running", "starting", "stopping", "suspended":
 		return true
 	}
 	return false

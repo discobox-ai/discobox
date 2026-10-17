@@ -32,6 +32,10 @@ const (
 	StateStarting  State = "starting"
 	StateRepairing State = "repairing"
 	StateStopped   State = "stopped"
+	// StateSuspended is a box frozen whole, its memory kept (ADR 26-10-16-420):
+	// up as far as acting on it goes — stop takes it — and off as far as
+	// anything inside it answering, which a start or a use brings back.
+	StateSuspended State = "suspended"
 	StateArchived  State = "archived"
 	StateError     State = "error"
 )

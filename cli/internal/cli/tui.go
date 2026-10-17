@@ -977,7 +977,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	return row
 }
 
-// toTUIState narrows the server's lifecycle states to the six the launcher
+// toTUIState narrows the server's lifecycle states to the seven the launcher
 // draws. The transitional ones read as the state they are heading for, because
 // that is the one that answers "can I act on this": a stopping sandbox takes
 // the same actions a running one does until it is off. Repairing is the
@@ -993,6 +993,8 @@ func toTUIState(state string) tui.State {
 		return tui.StateRunning
 	case "repairing":
 		return tui.StateRepairing
+	case "suspended":
+		return tui.StateSuspended
 	case "archived", "archiving":
 		return tui.StateArchived
 	case "error":

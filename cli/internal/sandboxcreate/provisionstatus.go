@@ -88,8 +88,11 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 		// one refines this with PoolProvisionStatus.
 		return StepWaitingForPool
 	}
-	if runtime.RuntimeState.Or("") == apiclientgen.SandboxRuntimeRuntimeStateStarting {
+	switch runtime.RuntimeState.Or("") {
+	case apiclientgen.SandboxRuntimeRuntimeStateStarting:
 		return "starting the discobox"
+	case apiclientgen.SandboxRuntimeRuntimeStateSuspended:
+		return "resuming the discobox"
 	}
 	return "preparing the discobox"
 }
