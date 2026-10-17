@@ -453,11 +453,12 @@ type Invoker interface {
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
 	// GetSandboxSourceProjectLayer invokes get-sandbox-source-project-layer operation.
 	//
-	// Reads a materialized source's project layer (.discobox/project.json in its working tree), which
-	// the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055,
-	// ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox
-	// has not materialized it, 422 when the file is not a JSON object. Only a token carrying the
-	// pool-only runtime-config scope may read it.
+	// Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .
+	// discobox/project.json in a repository without one), which the pool reads to settle the sandbox's
+	// final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11).
+	// 404 when no applied runtime-config document names the source, 409 while the sandbox has not
+	// materialized it, 422 when the file does not decode or the repository holds settings.json beside a
+	// file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
 	GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (GetSandboxSourceProjectLayerRes, error)
@@ -8194,11 +8195,12 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 
 // GetSandboxSourceProjectLayer invokes get-sandbox-source-project-layer operation.
 //
-// Reads a materialized source's project layer (.discobox/project.json in its working tree), which
-// the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055,
-// ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox
-// has not materialized it, 422 when the file is not a JSON object. Only a token carrying the
-// pool-only runtime-config scope may read it.
+// Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .
+// discobox/project.json in a repository without one), which the pool reads to settle the sandbox's
+// final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11).
+// 404 when no applied runtime-config document names the source, 409 while the sandbox has not
+// materialized it, 422 when the file does not decode or the repository holds settings.json beside a
+// file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
 func (c *Client) GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (GetSandboxSourceProjectLayerRes, error) {

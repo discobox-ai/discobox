@@ -1473,14 +1473,14 @@ components:
             type: object
         SandboxSourceProjectLayer:
             additionalProperties: false
-            description: A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox read it.
+            description: A materialized source's project layer, its settings file in its working tree (.discobox/settings.json, or .discobox/project.json in a repository without one), as the sandbox read it.
             properties:
                 commit:
                     description: The commit checked out in the source when it was read.
                     type: string
                 projectLayer:
                     additionalProperties: true
-                    description: The file's JSON object. Absent when the source has no project layer.
+                    description: The project layer the settings file sets. Absent when the source sets none.
                     type: object
                 slug:
                     type: string
@@ -2999,7 +2999,7 @@ paths:
                 - Sandbox Runtime Config
     /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer:
         get:
-            description: Reads a materialized source's project layer (.discobox/project.json in its working tree), which the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055, ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox has not materialized it, 422 when the file is not a JSON object. Only a token carrying the pool-only runtime-config scope may read it.
+            description: Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .discobox/project.json in a repository without one), which the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11). 404 when no applied runtime-config document names the source, 409 while the sandbox has not materialized it, 422 when the file does not decode or the repository holds settings.json beside a file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
             operationId: get-sandbox-source-project-layer
             parameters:
                 - description: Project that owns the sandbox.

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -639,6 +640,48 @@ func TestProjectLayer(t *testing.T) {
 	if _, ok := got["runCommand"]; !ok {
 		t.Fatalf("layer = %s", layer.Layer)
 	}
+
+	// settings.json replaces project.json (ADR 26-10-16-423 §11): beside it,
+	// the repository is refused rather than merged, and alone it is read,
+	// keys the client reads and all.
+	writeFile(t, filepath.Join(target, ".discobox", "settings.json"), `{"sources":{"x":"https://github.com/acme/x"},"features":{"brew":false},"runCommand":["make","run"]}`)
+	if layer, err := h.c.ProjectLayer(context.Background(), "primary"); !errors.Is(err, ErrInvalidProjectLayer) || !errors.Is(err, sandboxconfig.ErrSettingsConflict) {
+		t.Fatalf("settings.json beside project.json read %s, %v; want a conflict", layer.Layer, err)
+	}
+	if err := os.Remove(filepath.Join(target, ".discobox", "project.json")); err != nil {
+		t.Fatal(err)
+	}
+	layer, err = h.c.ProjectLayer(context.Background(), "primary")
+	var settings sandboxconfig.ProjectLayer
+	if err != nil || json.Unmarshal(layer.Layer, &settings) != nil || !slices.Equal(settings.RunCommand, []string{"make", "run"}) {
+		t.Fatalf("settings.json alone = %s, %v; want its project layer", layer.Layer, err)
+	}
+	var keys map[string]any
+	if json.Unmarshal(layer.Layer, &keys) != nil || len(keys) != 1 {
+		t.Fatalf("settings.json alone answered %s, want the project layer alone", layer.Layer)
+	}
+	// The client's keys alone are no project layer, so they never make the
+	// pool rebuild a container.
+	writeFile(t, filepath.Join(target, ".discobox", "settings.json"), `{"$schema":"s","sources":{"x":"https://github.com/acme/x"}}`)
+	if layer, err := h.c.ProjectLayer(context.Background(), "primary"); err != nil || layer.Layer != nil {
+		t.Fatalf("a sources-only settings.json = %s, %v; want no project layer", layer.Layer, err)
+	}
+	// A key a newer Discobox added is read past: an older agent must not
+	// refuse the file and leave the box never ready.
+	writeFile(t, filepath.Join(target, ".discobox", "settings.json"), `{"runCommand":["make"],"someday":{}}`)
+	if layer, err := h.c.ProjectLayer(context.Background(), "primary"); err != nil || string(layer.Layer) != `{"runCommand":["make"]}` {
+		t.Fatalf("a key the agent does not know: %s, %v; want the project layer read past it", layer.Layer, err)
+	}
+	// Nor does a file holding only such keys stop it: refusing a sources.json
+	// moved into place unwrapped is the client's, which reads sources.
+	writeFile(t, filepath.Join(target, ".discobox", "settings.json"), `{"skills":["x"]}`)
+	if layer, err := h.c.ProjectLayer(context.Background(), "primary"); err != nil || layer.Layer != nil {
+		t.Fatalf("a file of keys the agent does not know: %s, %v; want no project layer", layer.Layer, err)
+	}
+	if err := os.Remove(filepath.Join(target, ".discobox", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(target, ".discobox", "project.json"), `{"runCommand":["make","dev"]}`)
 
 	// The read stays inside the checkout whatever the repository links to.
 	outside := filepath.Join(t.TempDir(), "secret.json")
