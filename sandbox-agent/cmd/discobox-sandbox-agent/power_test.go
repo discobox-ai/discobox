@@ -11,9 +11,9 @@ import (
 
 var now = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 
-func testDirs(t *testing.T) dirs {
+func testDirs(t *testing.T) powerDirs {
 	root := t.TempDir()
-	return dirs{lease: filepath.Join(root, "keepalive"), sleep: filepath.Join(root, "sleep"), wake: filepath.Join(root, "wake"), controlPlane: filepath.Join(root, "control-plane-power")}
+	return powerDirs{lease: filepath.Join(root, "keepalive"), sleep: filepath.Join(root, "sleep"), wake: filepath.Join(root, "wake"), controlPlane: filepath.Join(root, "control-plane-power")}
 }
 
 func mtime(t *testing.T, path string) time.Time {
@@ -27,7 +27,7 @@ func mtime(t *testing.T, path string) time.Time {
 
 func TestSleepWithAWakeWritesBothDatedAndNothingElse(t *testing.T) {
 	d := testDirs(t)
-	if err := run(d, []string{"sleep", "--wake-in", "45m", "--note", "check CI"}, now, io.Discard); err != nil {
+	if err := power(d, []string{"sleep", "--wake-in", "45m", "--note", "check CI"}, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got := mtime(t, filepath.Join(d.wake, "sleep")); !got.Equal(now.Add(45 * time.Minute)) {
@@ -50,13 +50,13 @@ func TestSleepWithAWakeWritesBothDatedAndNothingElse(t *testing.T) {
 
 func TestWakeAtAClockTimeIsTheNextOneToCome(t *testing.T) {
 	d := testDirs(t)
-	if err := run(d, []string{"wake", "ci", "--at", "09:30"}, now, io.Discard); err != nil {
+	if err := power(d, []string{"wake", "ci", "--at", "09:30"}, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := mtime(t, filepath.Join(d.wake, "ci")), time.Date(2026, 10, 17, 9, 30, 0, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("wake at %v, want tomorrow's %v", got, want)
 	}
-	if err := run(d, []string{"wake", "rm", "ci"}, now, io.Discard); err != nil {
+	if err := power(d, []string{"wake", "rm", "ci"}, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(d.wake, "ci")); !os.IsNotExist(err) {
@@ -66,7 +66,7 @@ func TestWakeAtAClockTimeIsTheNextOneToCome(t *testing.T) {
 
 func TestKeepaliveForADuration(t *testing.T) {
 	d := testDirs(t)
-	if err := run(d, []string{"keepalive", "build", "--for", "2h"}, now, io.Discard); err != nil {
+	if err := power(d, []string{"keepalive", "build", "--for", "2h"}, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got := mtime(t, filepath.Join(d.lease, "build")); !got.Equal(now.Add(2 * time.Hour)) {
@@ -77,11 +77,11 @@ func TestKeepaliveForADuration(t *testing.T) {
 func TestRefusesNamesNothingWouldRead(t *testing.T) {
 	d := testDirs(t)
 	for _, name := range []string{".hidden", "../escape", "a/b", ""} {
-		if err := run(d, []string{"wake", name, "--in", "1h"}, now, io.Discard); err == nil {
+		if err := power(d, []string{"wake", name, "--in", "1h"}, now, io.Discard); err == nil {
 			t.Errorf("wake %q accepted", name)
 		}
 	}
-	if err := run(d, []string{"wake", "x", "--in", "1h", "--at", "10:00"}, now, io.Discard); err == nil {
+	if err := power(d, []string{"wake", "x", "--in", "1h", "--at", "10:00"}, now, io.Discard); err == nil {
 		t.Error("accepted both --in and --at")
 	}
 }
@@ -91,7 +91,7 @@ func TestRefusesNamesNothingWouldRead(t *testing.T) {
 func TestAWakeWarnsWhenNothingWillActOnIt(t *testing.T) {
 	d := testDirs(t)
 	var out strings.Builder
-	if err := run(d, []string{"wake", "ci", "--in", "1h"}, now, &out); err != nil {
+	if err := power(d, []string{"wake", "ci", "--in", "1h"}, now, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "warning:") {
@@ -101,7 +101,7 @@ func TestAWakeWarnsWhenNothingWillActOnIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := run(d, []string{"wake", "ci", "--in", "1h"}, now, &out); err != nil {
+	if err := power(d, []string{"wake", "ci", "--in", "1h"}, now, &out); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "warning:") {
@@ -120,7 +120,7 @@ func TestStatusShowsADotNamedLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	if err := run(d, []string{"status"}, now, &out); err != nil {
+	if err := power(d, []string{"status"}, now, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), ".hidden") {

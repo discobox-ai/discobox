@@ -1,10 +1,3 @@
-// Command discobox-power is how an agent in a discobox holds it up, puts it to
-// sleep, and names when to wake it (ADR 0108 §4, ADR 26-10-16-337 §3).
-//
-// It only writes files — a keepalive lease, a sleep request, a wake — each put
-// in place with its time already set, and reads them back. The files are the
-// interface: `touch` and `mv` do everything this does, and nothing reads state
-// only this writes.
 package main
 
 import (
@@ -21,7 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 )
 
-const usage = `usage:
+const powerUsage = `usage:
   discobox-power sleep [--wake-in DUR | --wake-at TIME] [--note TEXT]
   discobox-power wake NAME (--in DUR | --at TIME) [--note TEXT]
   discobox-power wake ls
@@ -33,40 +26,48 @@ const usage = `usage:
 TIME is RFC 3339 (2026-10-16T14:00:00Z) or a clock time (14:00), the next one
 to come in local time. DUR is a Go duration (45m, 2h).`
 
-// dirs is where each kind of file lives, and the marker that says the control
-// plane holds the sandbox's power; tests point them elsewhere.
-type dirs struct {
+// powerDirs is where each kind of file lives, and the marker that says the
+// control plane holds the sandbox's power; tests point them elsewhere.
+type powerDirs struct {
 	lease, sleep, wake, controlPlane string
 }
 
-func main() {
+// runPower is discobox-power: how an agent in a discobox holds it up, puts it
+// to sleep, and names when to wake it (ADR 0108 §4, ADR 26-10-16-337 §3).
+//
+// It only writes files — a keepalive lease, a sleep request, a wake — each put
+// in place with its time already set, and reads them back. The files are the
+// interface: `touch` and `mv` do everything this does, and nothing reads state
+// only this writes.
+func runPower(args []string) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "discobox-power:", err)
-		os.Exit(1)
+		return 1
 	}
-	d := dirs{
+	d := powerDirs{
 		lease:        autostop.DefaultLeaseDir,
 		sleep:        autostop.DefaultSleepDir,
 		wake:         filepath.Join(home, ".discobox", "wake"),
 		controlPlane: autostop.DefaultControlPlaneMarker,
 	}
-	if err := run(d, os.Args[1:], time.Now(), os.Stdout); err != nil {
+	if err := power(d, args, time.Now(), os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "discobox-power:", err)
 		var u usageError
 		if errors.As(err, &u) {
-			fmt.Fprintln(os.Stderr, usage)
-			os.Exit(2)
+			fmt.Fprintln(os.Stderr, powerUsage)
+			return 2
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 type usageError struct{ msg string }
 
 func (e usageError) Error() string { return e.msg }
 
-func run(d dirs, args []string, now time.Time, out io.Writer) error {
+func power(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	if len(args) == 0 {
 		return usageError{"no command"}
 	}
@@ -80,7 +81,7 @@ func run(d dirs, args []string, now time.Time, out io.Writer) error {
 	case "status":
 		return status(d, now, out)
 	case "-h", "--help", "help":
-		fmt.Fprintln(out, usage)
+		fmt.Fprintln(out, powerUsage)
 		return nil
 	}
 	return usageError{fmt.Sprintf("unknown command %q", args[0])}
@@ -88,7 +89,7 @@ func run(d dirs, args []string, now time.Time, out io.Writer) error {
 
 // sleep writes the wake first, when there is one, so the status that carries
 // the sleep carries the wake too.
-func sleep(d dirs, args []string, now time.Time, out io.Writer) error {
+func sleep(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	fs := flag.NewFlagSet("sleep", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	in := fs.String("wake-in", "", "wake after this long")
@@ -117,7 +118,7 @@ func sleep(d dirs, args []string, now time.Time, out io.Writer) error {
 	return nil
 }
 
-func wake(d dirs, args []string, now time.Time, out io.Writer) error {
+func wake(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	if len(args) == 0 {
 		return usageError{"wake needs a NAME, ls, or rm"}
 	}
@@ -157,14 +158,14 @@ func wake(d dirs, args []string, now time.Time, out io.Writer) error {
 // warnUnwoken says so when nothing will act on a wake: the pool has not handed
 // the sandbox's power to the control plane, so a stopped sandbox stays
 // stopped until someone uses it (ADR 26-10-16-337 §8).
-func warnUnwoken(d dirs, out io.Writer) {
+func warnUnwoken(d powerDirs, out io.Writer) {
 	if _, err := os.Stat(d.controlPlane); err == nil {
 		return
 	}
 	fmt.Fprintln(out, "warning: this sandbox's pool does not wake sandboxes yet; once it stops, nothing starts it at that time")
 }
 
-func keepalive(d dirs, args []string, now time.Time, out io.Writer) error {
+func keepalive(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	if len(args) == 0 {
 		return usageError{"keepalive needs a NAME or rm"}
 	}
@@ -196,7 +197,7 @@ func keepalive(d dirs, args []string, now time.Time, out io.Writer) error {
 // status reads the files back. The idle policy's own view — when the sandbox
 // stops if nothing happens — is on the sandbox's status, which the console
 // shows.
-func status(d dirs, now time.Time, out io.Writer) error {
+func status(d powerDirs, now time.Time, out io.Writer) error {
 	for _, section := range []struct {
 		title    string
 		requests []autostop.Request

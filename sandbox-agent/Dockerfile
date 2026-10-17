@@ -45,10 +45,6 @@ COPY sandbox-agent ./sandbox-agent
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-runc ./cmd/discobox-runc \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-power ./cmd/discobox-power \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C access build -trimpath -ldflags="-s -w" -o /out/discobox-access ./cmd/discobox-access
 
 # Built in its own layer so bumping the review version does not invalidate the
@@ -640,17 +636,10 @@ COPY --chmod=0755 sandbox-agent/image/discobox-shell /usr/local/bin/discobox-she
 # harmlessly.
 COPY --chmod=0755 sandbox-agent/image/agent-store /usr/local/bin/discobox-agent-store
 COPY --chmod=0755 sandbox-agent/image/harness-upgrade /usr/local/bin/discobox-harness-upgrade
+# The agent, and through the links laid below every command that ships at its
+# version (ADR 26-10-16-423 §7).
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
-# Installs as `runc` on a directory prepended to containerd's and dockerd's
-# PATH, so every container either one starts has the MITM CA bundles and proxy
-# env injected into its OCI spec. See the shared runcca package.
-COPY --from=sandbox-agent-builder /out/discobox-runc /opt/discobox/bin/runc
-COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobox-ca-anchor
-# Keepalive, sleep and wake for an agent in the sandbox: it writes the files
-# the sandbox agent reads (ADR 0108 §4, ADR 26-10-16-337 §3), which the image's
-# discobox skill documents.
-COPY --from=sandbox-agent-builder /out/discobox-power /usr/local/bin/discobox-power
-# Its own binary, not an argv[0] alias of the agent: the credential CLI is a
+# Its own binary, not an argv[0] personality of the agent: the credential CLI is a
 # client of a portable protocol and is meant to be liftable into another
 # repository, so it must not be welded to this image's runtime (ADR 0031).
 COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-access
@@ -674,22 +663,31 @@ COPY access/skills /usr/local/share/discobox/skills
 # costs is paid at `ARG REVIEW_VERSION` in the builder stage, where the note to
 # re-read that skill on a bump lives.
 COPY sandbox-agent/image/skills /usr/local/share/discobox/skills
-# Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
-# give `docker build` the pool-shared BuildKit cache. Non-build commands are
-# exec'd straight through. See the sandbox-agent/dockercache package.
-COPY --from=sandbox-agent-builder /out/discobox-docker /usr/local/bin/docker
 COPY --from=sandbox-agent-builder /out/discobox-review /usr/local/bin/discobox-review
 COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
 
+# The agent's personalities, each a link it dispatches on by argv[0] (see
+# cmd/discobox-sandbox-agent):
+# - `runc`, on a directory prepended to containerd's and dockerd's PATH, so
+#   every container either one starts has the MITM CA bundles and proxy env
+#   injected into its OCI spec. See the shared runcca package.
+# - `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to give
+#   `docker build` the pool-shared BuildKit cache. Non-build commands are
+#   exec'd straight through. See the sandbox-agent/dockercache package.
+# - `discobox-power`: keepalive, sleep and wake for an agent in the sandbox. It
+#   writes the files the sandbox agent reads (ADR 0108 §4, ADR 26-10-16-337
+#   §3), which the image's discobox skill documents.
+# - `discobox-ca-anchor`, which discobox-trust-ca.service runs, and
+#   `discobox-hook-publish`, which the harnesses' hooks run.
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
-    && chmod 0755 /opt/discobox/bin/runc \
-    && chmod 0755 /usr/local/bin/discobox-ca-anchor \
-    && chmod 0755 /usr/local/bin/discobox-power \
-    && chmod 0755 /usr/local/bin/docker \
     && chmod 0755 /usr/local/bin/discobox-review \
     && chmod 0755 /usr/local/bin/fresh \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
-    && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
+    && install -d -m 0755 /opt/discobox/bin \
+    && ln -sf /usr/local/bin/discobox-sandbox-agent /opt/discobox/bin/runc \
+    && for c in docker discobox-power discobox-ca-anchor discobox-hook-publish; do \
+        ln -sf /usr/local/bin/discobox-sandbox-agent "/usr/local/bin/$c"; \
+       done \
     && for c in nix nix-build nix-env nix-shell nix-store devenv; do \
         ln -sf /usr/local/lib/discobox/nix-shim "/usr/local/bin/$c"; \
        done \
