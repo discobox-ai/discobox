@@ -106,6 +106,9 @@ func (f *fakeSandboxService) StopSandbox(context.Context, string, string, servic
 func (f *fakeSandboxService) RestartSandbox(context.Context, string, string, services.RestartSandboxBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }
+func (f *fakeSandboxService) SuspendSandbox(context.Context, string, string, services.SuspendSandboxBody) (*model.Sandbox, error) {
+	panic("not implemented")
+}
 func (f *fakeSandboxService) RepairSandbox(context.Context, string, string) (*model.Sandbox, error) {
 	panic("not implemented")
 }

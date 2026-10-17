@@ -18,6 +18,8 @@ type powerProvider struct {
 	recordingProvider
 	powerDowns []sandbox.PowerDownReason
 	starts     int
+	suspends   int
+	suspendErr error
 	wake       sandbox.Wake
 	refuse     bool
 	// during runs inside the power-down, as an outside instruction landing
@@ -34,6 +36,11 @@ func (p *powerProvider) PowerDown(_ context.Context, _ sandbox.SandboxRef, state
 		return sandbox.Wake{}, state, sandbox.ErrPowerDownRefused
 	}
 	return p.wake, state, nil
+}
+
+func (p *powerProvider) Suspend(_ context.Context, _ sandbox.SandboxRef, state []byte) ([]byte, error) {
+	p.suspends++
+	return state, p.suspendErr
 }
 
 func (p *powerProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
@@ -262,4 +269,71 @@ func TestOnlyAStatusAskingForAPowerDownMarksIt(t *testing.T) {
 		}
 	}
 	_ = f
+}
+
+// A person's suspend is an instruction from outside: it reaches the runtime
+// and cancels the wake the sandbox asked for, as a stop does
+// (ADR 26-10-16-420 §3).
+func TestASuspendReachesTheRuntimeAndCancelsTheWake(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	at := f.now.Add(time.Hour)
+	if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, 0, &at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.SuspendSandbox(context.Background(), "project-1", f.sandboxID, services.SuspendSandboxBody{}); err != nil {
+		t.Fatal(err)
+	}
+	if f.provider.suspends != 1 {
+		t.Fatalf("suspends = %d, want 1", f.provider.suspends)
+	}
+	if got := f.load(t).WakeAt; got != nil {
+		t.Fatalf("wake = %v after a suspend, want it canceled", got)
+	}
+}
+
+// A frozen sandbox's last status still asks for the sleep that froze it. It
+// is not running, so it is not asked again; its wake still starts it, which
+// is what thaws it (ADR 26-10-16-420 §4).
+func TestASuspendedSandboxIsNotPoweredDownAndItsWakeStartsIt(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"sleep": map[string]any{"requestedAt": f.now, "request": "agent"}})
+	f.provider.wake = sandbox.Wake{At: f.now.Add(time.Hour)}
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateSuspended)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.provider.powerDowns) != 1 {
+		t.Fatalf("power-downs = %v, want the one that froze it", f.provider.powerDowns)
+	}
+	f.now = f.now.Add(time.Hour)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if f.provider.starts != 1 {
+		t.Fatalf("starts = %d at the wake, want 1", f.provider.starts)
+	}
+}
+
+// A refused suspend changes nothing, the wake included: the likeliest refusal
+// is a sandbox a sleep stopped, which is the one holding a wake
+// (ADR 26-10-16-420 §3).
+func TestARefusedSuspendKeepsTheWake(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateStopped)
+	at := f.now.Add(time.Hour)
+	if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, 0, &at); err != nil {
+		t.Fatal(err)
+	}
+	f.provider.suspendErr = sandbox.ErrNotRunning
+	if _, err := f.svc.SuspendSandbox(context.Background(), "project-1", f.sandboxID, services.SuspendSandboxBody{}); err == nil {
+		t.Fatal("suspend of a stopped sandbox succeeded")
+	}
+	if got := f.load(t).WakeAt; got == nil || !got.Equal(at) {
+		t.Fatalf("wake = %v after a refused suspend, want %v kept", got, at)
+	}
 }

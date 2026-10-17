@@ -47,6 +47,8 @@ const (
 	StateRunning  = "running"
 	StateStopping = "stopping"
 	StateStopped  = "stopped"
+	// StateSuspended is a container frozen whole (ADR 26-10-16-420 §1).
+	StateSuspended = "suspended"
 )
 
 // SandboxStateObservation is one observation about one sandbox.
@@ -239,6 +241,8 @@ func (r *DockerSandboxRuntime) watchSandboxStateEvents(ctx context.Context, logg
 	filters = filters.Add("event", string(events.ActionDie))
 	filters = filters.Add("event", string(events.ActionStop))
 	filters = filters.Add("event", string(events.ActionDestroy))
+	filters = filters.Add("event", string(events.ActionPause))
+	filters = filters.Add("event", string(events.ActionUnPause))
 	filters = filters.Add("label", sandboxLabelManaged+"=true")
 	filters = filters.Add("label", sandboxLabelProject+"="+r.projectID)
 	filters = filters.Add("label", sandboxLabelPool+"="+r.poolID)
@@ -303,8 +307,10 @@ func observationFromEvent(message events.Message) (SandboxStateObservation, bool
 		return SandboxStateObservation{}, false
 	}
 	switch message.Action {
-	case events.ActionStart:
+	case events.ActionStart, events.ActionUnPause:
 		return SandboxStateObservation{SandboxID: sandboxID, State: StateRunning}, true
+	case events.ActionPause:
+		return SandboxStateObservation{SandboxID: sandboxID, State: StateSuspended}, true
 	case events.ActionDie, events.ActionStop, events.ActionDestroy:
 		// A destroyed container is not running, which is all this channel
 		// claims. Whether the sandbox should still exist is the control plane's
@@ -315,8 +321,8 @@ func observationFromEvent(message events.Message) (SandboxStateObservation, bool
 	}
 }
 
-// stateFromStatus reduces a container status to the only distinction this
-// channel can honestly make: running, or not.
+// stateFromStatus reduces a container status to the only distinctions this
+// channel can honestly make: running, frozen, or not.
 //
 // `failed` is deliberately absent. A container that has exited looks identical
 // whether it was stopped on purpose or died on its own — a normal stop leaves
@@ -325,8 +331,11 @@ func observationFromEvent(message events.Message) (SandboxStateObservation, bool
 // something went wrong is a judgement about an operation, which belongs to the
 // component that asked for it, not to the one watching containers.
 func stateFromStatus(status Status) string {
-	if status == StatusRunning {
+	switch status {
+	case StatusRunning:
 		return StateRunning
+	case StatusSuspended:
+		return StateSuspended
 	}
 	return StateStopped
 }

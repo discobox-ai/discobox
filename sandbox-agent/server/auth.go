@@ -47,9 +47,11 @@ const (
 	// key (ADR 26-10-08-127 §3).
 	ScopeRuntimeConfig = sandboxconfig.RuntimeConfigScope
 	// ScopeAutostopConfirm gates the confirmation a pool asks for under its
-	// power lock before it powers the sandbox down (ADR 26-10-16-337 §5). It
-	// is the pool's alone, like the intake: a confirmed sleep consumes the
-	// sandbox's requests, and only the party about to power it down may ask.
+	// power lock before it powers the sandbox down (ADR 26-10-16-337 §5), and
+	// the pool's word that it has thawed the sandbox (autostop/resumed, ADR
+	// 26-10-16-420 §4). It is the pool's alone, like the intake: a confirmed
+	// sleep consumes the sandbox's requests and a resume moves its wakes, and
+	// only the party that holds its power may ask.
 	ScopeAutostopConfirm = sandboxconfig.AutostopConfirmScope
 	// ScopeSandboxRead and ScopeSandboxWrite gate the sandbox's own Git
 	// repositories, as the pool's worktree route always has: a fetch reads,
@@ -267,11 +269,13 @@ func inventoryRoute(path string) bool {
 	return len(segments) == 6 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "inventory"
 }
 
-// autostopConfirmRoute is told by its whole route, like the inventory: its
-// scope is the pool's alone, and nothing else may be reachable with it.
-func autostopConfirmRoute(path string) bool {
+// autostopPoolRoute is the confirm route or the resumed route, told by its
+// whole route, like the inventory: their scope is the pool's alone, and
+// nothing else may be reachable with it.
+func autostopPoolRoute(path string) bool {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	return len(segments) == 7 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "autostop" && segments[6] == "confirm"
+	return len(segments) == 7 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "autostop" &&
+		(segments[6] == "confirm" || segments[6] == "resumed")
 }
 
 func routeIdentity(path string) (string, string, bool) {
@@ -302,7 +306,7 @@ func requiredRequestScope(r *http.Request) string {
 	if sourcesRoute(r.URL.EscapedPath()) {
 		return ScopeRuntimeConfig
 	}
-	if r.Method == http.MethodPost && autostopConfirmRoute(r.URL.EscapedPath()) {
+	if r.Method == http.MethodPost && autostopPoolRoute(r.URL.EscapedPath()) {
 		return ScopeAutostopConfirm
 	}
 	// The status route reports git/session/connection telemetry and nothing

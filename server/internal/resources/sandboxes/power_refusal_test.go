@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // A refusal of a power instruction for want of a runtime says why the runtime
@@ -41,5 +42,24 @@ func TestInstructionRefusalSaysWhatToDo(t *testing.T) {
 	var statusErr apperrors.StatusError
 	if got := runtimeRefusal(other, sandboxStop.String()); errors.As(got, &statusErr) || got.Error() != other.Error() {
 		t.Fatalf("an unrelated failure was rewritten as %v", got)
+	}
+}
+
+// A suspend the pool cannot carry out says so and changes nothing: one not
+// running, and one whose pool agent is from before the operation
+// (ADR 26-10-16-420 §3).
+func TestASuspendRefusalSaysWhy(t *testing.T) {
+	for cause, want := range map[error]string{
+		ErrNotRunning:                   "it is not running",
+		sandbox.ErrPoolAgentUnsupported: "upgrade the pool",
+	} {
+		err := runtimeRefusal(fmt.Errorf("pool: %w", cause), sandboxSuspend.String())
+		var statusErr apperrors.StatusError
+		if !errors.As(err, &statusErr) || statusErr.Status != http.StatusConflict {
+			t.Fatalf("refusal = %#v, want a 409", err)
+		}
+		if !strings.HasPrefix(err.Error(), "cannot suspend sandbox") || !strings.Contains(err.Error(), want) {
+			t.Fatalf("message = %q, want it to name the suspend and say %q", err.Error(), want)
+		}
 	}
 }

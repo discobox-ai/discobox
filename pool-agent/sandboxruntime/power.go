@@ -76,11 +76,77 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 	return r.startLocked(ctx, sandboxID)
 }
 
+// SuspendSandbox freezes a running sandbox whole with `docker pause`, under its
+// power lock (ADR 26-10-16-420 §3). A person asked to keep what it holds, so a
+// pause that fails is returned rather than turned into a stop.
+//
+// A sandbox still booting is refused like a stopped one: its boot waits for an
+// agent the freeze would keep from ever answering.
+func (r *DockerSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string) error {
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+	sb, err := r.powerTarget(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case sb.Status == StatusSuspended:
+		return nil
+	case sb.Status != StatusRunning:
+		return ErrNotRunning
+	case r.SandboxBooting(sandboxID):
+		return fmt.Errorf("%w: it is still starting", ErrNotRunning)
+	}
+	return r.pauseLocked(ctx, sb)
+}
+
+// pauseLocked freezes the sandbox's container. The pause event reports it
+// suspended. The caller holds the sandbox's power lock.
+func (r *DockerSandboxRuntime) pauseLocked(ctx context.Context, sb *Sandbox) error {
+	if _, err := r.client.ContainerPause(ctx, sb.ID, client.ContainerPauseOptions{}); err != nil {
+		return fmt.Errorf("suspend sandbox %s: %w", sb.SandboxID, err)
+	}
+	return nil
+}
+
+// resumeLocked thaws a suspended sandbox (ADR 26-10-16-420 §4): the unpause
+// event reports it running, and nothing in it boots. What changed while it was
+// frozen is then delivered — its runtime-config document, and to its agent the
+// news that it resumed, which sets aside the wakes now due so the one that
+// brought it back is not returned by its next power-down. Neither is the
+// resume's to fail: the status poll converges the document, and an agent from
+// before the resumed route has no wakes to set aside. The caller holds the
+// sandbox's power lock.
+//
+// Both run detached from the caller, as a boot's wait does (finishBoot), each
+// bounded by its own timeout: a use that thawed the sandbox and then went away
+// must not leave its due wake in place, where the next sleep's confirmation
+// would hand it back and undo that sleep at once. They stay under the lock, so
+// no power-down can confirm before the wakes are set aside. Neither is retried:
+// the status poll converges the document, and a resumed call that fails anyway
+// costs at most the next sleep, undone by the wake it hands back.
+func (r *DockerSandboxRuntime) resumeLocked(ctx context.Context, sb *Sandbox) error {
+	if _, err := r.client.ContainerUnpause(ctx, sb.ID, client.ContainerUnpauseOptions{}); err != nil {
+		return fmt.Errorf("resume sandbox %s: %w", sb.SandboxID, err)
+	}
+	ctx = context.WithoutCancel(ctx)
+	slog.InfoContext(ctx, "resumed suspended sandbox", "sandboxId", sb.SandboxID)
+	if err := logRuntimeConfigFailure(ctx, sb.SandboxID, r.deliverRuntimeConfig(ctx, sb.SandboxID, nil)); err != nil {
+		slog.WarnContext(ctx, "deliver runtime config to a resumed sandbox", "sandboxId", sb.SandboxID, "error", err)
+	}
+	if err := r.tellResumed(ctx, sb.SandboxID); err != nil {
+		slog.WarnContext(ctx, "tell a resumed sandbox it resumed", "sandboxId", sb.SandboxID, "error", err)
+	}
+	return nil
+}
+
 // PowerDownSandbox carries out a power-down the sandbox asked for, on what the
 // sandbox confirms under the power lock rather than on what its last status
 // said: that status is a poll and a push old, and a client may have attached
-// since (ADR 26-10-16-337 §5). This runtime cannot freeze, so a confirmed sleep
-// stops the sandbox as a confirmed idle does.
+// since (ADR 26-10-16-337 §5). A confirmed idle stops the sandbox. A confirmed
+// sleep freezes it (ADR 26-10-16-420 §2), and stops it if the freeze fails:
+// the agent asked to go down, and a stop is the power-down every runtime has.
 //
 // A sleep whose stop then fails leaves the sandbox up with its request
 // consumed; its idle stop puts it down in time.
@@ -100,6 +166,13 @@ func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 		return Wake{}, err
 	}
 	slog.Default().Info("powering sandbox down on its own request", "sandboxId", sandboxID, "reason", reason, "wakeAt", wake.At)
+	if reason == PowerDownSleep {
+		err := r.pauseLocked(ctx, sb)
+		if err == nil {
+			return wake, nil
+		}
+		slog.Default().Warn("could not freeze a sleeping sandbox; stopping it", "sandboxId", sandboxID, "error", err)
+	}
 	if err := r.stopLocked(ctx, sandboxID); err != nil {
 		return Wake{}, err
 	}
@@ -109,44 +182,16 @@ func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 // confirmPowerDown asks the sandbox agent to confirm reason, with a token the
 // pool signs for that alone.
 func (r *DockerSandboxRuntime) confirmPowerDown(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
-	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
-	defer cancel()
-	token, err := r.poolToken(sandboxID, sandboxconfig.AutostopConfirmScope)
-	if err != nil {
-		return Wake{}, err
-	}
-	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
-	if err != nil {
-		return Wake{}, err
-	}
-	body, err := json.Marshal(map[string]string{"reason": string(reason)})
-	if err != nil {
-		return Wake{}, err
-	}
-	target := HTTPURL(SandboxAgentPort, fmt.Sprintf("/api/projects/%s/sandboxes/%s/autostop/confirm", r.projectID, sandboxID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
-	if err != nil {
-		return Wake{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	// The connection is no credential: the sandbox agent decides on this token
-	// alone, whatever carried it (ADR 0126 §5).
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
+	status, data, err := r.callAutostop(ctx, sandboxID, "confirm", map[string]string{"reason": string(reason)})
 	if err != nil {
 		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: %w", sandboxID, err)
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return Wake{}, err
-	}
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusOK:
 	case http.StatusConflict:
 		return Wake{}, ErrPowerDownRefused
 	default:
-		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: status %d: %s", sandboxID, resp.StatusCode, strings.TrimSpace(string(data)))
+		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: status %d: %s", sandboxID, status, strings.TrimSpace(string(data)))
 	}
 	var confirmed struct {
 		WakeAt *time.Time `json:"wakeAt"`
@@ -161,8 +206,60 @@ func (r *DockerSandboxRuntime) confirmPowerDown(ctx context.Context, sandboxID s
 	return Wake{At: confirmed.WakeAt.UTC(), Name: confirmed.Wake}, nil
 }
 
-// EnsureSandboxRunning starts a sandbox that is not running, and is a no-op for
-// one that already is. It is what the sandbox-directed routes call so that a
+// tellResumed tells the sandbox agent its sandbox was thawed. An agent from
+// before the route answers 404, and has nothing to do on a resume.
+func (r *DockerSandboxRuntime) tellResumed(ctx context.Context, sandboxID string) error {
+	status, data, err := r.callAutostop(ctx, sandboxID, "resumed", struct{}{})
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK && status != http.StatusNotFound {
+		return fmt.Errorf("status %d: %s", status, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+// callAutostop posts body to one of the sandbox agent's pool-only autostop
+// routes, with a token the pool signs for that scope alone, and returns the
+// answer's status and body.
+func (r *DockerSandboxRuntime) callAutostop(ctx context.Context, sandboxID, route string, body any) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
+	defer cancel()
+	token, err := r.poolToken(sandboxID, sandboxconfig.AutostopConfirmScope)
+	if err != nil {
+		return 0, nil, err
+	}
+	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	if err != nil {
+		return 0, nil, err
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return 0, nil, err
+	}
+	target := HTTPURL(SandboxAgentPort, fmt.Sprintf("/api/projects/%s/sandboxes/%s/autostop/%s", r.projectID, sandboxID, route))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(payload))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// The connection is no credential: the sandbox agent decides on this token
+	// alone, whatever carried it (ADR 0126 §5).
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, data, nil
+}
+
+// EnsureSandboxRunning starts a sandbox that is not running, thaws one that is
+// suspended, and is a no-op for one that already runs. It is what the sandbox-directed routes call so that a
 // stopped sandbox comes up on first use (ADR 0017 §12), and what the control
 // plane calls before it forwards an action into one (ADR 26-10-12-711 §2).
 //
@@ -277,8 +374,11 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	if err != nil {
 		return err
 	}
-	if sb.Status == StatusRunning {
+	switch sb.Status {
+	case StatusRunning:
 		return nil
+	case StatusSuspended:
+		return r.resumeLocked(ctx, sb)
 	}
 	if err := r.retireContainerWithoutRuntimeConfig(ctx, sb); err != nil {
 		return err

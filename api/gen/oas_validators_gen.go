@@ -4707,6 +4707,8 @@ func (s PoolSandboxStateState) Validate() error {
 		return nil
 	case "stopped":
 		return nil
+	case "suspended":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -7932,6 +7934,8 @@ func (s SandboxRuntimeDisplayState) Validate() error {
 		return nil
 	case "stopped":
 		return nil
+	case "suspended":
+		return nil
 	case "repairing":
 		return nil
 	case "archiving":
@@ -7967,6 +7971,8 @@ func (s SandboxRuntimeRuntimeState) Validate() error {
 	case "stopping":
 		return nil
 	case "stopped":
+		return nil
+	case "suspended":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

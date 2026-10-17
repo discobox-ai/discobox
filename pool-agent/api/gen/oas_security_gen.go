@@ -48,6 +48,7 @@ var operationRolesPoolBearerAuth = map[string][]string{
 	PoolRestartSandboxOperation:       []string{},
 	PoolStartSandboxOperation:         []string{},
 	PoolStopSandboxOperation:          []string{},
+	PoolSuspendSandboxOperation:       []string{},
 	PoolSyncOperation:                 []string{},
 	PoolUpdateSandboxOperation:        []string{},
 }

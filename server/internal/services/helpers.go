@@ -548,8 +548,8 @@ func SandboxUpgrade(sandbox *model.Sandbox, fallback *model.HarnessConfig) map[s
 }
 
 // SandboxDisplayState renders the small lifecycle vocabulary presented to API
-// users: starting, running, stopping, stopped, repairing, archiving, archived,
-// deleting, deleted, error.
+// users: starting, running, stopping, stopped, suspended, repairing, archiving,
+// archived, deleting, deleted, error.
 //
 // It is the one place the two state axes are combined, and it is what clients
 // should read: existence is the reconciler's `State`, power is the pool agent's

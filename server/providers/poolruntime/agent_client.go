@@ -419,9 +419,20 @@ func (p *poolAgentClient) Restart(ctx context.Context, ref sandbox.SandboxRef, s
 	})
 }
 
+// Suspend asks the pool agent to freeze the sandbox whole (ADR 26-10-16-420
+// §3). A pool agent from before the route answers 404, which is
+// sandbox.ErrPoolAgentUnsupported: that pool cannot suspend, and nothing
+// changed.
+func (p *poolAgentClient) Suspend(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
+		_, err := client.PoolSuspendSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolSuspendSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		return err
+	})
+}
+
 // PowerDown asks the pool agent to power the sandbox down once the sandbox
-// confirms it (ADR 26-10-16-337 §5). The pool cannot freeze, so it stops; a
-// runtime that can freeze does so for a sleep behind this same call.
+// confirms it (ADR 26-10-16-337 §5). The pool decides what powering down is:
+// a stop for idle, and for a sleep a freeze where it can (ADR 26-10-16-420 §2).
 func (p *poolAgentClient) PowerDown(ctx context.Context, ref sandbox.SandboxRef, state []byte, reason sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {
@@ -1083,6 +1094,8 @@ func mapPoolClientError(err error) error {
 			return sandbox.ErrNoContainer
 		case poolapimodel.ErrorTypeSandboxPowerDownRefused:
 			return sandbox.ErrPowerDownRefused
+		case poolapimodel.ErrorTypeSandboxNotRunning:
+			return fmt.Errorf("%w: %s", sandbox.ErrNotRunning, poolClientErrorMessage(statusErr))
 		}
 		return sandbox.ErrAlreadyExists
 	}

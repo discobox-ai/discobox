@@ -79,6 +79,10 @@ const (
 	SandboxRuntimeStateRunning  = "running"
 	SandboxRuntimeStateStopping = "stopping"
 	SandboxRuntimeStateStopped  = "stopped"
+	// SandboxRuntimeStateSuspended is a container frozen whole: its memory and
+	// every process kept, nothing in it running (ADR 26-10-16-420 §1). Any
+	// start, or any use, thaws it.
+	SandboxRuntimeStateSuspended = "suspended"
 
 	// GitSourceDeliveryClone has the sandbox fetch the source itself.
 	// GitSourceDeliveryPush has the client push it in, for a local directory the
@@ -134,6 +138,7 @@ var (
 		SandboxRuntimeStateRunning,
 		SandboxRuntimeStateStopping,
 		SandboxRuntimeStateStopped,
+		SandboxRuntimeStateSuspended,
 	}
 	GitSourceDeliveries = []string{
 		GitSourceDeliveryClone,
@@ -169,7 +174,8 @@ func SandboxUpgradesAutomatically(project *Project) bool {
 // mid-create waiting for the client's push, and replacing its container in the
 // middle of that hands the push a different sandbox than the one it started
 // against. The transitional runtime states count as live because the runtime is
-// acting on the container right now.
+// acting on the container right now, and suspended because its container holds
+// the memory of everything that was running in it.
 //
 // It takes the sandbox rather than a state string because the question spans
 // both state axes: `awaiting_source` is a phase of creation and the rest are
@@ -189,7 +195,7 @@ func SandboxIsLive(sandbox *Sandbox) bool {
 		return true
 	}
 	switch sandbox.RuntimeState {
-	case SandboxRuntimeStateStarting, SandboxRuntimeStateRunning, SandboxRuntimeStateStopping:
+	case SandboxRuntimeStateStarting, SandboxRuntimeStateRunning, SandboxRuntimeStateStopping, SandboxRuntimeStateSuspended:
 		// An archived sandbox is not live whatever its last observation said:
 		// the archive removed the container, and reports stop covering it
 		// (ADR 0022 §5), so a stale `running` must not read as live.
@@ -1038,7 +1044,7 @@ type Sandbox struct {
 	// writer, and Store.UpdateSandbox omits it so no other path can carry a
 	// stale value back over an observation (ADR 0034 §2). Empty means no agent
 	// has reported on this sandbox yet, which is not the same as `stopped`.
-	RuntimeState          string     `gorm:"column:runtime_state;not null;type:text;default:''" json:"runtimeState,omitempty" doc:"Observed power state, reported by the pool agent hosting the sandbox. Empty until one has reported." enum:"starting,running,stopping,stopped"`
+	RuntimeState          string     `gorm:"column:runtime_state;not null;type:text;default:''" json:"runtimeState,omitempty" doc:"Observed power state, reported by the pool agent hosting the sandbox. Empty until one has reported." enum:"starting,running,stopping,stopped,suspended"`
 	RuntimeStateChangedAt *time.Time `gorm:"column:runtime_state_changed_at" json:"runtimeStateChangedAt,omitempty" doc:"When RuntimeState last changed to its current value" format:"date-time"`
 	// StateReportedAt and StateReportSeq order the runtime's state reports
 	// (ADR 0017 §10). A report older than what is already recorded is ignored,

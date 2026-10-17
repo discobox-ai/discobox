@@ -493,7 +493,8 @@ owns; a client names that stage by inference instead (ADR 0060).
 
 The Docker runtime makes three deliveries, all load-bearing:
 
-- **Deltas**, from the Docker event stream — `start`, `die`, `stop`, `destroy`.
+- **Deltas**, from the Docker event stream — `start`, `die`, `stop`, `destroy`,
+  and `pause`/`unpause` for a suspended sandbox (`suspended`, then `running`).
   `destroy` alone is not enough: a container that stops and stays put emits
   nothing else, and would go on being reported as running.
 - **A complete sync**, on agent start and every 60s, listing every sandbox
@@ -517,7 +518,8 @@ whether it was stopped on purpose or died, so failure is a judgement about an
 operation rather than something the runtime can observe. For the same reason a
 report carries no error message: what this channel feeds is the control plane's
 runtime state field, and the field that records why something failed belongs to
-the reconciler (ADR 0034 §7).
+the reconciler (ADR 0034 §7). `suspended` is the one state beyond the four: a
+paused container, which Docker itself calls running.
 
 The sandbox-agent proxy names every path it forwards
 (`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope
@@ -527,7 +529,7 @@ not one — control plane, here, and the sandbox-agent's own generated router �
 and a route added at the ends but not the middle 404s with nothing to say why.
 Adding one means adding it in all three.
 
-Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
+Power operations (`start`, `stop`, `restart`, `suspend`) answer with acceptance only, and
 serialise per sandbox on one mutex (the ones that can start a container also
 pass the pool's start gate first; see [Clearing the Pool's Caches](#clearing-the-pools-caches)). That is also what makes on-demand start safe:
 ten concurrent requests produce one start.
@@ -537,10 +539,29 @@ ten concurrent requests produce one start.
 §5): the control plane sends it when a sandbox reported itself idle or asked
 to sleep, and under the same mutex the runtime asks the sandbox to confirm the
 reason, fresh — `POST .../autostop/confirm`, with a token the pool signs for the
-pool-only `autostop-confirm` scope alone. A sandbox that is not running, or
+pool-only `autostop-confirm` scope alone (the scope that also signs the thaw's
+`autostop/resumed`, below). A sandbox that is not running, or
 does not confirm, is refused with a typed 409 (`sandbox-power-down-refused`)
-and nothing changes; a confirmed one is stopped (this runtime cannot freeze)
-and the answer carries the wake the sandbox's confirmation named.
+and nothing changes; a confirmed idle is stopped, a confirmed sleep is frozen
+(stopped if the freeze fails), and the answer carries the wake the sandbox's
+confirmation named.
+
+**Suspended is a frozen container**
+([ADR 26-10-16-420](../docs/adr/26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)).
+`suspend`, and a confirmed sleep, `docker pause` the container: memory and every
+process kept, nothing in it running. Docker calls a paused container running;
+this runtime calls it `StatusSuspended` and reports `suspended` (from `Paused`,
+and the `pause`/`unpause` events), so nothing that reaches into a running
+sandbox — the status poll, runtime-config delivery, `requireRunning`, an
+export — reaches into one that cannot answer. A `suspend` never stops instead:
+a pause that fails is an error, and a sandbox not running a typed 409
+(`sandbox-not-running`). Every start thaws it — `startLocked` unpauses rather
+than boots, so an explicit start, the scheduled wake's, and every on-use
+`EnsureSandboxRunning` alike — then delivers the runtime-config document and
+calls the sandbox agent's pool-only `POST .../autostop/resumed`, which sets
+aside the wakes now due. Stop, restart, archive, delete and a cache clear act
+on a suspended sandbox as on a running one; Docker delivers the stop signal as
+it thaws.
 
 **The control plane decides what starts a sandbox, and this agent carries it
 out** (ADR 26-10-12-711 §2). Every sandbox-directed route — the HTTP proxy, the

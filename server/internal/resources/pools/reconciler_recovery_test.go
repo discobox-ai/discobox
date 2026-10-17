@@ -454,6 +454,10 @@ func (stubPoolProvider) PowerDown(_ context.Context, _ sandbox.SandboxRef, state
 	return sandbox.Wake{}, state, nil
 }
 
+func (stubPoolProvider) Suspend(_ context.Context, _ sandbox.SandboxRef, state []byte) ([]byte, error) {
+	return state, nil
+}
+
 func (stubPoolProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }

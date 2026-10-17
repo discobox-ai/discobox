@@ -129,8 +129,8 @@ func (UnimplementedHandler) PoolListSandboxes(ctx context.Context, params PoolLi
 // the reason, fresh; a sandbox that is not running or does not
 // confirm is refused with a 409 of type sandbox-power-down-refused,
 // and nothing changes. A confirmed idle stops the sandbox; a
-// confirmed sleep freezes it where the runtime can, and stops it
-// otherwise.
+// confirmed sleep freezes it where the runtime can, which reports
+// it suspended, and stops it otherwise.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
 func (UnimplementedHandler) PoolPowerDownSandbox(ctx context.Context, req *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (r *PoolSandboxPowerDownResult, _ error) {
@@ -161,6 +161,20 @@ func (UnimplementedHandler) PoolStartSandbox(ctx context.Context, req *PoolSandb
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
 func (UnimplementedHandler) PoolStopSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStopSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// PoolSuspendSandbox implements pool-suspend-sandbox operation.
+//
+// Suspends a running sandbox: freezes it, keeping its memory and
+// every process, until a start, or a use that starts it, thaws it
+// (ADR 26-10-16-420 §3). It never stops the sandbox instead: a
+// runtime that cannot freeze it answers with an error and changes
+// nothing. A sandbox already suspended is accepted as it is; one that
+// is not running is a 409 of type sandbox-not-running.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/suspend
+func (UnimplementedHandler) PoolSuspendSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolSuspendSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

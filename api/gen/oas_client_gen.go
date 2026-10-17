@@ -940,6 +940,15 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
+	// ResumeSandboxAutostop invokes resume-sandbox-autostop operation.
+	//
+	// Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing
+	// booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and
+	// the wake that brought it back is not returned again by its next power-down's confirmation. Only a
+	// token carrying the pool-only autostop scope may call it.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
+	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
 	// RevokeSecretGrant invokes revoke-secret-grant operation.
 	//
 	// Revoke a secret grant.
@@ -1016,6 +1025,15 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// SuspendSandbox invokes suspend-sandbox operation.
+	//
+	// Freezes a running sandbox whole, keeping its memory and every process, until a start or
+	// a use thaws it (ADR 26-10-16-420 §3). It never stops the sandbox instead: a sandbox whose
+	// runtime cannot freeze it is refused, as is one that is not running. Like a stop, it
+	// cancels the wake the sandbox asked for.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/suspend
+	SuspendSandbox(ctx context.Context, request *SuspendSandboxBody, params SuspendSandboxParams) (SuspendSandboxRes, error)
 	// UnarchiveSandbox invokes unarchive-sandbox operation.
 	//
 	// Restore an archived sandbox. Its container is recreated against the data that was retained and
@@ -16551,6 +16569,121 @@ func (c *Client) sendRestartSandboxService(ctx context.Context, params RestartSa
 	return result, nil
 }
 
+// ResumeSandboxAutostop invokes resume-sandbox-autostop operation.
+//
+// Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing
+// booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and
+// the wake that brought it back is not returned again by its next power-down's confirmation. Only a
+// token carrying the pool-only autostop scope may call it.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
+func (c *Client) ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error) {
+	res, err := c.sendResumeSandboxAutostop(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (res ResumeSandboxAutostopRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("resume-sandbox-autostop"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResumeSandboxAutostopOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/autostop/resumed"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResumeSandboxAutostopResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // RevokeSecretGrant invokes revoke-secret-grant operation.
 //
 // Revoke a secret grant.
@@ -17997,6 +18130,124 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 
 	stage = "DecodeResponse"
 	result, err := decodeStreamSandboxExecResourcesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// SuspendSandbox invokes suspend-sandbox operation.
+//
+// Freezes a running sandbox whole, keeping its memory and every process, until a start or
+// a use thaws it (ADR 26-10-16-420 §3). It never stops the sandbox instead: a sandbox whose
+// runtime cannot freeze it is refused, as is one that is not running. Like a stop, it
+// cancels the wake the sandbox asked for.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/suspend
+func (c *Client) SuspendSandbox(ctx context.Context, request *SuspendSandboxBody, params SuspendSandboxParams) (SuspendSandboxRes, error) {
+	res, err := c.sendSuspendSandbox(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendSuspendSandbox(ctx context.Context, request *SuspendSandboxBody, params SuspendSandboxParams) (res SuspendSandboxRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("suspend-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/suspend"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SuspendSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/suspend"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeSuspendSandboxRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSuspendSandboxResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -165,6 +165,14 @@ archive, delete, import and stop, so waiting on it (or failing a `TryLock`)
 stalls healthy traffic behind unrelated work, and re-reading the container
 after it adds a Docker round trip to every request.
 
+Run a thaw's follow-up calls detached from the caller and under the power
+lock. What `resumeLocked` does after `ContainerUnpause` — the runtime-config
+delivery and the sandbox agent's `autostop/resumed` — is the thaw's equivalent
+of a boot's wait, and the same rule holds: do not put it on the caller's
+context. A caller that goes away mid-thaw must not leave the due wake in place:
+the next sleep's confirmation would return it, and the server would thaw the
+sandbox again at once (ADR 26-10-16-420 §4).
+
 ## What starts a sandbox is not decided here
 
 A sandbox-directed route is wrapped in `onUse` and nothing else. Whether it

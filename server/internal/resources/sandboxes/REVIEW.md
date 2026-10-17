@@ -35,4 +35,9 @@
   the wake (ADR 26-10-16-337 §6).
 - **A wake is written and claimed only on the `WakeEpoch` the reconcile read**,
   and every outside power instruction moves it, wake or no wake. A write that
-  skips the guard lets a person's stop be undone by the wake it raced.
+  skips the guard lets a person's stop be undone by the wake it raced. Suspend
+  is the one instruction that moves it after it is sent, and only when the
+  pool accepted it: a refused suspend changes nothing (ADR 26-10-16-420 §3),
+  and the order is still safe because a reconcile that reads the epoch once
+  the sandbox is frozen finds it not running and is refused. Do not move it
+  back before the send.

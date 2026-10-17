@@ -306,6 +306,18 @@ func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params Re
 	return r, ht.ErrNotImplemented
 }
 
+// ResumeSandboxAutostop implements resume-sandbox-autostop operation.
+//
+// Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing
+// booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and
+// the wake that brought it back is not returned again by its next power-down's confirmation. Only a
+// token carrying the pool-only autostop scope may call it.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
+func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (r *SandboxAutostopResumption, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // SendSandboxExecInput implements send-sandbox-exec-input operation.
 //
 // Writes text and named keys to the terminal, in order, the way typing into an attach does, and

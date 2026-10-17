@@ -114,8 +114,8 @@ type Invoker interface {
 	// the reason, fresh; a sandbox that is not running or does not
 	// confirm is refused with a 409 of type sandbox-power-down-refused,
 	// and nothing changes. A confirmed idle stops the sandbox; a
-	// confirmed sleep freezes it where the runtime can, and stops it
-	// otherwise.
+	// confirmed sleep freezes it where the runtime can, which reports
+	// it suspended, and stops it otherwise.
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
 	PoolPowerDownSandbox(ctx context.Context, request *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (*PoolSandboxPowerDownResult, error)
@@ -137,6 +137,17 @@ type Invoker interface {
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
 	PoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxOperationAccepted, error)
+	// PoolSuspendSandbox invokes pool-suspend-sandbox operation.
+	//
+	// Suspends a running sandbox: freezes it, keeping its memory and
+	// every process, until a start, or a use that starts it, thaws it
+	// (ADR 26-10-16-420 §3). It never stops the sandbox instead: a
+	// runtime that cannot freeze it answers with an error and changes
+	// nothing. A sandbox already suspended is accepted as it is; one that
+	// is not running is a 409 of type sandbox-not-running.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/suspend
+	PoolSuspendSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolSuspendSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolSync invokes pool-sync operation.
 	//
 	// Reconcile the set of pools this host should have, reaping any others.
@@ -2118,8 +2129,8 @@ func (c *Client) sendPoolListSandboxes(ctx context.Context, params PoolListSandb
 // the reason, fresh; a sandbox that is not running or does not
 // confirm is refused with a 409 of type sandbox-power-down-refused,
 // and nothing changes. A confirmed idle stops the sandbox; a
-// confirmed sleep freezes it where the runtime can, and stops it
-// otherwise.
+// confirmed sleep freezes it where the runtime can, which reports
+// it suspended, and stops it otherwise.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
 func (c *Client) PoolPowerDownSandbox(ctx context.Context, request *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (*PoolSandboxPowerDownResult, error) {
@@ -2778,6 +2789,178 @@ func (c *Client) sendPoolStopSandbox(ctx context.Context, request *PoolSandboxOp
 
 	stage = "DecodeResponse"
 	result, err := decodePoolStopSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PoolSuspendSandbox invokes pool-suspend-sandbox operation.
+//
+// Suspends a running sandbox: freezes it, keeping its memory and
+// every process, until a start, or a use that starts it, thaws it
+// (ADR 26-10-16-420 §3). It never stops the sandbox instead: a
+// runtime that cannot freeze it answers with an error and changes
+// nothing. A sandbox already suspended is accepted as it is; one that
+// is not running is a 409 of type sandbox-not-running.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/suspend
+func (c *Client) PoolSuspendSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolSuspendSandboxParams) (*PoolSandboxOperationAccepted, error) {
+	res, err := c.sendPoolSuspendSandbox(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPoolSuspendSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolSuspendSandboxParams) (res *PoolSandboxOperationAccepted, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("pool-suspend-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/suspend"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PoolSuspendSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/project/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pool/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/suspend"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePoolSuspendSandboxRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	{
+		type bitset = [1]uint8
+		var satisfied bitset
+		{
+			stage = "Security:PoolBearerAuth"
+			switch err := c.securityPoolBearerAuth(ctx, PoolSuspendSandboxOperation, r); {
+			case err == nil: // if NO error
+				satisfied[0] |= 1 << 0
+			case errors.Is(err, ogenerrors.ErrSkipClientSecurity):
+				// Skip this security.
+			default:
+				return res, errors.Wrap(err, "security \"PoolBearerAuth\"")
+			}
+		}
+
+		if ok := func() bool {
+		nextRequirement:
+			for _, requirement := range []bitset{
+				{0b00000001},
+			} {
+				for i, mask := range requirement {
+					if satisfied[i]&mask != mask {
+						continue nextRequirement
+					}
+				}
+				return true
+			}
+			return false
+		}(); !ok {
+			return res, ogenerrors.ErrSecurityRequirementIsNotSatisfied
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePoolSuspendSandboxResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

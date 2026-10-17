@@ -20,10 +20,10 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn37AllowedHeaders = map[string]string{
+	rn39AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn46AllowedHeaders = map[string]string{
+	rn48AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn24AllowedHeaders = map[string]string{
@@ -32,7 +32,7 @@ var (
 	rn34AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn45AllowedHeaders = map[string]string{
+	rn47AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
 	rn16AllowedHeaders = map[string]string{
@@ -133,32 +133,74 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 					switch elem[0] {
-					case 'a': // Prefix: "autostop/confirm"
+					case 'a': // Prefix: "autostop/"
 
-						if l := len("autostop/confirm"); len(elem) >= l && elem[0:l] == "autostop/confirm" {
+						if l := len("autostop/"); len(elem) >= l && elem[0:l] == "autostop/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "POST":
-								s.handleConfirmSandboxAutostopRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
-									allowedHeaders: rn9AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
+							break
+						}
+						switch elem[0] {
+						case 'c': // Prefix: "confirm"
+
+							if l := len("confirm"); len(elem) >= l && elem[0:l] == "confirm" {
+								elem = elem[l:]
+							} else {
+								break
 							}
 
-							return
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleConfirmSandboxAutostopRequest([2]string{
+										args[0],
+										args[1],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "POST",
+										allowedHeaders: rn9AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						case 'r': // Prefix: "resumed"
+
+							if l := len("resumed"); len(elem) >= l && elem[0:l] == "resumed" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleResumeSandboxAutostopRequest([2]string{
+										args[0],
+										args[1],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "POST",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
 						}
 
 					case 'e': // Prefix: "exec"
@@ -372,7 +414,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn37AllowedHeaders,
+													allowedHeaders: rn39AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -604,7 +646,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn46AllowedHeaders,
+													allowedHeaders: rn48AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -753,7 +795,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "PATCH",
-									allowedHeaders: rn45AllowedHeaders,
+									allowedHeaders: rn47AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "application/json",
 								})
@@ -1304,29 +1346,68 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						break
 					}
 					switch elem[0] {
-					case 'a': // Prefix: "autostop/confirm"
+					case 'a': // Prefix: "autostop/"
 
-						if l := len("autostop/confirm"); len(elem) >= l && elem[0:l] == "autostop/confirm" {
+						if l := len("autostop/"); len(elem) >= l && elem[0:l] == "autostop/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "POST":
-								r.name = ConfirmSandboxAutostopOperation
-								r.summary = "Confirm a power-down the pool is about to carry out."
-								r.operationID = "confirm-sandbox-autostop"
-								r.operationGroup = ""
-								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm"
-								r.args = args
-								r.count = 2
-								return r, true
-							default:
-								return
+							break
+						}
+						switch elem[0] {
+						case 'c': // Prefix: "confirm"
+
+							if l := len("confirm"); len(elem) >= l && elem[0:l] == "confirm" {
+								elem = elem[l:]
+							} else {
+								break
 							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = ConfirmSandboxAutostopOperation
+									r.summary = "Confirm a power-down the pool is about to carry out."
+									r.operationID = "confirm-sandbox-autostop"
+									r.operationGroup = ""
+									r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm"
+									r.args = args
+									r.count = 2
+									return r, true
+								default:
+									return
+								}
+							}
+
+						case 'r': // Prefix: "resumed"
+
+							if l := len("resumed"); len(elem) >= l && elem[0:l] == "resumed" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = ResumeSandboxAutostopOperation
+									r.summary = "Tell the sandbox its pool thawed it."
+									r.operationID = "resume-sandbox-autostop"
+									r.operationGroup = ""
+									r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed"
+									r.args = args
+									r.count = 2
+									return r, true
+								default:
+									return
+								}
+							}
+
 						}
 
 					case 'e': // Prefix: "exec"

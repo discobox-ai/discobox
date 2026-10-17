@@ -104,7 +104,9 @@ func (r *DockerSandboxRuntime) ExportTree(ctx context.Context, sandboxID string,
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	if err == nil && sb.Status == StatusRunning {
+	// A suspended sandbox's processes hold the tree mid-write as surely as
+	// running ones do.
+	if err == nil && (sb.Status == StatusRunning || sb.Status == StatusSuspended) {
 		return nil, fmt.Errorf("export sandbox %s: %w", sandboxID, ErrSandboxRunning)
 	}
 	// A cache-delivered source's origin is a namespace of this pool's cache,

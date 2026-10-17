@@ -5302,6 +5302,24 @@ func (s *SandboxAutostopConfirmation) SetWakeAt(val OptDateTime) {
 	s.WakeAt = val
 }
 
+// What the sandbox did on being told it was thawed.
+// Ref: #/components/schemas/SandboxAutostopResumption
+type SandboxAutostopResumption struct {
+	// Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text
+	// the sandbox chose.
+	Wakes []string `json:"wakes"`
+}
+
+// GetWakes returns the value of Wakes.
+func (s *SandboxAutostopResumption) GetWakes() []string {
+	return s.Wakes
+}
+
+// SetWakes sets the value of Wakes.
+func (s *SandboxAutostopResumption) SetWakes(val []string) {
+	s.Wakes = val
+}
+
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
 	// Command argv executed in the sandbox.

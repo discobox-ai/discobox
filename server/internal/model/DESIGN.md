@@ -102,7 +102,7 @@ holds exactly the fields whose change requires a container rebuild, and
 pool host spec.
 
 A sandbox's power state is a separate axis (ADR 0034): `runtimeState`
-(`starting`/`running`/`stopping`/`stopped`, empty = not observed) is written
+(`starting`/`running`/`stopping`/`stopped`/`suspended`, empty = not observed) is written
 only by pool-agent reports through `Store.ApplySandboxStateReports`.
 `SandboxIsLive` answers "is anything relying on this container" across both
 axes.

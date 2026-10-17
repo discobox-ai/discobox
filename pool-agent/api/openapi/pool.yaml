@@ -1540,8 +1540,8 @@ paths:
                 the reason, fresh; a sandbox that is not running or does not
                 confirm is refused with a 409 of type sandbox-power-down-refused,
                 and nothing changes. A confirmed idle stops the sandbox; a
-                confirmed sleep freezes it where the runtime can, and stops it
-                otherwise.
+                confirmed sleep freezes it where the runtime can, which reports
+                it suspended, and stops it otherwise.
             operationId: pool-power-down-sandbox
             parameters:
             -   description: Project ID
@@ -1587,6 +1587,62 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Power a pool sandbox down on its own request
+    "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/suspend":
+        post:
+            description: |-
+                Suspends a running sandbox: freezes it, keeping its memory and
+                every process, until a start, or a use that starts it, thaws it
+                (ADR 26-10-16-420 §3). It never stops the sandbox instead: a
+                runtime that cannot freeze it answers with an error and changes
+                nothing. A sandbox already suspended is accepted as it is; one that
+                is not running is a 409 of type sandbox-not-running.
+            operationId: pool-suspend-sandbox
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Sandbox ID
+                in: path
+                name: sandboxId
+                required: true
+                schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PoolSandboxOperationRequest"
+                required: true
+            responses:
+                '202':
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PoolSandboxOperationAccepted"
+                    description: Instruction accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: Suspend pool sandbox
+            tags:
+            - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop":
         post:
             operationId: pool-stop-sandbox

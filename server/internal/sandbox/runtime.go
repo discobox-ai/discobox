@@ -44,6 +44,13 @@ type Provider interface {
 	Start(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
 	Restart(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
+	// Suspend freezes a running sandbox whole, its memory kept, until a start
+	// or EnsureRunning thaws it (ADR 26-10-16-420 §3). Like Start, Stop and
+	// Restart it reports acceptance only. It never stops the sandbox instead:
+	// a runtime that cannot freeze it errors — ErrPoolAgentUnsupported for a
+	// pool agent from before the operation — and one not running is
+	// ErrNotRunning.
+	Suspend(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
 	// PowerDown powers the sandbox down on its own request: it reported itself
 	// idle, or asked to sleep (ADR 26-10-16-337 §5). Unlike Stop it is
 	// conditional — the runtime asks the sandbox to confirm the reason under
@@ -599,7 +606,7 @@ const (
 	// always stopped, because nothing in it is worth keeping in memory.
 	PowerDownIdle PowerDownReason = "idle"
 	// PowerDownSleep is a sandbox an agent asked to sleep: frozen where the
-	// runtime can, stopped otherwise.
+	// runtime can, stopped otherwise (ADR 26-10-16-420 §2).
 	PowerDownSleep PowerDownReason = "sleep"
 )
 

@@ -713,6 +713,14 @@ func (p *Provider) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byt
 	return client.Stop(ctx, ref, state, timeout)
 }
 
+func (p *Provider) Suspend(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	client, err := p.agentClientFromState(ctx, ref, state)
+	if err != nil {
+		return state, err
+	}
+	return client.Suspend(ctx, ref, state)
+}
+
 func (p *Provider) PowerDown(ctx context.Context, ref sandbox.SandboxRef, state []byte, reason sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {

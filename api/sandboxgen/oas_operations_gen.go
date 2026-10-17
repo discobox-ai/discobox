@@ -33,6 +33,7 @@ const (
 	ProposeSandboxRuleOperation             OperationName = "ProposeSandboxRule"
 	PutSandboxRuntimeConfigOperation        OperationName = "PutSandboxRuntimeConfig"
 	RestartSandboxServiceOperation          OperationName = "RestartSandboxService"
+	ResumeSandboxAutostopOperation          OperationName = "ResumeSandboxAutostop"
 	SendSandboxExecInputOperation           OperationName = "SendSandboxExecInput"
 	StartSandboxExecOperation               OperationName = "StartSandboxExec"
 	StartSandboxServiceOperation            OperationName = "StartSandboxService"

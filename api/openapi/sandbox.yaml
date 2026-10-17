@@ -1039,6 +1039,16 @@ components:
                     format: date-time
                     type: string
             type: object
+        SandboxAutostopResumption:
+            additionalProperties: false
+            description: What the sandbox did on being told it was thawed.
+            properties:
+                wakes:
+                    description: Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text the sandbox chose.
+                    items:
+                        type: string
+                    type: array
+            type: object
         SandboxExec:
             additionalProperties: false
             properties:
@@ -1782,6 +1792,39 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response. 409 when the sandbox does not confirm the power-down.
             summary: Confirm a power-down the pool is about to carry out.
+            tags:
+                - Sandbox Autostop
+    /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed:
+        post:
+            description: Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and the wake that brought it back is not returned again by its next power-down's confirmation. Only a token carrying the pool-only autostop scope may call it.
+            operationId: resume-sandbox-autostop
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAutostopResumption'
+                    description: The resume is taken.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Tell the sandbox its pool thawed it.
             tags:
                 - Sandbox Autostop
     /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
