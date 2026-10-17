@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -56,6 +57,17 @@ var (
 	jpgBytes = []byte("\xff\xd8\xff jpg bytes")
 )
 
+// fileURI is the file:// URI a file manager gives a dragged file: on Windows
+// the drive path takes a slash in front, file:///C:/..., where without one the
+// drive would be read as the URI's host.
+func fileURI(path string) string {
+	slashed := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return (&url.URL{Scheme: "file", Path: slashed}).String()
+}
+
 func TestPathsReadsTheImagesAPasteNames(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "my shot.png")
@@ -66,7 +78,7 @@ func TestPathsReadsTheImagesAPasteNames(t *testing.T) {
 	if err := os.WriteFile(second, jpgBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(second)}).String()
+	uri := fileURI(second)
 
 	images, err := Paths(context.Background(), "'"+first+"' "+uri)
 	if err != nil {
@@ -105,16 +117,16 @@ func TestPathsReadsNothingButImages(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("-----BEGIN OPENSSH PRIVATE KEY-----"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	uri := fileURI(secret)
+	texts := []string{uri + "#.png", uri + "?.png"}
+	// Windows lets only some accounts make a symlink.
 	link := filepath.Join(dir, "shot.png")
-	if err := os.Symlink(secret, link); err != nil {
+	if err := os.Symlink(secret, link); err == nil {
+		texts = append(texts, link)
+	} else if runtime.GOOS != "windows" {
 		t.Fatal(err)
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(secret)}).String()
-	for _, text := range []string{
-		uri + "#.png",
-		uri + "?.png",
-		link,
-	} {
+	for _, text := range texts {
 		images, err := Paths(context.Background(), text)
 		if err != nil || images != nil {
 			t.Errorf("Paths(%q) = %v, %v; want nothing read", text, images, err)
