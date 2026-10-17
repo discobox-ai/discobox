@@ -181,10 +181,8 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	for _, build := range []string{"Dockerfile", "boxd.yaml"} {
-		if !strings.Contains(readFile(t, build), "hook-extension.js "+installedHookExt) {
-			t.Errorf("%s does not install the extension at %s", build, installedHookExt)
-		}
+	if !strings.Contains(readFile(t, "Dockerfile"), "hook-extension.js "+installedHookExt) {
+		t.Errorf("Dockerfile does not install the extension at %s", installedHookExt)
 	}
 }
 
@@ -207,17 +205,11 @@ func TestImagePolicy(t *testing.T) {
 	}
 	for _, build := range []struct{ file, want string }{
 		{"Dockerfile", "apt-get install -y --no-install-recommends fd-find"},
-		{"boxd.yaml", "apt-get install -y --no-install-recommends fd-find"},
 		{"Dockerfile", "npm install -g @earendil-works/pi-coding-agent"},
-		{"boxd.yaml", "npm install -g @earendil-works/pi-coding-agent"},
 		{"Dockerfile", "launch.sh /usr/local/bin/" + harness.RunCommand},
 		{"Dockerfile", "prompt.sh /usr/local/bin/discobox-prompt"},
 		{"Dockerfile", "configure.sh " + image.Harness.Config.Command[0]},
 		{"Dockerfile", "agent.conf /usr/local/libexec/discobox/agent.conf"},
-		{"boxd.yaml", "launch.sh /usr/local/bin/" + harness.RunCommand},
-		{"boxd.yaml", "prompt.sh /usr/local/bin/discobox-prompt"},
-		{"boxd.yaml", "configure.sh " + image.Harness.Config.Command[0]},
-		{"boxd.yaml", "agent.conf /usr/local/libexec/discobox/agent.conf"},
 	} {
 		if !strings.Contains(readFile(t, build.file), build.want) {
 			t.Errorf("%s does not install %q", build.file, build.want)

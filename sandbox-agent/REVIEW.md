@@ -8,8 +8,7 @@
   else is let through, because the nested Docker's bridges must reach it. A
   sandbox attached under another name — a boxd machine's `enp*`, an endpoint
   given a `com.docker.network.container_iface_prefix`, an interface an image
-  unit renames — would answer its pool neighbours under its own certificate.
-  Check the boxd twin (`boxd.yaml`) too: it installs the same units
+  unit renames — would answer its pool neighbours under its own certificate
   (ADR 26-10-15-760).
 
 ## Provisioning
@@ -246,8 +245,8 @@ user waits on every single start.
   a table in `init` multiplies: `go-runewidth` before v0.0.31 cost 21ms of a
   ~40ms call. Check a new dependency with
   `GODEBUG=inittrace=1 /opt/discobox/bin/runc --version`.
-- **A personality is a `personalities` entry and a link in both image
-  recipes**, `Dockerfile` and `boxd.yaml`; a test holds the three together. A
+- **A personality is a `personalities` entry and a link in the image
+  recipe**, `Dockerfile`; a test holds the two together. A
   link with no entry starts the agent's server under that name.
 
 ## Platform observation

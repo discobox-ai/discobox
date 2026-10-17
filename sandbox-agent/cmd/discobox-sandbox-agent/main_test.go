@@ -52,8 +52,7 @@ func linkedPaths(t *testing.T, recipe string) []string {
 // under that name, and a personality nothing links is a command the image
 // lost. Where each link sits matters as much as its name: `runc` must be on
 // the directory containerd's and dockerd's drop-ins put ahead of the real one,
-// and the rest on the user's PATH. The container image and its boxd twin lay
-// the same links.
+// and the rest on the user's PATH.
 func TestImageLinksEveryPersonalityAndNothingElse(t *testing.T) {
 	var want []string
 	for name := range personalities {
@@ -64,9 +63,7 @@ func TestImageLinksEveryPersonalityAndNothingElse(t *testing.T) {
 		want = append(want, dir+name)
 	}
 	slices.Sort(want)
-	for _, recipe := range []string{"../../Dockerfile", "../../boxd.yaml"} {
-		if got := linkedPaths(t, recipe); !slices.Equal(got, want) {
-			t.Errorf("%s links the agent as %v, want %v", recipe, got, want)
-		}
+	if got := linkedPaths(t, "../../Dockerfile"); !slices.Equal(got, want) {
+		t.Errorf("Dockerfile links the agent as %v, want %v", got, want)
 	}
 }

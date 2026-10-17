@@ -55,9 +55,8 @@ Look for:
   assumes it sees every change; the server deciding runtime state that the
   pool agent observes and reports.
 - **Contracts and generated code.** An API change made in generated code
-  instead of the OpenAPI document; a contract changed on one side only; one of
-  the files root `REVIEW.md` says has a twin changed without it; a hand-run
-  command documented where a `Taskfile.yml` target belongs.
+  instead of the OpenAPI document; a contract changed on one side only; a
+  hand-run command documented where a `Taskfile.yml` target belongs.
 - **Persisted state.** A schema or on-disk format change with no migration or
   backfill; a design that only works on a fresh database or a recreated
   sandbox, without saying so.

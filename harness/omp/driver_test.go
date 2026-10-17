@@ -172,13 +172,8 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	for _, build := range []struct{ file, want string }{
-		{"Dockerfile", "hook-extension.js " + installedHookExt},
-		{"boxd.yaml", "hook-extension.js " + installedHookExt},
-	} {
-		if !strings.Contains(readFile(t, build.file), build.want) {
-			t.Errorf("%s does not install the extension at %s", build.file, installedHookExt)
-		}
+	if !strings.Contains(readFile(t, "Dockerfile"), "hook-extension.js "+installedHookExt) {
+		t.Errorf("Dockerfile does not install the extension at %s", installedHookExt)
 	}
 }
 
@@ -225,17 +220,11 @@ func TestImagePolicy(t *testing.T) {
 	for _, build := range []struct{ file, want string }{
 		{"Dockerfile", "discobox.yml " + overlayPath},
 		{"Dockerfile", "proxy-env.sh /etc/profile.d/omp-proxy.sh"},
-		{"boxd.yaml", "proxy-env.sh /etc/profile.d/omp-proxy.sh"},
-		{"boxd.yaml", "discobox.yml " + overlayPath},
 		{"Dockerfile", "launch.sh /usr/local/bin/" + harness.RunCommand},
 		{"Dockerfile", "prompt.sh /usr/local/bin/discobox-prompt"},
 		{"Dockerfile", "configure.sh " + image.Harness.Config.Command[0]},
 		{"Dockerfile", "agent.conf /usr/local/libexec/discobox/agent.conf"},
 		{"Dockerfile", "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent"},
-		{"boxd.yaml", "launch.sh /usr/local/bin/" + harness.RunCommand},
-		{"boxd.yaml", "prompt.sh /usr/local/bin/discobox-prompt"},
-		{"boxd.yaml", "configure.sh " + image.Harness.Config.Command[0]},
-		{"boxd.yaml", "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent"},
 	} {
 		if !strings.Contains(readFile(t, build.file), build.want) {
 			t.Errorf("%s does not install %q", build.file, build.want)
