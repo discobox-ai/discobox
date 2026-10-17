@@ -195,6 +195,19 @@ func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimode
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
 
+// PoolSuspendSandbox freezes a running sandbox whole (ADR 26-10-16-420 §3).
+// It never stops one instead: a pause that fails is an error, and a sandbox
+// that is not running a typed 409.
+func (s *sandboxService) PoolSuspendSandbox(ctx context.Context, _ *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolSuspendSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	if err := s.runtime.SuspendSandbox(ctx, params.SandboxId); err != nil {
+		return nil, mapRuntimeError(err)
+	}
+	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
+}
+
 // PoolPowerDownSandbox powers a sandbox down on its own request, once it has
 // confirmed it (ADR 26-10-16-337 §5). A refusal is a typed 409: nothing
 // changed, and the control plane reads it as an instruction with nothing to do.
@@ -363,6 +376,9 @@ func mapRuntimeError(err error) error {
 	}
 	if errors.Is(err, sandboxruntime.ErrPowerDownRefused) {
 		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxPowerDownRefused)
+	}
+	if errors.Is(err, sandboxruntime.ErrNotRunning) {
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxNotRunning)
 	}
 	if errors.Is(err, sandboxruntime.ErrImageUnavailable) {
 		return newTypedStatusError(http.StatusUnprocessableEntity, err.Error(), workerapimodel.ErrorTypeSandboxImageUnavailable)

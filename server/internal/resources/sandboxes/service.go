@@ -788,6 +788,14 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart)
 }
 
+// SuspendSandbox has the pool freeze the sandbox whole (ADR 26-10-16-420 §3).
+// It is an instruction like a stop, and it never becomes one: a pool that
+// cannot freeze the sandbox refuses it, and nothing changes. Any start, or any
+// use, thaws it.
+func (s *Service) SuspendSandbox(ctx context.Context, projectID, sandboxID string, _ services.SuspendSandboxBody) (*model.Sandbox, error) {
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxSuspend)
+}
+
 // RepairSandbox rebuilds the sandbox in place, on its harness config's current
 // image, and starts it (ADR 0035, ADR 0064).
 //
@@ -859,9 +867,10 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 // for want of a container repairs the sandbox once, or waits for the rebuild
 // already coming, and is then sent again (ADR 26-10-12-711 §3). It waits for
 // nothing else: an instruction is a command that wants an answer, and a
-// sandbox still being created is still refused at once. A stop is not a use.
+// sandbox still being created is still refused at once. A stop is not a use,
+// and nor is a suspend.
 func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
-	if instruction == sandboxStop {
+	if instruction == sandboxStop || instruction == sandboxSuspend {
 		sandbox, err := s.instructSandboxOnce(ctx, projectID, sandboxID, instruction)
 		if err != nil {
 			return nil, err
@@ -893,11 +902,24 @@ func (s *Service) instructSandboxOnce(ctx context.Context, projectID, sandboxID 
 	if err != nil {
 		return sandbox, err
 	}
-	// A start, stop or restart from outside — a person's, a lead's, a
-	// repair's — overrides the wake the sandbox asked for: it does not get
+	// A start, stop, restart or suspend from outside — a person's, a lead's,
+	// a repair's — overrides the wake the sandbox asked for: it does not get
 	// back the run time a stop took away (ADR 26-10-16-337 §6). Canceled
 	// before the instruction is sent, so a power reconcile already in flight
 	// cannot record the wake afterwards.
+	//
+	// A suspend cancels it only once the pool has frozen the sandbox: a
+	// refused one changes nothing (ADR 26-10-16-420 §3), and the likeliest
+	// refusal — a sandbox that is not running — is one a sleep stopped, which
+	// is the one with a wake to lose. Canceling after is as safe for it: a
+	// power reconcile reading the epoch once the sandbox is frozen finds it
+	// not running, and the pool refuses its power-down.
+	if instruction == sandboxSuspend {
+		if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {
+			return sandbox, runtimeRefusal(err, instruction.String())
+		}
+		return sandbox, s.cancelSandboxWake(ctx, projectID, sandboxID)
+	}
 	if err := s.cancelSandboxWake(ctx, projectID, sandboxID); err != nil {
 		return sandbox, err
 	}
@@ -924,6 +946,10 @@ func runtimeRefusal(err error, verb string) error {
 		// with, or one that failed and settled, and unarchiving again would be
 		// refused. Repair is the way out of the second.
 		message = fmt.Sprintf("cannot %s sandbox: it is still archived on its pool; try again shortly while its unarchive converges, or repair it if the unarchive failed", verb)
+	case errors.Is(err, ErrNotRunning):
+		message = fmt.Sprintf("cannot %s sandbox: it is not running", verb)
+	case errors.Is(err, sandbox.ErrPoolAgentUnsupported):
+		message = fmt.Sprintf("cannot %s sandbox: its pool's agent does not support it; upgrade the pool", verb)
 	case errors.Is(err, ErrNotFound):
 		// Not only the pool's 404: a sandbox whose create has not placed it on
 		// a pool yet reads the same way.

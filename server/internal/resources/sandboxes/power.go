@@ -23,6 +23,7 @@ const (
 	sandboxStart sandboxInstruction = iota
 	sandboxStop
 	sandboxRestart
+	sandboxSuspend
 )
 
 func (i sandboxInstruction) String() string {
@@ -31,6 +32,8 @@ func (i sandboxInstruction) String() string {
 		return "stop"
 	case sandboxRestart:
 		return "restart"
+	case sandboxSuspend:
+		return "suspend"
 	default:
 		return "start"
 	}
@@ -57,6 +60,8 @@ func instructSandbox(ctx context.Context, st *store.Store, provider Provider, sb
 		rotated, err = provider.Stop(ctx, ref, secretState, defaultSandboxStopTimeout)
 	case sandboxRestart:
 		rotated, err = provider.Restart(ctx, ref, secretState, defaultSandboxStopTimeout)
+	case sandboxSuspend:
+		rotated, err = provider.Suspend(ctx, ref, secretState)
 	default:
 		rotated, err = provider.Start(ctx, ref, secretState)
 	}

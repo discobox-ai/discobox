@@ -480,8 +480,9 @@ func (s *Service) RebindSandboxSecrets(ctx context.Context, projectID, sandboxID
 	}
 	// A sandbox that is not running has nothing to push to: its assignments are
 	// read fresh when the reconciler builds its create options, so the rows
-	// above are the whole repair.
-	if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning {
+	// above are the whole repair. A suspended one is pushed to: nothing builds
+	// it again when it thaws, and its pool delivers what it records then.
+	if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning && sandboxModel.RuntimeState != model.SandboxRuntimeStateSuspended {
 		return nil
 	}
 	// Push even when every sentinel was kept: the proxy caches a resolved value

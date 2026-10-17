@@ -4180,6 +4180,7 @@ func (*ErrorModelStatusCode) setDefaultProjectRes()                {}
 func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
 func (*ErrorModelStatusCode) startSandboxRes()                     {}
 func (*ErrorModelStatusCode) stopSandboxRes()                      {}
+func (*ErrorModelStatusCode) suspendSandboxRes()                   {}
 func (*ErrorModelStatusCode) unarchiveSandboxRes()                 {}
 func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()        {}
 func (*ErrorModelStatusCode) unsetDefaultPoolRes()                 {}
@@ -4263,6 +4264,7 @@ func (*ErrorResponseStatusCode) listSandboxToolsRes()               {}
 func (*ErrorResponseStatusCode) proposeSandboxRuleRes()             {}
 func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
+func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()          {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()           {}
 func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
 func (*ErrorResponseStatusCode) startSandboxServiceRes()            {}
@@ -18727,10 +18729,11 @@ func (s *PoolSandboxState) SetState(val PoolSandboxStateState) {
 type PoolSandboxStateState string
 
 const (
-	PoolSandboxStateStateStarting PoolSandboxStateState = "starting"
-	PoolSandboxStateStateRunning  PoolSandboxStateState = "running"
-	PoolSandboxStateStateStopping PoolSandboxStateState = "stopping"
-	PoolSandboxStateStateStopped  PoolSandboxStateState = "stopped"
+	PoolSandboxStateStateStarting  PoolSandboxStateState = "starting"
+	PoolSandboxStateStateRunning   PoolSandboxStateState = "running"
+	PoolSandboxStateStateStopping  PoolSandboxStateState = "stopping"
+	PoolSandboxStateStateStopped   PoolSandboxStateState = "stopped"
+	PoolSandboxStateStateSuspended PoolSandboxStateState = "suspended"
 )
 
 // AllValues returns all PoolSandboxStateState values.
@@ -18740,6 +18743,7 @@ func (PoolSandboxStateState) AllValues() []PoolSandboxStateState {
 		PoolSandboxStateStateRunning,
 		PoolSandboxStateStateStopping,
 		PoolSandboxStateStateStopped,
+		PoolSandboxStateStateSuspended,
 	}
 }
 
@@ -18753,6 +18757,8 @@ func (s PoolSandboxStateState) MarshalText() ([]byte, error) {
 	case PoolSandboxStateStateStopping:
 		return []byte(s), nil
 	case PoolSandboxStateStateStopped:
+		return []byte(s), nil
+	case PoolSandboxStateStateSuspended:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18773,6 +18779,9 @@ func (s *PoolSandboxStateState) UnmarshalText(data []byte) error {
 		return nil
 	case PoolSandboxStateStateStopped:
 		*s = PoolSandboxStateStateStopped
+		return nil
+	case PoolSandboxStateStateSuspended:
+		*s = PoolSandboxStateStateSuspended
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -21791,6 +21800,7 @@ func (*Sandbox) repairSandboxRes()             {}
 func (*Sandbox) restartSandboxRes()            {}
 func (*Sandbox) startSandboxRes()              {}
 func (*Sandbox) stopSandboxRes()               {}
+func (*Sandbox) suspendSandboxRes()            {}
 func (*Sandbox) updateSandboxMetaRes()         {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
@@ -24122,6 +24132,26 @@ func (s *SandboxAutostopConfirmation) SetWake(val OptString) {
 }
 
 func (*SandboxAutostopConfirmation) confirmSandboxAutostopRes() {}
+
+// What the sandbox did on being told it was thawed.
+// Ref: #/components/schemas/SandboxAutostopResumption
+type SandboxAutostopResumption struct {
+	// Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text
+	// the sandbox chose.
+	Wakes []string `json:"wakes"`
+}
+
+// GetWakes returns the value of Wakes.
+func (s *SandboxAutostopResumption) GetWakes() []string {
+	return s.Wakes
+}
+
+// SetWakes sets the value of Wakes.
+func (s *SandboxAutostopResumption) SetWakes(val []string) {
+	s.Wakes = val
+}
+
+func (*SandboxAutostopResumption) resumeSandboxAutostopRes() {}
 
 // Both the cumulative counter and the rate - the counter so a consumer can difference across any two
 // reports it kept, the rate so it does not have to.
@@ -27281,7 +27311,8 @@ type SandboxRuntime struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 	// Observed power state: what the container is doing, as reported by the pool agent
 	// hosting it, which is the only component that can see it. Absent until an agent has
-	// reported on this sandbox, which is not the same as `stopped`.
+	// reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+	// container frozen whole, its memory kept: any start, or any use, thaws it.
 	RuntimeState OptSandboxRuntimeRuntimeState `json:"runtimeState"`
 	// When runtimeState last changed to its current value.
 	RuntimeStateChangedAt OptDateTime `json:"runtimeStateChangedAt"`
@@ -27867,6 +27898,7 @@ const (
 	SandboxRuntimeDisplayStateRunning   SandboxRuntimeDisplayState = "running"
 	SandboxRuntimeDisplayStateStopping  SandboxRuntimeDisplayState = "stopping"
 	SandboxRuntimeDisplayStateStopped   SandboxRuntimeDisplayState = "stopped"
+	SandboxRuntimeDisplayStateSuspended SandboxRuntimeDisplayState = "suspended"
 	SandboxRuntimeDisplayStateRepairing SandboxRuntimeDisplayState = "repairing"
 	SandboxRuntimeDisplayStateArchiving SandboxRuntimeDisplayState = "archiving"
 	SandboxRuntimeDisplayStateArchived  SandboxRuntimeDisplayState = "archived"
@@ -27882,6 +27914,7 @@ func (SandboxRuntimeDisplayState) AllValues() []SandboxRuntimeDisplayState {
 		SandboxRuntimeDisplayStateRunning,
 		SandboxRuntimeDisplayStateStopping,
 		SandboxRuntimeDisplayStateStopped,
+		SandboxRuntimeDisplayStateSuspended,
 		SandboxRuntimeDisplayStateRepairing,
 		SandboxRuntimeDisplayStateArchiving,
 		SandboxRuntimeDisplayStateArchived,
@@ -27901,6 +27934,8 @@ func (s SandboxRuntimeDisplayState) MarshalText() ([]byte, error) {
 	case SandboxRuntimeDisplayStateStopping:
 		return []byte(s), nil
 	case SandboxRuntimeDisplayStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateSuspended:
 		return []byte(s), nil
 	case SandboxRuntimeDisplayStateRepairing:
 		return []byte(s), nil
@@ -27933,6 +27968,9 @@ func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimeDisplayStateStopped:
 		*s = SandboxRuntimeDisplayStateStopped
+		return nil
+	case SandboxRuntimeDisplayStateSuspended:
+		*s = SandboxRuntimeDisplayStateSuspended
 		return nil
 	case SandboxRuntimeDisplayStateRepairing:
 		*s = SandboxRuntimeDisplayStateRepairing
@@ -28014,14 +28052,16 @@ func (s *SandboxRuntimeResources) init() SandboxRuntimeResources {
 
 // Observed power state: what the container is doing, as reported by the pool agent
 // hosting it, which is the only component that can see it. Absent until an agent has
-// reported on this sandbox, which is not the same as `stopped`.
+// reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+// container frozen whole, its memory kept: any start, or any use, thaws it.
 type SandboxRuntimeRuntimeState string
 
 const (
-	SandboxRuntimeRuntimeStateStarting SandboxRuntimeRuntimeState = "starting"
-	SandboxRuntimeRuntimeStateRunning  SandboxRuntimeRuntimeState = "running"
-	SandboxRuntimeRuntimeStateStopping SandboxRuntimeRuntimeState = "stopping"
-	SandboxRuntimeRuntimeStateStopped  SandboxRuntimeRuntimeState = "stopped"
+	SandboxRuntimeRuntimeStateStarting  SandboxRuntimeRuntimeState = "starting"
+	SandboxRuntimeRuntimeStateRunning   SandboxRuntimeRuntimeState = "running"
+	SandboxRuntimeRuntimeStateStopping  SandboxRuntimeRuntimeState = "stopping"
+	SandboxRuntimeRuntimeStateStopped   SandboxRuntimeRuntimeState = "stopped"
+	SandboxRuntimeRuntimeStateSuspended SandboxRuntimeRuntimeState = "suspended"
 )
 
 // AllValues returns all SandboxRuntimeRuntimeState values.
@@ -28031,6 +28071,7 @@ func (SandboxRuntimeRuntimeState) AllValues() []SandboxRuntimeRuntimeState {
 		SandboxRuntimeRuntimeStateRunning,
 		SandboxRuntimeRuntimeStateStopping,
 		SandboxRuntimeRuntimeStateStopped,
+		SandboxRuntimeRuntimeStateSuspended,
 	}
 }
 
@@ -28044,6 +28085,8 @@ func (s SandboxRuntimeRuntimeState) MarshalText() ([]byte, error) {
 	case SandboxRuntimeRuntimeStateStopping:
 		return []byte(s), nil
 	case SandboxRuntimeRuntimeStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeRuntimeStateSuspended:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -28064,6 +28107,9 @@ func (s *SandboxRuntimeRuntimeState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimeRuntimeStateStopped:
 		*s = SandboxRuntimeRuntimeStateStopped
+		return nil
+	case SandboxRuntimeRuntimeStateSuspended:
+		*s = SandboxRuntimeRuntimeStateSuspended
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -31869,6 +31915,22 @@ func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 }
 
 func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
+
+// Ref: #/components/schemas/SuspendSandboxBody
+type SuspendSandboxBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SuspendSandboxBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// SetSchema sets the value of Schema.
+func (s *SuspendSandboxBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
 
 // The certificate a host trust verifies the host against. ca pins a CA the chain must verify to,
 // with the name checked as usual; leaf-spki pins the server certificate's public key exactly, for a

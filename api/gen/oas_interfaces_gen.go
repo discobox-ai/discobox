@@ -529,6 +529,10 @@ type RestartSandboxServiceRes interface {
 	restartSandboxServiceRes()
 }
 
+type ResumeSandboxAutostopRes interface {
+	resumeSandboxAutostopRes()
+}
+
 type RevokeSecretGrantRes interface {
 	revokeSecretGrantRes()
 }
@@ -575,6 +579,10 @@ type StopSandboxServiceRes interface {
 
 type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
+}
+
+type SuspendSandboxRes interface {
+	suspendSandboxRes()
 }
 
 type UnarchiveSandboxRes interface {

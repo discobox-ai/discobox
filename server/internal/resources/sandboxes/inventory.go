@@ -37,10 +37,11 @@ const primaryExecID = "primary"
 // sandbox.ErrNotRunning, so it is still read from its inventory.
 func (s *Service) AcquireRunningSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	lease, sandboxModel, err := s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes, use)
-	if err != nil && errors.Is(err, sandbox.ErrPoolNotReachable) && sandboxModel != nil && sandboxModel.RuntimeState == model.SandboxRuntimeStateStopped {
+	if err != nil && errors.Is(err, sandbox.ErrPoolNotReachable) && sandboxModel != nil &&
+		(sandboxModel.RuntimeState == model.SandboxRuntimeStateStopped || sandboxModel.RuntimeState == model.SandboxRuntimeStateSuspended) {
 		return nil, sandboxModel, apperrors.StatusError{
 			Status:  http.StatusConflict,
-			Message: fmt.Sprintf("discobox %s is stopped, and its pool is not reachable", sandboxModel.ID),
+			Message: fmt.Sprintf("discobox %s is %s, and its pool is not reachable", sandboxModel.ID, sandboxModel.RuntimeState),
 			Cause:   sandbox.ErrNotRunning,
 		}
 	}

@@ -28164,6 +28164,8 @@ func (s *PoolSandboxStateState) Decode(d *jx.Decoder) error {
 		*s = PoolSandboxStateStateStopping
 	case PoolSandboxStateStateStopped:
 		*s = PoolSandboxStateStateStopped
+	case PoolSandboxStateStateSuspended:
+		*s = PoolSandboxStateStateSuspended
 	default:
 		*s = PoolSandboxStateState(v)
 	}
@@ -39288,6 +39290,82 @@ func (s *SandboxAutostopConfirmation) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SandboxAutostopResumption) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAutostopResumption) encodeFields(e *jx.Encoder) {
+	{
+		if s.Wakes != nil {
+			e.FieldStart("wakes")
+			e.ArrStart()
+			for _, elem := range s.Wakes {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxAutostopResumption = [1]string{
+	0: "wakes",
+}
+
+// Decode decodes SandboxAutostopResumption from json.
+func (s *SandboxAutostopResumption) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAutostopResumption to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "wakes":
+			if err := func() error {
+				s.Wakes = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Wakes = append(s.Wakes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wakes\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAutostopResumption")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAutostopResumption) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAutostopResumption) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SandboxCPUConsumption) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -47435,6 +47513,8 @@ func (s *SandboxRuntimeDisplayState) Decode(d *jx.Decoder) error {
 		*s = SandboxRuntimeDisplayStateStopping
 	case SandboxRuntimeDisplayStateStopped:
 		*s = SandboxRuntimeDisplayStateStopped
+	case SandboxRuntimeDisplayStateSuspended:
+		*s = SandboxRuntimeDisplayStateSuspended
 	case SandboxRuntimeDisplayStateRepairing:
 		*s = SandboxRuntimeDisplayStateRepairing
 	case SandboxRuntimeDisplayStateArchiving:
@@ -47587,6 +47667,8 @@ func (s *SandboxRuntimeRuntimeState) Decode(d *jx.Decoder) error {
 		*s = SandboxRuntimeRuntimeStateStopping
 	case SandboxRuntimeRuntimeStateStopped:
 		*s = SandboxRuntimeRuntimeStateStopped
+	case SandboxRuntimeRuntimeStateSuspended:
+		*s = SandboxRuntimeRuntimeStateSuspended
 	default:
 		*s = SandboxRuntimeRuntimeState(v)
 	}
@@ -54749,6 +54831,69 @@ func (s *StopSandboxBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *StopSandboxBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SuspendSandboxBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SuspendSandboxBody) encodeFields(e *jx.Encoder) {
+	{
+		if s.Schema.Set {
+			e.FieldStart("$schema")
+			s.Schema.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSuspendSandboxBody = [1]string{
+	0: "$schema",
+}
+
+// Decode decodes SuspendSandboxBody from json.
+func (s *SuspendSandboxBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SuspendSandboxBody to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "$schema":
+			if err := func() error {
+				s.Schema.Reset()
+				if err := s.Schema.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SuspendSandboxBody")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SuspendSandboxBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SuspendSandboxBody) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

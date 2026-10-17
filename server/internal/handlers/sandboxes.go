@@ -134,6 +134,18 @@ func (h *Handler) StopSandbox(ctx context.Context, req *apimodel.StopSandboxBody
 	return &body, nil
 }
 
+func (h *Handler) SuspendSandbox(ctx context.Context, req *apimodel.SuspendSandboxBody, params serverapi.SuspendSandboxParams) (serverapi.SuspendSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.SuspendSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandboxBody, params serverapi.RestartSandboxParams) (serverapi.RestartSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.RestartSandbox(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {

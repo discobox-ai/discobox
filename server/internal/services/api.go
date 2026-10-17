@@ -46,6 +46,7 @@ type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
 type StopSandboxBody = apimodel.StopSandboxBody
 type RestartSandboxBody = apimodel.RestartSandboxBody
+type SuspendSandboxBody = apimodel.SuspendSandboxBody
 type UpgradeSandboxBody = apimodel.UpgradeSandboxBody
 type SandboxProviderCatalogItem = apimodel.SandboxProviderCatalogItem
 type ProviderConfigField = apimodel.ProviderConfigField
@@ -188,6 +189,9 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+	// SuspendSandbox freezes a running sandbox whole; a start or a use thaws
+	// it. It never stops one instead (ADR 26-10-16-420 §3).
+	SuspendSandbox(ctx context.Context, projectID, sandboxID string, input SuspendSandboxBody) (*model.Sandbox, error)
 	// RepairSandbox rebuilds the sandbox in place — teardown, recreate against
 	// the durable tree, then a start instruction — as one intent (ADR 0035).
 	// The rebuild lands on the harness config's current image: the same intent

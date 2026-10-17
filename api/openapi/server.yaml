@@ -1494,6 +1494,16 @@ components:
                     description: The file name of that wake. Text the sandbox chose.
                     type: string
             type: object
+        SandboxAutostopResumption:
+            additionalProperties: false
+            description: What the sandbox did on being told it was thawed.
+            properties:
+                wakes:
+                    description: Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text the sandbox chose.
+                    items:
+                        type: string
+                    type: array
+            type: object
         SandboxAgentGitSourceStatus:
             additionalProperties: false
             properties:
@@ -4492,6 +4502,7 @@ components:
                         - running
                         - stopping
                         - stopped
+                        - suspended
                         - repairing
                         - archiving
                         - archived
@@ -4528,12 +4539,14 @@ components:
                     description: |-
                         Observed power state: what the container is doing, as reported by the pool agent
                         hosting it, which is the only component that can see it. Absent until an agent has
-                        reported on this sandbox, which is not the same as `stopped`.
+                        reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+                        container frozen whole, its memory kept: any start, or any use, thaws it.
                     enum:
                         - starting
                         - running
                         - stopping
                         - stopped
+                        - suspended
                     type: string
                 runtimeStateChangedAt:
                     description: When runtimeState last changed to its current value
@@ -6604,6 +6617,16 @@ components:
                     description: Force stop if the provider supports it
                     type: boolean
             type: object
+        SuspendSandboxBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SuspendSandboxBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+            type: object
         StreamErrorEvent:
             additionalProperties: false
             properties:
@@ -7042,6 +7065,7 @@ components:
                         - running
                         - stopping
                         - stopped
+                        - suspended
                     type: string
             required:
                 - sandboxId
@@ -10604,6 +10628,52 @@ paths:
             summary: Stop a sandbox
             tags:
                 - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/suspend:
+        post:
+            description: |-
+                Freezes a running sandbox whole, keeping its memory and every process, until a start or
+                a use thaws it (ADR 26-10-16-420 §3). It never stops the sandbox instead: a sandbox whose
+                runtime cannot freeze it is refused, as is one that is not running. Like a stop, it
+                cancels the wake the sandbox asked for.
+            operationId: suspend-sandbox
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SuspendSandboxBody'
+                required: true
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Suspend a sandbox
+            tags:
+                - Sandboxes
     /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks:
         get:
             operationId: list-harness-hooks
@@ -10963,6 +11033,40 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response. 409 when the sandbox does not confirm the power-down.
             summary: Confirm a power-down the pool is about to carry out.
+            tags:
+                - Sandbox Autostop
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed:
+        post:
+            description: Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and the wake that brought it back is not returned again by its next power-down's confirmation. Only a token carrying the pool-only autostop scope may call it.
+            operationId: resume-sandbox-autostop
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAutostopResumption'
+                    description: The resume is taken.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Tell the sandbox its pool thawed it.
             tags:
                 - Sandbox Autostop
             x-sandbox-agent: true

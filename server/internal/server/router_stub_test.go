@@ -356,6 +356,10 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 	return s.instructSandbox(projectID, sandboxID)
 }
 
+func (s *routerTestServices) SuspendSandbox(_ context.Context, projectID, sandboxID string, _ services.SuspendSandboxBody) (*model.Sandbox, error) {
+	return s.instructSandbox(projectID, sandboxID)
+}
+
 func (s *routerTestServices) RepairSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	return s.instructSandbox(projectID, sandboxID)
 }

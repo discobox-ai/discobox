@@ -703,6 +703,17 @@ func (h *handler) ConfirmSandboxAutostop(_ context.Context, req *sandboxapi.Sand
 	return out, nil
 }
 
+// ResumeSandboxAutostop is the pool telling the sandbox it thawed it from a
+// suspend (ADR 26-10-16-420 §4): the wakes now due are set aside as a boot sets
+// them aside.
+func (h *handler) ResumeSandboxAutostop(_ context.Context, _ sandboxapi.ResumeSandboxAutostopParams) (*sandboxapi.SandboxAutostopResumption, error) {
+	wakes, err := h.autostop.Resumed()
+	if err != nil {
+		return nil, err
+	}
+	return &sandboxapi.SandboxAutostopResumption{Wakes: wakes}, nil
+}
+
 // sandboxAgentListeningPort carries one port onto the wire.
 //
 // Every field of ports.Port has to be mapped here, and a test asserts it by

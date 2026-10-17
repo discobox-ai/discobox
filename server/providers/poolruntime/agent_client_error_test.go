@@ -42,6 +42,7 @@ func TestMapPoolClientErrorSeparatesTheTwoConflicts(t *testing.T) {
 	}{
 		{"archived carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxArchived, sandbox.ErrArchived},
 		{"no container carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxNoContainer, sandbox.ErrNoContainer},
+		{"not running carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxNotRunning, sandbox.ErrNotRunning},
 		{"a bare conflict is already-exists", http.StatusConflict, "", sandbox.ErrAlreadyExists},
 		{"an unrelated type is already-exists", http.StatusConflict, "https://discobox.ai/errors/other", sandbox.ErrAlreadyExists},
 		{"not found is unchanged", http.StatusNotFound, "", sandbox.ErrNotFound},

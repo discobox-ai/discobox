@@ -331,6 +331,11 @@ user waits on every single start.
 - **A confirmed sleep consumes its requests before anything powers down.** A
   frozen sandbox keeps `/run`, and an unconsumed request would put it straight
   back to sleep when it resumes.
+- **A thaw is a start for the idle clock.** `Resumed` records activity as the
+  agent's own start does for a boot: the wall clock runs on while the cgroup is
+  frozen, so a sandbox frozen past its idle timeout is otherwise reported idle
+  and stopped within a poll of thawing, losing the memory the freeze kept
+  (ADR 26-10-16-420 §4).
 - **Reading is never activity.** A status poll, a listing, a title re-sent
   unchanged: none of them may move the idle clock. The pool agent polls every
   sandbox's status every 15 seconds, so anything a read counts as activity

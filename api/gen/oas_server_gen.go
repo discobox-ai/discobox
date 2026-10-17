@@ -921,6 +921,15 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
+	// ResumeSandboxAutostop implements resume-sandbox-autostop operation.
+	//
+	// Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing
+	// booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and
+	// the wake that brought it back is not returned again by its next power-down's confirmation. Only a
+	// token carrying the pool-only autostop scope may call it.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
+	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
 	// RevokeSecretGrant implements revoke-secret-grant operation.
 	//
 	// Revoke a secret grant.
@@ -997,6 +1006,15 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// SuspendSandbox implements suspend-sandbox operation.
+	//
+	// Freezes a running sandbox whole, keeping its memory and every process, until a start or
+	// a use thaws it (ADR 26-10-16-420 §3). It never stops the sandbox instead: a sandbox whose
+	// runtime cannot freeze it is refused, as is one that is not running. Like a stop, it
+	// cancels the wake the sandbox asked for.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/suspend
+	SuspendSandbox(ctx context.Context, req *SuspendSandboxBody, params SuspendSandboxParams) (SuspendSandboxRes, error)
 	// UnarchiveSandbox implements unarchive-sandbox operation.
 	//
 	// Restore an archived sandbox. Its container is recreated against the data that was retained and

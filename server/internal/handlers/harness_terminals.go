@@ -95,6 +95,13 @@ func (h *Handler) ConfirmSandboxAutostop(context.Context, *serverapi.SandboxAuto
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// ResumeSandboxAutostop is what a pool tells the sandbox once it has thawed it
+// from a suspend (ADR 26-10-16-420 §4). Like the confirm beside it, it is the
+// pool's route, neither served nor proxied here.
+func (h *Handler) ResumeSandboxAutostop(context.Context, serverapi.ResumeSandboxAutostopParams) (serverapi.ResumeSandboxAutostopRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 // JudgeSandbox is the judge runtime's own route, which the pool reaches
 // through its agent (ADR 26-09-22-838 §2). The control plane routes judging rather
 // than answering it, so this route is neither served nor proxied here.

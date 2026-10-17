@@ -345,14 +345,20 @@ discobox-power wake rm ci                                       # cancel one
 discobox-power status                                           # leases, sleep, wakes
 ```
 
-- **Sleep powers the box down within a minute, whatever else is going on** —
+- **Sleep takes the box down within a minute, whatever else is going on** —
   a person attached is disconnected, and your own terminal goes with it. Say
   so to the user before you sleep, and do it as the last thing you do.
+- **Where the pool can, sleep freezes the box rather than shutting it down.**
+  Memory, `/run`, your harness and every terminal are kept as they are, and
+  on waking everything carries on from where it froze: nothing is relaunched
+  and nothing is handed `DISCOBOX_WAKE`. The wakes that fell due are moved to
+  `~/.discobox/wake/.done/` as they would be at a boot — read them there. The
+  clock has jumped, and connections you held may be gone.
 - **A wake is a file in `~/.discobox/wake/` whose modification time is when to
   wake.** Discobox starts the box at that time; the note, if you left one, is
   the file's contents. It survives the stop, and the box being started early
   by use — someone attaching, a request to it — which does not cancel it.
-- **On waking, your harness is relaunched with `DISCOBOX_WAKE`** set to the
+- **Woken from a shutdown, your harness is relaunched with `DISCOBOX_WAKE`** set to the
   paths of the wakes that fell due — moved to `~/.discobox/wake/.done/`, one
   per line, notes still in them. Whether the harness turns that into a turn
   is the harness's business. If you wake with no prompt, read them.

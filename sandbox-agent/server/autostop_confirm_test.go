@@ -45,3 +45,28 @@ func TestAutostopConfirmIsThePoolsAlone(t *testing.T) {
 		t.Fatalf("runtime config with the autostop scope = %d, want refused", resp.Code)
 	}
 }
+
+// The resumed route moves the sandbox's wakes, so it is the pool's alone on the
+// same scope as the confirmation (ADR 26-10-16-420 §4).
+func TestAutostopResumedIsThePoolsAlone(t *testing.T) {
+	router, token, poolToken := runtimeConfigRouterWithPool(t)
+	serve := func(tok string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/autostop/resumed", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+	if resp := serve(poolToken("worker-1", ScopeAutostopConfirm)); resp.Code != http.StatusOK {
+		t.Fatalf("resumed with the pool's token = %d %s, want 200", resp.Code, resp.Body.String())
+	}
+	for name, tok := range map[string]string{
+		"a control-plane wildcard":        token("*"),
+		"the pool's runtime-config scope": poolToken("worker-1", ScopeRuntimeConfig),
+		"another pool":                    poolToken("worker-2", ScopeAutostopConfirm),
+	} {
+		if resp := serve(tok); resp.Code != http.StatusForbidden && resp.Code != http.StatusUnauthorized {
+			t.Errorf("resumed with %s = %d, want refused", name, resp.Code)
+		}
+	}
+}

@@ -102,7 +102,9 @@ func (s *Service) ExportSandbox(ctx context.Context, projectID, sandboxID string
 // `stopped` -- but it is also not a container writing, so it does not refuse.
 func sandboxContainerIsLive(sb *model.Sandbox) bool {
 	switch sb.RuntimeState {
-	case model.SandboxRuntimeStateStarting, model.SandboxRuntimeStateRunning, model.SandboxRuntimeStateStopping:
+	// A suspended container's processes hold the tree mid-write as surely as
+	// running ones do.
+	case model.SandboxRuntimeStateStarting, model.SandboxRuntimeStateRunning, model.SandboxRuntimeStateStopping, model.SandboxRuntimeStateSuspended:
 		return sb.State != model.SandboxStateArchived
 	default:
 		return false

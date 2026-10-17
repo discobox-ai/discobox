@@ -130,6 +130,9 @@ var (
 	// ErrPowerDownRefused is a power-down the sandbox did not confirm, or one
 	// for a sandbox that was not running to confirm it. Nothing changed.
 	ErrPowerDownRefused = errors.New("the sandbox does not confirm the power-down")
+	// ErrNotRunning is an instruction that needs the sandbox running — a
+	// suspend — finding it not. Nothing changed.
+	ErrNotRunning = errors.New("the sandbox is not running")
 )
 
 // PowerDownReason is why the control plane is powering a sandbox down: it
@@ -203,9 +206,13 @@ type Status string
 const (
 	StatusCreated Status = "created"
 	StatusRunning Status = "running"
-	StatusStopped Status = "stopped"
-	StatusFailed  Status = "failed"
-	StatusRemoved Status = "removed"
+	// StatusSuspended is a container frozen whole (ADR 26-10-16-420 §1): it
+	// holds its memory and every process, and nothing in it runs or answers.
+	// Docker calls it running; nothing that reaches into a sandbox may.
+	StatusSuspended Status = "suspended"
+	StatusStopped   Status = "stopped"
+	StatusFailed    Status = "failed"
+	StatusRemoved   Status = "removed"
 )
 
 // Runtime performs local sandbox operations for one pool agent.
@@ -267,6 +274,11 @@ type Runtime interface {
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
+	// SuspendSandbox freezes a running sandbox whole (ADR 26-10-16-420 §3).
+	// It never stops it instead: a runtime that cannot freeze it errors and
+	// changes nothing. A suspended sandbox is accepted as it is, and one that
+	// is not running is ErrNotRunning. Every start thaws it.
+	SuspendSandbox(ctx context.Context, sandboxID string) error
 	// PowerDownSandbox powers a sandbox down on its own request
 	// (ADR 26-10-16-337 §5): under the power lock it asks the sandbox to
 	// confirm reason, fresh, and refuses with ErrPowerDownRefused when the
@@ -274,7 +286,8 @@ type Runtime interface {
 	// confirmed sleep freezes it where the runtime can and stops it otherwise.
 	// It returns the sandbox's earliest pending wake.
 	PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error)
-	// EnsureSandboxRunning starts a stopped sandbox on demand, for the
+	// EnsureSandboxRunning starts a stopped sandbox, or thaws a suspended
+	// one, on demand, for the
 	// sandbox-directed routes and the control plane's own ensure
 	// (ADR 0017 §12, ADR 26-10-12-711 §2), and returns once its agent answers.
 	// A sandbox this pool holds without a container is answered at once with
@@ -601,7 +614,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		// in hand; the sandbox's state lives in the pool-host binds prepared
 		// below, not in the container, so it survives.
 		replaced = existing
-		replacedRunning = existing.Status == StatusRunning
+		// A suspended container is replaced by a running one: what it held
+		// in memory goes with the container either way.
+		replacedRunning = existing.Status == StatusRunning || existing.Status == StatusSuspended
 		slog.InfoContext(ctx, "replacing sandbox container",
 			"sandboxId", sandboxID,
 			"reason", reason,
@@ -2473,6 +2488,8 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(ctx context.Context, inspect c
 		}
 		sb.Error = inspect.State.Error
 		switch {
+		case inspect.State.Running && inspect.State.Paused:
+			sb.Status = StatusSuspended
 		case inspect.State.Running:
 			sb.Status = StatusRunning
 		case inspect.State.Dead || inspect.State.OOMKilled || inspect.State.Error != "":
@@ -2746,7 +2763,7 @@ func (r *MemorySandboxRuntime) ClearCache(context.Context) ([]string, error) {
 	var stopped []string
 	now := time.Now().UTC()
 	for sandboxID, sb := range r.sandboxes {
-		if sb.Status != StatusRunning {
+		if sb.Status != StatusRunning && sb.Status != StatusSuspended {
 			continue
 		}
 		sb.Status = StatusStopped
@@ -2789,9 +2806,29 @@ func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, 
 	return nil
 }
 
-// PowerDownSandbox stops a running memory sandbox: there is no agent to
-// confirm with, so it confirms itself, and has no wake.
-func (r *MemorySandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, _ PowerDownReason) (Wake, error) {
+// SuspendSandbox marks a running memory sandbox suspended; a start runs it
+// again.
+func (r *MemorySandboxRuntime) SuspendSandbox(_ context.Context, sandboxID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sb := r.sandboxes[sandboxID]
+	if sb == nil {
+		return ErrNotFound
+	}
+	switch sb.Status {
+	case StatusSuspended:
+		return nil
+	case StatusRunning:
+		sb.Status = StatusSuspended
+		return nil
+	}
+	return ErrNotRunning
+}
+
+// PowerDownSandbox powers down a running memory sandbox: there is no agent to
+// confirm with, so it confirms itself, and has no wake. A sleep suspends it,
+// as the Docker runtime's does; an idle stops it.
+func (r *MemorySandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
 	r.mu.Lock()
 	sb := r.sandboxes[sandboxID]
 	running := sb != nil && sb.Status == StatusRunning
@@ -2801,6 +2838,9 @@ func (r *MemorySandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 	}
 	if !running {
 		return Wake{}, ErrPowerDownRefused
+	}
+	if reason == PowerDownSleep {
+		return Wake{}, r.SuspendSandbox(ctx, sandboxID)
 	}
 	return Wake{}, r.StopSandbox(ctx, sandboxID, nil)
 }

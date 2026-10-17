@@ -57,7 +57,8 @@ type RuntimeConfig struct {
 const RuntimeConfigScope = "runtime-config"
 
 // AutostopConfirmScope is the sandbox-agent token scope that confirms a
-// power-down the pool is about to carry out (ADR 26-10-16-337 §5). Like
+// power-down the pool is about to carry out (ADR 26-10-16-337 §5), and that
+// tells the sandbox the pool thawed it (ADR 26-10-16-420 §4). Like
 // RuntimeConfigScope it is the pool's alone and signed with the pool's key:
 // the pool holds the power lock the confirmation is asked under.
 const AutostopConfirmScope = "autostop-confirm"

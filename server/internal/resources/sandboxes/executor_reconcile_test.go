@@ -203,6 +203,10 @@ func (p *missingRuntimeProvider) PowerDown(_ context.Context, _ sandboxes.Sandbo
 	return sandboxes.Wake{}, state, nil
 }
 
+func (p *missingRuntimeProvider) Suspend(_ context.Context, _ sandboxes.SandboxRef, state []byte) ([]byte, error) {
+	return state, nil
+}
+
 func (p *missingRuntimeProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
@@ -331,6 +335,10 @@ func (p failingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []by
 
 func (p failingSandboxProvider) PowerDown(_ context.Context, _ sandboxes.SandboxRef, state []byte, _ sandboxes.PowerDownReason) (sandboxes.Wake, []byte, error) {
 	return sandboxes.Wake{}, state, nil
+}
+
+func (p failingSandboxProvider) Suspend(_ context.Context, _ sandboxes.SandboxRef, state []byte) ([]byte, error) {
+	return state, nil
 }
 
 func (p failingSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {

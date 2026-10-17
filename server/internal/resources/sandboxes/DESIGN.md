@@ -120,7 +120,15 @@ a dirty row no other reconcile returns over.
   `sleep` wins over `idle` — for a sandbox observed running. The stored status
   is never acted on as it stands: the runtime asks the sandbox to confirm under
   its power lock, and `ErrPowerDownRefused` is the instruction having nothing
-  to do. Idle is always a stop; sleep is the runtime's to freeze if it can.
+  to do. Idle is always a stop; sleep is the runtime's to freeze if it can,
+  which a Docker pool does: the sandbox then reports `suspended`, is not
+  running, and is not asked again on the status that froze it.
+- **Suspend.** `SuspendSandbox` is a power instruction beside stop
+  ([ADR 26-10-16-420](../../../../docs/adr/26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)):
+  provider `Suspend`, never a use, never a stop in its place — a pool that
+  cannot freeze refuses it (`ErrPoolAgentUnsupported`, `ErrNotRunning`, each a
+  409 that says why). Every start and every use's `ensureRunning` thaws a
+  suspended sandbox; `SandboxIsLive` counts it, so nothing rebuilds under it.
 - **The scheduled start.** The confirmation carries the sandbox's earliest
   pending wake, recorded as `WakeAt` and armed as `RequeueAt`. At that time the
   reconcile claims it — clears it on the `WakeEpoch` it read — and sends one
@@ -133,7 +141,9 @@ a dirty row no other reconcile returns over.
   (`recordSandboxIntent`) cancels the wake and moves `WakeEpoch`, wake or no
   wake, in one transaction with the power reconcile's mark — before the
   instruction is sent, so a power-down in flight cannot write its wake back.
-  `WakeAt` and `WakeEpoch` have two writers, so `UpdateSandbox` never writes
+  A suspend cancels it too, but after the pool accepted it, since a refused
+  suspend changes nothing; a power-down reading the epoch once the sandbox is
+  frozen is refused by the pool. `WakeAt` and `WakeEpoch` have two writers, so `UpdateSandbox` never writes
   them (`sandboxWakeColumns`).
 
 ## A sandbox that is not running is read from its inventory
@@ -154,7 +164,7 @@ authorized exactly as the live read is.
 an inspect or, for the screen, an observe. It leases
 as `AcquireSandboxHTTPClient` does — the pool agent, not the row, says
 whether the sandbox is running — and refuses with `sandbox.ErrNotRunning`
-only a sandbox recorded as stopped whose pool is not reachable.
+only a sandbox recorded as stopped or suspended whose pool is not reachable.
 
 ## What a request is for
 
@@ -416,7 +426,7 @@ other's field:
 | Field | Values | Owner |
 | --- | --- | --- |
 | `State` | `pending`, `awaiting_source`, `ready`, `failed`, `archived`, `deleted` | `SandboxReconciler`, and nothing else |
-| `RuntimeState` | `starting`, `running`, `stopping`, `stopped`, empty | `Store.ApplySandboxStateReports`, and nothing else |
+| `RuntimeState` | `starting`, `running`, `stopping`, `stopped`, `suspended`, empty | `Store.ApplySandboxStateReports`, and nothing else |
 | `ErrorMessage`, `ErrorReason`, `ObservedGeneration` | — | `SandboxReconciler` |
 
 `ready` means the container has been converged against the spec. It says

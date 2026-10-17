@@ -483,6 +483,41 @@ func (p *Policy) TakeDueWakes() ([]string, error) {
 	if err := os.WriteFile(p.handoverMarker, nil, 0o600); err != nil {
 		return nil, err
 	}
+	return p.setAsideDueWakes()
+}
+
+// Resumed is the pool telling the sandbox it was thawed from a suspend
+// (ADR 26-10-16-420 §4). Nothing booted, and the harness that froze is the one
+// still running, so nothing is handed to a launch: the wakes now due are moved
+// into WakeDoneDir as a boot moves them, so the wake that brought the sandbox
+// back is not returned by its next power-down's confirmation and does not undo
+// its next sleep. It returns the moved files' paths, oldest first.
+//
+// A thaw is a start for the idle clock, as the agent's own start is for a
+// boot: the freeze stopped every terminal and client from counting, and the
+// wall clock ran on through it, so without this a sandbox frozen past its
+// idle timeout would be idle the moment it thawed.
+func (p *Policy) Resumed() ([]string, error) {
+	if p == nil {
+		return nil, nil
+	}
+	p.mu.Lock()
+	p.seen.consider(p.now().UTC(), "resumed from a suspend")
+	p.mu.Unlock()
+	if p.wakeDir == "" {
+		return nil, nil
+	}
+	paths, err := p.setAsideDueWakes()
+	if err != nil {
+		return paths, err
+	}
+	p.logger.Info("sandbox resumed from a suspend", "wakesDue", len(paths))
+	return paths, nil
+}
+
+// setAsideDueWakes moves every wake whose time has come into WakeDoneDir and
+// returns the moved files' paths, oldest first.
+func (p *Policy) setAsideDueWakes() ([]string, error) {
 	now := p.now().UTC()
 	var due []Request
 	for _, wake := range p.wakes() {

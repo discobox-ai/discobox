@@ -142,7 +142,8 @@ func (r *DockerSandboxRuntime) clearCache(drainCtx context.Context, run *cacheCl
 		errs    []error
 	)
 	for _, sb := range sandboxes {
-		if sb.Status != StatusRunning {
+		// A suspended sandbox still has the caches mounted.
+		if sb.Status != StatusRunning && sb.Status != StatusSuspended {
 			continue
 		}
 		wg.Add(1)
@@ -253,7 +254,7 @@ func (r *DockerSandboxRuntime) stopIfRunning(ctx context.Context, sandboxID stri
 	if err != nil {
 		return false, err
 	}
-	if sb.Status != StatusRunning {
+	if sb.Status != StatusRunning && sb.Status != StatusSuspended {
 		return false, nil
 	}
 	return true, r.stopLocked(ctx, sandboxID)

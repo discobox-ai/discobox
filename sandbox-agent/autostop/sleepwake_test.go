@@ -188,3 +188,52 @@ func TestTheControlPlaneMarkerFollowsTheHandover(t *testing.T) {
 		t.Fatalf("marker still there after the power was taken back: %v", err)
 	}
 }
+
+// A thaw sets aside the wakes now due though this boot already handed its
+// wakes over: the wake that brought a frozen sandbox back would otherwise be
+// returned by its next power-down and undo its next sleep at once
+// (ADR 26-10-16-420 §4).
+func TestResumedSetsAsideTheWakesDueWithinABoot(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	if _, err := p.TakeDueWakes(); err != nil {
+		t.Fatal(err)
+	}
+	writeRequest(t, p.wakeDir, "check-ci", epoch.Add(-time.Minute))
+	writeRequest(t, p.wakeDir, "later", epoch.Add(time.Hour))
+	paths, err := p.Resumed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(p.wakeDir, WakeDoneDir, "check-ci"); len(paths) != 1 || paths[0] != want {
+		t.Fatalf("paths = %v, want [%s]", paths, want)
+	}
+	writeRequest(t, p.sleepDir, "agent", epoch)
+	wake, err := p.Confirm(ReasonSleep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wake.Name != "later" {
+		t.Fatalf("the next sleep's confirmation carries %+v, want the future wake alone", wake)
+	}
+}
+
+// A thaw is a start for the idle clock: a sandbox frozen for longer than its
+// idle timeout is not idle the moment it thaws (ADR 26-10-16-420 §4).
+func TestResumedRestartsTheIdleClock(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	c.Set(epoch.Add(3 * time.Hour))
+	if !p.Evaluate(c.Now()).Idle {
+		t.Fatal("not idle three hours after the agent's start")
+	}
+	if _, err := p.Resumed(); err != nil {
+		t.Fatal(err)
+	}
+	if state := p.Evaluate(c.Now()); state.Idle {
+		t.Fatalf("idle the moment it thawed: %+v", state)
+	}
+	if _, err := p.Confirm(ReasonIdle); !errors.Is(err, ErrNotConfirmed) {
+		t.Fatalf("confirm idle just after a thaw = %v, want ErrNotConfirmed", err)
+	}
+}
