@@ -127,7 +127,9 @@ func resolvePOSIX(l Layers, need Fields) (User, error) {
 			if !isUnknownUser(err) {
 				return User{}, fmt.Errorf("resolve run user %q: %w", name, err)
 			}
-		} else {
+		} else if user.UID == nil || found.Uid == strconv.FormatInt(*user.UID, 10) {
+			// Only for the account the name is: under another uid it is
+			// someone else's entry, an account in the way of the one named.
 			if user.UID == nil {
 				uid, err := parseID(found.Uid, "uid", name)
 				if err != nil {
@@ -154,10 +156,10 @@ func resolvePOSIX(l Layers, need Fields) (User, error) {
 	// whether or not the caller asked for the uid itself.
 	if user.UID != nil {
 		if user.GID == nil && need.Has(sandboxuser.FieldGID) {
-			found, err := lookupUserByID(strconv.FormatInt(*user.UID, 10))
-			if err != nil {
+			found, reason := lookupAccountByID(*user.UID, user.Name)
+			if found == nil {
 				return User{}, sandboxuser.Unresolved(sandboxuser.FieldGID,
-					fmt.Sprintf("uid %d has no passwd entry to take a primary group from", *user.UID))
+					reason+" to take a primary group from")
 			}
 			gid, err := parseID(found.Gid, "gid", strconv.FormatInt(*user.UID, 10))
 			if err != nil {
@@ -184,14 +186,13 @@ func completeNameAndHome(user *User, need Fields) error {
 	if !wantName && !wantHome {
 		return nil
 	}
-	found, err := lookupUserByID(strconv.FormatInt(*user.UID, 10))
-	if err != nil {
+	found, reason := lookupAccountByID(*user.UID, user.Name)
+	if found == nil {
 		field := sandboxuser.FieldName
 		if !wantName {
 			field = sandboxuser.FieldHome
 		}
-		return sandboxuser.Unresolved(field,
-			fmt.Sprintf("uid %d has no passwd entry", *user.UID))
+		return sandboxuser.Unresolved(field, reason)
 	}
 	if wantName {
 		if name := strings.TrimSpace(found.Username); name != "" {
@@ -210,6 +211,22 @@ func completeNameAndHome(user *User, need Fields) error {
 		}
 	}
 	return nil
+}
+
+// lookupAccountByID is the passwd entry of uid, when it is the account a
+// layer named: an entry under another name is an account in the way of the
+// one named -- boot deletes it (ADR 26-10-16-423 §14) -- and completes
+// nothing of it. With no entry to complete from, it says why instead, for
+// the caller's *UnresolvedError.
+func lookupAccountByID(uid int64, name string) (*osuser.User, string) {
+	found, err := lookupUserByID(strconv.FormatInt(uid, 10))
+	if err != nil {
+		return nil, fmt.Sprintf("uid %d has no passwd entry", uid)
+	}
+	if name = strings.TrimSpace(name); name != "" && found.Username != name {
+		return nil, fmt.Sprintf("uid %d's passwd entry is %q's, an account in the way of %q, with nothing of it", uid, found.Username, name)
+	}
+	return found, ""
 }
 
 // clearUnrequested drops what the caller did not ask for. A field that was

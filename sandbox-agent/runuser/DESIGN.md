@@ -93,6 +93,11 @@ These are the POSIX resolver's; the one-account resolver's are above.
 - **Only what is missing is looked up.** A complete identity needs no account to
   exist yet, which is what lets the boot flow resolve an account it is about to
   create.
+- **An entry completes only its own account.** A uid's passwd entry under
+  another name than the one a layer gives, or a name's entry at another uid,
+  is an account in the way of the one named — boot deletes it
+  ([ADR 26-10-16-423](../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §14) — and supplies none of its gid, name or home.
 - **Names resolve to ids, one way.** `GroupName` becomes `GID` and is cleared;
   a named group the image lacks is an `*UnresolvedError` on the gid whatever
   was asked for. Numeric entries resolve as ids before names, so a group named
