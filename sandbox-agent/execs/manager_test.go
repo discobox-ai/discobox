@@ -219,19 +219,21 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 
 func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 	// The default user names no gid, so resolution completes it from the
-	// account database. That is /etc/passwd in the guest; on Windows the same
-	// lookup goes to the account SIDs, where "darren" with uid 1000 is nobody.
+	// account database -- the fixture's, where dev is uid 1000 with gid 2000,
+	// never the machine's own. That is /etc/passwd in the guest; on Windows the
+	// same lookup goes to the account SIDs, where dev with uid 1000 is nobody.
 	if runtime.GOOS == "windows" {
 		t.Skip("completing a gid reads the guest's passwd database; the sandbox is Linux")
 	}
+	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}
 	uid := int64(1000)
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		DefaultUser: &User{
-			Name:          "darren",
+			Name:          "dev",
 			UID:           &uid,
-			HomeDirectory: "/home/darren",
+			HomeDirectory: "/home/dev",
 		},
 		RuntimeDir: t.TempDir(),
 		Env: map[string]string{

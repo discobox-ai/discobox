@@ -3,6 +3,7 @@ package runuser
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/sandboxuser"
@@ -44,6 +45,11 @@ func TestResolveCompletesAgainstTheAccountDatabase(t *testing.T) {
 		// needed here, so the shortfall surfaces as an error rather than a zero.
 		"unknown user name":   {in: User{Name: "nobody-here"}, wantErr: true},
 		"uid with no account": {in: User{UID: sandboxuser.ID(4242424)}, wantErr: true},
+		// An entry under another name, or at another uid, is an account in the
+		// way of the one named (ADR 26-10-16-423 §14): its gid is not this
+		// account's to take.
+		"name with another account's uid":  {in: User{Name: "alice", UID: sandboxuser.ID(1000)}, wantErr: true},
+		"name whose account has other uid": {in: User{Name: "dev", UID: sandboxuser.ID(1001)}, wantErr: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Cleanup(FixedDatabase())
@@ -130,6 +136,24 @@ func TestResolveNamesTheFieldItCouldNotResolve(t *testing.T) {
 	}
 	if unresolved.Field != sandboxuser.FieldUID {
 		t.Fatalf("field = %s, want uid", unresolved.Field)
+	}
+}
+
+// A uid's entry under another name than the one named completes neither name
+// nor home: that account is in the way, and boot deletes it rather than make
+// the named account at its home (ADR 26-10-16-423 §14).
+func TestResolveCompletesNothingFromAnAccountInTheWay(t *testing.T) {
+	t.Cleanup(FixedDatabase())
+	named := Layers{Manifest: &User{Name: "alice", UID: sandboxuser.ID(1000), GID: sandboxuser.ID(1700)}}
+	if got, err := resolvePOSIX(named, sandboxuser.Complete); err == nil || !strings.Contains(err.Error(), `"dev"`) {
+		t.Fatalf("Resolve = %#v, %v; want no home from dev's entry, and dev named as the account in the way", got, err)
+	}
+	got, err := resolvePOSIX(Layers{Manifest: &User{Name: "dev", UID: sandboxuser.ID(1000)}}, sandboxuser.Complete)
+	if err != nil {
+		t.Fatalf("Resolve its own account: %v", err)
+	}
+	if got.HomeDirectory != "/home/dev" || got.GID == nil || *got.GID != 2000 {
+		t.Fatalf("identity = %#v, want dev's own home and gid", got)
 	}
 }
 
