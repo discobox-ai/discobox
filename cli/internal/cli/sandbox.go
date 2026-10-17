@@ -79,6 +79,7 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
+	cmd.AddCommand(a.newSandboxSuspendCommand())
 	cmd.AddCommand(a.newSandboxRepairCommand())
 	cmd.AddCommand(a.newSandboxUpgradeCommand())
 	cmd.AddCommand(a.newSandboxResourcesCommand())
@@ -462,6 +463,36 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force stop if supported")
 	return cmd
+}
+
+// newSandboxSuspendCommand freezes a running discobox whole (ADR 26-10-16-420
+// §3). It is here and nowhere else: `discobox start`, or any use, thaws it.
+func (a *App) newSandboxSuspendCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "suspend DISCOBOX_ID",
+		Short: "Suspend a discobox, keeping its memory",
+		Long: `Suspend a running discobox: freeze everything in it, its memory kept, until it
+is started again or used, which thaws it where it left off. A pool that cannot
+freeze it refuses, and the discobox keeps running. Like a stop, a suspend
+cancels the wake its agent asked for.`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			sandboxRes, err := client.SuspendSandbox(cmd.Context(), &apimodel.SuspendSandboxBody{}, apiclientgen.SuspendSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			if err != nil {
+				return err
+			}
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
+			if err != nil {
+				return err
+			}
+			return a.writeSandbox(cmd, sandbox)
+		},
+	}
 }
 
 func (a *App) newSandboxRestartCommand() *cobra.Command {

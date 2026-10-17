@@ -2231,8 +2231,9 @@ func (m *Model) actions(targets []Sandbox) []action {
 	for _, s := range targets {
 		anyUpgrade = anyUpgrade || s.Upgrade
 		anyRepair = anyRepair || s.repairable()
-		anyRunning = anyRunning || s.State == StateRunning
-		anyStopped = anyStopped || s.State == StateStopped
+		// A suspended box takes both: stop powers it off, start thaws it.
+		anyRunning = anyRunning || s.State == StateRunning || s.State == StateSuspended
+		anyStopped = anyStopped || s.State == StateStopped || s.State == StateSuspended
 		anyArchived = anyArchived || s.State == StateArchived
 		allArchived = allArchived && s.State == StateArchived
 	}
@@ -2278,7 +2279,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: repairWhy},
 		{key: "t", press: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
 			why: "not running"},
-		{key: "T", press: "T", label: "start", detail: "power a stopped box back on", enabled: anyStopped,
+		{key: "T", press: "T", label: "start", detail: "power a stopped box back on, or thaw a suspended one", enabled: anyStopped,
 			why: "already on, or archived"},
 		{key: "x", press: "x", label: "archive", detail: "put it away, disk and all, reversibly", enabled: !allArchived,
 			why: "already archived"},
