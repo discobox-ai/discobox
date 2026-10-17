@@ -52,3 +52,17 @@
   next steps put a sandbox directory into `git -C <dir>` unquoted. Quote it for
   the user's shell before adding another such command, and do not treat this
   section as covering them.
+
+## Crossing into Windows from WSL
+
+- **Ask Windows through `internal/wsl`, never with a copy of it.** Detection,
+  `wslpath`, finding a Windows program (`cmd.exe`, `powershell.exe`) and
+  reading a Windows variable each have a detail a copy forgets — a
+  distribution with `appendWindowsPath=false`, a probe that never returns — and
+  four copies had drifted into two meanings of "is this WSL" before they were
+  folded into one.
+- **WSL is the two variables WSL sets, never the kernel's release string.**
+  That string says "microsoft" in every container on a WSL2 kernel (Docker
+  Desktop, a wslc pool's boxes), where there is no Windows to reach, and the
+  CLI's tests clear the variables to stay out of a developer's real Windows
+  profile.

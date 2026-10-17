@@ -3,11 +3,11 @@ package tui
 import (
 	"context"
 	"encoding/base64"
-	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/atotto/clipboard"
+
+	"github.com/discobox-ai/discobox/cli/internal/wsl"
 )
 
 // osClipboard writes text to the operating system clipboard, or reports that
@@ -20,22 +20,16 @@ import (
 // boundary as base64, which is ASCII under every code page there has ever
 // been, and PowerShell itself decodes it as the UTF-8 it is.
 func osClipboard(ctx context.Context, text string) error {
-	if isWSL() {
+	if wsl.Detected() {
+		powershell, err := wsl.PowerShell(ctx)
+		if err != nil {
+			return err
+		}
 		b64 := base64.StdEncoding.EncodeToString([]byte(text))
 		//nolint:gosec // the interpolated value is base64: its alphabet has no quote or metacharacter, and there is no shell between here and powershell's argv anyway
-		return exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command",
+		return exec.CommandContext(ctx, powershell, "-NoProfile", "-Command",
 			"Set-Clipboard -Value ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+b64+"')))",
 		).Run()
 	}
 	return clipboard.WriteAll(text)
-}
-
-// isWSL reports whether this Linux is a WSL distribution, where the clipboard
-// worth writing is Windows' rather than X11's.
-func isWSL() bool {
-	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
-		return true
-	}
-	release, err := os.ReadFile("/proc/sys/kernel/osrelease")
-	return err == nil && strings.Contains(strings.ToLower(string(release)), "microsoft")
 }
