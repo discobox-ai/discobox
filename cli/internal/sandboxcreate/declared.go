@@ -4,30 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// declaredSourcesFile is where a repository names the other repositories it is
-// worked on with: a JSON object of name to Git URL, optionally with an @REF
-// suffix, at the source's root.
+// A repository names the other repositories it is worked on with in its
+// settings (sandboxconfig.SettingsFile, or the sources.json it replaces): a
+// JSON object of name to Git URL, optionally with an @REF suffix.
 //
-//	{"foo": "https://github.com/acme/foo", "bar": "git@github.com:acme/bar@main"}
+//	{"sources": {"foo": "https://github.com/acme/foo", "bar": "git@github.com:acme/bar@main"}}
 //
-// It is read here, on the client, and not by the pool or the server: deciding
-// what a declared source resolves to means looking at this machine's disk for a
-// checkout of it, which nothing else in the system can see. A remote primary
-// source's is read from its remote, at the commit it is pinned to
-// (readRemoteDeclaredSources). That is also why it
-// is a file of its own rather than a field of .discobox/project.json — that one
-// is read by pool-agent, out of the materialized clone, long after every source
-// has been resolved (ADR 0012 §7).
-const declaredSourcesFile = ".discobox/sources.json"
+// They are read here, on the client, and not by the pool or the server:
+// deciding what a declared source resolves to means looking at this machine's
+// disk for a checkout of it, which nothing else in the system can see. A
+// remote primary source's are read from its remote, at the commit it is
+// pinned to (readRemoteSettings). The pool agent reads the same file's project
+// layer out of the materialized clone, long after every source has been
+// resolved, and each reader takes only its own keys (ADR 26-10-16-423 §11).
 
 // DeclaredSource is one entry of a repository's declared sources and what it
 // resolved to on this machine, so a frontend can say where each came from.
@@ -59,24 +62,20 @@ type DeclaredSource struct {
 // resolved. Frontends render it; this package does not print.
 type ReportDeclaredSourceFunc func(DeclaredSource)
 
-// readDeclaredSources reads the sources a source root declares. A missing file
-// is not an error — most repositories declare nothing — but a malformed one is:
-// it is a statement about what the sandbox must contain, and running without
-// the sources it names would silently produce a sandbox missing them.
-func readDeclaredSources(root string) (map[string]string, error) {
-	path := filepath.Join(root, filepath.FromSlash(declaredSourcesFile))
-	data, err := os.ReadFile(path)
+// readLocalSettings reads the settings of a source root on this machine. A
+// missing file is not an error — most repositories declare nothing.
+func readLocalSettings(root string) (sandboxconfig.RepositorySettings, error) {
+	settings, err := sandboxconfig.ReadSettings(func(path string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	}, sandboxconfig.LegacySourcesFile)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("%s: %w", root, err)
 	}
-	return parseDeclaredSources(data, path)
+	return settings, nil
 }
 
-// readRemoteDeclaredSources reads the sources a remote repository declares at
-// commit, without cloning it (ADR 26-10-10-545 §4).
+// readRemoteSettings reads the settings of a remote repository at commit,
+// without cloning it (ADR 26-10-10-545 §4).
 //
 // The sources of a create are fixed in the create request, so the file is read
 // before the create and must not wait on the history. The pinned commit alone
@@ -89,23 +88,23 @@ func readDeclaredSources(root string) (map[string]string, error) {
 // ref is the branch or tag the commit was resolved from, when there was one:
 // a remote that will not be asked for a commit by id is asked for that, and
 // believed only while it still names the commit.
-func readRemoteDeclaredSources(ctx context.Context, remote, commit, ref string) (map[string]string, error) {
-	where := remote + "@" + commit[:min(len(commit), 12)] + ":" + declaredSourcesFile
-	dir, err := os.MkdirTemp("", "discobox-declared-sources-")
+func readRemoteSettings(ctx context.Context, remote, commit, ref string) (sandboxconfig.RepositorySettings, error) {
+	where := remote + "@" + commit[:min(len(commit), 12)]
+	dir, err := os.MkdirTemp("", "discobox-settings-")
 	if err != nil {
-		return nil, err
+		return sandboxconfig.RepositorySettings{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	git := func(args ...string) (string, error) {
 		return gitutil.Output(ctx, dir, nil, nil, args...)
 	}
 	if _, err := git("init", "--quiet", "--bare", "."); err != nil {
-		return nil, fmt.Errorf("read %s: %w", where, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("read %s: %w", where, err)
 	}
 	// A named remote, so the objects the read needs are fetched from it on
 	// demand.
 	if _, err := git("remote", "add", "origin", remote); err != nil {
-		return nil, fmt.Errorf("read %s: %w", where, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("read %s: %w", where, err)
 	}
 	_, err = git("fetch", "--quiet", "--no-tags", "--depth=1", "--filter=tree:0", "origin", commit)
 	if err != nil {
@@ -119,29 +118,66 @@ func readRemoteDeclaredSources(ctx context.Context, remote, commit, ref string) 
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", where, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("read %s: %w", where, err)
 	}
-	listed, err := git("ls-tree", "--name-only", commit, "--", declaredSourcesFile)
+	// Which of the files the commit holds, in one listing, so a file it does
+	// not hold is never asked for.
+	listed, err := git("ls-tree", "--name-only", commit, "--",
+		sandboxconfig.SettingsFile, sandboxconfig.LegacySourcesFile, sandboxconfig.LegacyProjectFile)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", where, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("read %s: %w", where, err)
 	}
-	if strings.TrimSpace(listed) == "" {
-		return nil, nil
-	}
-	data, err := git("show", commit+":"+declaredSourcesFile)
+	held := strings.Fields(listed)
+	settings, err := sandboxconfig.ReadSettings(func(path string) ([]byte, error) {
+		if !slices.Contains(held, path) {
+			return nil, fs.ErrNotExist
+		}
+		data, err := git("show", commit+":"+path)
+		return []byte(data), err
+	}, sandboxconfig.LegacySourcesFile)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", where, err)
+		return sandboxconfig.RepositorySettings{}, fmt.Errorf("%s: %w", where, err)
 	}
-	return parseDeclaredSources([]byte(data), where)
+	return settings, nil
 }
 
-// parseDeclaredSources parses a declared-sources file read from path, which
-// names it in what is said about it.
-func parseDeclaredSources(data []byte, path string) (map[string]string, error) {
-	var declared map[string]string
-	if err := json.Unmarshal(data, &declared); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+// declaredSources are the sources a repository's settings declare, checked.
+// where names the repository in what is said about them.
+//
+// A malformed file is an error: it is a statement about what the sandbox must
+// contain, and running without the sources it names would silently produce a
+// sandbox missing them.
+//
+// So is a settings.json in the shape of a sources.json — nothing but $schema
+// and keys it does not define, each a string: one moved into place without
+// wrapping it in "sources". Only here, where sources are read: a key a newer
+// Discobox added is otherwise read past, never refused.
+func declaredSources(settings sandboxconfig.RepositorySettings, where string) (map[string]string, error) {
+	parsed, err := settings.Settings()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", where, err)
 	}
+	if unknown := settings.UnknownKeys(); len(unknown) > 0 {
+		var all map[string]json.RawMessage
+		_ = json.Unmarshal(settings.Data, &all)
+		delete(all, "$schema")
+		unwrapped := len(all) == len(unknown)
+		for _, value := range unknown {
+			var url string
+			unwrapped = unwrapped && json.Unmarshal(value, &url) == nil
+		}
+		if unwrapped {
+			return nil, fmt.Errorf(`%s: %s holds %s at its top level, the shape of a sources.json; sources go in its "sources" object`,
+				where, settings.Path, quoteKeys(unknown))
+		}
+	}
+	return checkDeclaredSources(parsed.Sources, where+": "+settings.Path)
+}
+
+// checkDeclaredSources checks the sources a settings file declares, and
+// expands each to the Git URL it names. path names the file in what is said
+// about it.
+func checkDeclaredSources(declared map[string]string, path string) (map[string]string, error) {
 	for name, url := range declared {
 		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("%s: a declared source has no name", path)
@@ -179,6 +215,18 @@ func parseDeclaredSources(data []byte, path string) (map[string]string, error) {
 		declared[name] = source.String()
 	}
 	return declared, nil
+}
+
+// quoteKeys lists the keys of a repository's settings file for a person to
+// read, sorted and each Go-quoted: a key is repository content, and a JSON
+// escape in one decodes to a control character that would otherwise reach
+// their terminal (cli/REVIEW.md).
+func quoteKeys(keys map[string]json.RawMessage) string {
+	quoted := make([]string, 0, len(keys))
+	for _, key := range slices.Sorted(maps.Keys(keys)) {
+		quoted = append(quoted, strconv.Quote(key))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // declaredSourceNames is the order declared sources are resolved in. It is

@@ -110,11 +110,11 @@ sandbox create requests.
   name under its working root (`C:\workspace\source` on Windows).
 - A source's path on this machine and its path in the sandbox are therefore two
   different things off a POSIX host, and the code that reads the client's disk —
-  `.discobox/sources.json`, the checkout beside the primary source — takes the
+  `.discobox/settings.json`, the checkout beside the primary source — takes the
   first, while destinations and reference keys take the second.
 
-- Every source argument — `-C`, `-i`, `--skills`, a `.discobox/sources.json`
-  entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
+- Every source argument — `-C`, `-i`, `--skills`, a `.discobox/settings.json`
+  `sources` entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
   (`ParseSource`; ADR 26-10-15-664). A GitHub repository may be named short —
   `owner/repo` or `github.com/owner/repo` — and is
   `https://github.com/owner/repo.git` only when no such path exists locally:
@@ -159,20 +159,29 @@ sandbox create requests.
   source is and filed as the request's `sourceCodeReferences` under the sandbox
   directory each lands in. This package settles their slugs and destinations;
   see the CLI design doc's "Extra Sources".
-- The primary source's own `.discobox/sources.json` names more of them
-  (`declared.go`). It is read here, on the client, because deciding what a
-  declared source resolves to means looking at this machine's disk for a
-  checkout of it — which is also why it is not a field of `.discobox/project.json`,
-  read by pool-agent out of the materialized clone. A declared URL names a
+- The primary source's own settings name more of them: the `sources` of its
+  `.discobox/settings.json` (`declared.go`, read through
+  `sandboxconfig.ReadSettings`). They are read here, on the client, because
+  deciding what a declared source resolves to means looking at this machine's
+  disk for a checkout of it; the pool agent reads the same file's project
+  layer out of the materialized clone, and each takes only its own keys
+  ([ADR 26-10-16-423](../../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §11).
+  A repository without `settings.json` is read through the `sources.json` it
+  replaces, and the create warns about every old file there, and about any key
+  of `settings.json` it does not read (`Warn`); one holding both kinds is
+  refused, and so is a `settings.json` in the shape of a `sources.json`
+  (nothing but `$schema` and unknown string-valued keys), which is one moved
+  into place without its `sources` wrapper. A declared URL names a
   repository on a network: the client fetches it and delivers it into the
   discobox, and the declaration is repository content, so a `file://` URL or
   a path — this machine's disk — is refused. A remote primary source
-  declares sources too (`readRemoteDeclaredSources`): the file is read from
+  declares sources too (`readRemoteSettings`): the file is read from
   the remote at the pinned commit, by fetching that commit alone
   (`--depth=1 --filter=tree:0`, at depth 1 when the remote refuses the filter)
-  into a repository thrown away afterwards. It has no directory to look
+  into a repository thrown away afterwards, and one listing of the commit says
+  which of the three files it holds. It has no directory to look
   beside, so each source it declares resolves to its URL ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) §4). Reporting is the frontend's
-  (`ReportDeclaredSource`); this package prints nothing. See the CLI design
+  (`ReportDeclaredSource`, `Warn`); this package prints nothing. See the CLI design
   doc's "Declared Sources" and
   [ADR 0056](../../../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
 - `DeliverSource` delivers the sources the server recorded as a client's to

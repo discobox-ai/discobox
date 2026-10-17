@@ -164,10 +164,10 @@ up at the path readlink -f ../foo prints, under the same rule the source
 directory follows above; one from anywhere else is placed under /workspace,
 named after itself.
 
-A repository can name the others it is worked on with, in .discobox/sources.json
+A repository can name the others it is worked on with, in .discobox/settings.json
 at its root:
 
-  {"foo": "https://github.com/acme/foo"}
+  {"sources": {"foo": "https://github.com/acme/foo"}}
 
 Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
@@ -312,6 +312,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	}
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
 	opts.prompt.ReportDeclaredSource = reportDeclaredSource(notes)
+	opts.prompt.Warn = func(warning string) { notes("%s", warningLine(warning)) }
 	parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, prompt)
 	if err != nil {
 		return err
@@ -424,7 +425,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
 	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
-	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
+	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
 	flags.Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
 	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, and nothing in the discobox can read it")
@@ -675,6 +676,13 @@ func declaredSourceLine(source sandboxcreate.DeclaredSource) string {
 	default:
 		return fmt.Sprintf("source %s: %s", source.Name, source.Checkout)
 	}
+}
+
+// warningLine is a create's warning as one line, shared with the window the
+// way declaredSourceLine is. A warning can carry what a repository's own
+// files say, which a discobox may have written, so it is escaped (cli/REVIEW.md).
+func warningLine(warning string) string {
+	return "warning: " + terminalSafe(warning)
 }
 
 // dirtyWorkspacePrompt names what the choice is about: how many paths differ

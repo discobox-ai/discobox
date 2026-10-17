@@ -194,19 +194,19 @@ func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
 // A declared source may be GitHub shorthand, which is always the repository:
 // a declaration never names a directory, so one that happens to be there is
 // not consulted. //PATH is refused, as on any source but the primary.
-func TestParseDeclaredSourcesTakesGitHubShorthand(t *testing.T) {
+func TestCheckDeclaredSourcesTakesGitHubShorthand(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := os.MkdirAll(filepath.Join("acme", "lib"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := parseDeclaredSources([]byte(`{"lib": "acme/lib@v1", "tools": "github.com/acme/tools"}`), "sources.json")
+	got, err := checkDeclaredSources(map[string]string{"lib": "acme/lib@v1", "tools": "github.com/acme/tools"}, "settings.json")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if got["lib"] != "https://github.com/acme/lib.git@v1" || got["tools"] != "https://github.com/acme/tools.git" {
 		t.Fatalf("declared = %v, want the shorthand as GitHub URLs", got)
 	}
-	if _, err := parseDeclaredSources([]byte(`{"lib": "acme/lib//sub"}`), "sources.json"); err == nil || !strings.Contains(err.Error(), "//sub") {
+	if _, err := checkDeclaredSources(map[string]string{"lib": "acme/lib//sub"}, "settings.json"); err == nil || !strings.Contains(err.Error(), "//sub") {
 		t.Fatalf("a declared //PATH = %v, want a refusal naming it", err)
 	}
 }
@@ -217,20 +217,26 @@ func TestBuildPromptSandboxBodyRefusesAMalformedDeclaration(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(primary, ".discobox"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(primary, ".discobox", "sources.json"), []byte("{not json"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	for file, data := range map[string]string{"settings.json": `{"sources": "x"}`, "sources.json": "{not json"} {
+		t.Run(file, func(t *testing.T) {
+			path := filepath.Join(primary, ".discobox", file)
+			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(path)
 
-	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
-		Source:       primary,
-		IncludeDirty: IncludeDirtyNever,
-	})
-	defer local.Close()
-	if err == nil {
-		t.Fatal("a malformed sources.json: got nil error, want a refusal")
-	}
-	if !strings.Contains(err.Error(), "sources.json") {
-		t.Fatalf("error = %v, want it to name the file", err)
+			_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+				Source:       primary,
+				IncludeDirty: IncludeDirtyNever,
+			})
+			defer local.Close()
+			if err == nil {
+				t.Fatalf("a malformed %s: got nil error, want a refusal", file)
+			}
+			if !strings.Contains(err.Error(), file) {
+				t.Fatalf("error = %v, want it to name the file", err)
+			}
+		})
 	}
 }
 
@@ -263,16 +269,177 @@ func TestBuildPromptSandboxBodyRefusesAPathInsteadOfAURL(t *testing.T) {
 
 func declareSources(t *testing.T, root string, declared map[string]string) {
 	t.Helper()
+	writeSettingsFile(t, root, "settings.json", map[string]any{"sources": declared})
+}
+
+// writeSettingsFile writes one of a repository's settings files, as JSON.
+func writeSettingsFile(t *testing.T, root, name string, content any) {
+	t.Helper()
 	dir := filepath.Join(root, ".discobox")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(declared)
+	data, err := json.Marshal(content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "sources.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// settingsLayouts are the repositories ADR 26-10-16-423 §11 tells apart: one
+// with settings.json alone, one with only the files it replaces, and one with
+// both. Each declares lib, and the old files declare it at another ref, so a
+// merge would show.
+var settingsLayouts = []struct {
+	name  string
+	files map[string]any
+	// lib is what lib resolves to; empty for a refusal.
+	lib string
+	// warned says the create warns about the old files, and unknownWarned
+	// about keys it does not read.
+	warned        bool
+	unknownWarned bool
+}{
+	{
+		name:  "settings.json alone",
+		files: map[string]any{"settings.json": map[string]any{"$schema": "https://example.invalid/s.json", "sources": map[string]string{"lib": "https://github.com/acme/lib@v2"}, "features": map[string]any{"brew": false}, "runCommand": []string{"make"}}},
+		lib:   "https://github.com/acme/lib@v2",
+	},
+	{
+		name:  "settings.json with a key this client does not read",
+		files: map[string]any{"settings.json": map[string]any{"sources": map[string]string{"lib": "https://github.com/acme/lib@v2"}, "someday": true}},
+		// A key is repository content: one spelling a control character
+		// reaches the warning quoted, never raw.
+		lib:           "https://github.com/acme/lib@v2",
+		unknownWarned: true,
+	},
+	{
+		name:   "the old files alone",
+		files:  map[string]any{"sources.json": map[string]string{"lib": "https://github.com/acme/lib@v1"}, "project.json": map[string]any{"runCommand": []string{"make"}}},
+		lib:    "https://github.com/acme/lib@v1",
+		warned: true,
+	},
+	{
+		name:  "both",
+		files: map[string]any{"settings.json": map[string]any{"sources": map[string]string{"lib": "https://github.com/acme/lib@v2"}}, "project.json": map[string]any{}},
+	},
+}
+
+// A local primary source's settings, in each layout.
+func TestDeclaredSourcesOfEachSettingsLayout(t *testing.T) {
+	for _, layout := range settingsLayouts {
+		t.Run(layout.name, func(t *testing.T) {
+			primary := newRunSourceTestRepoIn(t, testWorkspace(t), "app")
+			for name, content := range layout.files {
+				writeSettingsFile(t, primary, name, content)
+			}
+			var warnings []string
+			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
+				resolvedRunSource{LocalDirectory: primary})
+			checkSettingsLayout(t, layout.lib, layout.warned, layout.unknownWarned, declared, warnings, err)
+		})
+	}
+}
+
+// A remote primary source's settings, read at its pinned commit, in each
+// layout.
+func TestRemoteDeclaredSourcesOfEachSettingsLayout(t *testing.T) {
+	for _, layout := range settingsLayouts {
+		t.Run(layout.name, func(t *testing.T) {
+			remote := newRunSourceTestRepoIn(t, t.TempDir(), "widget")
+			git := runSourceTestGit(t, remote)
+			for name, content := range layout.files {
+				writeSettingsFile(t, remote, name, content)
+			}
+			git("add", ".discobox")
+			git("commit", "-m", "settings")
+			git("config", "uploadpack.allowFilter", "true")
+			primary := resolvedRunSource{
+				Kind:     runSourceKindGit,
+				URL:      "file://" + filepath.ToSlash(remote),
+				Checkout: resolvedRunSourceCheckout{Commit: strings.TrimSpace(git("rev-parse", "HEAD")), RefName: "main", RefType: runSourceRefTypeBranch},
+			}
+			var warnings []string
+			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }}, primary)
+			checkSettingsLayout(t, layout.lib, layout.warned, layout.unknownWarned, declared, warnings, err)
+			if len(warnings) > 0 && !strings.HasPrefix(warnings[0], primary.URL+"@") {
+				t.Fatalf("warning %q does not name the remote", warnings[0])
+			}
+		})
+	}
+}
+
+// A sources.json moved into place without its "sources" wrapper is refused,
+// $schema or not, rather than read as a repository declaring nothing; a file
+// of keys a newer discobox added is read past with a warning, never refused.
+func TestASettingsFileInTheShapeOfASourcesFile(t *testing.T) {
+	for name, tc := range map[string]struct {
+		content any
+		refused bool
+	}{
+		"unwrapped":              {map[string]string{"lib": "https://github.com/acme/lib"}, true},
+		"unwrapped with $schema": {map[string]string{"$schema": "https://example.invalid/s.json", "lib": "https://github.com/acme/lib"}, true},
+		"a newer discobox's key": {map[string]any{"$schema": "https://example.invalid/s.json", "skills": []string{"x"}}, false},
+		"a newer string key":     {map[string]any{"lib": "https://github.com/acme/lib", "features": map[string]any{}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			primary := newRunSourceTestRepoIn(t, testWorkspace(t), "app")
+			writeSettingsFile(t, primary, "settings.json", tc.content)
+			var warnings []string
+			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
+				resolvedRunSource{LocalDirectory: primary})
+			if tc.refused {
+				if err == nil || !strings.Contains(err.Error(), `holds "lib" at its top level`) {
+					t.Fatalf("declared = %v, %v; want the file refused, naming the key", declared, err)
+				}
+				return
+			}
+			if err != nil || len(declared) != 0 || len(warnings) != 1 {
+				t.Fatalf("declared = %v, %v, warnings %q; want nothing declared and one warning", declared, err, warnings)
+			}
+		})
+	}
+}
+
+// A key is repository content: one spelling a control character is quoted
+// wherever it is named, never handed to a terminal raw.
+func TestQuoteKeysQuotesRepositoryContent(t *testing.T) {
+	keys := map[string]json.RawMessage{"\x1b]52;c;eA==\a": nil, "a": nil}
+	if quoted := quoteKeys(keys); quoted != `"\x1b]52;c;eA==\a", "a"` {
+		t.Fatalf("quoteKeys = %s, want each key Go-quoted, sorted", quoted)
+	}
+}
+
+func checkSettingsLayout(t *testing.T, lib string, warned, unknownWarned bool, declared map[string]string, warnings []string, err error) {
+	t.Helper()
+	if lib == "" {
+		if err == nil || !strings.Contains(err.Error(), "settings.json replaces .discobox/project.json") {
+			t.Fatalf("declared = %v, %v; want the repository refused for holding both", declared, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("declared sources: %v", err)
+	}
+	if len(declared) != 1 || declared["lib"] != lib {
+		t.Fatalf("declared = %v, want lib at %s alone", declared, lib)
+	}
+	if unknownWarned {
+		if len(warnings) != 1 || !strings.Contains(warnings[0], `sets "someday", which this discobox does not read`) {
+			t.Fatalf("warnings = %q, want one naming the unknown key", warnings)
+		}
+		return
+	}
+	if !warned {
+		if len(warnings) != 0 {
+			t.Fatalf("warnings = %q, want none", warnings)
+		}
+		return
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], ".discobox/sources.json and .discobox/project.json are read because the repository has no .discobox/settings.json") {
+		t.Fatalf("warnings = %q, want one naming both old files", warnings)
 	}
 }
 
@@ -342,10 +509,10 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(remote, ".discobox"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(remote, ".discobox", "sources.json"), []byte(`{"lib": "https://github.com/acme/lib@main"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(remote, ".discobox", "settings.json"), []byte(`{"sources": {"lib": "https://github.com/acme/lib@main"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git("add", ".discobox/sources.json")
+	git("add", ".discobox/settings.json")
 	git("commit", "-m", "declare lib")
 	declaring := strings.TrimSpace(git("rev-parse", "HEAD"))
 	url := "file://" + filepath.ToSlash(remote)
@@ -353,7 +520,11 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 	for name, allowFilter := range map[string]string{"a remote that takes a filtered fetch": "true", "a remote that refuses one": "false"} {
 		t.Run(name, func(t *testing.T) {
 			git("config", "uploadpack.allowFilter", allowFilter)
-			declared, err := readRemoteDeclaredSources(context.Background(), url, declaring, "main")
+			settings, err := readRemoteSettings(context.Background(), url, declaring, "main")
+			if err != nil {
+				t.Fatalf("read settings: %v", err)
+			}
+			declared, err := declaredSources(settings, url)
 			if err != nil {
 				t.Fatalf("read declared sources: %v", err)
 			}
@@ -365,9 +536,9 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 
 	// The commit pinned, not the remote's tip: before the file existed there
 	// was nothing declared.
-	declared, err := readRemoteDeclaredSources(context.Background(), url, before, "")
-	if err != nil || declared != nil {
-		t.Fatalf("declared at a commit without the file = %v, %v; want none", declared, err)
+	settings, err := readRemoteSettings(context.Background(), url, before, "")
+	if err != nil || settings.Path != "" {
+		t.Fatalf("settings at a commit without the file = %+v, %v; want none", settings, err)
 	}
 
 	// Through the create: a remote primary's declared source is brought in by
@@ -392,16 +563,17 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 
 	// A declaration is repository content, fetched by this client and
 	// delivered into the discobox: it may not name this machine's disk.
-	if _, err := parseDeclaredSources([]byte(`{"lib": "file:///home/me/private"}`), "sources.json"); err == nil || !strings.Contains(err.Error(), "a path on this machine") {
+	if _, err := checkDeclaredSources(map[string]string{"lib": "file:///home/me/private"}, "settings.json"); err == nil || !strings.Contains(err.Error(), "a path on this machine") {
 		t.Fatalf("a declared file:// URL was accepted: %v", err)
 	}
 
 	// A malformed file is an error there as it is on disk.
-	if err := os.WriteFile(filepath.Join(remote, ".discobox", "sources.json"), []byte(`{"lib": "../lib"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(remote, ".discobox", "settings.json"), []byte(`{"sources": {"lib": "../lib"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git("commit", "-am", "declare a path")
-	if _, err := readRemoteDeclaredSources(context.Background(), url, strings.TrimSpace(git("rev-parse", "HEAD")), "main"); err == nil || !strings.Contains(err.Error(), "not a Git URL") {
+	primary.Checkout.Commit = strings.TrimSpace(git("rev-parse", "HEAD"))
+	if _, err := declaredPromptSources(context.Background(), PromptOptions{}, primary); err == nil || !strings.Contains(err.Error(), "not a Git URL") {
 		t.Fatalf("a declared path was accepted: %v", err)
 	}
 }

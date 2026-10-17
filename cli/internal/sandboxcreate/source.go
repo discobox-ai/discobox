@@ -1063,7 +1063,7 @@ type resolvedReference struct {
 // host path of its own, where it goes.
 //
 // `--include` leaves both to the source: `-i ../foo` is the source foo, and a
-// remote one lands under /workspace. A declared source (.discobox/sources.json)
+// remote one lands under /workspace. A declared source (.discobox/settings.json)
 // sets both, because its whole point is that the sandbox looks the same however
 // the source was obtained: it takes the name the repository declared, and a
 // remote fallback is placed at the sibling path the local checkout would have
