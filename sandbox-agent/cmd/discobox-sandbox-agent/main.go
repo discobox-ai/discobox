@@ -1,3 +1,5 @@
+// Command discobox-sandbox-agent is the sandbox agent, and by the name it is
+// invoked under it is also each command in personalities.
 package main
 
 import (
@@ -20,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/dnsstub"
+	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
@@ -31,13 +34,29 @@ import (
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
-func main() {
-	os.Exit(run(os.Args[1:]))
+// personalities are the commands this binary is when invoked by argv[0]
+// under another name, through the links the image lays (ADR 26-10-16-423 §7).
+// They always ship at the agent's version, so one Go runtime serves them all;
+// each keeps the flags and behavior it had as a binary of its own.
+// discobox-access is not one: it is a client of a portable protocol and stays
+// its own binary (access/DESIGN.md).
+var personalities = map[string]func(args []string) int{
+	"discobox-hook-publish": runHookPublish,
+	"discobox-ca-anchor":    runCAAnchor,
+	"discobox-power":        runPower,
+	// On a directory prepended to containerd's and dockerd's PATH.
+	"runc": runRunc,
+	// Ahead of the real CLI on PATH. See the dockercache package.
+	"docker": dockercache.Run,
 }
 
-func run(args []string) int {
-	if filepath.Base(os.Args[0]) == "discobox-hook-publish" {
-		return runHookPublish(args)
+func main() {
+	os.Exit(run(filepath.Base(os.Args[0]), os.Args[1:]))
+}
+
+func run(name string, args []string) int {
+	if personality, ok := personalities[name]; ok {
+		return personality(args)
 	}
 	if len(args) > 0 && args[0] == "hook-publish" {
 		return runHookPublish(args[1:])

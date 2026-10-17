@@ -1,8 +1,3 @@
-// Command discobox-runc installs as `runc` on a directory prepended to
-// containerd's and dockerd's PATH. It seeds the sandbox's MITM CA into a
-// container's trust stores and injects proxy-trust environment into its OCI
-// spec, then execs the real runc. See the runcca package for why this replaced
-// the NRI plugin of docs/adr/0015.
 package main
 
 import (
@@ -14,8 +9,12 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 )
 
-func main() {
-	args := os.Args[1:]
+// runRunc is the runc wrapper, the agent invoked as `runc` from a directory
+// prepended to containerd's and dockerd's PATH. It seeds the sandbox's MITM CA
+// into a container's trust stores and injects proxy-trust environment into
+// its OCI spec, then execs the real runc. See the runcca package for why this
+// replaced the NRI plugin of docs/adr/0015.
+func runRunc(args []string) int {
 	id := runcca.ContainerID(args)
 
 	// Injection is best-effort by design. A container that starts without the
@@ -39,6 +38,6 @@ func main() {
 	//nolint:gosec // Passing this process's own argv through to the real runc is the entire point of the shim.
 	if err := syscall.Exec(runcca.RealRunc, argv, os.Environ()); err != nil {
 		fmt.Fprintf(os.Stderr, "discobox-runc: exec %s: %v\n", runcca.RealRunc, err)
-		os.Exit(127)
 	}
+	return 127
 }

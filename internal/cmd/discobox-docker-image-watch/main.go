@@ -351,10 +351,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	if err := addTree(sandboxRoot, sandboxSeen); err != nil {
 		return nil, err
 	}
-	// Every binary the Dockerfile builds, so every root-module package it
-	// copies into the build context is watched without naming any of them.
-	sandboxFiles, err := goModuleFiles(ctx, sandboxRoot, repoRoot,
-		"./cmd/discobox-sandbox-agent", "./cmd/discobox-runc", "./cmd/discobox-docker")
+	// The binary the Dockerfile builds, so every root-module package it copies
+	// into the build context is watched without naming any of them.
+	sandboxFiles, err := goModuleFiles(ctx, sandboxRoot, repoRoot, "./cmd/discobox-sandbox-agent")
 	if err != nil {
 		return nil, err
 	}

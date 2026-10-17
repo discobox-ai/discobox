@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
@@ -92,20 +92,25 @@ lags it by the 15s poll). `d cp` scripts into `/tmp`.
   timed keys (`\x1b[A` focuses the list, `\r` opens a box, `\x01q` quits)
   and `os.system` calls (`d admin terminal input`) to change the box mid-run.
 
-# Verifying the runc wrapper (runcca, sandbox-agent/cmd/discobox-runc)
+# Verifying the runc wrapper (runcca, the agent's `runc` personality)
 
 The installed wrapper is `/opt/discobox/bin/runc`; dockerd and containerd call
-it for every container. Swap a build in, drive `docker run`, then put the
-original back.
+it for every container. It is the sandbox agent's `runc` personality: a
+symlink to the agent, which dispatches on `argv[0]`
+(`sandbox-agent/cmd/discobox-sandbox-agent/runc.go`). Point the link at a
+build, drive `docker run`, then put the original back.
 
 ```bash
 S=<scratchpad>
-(cd sandbox-agent && CGO_ENABLED=0 go build -o $S/discobox-runc ./cmd/discobox-runc)
-cp /opt/discobox/bin/runc $S/runc.orig
-sudo install -m 0755 $S/discobox-runc /opt/discobox/bin/runc
+(cd sandbox-agent && CGO_ENABLED=0 go build -o $S/discobox-sandbox-agent ./cmd/discobox-sandbox-agent)
+cp -P /opt/discobox/bin/runc $S/runc.orig   # the link, or an older image's file
+sudo ln -sf $S/discobox-sandbox-agent /opt/discobox/bin/runc
 docker run --rm -e HTTP_PROXY busybox:1.36 sh -c 'env | grep -i proxy | sort'
-sudo install -m 0755 $S/runc.orig /opt/discobox/bin/runc   # always restore
+sudo cp -P --remove-destination $S/runc.orig /opt/discobox/bin/runc   # always restore
 ```
+
+An image from before the fold ships a standalone wrapper file there, and its
+agent has no `runc` personality: restore what was there, never a fixed link.
 
 - Run the same commands against the original wrapper first, as a baseline.
 - Inputs: `/etc/discobox/proxy/bridge.json` (root-only, loopback forwarder)

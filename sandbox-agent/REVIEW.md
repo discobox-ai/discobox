@@ -222,6 +222,18 @@ user waits on every single start.
   boot must not assert it again. Both sides asserting produced two full walks of
   the same inodes, in opposite directions, on every start.
 
+## Personalities
+
+- **Every package init the agent links is paid by every `runc` and `docker`
+  call.** Those are personalities of this binary (`cmd/discobox-sandbox-agent`),
+  and a nested container start runs `runc` four times. A dependency that builds
+  a table in `init` multiplies: `go-runewidth` before v0.0.31 cost 21ms of a
+  ~40ms call. Check a new dependency with
+  `GODEBUG=inittrace=1 /opt/discobox/bin/runc --version`.
+- **A personality is a `personalities` entry and a link in both image
+  recipes**, `Dockerfile` and `boxd.yaml`; a test holds the three together. A
+  link with no entry starts the agent's server under that name.
+
 ## Platform observation
 
 - **Ports, resource counters and power-off go through their seam**

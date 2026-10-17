@@ -567,16 +567,16 @@ layers:
           export GOPATH=/var/tmp/discobox-go GOCACHE=/var/tmp/discobox-go/cache GOFLAGS=-trimpath CGO_ENABLED=0
           cd /var/tmp/discobox-src
           go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-sandbox-agent ./cmd/discobox-sandbox-agent
-          # As `runc`, on the directory prepended to containerd's and dockerd's
-          # PATH; and as `docker`, ahead of the real CLI. See the Dockerfile.
-          install -d /opt/discobox/bin
-          go -C sandbox-agent build -ldflags="-s -w" -o /opt/discobox/bin/runc ./cmd/discobox-runc
-          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-ca-anchor ./cmd/discobox-ca-anchor
-          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/discobox-power ./cmd/discobox-power
-          go -C sandbox-agent build -ldflags="-s -w" -o /usr/local/bin/docker ./cmd/discobox-docker
           go -C access build -ldflags="-s -w" -o /usr/local/bin/discobox-access ./cmd/discobox-access
           go -C cli build -ldflags="-s -w" -o /usr/local/bin/discobox ./cmd/discobox
-          ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish
+          # The agent's personalities, as the Dockerfile lays them: `runc` on
+          # the directory prepended to containerd's and dockerd's PATH, and
+          # `docker` ahead of the real CLI.
+          install -d /opt/discobox/bin
+          ln -sf /usr/local/bin/discobox-sandbox-agent /opt/discobox/bin/runc
+          for c in docker discobox-power discobox-ca-anchor discobox-hook-publish; do
+            ln -sf /usr/local/bin/discobox-sandbox-agent "/usr/local/bin/$c"
+          done
           # The base layer's manifest, the Dockerfile's
           # io.discobox.image.v1.10-sandbox-base label (see image-files).
           install -d /usr/local/share/discobox/labels
