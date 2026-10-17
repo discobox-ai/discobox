@@ -63,6 +63,13 @@ missing — so it survives review easily. Rules, and why each exists:
   means its rules (a numeric entry is a gid) hold for every caller,
   `runuser.FixedDatabase()` fakes the database for every test, and two parsers
   of one file drift.
+- **Boot never changes an account in place, and deletes before it resolves
+  the group.** An account holding the sandbox's uid or name that is not
+  exactly the sandbox's is deleted and the account made fresh (ADR
+  26-10-16-423 §14); a `usermod --login`, `--uid`, `--gid` or `--home` on it
+  is the rename that failed on a logged-in provider user (PR #180). The
+  deletion comes before `ensureGroup`: `userdel` takes the account's own group
+  with it, so a group resolved first can be gone by `useradd`.
 - **A group the image never created is skipped, not fatal.** `runuser.Groups`
   drops it from the credential, the same way boot's `ensureAdditionalGroups`
   skips it, so the two cannot disagree about the same image. A harness Dockerfile
@@ -77,8 +84,9 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   machine's real accounts — `osuser.Current()` makes a test pass or fail on
   whoever runs it, and hides id assumptions behind whatever the host happens to
   use.
-- Do not write fixtures where `uid == gid`. That coincidence is what the rules
-  must not rely on, so reproducing it hides the bug.
+- Do not write fixtures where `uid == gid` — boot's passwd and group fakes
+  included. That coincidence is what the rules must not rely on, so
+  reproducing it hides the bug.
 
 ## Processes
 

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -79,7 +80,9 @@ func resolveIdentity(manifest *runuser.User) (identity, error) {
 
 	// Name and home come from the account when it already exists. A fresh one
 	// has neither, which is not an error: boot is the thing that gives them to
-	// it. Asking without them in `need` is how that expectation is stated.
+	// it. Asking without them in `need` is how that expectation is stated. An
+	// account in the way under another name is not this one, and runuser
+	// completes nothing from it.
 	if described, err := runuser.Resolve(layers, sandboxuser.Complete); err == nil {
 		id.name, id.home = described.Name, described.HomeDirectory
 	}
@@ -140,21 +143,43 @@ func envID(key string) (*int64, error) {
 	return &parsed, nil
 }
 
-// ensureUser creates or aligns the sandbox user/group and grants passwordless
-// sudo. Root needs none of this.
+// ensureUser makes the sandbox's account and grants it passwordless sudo.
+// Root needs none of this.
+//
+// An existing account is never changed in place: one that is already exactly
+// the sandbox's -- its name, uid, gid and home, made by an earlier boot -- is
+// kept, and any other holding the sandbox's uid or name is deleted before the
+// account is created, as if the box had never had one (ADR 26-10-16-423 §14).
+// A provider's image commonly has an account at uid 1000, the uid every macOS
+// and Windows client sends; that and any other account in the way are
+// deleted whenever boot finds one.
 func (b *booter) ensureUser(id identity) error {
 	if !id.configured || id.uid == 0 {
 		return nil
+	}
+	// Refused before anything is deleted. Root is uid 0, which needs no
+	// account (ADR 0141); a root at another uid would have to be made by
+	// deleting the real one.
+	if id.name == "root" {
+		return fmt.Errorf("the sandbox's account cannot be named root with uid %d: root is uid 0", id.uid)
+	}
+	if !sudoersNameRE.MatchString(id.name) {
+		return fmt.Errorf("user name %q is not safe for sudoers", id.name)
+	}
+	// Before the group: userdel takes the deleted account's own group with
+	// it, which may be the group at the sandbox's gid.
+	kept, err := b.clearAccountsInTheWay(id)
+	if err != nil {
+		return err
 	}
 	groupName, err := b.ensureGroup(id)
 	if err != nil {
 		return err
 	}
-	if err := b.ensureAccount(id, groupName); err != nil {
-		return err
-	}
-	if !sudoersNameRE.MatchString(id.name) {
-		return fmt.Errorf("user name %q is not safe for sudoers", id.name)
+	if !kept {
+		if err := b.run("useradd", "--uid", strconv.Itoa(id.uid), "--gid", groupName, "--home-dir", id.home, "--shell", "/bin/bash", id.name); err != nil {
+			return err
+		}
 	}
 	return b.writeSudoers(id.name)
 }
@@ -175,21 +200,162 @@ func (b *booter) ensureGroup(id identity) (string, error) {
 	return id.name, nil
 }
 
-func (b *booter) ensureAccount(id identity, groupName string) error {
-	if b.exists("id", "-u", id.name) {
-		return b.run("usermod", "--uid", strconv.Itoa(id.uid), "--gid", strconv.Itoa(id.gid), "--home", id.home, id.name)
-	}
-	if out, ok := b.lookup("getent", "passwd", strconv.Itoa(id.uid)); ok {
-		existing := firstField(out)
-		if existing != "" && existing != id.name {
-			if err := b.run("usermod", "--login", id.name, existing); err != nil {
-				return err
-			}
-		}
-		return b.run("usermod", "--gid", strconv.Itoa(id.gid), "--home", id.home, id.name)
-	}
-	return b.run("useradd", "--uid", strconv.Itoa(id.uid), "--gid", groupName, "--home-dir", id.home, "--shell", "/bin/bash", id.name)
+// passwdEntry is the fields of an /etc/passwd line boot decides by.
+type passwdEntry struct {
+	name string
+	uid  int
+	gid  int
+	home string
 }
+
+func parsePasswdEntry(line string) (passwdEntry, error) {
+	line = strings.TrimSpace(line)
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	fields := strings.Split(line, ":")
+	if len(fields) < 6 {
+		return passwdEntry{}, fmt.Errorf("passwd entry %q has %d fields, want 7", line, len(fields))
+	}
+	uid, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return passwdEntry{}, fmt.Errorf("passwd entry %q: uid: %w", line, err)
+	}
+	gid, err := strconv.Atoi(fields[3])
+	if err != nil {
+		return passwdEntry{}, fmt.Errorf("passwd entry %q: gid: %w", line, err)
+	}
+	return passwdEntry{name: fields[0], uid: uid, gid: gid, home: fields[5]}, nil
+}
+
+// clearAccountsInTheWay deletes every account holding the sandbox's uid or
+// name, and reports whether the sandbox's own account is already there and
+// was kept.
+func (b *booter) clearAccountsInTheWay(id identity) (kept bool, err error) {
+	var holders []passwdEntry
+	for _, key := range []string{strconv.Itoa(id.uid), id.name} {
+		out, ok := b.lookup("getent", "passwd", key)
+		if !ok {
+			continue
+		}
+		entry, err := parsePasswdEntry(out)
+		if err != nil {
+			return false, err
+		}
+		if !slices.ContainsFunc(holders, func(h passwdEntry) bool { return h.name == entry.name }) {
+			holders = append(holders, entry)
+		}
+	}
+	for _, holder := range holders {
+		if holder.name == id.name && holder.uid == id.uid && holder.gid == id.gid &&
+			filepath.Clean(holder.home) == filepath.Clean(id.home) {
+			kept = true
+			continue
+		}
+		if err := b.deleteAccount(holder); err != nil {
+			return false, err
+		}
+	}
+	return kept, nil
+}
+
+// loginUsersDir is where logind keeps a file per user it has sessions for. A
+// variable so a test can say who is logged in.
+var loginUsersDir = "/run/systemd/users"
+
+// deleteAccount ends an account's processes, deletes it, and removes its home
+// where that is safe (removeAccountHome).
+//
+// A provider's login user has processes -- boxd's exec runs as boxd -- and
+// userdel refuses a user that is logged in (PR #180). logind's sessions are
+// ended first, only for a user it has some (at Wire, before sysinit, there is
+// no logind to ask), then anything left at the uid is killed. --force deletes
+// even so, since a killed process can still be waiting to be reaped.
+func (b *booter) deleteAccount(holder passwdEntry) error {
+	if holder.uid == 0 {
+		return fmt.Errorf("account %q is uid 0 and holds the sandbox account's name or uid: root is never deleted", holder.name)
+	}
+	uid := strconv.Itoa(holder.uid)
+	if fileExists(filepath.Join(loginUsersDir, uid)) {
+		// Not checked: whatever it leaves running, pkill ends next.
+		_ = b.run("loginctl", "terminate-user", uid)
+	}
+	// pkill exits 1 when nothing ran at the uid, the usual answer.
+	_ = b.exists("pkill", "--signal", "KILL", "--uid", uid)
+	if err := b.run("userdel", "--force", holder.name); err != nil {
+		return err
+	}
+	return removeAccountHome(holder)
+}
+
+// mountInfoPath lists this process's mounts. A variable so a test can say
+// what is mounted.
+var mountInfoPath = "/proc/self/mountinfo"
+
+// removeAccountHome removes a deleted account's home, so the sandbox's account
+// starts from /etc/skel with nothing of the old one kept, unless it is not
+// that account's to lose:
+//
+//   - a mount point, or a directory with anything mounted beneath it, which
+//     a recursive removal would empty -- a driver that mounts the sandbox's
+//     persistent home before boot runs is the case it keeps;
+//   - a directory the account does not own, as a system account's home
+//     (daemon's /usr/sbin) is not; and anything not a directory.
+//
+// A plain directory at the path the sandbox's home will be is removed like
+// any other: left, it would hold files of a uid that no longer exists, and
+// seedHome would give it no skeleton, since it seeds only an empty home.
+func removeAccountHome(holder passwdEntry) error {
+	if !filepath.IsAbs(holder.home) {
+		return nil
+	}
+	home := filepath.Clean(holder.home)
+	if home == "/" {
+		return nil
+	}
+	info, err := os.Lstat(home)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	if owner, _, ok := fileOwner(info); !ok || owner != holder.uid {
+		return nil
+	}
+	mounts, err := mountPoints(mountInfoPath)
+	if err != nil {
+		return fmt.Errorf("remove the home of deleted account %q: %w", holder.name, err)
+	}
+	if slices.ContainsFunc(mounts, func(mount string) bool { return within(home, mount) }) {
+		return nil
+	}
+	return os.RemoveAll(home)
+}
+
+// mountPoints reads the mount points out of a mountinfo file: the fifth
+// field, with the octal escapes the kernel writes for space, tab, newline
+// and backslash undone.
+func mountPoints(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var mounts []string
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		mounts = append(mounts, filepath.Clean(mountInfoUnescaper.Replace(fields[4])))
+	}
+	return mounts, nil
+}
+
+var mountInfoUnescaper = strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
 
 // ensureAdditionalGroups adds the sandbox user to supplementary OS groups the
 // image declared (e.g. "docker"), alongside its own primary group. It runs
@@ -238,11 +404,15 @@ func sudoersContent(name string) string {
 		strings.Join(proxyEnvKeep, " "), name)
 }
 
+// sudoersPath is the sandbox account's sudoers drop-in. A variable so a test
+// does not write the machine's own.
+var sudoersPath = "/etc/sudoers.d/discobox-user"
+
 func (b *booter) writeSudoers(name string) error {
-	if err := os.MkdirAll("/etc/sudoers.d", 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sudoersPath), 0o750); err != nil {
 		return err
 	}
-	path := "/etc/sudoers.d/discobox-user"
+	path := sudoersPath
 	// sudo runs with env_reset, so the sandbox's proxy-trust variables are
 	// stripped on the way to root and anything run under sudo tries to reach
 	// the network directly -- which a sandbox has no route for. env_keep is the

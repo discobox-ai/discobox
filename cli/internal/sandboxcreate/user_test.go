@@ -109,8 +109,8 @@ func TestWindowsRunUserIsAUsableSandboxIdentity(t *testing.T) {
 	if windowsRunUser.UID != 1000 || windowsRunUser.GID != 1000 {
 		t.Fatalf("windows identity = %#v, want uid/gid 1000", windowsRunUser)
 	}
-	// Absent on purpose: boot resolves the home from the account it creates or
-	// finds, so naming one here would move an existing account's home instead.
+	// Absent on purpose: where the account boot creates keeps its home is the
+	// sandbox's to decide (/home/<name>), not this machine's.
 	if windowsRunUser.HomeDirectory != "" {
 		t.Fatalf("windows home directory = %q, want it left to the sandbox", windowsRunUser.HomeDirectory)
 	}

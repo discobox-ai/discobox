@@ -532,12 +532,16 @@ the client's, whatever the guest already has there.
 - **Any account holding the sandbox's uid or its name is deleted**, then the
   sandbox's account is created from `/etc/skel`, as if the box had never had
   one. Nothing of the old account is renamed, adopted or kept.
-- **Its home goes with it, unless that home is the sandbox's.** The deletion
-  runs before volumes are wired, and it never removes a mount point or the
-  path that will be the sandbox's home: on the Docker driver that path is the
-  sandbox's persistent `data` volume, and the old account's files there are
-  the sandbox's own from an earlier boot. Seeding then fills that home only
-  where it is empty, as today.
+- **Its home goes with it, unless something is mounted there.** The deletion
+  runs before volumes are wired, and it never removes a mount point or a
+  directory with one beneath it: where a driver mounts the sandbox's
+  persistent `data` volume at its home before boot, the old account's files
+  there are the sandbox's own from an earlier boot. A plain directory at the
+  path that will be the sandbox's home is removed like any other — kept, it
+  would hold the files of a uid that no longer exists, and no skeleton. Nor
+  is a home the account does not own removed (a system account's, such as
+  daemon's `/usr/sbin`). Seeding then fills the sandbox's home only where it
+  is empty, as today.
 - **Its processes are ended first** (`loginctl terminate-user`, then any that
   remain), since a provider's login user has them — boxd's exec runs as
   `boxd` — and `userdel` refuses a user that is logged in (PR #180).
