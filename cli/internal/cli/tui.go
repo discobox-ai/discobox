@@ -1200,6 +1200,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		opts.ReportDeclaredSource = func(source sandboxcreate.DeclaredSource) {
 			report(declaredSourceLine(source))
 		}
+		opts.Warn = func(warning string) { report(warningLine(warning)) }
 	}
 	// With no source there is no directory to cut from, and -C says only where
 	// the create came from — which for the window is where it is running, the

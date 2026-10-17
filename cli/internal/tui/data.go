@@ -1205,7 +1205,7 @@ type RunRequest struct {
 	NoProjectSkills bool
 
 	// SkipDeclaredSources is `--declared-sources=false`: leave out the sources
-	// the primary source's repository declares in .discobox/sources.json. The
+	// the primary source's repository declares in .discobox/settings.json. The
 	// zero value brings them in, which is what both frontends do by default.
 	SkipDeclaredSources bool
 

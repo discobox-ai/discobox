@@ -2593,11 +2593,12 @@ mechanism they use is the primary source's, not a second one:
 
 ## Declared Sources
 
-A repository can name the others it is worked on with, in
-`.discobox/sources.json` at the primary source's root:
+A repository can name the others it is worked on with, in the `sources` of
+`.discobox/settings.json` at the primary source's root
+([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §11):
 
 ```json
-{"foo": "https://github.com/acme/foo"}
+{"sources": {"foo": "https://github.com/acme/foo"}}
 ```
 
 `discobox new` and the console both bring them in, as source code references
@@ -2634,13 +2635,26 @@ resolved exactly like `--include`:
   look beside, so each source it declares is its URL, placed beside where the
   primary lands
   ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) §4).
+- **A key the client does not read is warned about, not refused** — misspelled,
+  or for a newer discobox — so an older client still creates boxes in a
+  repository a newer one wrote settings for. The one refusal is a file in the
+  shape of a `sources.json` — nothing but `$schema` and unknown keys, each a
+  string — which is one moved into place without its `sources` wrapper and
+  would otherwise bring the box up without its sources. Key names reach the
+  warning quoted, and the warning is escaped: they are repository content.
+- **The old file is still read.** A repository without `settings.json` is read
+  through `.discobox/sources.json`, the file it replaces, which lives in
+  repositories nobody here can migrate; the create warns, naming every old
+  file there (`project.json` too, which the pool reads). A repository holding
+  `settings.json` beside either is refused rather than merged.
 - `--declared-sources=false` leaves them out, for a caller who wants only what
-  they named — or does not want a large clone on every run.
+  they named — or does not want a large clone on every run. The settings are
+  then not read at all.
 
 `sandboxcreate` resolves them and reports through
-`PromptOptions.ReportDeclaredSource`; `discobox new` prints one line per source on
-stderr. The console passes no reporter — it owns its screen and has no status
-line for per-source progress — so it brings the same sources in silently. See
+`PromptOptions.ReportDeclaredSource`, and warns through `PromptOptions.Warn`;
+`discobox new` prints one note per source, and the warning, on stderr, and the
+console narrates the same lines on its busy line. See
 [ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
 
 ## A Directory That Is Not a Repository

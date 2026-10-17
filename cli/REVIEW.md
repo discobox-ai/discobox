@@ -31,7 +31,10 @@
   `writeTerminalSafeJSON`. It is display data, and printed raw a control
   sequence in it is an instruction to the reader's terminal. That includes a
   sandbox command's stderr folded into an error: the console puts the error on
-  its status line, outside any pane's emulator.
+  its status line, outside any pane's emulator. A repository's `.discobox`
+  files count too, local or remote: a box can push the commit a create reads,
+  and a JSON key or value decodes `\u001b` to a raw escape. Quote what they
+  name (`sandboxcreate.quoteKeys`, `%q`) and escape the line it lands in.
 
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line

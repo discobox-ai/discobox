@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/randomname"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/sourceref"
@@ -42,16 +43,21 @@ type PromptOptions struct {
 	// become the sandbox's source code references.
 	Include []string
 	// SkipDeclaredSources leaves the sources the primary source's repository
-	// declares in .discobox/sources.json out of the sandbox. The zero value
+	// declares in .discobox/settings.json out of the sandbox. The zero value
 	// brings them in, which is what declaring them asks for; a caller sets this
 	// when it wants only what it named itself.
 	SkipDeclaredSources bool
 	// ReportDeclaredSource is told what each declared source resolved to, for a
 	// frontend to show. Leave it nil when there is nowhere to show it.
 	ReportDeclaredSource ReportDeclaredSourceFunc
-	Prompt               []string
-	Env                  []string
-	Secret               []string
+	// Warn is told what the caller should change about what the request was
+	// built from — a repository whose settings are read from the files
+	// .discobox/settings.json replaces. Leave it nil when there is nowhere to
+	// show it.
+	Warn   func(string)
+	Prompt []string
+	Env    []string
+	Secret []string
 	// SkillDirs and UserSkills are --skills and --user-skills: directories of
 	// skills read into the request, and whether ~/.claude/skills and
 	// ~/.agents/skills are read first (ReadSkills).
@@ -220,7 +226,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 // out of it.
 //
 // Two things put a source here: `--include`, which the caller named, and the
-// primary source's own .discobox/sources.json, which the repository declared.
+// primary source's own .discobox/settings.json, which the repository declared.
 // The caller's win — an explicitly named source is not overridden by a
 // declaration of the same thing — and are resolved first for that reason.
 //
@@ -350,17 +356,42 @@ func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, prim
 // a POSIX host the two are not even the same path. For a remote primary source
 // it is read from the remote, at the commit the source is pinned to, which
 // takes one small fetch and no clone (ADR 26-10-10-545 §4).
+//
+// A repository read through the files settings.json replaces, or whose
+// settings.json sets keys this client does not know, is warned about (Warn): they are still read, since they live in repositories nobody here can
+// migrate, but the person creating the box is the one who can.
 func declaredPromptSources(ctx context.Context, opts PromptOptions, primary resolvedRunSource) (map[string]string, error) {
 	if opts.SkipDeclaredSources {
 		return nil, nil
 	}
-	if primary.LocalDirectory != "" {
-		return readDeclaredSources(primary.LocalDirectory)
+	var settings sandboxconfig.RepositorySettings
+	var where string
+	var err error
+	switch {
+	case primary.LocalDirectory != "":
+		where = primary.LocalDirectory
+		settings, err = readLocalSettings(where)
+	case primary.URL != "" && primary.Checkout.Commit != "":
+		where = primary.URL + "@" + primary.Checkout.Commit[:min(len(primary.Checkout.Commit), 12)]
+		settings, err = readRemoteSettings(ctx, primary.URL, primary.Checkout.Commit, primary.Checkout.RefName)
+	default:
+		return nil, nil
 	}
-	if primary.URL != "" && primary.Checkout.Commit != "" {
-		return readRemoteDeclaredSources(ctx, primary.URL, primary.Checkout.Commit, primary.Checkout.RefName)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	if opts.Warn != nil {
+		if warning := settings.LegacyWarning(); warning != "" {
+			opts.Warn(where + ": " + warning)
+		}
+		// Read past rather than refused, so a key a newer Discobox added does
+		// not stop this one; said, so a misspelled one is seen.
+		if unknown := settings.UnknownKeys(); len(unknown) > 0 {
+			opts.Warn(fmt.Sprintf("%s: %s sets %s, which this discobox does not read; misspelled, or for a newer discobox",
+				where, sandboxconfig.SettingsFile, quoteKeys(unknown)))
+		}
+	}
+	return declaredSources(settings, where)
 }
 
 type promptSandboxCreator interface {
