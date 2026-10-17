@@ -30,16 +30,42 @@ func Schema(t reflect.Type, id, title, description string) (map[string]any, erro
 	return root, nil
 }
 
+// A Schemer is a type that spells its own JSON Schema, for a value no
+// struct can describe — one written either as a boolean or as an object.
+type Schemer interface {
+	ConfigSchema() map[string]any
+}
+
 func objectSchema(t reflect.Type, prefix string) (map[string]any, error) {
 	properties := map[string]any{}
+	var required []any
 	for i := range t.NumField() {
 		field := t.Field(i)
+		// An embedded struct's fields are its embedder's, as encoding/json
+		// reads them.
+		if field.Anonymous && field.Type.Kind() == reflect.Struct && field.Tag.Get("yaml") == "" && field.Tag.Get("json") == "" {
+			embedded, err := objectSchema(field.Type, prefix)
+			if err != nil {
+				return nil, err
+			}
+			embeddedProperties, _ := embedded["properties"].(map[string]any)
+			for name, property := range embeddedProperties {
+				properties[name] = property
+			}
+			if names, ok := embedded["required"].([]any); ok {
+				required = append(required, names...)
+			}
+			continue
+		}
 		if !field.IsExported() {
 			continue
 		}
-		name, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
+		name, isRequired := fieldKey(field)
 		if name == "" || name == "-" {
 			continue
+		}
+		if isRequired {
+			required = append(required, name)
 		}
 		path := name
 		if prefix != "" {
@@ -54,7 +80,8 @@ func objectSchema(t reflect.Type, prefix string) (map[string]any, error) {
 			// A group is written by the reference as a bare key too — that is
 			// how its children stay commented — so it needs null for the same
 			// reason every default-less scalar does.
-			nested["type"] = nullableType("object", true)
+			_, yamlKey := field.Tag.Lookup("yaml")
+			nested["type"] = nullableType("object", yamlKey)
 			properties[name] = nested
 			continue
 		}
@@ -64,11 +91,49 @@ func objectSchema(t reflect.Type, prefix string) (map[string]any, error) {
 		}
 		properties[name] = property
 	}
-	return map[string]any{
+	out := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties":           properties,
-	}, nil
+	}
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out, nil
+}
+
+// fieldKey is the key a field is written under, and whether it is required.
+// A YAML configuration file names it in its yaml tag; a JSON file, read with
+// encoding/json, in its json tag, where a field without omitempty is one
+// every value writes.
+func fieldKey(field reflect.StructField) (string, bool) {
+	if tag, ok := field.Tag.Lookup("yaml"); ok {
+		name, _, _ := strings.Cut(tag, ",")
+		return name, false
+	}
+	name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if name == "" || name == "-" {
+		return "", false
+	}
+	return name, !strings.Contains(","+options+",", ",omitempty,")
+}
+
+// elementSchema is the schema of a map's values or a list's items.
+func elementSchema(t reflect.Type, prefix string) (map[string]any, error) {
+	if schemer, ok := reflect.New(t).Elem().Interface().(Schemer); ok {
+		return schemer.ConfigSchema(), nil
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		return objectSchema(t, prefix)
+	case reflect.String:
+		return map[string]any{"type": "string"}, nil
+	case reflect.Bool:
+		return map[string]any{"type": "boolean"}, nil
+	case reflect.Int, reflect.Int64:
+		return map[string]any{"type": "integer"}, nil
+	}
+	return nil, fmt.Errorf("unsupported element type %s", t)
 }
 
 func valueSchema(field reflect.StructField) (map[string]any, error) {
@@ -100,7 +165,9 @@ func valueSchema(field reflect.StructField) (map[string]any, error) {
 	// accept null for exactly those, or an editor flags the very lines the
 	// generated reference tells an operator to uncomment. Both artifacts ask
 	// the same function so they cannot drift.
-	nullable := rendersAsBareKey(field)
+	// A JSON file has no reference to uncomment, so none of its keys does.
+	_, yamlKey := field.Tag.Lookup("yaml")
+	nullable := yamlKey && rendersAsBareKey(field)
 	if enum := field.Tag.Get("enum"); enum != "" {
 		values := strings.Split(enum, ",")
 		anyValues := make([]any, 0, len(values)+1)
@@ -113,7 +180,12 @@ func valueSchema(field reflect.StructField) (map[string]any, error) {
 		out["enum"] = anyValues
 	}
 
-	switch reflect.New(field.Type).Elem().Interface().(type) {
+	switch value := reflect.New(field.Type).Elem().Interface().(type) {
+	case Schemer:
+		for key, keyword := range value.ConfigSchema() {
+			out[key] = keyword
+		}
+		return out, nil
 	case time.Duration:
 		// Durations are Go duration strings. Spelling them as a string with a
 		// pattern gives an editor something to check; spelling them as an
@@ -138,6 +210,23 @@ func valueSchema(field reflect.StructField) (map[string]any, error) {
 
 	def := field.Tag.Get("default")
 	switch field.Type.Kind() {
+	case reflect.Map:
+		if field.Type.Key().Kind() != reflect.String {
+			return nil, fmt.Errorf("unsupported setting type %s", field.Type)
+		}
+		values, err := elementSchema(field.Type.Elem(), "")
+		if err != nil {
+			return nil, err
+		}
+		out["type"] = nullableType("object", nullable)
+		out["additionalProperties"] = values
+	case reflect.Slice:
+		items, err := elementSchema(field.Type.Elem(), "")
+		if err != nil {
+			return nil, err
+		}
+		out["type"] = nullableType("array", nullable)
+		out["items"] = items
 	case reflect.String:
 		out["type"] = nullableType("string", nullable)
 		if def != "" {
