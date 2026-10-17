@@ -6,6 +6,7 @@
   §5's "address the pool can dial" for provider-hosted VMs; §1's "a container
   keeps its PID-1 `init` flow" and the deferred "containers on the same model"
   superseded by [26-10-10-767](26-10-10-767-a-container-sandbox-boots-systemd-and-a-unit-wires-its-volumes.md))
+- **§§1–2 narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — the image no longer has the agent installed; the backend places the agent layer and runs one command on first boot
 - **Date**: 2026-10-09
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
   [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md),

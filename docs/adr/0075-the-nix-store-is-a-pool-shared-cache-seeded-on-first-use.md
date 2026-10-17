@@ -7,6 +7,7 @@
   the per-user caches around it are partitioned —
   [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md);
   everything else stands)
+- **Narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — the image's store becomes provisioned content
 - **Date**: 2026-08-27
 
 ## Context

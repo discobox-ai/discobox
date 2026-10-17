@@ -7,6 +7,7 @@
   "as PID 1 before systemd starts" superseded by
   [26-10-10-767](26-10-10-767-a-container-sandbox-boots-systemd-and-a-unit-wires-its-volumes.md): a unit of the
   container's init wires the volumes before `sysinit.target`)
+- **§3 narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — the image content a data volume overlays becomes provisioned content
 - **Date**: 2026-07-20
 
 ## Context

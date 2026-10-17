@@ -3,6 +3,7 @@
 - **Status**: Accepted (adds a rule to
   [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §3's
   mount list)
+- **Narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — Homebrew becomes provisioned content
 - **Date**: 2026-09-11
 
 ## Context

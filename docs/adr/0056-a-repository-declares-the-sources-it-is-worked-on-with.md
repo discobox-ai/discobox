@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **§1's "a remote primary source declares nothing" superseded by**: [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
+- **§1's separate `sources.json` superseded by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — `.discobox/settings.json`, whose readers each take their own keys
 - **Date**: 2026-08-19
 
 ## Context

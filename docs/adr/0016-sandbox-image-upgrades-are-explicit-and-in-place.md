@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Partially superseded by**: [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) — its treatment of sandboxes with no harness config only; the rest stands.
+- **Narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — the explicit re-pin covers the harness bundle; the platform is not part of a sandbox's pin and follows its server from the next start
 - **Date**: 2026-07-23
 - **Closes**: the digest-pinning follow-on left open by
   [ADR 0012](0012-sandbox-config-is-three-attribute-owned-layers.md)

@@ -1,6 +1,6 @@
 # 26-10-16-423 — A harness is a provisioning bundle, and the sandbox agent provisions any box
 
-- **Status**: Proposed. On acceptance it supersedes:
+- **Status**: Accepted. It supersedes:
   [0068](0068-container-images-share-one-base-image.md), whose Debian 13 and
   Docker CE base becomes the Docker driver's Ubuntu sandbox image (§10);
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)
