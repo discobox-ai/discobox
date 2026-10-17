@@ -1,0 +1,7 @@
+{
+  "$schema": "https://raw.githubusercontent.com/discobox-ai/discobox/main/settings.schema.json",
+  "sources": {
+    "x": "https://github.com/discobox-ai/x",
+    "hooks": "https://github.com/discobox-ai/hooks"
+  }
+}

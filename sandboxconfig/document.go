@@ -289,10 +289,10 @@ func (g GitIdentity) Configured() bool {
 // File is a file to write into the harness's home directory when the harness
 // is installed.
 type File struct {
-	Path       string `json:"path"`
-	Content    string `json:"content"`
-	CreateOnly bool   `json:"createOnly,omitempty"`
-	Template   bool   `json:"template,omitempty"`
+	Path       string `json:"path" doc:"The file's path, relative to the sandbox user's home directory."`
+	Content    string `json:"content" doc:"The file's content."`
+	CreateOnly bool   `json:"createOnly,omitempty" doc:"Leave the file alone when it already exists."`
+	Template   bool   `json:"template,omitempty" doc:"Render the content against the public sandbox configuration before writing it."`
 }
 
 // ImageLayer carries the immutable harness contract and defaults baked into
@@ -331,14 +331,14 @@ type ImageLayer struct {
 type ProjectLayer struct {
 	// RunCommand and RelaunchCommand are override-grant only: when non-empty
 	// they replace the image's value wholesale.
-	RunCommand      []string `json:"runCommand,omitempty"`
-	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
+	RunCommand      []string `json:"runCommand,omitempty" doc:"The command the harness runs, replacing the harness image's."`
+	RelaunchCommand []string `json:"relaunchCommand,omitempty" doc:"The command the harness is relaunched with, replacing the harness image's."`
 
-	WorkingDirectorySubpath string `json:"workingDirectorySubpath,omitempty"`
+	WorkingDirectorySubpath string `json:"workingDirectorySubpath,omitempty" doc:"The directory beneath the repository the harness starts in."`
 
 	// FilesAdd appends new files by path; it never overrides an existing
 	// image- or runtime-declared path.
-	FilesAdd []File `json:"filesAdd,omitempty"`
+	FilesAdd []File `json:"filesAdd,omitempty" doc:"Files written into the sandbox. A path the harness image or the sandbox already declares is left as it is."`
 }
 
 // LocalSubnetsToken is a placeholder pool-agent writes into env values that
@@ -421,7 +421,7 @@ const SandboxConfigDir = "/etc/discobox"
 // is final. It is the signal a sandbox whose source arrives by push waits on
 // before running anything: until the client's push has landed and been checked
 // out, the workspace is an empty repository, and the configuration the project
-// itself declares (.discobox/project.json) cannot have been read yet either.
+// itself declares (its .discobox/settings.json) cannot have been read yet either.
 //
 // It is a separate signal from the per-source materialized marker deliberately.
 // That marker is written the moment a source's checkout completes, which is

@@ -1,0 +1,100 @@
+{
+  "$id": "https://raw.githubusercontent.com/discobox-ai/discobox/main/settings.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A repository's .discobox/settings.json: the sources it is worked on with, the features its boxes turn off, and its project layer.",
+  "properties": {
+    "$schema": {
+      "description": "The JSON Schema this file is checked against, for an editor.",
+      "type": "string"
+    },
+    "features": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "additionalProperties": true,
+            "properties": {
+              "enabled": {
+                "description": "False turns the feature off. Absent leaves it on.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "description": "The box's features by name, each true, false, or an object whose enabled is false to turn it off. Checked, but no feature reads it yet.",
+      "examples": [
+        {
+          "brew": false
+        }
+      ],
+      "type": "object"
+    },
+    "filesAdd": {
+      "description": "Files written into the sandbox. A path the harness image or the sandbox already declares is left as it is.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "description": "The file's content.",
+            "type": "string"
+          },
+          "createOnly": {
+            "description": "Leave the file alone when it already exists.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The file's path, relative to the sandbox user's home directory.",
+            "type": "string"
+          },
+          "template": {
+            "description": "Render the content against the public sandbox configuration before writing it.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "relaunchCommand": {
+      "description": "The command the harness is relaunched with, replacing the harness image's.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "runCommand": {
+      "description": "The command the harness runs, replacing the harness image's.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sources": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "The other repositories this one is worked on with, by name: a Git URL with an optional @REF. The checkout beside this repository named the same is used when there is one, and the URL is cloned to where it would have been when there is not.",
+      "examples": [
+        {
+          "x": "https://github.com/discobox-ai/x"
+        }
+      ],
+      "type": "object"
+    },
+    "workingDirectorySubpath": {
+      "description": "The directory beneath the repository the harness starts in.",
+      "type": "string"
+    }
+  },
+  "title": "Discobox repository settings",
+  "type": "object"
+}

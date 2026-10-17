@@ -68,9 +68,9 @@ control plane's resolved harness config.
   digest moved — on every server start for built-in harnesses, on an explicit
   refresh for registered ones — because a stable tag is rebuilt in place, so
   registration is not a one-time read (ADR 0016).
-- `ProjectLayer`: the resolved source repository's contribution
-  (`.discobox/project.json` in the primary source), read by pool-agent at the
-  commit it clones. Optional — nil when the project supplies nothing. A source
+- `ProjectLayer`: the resolved source repository's contribution (the
+  project-layer keys of the primary source's [settings](#repository-settings)),
+  read by pool-agent at the commit it clones. Optional — nil when the project supplies nothing. A source
   the client delivers by push is empty at that moment, so pool-agent reads it
   again when the push lands and rebuilds the container if it differs from the
   project layer recorded in `_provenance`
@@ -81,6 +81,41 @@ layers legitimately contribute to the same named attribute (e.g.
 `RunCommand`, image-owned but project-overridable), both layers declare that
 field independently — there is no shared domain object embedded in more than
 one layer.
+
+## Repository settings
+
+A repository's settings are one file, `.discobox/settings.json` (`Settings`,
+[ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+§11): `sources`, `features`, and the `ProjectLayer` fields, embedded. Each
+reader takes only its own keys — the client `sources` before the box exists,
+the pool the project layer out of the materialized clone, through the sandbox
+agent, which answers it the project layer alone — so one fetch of a remote
+primary source reads all of it, and a key one reader owns never changes what
+another decides. `features` is decoded and checked, and nothing acts on it
+yet.
+
+- `ReadSettings` is the one place the file is found, for every reader: it
+  takes a read function (the client's disk, a commit on a remote, an
+  `os.Root` in the sandbox) and the legacy file that reader's keys used to
+  live in.
+- **Legacy.** `sources.json` and `project.json` live in users' repositories
+  and cannot be migrated: without `settings.json` each reader reads its old
+  file, and `LegacyWarning` names every old file there. A repository holding
+  `settings.json` beside either is refused (`ErrSettingsConflict`), never
+  merged.
+- `RepositorySettings.Settings` is the one decode, for every reader. A key
+  `Settings` does not define is read past, never refused — every client and
+  agent version a repository's people run reads the same file, and a key a
+  newer one added must not stop an older one — and the client warns about it
+  (`UnknownKeys`), so a misspelling is seen. The schema stays closed, for the
+  editor. Refusing a `sources.json` moved into place without its `sources`
+  wrapper is the client's, which reads sources — see
+  [`cli/internal/sandboxcreate`](../cli/internal/sandboxcreate/DESIGN.md).
+- `Feature` is `true`, `false` or an object (`enabled`, absent meaning on), so
+  a feature's settings can be added without a schema change.
+- `settings.schema.json` at the repository root is generated from `Settings`
+  by `configfile` (`gensettingsschema`) and named by its raw GitHub URL
+  (`SettingsSchemaID`), as `server.yaml`'s and `client.yaml`'s are.
 
 ## Static and dynamic
 
