@@ -1,6 +1,7 @@
 # 0012 — Sandbox config is three attribute-owned layers, merged by a shared library
 
 - **Status**: Accepted
+- **§6 superseded, and §7 narrowed, by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — a runnable image no longer carries the metadata (a bundle's manifest still rides its labels), and the project file becomes `.discobox/settings.json`
 - **Date**: 2026-07-23
 
 ## Context

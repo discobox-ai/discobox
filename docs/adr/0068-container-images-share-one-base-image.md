@@ -1,6 +1,6 @@
 # 0068. Container images share one base image
 
-Status: Accepted
+Status: Superseded by [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
 
 ## Context
 

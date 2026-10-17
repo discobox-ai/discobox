@@ -10,6 +10,7 @@
   its §5 for macOS; supersedes [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)'s
   consequence that a provider credential stays in the pool; builds on
   ADR 26-10-09-143, [PR #105](https://github.com/discobox-ai/discobox/pull/105))
+- **§5 superseded for Linux sandboxes, §4 narrowed, and its deferred account ids settled, by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — a provisioned bundle replaces the build spec, the image kind is the provider's, and §14 decides the account
 - **Date**: 2026-10-09
 - **Amended**: 2026-10-12, §§1 and 5, the Consequences, one rejected
   alternative and the Status line (which no longer narrows 0144 §3), before

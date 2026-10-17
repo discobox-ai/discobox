@@ -1,6 +1,7 @@
 # 0114 — A sandbox pins its agent version from a pool-cached store
 
 - **Status**: Accepted (§2's "an existing pin is never rewritten" narrowed by [26-10-15-848](26-10-15-848-the-opencode-harness-runs-opencode-2.md) §7: a pin into another package's store directory is replaced)
+- **§7 narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — the harness bundle, not the image, declares its agent in a file
 - **Date**: 2026-09-12
 
 ## Context

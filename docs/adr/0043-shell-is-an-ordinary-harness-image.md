@@ -3,6 +3,7 @@
 - **Status**: Accepted (§2, an omitted `runCommand` meaning the login shell, is
   superseded by [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md);
   §1 and §3 stand)
+- **Narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — its rejection of a control-plane path that resolves the base: the server composes the release's platform bundle layer under a harness's
 - **Date**: 2026-08-15
 - **Supersedes**: [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) §2 — `shell` as a seeded built-in whose image is the default sandbox image. §1 (every sandbox carries a harness config) and §3 (the chain ends at the reserved slug) stand unchanged.
 

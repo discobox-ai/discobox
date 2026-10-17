@@ -1,6 +1,7 @@
 # 0086 — A harness image extends the sandbox base, and its manifest is override-only
 
 - **Status**: Accepted
+- **§1 superseded, and §2 narrowed, by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — no base layer is required; the server composes the label stack across the platform and harness bundles
 - **Date**: 2026-09-02
 - **Supersedes**: [0043](0043-shell-is-an-ordinary-harness-image.md) §2 — an omitted `runCommand` meaning the sandbox's login shell. §1 (`shell` is an ordinary harness image) and §3 (`Configured` is derived from what the image collects) stand unchanged.
 
