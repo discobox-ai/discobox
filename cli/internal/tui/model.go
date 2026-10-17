@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
+	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
 )
@@ -413,6 +414,14 @@ type Model struct {
 	// (imagepaste.go). A field for the same reason copyOS is: a test paste
 	// must not read the developer's actual clipboard.
 	readClipboard func(context.Context) ([]clipimage.Image, error)
+
+	// clipWatch keeps up with the Windows clipboard, so a dictation tool's
+	// Ctrl-V can be answered with the text it pasted before the tool puts the
+	// clipboard back (imagepaste.go). Run starts it; nil, and never live,
+	// everywhere else — a test included. clipWatchReported is set once the
+	// window has said why a watch that should be running is not.
+	clipWatch         *clipwatch.Watcher
+	clipWatchReported bool
 
 	// openOS hands a URL to this machine's URL handler, for the header's
 	// links. A field for the same reason copyOS is: a test press must not

@@ -43,4 +43,9 @@ Global review expectations:
   harness Dockerfile makes the same change to the `boxd.yaml` beside it. No
   build or check covers the twins, so nothing else will notice that they have
   drifted.
+- A binary embedded from a gitignored `artifacts/` directory (the server's
+  guest relay, the Linux CLI's clipboard helper) builds without it by design,
+  so a fresh checkout compiles. That makes a release without it silent:
+  every such artifact gets a check in `release:verify` that the release
+  binary's own architecture has one.
 - Update package-local design docs when changing architecture or data model.

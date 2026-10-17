@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
+	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
 )
 
 // input is everything the pane has typed at the terminal so far.
@@ -200,4 +201,80 @@ func TestImageNameIsSafeToPaste(t *testing.T) {
 			t.Errorf("imageName(%q) = %q, want %q", name, got, want)
 		}
 	}
+}
+
+// A dictation tool writes what it heard to the clipboard, presses Ctrl-V, and
+// puts the clipboard back half a second later. The text the watch saw land
+// just before the key is what is pasted.
+func TestCtrlVJustAfterTextLandsPastesTheText(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	var asked atomic.Int32
+	m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
+		asked.Add(1)
+		return nil, nil
+	}
+	m.clipWatch = clipwatch.NewWatcher()
+	m.clipWatch.Record("old clipboard", false)
+	time.Sleep(10 * time.Millisecond)
+	m.clipWatch.Record("what I said ", false)
+
+	d.key("ctrl+v")
+	d.wait("the dictation", func() bool { return term.inputSoFar() == "what I said " })
+	if asked.Load() != 0 || len(ds.putImagesSoFar()) != 0 {
+		t.Fatal("a dictation was read as an image paste")
+	}
+}
+
+// The key can overtake the watch's notice of the write before it: a change
+// that lands just after the press is still the one the press was for.
+func TestCtrlVWaitsBrieflyForTheWatchToCatchUp(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	m.clipWatch = clipwatch.NewWatcher()
+	m.clipWatch.Record("old clipboard", false)
+	time.Sleep(dictationWindow + 50*time.Millisecond)
+
+	d.dispatch(keyPress("ctrl+v"))
+	m.clipWatch.Record("late notice ", false)
+	d.wait("the dictation", func() bool { return term.inputSoFar() == "late notice " })
+}
+
+// A Ctrl-V pressed by hand, with nothing just copied and no image, goes through
+// as the key — answered from the watch, without reading the clipboard.
+func TestCtrlVWithAStaleClipboardIsTheKey(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	var asked atomic.Int32
+	m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
+		asked.Add(1)
+		return nil, nil
+	}
+	m.clipWatch = clipwatch.NewWatcher()
+	m.clipWatch.Record("copied a while ago", false)
+	m.now = func() time.Time { return time.Now().Add(2 * dictationWindow) }
+
+	d.key("ctrl+v")
+	d.wait("the key", func() bool { return term.inputSoFar() == "\x16" })
+	if asked.Load() != 0 {
+		t.Fatal("the clipboard was read with the watch saying there was nothing on it")
+	}
+}
+
+// An image on the clipboard is still an image paste with the watch running.
+func TestCtrlVWithAnImageOnAWatchedClipboardCarriesItIn(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
+		return []clipimage.Image{{Name: "clipboard.png", Data: []byte("pixels")}}, nil
+	}
+	m.clipWatch = clipwatch.NewWatcher()
+	m.clipWatch.Record("", true)
+
+	d.key("ctrl+v")
+	d.wait("the path pasted", func() bool { return strings.Contains(term.inputSoFar(), "/tmp/discobox-paste/") })
 }

@@ -204,11 +204,40 @@ tasks:
     # Virtualization entitlement are build:server's business. `task build`
     # writes both binaries into build/, which is what makes a development CLI
     # find a server with nothing configured.
+    deps:
+      # The Linux CLI embeds the Windows clipboard helper it runs from WSL.
+      - build:clipwatch
     cmds:
       - mkdir -p build
       - rm -f {{.CLI_BINARY}}
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
 
+
+  build:clipwatch:
+    desc: Cross-compile the Windows clipboard helper the Linux CLI embeds for WSL
+    run: once
+    cmds:
+      # One per Windows architecture: WSL2 does not emulate, so a Linux CLI
+      # runs on a Windows host of its own GOARCH and reads that helper.
+      - task: build:clipwatch:arch
+        vars: { CLIPWATCH_ARCH: amd64 }
+      - task: build:clipwatch:arch
+        vars: { CLIPWATCH_ARCH: arm64 }
+
+  build:clipwatch:arch:
+    desc: Cross-compile the Windows clipboard helper for one architecture (CLIPWATCH_ARCH=)
+    requires:
+      vars: [CLIPWATCH_ARCH]
+    vars:
+      CLIPWATCH_BIN: build/discobox-clipwatch.windows-{{.CLIPWATCH_ARCH}}.exe
+      CLIPWATCH_OUT: cli/internal/clipwatch/artifacts/discobox-clipwatch.windows-{{.CLIPWATCH_ARCH}}.exe.gz
+    cmds:
+      # The artifact is gitignored; without it the CLI still builds, and on WSL
+      # the console's clipboard watch reports this task as the one to run.
+      # CGO_ENABLED=0 for the reason build:cp-relay gives: a cross-compile with
+      # cgo on builds runtime/cgo against the wrong SDK.
+      - cd cli && CGO_ENABLED=0 GOOS=windows GOARCH={{.CLIPWATCH_ARCH}} go build -trimpath -ldflags="-s -w" -o ../{{.CLIPWATCH_BIN}} ./cmd/discobox-clipwatch
+      - go run ./internal/cmd/discobox-gzip {{.CLIPWATCH_BIN}} {{.CLIPWATCH_OUT}}
 
   build:access:
     desc: Compile the discobox-access CLI
@@ -561,6 +590,10 @@ tasks:
 
   dev:cli:
     desc: Recompile the discobox CLI with watchnbuild hot reload (see .wnb.cli.yaml)
+    deps:
+      # Embedded at compile time, like the server's relay; rerun
+      # `task build:clipwatch` after changing the helper.
+      - build:clipwatch
     cmds:
       - go run ./internal/cmd/discobox-dev-lock cli go tool watchnbuild -config .wnb.cli.yaml
 
@@ -1117,8 +1150,10 @@ tasks:
     requires:
       vars: [TARGET_OS, TARGET_ARCH]
     deps:
-      # The server embeds the guest relay.
+      # The server embeds the guest relay, and the Linux CLI the clipboard
+      # helper.
       - build:cp-relay
+      - build:clipwatch
     vars:
       # The tag the agent images are pinned to, resolved the way release:image
       # and release:publish resolve theirs.
@@ -1359,6 +1394,21 @@ tasks:
               size=$(wc -c < "$relay")
               [ "$size" -gt 65536 ] || { echo "$name: guest relay for linux/$arch is $size bytes, not a real binary" >&2; exit 1; }
               echo "$name: guest relay linux/$arch ($size bytes)"
+              ;;
+          esac
+
+          # A Linux CLI carries the Windows clipboard helper it runs from WSL,
+          # for its own architecture, for the same reason. Without it the CLI
+          # builds and runs by design — a fresh checkout has no artifact — so
+          # only this notices a release whose dictation would be off on WSL.
+          case "$name" in
+            discobox-linux-*)
+              arch=${name#discobox-linux-}
+              helper="cli/internal/clipwatch/artifacts/discobox-clipwatch.windows-$arch.exe.gz"
+              [ -f "$helper" ] || { echo "$name: no clipboard helper was built for windows/$arch; add it to build:clipwatch" >&2; exit 1; }
+              size=$(wc -c < "$helper")
+              [ "$size" -gt 65536 ] || { echo "$name: clipboard helper for windows/$arch is $size bytes, not a real binary" >&2; exit 1; }
+              echo "$name: clipboard helper windows/$arch ($size bytes)"
               ;;
           esac
 

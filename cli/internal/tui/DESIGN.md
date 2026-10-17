@@ -2606,9 +2606,19 @@ path it landed at is pasted instead — the shape a dragged file has, which ever
 agent takes as an image. With no image, the key or paste goes through as it
 came.
 
-While one is in flight the pane's keys and pastes are held (`pane.imageHeld`)
-and delivered after it, so typing behind a paste does not overtake it — all but
-the leader and the key after it, which are the window's commands.
+On Ctrl-V the Windows clipboard watch (`Model.clipWatch`,
+`cli/internal/clipwatch`, started by `Run`) answers first. Text that reached
+the clipboard within a second before the key is a dictation tool pasting what it
+heard, and is pasted as text: the tool restores the clipboard within half a
+second, faster than a read started from WSL completes. An image on it is read and
+carried in as above; anything else lets the key through without reading the
+clipboard at all. What the clipboard held when the watch started is not a
+change, so it is never pasted as dictation. Off Windows and WSL the watch is
+never live and the key reads the clipboard when it arrives; a watch that should
+be running and is not is said once, on the first Ctrl-V. While one is in flight
+the pane's keys and pastes are held (`pane.imageHeld`) and delivered after it,
+so typing behind a paste does not overtake it — all but the leader and the key
+after it, which are the window's commands.
 
 What a paste names is often text a discobox wrote (a link it showed, or put on
 the clipboard over OSC 52), so `clipimage` reads only a file that is an image
