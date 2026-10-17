@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,6 +270,35 @@ func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) e
 	d = d.at(sandboxID)
 	return d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, execID)
 }
+
+func (d *apiDataSource) PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error) {
+	d = d.at(sandboxID)
+	command := []string{"sh", "-c", putImageScript, "sh", name}
+	out, err := d.app.sandboxCommandInput(ctx, d.projectID, sandboxID, command, bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("copy %s into the discobox: %w", name, err)
+	}
+	path := strings.TrimSpace(out)
+	if path == "" {
+		return "", fmt.Errorf("copy %s into the discobox: it did not say where it put it", name)
+	}
+	return path, nil
+}
+
+// putImageScript writes its stdin to a fresh file named $1 in a directory of
+// pasted images under the sandbox's temporary directory, and prints the file's
+// path.
+//
+// The bytes ride stdin rather than argv: an argument is capped at 128 KiB on
+// Linux, and a screenshot is routinely more. The name is the console's own —
+// a timestamp and a base name already stripped to a safe alphabet — so it needs
+// no quoting, and the path printed is the path a program in the discobox opens.
+const putImageScript = `set -e
+d="${TMPDIR:-/tmp}/discobox-paste"
+mkdir -p "$d"
+p="$d/$1"
+cat > "$p"
+printf %s "$p"`
 
 // newSandboxSession is what all of them are: create the exec, attach to it,
 // and only then start it.

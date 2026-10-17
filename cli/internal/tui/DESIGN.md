@@ -2592,6 +2592,29 @@ then the composer, and nothing at all on a screen drawn in place of the composer
 Input dialogs carry no character limit, because a credential is as long as
 whoever issued it made it and a truncated one fails later as a wrong password.
 
+**A paste that means an image is carried into the discobox** (`imagepaste.go`,
+`DataSource.PutImage`, `cli/internal/clipimage`). A discobox has no clipboard
+and cannot open this machine's files, so an agent asked to paste a screenshot
+has nothing to read. Into a session in a discobox, three inputs mean an image:
+Ctrl-V or Alt-V on a harness terminal with an image on the OS clipboard (the
+keys the agents bind; shells are left out, where Ctrl-V is quoted-insert and the
+probe would cost a PowerShell start on WSL per press), an empty bracketed paste
+(what a terminal sends when its paste found no text), and a paste whose every
+word is a path to an image file here (a dragged file; Windows paths go through
+`wslpath`). The image is written into the discobox over an exec's stdin and the
+path it landed at is pasted instead — the shape a dragged file has, which every
+agent takes as an image. With no image, the key or paste goes through as it
+came.
+
+While one is in flight the pane's keys and pastes are held (`pane.imageHeld`)
+and delivered after it, so typing behind a paste does not overtake it — all but
+the leader and the key after it, which are the window's commands.
+
+What a paste names is often text a discobox wrote (a link it showed, or put on
+the clipboard over OSC 52), so `clipimage` reads only a file that is an image
+by its name and its bytes, and only from this machine's own drives: no `file://`
+link with a query or fragment, no Windows share.
+
 **The introduction is shown once, and the project is what remembers**
 (`welcome.go`, `WithWelcome`, `DataSource.MarkWelcomed`). Every other screen
 assumes you know what a discobox is; this one says so, and then never again. The
@@ -3341,7 +3364,8 @@ the newest one where the busy line goes.
 | `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |
 | `zones.go` | the hit map a frame records as it draws |
 | `chrome.go` | the chrome selection over the composed frame |
-| `clipboard.go` | the OS clipboard, WSL included |
+| `clipboard.go` | writing the OS clipboard, WSL included; reading it for an image paste is `cli/internal/clipimage`'s |
+| `imagepaste.go` | a paste that means an image, carried into the discobox and pasted as its path there |
 | `links.go` | where a pane's URLs and the header's links point, and opening one |
 | `util.go` | row helpers: padding, spreading, centering, fitting fields to a row |
 

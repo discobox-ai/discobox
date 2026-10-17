@@ -29,7 +29,9 @@
   them: anything composed inside a discobox goes through `terminalSafe`
   (`audit.go`) on its way to a terminal, and JSON carrying it through
   `writeTerminalSafeJSON`. It is display data, and printed raw a control
-  sequence in it is an instruction to the reader's terminal.
+  sequence in it is an instruction to the reader's terminal. That includes a
+  sandbox command's stderr folded into an error: the console puts the error on
+  its status line, outside any pane's emulator.
 
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
@@ -66,3 +68,12 @@
   Desktop, a wslc pool's boxes), where there is no Windows to reach, and the
   CLI's tests clear the variables to stay out of a developer's real Windows
   profile.
+
+## Reading files a paste names
+
+- **The box can write what gets pasted.** OSC 52 puts its text on the user's
+  clipboard, and its screen is what the user copies from, so pasted text that
+  leads to reading a file on this machine checks what is actually opened — an
+  image by name and bytes (`clipimage.ReadFile`), on a local drive — and never
+  trusts the text that named it. A `file://` link's fragment, a `.png` symlink
+  and a Windows share path all led somewhere else.

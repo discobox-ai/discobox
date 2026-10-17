@@ -75,6 +75,12 @@
   harness's configure terminal becomes "reconfigure the highlighted harness"
   and restarts the flow it was typed into.
 
+- **Input held behind slow work never holds the leader.** An image paste holds
+  a pane's keys while it reads the clipboard and copies into the discobox,
+  which can take minutes over a slow link; the leader and the key after it are
+  the window's own commands — quit, detach, move — and holding them too left
+  no way out until the copy ended.
+
 ## The screen
 
 - **A frame the window holds only briefly is a frame that may never be drawn.**

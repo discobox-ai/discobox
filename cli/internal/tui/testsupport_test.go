@@ -70,6 +70,10 @@ type fakeSource struct {
 
 	session   Session
 	sandboxes []Sandbox
+	// putImages are the images carried into a discobox by a paste, and
+	// putImageErr what the next one fails with.
+	putImages   []putImage
+	putImageErr error
 	// unreachable are the servers the listing reports it did not hear back
 	// from, the way a window listing more than one server does.
 	unreachable []string
@@ -1192,6 +1196,28 @@ func (f *fakeSource) editedToolFiles() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.editedTools...)
+}
+
+// putImage is one image a pane carried into a discobox.
+type putImage struct {
+	sandboxID, name string
+	data            []byte
+}
+
+func (f *fakeSource) PutImage(_ context.Context, sandboxID, name string, data []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.putImageErr != nil {
+		return "", f.putImageErr
+	}
+	f.putImages = append(f.putImages, putImage{sandboxID: sandboxID, name: name, data: data})
+	return "/tmp/discobox-paste/" + name, nil
+}
+
+func (f *fakeSource) putImagesSoFar() []putImage {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]putImage(nil), f.putImages...)
 }
 
 func (f *fakeSource) EndExec(_ context.Context, _, execID string) error {
