@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/wsl"
 )
 
 // forwardedURL is where a URL printed inside a pane actually reaches from here.
@@ -166,10 +168,15 @@ func openCommand(ctx context.Context, target string) *exec.Cmd {
 		return exec.CommandContext(ctx, "open", target)
 	case runtime.GOOS == "windows":
 		return exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", target)
-	case isWSL():
+	case wsl.Detected():
+		// Not found, the bare name is run, and its failure is what is said.
+		powershell, err := wsl.PowerShell(ctx)
+		if err != nil {
+			powershell = "powershell.exe"
+		}
 		quoted := "'" + strings.ReplaceAll(target, "'", "''") + "'"
 		//nolint:gosec // there is no shell between here and powershell's argv, and the value is single-quoted for powershell itself with its own escape for a quote inside one
-		return exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", "Start-Process "+quoted)
+		return exec.CommandContext(ctx, powershell, "-NoProfile", "-Command", "Start-Process "+quoted)
 	default:
 		return exec.CommandContext(ctx, "xdg-open", target)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/wsl"
 	"github.com/discobox-ai/discobox/tools"
 )
 
@@ -91,7 +92,7 @@ func resolveHostTool(ctx context.Context, def tools.Definition, named string) (h
 			return hostToolLaunch{}, err
 		}
 		launch.program = program
-		launch.windowsProgram = isWSL() && isWindowsExecutable(ctx, program)
+		launch.windowsProgram = wsl.Detected() && isWindowsExecutable(ctx, program)
 	case named != "":
 		return hostToolLaunch{}, fmt.Errorf("tool %s is a script, and --program names the program a .yaml tool runs", def.ID)
 	case strings.EqualFold(filepath.Ext(def.Path), ".ps1"):

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/discobox-ai/discobox/cli/internal/wsl"
 	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
@@ -140,7 +141,7 @@ func machineSSHTargets(ctx context.Context) (machineTargets, error) {
 		return machineTargets{}, fmt.Errorf("locate this machine's own ssh: %w", err)
 	}
 	targets := machineTargets{all: []sshTarget{local}}
-	if !isWSL() {
+	if !wsl.Detected() {
 		return targets, nil
 	}
 	// Recorded on the value either way, and added when there was nothing to
