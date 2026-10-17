@@ -47,6 +47,17 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
   `32;` to drag, a lowercase `m` to release) goes out as OSC 52: the box has no
   clipboard tool, so `tmux -L verify set -g set-clipboard on` first and read it
   with `show-buffer`. The wheel is `$'\e[<64;X;YM'` (up) / `65` (down).
+- A paste (an image path dragged on, imagepaste.go) is a bracketed paste sent
+  raw: `tmux -L verify send-keys -t v -l $'\e[200~/path/shot.png\e[201~'`.
+  Open the box's workspace with `attach <sbx_id>` (it takes the ID, not the
+  name), and read what landed with `sha256sum /tmp/discobox-paste/*` typed
+  into the box's shell. The box has no wl-paste/xclip, so a Ctrl-V there only
+  shows the fallback; a real image needs a real PNG signature (`clipimage`
+  sniffs the bytes).
+- On a box that has just booted, `new -H shell` can answer "harness config
+  not found" until the image watcher has built that harness; the server seeds
+  it on its next restart. Build a binary to run into `/tmp`, not `/dev/shm`
+  (mounted noexec).
 - A change in a module outside the checkout (a `replace` to `../../<fork>`)
   is not rebuilt by the loop: build the console yourself with `go build -o
   $S/discobox ./cli/cmd/discobox`, and expect the image watcher to fail on
