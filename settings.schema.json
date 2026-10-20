@@ -26,7 +26,7 @@
           }
         ]
       },
-      "description": "The box's features by name, each true, false, or an object whose enabled is false to turn it off. Checked, but no feature reads it yet.",
+      "description": "The box's features by name, each true, false, or an object whose enabled is false to turn it off. A feature turned off is neither installed nor wired, and one already on the box is left there unwired. A feature the harness requires cannot be turned off unless the box already has a usable one.",
       "examples": [
         {
           "brew": false

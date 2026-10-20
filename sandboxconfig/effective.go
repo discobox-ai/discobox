@@ -1,6 +1,10 @@
 package sandboxconfig
 
-import "github.com/discobox-ai/discobox/harness"
+import (
+	"maps"
+
+	"github.com/discobox-ai/discobox/harness"
+)
 
 // APIVersion is the sandbox.json contract version.
 const APIVersion = "discobox.dev/sandbox/v1"
@@ -46,6 +50,10 @@ type Config struct {
 	// SkillsSources are linked into the same directories after Skills, in
 	// order, each replacing a skill of its name (ADR 26-10-14-294 §§3–4).
 	SkillsSources []SkillsSource `json:"skillsSources,omitempty"`
+
+	// Features turns the box's features off by name; every one not turned
+	// off here is provisioned (ADR 26-10-16-423 §4).
+	Features map[string]Feature `json:"features,omitempty"`
 }
 
 // Harness is the effective, fully-resolved harness contract: exactly one
@@ -93,6 +101,7 @@ func Effective(doc Document) (Config, Provenance) {
 		Git:                 doc.Runtime.Git,
 		Skills:              doc.Runtime.Skills.clone(),
 		SkillsSources:       append([]SkillsSource(nil), doc.Runtime.SkillsSources...),
+		Features:            maps.Clone(doc.Runtime.Features),
 
 		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),

@@ -875,6 +875,9 @@ type SandboxManifest struct {
 	// SkillsSources are spec for the same reason, and omitted when empty for
 	// the same reason (ADR 26-10-14-294 §2).
 	SkillsSources []SkillsSource `gorm:"column:skills_sources;type:text;serializer:json" json:"skillsSources,omitempty" doc:"Directories of skills sources whose skills are linked into the harness's skill directories on the sandbox's first launch, in order"`
+	// Features ride the bootstrap too, and are omitted when empty for the
+	// same reason (ADR 26-10-16-423 §§4, 11).
+	Features map[string]sandboxconfig.Feature `gorm:"column:features;type:text;serializer:json" json:"features,omitempty" doc:"The repository's features by name, as its settings.json set them at create; the sandbox provisions every one but those turned off"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against

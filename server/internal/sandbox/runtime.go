@@ -237,7 +237,10 @@ type CreateOptions struct {
 	Skills sandboxconfig.Skills
 	// SkillsSources are the directories of its skills sources, in order
 	// (ADR 26-10-14-294 §2).
-	SkillsSources         []model.SkillsSource
+	SkillsSources []model.SkillsSource
+	// Features are the repository's, which the bootstrap carries
+	// (ADR 26-10-16-423 §4).
+	Features              map[string]sandboxconfig.Feature
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string

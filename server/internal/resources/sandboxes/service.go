@@ -228,6 +228,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		converted := services.GitSourceToModel(inputSource)
 		source = &converted
 	}
+	features, err := services.SandboxFeaturesToModel(config.Features.Value)
+	if err != nil {
+		return nil, err
+	}
 	skillsSources := services.SandboxSkillsSourcesToModel(config.SkillsSources)
 	if err := validateSkillsSources(source, sourceCodeReferences, skillsSources); err != nil {
 		return nil, err
@@ -329,6 +333,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			GitUserEmail:         git.UserEmail,
 			Skills:               skills,
 			SkillsSources:        skillsSources,
+			Features:             features,
 		},
 		SourceRoot: sourceRoot,
 		Origin:     origin,
