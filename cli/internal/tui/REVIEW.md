@@ -101,6 +101,14 @@
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a
   builder does not.
 
+## Saved state
+
+- **The window's memory is one per machine, shared by every window open at
+  once** (`Session.Draft`, `View`, `LastSource`; ADR 26-10-20-596). "Nothing
+  changed since this window last wrote it" is not "the store still holds it":
+  another window may have written since. Anything that skips a write on that
+  basis must still write what must survive on the way out (`saveDraftNow`).
+
 ## Tests
 
 - **A command that waits by design goes through `listen`; a timer through

@@ -64,22 +64,17 @@ type createItemMsg struct {
 }
 
 // newCreateCard opens the card on where a create would be cut from with
-// nothing said: the Source row's choice, or — with the header on every folder,
-// which names no one place — the last card's answer.
+// nothing said: the Source row's choice, which is the last card's answer until
+// the header or the row is moved (optionSet.cutFrom).
 func (o *optionSet) newCreateCard(prompt string, base *RunRequest) *createCard {
 	c := &createCard{opts: o, prompt: prompt, base: base, row: -1}
 	source := o.opts[optSource]
 	c.cursor = source.idx
-	switch {
-	case base != nil:
+	if base != nil {
 		// `discobox new` without -C was the directory it ran in before it
-		// asked, and that stays the first answer whatever folder the last
-		// window here was left on.
+		// asked, and that stays the first answer whatever the last window was
+		// left cutting from.
 		if i := slices.Index(source.values, o.session.source()); i >= 0 {
-			c.cursor = i
-		}
-	case o.folder == "" && o.lastCut != "":
-		if i := slices.Index(source.values, o.lastCut); i >= 0 {
 			c.cursor = i
 		}
 	}

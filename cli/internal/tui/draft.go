@@ -9,15 +9,15 @@ import (
 // closing the window — on purpose, by reflex, or because the terminal went
 // away — is not how you lose one.
 //
-// The draft is kept per folder, and the folder is the session's own directory:
-// the project you are standing in, which is the one Enter would create in. A
-// prompt written in one checkout has no business coming back in another.
+// There is one draft on this machine, whatever directory a window is opened in
+// (ADR 26-10-20-596): a prompt is what you were thinking, and the window you
+// open next is where you go back to it.
 //
 // Where it is kept is the DataSource's business (SaveDraft), the way everything
 // outside this window is. The window's part is when: on the listing's clock
 // while it is open, and on the way out.
 
-// restoreDraft puts back the prompt the last window left in this folder.
+// restoreDraft puts back the prompt the last window left.
 //
 // Only into an empty composer. The session lands a moment after the window is
 // up and the cursor is in the field from the first frame, so anything already
@@ -43,19 +43,19 @@ func (m *Model) restoreDraft(draft string) tea.Cmd {
 	// nothing left to play on.
 	m.stopShimmer()
 	m.layout()
-	return m.report(false, "the prompt you left here is back")
+	return m.report(false, "the prompt you left is back")
 }
 
 // saveDraft writes the prompt if it has moved since the store last had it, and
 // returns nil when it has not, so an idle window writes nothing at all.
 func (m *Model) saveDraft() tea.Cmd {
-	folder, prompt, ok := m.draftToSave()
+	prompt, ok := m.draftToSave()
 	if !ok {
 		return nil
 	}
 	ds, ctx := m.ds, m.ctx
 	return func() tea.Msg {
-		if err := ds.SaveDraft(ctx, folder, prompt); err != nil {
+		if err := ds.SaveDraft(ctx, prompt); err != nil {
 			return statusMsg{text: "cannot save the prompt: " + err.Error(), err: true}
 		}
 		return nil
@@ -67,13 +67,22 @@ func (m *Model) saveDraft() tea.Cmd {
 // batched with tea.Quit races the runtime shutting down, and a prompt lost on
 // the way out is the whole of what this exists to prevent.
 //
+// A prompt still in the composer is written even when this window already
+// wrote it: there is one draft on the machine, and another window may have
+// written its own over it since. The window closed last is the one whose
+// prompt comes back. An empty composer that was never anything else writes
+// nothing, so closing an idle window does not wipe another's draft.
+//
 // Nothing is reported. There is no frame left to report it on.
 func (m *Model) saveDraftNow() {
-	folder, prompt, ok := m.draftToSave()
+	prompt, ok := m.draftToSave()
 	if !ok {
-		return
+		if m.oneShot() || m.session.Directory == "" || m.draft == "" {
+			return
+		}
+		prompt = m.draft
 	}
-	_ = m.ds.SaveDraft(m.ctx, folder, prompt)
+	_ = m.ds.SaveDraft(m.ctx, prompt)
 }
 
 // draftToSave is what a write would carry, and whether there is one to make.
@@ -82,20 +91,22 @@ func (m *Model) saveDraftNow() {
 // reported and left alone until the prompt changes again, because the
 // alternative is a window that says the same thing about the same broken disk
 // every five seconds.
-func (m *Model) draftToSave() (folder, prompt string, ok bool) {
+func (m *Model) draftToSave() (prompt string, ok bool) {
 	// Nothing a `discobox new` or `discobox attach` window does is a prompt
 	// somebody typed here: the composer is never shown, and a create started
 	// from the command line empties it on the way past. Writing that would
 	// throw away the sentence the launcher was left mid-way through.
 	if m.oneShot() {
-		return "", "", false
+		return "", false
 	}
-	folder, prompt = m.session.Directory, m.prompt.Value()
-	if folder == "" || prompt == m.draft {
-		return "", "", false
+	// Before the session lands — or when it could not be read — the window
+	// has not been handed the draft it would be writing over.
+	prompt = m.prompt.Value()
+	if m.session.Directory == "" || prompt == m.draft {
+		return "", false
 	}
 	m.draft = prompt
-	return folder, prompt, true
+	return prompt, true
 }
 
 // closeWindow ends the program, with whatever is in the composer saved first.
