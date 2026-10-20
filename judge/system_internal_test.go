@@ -26,3 +26,11 @@ func TestThePromptNamesTheStandingCap(t *testing.T) {
 		t.Fatalf("the system prompt does not say %q", want)
 	}
 }
+
+func TestThePolicyPromptVersionNamesTheseWords(t *testing.T) {
+	t.Parallel()
+	sum := sha256.Sum256([]byte(PolicySystem))
+	if got := hex.EncodeToString(sum[:]); got != policySystemDigest {
+		t.Fatalf("the policy system prompt now digests to %s: bump PolicyPromptVersion and pin the new words in policySystemDigest", got)
+	}
+}

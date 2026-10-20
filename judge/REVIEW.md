@@ -1,0 +1,5 @@
+# judge review notes
+
+- What a judge reads about a policy agrees with what code already decided about it (`knownParts`). A statement code knows matches nothing — a variable that does not bind — is neither asked about, nor stated in a model's policy as applying, nor counted as a step a supporting read may be toward (`Job.Live`, `LiveAllows`): a supporting yes allows on its own, so a judge shown a dead allow can allow a read toward it.
+- `created by $this` is an observed fact nothing records yet (ADR 26-10-20-782 §5), wherever it sits: on the statement, on a parent in `Within`, or on a scope's parent. A judge's yes on the part that carries it is unknown. A check that reads only `Statement.CreatedBy` looks complete and leaves the parents to the judge's word.
+- A policy answer is an answer to the words it was asked in. Answers that crossed a process boundary are read only when the questions' digest (`QuestionsDigest`) is the reader's own; an ID alone does not name a question across versions.

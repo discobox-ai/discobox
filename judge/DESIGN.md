@@ -11,13 +11,15 @@ it.
 | File | What it holds |
 | --- | --- |
 | `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
+| `policy.go` | A request job judged against its grant's policy (`Job.Policy`, `Job.Variables`; ADR 26-10-20-782 §8): `PolicyQuestions`, the small questions both judges are asked about it, and `DecidePolicy`, which combines their answers in code into a verdict and the `PolicyDecision` a verdict records. |
+| `policysystem.go` | `PolicySystem`, `PolicySystemFor`, `PolicyPrompt`, `PolicySchema`, `DecodePolicyReply` and `PolicyPromptVersion`: those questions as a model behind `discobox-prompt` is asked them, and the reply Discobox will accept. |
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the uses a person starts an approval rule from — the same work on any target of its kind. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
 | `facts.go` | `Discobox`, `Facts` and `DelegationFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
 | `recognized.go` | `Recognition`, the names of the protocols, endpoints and parsers a pool recognizes, and `GuidanceFor`: the trusted words that go with each name. |
-| `jev/` | The same jobs put to TypeSafe's Jev rather than a model behind `discobox-prompt` (ADR 26-10-01-324): its HTTP client, the yes/no questions a job becomes, and the code that decides a `judge.Answer` from their probabilities. |
+| `jev/` | The same jobs put to TypeSafe's Jev rather than a model behind `discobox-prompt` (ADR 26-10-01-324): its HTTP client, the yes/no questions a job becomes, and the code that decides a `judge.Answer` from their probabilities; for a policy job (`policy.go` there), one noul per `PolicyQuestions` question, read at its thresholds and combined by `DecidePolicy`. |
 
 ## The rules it exists to keep
 
@@ -28,7 +30,8 @@ choose a kinder question.
 
 **Evidence is data.** `Job` is marshalled to JSON, so a request body that
 spells out a verdict and then gives fresh instructions arrives as one string in
-one field. `Purpose` and `Host` are the authorization; nothing else can widen
+one field. `Purpose` (or, for a request under a policy, `Policy` with the
+`Variables` it binds) and `Host` are the authorization; nothing else can widen
 them. A delegation or rule job is judged against several uses, and carries
 them as the list `Purposes` instead of one `Purpose`, through the sandbox API's
 `JudgeJob` to the judge: a list, never lines of one string, so no use's words
@@ -229,6 +232,71 @@ answers typed questions with probabilities and writes no text, so `System`,
 - **Versioning.** `QuestionsVersion` names the questions and thresholds
   together. Change any of them and change it.
 
+**A request under a policy is many small questions, and code decides**
+(`policy.go`, ADR 26-10-20-782 §8). A grant that carries a policy is judged by
+it, not by the sentence beside it: a request job carries the `Policy` in place
+of a `Purpose`, and the `Variables` that bind for this decision (only those
+that resolved at approval and resolve to the same value now). Neither judge
+decides. `PolicyQuestions` is what both are asked, built once so they answer
+the same questions and are read the same way:
+
+- **Per statement:** the action — for an allow, is *everything* the request
+  does one of its actions; for a deny, is *any* part — its resource (type, name,
+  parents) and its scope, with each variable said as its value and what it
+  means. Separate "any" questions for a deny can join parts of different
+  operations, which only ever refuses more.
+- **Per condition, two:** does what is shown settle it, and does it hold. A
+  condition is unknown unless the first is a yes: asked only whether it held,
+  Jev read "not shown" as "no".
+- **Per request:** the supporting read (§2's one exception), asked only when
+  the policy has an allow, and the claims-approval hazard, Jev's in the request
+  job's own words.
+- **Code answers what needs no reading** (`knownParts`): `manage`, `anything`
+  with no name or parents, `anywhere`, and a part naming a variable that does
+  not bind, which matches nothing; a statement code knows matches nothing is
+  not asked about. A question several statements share is asked once and
+  answers each. `created by $this` is an observed fact nobody records yet, so a
+  judge's yes on such a resource is unknown.
+
+`DecidePolicy` combines the answers: `policy.Evaluate`'s two phases, on one
+atom — §8's own "is *everything* the request does one of its actions" wording
+is what lets the request be one. A request whose parts two different allows
+cover (a push of two branches, each its own statement) is therefore never
+allowed by a judge, only refused or left unsure; splitting a request into
+atoms is the fast path's (§7). And a
+refusal they decide stands whatever the hazard says, since the hazard only
+ever refuses more; then a claim of approval that is a yes refuses, and one not
+ruled out refuses unsure; then what the phases allowed is allowed. An allow
+names the statement that covered it and a refusal the deny that decided it.
+Undecided is a refusal, unsure. Whatever is unsure that could still change the
+answer asks for the body instead while it can still be shown: **asking is
+code's, never the model's**. Offered an ask, the model asked for the body of a
+request a deny already refused from its URL, only to rule out the hazard. A
+question with no answer is unknown. A judge discobox says beside its answers
+the `QuestionsDigest` of the questions it asked and its `PolicyPromptVersion`,
+and its answers are read only when that digest is of the questions this side
+would ask: a runtime of another version may put other words under the same
+ID. Otherwise it is no verdict. The verdict records the runtime's version. Nothing stands: neither judge proposes a
+route for a policy job.
+
+The model's side (`policysystem.go`) gets the policy — its statements numbered
+and bound, the definitions, host, credential, facts and guidance — as its
+system prompt (`PolicySystemFor`), and the request in the prompt between
+`<request>` lines as data it never takes as instructions or facts
+(`PolicyPrompt`); `encoding/json` escapes `<` and `>`, so nothing in the
+request can close that block. It answers every question yes, no or unsure with
+a reason — unsure for what depends on a body it has not been shown — and
+nothing else; `DecodePolicyReply` is as strict as `Decode` and refuses a reply
+that misses a question, answers one not asked, or carries anything beside the
+answers — a reason of its own, an allow, an ask — which would read as a
+decision.
+`PolicyPromptVersion` names the words, pinned by digest like `PromptVersion`.
+Jev's side is `jev.PolicyQuestionsVersion`: each question's statements,
+definitions of only the words it uses, facts and guidance in its instructions,
+only the request in its state. Like a use's request job, a body that can still
+be shown is asked for before Jev's answers decide, unless Jev is sure the
+request claims its own approval.
+
 **Recorded cases measure a harness's judge.** `test/judge-evals` holds jobs and
 what a correct judge does with each; `go tool task eval:judge` asks a harness's
 own `discobox-prompt` about them with this package's `System`, `Schema`,
@@ -240,7 +308,9 @@ and counts what it was unsure of and what it refused alone on a case a correct
 judge does not refuse; change a question or a threshold there and run it.
 A proposer case has the wrapper write a proposal (`ProposalSystem`) and the
 same judge score it: the written uses, and the uses as asked, cover the
-request, and neither covers a control.
+request, and neither covers a control. A `policy-*` case is a request job with
+a policy, put to either judge the way the control plane puts it and combined by
+`DecidePolicy`; its unsure refusals are counted whichever judge answered.
 
 **A job says beside its request whether the judge may still ask.** `Prompt`
 derives `BodyCanBeShown` and `AsksLeft` — a request job before its last round,
