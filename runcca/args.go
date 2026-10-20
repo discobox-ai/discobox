@@ -2,12 +2,6 @@ package runcca
 
 import "strings"
 
-// RealRunc is the runc this wrapper delegates to. It is referenced by absolute
-// path, never by name: the wrapper installs itself as `runc` on a directory
-// that is prepended to containerd's and dockerd's PATH, so resolving "runc"
-// through PATH would re-exec the wrapper.
-const RealRunc = "/usr/bin/runc"
-
 // BundleDir returns the OCI bundle directory named on a runc command line.
 //
 // Presence of --bundle is the whole test: of runc's verbs only create, run and

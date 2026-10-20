@@ -34,10 +34,20 @@ func runRunc(args []string) int {
 		}
 	}
 
-	argv := append([]string{runcca.RealRunc}, args...)
+	self, err := runcca.SelfInfo()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "discobox-runc: %v\n", err)
+		return 127
+	}
+	runc, err := runcca.RealRunc(os.Getenv("PATH"), self)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "discobox-runc: %v\n", err)
+		return 127
+	}
+	argv := append([]string{runc}, args...)
 	//nolint:gosec // Passing this process's own argv through to the real runc is the entire point of the shim.
-	if err := syscall.Exec(runcca.RealRunc, argv, os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "discobox-runc: exec %s: %v\n", runcca.RealRunc, err)
+	if err := syscall.Exec(runc, argv, os.Environ()); err != nil {
+		fmt.Fprintf(os.Stderr, "discobox-runc: exec %s: %v\n", runc, err)
 	}
 	return 127
 }
