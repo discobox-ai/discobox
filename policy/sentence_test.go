@@ -105,7 +105,7 @@ func TestFormatIsCanonical(t *testing.T) {
 		{`deny delete on branch in anywhere unless "x" when "y"`,
 			`deny delete on branch in anywhere when "y" unless "x"`},
 		{`allow read on issue "ét\x65" in repository "a"`,
-			`allow read on issue "éte" in repository "a"`},
+			`allow read on issue "\u00e9te" in repository "a"`},
 		{`allow read on issue "$" in repository "a"`,
 			`allow read on issue "$" in repository "a"`},
 		{`allow read on issue $primary.nope in repository "$this"`,
@@ -289,7 +289,8 @@ func TestParseTeachesWhatItExpected(t *testing.T) {
 		{`allow read, on issue`, `at "on" (byte 12): expected an action`},
 		{`allow read on in repository "a"`, `at "in" (byte 14): expected the resource type`},
 		{`allow read on issue in "a"`, `at the name or condition "a" (byte 23): expected the scope's type`},
-		{`allow read on issue in repository "a" within issue`, `at "within" (byte 38): expected "when" and a condition, "unless" and a condition, or the end of the sentence`},
+		{`allow read on issue in repository "a" within issue`, `at "within" (byte 38): expected "of" and what the scope is in, "when" and a condition, "unless" and a condition, or the end of the sentence`},
+		{`allow read on issue when "x" in repository "a"`, `at "in" (byte 29): expected "unless" and a condition, or the end of the sentence`},
 		{`allow read on issue in repository "a" when its base is main`, `at "its" (byte 43): expected the condition after "when", in quotes`},
 		{`allow read on issue in repository "a" when "x" when "y"`, `at "when" (byte 47): expected "unless" and a condition, or the end of the sentence`},
 		{`allow read on issue created $this in repository "a"`, `at the variable $this (byte 28): expected "by" after "created"`},
@@ -380,15 +381,15 @@ func TestValidateRefusesWordsASentenceCannotHold(t *testing.T) {
 	}
 }
 
-// Quoted text escapes what could pass for its closing quote or for nothing,
-// so a condition cannot seem to end early and seem to be followed by more.
-func TestFormatEscapesWhatQuotedTextCouldPassFor(t *testing.T) {
+// Quoted text is written in ASCII, so nothing in a condition can pass for its
+// closing quote and seem to be followed by more.
+func TestFormatWritesQuotedTextInASCII(t *testing.T) {
 	s := Statement{
 		Effect: Allow, Actions: []string{ActionRead}, ResourceType: "issue", Name: ptr("ünï\u2800x"),
 		Scope: Scope{Type: "repository", Name: "a\xffb"},
-		When:  ptr("a\u201d unless \u201cb\u2033 \u3164\u200b"),
+		When:  ptr("a\u201d unless \u201cb\u2033 \u3164\u200b \u02ee\u05f4\u02f6 \u1425 \u030e \U00013441 日本 e\u0301"),
 	}
-	want := `allow read on issue "ünï\u2800x" in repository "a\xffb" when "a\u201d unless \u201cb\u2033 \u3164\u200b"`
+	want := `allow read on issue "\u00fcn\u00ef\u2800x" in repository "a\xffb" when "a\u201d unless \u201cb\u2033 \u3164\u200b \u02ee\u05f4\u02f6 \u1425 \u030e \U00013441 \u65e5\u672c e\u0301"`
 	if got := Format(s); got != want {
 		t.Fatalf("Format:\n got %s\nwant %s", got, want)
 	}
