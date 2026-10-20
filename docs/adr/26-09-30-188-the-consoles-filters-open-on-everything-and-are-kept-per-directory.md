@@ -1,6 +1,6 @@
 # 26-09-30-188 — The console's filters open on everything, and are kept per directory
 
-- **Status**: Accepted (§1's sectioning by server superseded by [ADR 26-10-14-585](26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md); "`ls` is unchanged" superseded by [ADR 26-10-10-954](26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md))
+- **Status**: Accepted (§2, §3's saved view outranking the flags and §4's answer narrowing the folder superseded by [ADR 26-10-20-596](26-10-20-596-the-console-keeps-one-memory-per-machine-and-the-last-source-leads.md); §1's sectioning by server superseded by [ADR 26-10-14-585](26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md); "`ls` is unchanged" superseded by [ADR 26-10-10-954](26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md))
 - **Date**: 2026-09-30
 - **Supersedes**: [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)
   §3's folder the launcher's header opens on — the window's own, and
