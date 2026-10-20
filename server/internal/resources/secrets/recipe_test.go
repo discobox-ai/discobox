@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/publicnet"
 )
 
 func boxdRecipe() *model.ExchangeRecipe {
@@ -118,7 +119,7 @@ func TestTheExchangeDialRefusesAnInternalAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := exchangeClient(target).Do(req)
+	resp, err := publicnet.Client(tokenHTTPClient, target, tokenRenewTimeout).Do(req)
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("the dial reached a loopback endpoint")

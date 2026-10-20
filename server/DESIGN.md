@@ -935,6 +935,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |
 | `internal/resources/gateways` | A project's gateways, which every discobox of the project is routed through by its pool's proxy, and the server environment values their headers take (ADR 26-10-16-470). |
 | `internal/harnessdefs` | Seed data for the built-in harness images and the dev image env overrides. |
+| `internal/publicnet` | The server's requests to a URL somebody else wrote reach only public addresses: an exchange recipe's endpoint, a target document. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |

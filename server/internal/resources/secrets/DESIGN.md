@@ -920,10 +920,11 @@ the recipe `recipe.go` reads.
   new binding — by an update or by an approval — is held to the recipe.
   `tokenHTTPClient` follows no redirect, since a 307 would re-send the key to
   whatever it names.
-- **An exchange never reaches an internal address** (`internalAddress`):
+- **An exchange never reaches an internal address** (`publicnet.Internal`):
   loopback, private, CGNAT, link-local, unspecified, multicast. The recipe's
-  host is resolved and refused at create and at every exchange, and
-  `exchangeClient` checks the address the direct dial connects to, so a name
+  host is resolved and refused at create and at every exchange
+  (`publicnet.RefuseHost`), and `publicnet.Client` checks the address the
+  direct dial connects to, so a name
   that resolves inward the second time is still refused; a dial to the
   configured proxy is left alone. A recipe is somebody's to write, and the
   server's own network position is not theirs.
