@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
@@ -20,6 +21,15 @@ import (
 
 // consoleStateFile is the state file, relative to the CLI's state directory.
 const consoleStateFile = "console.json"
+
+// consoleStateLockName is held across a read-modify-write of the file, beside
+// it.
+const consoleStateLockName = "console.lock"
+
+// consoleStateLockWait is how long one save waits for another process's. A
+// save is a read and a small write, so this is generous; it is short because
+// the window's last save is made on its way out.
+const consoleStateLockWait = 2 * time.Second
 
 // promptDraftMax is the most of one prompt that is kept. A composer holds
 // whatever is pasted into it, and a state file is not where a megabyte of
@@ -41,12 +51,15 @@ type consoleView struct {
 	Tags         []string `json:"tags,omitempty"`
 }
 
-// consoleStateMu serializes this process's read-modify-writes of the file. The
-// window saves the draft and the view from commands that run concurrently, and
-// each rewrites the whole file: unserialized, one would put back the field the
-// other had just changed. Two windows open at once still share one file: the
-// last to write a field wins it, which is why a window closing with a prompt
-// writes it again (tui's saveDraftNow).
+// consoleStateMu and the lock file beside the state serialize read-modify-
+// writes of it, within this process and across processes. Each save rewrites
+// the whole file, and the window saves the draft and the view from commands
+// that run concurrently while another window may be saving too: unserialized,
+// one save would put back the field another had just changed. Serialized, two
+// windows open at once still share one file, and the last to write a field
+// wins it, which is why a window closing with a prompt writes it again (tui's
+// saveDraftNow). The mutex queues this process's own saves without polling the
+// lock.
 var consoleStateMu sync.Mutex
 
 func consoleStatePath() string {
@@ -70,6 +83,15 @@ func loadConsoleState() consoleState {
 func updateConsoleState(change func(*consoleState)) error {
 	consoleStateMu.Lock()
 	defer consoleStateMu.Unlock()
+	dir := filepath.Dir(consoleStatePath())
+	if err := ensureStateDir(dir); err != nil {
+		return err
+	}
+	lock, err := acquireFileLock(filepath.Join(dir, consoleStateLockName), consoleStateLockWait)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 	state := loadConsoleState()
 	change(&state)
 	return writeStateFile(consoleStatePath(), state)

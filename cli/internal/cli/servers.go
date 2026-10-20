@@ -38,15 +38,11 @@ func serversFile() string {
 // the file it guards.
 const serversLockName = "servers.lock"
 
-const (
-	// registryLockWait is how long one command waits for another's
-	// read-modify-write. Long enough that two overlapping registrations queue
-	// rather than fail, short enough that a lock left by a killed process does
-	// not look like a hang.
-	registryLockWait = 5 * time.Second
-	// registryLockRetry is how often the wait looks again.
-	registryLockRetry = 20 * time.Millisecond
-)
+// registryLockWait is how long one command waits for another's
+// read-modify-write. Long enough that two overlapping registrations queue
+// rather than fail, short enough that a lock left by a killed process does not
+// look like a hang.
+const registryLockWait = 5 * time.Second
 
 // withServerRegistry runs change against the registry with the lock held
 // across the read, the change, and the write, saving what change leaves
@@ -66,7 +62,10 @@ func withServerRegistry(change func(reg *serverRegistry) (bool, error)) error {
 	if err := ensureStateDir(dir); err != nil {
 		return err
 	}
-	lock, err := acquireServerRegistry(filepath.Join(dir, serversLockName))
+	lock, err := acquireFileLock(filepath.Join(dir, serversLockName), registryLockWait)
+	if errors.Is(err, filelock.ErrBusy) {
+		return errors.New("another discobox command is still changing the registered servers; try again")
+	}
 	if err != nil {
 		return err
 	}
@@ -80,26 +79,6 @@ func withServerRegistry(change func(reg *serverRegistry) (bool, error)) error {
 		return err
 	}
 	return reg.save()
-}
-
-// acquireServerRegistry waits for the registry lock rather than failing on the
-// first busy answer: the window it guards is short, and two commands wanting
-// it at once is what it is for.
-func acquireServerRegistry(path string) (*filelock.Lock, error) {
-	deadline := time.Now().Add(registryLockWait)
-	for {
-		lock, err := filelock.TryAcquire(path)
-		if err == nil {
-			return lock, nil
-		}
-		if !errors.Is(err, filelock.ErrBusy) {
-			return nil, err
-		}
-		if !time.Now().Before(deadline) {
-			return nil, errors.New("another discobox command is still changing the registered servers; try again")
-		}
-		time.Sleep(registryLockRetry)
-	}
 }
 
 // registeredServer is one server the user registered: the name it is listed

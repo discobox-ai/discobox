@@ -3107,8 +3107,11 @@ the card.
   keeps it for the next window, which opens its row on `Session.LastSource`
   unless `-C` named a source (ADR 26-10-20-596). The card opens on the row's
   choice, so the next create is one Enter from the same place until the header
-  or the row is moved to name another; with nothing ever answered, that is the
-  folder the header is on, or the window's own directory on "all folders".
+  or the row is moved to name another. With nothing ever answered, the card
+  opens on the folder the header is on, or the window's own directory on "all
+  folders". "All folders" names no place, so once there is a last answer,
+  moving the header there goes back to it (`setFolder`) rather than to the
+  window's own directory.
 - **The settings are the run options' own rows**, not copies: what is changed
   on the card is what the panel and the chip strip say afterwards, the Server
   row moves the header as it does from the panel (`followServer`), and a

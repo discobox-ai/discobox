@@ -2,9 +2,12 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/discobox-ai/discobox/internal/filelock"
 	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
@@ -59,4 +62,23 @@ func writePrivateFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(temp.Name(), path)
+}
+
+// fileLockRetry is how often a wait for a file lock looks again.
+const fileLockRetry = 20 * time.Millisecond
+
+// acquireFileLock takes the lock at path, waiting up to wait for another
+// process to let go rather than failing on the first busy answer: the
+// read-modify-writes these locks guard are short, and two processes wanting
+// one at once is what it is for. It reports filelock.ErrBusy once wait runs
+// out. The directory must already exist.
+func acquireFileLock(path string, wait time.Duration) (*filelock.Lock, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		lock, err := filelock.TryAcquire(path)
+		if !errors.Is(err, filelock.ErrBusy) || !time.Now().Before(deadline) {
+			return lock, err
+		}
+		time.Sleep(fileLockRetry)
+	}
 }
