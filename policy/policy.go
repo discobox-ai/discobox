@@ -166,7 +166,7 @@ func (p Policy) Validate() error {
 			fail("the definition of %q is empty", word)
 		case len(definition) > MaxTextBytes:
 			fail("the definition of %q is longer than %d bytes", word, MaxTextBytes)
-		case hasControl(definition):
+		case HasControl(definition):
 			fail("the definition of %q has a control character", word)
 		}
 	}
@@ -283,7 +283,7 @@ func (s Statement) validate(used map[string]bool) []error {
 			fail("%s is empty; leave it out to state no condition", c.what)
 		case len(*c.text) > MaxTextBytes:
 			fail("%s is longer than %d bytes", c.what, MaxTextBytes)
-		case hasControl(*c.text):
+		case HasControl(*c.text):
 			fail("%s has a control character", c.what)
 		}
 	}
@@ -321,16 +321,17 @@ func checkWord(w string) error {
 	case strings.HasPrefix(w, "$"):
 		return fmt.Errorf("%q is a variable, not a word", w)
 	}
-	if hasControl(w) {
+	if HasControl(w) {
 		return fmt.Errorf("%q has a control character", w)
 	}
 	return nil
 }
 
-// hasControl reports whether text holds a control character. Every word and
+// HasControl reports whether text holds a control character. Every word and
 // text in a policy is shown to the person approving it, and one that can move
-// a terminal's cursor can hide what they approve.
-func hasControl(text string) bool {
+// a terminal's cursor can hide what they approve; whatever else states a
+// policy's values, such as a judge's prompt, holds them to the same.
+func HasControl(text string) bool {
 	for _, r := range text {
 		if r < ' ' || r == 0x7f || (r >= 0x80 && r < 0xa0) {
 			return true
@@ -365,6 +366,22 @@ func checkCreatedBy(createdBy string) error {
 		return fmt.Errorf("%q is not %s", createdBy, VarThis)
 	}
 	return nil
+}
+
+// Words lists the words s uses in the slots that take one — its actions, its
+// resource type, and the types of its parents, its scope and the scope's
+// parents — in that order, each as often as it is used. A judge is given the
+// definitions of the words a question uses.
+func (s Statement) Words() []string {
+	words := append(slices.Clone(s.Actions), s.ResourceType)
+	for _, r := range s.Within {
+		words = append(words, r.Type)
+	}
+	words = append(words, s.Scope.Type)
+	for _, r := range s.Scope.Within {
+		words = append(words, r.Type)
+	}
+	return words
 }
 
 // Variables lists every variable p's statements use, sorted, each once.
