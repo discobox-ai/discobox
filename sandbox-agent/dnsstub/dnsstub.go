@@ -111,10 +111,14 @@ func (c Config) Material() (*bridge.Material, error) {
 // one of its bridges and are answered too.
 //
 // A local address answers on every interface, so it also drops whatever is
-// sent to addr on the pool's network (pooledInterfaces): every sandbox of a pool
-// shares that bridge, and a neighbor routing addr through this sandbox would
-// otherwise have its queries asked of the pool under this sandbox's
-// certificate. Both steps are idempotent across restarts.
+// sent to addr on the network the box is on (pooledInterfaces): every sandbox
+// of a pool shares that network, and a neighbor routing addr through this
+// sandbox would otherwise have its queries asked of the pool under this
+// sandbox's certificate. Both steps are idempotent across restarts.
+//
+// It never touches the box's resolver: in a container Docker's embedded one
+// forwards here, and on a machine the provider's stays the box's own, with
+// the stub beside it for the nested Docker (ADR 26-10-16-423 §9).
 func ClaimAddress(ctx context.Context, addr netip.Addr) error {
 	bits, iptables := 32, "iptables"
 	if addr.Is6() {
@@ -124,25 +128,30 @@ func ClaimAddress(ctx context.Context, addr netip.Addr) error {
 	if err := run(ctx, "ip", "address", "replace", prefix, "dev", "lo"); err != nil {
 		return fmt.Errorf("claim %s on lo: %w", addr, err)
 	}
-	// -w waits for the xtables lock rather than failing when something else in
-	// the sandbox, a starting dockerd say, holds it.
-	rule := []string{"INPUT", "-d", prefix, "-i", pooledInterfaces, "-j", "DROP"}
-	if run(ctx, iptables, append([]string{"-w", "-C"}, rule...)...) == nil {
-		return nil
-	}
-	if err := run(ctx, iptables, append([]string{"-w", "-I"}, rule...)...); err != nil {
-		return fmt.Errorf("keep %s off the pool's network: %w", addr, err)
+	for _, iface := range pooledInterfaces {
+		// -w waits for the xtables lock rather than failing when something
+		// else in the sandbox, a starting dockerd say, holds it.
+		rule := []string{"INPUT", "-d", prefix, "-i", iface, "-j", "DROP"}
+		if run(ctx, iptables, append([]string{"-w", "-C"}, rule...)...) == nil {
+			continue
+		}
+		if err := run(ctx, iptables, append([]string{"-w", "-I"}, rule...)...); err != nil {
+			return fmt.Errorf("keep %s off the pool's network: %w", addr, err)
+		}
 	}
 	return nil
 }
 
-// pooledInterfaces matches the interfaces Docker gives a sandbox container:
-// eth0 on its pool's network, and any further network it is attached to — the
-// only sandbox the pool writes a DNS server into the bootstrap of. The rest are
-// lo, the bridges the sandbox's own nested Docker made, and whatever else the
-// sandbox's root adds itself (a VPN's tun, say), whose peers it chose and could
-// as well forward queries for.
-const pooledInterfaces = "eth+"
+// pooledInterfaces match the interfaces a box reaches its pool's network on:
+// eth+ is every one Docker gives a sandbox container (eth0 on its pool's
+// network, and any further network it is attached to) and a VM guest whose
+// kernel names its NICs the classic way; en+ is every one a machine's
+// systemd names predictably (ens3, enp0s1, eno1), which is how a provider's
+// Ubuntu machine names its own (ADR 26-10-16-423 §9). The rest are lo, the
+// bridges the sandbox's own nested Docker made, which may carry any name,
+// and whatever the sandbox's root adds itself (a VPN's tun, say), whose peers
+// it chose and could as well forward queries for (ADR 26-10-15-760 §2).
+var pooledInterfaces = []string{"eth+", "en+"}
 
 func run(ctx context.Context, name string, args ...string) error {
 	//nolint:gosec // G204: fixed binaries (ip, iptables, ip6tables) with arguments built from a netip.Prefix and constants.

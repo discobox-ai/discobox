@@ -4,17 +4,17 @@
 
 - **A new way of putting a sandbox on a shared network keeps its interface
   under `dnsstub.pooledInterfaces`.** The stub drops what arrives for its
-  address only on `eth+`, the names Docker gives a container sandbox; anything
-  else is let through, because the nested Docker's bridges must reach it. A
-  sandbox attached under another name — a boxd machine's `enp*`, an endpoint
-  given a `com.docker.network.container_iface_prefix`, an interface an image
-  unit renames — would answer its pool neighbours under its own certificate
-  (ADR 26-10-15-760).
+  address only on `eth+`, the names Docker gives a container sandbox, and
+  `en+`, the names systemd gives a provider machine's NICs; anything else is
+  let through, because the nested Docker's bridges must reach it. A sandbox
+  attached under another name — an endpoint given a
+  `com.docker.network.container_iface_prefix`, an interface an image unit
+  renames, a provider whose guests keep a kernel name outside both — would
+  answer its pool neighbours under its own certificate (ADR 26-10-15-760,
+  ADR 26-10-16-423 §9).
 
 ## Provisioning
 
-- **An env step's `path` goes ahead of `/usr/local/bin`.** Its script sorts
-  after the box's own profile scripts (`zz-discobox-…`), so every directory
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has
   and the source does not name, which is what keeps a provider's settings; it
@@ -22,6 +22,8 @@
   member simply removed stays on every box provisioned before, for good. The
   box's own value of a member the source overwrote is not kept either.
 
+- **An env step's `path` goes ahead of `/usr/local/bin`.** Its script sorts
+  after the box's own profile scripts (`zz-discobox-…`), so every directory
   it lists shadows the `docker` and `nix` shims there (ADR 0044 §8, ADR 0075
   §4). A feature that moves a toolchain onto an env step must not list a
   directory holding a `docker` or `nix` of its own; and since the script
