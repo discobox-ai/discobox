@@ -171,9 +171,15 @@ func (p Policy) Validate() error {
 		}
 	}
 	for _, word := range sortedKeys(used) {
-		if !isReserved(word) {
+		// A word already refused needs no definition; asking for one would
+		// teach the wrong fix.
+		if !isReserved(word) && checkWord(word) == nil && checkSentenceWord(word) == nil {
 			if _, ok := p.Definitions[word]; !ok {
-				fail("%q is not a default word and has no definition", word)
+				if strings.Contains(word, " ") {
+					fail("%q is not a default word and has no definition; if its last word is a name, quote it: a name is quoted or a variable", word)
+				} else {
+					fail("%q is not a default word and has no definition", word)
+				}
 			}
 		}
 	}
@@ -192,11 +198,16 @@ func (s Statement) validate(used map[string]bool) []error {
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	word := func(what, w string) {
+		// A word refused is still the word the statement uses, so its
+		// definition is not also reported unused.
+		if w != "" {
+			used[w] = true
+		}
 		if err := checkWord(w); err != nil {
 			fail("%s: %w", what, err)
-			return
+		} else if err := checkSentenceWord(w); err != nil {
+			fail("%s: %w", what, err)
 		}
-		used[w] = true
 	}
 
 	switch s.Effect {
@@ -259,7 +270,7 @@ func (s Statement) validate(used map[string]bool) []error {
 	default:
 		word("scope type", s.Scope.Type)
 		if s.Scope.Name == "" {
-			fail("scope %q has no name", s.Scope.Type)
+			fail("scope %q has no name; a name is quoted or a variable", s.Scope.Type)
 		} else if err := checkName(s.Scope.Name); err != nil {
 			fail("scope name: %w", err)
 		}
