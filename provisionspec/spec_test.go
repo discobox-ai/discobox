@@ -67,6 +67,7 @@ func TestParseRefuses(t *testing.T) {
 		"absolute script":     head + "  - name: a\n    check: /bin/true\n    run: a.sh\n",
 		"relative file path":  head + "  - name: a\n    file: {path: etc/a, source: a}\n",
 		"bad mode":            head + "  - name: a\n    file: {path: /etc/a, source: a, mode: \"4755\"}\n",
+		"unknown merge":       head + "  - name: a\n    file: {path: /etc/a, source: a, merge: yaml}\n",
 		"bad unit":            head + "  - name: a\n    systemd: {enable: [\"docker\"]}\n",
 		"empty systemd":       head + "  - name: a\n    systemd: {}\n",
 		"drop-in name":        head + "  - name: a\n    systemd: {dropIn: {unit: a.service, name: x, source: x}}\n",
