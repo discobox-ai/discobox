@@ -288,3 +288,20 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 		t.Fatal("validate create request naming no source: nil, want a refusal")
 	}
 }
+
+// sandbox.json carries the repository's features as the request gave them
+// (ADR 26-10-16-423 §4).
+func TestSandboxDocumentCarriesFeatures(t *testing.T) {
+	req := originTestRequest("/home/user/src/app")
+	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}, "nix": {Enabled: true}})
+	req.Config.Image = workerclient.NewOptString("image")
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	want := map[string]sandboxconfig.Feature{"brew": {Enabled: false}, "nix": {Enabled: true}}
+	if !reflect.DeepEqual(doc.Runtime.Features, want) {
+		t.Fatalf("features = %+v, want %+v", doc.Runtime.Features, want)
+	}
+	config, _ := sandboxconfig.Effective(doc)
+	if !reflect.DeepEqual(config.Features, want) {
+		t.Fatalf("sandbox.json features = %+v, want %+v", config.Features, want)
+	}
+}

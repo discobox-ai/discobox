@@ -39,10 +39,10 @@ type Settings struct {
 	// Sources is read by the client, which resolves each one against its own
 	// disk before the box exists (ADR 0056).
 	Sources map[string]string `json:"sources,omitempty" doc:"The other repositories this one is worked on with, by name: a Git URL with an optional @REF. The checkout beside this repository named the same is used when there is one, and the URL is cloned to where it would have been when there is not." example:"{x: https://github.com/discobox-ai/x}"`
-	// Features opts a box's features out (ADR 26-10-16-423 §4). It is
-	// decoded and checked, and nothing acts on it yet: no feature is
-	// provisioned by name.
-	Features map[string]Feature `json:"features,omitempty" doc:"The box's features by name, each true, false, or an object whose enabled is false to turn it off. Checked, but no feature reads it yet." example:"{brew: false}"`
+	// Features opts a box's features out (ADR 26-10-16-423 §4). The client
+	// reads it, as it does Sources, and the create request carries it into
+	// the box's bootstrap, where provisioning turns each feature off.
+	Features map[string]Feature `json:"features,omitempty" doc:"The box's features by name, each true, false, or an object whose enabled is false to turn it off. A feature turned off is neither installed nor wired, and one already on the box is left there unwired. A feature the harness requires cannot be turned off unless the box already has a usable one." example:"{brew: false}"`
 	ProjectLayer
 }
 

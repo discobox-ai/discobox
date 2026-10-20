@@ -28,7 +28,10 @@ control plane's resolved harness config.
   is the rule the CLI, the server, the pool and the sandbox hold; ADR
   26-10-14-294; `ValidateSkillsRepository` is what a project's skills source
   may name, held by the server on add and by every client before Git runs on
-  one, ADR 26-10-14-894), the create-time `Description` (only a seed for the
+  one, ADR 26-10-14-894), the create-time `Features` (the repository's
+  features as its client read them from `.discobox/settings.json`, which the
+  box's provisioning turns off by name; ADR 26-10-16-423 §4), the create-time
+  `Description` (only a seed for the
   sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
   sandbox-agent's runc wrapper. `Files` is the harness config's configured-file
@@ -87,12 +90,13 @@ one layer.
 A repository's settings are one file, `.discobox/settings.json` (`Settings`,
 [ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
 §11): `sources`, `features`, and the `ProjectLayer` fields, embedded. Each
-reader takes only its own keys — the client `sources` before the box exists,
-the pool the project layer out of the materialized clone, through the sandbox
-agent, which answers it the project layer alone — so one fetch of a remote
-primary source reads all of it, and a key one reader owns never changes what
-another decides. `features` is decoded and checked, and nothing acts on it
-yet.
+reader takes only its own keys — the client `sources` and `features` before
+the box exists, the pool the project layer out of the materialized clone,
+through the sandbox agent, which answers it the project layer alone — so one
+fetch of a remote primary source reads all of it, and a key one reader owns
+never changes what another decides. `features` rides the create request into
+the runtime layer and `sandbox.json` (`Config.Features`), single-writer, where
+the box's provisioning turns each one off.
 
 - `ReadSettings` is the one place the file is found, for every reader: it
   takes a read function (the client's disk, a commit on a remote, an

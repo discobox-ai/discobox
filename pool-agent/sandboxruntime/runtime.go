@@ -1431,6 +1431,12 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 			})
 		}
 		doc.Runtime.SkillsSources = sandboxSkillsSources(sources, req.Config.SkillsSources)
+		for name, feature := range req.Config.Features.Value {
+			if doc.Runtime.Features == nil {
+				doc.Runtime.Features = map[string]sandboxconfig.Feature{}
+			}
+			doc.Runtime.Features[name] = sandboxconfig.Feature{Enabled: feature.Enabled}
+		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
 			doc.Image = sandboxconfig.ImageLayer{
 				HarnessID:          resolved.ID,

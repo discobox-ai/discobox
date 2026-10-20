@@ -76,6 +76,12 @@ type RuntimeLayer struct {
 	// SkillsSources are the directories of skills sources whose skills are
 	// linked in after Skills are written, in order (ADR 26-10-14-294 §3).
 	SkillsSources []SkillsSource `json:"skillsSources,omitempty"`
+
+	// Features are the repository's features as the client read them from
+	// its settings.json at create (ADR 26-10-16-423 §§4, 11): the box
+	// provisions every feature but those turned off here. Single-writer:
+	// the client is the only reader of them in that file.
+	Features map[string]Feature `json:"features,omitempty"`
 }
 
 // Provider is non-secret provider context for the sandbox runtime.

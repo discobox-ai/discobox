@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
@@ -163,6 +164,27 @@ func SandboxGitToModel(value OptSandboxGitIdentity) SandboxGitFields {
 	}
 }
 
+// SandboxFeaturesToModel is the request's features, or the refusal a name
+// that is not a feature's earns.
+func SandboxFeaturesToModel(in serverapi.SandboxCreateConfigFeatures) (map[string]sandboxconfig.Feature, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]sandboxconfig.Feature, len(in))
+	for name, feature := range in {
+		if !provisionspec.ValidName(name) {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("feature %q is not a feature's name", name))
+		}
+		if name == provisionspec.Core {
+			// Refused here rather than by the box at readiness: core is
+			// not optional (ADR 26-10-16-423 §4).
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "core is not a feature a repository's settings can name: it is never off")
+		}
+		out[name] = sandboxconfig.Feature{Enabled: feature.Enabled}
+	}
+	return out, nil
+}
+
 // SandboxSkillsSourcesToModel is the request's skills sources, in order.
 func SandboxSkillsSourcesToModel(in []serverapi.SandboxSkillsSource) []model.SkillsSource {
 	if len(in) == 0 {
@@ -266,6 +288,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if len(sandbox.SkillsSources) > 0 {
 		config["skillsSources"] = sandbox.SkillsSources
+	}
+	if len(sandbox.Features) > 0 {
+		config["features"] = sandbox.Features
 	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,

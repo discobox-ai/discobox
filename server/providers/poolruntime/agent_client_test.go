@@ -156,3 +156,17 @@ func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 		t.Fatalf("unrestricted policy = %+v, set %v; want it sent, unrestricted", got, ok)
 	}
 }
+
+// The repository's features reach the pool, and none are sent for a sandbox
+// created without them (ADR 26-10-16-423 §4).
+func TestPoolCreateRequestCarriesFeatures(t *testing.T) {
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Features: map[string]sandboxconfig.Feature{"brew": {Enabled: false}},
+	})
+	if got := request.Config.Features.Or(nil); len(got) != 1 || got["brew"].Enabled {
+		t.Fatalf("features = %#v", request.Config.Features)
+	}
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Config.Features.Set {
+		t.Fatal("features set for a sandbox created without any")
+	}
+}

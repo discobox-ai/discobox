@@ -859,6 +859,13 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	for _, skills := range opts.SkillsSources {
 		config.SkillsSources = append(config.SkillsSources, poolapimodel.SandboxSkillsSource{Source: skills.Source, Directory: skills.Directory})
 	}
+	if len(opts.Features) > 0 {
+		features := make(poolclient.SandboxConfigFeatures, len(opts.Features))
+		for name, feature := range opts.Features {
+			features[name] = poolclient.SandboxFeature{Enabled: feature.Enabled}
+		}
+		config.Features = poolclient.NewOptSandboxConfigFeatures(features)
+	}
 	return out
 }
 
