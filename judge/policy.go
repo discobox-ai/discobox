@@ -134,7 +134,7 @@ func (j Job) knownParts() []policy.Parts {
 			parts[i].Action = policy.Yes
 		}
 		switch {
-		case !j.binds(s.Name) || !j.bindsAll(s.Within):
+		case !j.binds(s.Name) || (s.CreatedBy != "" && !j.binds(&s.CreatedBy)) || !j.bindsAll(s.Within):
 			parts[i].Resource = policy.No
 		case s.ResourceType == policy.Anything && s.Name == nil && len(s.Within) == 0 && s.CreatedBy == "":
 			parts[i].Resource = policy.Yes

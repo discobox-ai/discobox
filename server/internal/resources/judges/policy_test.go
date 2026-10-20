@@ -206,15 +206,24 @@ func TestAJudgeDiscoboxThatAskedOtherQuestionsIsNoVerdict(t *testing.T) {
 	}
 	unsure["s1_scope"] = 0.5
 	service, _, _, _, _ := jevWithFallback(t, unsure, sandboxapi.JudgeAnswer{})
+	// Answers that would allow, so only the digest can refuse.
 	answers := []sandboxapi.JudgePolicyAnswer{}
 	for _, id := range []string{"s1_action", "s1_resource", "s1_scope", "supporting", "claims_approval"} {
-		answers = append(answers, sandboxapi.JudgePolicyAnswer{ID: id, Answer: sandboxapi.JudgePolicyAnswerAnswerYes, Reason: "it is"})
+		said := sandboxapi.JudgePolicyAnswerAnswerYes
+		if id == "supporting" || id == "claims_approval" {
+			said = sandboxapi.JudgePolicyAnswerAnswerNo
+		}
+		answers = append(answers, sandboxapi.JudgePolicyAnswer{ID: id, Answer: said, Reason: "it is"})
 	}
-	service.SetLeases(newPolicyJudge(t, sandboxapi.JudgePolicyReply{Answers: answers, PromptVersion: "policy-0", QuestionsDigest: "another"}))
+	harness := newPolicyJudge(t, sandboxapi.JudgePolicyReply{Answers: answers, PromptVersion: "policy-0", QuestionsDigest: "another"})
+	service.SetLeases(harness)
 	service.SetUses(approvedUses{use: policyUse(pullRequestPolicy("org/repo"))})
 
 	answer, err := service.Judge(ctx, "pool-1", requestAsk())
 	if err == nil && answer.Allow {
 		t.Fatalf("answer = %+v, want no allow on answers to other questions", answer)
+	}
+	if len(harness.paths) != 1 || !strings.HasSuffix(harness.paths[0], "/judge/policy") {
+		t.Fatalf("judge discobox asked at %v, want once at judge/policy", harness.paths)
 	}
 }

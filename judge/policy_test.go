@@ -405,3 +405,26 @@ func TestAStatementThatMatchesNothingIsNotShownAsOne(t *testing.T) {
 		}
 	}
 }
+
+// A statement limited to what $this created matches nothing while $this does
+// not bind, as a name naming an unbound variable does: it is neither asked
+// about nor a step a supporting read may be toward.
+func TestAnUnboundCreatedByMatchesNothing(t *testing.T) {
+	t.Parallel()
+	job := withPolicyJob(func(j *judge.Job) {
+		j.Policy.Statements[0].CreatedBy = policy.VarThis
+		j.Policy.Statements[0].When = nil
+	})
+	questions, err := judge.PolicyQuestions(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range questions {
+		if strings.HasPrefix(q.ID, "s1_") || q.ID == judge.QuestionSupporting {
+			t.Fatalf("asked %s about a statement whose created-by does not bind", q.ID)
+		}
+	}
+	if job.Live(0) {
+		t.Fatal("a statement whose created-by does not bind is live")
+	}
+}

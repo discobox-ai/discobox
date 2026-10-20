@@ -30442,7 +30442,8 @@ type SecretGrant struct {
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
 	// The approved policy, with the value each of its variables resolved to for the sandbox the grant is
-	// for (ADR 26-10-20-782). Nothing judges by it yet.
+	// for (ADR 26-10-20-782). A request spending the grant is judged against it (ADR 26-10-20-782
+	// section 8); a command, against the use it runs under.
 	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.
