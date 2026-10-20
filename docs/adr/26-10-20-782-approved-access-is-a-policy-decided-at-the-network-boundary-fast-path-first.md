@@ -1,0 +1,405 @@
+# 26-10-20-782 — Approved access is a policy, decided at the network boundary by a generated fast path before any judge
+
+- **Status**: Proposed
+- **Date**: 2026-10-20
+- **Supersedes** (on acceptance):
+  - [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
+    §5 in part: a grant's approved uses as sentences `[]{useId, description}`.
+    A grant carries one policy instead (§1).
+  - [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
+    §3, and §§4–5 in part: commands are no longer judged (§10), and a request
+    is decided against its grant's whole policy, not one use's sentence. §5's
+    reasonable association survives only inside the fallback judge (§8).
+  - [26-10-02-054](26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md)
+    §§1–3 for commands: `judgeCommands` goes. Its delegation judging stays
+    (Deferred).
+  - [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
+    §3's request job: one "within" noul becomes a question per statement and
+    per condition, combined in code (§8).
+  - [26-10-14-448](26-10-14-448-jevs-command-question-admits-the-steps-of-a-job.md),
+    Proposed, is withdrawn: there is no command question left to reword.
+- **Relates to**:
+  [26-10-14-691](26-10-14-691-the-judge-is-told-who-is-asking-from-the-control-planes-record.md)
+  (the control plane's record, which §4 turns into typed facts),
+  [26-09-26-240](26-09-26-240-a-request-is-recognized-and-its-body-is-shown-in-one-shape.md)
+  (recognition, which §6 generalizes),
+  [26-09-25-428](26-09-25-428-the-judge-may-let-its-allow-stand-for-a-route.md)
+  (standing allows, which the fast path makes rarely needed),
+  [26-10-12-669](26-10-12-669-jevs-confident-refusal-is-final-and-only-what-it-is-unsure-of-goes-on.md)
+  (thresholds, unchanged),
+  [26-10-12-330](26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
+  (approval rules, Deferred).
+
+## Context
+
+A use is a sentence today. An agent writes one per job — the job, its target,
+what it reads and writes, and a "Never …" sentence ruling out each write's
+neighbors — a person approves it, and a model reads it twice: once against the
+command `discobox-access run` declares, and once against each request the
+proxy sees, when request judging is on.
+
+What was measured (2026-10-17 to 2026-10-20; the evals named are in
+`test/judge-evals`, and the sets are small):
+
+- **The sentence is hard to write and to read.** Agents writing uses under
+  the current skill averaged 58 words a use, 37% of them reading as commands,
+  and a grader rated them 3.7/5 to decide at a glance. A list of
+  `<action> in <scope>` items averaged 11 words, named a target 100% of the
+  time, and rated 4.9/5. It covered the task's needs slightly less often
+  (88% against 94%).
+- **A list of items leaks across items.** An agent picks the use a command
+  runs under, so a command is allowed under the most permissive item. A
+  force-push refused under "push branch X, excluding force-pushing" was
+  allowed under "open and update pull requests from X". "Read anything in X"
+  allowed listing Actions secrets in every style that lacked an explicit
+  never; "comment on that pull request" allowed commenting on an unrelated
+  issue.
+- **Jev cannot judge commands.** Under every style — the hand-written uses
+  included — Jev refused 74–94% of the needed commands the LLM judge allowed
+  (3–13% refused). The command declaration was never the enforcement point
+  anyway: the pool says so (`pool-agent/proxyagent/activations.go`).
+- **Jev believes facts.** It resists injected commands and claims of
+  approval (0.97–0.99 on the hazard), but a false fact in a request header
+  moved "within" from 0.46 to 0.68, and to 0.86 with the authorization moved
+  into the state. With no trusted fact naming "this discobox's repository",
+  it allowed an issue in an assumed repository at 0.92.
+- **Most of a request's meaning is mechanical.** A prototype target entry
+  for GitHub (below) mapped 57 of 62 recorded GitHub requests to an action,
+  resource, name and scope with no model, and decided 40 of them statically
+  against policies rewritten from their approved uses.
+
+## Decision
+
+### 1. A grant carries a policy of statements
+
+A grant's authorization is a policy: a set of statements, each
+
+```
+<allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when <condition>] [unless <condition>]
+```
+
+```json
+{ "effect": "allow", "actions": ["create", "update"], "resourceType": "pull request",
+  "name": null, "within": [], "scope": { "type": "repository", "name": "$primary.repo" },
+  "when": "its head is discobox/issue-46 and its base is main", "unless": null }
+```
+
+- **Structure is fixed; words are open.** Actions and resource types are any
+  words. Any word but the defaults carries a definition in the policy, which
+  a person approves with it. The defaults — `read`, `create`, `update`,
+  `delete`, and `manage`, which is every action on the type — carry none, and
+  a policy cannot give them one: otherwise a definition could quietly widen
+  `read`. Which request is which action is the target entry's to say (§6),
+  and an entry offers its host's words, so policies for a host converge on
+  them.
+- **Scope** is a typed name (`repository acme/web`, `namespace web of cluster
+  staging`) or a variable (§4). An allow must name one. A deny may say
+  `anywhere`. `anything` as a resource type covers every type in the scope.
+- **`when` and `unless` are conditions**: limits a request can be checked
+  against. Never an example, a qualifier, or an intention. "Such as …" and
+  "light" are not conditions.
+- Names are literals, globs, or variables.
+
+### 2. Two phases, and order never matters
+
+A request yields one or more atoms (an action on a resource in a scope; a push
+of two refs is two). It is allowed when **every atom matches some allow and no
+atom matches any deny**. A statement matches when its action, type, name,
+parents and scope fit, its `when` holds and its `unless` does not. Anything
+no allow covers is refused, with one exception the judge alone may make: a
+read that changes nothing and is an ordinary step toward an allowed statement,
+on that statement's target — looking a repository up, listing its refs
+before a push (§8).
+
+### 3. A policy is written, rewritten, then approved
+
+An agent or a person asks. Before a person sees it, Discobox's model validates
+and rewrites it: maps words to the host's vocabulary and phrases to variables
+(§4), splits and merges statements, turns examples into statements or drops
+them, drops vague qualifiers, adds standard denies, and notes gaps against the
+task — a missing scope is a gap, never a default to everywhere. A rewrite
+never widens what was asked; anything it would add appears on the form as an
+addition with its reason.
+
+The person approves the **policy**. The form they read is a rendering of it —
+grouped by scope, denies that apply everywhere shown once as such, conditions
+under their statement, every non-default word with its definition — and may
+change as Discobox improves without changing what was approved. Editing the
+form edits the policy, and may only narrow it.
+
+### 4. Static input facts are typed, and variables resolve from them
+
+The control plane's record of a discobox (ADR 26-10-14-691) becomes typed
+facts, not only sentences:
+
+```json
+{ "discobox": { "id": "sbx_…", "createdBy": "sbx_…" | null, "project": "default" },
+  "sources": [ { "slug": "primary", "primary": true,
+                 "remote": { "host": "github.com", "repo": "darren/discobox", "url": "https://github.com/darren/discobox" },
+                 "ref": { "type": "branch", "name": "main" }, "commit": "…" } ],
+  "observed": { "github.com": { "darren/discobox": { "parent": "discobox-ai/discobox", "defaultBranch": "main",
+                                                     "evidence": "GET /repos/darren/discobox: $.parent.full_name, $.default_branch" } } } }
+```
+
+Variables a policy may use, and nothing else:
+
+| Variable | Is |
+| --- | --- |
+| `$this` | the discobox the policy is bound to |
+| `$primary.repo`, `$primary.host`, `$primary.branch` | its primary source as recorded at create |
+| `$primary.upstream` | the repository GitHub says the primary is a fork of (`parent`, an observed fact) |
+| `$primary.default_branch` | that repository's default branch, observed |
+| `$sources.<slug>.repo` | another source, as recorded |
+| `created by $this` | a qualifier on a resource: one this discobox created (§5) |
+
+- **Values come from the record and from upstream facts, never from the
+  discobox.** A remote named `upstream` in `.git/config` proves nothing.
+- **Resolved at approval, bound at runtime.** The form shows the resolved
+  value and the policy keeps both. At runtime the variable binds from the
+  discobox's facts; a value that no longer matches what was approved refuses.
+- **No value, no match.** A variable that does not resolve — no GitHub
+  remote, not a fork, no fact — matches nothing, and the form says so.
+- A policy handed to another discobox binds its variables there, as facts do
+  today.
+
+### 5. Observed facts come from upstream responses
+
+A fact is a server-assigned field in an upstream's own response, about that
+upstream's own objects: an ID, its own URL, `node_id`, `full_name`,
+`repository_url`, `head.ref`, `parent.full_name`. Text a discobox may have
+written — titles, bodies, messages — is never a fact, and nothing in a request
+is.
+
+- **An ID index runs as responses pass**: plain code records the IDs in each
+  response against the exchange and its origin.
+- **Extractors run on demand**, when a decision needs a fact the store lacks:
+  the index finds the exchanges that mention the reference, a generated
+  extractor for that response shape (§7) reads them, and failing that one GET
+  of the object's own endpoint is made with the same credential and recorded
+  as Discobox's. No extractor, no fact: the decision falls through.
+- **"Created by `$this`"** is recorded by the proxy for a write that succeeded
+  under this discobox's credential, with the created object's ID read from the
+  response.
+- **A fact that decides a write is fresh**: older than a short limit, it is
+  re-read first.
+- Facts are metadata (IDs, links, relations, times), per discobox and
+  credential; identity facts may be shared within the project.
+
+### 6. A target database describes hosts, and is optional
+
+Keyed by hostname, an entry holds what is known about a host: its documents
+(an OpenAPI description, a GraphQL schema, prose) and its vocabulary with
+definitions. It is input to the generation of §7 and context for the judge of
+§8. Judging never needs one: a host with no entry, or with no documents
+describing its API, is decided by the judge alone.
+An entry is trusted input — Discobox ships the built-ins, an admin may add or
+override one per project, and a discobox never writes one — and every decision
+records the entry version it used.
+
+### 7. AI generates a fast path, as a best effort
+
+The policy is the source of truth for intent. The fast path is derived from
+it, and can always be thrown away and generated again.
+
+- **Only from documents.** A fast path is generated only for a host whose
+  target entry has documents describing its API. They are what the rules are
+  written from, and what they are checked against (§9): without a
+  description of the API there is nothing to enumerate the requests a rule
+  must answer, so nothing to tell a rule that is right from one that is
+  merely plausible. A host without documents has no fast path; every request
+  to it goes to the judge.
+- **Generated by a model.** From a policy's statements and the target entry,
+  a model writes the rules that recognize a request — which action on which
+  resource in which scope it is — and decide the statements that cover it, and
+  the extractors those rules need for facts. It is generated from the policy
+  and the host's documents, never from what a discobox sent.
+- **Best effort.** Generation covers what it can. A statement, a condition, or
+  a request it has no rule for falls through to the judge (§8); nothing is
+  refused for want of a rule.
+- **Cached and reused.** Generated rules are kept, keyed by what they were
+  generated from — the target entry version, and the statement's shape with
+  its names as parameters (`allow create on issue in repository {S}`) — so a
+  later policy with the same shape reuses them, bound to its own names and
+  the discobox's facts. The cache's keys are also the rewrite's (§3) list of
+  statements that already have a fast path.
+- **The runtime is an implementation detail.** What the rules are written in
+  and how they run is not this decision. They must be deterministic, run
+  sandboxed with no I/O, and decide only from the request, its body, and
+  facts.
+- **They decide only when certain.** Allow when an allow matches every atom
+  outright. Refuse when a deny matches, when an atom is outside every allow's
+  scope, or when it is a write no allow covers — a write is not a supporting
+  step. Anything else falls through: a read in an allowed scope that no
+  statement names (perhaps a supporting step), a condition the rules cannot
+  check, a fact not known, a request no rule recognizes.
+
+### 8. The fallback judge answers the same structure
+
+Jev first, then the LLM judge, as today's thresholds and unsure handling say.
+Neither decides. Both answer the same small questions about the policy's
+statements, and code combines the answers in the two phases of §2:
+
+- **Per statement:** the action — for an allow, is *everything* the request
+  does one of its actions; for a deny, does *any* part do one — its resource
+  (type, name, parents), and its scope. Code answers what needs no reading
+  (`anywhere`, `anything`, `manage`), and a question several statements share
+  is asked once.
+- **Per condition, two questions:** does the request *show* enough to tell
+  whether it holds, and does it hold. Unless the first is a confident yes, the
+  condition is unsure. Asked only whether it holds, Jev read "not shown" as
+  "no" and refused requests whose body was not recorded.
+- **Per request:** whether it is a supporting read (§2), and the
+  claims-approval hazard.
+- **Jev** gets one noul per question: the statement's words, their
+  definitions and Discobox's facts in the instructions, only the request in
+  the state.
+- **The LLM judge** gets the policy, the definitions and the facts as its
+  system prompt, and the request as a delimited block of data it is told never
+  to take as instructions or facts. It answers yes, no or unsure for each part
+  of each statement, with a reason.
+- What the fast path already decided is passed along, so the judge answers
+  only what is left. A refusal names the statement that decided it.
+
+### 9. Nothing generated decides before it agrees with the judge
+
+A model wrote the fast path, so its correctness comes from checking it, not
+from how it was made:
+
+- **Generated rules and extractors are enabled** only after their decisions
+  agree with the judge's on recorded traffic and on requests synthesized from
+  the host's documents: every documented operation, inside and outside a
+  policy's scope, in each form the documents allow. This is why a fast path
+  needs documents (§7).
+- **After that, a sample of live traffic is decided both ways**, and a
+  disagreement disables what disagreed and reports it.
+- **An extractor cites**, for every value it emits, where in the response the
+  value was; code checks the citation, and the fact's origin must be the
+  response's.
+- **A verdict records** whether generated rules or the judge decided it, and
+  which rules, so a wrong one can be traced and regenerated.
+
+### 10. Commands are not judged
+
+`discobox-access run` binds the credential it hands out to its grant and
+records the declared command, which travels with each request as a labelled
+claim. Nothing is decided on it. Every request carrying the credential is
+decided by §§7–8.
+
+## Measurements
+
+The GitHub prototype (`build/targetdb`, not in the tree): GitHub's REST
+description and GraphQL schema, labelled by a model one category at a time
+(55 calls, 1,520 operations, every one labelled), everything else by code.
+
+| | |
+| --- | --- |
+| Target rules | 1,559: 1,242 REST, 309 GraphQL roots, 8 git over HTTPS |
+| Vocabulary | 330 resource types (near-duplicates included), 80 actions; read 688, update 239, create 173, delete 164 |
+| Statement shapes | 2,047 |
+| Extractors | 505 response shapes; 6,805 facts from 283 of 606 of GitHub's example responses |
+| Recorded GitHub requests classified | 57 of 62 (the rest: undocumented `copilot_internal`, a Go proxy, GraphQL whose body was not recorded) |
+| Decided statically | 41 of 62: 40 as their case expects, 1 not (an unscoped use rewritten to `$primary.repo`, on a case with no facts); 21 to the judge |
+| Fact resolution | a GraphQL `closeIssue` by node ID resolved to its repository from an earlier REST read, and decided by a deny |
+
+The two requests on which Jev allowed an issue in an assumed repository are
+refused statically: `$primary.repo` does not resolve without the record, and
+nothing in a request can supply it.
+
+A second run had a model write the fast path itself (§7): one Lua function per
+statement shape, 33 shapes from 42 statements, from the statement and excerpts
+of GitHub's documents — all loaded on the first attempt — run in a sandbox
+with no I/O and an instruction budget. The fallback judges of §8 were written
+for it from scratch and asked the same requests:
+
+| 62 recorded requests | Right | Wrong | Unsure |
+| --- | --- | --- | --- |
+| Generated fast path | 26 | 0 | 36 |
+| Jev | 34 | 1 | 27 |
+| LLM judge | 47 | 1 | 14 |
+
+The one wrong is the same request for both judges, under a policy the rewrite
+left empty because its use named no GitHub work: refusing is the policy's
+answer. Over those 62, the 43 synthesized requests on which the generated
+rules and the code-built prototype disagreed, and 110 sampled from the
+documented routes, Jev and the LLM judge never contradicted each other: where
+they differed, Jev was unsure. The generated rules contradicted a judge on 6
+synthesized requests, all one rule — `allow read on issue {N}` also allowed
+the issue's events, reactions, sub-issues and suggestions — which §9 would
+disable.
+
+Use writing and judging are measured by `go tool task eval:uses` and
+`eval:uses:judge`; the fact-injection and layout comparisons by
+`eval:judge:jev` on `test/judge-evals/cases`.
+
+## Alternatives rejected
+
+- **Keep judging commands.** The declaration is the discobox's word about
+  what it will send; the request is what it sends. Jev refused most needed
+  commands under every way of writing a use, and the LLM judge's seconds per
+  command buy no enforcement the request does not.
+- **One sentence per job, with "Never …".** Long to write and slow to read,
+  and nothing but a model can check it.
+- **A list of free-text allowed actions.** Readable, but an exclusion on one
+  item is undone by another, and no code can decide any of it.
+- **A fixed vocabulary.** Every host has its own nouns; defaults and a host's
+  offered words get most of the regularity without refusing a word a person
+  understands.
+- **A model evaluates the whole policy.** Precedence between items is exactly
+  where the force-push leaked. Models answer atoms; code combines them.
+- **One choice question (allow, refuse, examine) for Jev.** Rejected in
+  ADR 26-10-01-324 for hiding judgments in one question; examine is code's to
+  decide.
+- **The authorization in Jev's state.** TypeSafe documents policies in the
+  state. Measured here it allowed controls the instructions layout refused,
+  and raised the hazard on honest requests from about 0.03 to 0.2–0.3.
+- **A hand-written compiler from policy to rules.** Words are open and hosts
+  are arbitrary: a compiler covers what its authors anticipated, and every new
+  host or word would wait on code. A model reads the host's documents and the
+  policy's words and generates rules for both; §9 is what makes them
+  trustworthy.
+- **A model generates a check per request.** Code written at decision time is
+  checked by nothing before it decides, and adds a model's latency to every
+  miss. Rules are generated ahead of use and reused.
+- **Rules generated from observed traffic, or from a model's own knowledge of
+  an API.** What a discobox sent is its word, and a model's recollection of an
+  API is unchecked. Neither enumerates what a host accepts, so neither gives
+  §9 anything to test a rule against. Rules come from the policy and the
+  host's documents; traffic only tests them.
+- **Extract every response as it passes.** Most responses decide nothing. An
+  ID index is cheap; extraction waits for a need.
+- **The rendered form as the authority.** The form improves; what a person
+  approved must not move with it.
+
+## Deferred
+
+- **Delegations and approval rules over policies.** Handing a credential on
+  and testing a rule are still judged by comparing uses (ADR 26-10-12-330,
+  ADR 26-10-14-223). A policy makes most of that a structural comparison —
+  fewer actions, narrower resources, at least the same denies — with a model
+  only for conditions. Revisit once policies are what grants carry.
+- **Judging requests by default.** `judgeCredentials` stays off by default.
+  Revisit when the fast path's share of recorded traffic is measured across
+  the built-in hosts and the fallback's latency per request is known.
+- **Merging near-duplicate words** in a generated vocabulary (`label`, `issue
+  label`). Revisit when a policy's word gets no generated rule because of one.
+- **Facts across discoboxes.** Identity facts may be shared within a project;
+  sharing across projects is not decided.
+
+## Consequences
+
+- A grant carries a policy, and the approval surfaces render it. Existing
+  grants with sentence uses keep being judged as today until they lapse;
+  nothing converts them.
+- `discobox-access run` no longer waits on a judge, and a project with no
+  model can run credentialed commands. Its requests are decided at the
+  boundary, statically where a target entry covers them.
+- The pool runs the generated fast path, the ID index, and extractors on
+  demand. The control plane keeps the target database, generation and its
+  cache, the judge, and verdicts.
+- A verdict records what decided it — generated rules, Jev or the LLM judge —
+  which rules and target entry version, and the facts it used.
+- A host gets faster as its rules are generated and checked, and a policy
+  with an unfamiliar shape is slower until then; it is never decided
+  differently for having no rules.
+- The `discobox-access` skill teaches writing a policy instead of a use
+  sentence, and the use-writing evals measure it.
