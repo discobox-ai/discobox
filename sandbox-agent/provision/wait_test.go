@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,9 @@ func writeStatus(t *testing.T, path string, status provisionspec.Status) {
 // says once what it waits for, and treats a feature the box does not
 // provision as done.
 func TestWait(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("provision.json is a Linux box's; Windows refuses to replace a file another reader has open")
+	}
 	path := filepath.Join(t.TempDir(), "provision.json")
 	waitPoll = 5 * time.Millisecond
 	done := make(chan provisionspec.Status, 1)
@@ -71,6 +75,9 @@ func TestWait(t *testing.T) {
 
 // A placeholder finds the real command past itself.
 func TestLookPathSkipsThePlaceholders(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("placeholders are a Linux box's: they are found by executable bit, which Windows has none of")
+	}
 	dir := t.TempDir()
 	brew := filepath.Join(dir, "bin", "brew")
 	if err := os.MkdirAll(filepath.Dir(brew), 0o755); err != nil {
