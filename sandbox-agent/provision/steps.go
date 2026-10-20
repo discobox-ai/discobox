@@ -346,6 +346,12 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	if got := hex.EncodeToString(hash.Sum(nil)); got != download.SHA256 {
 		return fmt.Errorf("download %s: sha256 is %s, want %s", download.URL, got, download.SHA256)
 	}
+	if step.Unpack != nil {
+		if err := unpackInPlace(tmp.Name(), target, *step.Unpack); err != nil {
+			return fmt.Errorf("download %s: %w", download.URL, err)
+		}
+		return fsdurable.SyncDir(dir)
+	}
 	if err := os.Rename(tmp.Name(), target); err != nil {
 		return err
 	}
@@ -356,7 +362,9 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 
 // applyPackages installs a Debian family box's packages, refreshing the
 // package lists once per run. It holds the apt lock, which features
-// provisioning at once share.
+// provisioning at once share. A configuration file already at a package's
+// path is kept, never asked about: it is the box's, or a feature's that was
+// provisioned before the package arrived, and there is nobody to answer.
 func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisionspec.PackagesStep) error {
 	r.apt.Lock()
 	defer r.apt.Unlock()
@@ -367,7 +375,8 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 		}
 		r.aptUpdated = true
 	}
-	return r.command(ctx, out, "/", env, "apt-get", append([]string{"install", "-y", "--no-install-recommends"}, step.Debian...)...)
+	args := []string{"install", "-y", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}
+	return r.command(ctx, out, "/", env, "apt-get", append(args, step.Debian...)...)
 }
 
 func fileMode(mode string) os.FileMode {
