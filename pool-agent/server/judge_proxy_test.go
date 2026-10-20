@@ -23,6 +23,9 @@ func TestJudgeIsForwardedOnItsOwnScope(t *testing.T) {
 		// Proposing a rule's wording is the same runtime's other job.
 		{"asking it to propose a rule", http.MethodPost, path + "/proposal", ScopeJudgeRun},
 		{"reading a proposal", http.MethodGet, path + "/proposal", ""},
+		// So is answering the questions about a request under a policy.
+		{"asking it a policy's questions", http.MethodPost, path + "/policy", ScopeJudgeRun},
+		{"reading a policy's answers", http.MethodGet, path + "/policy", ""},
 		// No scope is not a refusal — it means this hop checks none — so what
 		// keeps a GET out is that the route is registered for POST alone.
 		// The table is asked anyway, to keep it in step with the sandbox
@@ -60,5 +63,21 @@ func TestJudgeRouteIsRegisteredAndStartsAStoppedJudge(t *testing.T) {
 	}
 	if runtime.ensured != 1 {
 		t.Fatalf("ensured %d times, want the judge started once", runtime.ensured)
+	}
+}
+
+// The judge runtime's other routes are registered by name too.
+func TestTheJudgesOtherRoutesAreRegistered(t *testing.T) {
+	for _, route := range []string{"/judge/policy", "/judge/proposal"} {
+		runtime := &ensureRecorder{err: sandboxruntime.ErrNoContainer}
+		service := &sandboxService{runtime: runtime}
+		router := chi.NewRouter()
+		registerSandboxProxyRoutes(router, service)
+
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, markedRequest(t, http.MethodPost, "/api/project/p/pool/w/sandboxes/sb_judge"+route, UseAction))
+		if resp.Code == http.StatusNotFound || resp.Code == http.StatusMethodNotAllowed {
+			t.Fatalf("%s: status = %d, want the path registered with this router", route, resp.Code)
+		}
 	}
 }

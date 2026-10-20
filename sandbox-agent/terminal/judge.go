@@ -57,6 +57,36 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	return answer, nil
 }
 
+// JudgePolicy answers the questions about one request judged against a policy
+// (ADR 26-10-20-782 §8): the same wrapper, role and --no-tools as Judge, with
+// the policy's own system prompt and schema. It decides nothing: what comes
+// back is an answer to every question, with the questions it answers, and the
+// control plane combines the answers with the policy.
+func (s *Service) JudgePolicy(ctx context.Context, job judge.Job) (judge.PolicyReply, []judge.Question, error) {
+	questions, err := judge.PolicyQuestions(job)
+	if err != nil {
+		return judge.PolicyReply{}, nil, err
+	}
+	system, err := judge.PolicySystemFor(job)
+	if err != nil {
+		return judge.PolicyReply{}, nil, err
+	}
+	prompt, err := judge.PolicyPrompt(job)
+	if err != nil {
+		return judge.PolicyReply{}, nil, err
+	}
+	out, err := s.askJudge(ctx, system, prompt, judge.PolicySchema)
+	if err != nil {
+		return judge.PolicyReply{}, nil, err
+	}
+	reply, err := judge.DecodePolicyReply(out, questions)
+	if err != nil {
+		// Not passed on, for the reason a verdict that does not decode is not.
+		return judge.PolicyReply{}, nil, fmt.Errorf("the judge did not answer the policy's questions: %w", err)
+	}
+	return reply, questions, nil
+}
+
 // Propose has the judge's model write the wider uses of an approval rule
 // from one request (ADR 26-10-12-330 §7). It is a run like a
 // judging one — the same wrapper, role and --no-tools, its own system prompt

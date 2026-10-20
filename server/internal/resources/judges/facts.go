@@ -9,6 +9,7 @@ import (
 
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -94,6 +95,27 @@ func (s *Service) delegationFacts(ctx context.Context, projectID string, ask ser
 		return nil, err
 	}
 	return judge.DelegationFacts(giving, ask.For.JudgeDiscobox()), nil
+}
+
+// variables is what a policy's variables bind to for the discobox asking, now
+// (ADR 26-10-20-782 §4): each that resolved when the policy was approved and
+// resolves to the same value from the discobox's record today. One that does
+// not is left out, and matches nothing.
+func (s *Service) variables(ctx context.Context, projectID, sandboxID string, p policy.Policy) (map[string]string, error) {
+	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "the discobox asking was not found")
+	}
+	var bound map[string]string
+	for variable, binding := range p.Bind(sandbox.PolicyFacts()) {
+		if value, ok := binding.Value(); ok {
+			if bound == nil {
+				bound = map[string]string{}
+			}
+			bound[variable] = value
+		}
+	}
+	return bound, nil
 }
 
 // asking is the record of the discobox asking.

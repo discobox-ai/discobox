@@ -3866,6 +3866,8 @@ components:
                         - sandbox
                         - judge
                     type: string
+                policyDecision:
+                    $ref: '#/components/schemas/CredentialPolicyDecision'
                 probabilities:
                     additionalProperties:
                         format: double
@@ -4963,6 +4965,9 @@ components:
                 purpose:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: For a request job whose grant carries a policy, what it is judged against in place of purpose (ADR 26-10-20-782 section 8). Such a job is put to the judge runtime's judge/policy route as small questions about each statement, and the control plane combines the answers.
                 purposes:
                     description: For a delegation or rule job, what it is judged against in place of purpose, one use each — the uses the discobox was delegated, or the rule's uses.
                     items:
@@ -4972,6 +4977,11 @@ components:
                     $ref: '#/components/schemas/JudgeReported'
                 request:
                     $ref: '#/components/schemas/JudgeRequestEvidence'
+                variables:
+                    additionalProperties:
+                        type: string
+                    description: For a job judged against a policy, the value each of its variables binds to for this decision -- only those that resolved at approval and resolve to the same value now. A variable the policy uses and this leaves out matches nothing.
+                    type: object
                 round:
                     description: Which ask this is, from 1. A round after the first exists because the judge asked to be shown the body.
                     format: int64
@@ -5191,6 +5201,50 @@ components:
                 standing:
                     $ref: '#/components/schemas/JudgeStanding'
             required:
+                - reason
+            type: object
+            x-sandbox-agent-component: true
+        JudgePolicyReply:
+            additionalProperties: false
+            description: What the judge's model answered about a request judged against a policy (ADR 26-10-20-782 section 8) -- an answer to every question it was asked. It decides nothing, and asks for nothing; the control plane combines the answers with the policy, and asks for the body when an unsure answer could change the decision.
+            properties:
+                answers:
+                    description: One answer per question.
+                    items:
+                        $ref: '#/components/schemas/JudgePolicyAnswer'
+                    type: array
+                promptVersion:
+                    description: The version of the words the runtime asked them in, which the verdict records.
+                    type: string
+                questionsDigest:
+                    description: The digest of the questions the runtime asked. The control plane reads the answers only when it is the digest of the questions it would have asked, since an answer under an ID is an answer to that ID's words.
+                    type: string
+            required:
+                - answers
+                - promptVersion
+                - questionsDigest
+            type: object
+            x-sandbox-agent-component: true
+        JudgePolicyAnswer:
+            additionalProperties: false
+            description: One question about a request judged against a policy, answered.
+            properties:
+                id:
+                    description: The question's ID.
+                    type: string
+                answer:
+                    description: yes, no, or unsure -- which is not known, never either.
+                    enum:
+                        - "yes"
+                        - "no"
+                        - unsure
+                    type: string
+                reason:
+                    description: The model's own sentence.
+                    type: string
+            required:
+                - id
+                - answer
                 - reason
             type: object
             x-sandbox-agent-component: true
@@ -5965,6 +6019,89 @@ components:
             required:
                 - description
             type: object
+        CredentialPolicyDecision:
+            additionalProperties: false
+            description: How a request judged against its grant's policy was decided (ADR 26-10-20-782 section 8) -- every question the judge answered, and the statement that decided. The judge answered; the control plane combined the answers.
+            properties:
+                verdict:
+                    description: allowed, refused, or undecided -- a request some part of which the judge could not tell, which is refused.
+                    enum:
+                        - allowed
+                        - refused
+                        - undecided
+                    type: string
+                statement:
+                    description: The statement that decided, from 1 -- the deny that refused, the allow that covered, or the one left unknown. Absent when none did.
+                    format: int64
+                    type: integer
+                hazard:
+                    description: The request's own question that refused it, when one did.
+                    type: string
+                answers:
+                    items:
+                        $ref: '#/components/schemas/CredentialPolicyAnswer'
+                    type: array
+            required:
+                - verdict
+                - answers
+            type: object
+        CredentialPolicyAnswer:
+            additionalProperties: false
+            description: One question about a request judged against a policy, and its answer.
+            properties:
+                id:
+                    type: string
+                ask:
+                    description: The question, as the judge was asked it.
+                    type: string
+                targets:
+                    description: The parts the answer is -- a question several statements share is asked once.
+                    items:
+                        $ref: '#/components/schemas/CredentialPolicyTarget'
+                    type: array
+                answer:
+                    description: yes, no, or unknown.
+                    enum:
+                        - "yes"
+                        - "no"
+                        - unknown
+                    type: string
+                reason:
+                    description: The model's own sentence, when a model answered.
+                    type: string
+                probability:
+                    description: Jev's probability of yes, when Jev answered.
+                    format: double
+                    type: number
+            required:
+                - id
+                - ask
+                - targets
+                - answer
+            type: object
+        CredentialPolicyTarget:
+            additionalProperties: false
+            properties:
+                statement:
+                    description: The statement, from 1, or 0 for the request's own questions.
+                    format: int64
+                    type: integer
+                part:
+                    enum:
+                        - action
+                        - resource
+                        - scope
+                        - when-shown
+                        - when
+                        - unless-shown
+                        - unless
+                        - supporting
+                        - claims-approval
+                    type: string
+            required:
+                - statement
+                - part
+            type: object
         AccessPolicy:
             additionalProperties: false
             description: What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for every word they use that is not a default, and, once approved, the value each variable resolved to for the discobox the grant is for. A request is allowed when every part of it matches some allow and no part matches any deny; order never matters.
@@ -6087,7 +6224,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). Nothing judges by it yet.
+                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). A request spending the grant is judged against it (ADR 26-10-20-782 section 8); a command, against the use it runs under.
                 purpose:
                     description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
                     enum:
@@ -11183,6 +11320,46 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Put one judging job to this discobox's harness.
+            tags:
+                - Sandbox Judge
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/judge/policy:
+        post:
+            description: Puts the questions about one request judged against a policy (ADR 26-10-20-782 section 8) to this discobox's harness and returns its answers. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the job, with its policy; the questions, the prompt, the schema, the model role and the tools restriction are the judge runtime's own. It decides nothing -- the control plane combines the answers -- and a job with no policy is refused.
+            operationId: judge-sandbox-policy
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeJob'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgePolicyReply'
+                    description: The answers to every question, and which questions they were.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Put the questions about a request judged against a policy to this discobox's harness.
             tags:
                 - Sandbox Judge
             x-sandbox-agent: true

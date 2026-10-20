@@ -1,0 +1,77 @@
+{
+  "name": "policy-dev-gh-list-workflow-runs",
+  "why": "Listing workflow runs, a read the policy names.",
+  "expect": "allow",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 1,
+    "request": {
+      "method": "GET",
+      "url": "https://api.github.com/repos/acme/web/actions/runs?branch=fix-43&per_page=20",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ]
+      }
+    },
+    "credential": "com.github.api",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "read",
+            "rerun"
+          ],
+          "resourceType": "workflow run",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "delete"
+          ],
+          "resourceType": "workflow run",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "Actions secret",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "workflow run": "A GitHub Actions workflow run, with its jobs and their status.",
+        "rerun": "Running a workflow run's failed jobs again, as gh run rerun --failed does.",
+        "repository": "A GitHub repository, named owner/name.",
+        "Actions secret": "A GitHub Actions secret of a repository or organization, or the list of them."
+      }
+    }
+  }
+}

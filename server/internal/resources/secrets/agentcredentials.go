@@ -453,6 +453,7 @@ func (s *Service) secretOwnUse(ctx context.Context, sandbox *model.Sandbox, cred
 func approvedCredentialUse(credential store.AgentCredential, use model.SecretUse, host string) services.ApprovedUse {
 	return services.ApprovedUse{
 		Purpose:    use.Description,
+		Policy:     credential.Grant.Policy,
 		Credential: credential.Name,
 		Host:       host,
 		GrantID:    credential.Grant.ID,

@@ -11,6 +11,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -775,7 +776,11 @@ type CommandAsk struct {
 // approved, the credential in the words they read it as, and the host the
 // grant is limited to.
 type ApprovedUse struct {
-	Purpose    string
+	Purpose string
+	// Policy is what the grant authorizes when it carries one (ADR
+	// 26-10-20-782 §1), with its variables as resolved at approval. A request
+	// under such a use is judged against it rather than against Purpose.
+	Policy     *policy.Policy
 	Credential string
 	Host       string
 	// GrantID is the grant the use belongs to, which a verdict is recorded

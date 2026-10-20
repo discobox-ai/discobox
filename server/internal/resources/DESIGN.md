@@ -144,6 +144,24 @@ answers allow without the judge and writes its own verdict naming the row that
 decided it (`StandingVerdictID`). Since the use is read live before any of
 this, a revoked grant ends a standing allow on its next request.
 
+A grant that carries a policy is judged by it (ADR 26-10-20-782 §8):
+`secrets.ApprovedUse` hands the policy over with the use, and `job` puts it in
+place of the sentence, with its variables bound to the discobox asking now
+(`variables` in `facts.go`, `policy.Bind` on `Sandbox.PolicyFacts`). Jev
+answers its questions through `jev.Client.Judge`; a judge discobox at
+`POST .../judge/policy`, whose answers `policyAnswer` combines here with
+`judge.DecidePolicy` — the runtime answers, this side decides. Those answers
+are read only when the runtime's `questionsDigest` is that of the questions
+this server would ask (`judge.QuestionsDigest`); a runtime on other questions —
+an image not yet re-pinned after an upgrade, a custom harness built on an older
+one — is no verdict, a 502 whose reason goes to the pool, so its request is
+refused (under `jevUnsure: harness`, Jev's unsure refusal stands). Nothing
+stands for one. Its verdict records `PolicyDecision` — every question, its
+answer, and the statement that decided — and as its prompt version
+`jev.PolicyQuestionsVersion`, or the `promptVersion` the judge discobox said it
+asked in. A grant without a policy is
+judged by its sentence, as before; a command, by its use's sentence either way.
+
 The row does not yet carry §8's request correlation. The proxy numbers an
 exchange when it writes the audit row, after the judge has answered, so there
 is no ID to send with the ask; a verdict joins the http trail by use, discobox

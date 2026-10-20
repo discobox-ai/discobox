@@ -3097,6 +3097,354 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
+// One question about a request judged against a policy, and its answer.
+// Ref: #/components/schemas/CredentialPolicyAnswer
+type CredentialPolicyAnswer struct {
+	ID string `json:"id"`
+	// The question, as the judge was asked it.
+	Ask string `json:"ask"`
+	// The parts the answer is -- a question several statements share is asked once.
+	Targets []CredentialPolicyTarget `json:"targets"`
+	// Yes, no, or unknown.
+	Answer CredentialPolicyAnswerAnswer `json:"answer"`
+	// The model's own sentence, when a model answered.
+	Reason OptString `json:"reason"`
+	// Jev's probability of yes, when Jev answered.
+	Probability OptFloat64 `json:"probability"`
+}
+
+// GetID returns the value of ID.
+func (s *CredentialPolicyAnswer) GetID() string {
+	return s.ID
+}
+
+// GetAsk returns the value of Ask.
+func (s *CredentialPolicyAnswer) GetAsk() string {
+	return s.Ask
+}
+
+// GetTargets returns the value of Targets.
+func (s *CredentialPolicyAnswer) GetTargets() []CredentialPolicyTarget {
+	return s.Targets
+}
+
+// GetAnswer returns the value of Answer.
+func (s *CredentialPolicyAnswer) GetAnswer() CredentialPolicyAnswerAnswer {
+	return s.Answer
+}
+
+// GetReason returns the value of Reason.
+func (s *CredentialPolicyAnswer) GetReason() OptString {
+	return s.Reason
+}
+
+// GetProbability returns the value of Probability.
+func (s *CredentialPolicyAnswer) GetProbability() OptFloat64 {
+	return s.Probability
+}
+
+// SetID sets the value of ID.
+func (s *CredentialPolicyAnswer) SetID(val string) {
+	s.ID = val
+}
+
+// SetAsk sets the value of Ask.
+func (s *CredentialPolicyAnswer) SetAsk(val string) {
+	s.Ask = val
+}
+
+// SetTargets sets the value of Targets.
+func (s *CredentialPolicyAnswer) SetTargets(val []CredentialPolicyTarget) {
+	s.Targets = val
+}
+
+// SetAnswer sets the value of Answer.
+func (s *CredentialPolicyAnswer) SetAnswer(val CredentialPolicyAnswerAnswer) {
+	s.Answer = val
+}
+
+// SetReason sets the value of Reason.
+func (s *CredentialPolicyAnswer) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetProbability sets the value of Probability.
+func (s *CredentialPolicyAnswer) SetProbability(val OptFloat64) {
+	s.Probability = val
+}
+
+// Yes, no, or unknown.
+type CredentialPolicyAnswerAnswer string
+
+const (
+	CredentialPolicyAnswerAnswerYes     CredentialPolicyAnswerAnswer = "yes"
+	CredentialPolicyAnswerAnswerNo      CredentialPolicyAnswerAnswer = "no"
+	CredentialPolicyAnswerAnswerUnknown CredentialPolicyAnswerAnswer = "unknown"
+)
+
+// AllValues returns all CredentialPolicyAnswerAnswer values.
+func (CredentialPolicyAnswerAnswer) AllValues() []CredentialPolicyAnswerAnswer {
+	return []CredentialPolicyAnswerAnswer{
+		CredentialPolicyAnswerAnswerYes,
+		CredentialPolicyAnswerAnswerNo,
+		CredentialPolicyAnswerAnswerUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CredentialPolicyAnswerAnswer) MarshalText() ([]byte, error) {
+	switch s {
+	case CredentialPolicyAnswerAnswerYes:
+		return []byte(s), nil
+	case CredentialPolicyAnswerAnswerNo:
+		return []byte(s), nil
+	case CredentialPolicyAnswerAnswerUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CredentialPolicyAnswerAnswer) UnmarshalText(data []byte) error {
+	switch CredentialPolicyAnswerAnswer(data) {
+	case CredentialPolicyAnswerAnswerYes:
+		*s = CredentialPolicyAnswerAnswerYes
+		return nil
+	case CredentialPolicyAnswerAnswerNo:
+		*s = CredentialPolicyAnswerAnswerNo
+		return nil
+	case CredentialPolicyAnswerAnswerUnknown:
+		*s = CredentialPolicyAnswerAnswerUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// How a request judged against its grant's policy was decided (ADR 26-10-20-782 section 8) -- every
+// question the judge answered, and the statement that decided. The judge answered; the control plane
+// combined the answers.
+// Ref: #/components/schemas/CredentialPolicyDecision
+type CredentialPolicyDecision struct {
+	// Allowed, refused, or undecided -- a request some part of which the judge could not tell, which is
+	// refused.
+	Verdict CredentialPolicyDecisionVerdict `json:"verdict"`
+	// The statement that decided, from 1 -- the deny that refused, the allow that covered, or the one
+	// left unknown. Absent when none did.
+	Statement OptInt64 `json:"statement"`
+	// The request's own question that refused it, when one did.
+	Hazard  OptString                `json:"hazard"`
+	Answers []CredentialPolicyAnswer `json:"answers"`
+}
+
+// GetVerdict returns the value of Verdict.
+func (s *CredentialPolicyDecision) GetVerdict() CredentialPolicyDecisionVerdict {
+	return s.Verdict
+}
+
+// GetStatement returns the value of Statement.
+func (s *CredentialPolicyDecision) GetStatement() OptInt64 {
+	return s.Statement
+}
+
+// GetHazard returns the value of Hazard.
+func (s *CredentialPolicyDecision) GetHazard() OptString {
+	return s.Hazard
+}
+
+// GetAnswers returns the value of Answers.
+func (s *CredentialPolicyDecision) GetAnswers() []CredentialPolicyAnswer {
+	return s.Answers
+}
+
+// SetVerdict sets the value of Verdict.
+func (s *CredentialPolicyDecision) SetVerdict(val CredentialPolicyDecisionVerdict) {
+	s.Verdict = val
+}
+
+// SetStatement sets the value of Statement.
+func (s *CredentialPolicyDecision) SetStatement(val OptInt64) {
+	s.Statement = val
+}
+
+// SetHazard sets the value of Hazard.
+func (s *CredentialPolicyDecision) SetHazard(val OptString) {
+	s.Hazard = val
+}
+
+// SetAnswers sets the value of Answers.
+func (s *CredentialPolicyDecision) SetAnswers(val []CredentialPolicyAnswer) {
+	s.Answers = val
+}
+
+// Allowed, refused, or undecided -- a request some part of which the judge could not tell, which is
+// refused.
+type CredentialPolicyDecisionVerdict string
+
+const (
+	CredentialPolicyDecisionVerdictAllowed   CredentialPolicyDecisionVerdict = "allowed"
+	CredentialPolicyDecisionVerdictRefused   CredentialPolicyDecisionVerdict = "refused"
+	CredentialPolicyDecisionVerdictUndecided CredentialPolicyDecisionVerdict = "undecided"
+)
+
+// AllValues returns all CredentialPolicyDecisionVerdict values.
+func (CredentialPolicyDecisionVerdict) AllValues() []CredentialPolicyDecisionVerdict {
+	return []CredentialPolicyDecisionVerdict{
+		CredentialPolicyDecisionVerdictAllowed,
+		CredentialPolicyDecisionVerdictRefused,
+		CredentialPolicyDecisionVerdictUndecided,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CredentialPolicyDecisionVerdict) MarshalText() ([]byte, error) {
+	switch s {
+	case CredentialPolicyDecisionVerdictAllowed:
+		return []byte(s), nil
+	case CredentialPolicyDecisionVerdictRefused:
+		return []byte(s), nil
+	case CredentialPolicyDecisionVerdictUndecided:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CredentialPolicyDecisionVerdict) UnmarshalText(data []byte) error {
+	switch CredentialPolicyDecisionVerdict(data) {
+	case CredentialPolicyDecisionVerdictAllowed:
+		*s = CredentialPolicyDecisionVerdictAllowed
+		return nil
+	case CredentialPolicyDecisionVerdictRefused:
+		*s = CredentialPolicyDecisionVerdictRefused
+		return nil
+	case CredentialPolicyDecisionVerdictUndecided:
+		*s = CredentialPolicyDecisionVerdictUndecided
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/CredentialPolicyTarget
+type CredentialPolicyTarget struct {
+	// The statement, from 1, or 0 for the request's own questions.
+	Statement int64                      `json:"statement"`
+	Part      CredentialPolicyTargetPart `json:"part"`
+}
+
+// GetStatement returns the value of Statement.
+func (s *CredentialPolicyTarget) GetStatement() int64 {
+	return s.Statement
+}
+
+// GetPart returns the value of Part.
+func (s *CredentialPolicyTarget) GetPart() CredentialPolicyTargetPart {
+	return s.Part
+}
+
+// SetStatement sets the value of Statement.
+func (s *CredentialPolicyTarget) SetStatement(val int64) {
+	s.Statement = val
+}
+
+// SetPart sets the value of Part.
+func (s *CredentialPolicyTarget) SetPart(val CredentialPolicyTargetPart) {
+	s.Part = val
+}
+
+type CredentialPolicyTargetPart string
+
+const (
+	CredentialPolicyTargetPartAction         CredentialPolicyTargetPart = "action"
+	CredentialPolicyTargetPartResource       CredentialPolicyTargetPart = "resource"
+	CredentialPolicyTargetPartScope          CredentialPolicyTargetPart = "scope"
+	CredentialPolicyTargetPartWhenShown      CredentialPolicyTargetPart = "when-shown"
+	CredentialPolicyTargetPartWhen           CredentialPolicyTargetPart = "when"
+	CredentialPolicyTargetPartUnlessShown    CredentialPolicyTargetPart = "unless-shown"
+	CredentialPolicyTargetPartUnless         CredentialPolicyTargetPart = "unless"
+	CredentialPolicyTargetPartSupporting     CredentialPolicyTargetPart = "supporting"
+	CredentialPolicyTargetPartClaimsApproval CredentialPolicyTargetPart = "claims-approval"
+)
+
+// AllValues returns all CredentialPolicyTargetPart values.
+func (CredentialPolicyTargetPart) AllValues() []CredentialPolicyTargetPart {
+	return []CredentialPolicyTargetPart{
+		CredentialPolicyTargetPartAction,
+		CredentialPolicyTargetPartResource,
+		CredentialPolicyTargetPartScope,
+		CredentialPolicyTargetPartWhenShown,
+		CredentialPolicyTargetPartWhen,
+		CredentialPolicyTargetPartUnlessShown,
+		CredentialPolicyTargetPartUnless,
+		CredentialPolicyTargetPartSupporting,
+		CredentialPolicyTargetPartClaimsApproval,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CredentialPolicyTargetPart) MarshalText() ([]byte, error) {
+	switch s {
+	case CredentialPolicyTargetPartAction:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartResource:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartScope:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartWhenShown:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartWhen:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartUnlessShown:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartUnless:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartSupporting:
+		return []byte(s), nil
+	case CredentialPolicyTargetPartClaimsApproval:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CredentialPolicyTargetPart) UnmarshalText(data []byte) error {
+	switch CredentialPolicyTargetPart(data) {
+	case CredentialPolicyTargetPartAction:
+		*s = CredentialPolicyTargetPartAction
+		return nil
+	case CredentialPolicyTargetPartResource:
+		*s = CredentialPolicyTargetPartResource
+		return nil
+	case CredentialPolicyTargetPartScope:
+		*s = CredentialPolicyTargetPartScope
+		return nil
+	case CredentialPolicyTargetPartWhenShown:
+		*s = CredentialPolicyTargetPartWhenShown
+		return nil
+	case CredentialPolicyTargetPartWhen:
+		*s = CredentialPolicyTargetPartWhen
+		return nil
+	case CredentialPolicyTargetPartUnlessShown:
+		*s = CredentialPolicyTargetPartUnlessShown
+		return nil
+	case CredentialPolicyTargetPartUnless:
+		*s = CredentialPolicyTargetPartUnless
+		return nil
+	case CredentialPolicyTargetPartSupporting:
+		*s = CredentialPolicyTargetPartSupporting
+		return nil
+	case CredentialPolicyTargetPartClaimsApproval:
+		*s = CredentialPolicyTargetPartClaimsApproval
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // One recorded judge decision about an agent credential use. The row lives in the control plane and
 // outlives its sandbox. A command verdict (kind command, origin judge) is the project's judge
 // answering about a command a discobox was about to run, recorded by the control plane before the
@@ -3164,7 +3512,8 @@ type CredentialVerdict struct {
 	// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
 	// project's judge, which no sandbox can claim. A server that predates request verdicts leaves it out,
 	//  and every verdict it has is the sandbox's.
-	Origin OptCredentialVerdictOrigin `json:"origin"`
+	Origin         OptCredentialVerdictOrigin  `json:"origin"`
+	PolicyDecision OptCredentialPolicyDecision `json:"policyDecision"`
 	// On a Jev verdict, the probability of yes Jev gave each question, by question ID. The verdict was
 	// decided from these against thresholds the server holds; promptVersion names the questions and
 	// thresholds.
@@ -3296,6 +3645,11 @@ func (s *CredentialVerdict) GetNeed() OptJudgeNeed {
 // GetOrigin returns the value of Origin.
 func (s *CredentialVerdict) GetOrigin() OptCredentialVerdictOrigin {
 	return s.Origin
+}
+
+// GetPolicyDecision returns the value of PolicyDecision.
+func (s *CredentialVerdict) GetPolicyDecision() OptCredentialPolicyDecision {
+	return s.PolicyDecision
 }
 
 // GetProbabilities returns the value of Probabilities.
@@ -3466,6 +3820,11 @@ func (s *CredentialVerdict) SetNeed(val OptJudgeNeed) {
 // SetOrigin sets the value of Origin.
 func (s *CredentialVerdict) SetOrigin(val OptCredentialVerdictOrigin) {
 	s.Origin = val
+}
+
+// SetPolicyDecision sets the value of PolicyDecision.
+func (s *CredentialVerdict) SetPolicyDecision(val OptCredentialPolicyDecision) {
+	s.PolicyDecision = val
 }
 
 // SetProbabilities sets the value of Probabilities.
@@ -4255,6 +4614,7 @@ func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()   {}
 func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()         {}
+func (*ErrorResponseStatusCode) judgeSandboxPolicyRes()             {}
 func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
@@ -7628,11 +7988,19 @@ type JudgeJob struct {
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
+	// For a request job whose grant carries a policy, what it is judged against in place of purpose (ADR
+	// 26-10-20-782 section 8). Such a job is put to the judge runtime's judge/policy route as small
+	// questions about each statement, and the control plane combines the answers.
+	Policy OptAccessPolicy `json:"policy"`
 	// For a delegation or rule job, what it is judged against in place of purpose, one use each — the
 	// uses the discobox was delegated, or the rule's uses.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
+	// For a job judged against a policy, the value each of its variables binds to for this decision --
+	// only those that resolved at approval and resolve to the same value now. A variable the policy uses
+	// and this leaves out matches nothing.
+	Variables OptJudgeJobVariables `json:"variables"`
 	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
 	// body.
 	Round int64         `json:"round"`
@@ -7677,6 +8045,11 @@ func (s *JudgeJob) GetPurpose() OptString {
 	return s.Purpose
 }
 
+// GetPolicy returns the value of Policy.
+func (s *JudgeJob) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
 // GetPurposes returns the value of Purposes.
 func (s *JudgeJob) GetPurposes() []string {
 	return s.Purposes
@@ -7690,6 +8063,11 @@ func (s *JudgeJob) GetReported() OptJudgeReported {
 // GetRequest returns the value of Request.
 func (s *JudgeJob) GetRequest() OptJudgeRequestEvidence {
 	return s.Request
+}
+
+// GetVariables returns the value of Variables.
+func (s *JudgeJob) GetVariables() OptJudgeJobVariables {
+	return s.Variables
 }
 
 // GetRound returns the value of Round.
@@ -7742,6 +8120,11 @@ func (s *JudgeJob) SetPurpose(val OptString) {
 	s.Purpose = val
 }
 
+// SetPolicy sets the value of Policy.
+func (s *JudgeJob) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
+}
+
 // SetPurposes sets the value of Purposes.
 func (s *JudgeJob) SetPurposes(val []string) {
 	s.Purposes = val
@@ -7755,6 +8138,11 @@ func (s *JudgeJob) SetReported(val OptJudgeReported) {
 // SetRequest sets the value of Request.
 func (s *JudgeJob) SetRequest(val OptJudgeRequestEvidence) {
 	s.Request = val
+}
+
+// SetVariables sets the value of Variables.
+func (s *JudgeJob) SetVariables(val OptJudgeJobVariables) {
+	s.Variables = val
 }
 
 // SetRound sets the value of Round.
@@ -7830,6 +8218,20 @@ func (s *JudgeJobKind) UnmarshalText(data []byte) error {
 	}
 }
 
+// For a job judged against a policy, the value each of its variables binds to for this decision --
+// only those that resolved at approval and resolve to the same value now. A variable the policy uses
+// and this leaves out matches nothing.
+type JudgeJobVariables map[string]string
+
+func (s *JudgeJobVariables) init() JudgeJobVariables {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // The judge asking to be shown a request's body, with a budget it may name and Discobox caps. It
 // names no form; the body is always shown in one shape (ADR 26-09-26-240).
 // Ref: #/components/schemas/JudgeNeed
@@ -7858,6 +8260,144 @@ func (s *JudgeNeed) SetBody(val bool) {
 func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
 }
+
+// One question about a request judged against a policy, answered.
+// Ref: #/components/schemas/JudgePolicyAnswer
+type JudgePolicyAnswer struct {
+	// The question's ID.
+	ID string `json:"id"`
+	// Yes, no, or unsure -- which is not known, never either.
+	Answer JudgePolicyAnswerAnswer `json:"answer"`
+	// The model's own sentence.
+	Reason string `json:"reason"`
+}
+
+// GetID returns the value of ID.
+func (s *JudgePolicyAnswer) GetID() string {
+	return s.ID
+}
+
+// GetAnswer returns the value of Answer.
+func (s *JudgePolicyAnswer) GetAnswer() JudgePolicyAnswerAnswer {
+	return s.Answer
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgePolicyAnswer) GetReason() string {
+	return s.Reason
+}
+
+// SetID sets the value of ID.
+func (s *JudgePolicyAnswer) SetID(val string) {
+	s.ID = val
+}
+
+// SetAnswer sets the value of Answer.
+func (s *JudgePolicyAnswer) SetAnswer(val JudgePolicyAnswerAnswer) {
+	s.Answer = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgePolicyAnswer) SetReason(val string) {
+	s.Reason = val
+}
+
+// Yes, no, or unsure -- which is not known, never either.
+type JudgePolicyAnswerAnswer string
+
+const (
+	JudgePolicyAnswerAnswerYes    JudgePolicyAnswerAnswer = "yes"
+	JudgePolicyAnswerAnswerNo     JudgePolicyAnswerAnswer = "no"
+	JudgePolicyAnswerAnswerUnsure JudgePolicyAnswerAnswer = "unsure"
+)
+
+// AllValues returns all JudgePolicyAnswerAnswer values.
+func (JudgePolicyAnswerAnswer) AllValues() []JudgePolicyAnswerAnswer {
+	return []JudgePolicyAnswerAnswer{
+		JudgePolicyAnswerAnswerYes,
+		JudgePolicyAnswerAnswerNo,
+		JudgePolicyAnswerAnswerUnsure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgePolicyAnswerAnswer) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgePolicyAnswerAnswerYes:
+		return []byte(s), nil
+	case JudgePolicyAnswerAnswerNo:
+		return []byte(s), nil
+	case JudgePolicyAnswerAnswerUnsure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgePolicyAnswerAnswer) UnmarshalText(data []byte) error {
+	switch JudgePolicyAnswerAnswer(data) {
+	case JudgePolicyAnswerAnswerYes:
+		*s = JudgePolicyAnswerAnswerYes
+		return nil
+	case JudgePolicyAnswerAnswerNo:
+		*s = JudgePolicyAnswerAnswerNo
+		return nil
+	case JudgePolicyAnswerAnswerUnsure:
+		*s = JudgePolicyAnswerAnswerUnsure
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What the judge's model answered about a request judged against a policy (ADR 26-10-20-782 section
+// 8) -- an answer to every question it was asked. It decides nothing, and asks for nothing; the
+// control plane combines the answers with the policy, and asks for the body when an unsure answer
+// could change the decision.
+// Ref: #/components/schemas/JudgePolicyReply
+type JudgePolicyReply struct {
+	// One answer per question.
+	Answers []JudgePolicyAnswer `json:"answers"`
+	// The version of the words the runtime asked them in, which the verdict records.
+	PromptVersion string `json:"promptVersion"`
+	// The digest of the questions the runtime asked. The control plane reads the answers only when it is
+	// the digest of the questions it would have asked, since an answer under an ID is an answer to that
+	// ID's words.
+	QuestionsDigest string `json:"questionsDigest"`
+}
+
+// GetAnswers returns the value of Answers.
+func (s *JudgePolicyReply) GetAnswers() []JudgePolicyAnswer {
+	return s.Answers
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *JudgePolicyReply) GetPromptVersion() string {
+	return s.PromptVersion
+}
+
+// GetQuestionsDigest returns the value of QuestionsDigest.
+func (s *JudgePolicyReply) GetQuestionsDigest() string {
+	return s.QuestionsDigest
+}
+
+// SetAnswers sets the value of Answers.
+func (s *JudgePolicyReply) SetAnswers(val []JudgePolicyAnswer) {
+	s.Answers = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *JudgePolicyReply) SetPromptVersion(val string) {
+	s.PromptVersion = val
+}
+
+// SetQuestionsDigest sets the value of QuestionsDigest.
+func (s *JudgePolicyReply) SetQuestionsDigest(val string) {
+	s.QuestionsDigest = val
+}
+
+func (*JudgePolicyReply) judgeSandboxPolicyRes() {}
 
 // The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
 // any target of its kind. They authorize nothing; they are judged, and read and edited by a person,
@@ -10226,6 +10766,52 @@ func (o OptCreateSecretGrantBodyPurpose) Or(d CreateSecretGrantBodyPurpose) Crea
 	return d
 }
 
+// NewOptCredentialPolicyDecision returns new OptCredentialPolicyDecision with value set to v.
+func NewOptCredentialPolicyDecision(v CredentialPolicyDecision) OptCredentialPolicyDecision {
+	return OptCredentialPolicyDecision{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCredentialPolicyDecision is optional CredentialPolicyDecision.
+type OptCredentialPolicyDecision struct {
+	Value CredentialPolicyDecision
+	Set   bool
+}
+
+// IsSet returns true if OptCredentialPolicyDecision was set.
+func (o OptCredentialPolicyDecision) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCredentialPolicyDecision) Reset() {
+	var v CredentialPolicyDecision
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCredentialPolicyDecision) SetTo(v CredentialPolicyDecision) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCredentialPolicyDecision) Get() (v CredentialPolicyDecision, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCredentialPolicyDecision) Or(d CredentialPolicyDecision) CredentialPolicyDecision {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCredentialVerdictKind returns new OptCredentialVerdictKind with value set to v.
 func NewOptCredentialVerdictKind(v CredentialVerdictKind) OptCredentialVerdictKind {
 	return OptCredentialVerdictKind{
@@ -11462,6 +12048,52 @@ func (o OptJudgeInput) Get() (v JudgeInput, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptJudgeInput) Or(d JudgeInput) JudgeInput {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeJobVariables returns new OptJudgeJobVariables with value set to v.
+func NewOptJudgeJobVariables(v JudgeJobVariables) OptJudgeJobVariables {
+	return OptJudgeJobVariables{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeJobVariables is optional JudgeJobVariables.
+type OptJudgeJobVariables struct {
+	Value JudgeJobVariables
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeJobVariables was set.
+func (o OptJudgeJobVariables) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeJobVariables) Reset() {
+	var v JudgeJobVariables
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeJobVariables) SetTo(v JudgeJobVariables) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeJobVariables) Get() (v JudgeJobVariables, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeJobVariables) Or(d JudgeJobVariables) JudgeJobVariables {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -29814,7 +30446,8 @@ type SecretGrant struct {
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
 	// The approved policy, with the value each of its variables resolved to for the sandbox the grant is
-	// for (ADR 26-10-20-782). Nothing judges by it yet.
+	// for (ADR 26-10-20-782). A request spending the grant is judged against it (ADR 26-10-20-782
+	// section 8); a command, against the use it runs under.
 	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.

@@ -62,8 +62,9 @@ func TestEvaluate(t *testing.T) {
 		{"a deny refuses even when another atom is unknown", writes([][]Parts{{unknown, unknown, unknown}, {yes, no, yes}}), Refused, 1, 2},
 		{"an atom no allow covers is refused", writes([][]Parts{{yes, no, no}, {no, no, no}}), Refused, 1, -1},
 		{"an uncovered atom refuses despite an unknown one", writes([][]Parts{{unknown, no, no}, {no, no, no}}), Refused, 1, -1},
-		{"an atom only possibly covered is undecided", writes([][]Parts{{yes, no, no}, {unknown, no, no}}), Undecided, 1, -1},
-		{"a deny that might match is undecided", writes([][]Parts{{yes, no, unknown}}), Undecided, 0, -1},
+		{"an atom only possibly covered is undecided", writes([][]Parts{{yes, no, no}, {unknown, no, no}}), Undecided, 1, 0},
+		{"a deny that might match is undecided", writes([][]Parts{{yes, no, unknown}}), Undecided, 0, 2},
+		{"an unknown deny is named before an unknown allow", writes([][]Parts{{unknown, no, unknown}}), Undecided, 0, 2},
 		{"no atoms is undecided", nil, Undecided, -1, -1},
 		{"an uncovered supporting read is allowed", []Atom{{Parts: []Parts{yes, no, no}, Supporting: No}, {Parts: []Parts{no, no, no}, Supporting: Yes}}, Allowed, -1, -1},
 		{"an uncovered read that might support is undecided", []Atom{{Parts: []Parts{no, no, no}, Supporting: Unknown}}, Undecided, 0, -1},
@@ -118,6 +119,22 @@ func TestEvaluateIgnoresOrder(t *testing.T) {
 				t.Fatalf("case %d: order %v decided %v, order %v decided %v", i, orders[0], first, order, got.Verdict)
 			}
 		}
+	}
+}
+
+// An allowed request names the allow that covered each atom, or none for a
+// supporting read.
+func TestEvaluateNamesWhatCovered(t *testing.T) {
+	got, err := Evaluate(twoAllowsOneDeny(), []Atom{
+		{Parts: []Parts{no, yes, no}, Supporting: No},
+		{Parts: []Parts{yes, yes, no}, Supporting: No},
+		{Parts: []Parts{no, no, no}, Supporting: Yes},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Verdict != Allowed || len(got.Covered) != 3 || got.Covered[0] != 1 || got.Covered[1] != 0 || got.Covered[2] != -1 {
+		t.Fatalf("Evaluate = %+v, want atoms covered by statements 2 and 1, and a supporting read", got)
 	}
 }
 

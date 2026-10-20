@@ -1,0 +1,89 @@
+{
+  "name": "policy-dev-gh-comment-on-another-issue",
+  "why": "Control: a comment on issue 44 under a policy allowing comments within issue 43.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 2,
+    "request": {
+      "method": "POST",
+      "url": "https://api.github.com/repos/acme/web/issues/44/comments",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "49"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 49,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "body"
+          ]
+        },
+        "content": "{\"body\":\"Reproduced on main; the fix is in #61.\"}"
+      }
+    },
+    "credential": "com.github.api",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "create"
+          ],
+          "resourceType": "issue comment",
+          "name": null,
+          "within": [
+            {
+              "type": "issue",
+              "name": "43"
+            }
+          ],
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "issue",
+          "name": "43",
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "issue comment": "A comment on a GitHub issue.",
+        "issue": "A GitHub issue, by its number.",
+        "repository": "A GitHub repository, named owner/name."
+      }
+    }
+  }
+}

@@ -397,8 +397,9 @@ func requiredRequestScope(r *http.Request) string {
 	}
 	// Judging is asked for on its own scope. A judge runtime answers nobody
 	// else, so nothing else about it is reachable with this token either.
-	// Proposing an approval rule's wording is the same runtime's other job.
-	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
+	// Answering a policy's questions and proposing an approval rule's
+	// wording are the same runtime's other jobs.
+	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/policy") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
 		if r.Method == http.MethodPost {
 			return ScopeJudgeRun
 		}

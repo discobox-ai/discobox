@@ -38,7 +38,8 @@ supporting read, is refused; anything unknown that could change the answer
 leaves it `Undecided`, for whatever decides next. Only a judge says an atom is
 a supporting read (§2); a fast path says `No` for a write and leaves a read it
 cannot place `Unknown`. Callers supply the
-parts — a fast path, a judge — and never combine them themselves.
+parts — a fast path, a judge (`judge.DecidePolicy`, which builds the parts from
+a judge's answers) — and never combine them themselves.
 
 **Variables are a whole name, from the record, never the discobox.** `$this`,
 `$primary.repo|host|branch`, `$sources.<slug>.repo`, and the observed

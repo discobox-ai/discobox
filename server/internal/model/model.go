@@ -2052,8 +2052,14 @@ type CredentialVerdict struct {
 	// the job was built, never a credential's value — and is display data the
 	// same way. Null on every other verdict, which is what every row written
 	// before it already is, so adding the column is the whole upgrade.
-	JevInput    json.RawMessage `gorm:"column:jev_input;type:text;serializer:json" json:"jevInput,omitempty" doc:"Exactly what Jev was sent, when it was asked: the JSON body of the request to its API, with the state and the questions"`
-	Volunteered bool            `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
+	JevInput json.RawMessage `gorm:"column:jev_input;type:text;serializer:json" json:"jevInput,omitempty" doc:"Exactly what Jev was sent, when it was asked: the JSON body of the request to its API, with the state and the questions"`
+	// PolicyDecision is how a request judged against its grant's policy was
+	// decided (ADR 26-10-20-782 §8): every question the judge answered, how,
+	// and the statement that decided. Null on every other verdict, which is
+	// what every row written before it already is, so adding the column is
+	// the whole upgrade.
+	PolicyDecision *judge.PolicyDecision `gorm:"column:policy_decision;type:text;serializer:json" json:"policyDecision,omitempty" doc:"How a request judged against its grant's policy was decided: every question the judge answered, and the statement that decided"`
+	Volunteered    bool                  `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
 	// StandingRoute and StandingUntil are an allow the judge let stand, as
 	// the control plane admitted it (ADR 26-09-25-428): until then, a request
 	// from the same discobox, under the same use, to the same host, whose

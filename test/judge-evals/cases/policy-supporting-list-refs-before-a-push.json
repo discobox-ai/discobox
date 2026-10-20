@@ -1,0 +1,49 @@
+{
+  "name": "policy-supporting-list-refs-before-a-push",
+  "why": "A supporting read: the ref advertisement git reads before the one push the policy allows.",
+  "expect": "allow",
+  "job": {
+    "kind": "request",
+    "host": "github.com",
+    "round": 1,
+    "request": {
+      "method": "GET",
+      "url": "https://github.com/acme/web.git/info/refs?service=git-receive-pack",
+      "headers": {
+        "Accept": [
+          "*/*"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "git/2.47.1"
+        ]
+      }
+    },
+    "credential": "github",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "create",
+            "update"
+          ],
+          "resourceType": "branch",
+          "name": "discobox/issue-46",
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "branch": "A Git branch, refs/heads/<name>. Pushing it creates or updates it; pushing its deletion deletes it.",
+        "repository": "A Git repository on github.com, named owner/name."
+      }
+    }
+  }
+}

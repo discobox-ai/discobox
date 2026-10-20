@@ -644,6 +644,23 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 - Approving `com.github.api` with a secret bound only to `api.github.com`
   needs `--hosts api.github.com`: the well-known credential's default hosts
   include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
+- **A request under a policy** (ADR 26-10-20-782 §8) goes to
+  `discobox-prompt` with the policy in `--system` and `Questions:\n[…]\n\n…
+  <request>\n{…}\n</request>` as `--prompt`; the stub must answer
+  `{"answers":[{"id","answer","reason"}…]}` for every question ID or the
+  verdict is refused. A python3 stub that maps the method to an action and
+  checks quoted `owner/name`s against the URL drives allow, refuse, and a
+  deny. Neither the CLI nor `discobox-access` sends a policy yet: have the box
+  `discobox-access request --json` with a plain use, then approve over the API
+  with one (`POST /projects/<p>/secret-requests/<id>/approve` body
+  `{"secretId","hosts","policy":{…}}`). The grant's `resolved` is in
+  `secret_grants.policy`; the verdict's `policyDecision` in
+  `GET /projects/<p>/credential-verdicts?kind=request`. A box from a scratch
+  repo whose `origin` is `https://github.com/acme/web.git` resolves
+  `$primary.repo`; a `--no-source` box does not. Edit the stub in the running
+  judge container with `docker exec -i` (stdin needs `-i`).
+- `/dev/shm` is mounted noexec here: build the isolated server's binaries
+  into `/var/tmp`.
 - To see what a real judge does with a captured job, wrap it as a
   `test/judge-evals` case (`{name, why, expect, job}`) in a scratch directory,
   and run `go run ./internal/cmd/discobox-judge-eval -wrapper

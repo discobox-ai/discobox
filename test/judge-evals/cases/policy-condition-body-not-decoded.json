@@ -1,0 +1,95 @@
+{
+  "name": "policy-condition-body-not-decoded",
+  "why": "Control: a file write whose branch is in a body that could not be decoded, so the condition naming the branch cannot be told.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 2,
+    "request": {
+      "method": "PUT",
+      "url": "https://api.github.com/repos/acme/web/contents/docs/README.md",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "190"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 190,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "branch",
+            "content",
+            "message",
+            "sha"
+          ]
+        },
+        "missing": "The body could not be decoded as text."
+      }
+    },
+    "credential": "com.github.api",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "update"
+          ],
+          "resourceType": "file",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "$primary.repo"
+          },
+          "when": "the branch it writes to is discobox/issue-46",
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "$primary.repo"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "file": "A file in a GitHub repository's contents, on one branch.",
+        "repository": "A GitHub repository, named owner/name."
+      },
+      "resolved": {
+        "$primary.repo": "acme/web"
+      }
+    },
+    "variables": {
+      "$primary.repo": "acme/web"
+    },
+    "facts": [
+      "The discobox asking is sbx_7k2m4q9wfc3d8n1p.",
+      "Its primary source, as it was created, is the Git repository github.com/acme/web, checked out from the branch main."
+    ]
+  }
+}

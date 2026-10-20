@@ -147,7 +147,7 @@ func main() {
 	// discobox write and Jev read.
 	command := strings.Fields(*wrapper)
 	var asker func(context.Context, Case, time.Duration, string) Run
-	version := judge.PromptVersion
+	version := judge.PromptVersion + ", " + judge.PolicyPromptVersion
 	if *useJev {
 		client, err := jev.New(jev.Config{APIKey: os.Getenv(jevKeyEnv), Model: *jevModel})
 		if err != nil {
@@ -166,7 +166,7 @@ func main() {
 			}
 			return scored(c, judging(ctx, c.Job, timeout, log))
 		}
-		version = jev.QuestionsVersion
+		version = jev.QuestionsVersion + ", " + jev.PolicyQuestionsVersion
 	} else {
 		if len(command) == 0 {
 			fmt.Fprintln(os.Stderr, "-wrapper names no command")
@@ -259,6 +259,16 @@ func loadCases(dir, glob string) ([]Case, error) {
 		c.Job.Guidance = judge.GuidanceFor(c.Job.Request)
 		if _, err := judge.Prompt(c.Job); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if c.Job.Policy != nil {
+			// A case's policy is one a person approved: its variables
+			// resolved, and the job binds them as they resolved.
+			if _, err := judge.PolicyPrompt(c.Job); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			if _, err := judge.PolicySystemFor(c.Job); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
 		}
 		cases = append(cases, c)
 	}
@@ -359,6 +369,9 @@ func runWrapper(ctx context.Context, command []string, model, system, prompt, sc
 
 // judgeWithWrapper asks the wrapper about one job and scores its answer.
 func judgeWithWrapper(ctx context.Context, command []string, model string, job judge.Job, timeout time.Duration, log string) verdict {
+	if job.Policy != nil {
+		return judgePolicyWithWrapper(ctx, command, model, job, timeout, log)
+	}
 	prompt, err := judge.Prompt(job)
 	if err != nil {
 		return verdict{outcome: OutcomeInvalid, err: err.Error()}
@@ -370,6 +383,46 @@ func judgeWithWrapper(ctx context.Context, command []string, model string, job j
 		return v
 	}
 	v.outcome = outcomeOf(job, out)
+	return v
+}
+
+// judgePolicyWithWrapper asks the wrapper the questions about a request
+// judged against a policy, as the judge runtime does (judge/policy), and
+// combines its answers the way the control plane does: a reply that does not
+// decode refuses, and the answers decide nothing until DecidePolicy reads them.
+func judgePolicyWithWrapper(ctx context.Context, command []string, model string, job judge.Job, timeout time.Duration, log string) verdict {
+	questions, err := judge.PolicyQuestions(job)
+	if err != nil {
+		return verdict{outcome: OutcomeInvalid, err: err.Error()}
+	}
+	system, err := judge.PolicySystemFor(job)
+	if err != nil {
+		return verdict{outcome: OutcomeInvalid, err: err.Error()}
+	}
+	prompt, err := judge.PolicyPrompt(job)
+	if err != nil {
+		return verdict{outcome: OutcomeInvalid, err: err.Error()}
+	}
+	out, elapsed, failure := runWrapper(ctx, command, model, system, prompt, judge.PolicySchema, timeout, log)
+	v := verdict{answer: strings.TrimSpace(string(out)), elapsed: elapsed}
+	if failure != "" {
+		v.outcome, v.err = OutcomeInvalid, failure
+		return v
+	}
+	reply, err := judge.DecodePolicyReply(out, questions)
+	if err != nil {
+		v.outcome = OutcomeInvalid
+		return v
+	}
+	answer, decision, unsure := judge.DecidePolicy(job, questions, reply.Answers, "the judge's")
+	if said, err := json.Marshal(struct {
+		judge.Answer
+		Decision judge.PolicyDecision `json:"decision"`
+	}{answer, decision}); err == nil {
+		v.answer = string(said)
+	}
+	v.unsure = unsure
+	v.outcome = outcomeOfAnswer(job, answer)
 	return v
 }
 
@@ -387,9 +440,10 @@ func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeou
 	}
 	said, err := json.Marshal(struct {
 		judge.Answer
-		Model         string             `json:"model"`
-		Probabilities map[string]float64 `json:"probabilities"`
-	}{decided.Answer, decided.Model, decided.Probabilities})
+		Model         string                `json:"model"`
+		Probabilities map[string]float64    `json:"probabilities"`
+		Decision      *judge.PolicyDecision `json:"decision,omitempty"`
+	}{decided.Answer, decided.Model, decided.Probabilities, decided.Policy})
 	if err != nil {
 		v.outcome, v.err = OutcomeInvalid, err.Error()
 		return v
@@ -516,15 +570,18 @@ func lastLine(s string) string {
 }
 
 // summarize prints a row per case and the totals, and reports whether any run
-// failed its case. jevAsked adds what only Jev's answers have: how many it was
-// unsure of, and how many it refused alone and wrongly.
+// failed its case. jevAsked, or any run the judge was unsure of — a policy
+// case's, whichever judge answered — adds how many it was unsure of, and how
+// many it refused, sure, and wrongly.
 func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked bool) bool {
 	byCase := map[string][]Run{}
 	for _, r := range results {
 		byCase[r.Case] = append(byCase[r.Case], r)
+		jevAsked = jevAsked || r.Unsure
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	// unsure is a column of Jev's alone: no other judge says it could not tell.
+	// unsure is a column of the judges that say they could not tell: Jev,
+	// and any judge answering a policy's questions.
 	unsureHeader := ""
 	if jevAsked {
 		unsureHeader = "unsure\t"
@@ -572,12 +629,12 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 	if err := tw.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
-	fmt.Fprintf(w, "\n%d of %d runs failed their case (prompt version %s)\n", failed, total, version)
+	fmt.Fprintf(w, "\n%d of %d runs failed their case (prompt versions %s)\n", failed, total, version)
 	if jevAsked {
 		// The two numbers ADR 26-10-12-669 is held to: how much goes on to a
 		// judge discobox, and what Jev refused alone that it should not have.
-		fmt.Fprintf(w, "%d of %d runs were refused because Jev was unsure, which jevUnsure: harness puts to the judge discobox\n", unsure, total)
-		fmt.Fprintf(w, "%d of %d runs were refusals Jev decided on a case a correct judge does not refuse\n", wronglyDecided, total)
+		fmt.Fprintf(w, "%d of %d runs were refused because the judge was unsure, which a server with jevUnsure: harness puts to the judge discobox when Jev is\n", unsure, total)
+		fmt.Fprintf(w, "%d of %d runs were refusals the judge decided on a case a correct judge does not refuse\n", wronglyDecided, total)
 	}
 	if len(errs) > 0 {
 		fmt.Fprintln(w, "\nerrors, and proposer checks that failed:")

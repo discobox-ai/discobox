@@ -1,0 +1,111 @@
+{
+  "name": "policy-dev-git-push-deletes-a-tag",
+  "why": "Control: deleting a release tag under a policy to push one branch, which a deny names.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "github.com",
+    "round": 2,
+    "request": {
+      "method": "POST",
+      "url": "https://github.com/acme/web.git/git-receive-pack",
+      "headers": {
+        "Accept": [
+          "application/x-git-receive-pack-result"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "git/2.47.1"
+        ],
+        "Content-Type": [
+          "application/x-git-receive-pack-request"
+        ],
+        "Content-Length": [
+          "180"
+        ]
+      },
+      "protocol": {
+        "name": "git-receive-pack",
+        "version": 1
+      },
+      "body": {
+        "mediaType": "application/x-git-receive-pack-request",
+        "length": 180,
+        "parser": {
+          "name": "git-receive-pack",
+          "version": 1
+        },
+        "metadata": {
+          "commands": [
+            {
+              "op": "delete",
+              "ref": "refs/tags/v1.4.0",
+              "old": "9b8a7c6d5e4f"
+            }
+          ],
+          "capabilities": [
+            "report-status",
+            "side-band-64k",
+            "quiet",
+            "object-format=sha1",
+            "agent=git/2.47.1"
+          ]
+        },
+        "content": "9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b 0000000000000000000000000000000000000000 refs/tags/v1.4.0 report-status side-band-64k quiet object-format=sha1 agent=git/2.47.1\n"
+      }
+    },
+    "credential": "github",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "create",
+            "update"
+          ],
+          "resourceType": "branch",
+          "name": "fix-43",
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "delete"
+          ],
+          "resourceType": "branch",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "delete"
+          ],
+          "resourceType": "tag",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "branch": "A Git branch, refs/heads/<name>. Pushing it creates or updates it; pushing its deletion deletes it.",
+        "tag": "A Git tag, refs/tags/<name>.",
+        "repository": "A Git repository on github.com, named owner/name."
+      }
+    }
+  }
+}

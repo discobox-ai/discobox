@@ -67,6 +67,17 @@ it, as the control plane does. Real refusals come from the proxy's audit
 record and the verdict a judge gave; controls are requests that must stay
 refused whatever a prompt change does.
 
+A **policy case** (`policy-*`) is a request job with a `policy` — its
+statements, definitions and `resolved` values, as a person approved it — and
+the `variables` that bind now, in place of a `purpose` (ADR 26-10-20-782 §8).
+The judge answers the questions `judge.PolicyQuestions` asks, and the runner
+combines them with `judge.DecidePolicy`, as the control plane does; with
+`-jev` Jev answers them. Most are twins of a recorded case, the use rewritten
+as the policy a person would approve for it; the rest control for what a
+policy's judges must get right: facts a request claims about itself, a
+condition the request does not show, and a supporting read. An unsure refusal
+is counted whichever judge was unsure.
+
 ## Use-case evals
 
 `use-cases/` asks a different question of the same runner: whether a use

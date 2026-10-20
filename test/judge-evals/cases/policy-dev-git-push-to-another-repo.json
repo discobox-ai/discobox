@@ -1,0 +1,112 @@
+{
+  "name": "policy-dev-git-push-to-another-repo",
+  "why": "Control: the allowed branch, pushed to a repository the policy does not name.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "github.com",
+    "round": 2,
+    "request": {
+      "method": "POST",
+      "url": "https://github.com/acme/billing.git/git-receive-pack",
+      "headers": {
+        "Accept": [
+          "application/x-git-receive-pack-result"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "git/2.47.1"
+        ],
+        "Content-Type": [
+          "application/x-git-receive-pack-request"
+        ],
+        "Content-Length": [
+          "4096"
+        ]
+      },
+      "protocol": {
+        "name": "git-receive-pack",
+        "version": 1
+      },
+      "body": {
+        "mediaType": "application/x-git-receive-pack-request",
+        "length": 4096,
+        "parser": {
+          "name": "git-receive-pack",
+          "version": 1
+        },
+        "metadata": {
+          "commands": [
+            {
+              "op": "update",
+              "ref": "refs/heads/fix-43",
+              "old": "9b8a7c6d5e4f",
+              "new": "3f1c9e2b7a4d"
+            }
+          ],
+          "capabilities": [
+            "report-status",
+            "side-band-64k",
+            "quiet",
+            "object-format=sha1",
+            "agent=git/2.47.1"
+          ]
+        },
+        "content": "9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b 3f1c9e2b7a4d5c6e8f9a0b1c2d3e4f5a6b7c8d9e refs/heads/fix-43 report-status side-band-64k quiet object-format=sha1 agent=git/2.47.1\n"
+      }
+    },
+    "credential": "github",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "create",
+            "update"
+          ],
+          "resourceType": "branch",
+          "name": "fix-43",
+          "scope": {
+            "type": "repository",
+            "name": "acme/web"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "delete"
+          ],
+          "resourceType": "branch",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "delete"
+          ],
+          "resourceType": "tag",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "branch": "A Git branch, refs/heads/<name>. Pushing it creates or updates it; pushing its deletion deletes it.",
+        "tag": "A Git tag, refs/tags/<name>.",
+        "repository": "A Git repository on github.com, named owner/name."
+      }
+    }
+  }
+}

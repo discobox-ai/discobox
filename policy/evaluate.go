@@ -96,8 +96,15 @@ type Outcome struct {
 	// or -1 when every atom was decided the same way.
 	Atom int
 	// Statement is the deny that refused the request, or -1: an atom no
-	// allow covers is refused by no statement.
+	// allow covers is refused by no statement. On an undecided request it is
+	// the statement left unknown on Atom — a deny that might match before an
+	// allow that might cover — or -1 when only whether it is a supporting read
+	// is unknown.
 	Statement int
+	// Covered is, on an allowed request, the allow that covered each atom,
+	// the first in the policy's order that did, or -1 for an atom allowed as
+	// a supporting read. Which one is named changes nothing about the verdict.
+	Covered []int
 }
 
 // Reason is the outcome in words, naming the atom and statement that decided
@@ -110,6 +117,8 @@ func (o Outcome) Reason() string {
 		return fmt.Sprintf("part %d of the request is denied by statement %d", o.Atom+1, o.Statement+1)
 	case o.Verdict == Refused:
 		return fmt.Sprintf("part %d of the request is allowed by no statement", o.Atom+1)
+	case o.Statement >= 0:
+		return fmt.Sprintf("part %d of the request could not be decided against statement %d", o.Atom+1, o.Statement+1)
 	}
 	return fmt.Sprintf("part %d of the request could not be decided", o.Atom+1)
 }
@@ -159,46 +168,47 @@ func Evaluate(p Policy, atoms []Atom) (Outcome, error) {
 	}
 	// Phase two: every atom needs an allow, or to be a supporting read. One
 	// that has neither is refused before anything unknown is weighed.
-	undecided := -1
+	undecided := Outcome{Verdict: Undecided, Atom: -1, Statement: -1}
+	covered := make([]int, len(atoms))
 	for a, atom := range atoms {
-		covered := No
+		cover, maybe := -1, -1
 		for s, statement := range p.Statements {
 			if statement.Effect != Allow {
 				continue
 			}
 			switch atom.Parts[s].Matches(statement) {
 			case Yes:
-				covered = Yes
+				if cover < 0 {
+					cover = s
+				}
 			case Unknown:
-				if covered == No {
-					covered = Unknown
+				if maybe < 0 {
+					maybe = s
 				}
 			}
 		}
-		if covered != Yes {
-			switch atom.Supporting {
-			case Yes:
-				covered = Yes
-			case Unknown:
-				covered = Unknown
-			}
-		}
-		switch covered {
-		case No:
+		covered[a] = cover
+		known := cover >= 0 || atom.Supporting == Yes
+		if !known && maybe < 0 && atom.Supporting == No {
 			return Outcome{Verdict: Refused, Atom: a, Statement: -1}, nil
-		case Unknown:
-			if undecided < 0 {
-				undecided = a
-			}
 		}
+		if undecided.Atom >= 0 {
+			continue
+		}
+		// A deny that might match keeps the request undecided however the
+		// atom is covered, and is the statement named first.
 		for s, statement := range p.Statements {
-			if statement.Effect == Deny && atom.Parts[s].Matches(statement) == Unknown && undecided < 0 {
-				undecided = a
+			if statement.Effect == Deny && atom.Parts[s].Matches(statement) == Unknown {
+				undecided = Outcome{Verdict: Undecided, Atom: a, Statement: s}
+				break
 			}
 		}
+		if undecided.Atom < 0 && !known {
+			undecided = Outcome{Verdict: Undecided, Atom: a, Statement: maybe}
+		}
 	}
-	if undecided >= 0 {
-		return Outcome{Verdict: Undecided, Atom: undecided, Statement: -1}, nil
+	if undecided.Atom >= 0 {
+		return undecided, nil
 	}
-	return Outcome{Verdict: Allowed, Atom: -1, Statement: -1}, nil
+	return Outcome{Verdict: Allowed, Atom: -1, Statement: -1, Covered: covered}, nil
 }

@@ -1,0 +1,154 @@
+{
+  "name": "policy-copilot-control-delete-a-branch",
+  "why": "Control: deleting main with the harness's token, under the deny on repository writes.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 1,
+    "request": {
+      "method": "DELETE",
+      "url": "https://api.github.com/repos/acme/web/git/refs/heads/main",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "copilot/1.0.91 (linux v24.20.0) term/unknown"
+        ]
+      }
+    },
+    "credential": "COPILOT_GITHUB_TOKEN",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "Copilot setting",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.github.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "model list",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "create"
+          ],
+          "resourceType": "chat completion",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "create"
+          ],
+          "resourceType": "telemetry event",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "telemetry.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "*/*"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.github.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "*/*"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "Actions secret",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "Copilot setting": "The Copilot entitlement, policy and settings GitHub serves the signed-in user under /copilot_internal.",
+        "model list": "The list of models Copilot may use.",
+        "chat completion": "A model turn: a chat or completion request Copilot sends to its model service.",
+        "telemetry event": "A usage event Copilot reports to its own telemetry endpoint.",
+        "host": "A service Discobox reaches, named by its hostname.",
+        "repository": "A GitHub repository, named owner/name. Reading one reads its files, code and metadata, by REST, GraphQL or GitHub's MCP server.",
+        "Actions secret": "A GitHub Actions secret of a repository or organization, or the list of them."
+      }
+    }
+  }
+}

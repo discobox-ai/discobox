@@ -80,6 +80,7 @@ const (
 	JudgeCommandForPoolOperation              OperationName = "JudgeCommandForPool"
 	JudgeForPoolOperation                     OperationName = "JudgeForPool"
 	JudgeSandboxOperation                     OperationName = "JudgeSandbox"
+	JudgeSandboxPolicyOperation               OperationName = "JudgeSandboxPolicy"
 	ListApprovalRequestsOperation             OperationName = "ListApprovalRequests"
 	ListApprovalRulesOperation                OperationName = "ListApprovalRules"
 	ListCredentialVerdictsOperation           OperationName = "ListCredentialVerdicts"
