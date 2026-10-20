@@ -1,0 +1,86 @@
+{
+  "name": "policy-within-branch-write-to-its-branch",
+  "why": "The same write, on the branch the policy names.",
+  "expect": "allow",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "credential": "com.github.api",
+    "round": 2,
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "create",
+            "update"
+          ],
+          "resourceType": "file",
+          "name": null,
+          "within": [
+            {
+              "type": "branch",
+              "name": "discobox/issue-46"
+            }
+          ],
+          "scope": {
+            "type": "repository",
+            "name": "$primary.repo"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "file": "A file in a GitHub repository, written through the contents API.",
+        "branch": "A git branch of the repository.",
+        "repository": "A GitHub repository, named owner/name."
+      },
+      "resolved": {
+        "$primary.repo": "acme/web"
+      }
+    },
+    "variables": {
+      "$primary.repo": "acme/web"
+    },
+    "facts": [
+      "The discobox asking is sbx_7k2m4q9wfc3d8n1p.",
+      "Its primary source, as it was created, is the Git repository github.com/acme/web, checked out from the branch discobox/issue-46."
+    ],
+    "request": {
+      "method": "PUT",
+      "url": "https://api.github.com/repos/acme/web/contents/src/reaper.go",
+      "headers": {
+        "Accept": [
+          "application/vnd.github+json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 99,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "branch",
+            "content",
+            "message",
+            "sha"
+          ]
+        },
+        "content": "{\"message\":\"Fix the reaper race\",\"content\":\"aGVsbG8K\",\"branch\":\"discobox/issue-46\",\"sha\":\"3f2a1c9\"}"
+      }
+    }
+  }
+}
