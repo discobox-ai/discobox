@@ -306,7 +306,7 @@ env -i HOME=$HOME PATH=$PATH DISCOBOX_ENV_FILE=$S/empty.env \
   DISCOBOX_CONFIG_DIR=$S/config DISCOBOX_CACHE_DIR=$S/cache \
   DISCOBOX_SERVER_LISTEN=unix://$SOCK/s.sock,http://127.0.0.1:18471 \
   $S/discobox-server > $S/server.log 2>&1 &
-until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
+until curl --noproxy '*' -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 ```
 
 - Name a `unix://` socket of your own in `DISCOBOX_SERVER_LISTEN`: otherwise
