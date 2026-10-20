@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 #
 # Bumping it can also invalidate the `discobox-review` skill, which documents
 # this binary's interface from another repository and is installed further
-# down: re-read `sandbox-agent/image/skills/discobox-review/SKILL.md` against
+# down: re-read `sandbox-agent/features/review/skills/discobox-review/SKILL.md` against
 # the version you move to. Nothing else in the build will notice.
 ARG REVIEW_VERSION=v0.0.0-20261013064909-4f0ca443f7cf
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -81,30 +81,31 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && { mv "$(go env GOPATH)/bin/${TARGETOS}_${TARGETARCH}/discobox-review" /out/discobox-review \
         || mv "$(go env GOPATH)/bin/discobox-review" /out/discobox-review; }
 
-# fresh (getfresh.dev), the terminal editor the launcher's tools picker opens.
-# Its own layer for the same reason discobox-review has one, and pinned to a
-# release tag rather than following latest: an unpinned version makes the build
-# unreproducible and leaves this layer cached on whatever it first saw. Bump it
-# to pull a newer release.
-#
-# The upstream install script is not used. It resolves the release itself,
-# installs under $HOME and writes desktop files — none of which survives being
-# copied into an image, and all of which is a network fetch this build would
-# not be able to pin. The release's own statically linked musl tarball is the
-# thing that does: one binary, no runtime, the same on every base.
-ARG FRESH_VERSION=v0.5.1
-RUN set -eux \
-    && case "$TARGETARCH" in \
-        amd64) fresh_target=x86_64-unknown-linux-musl ;; \
-        arm64) fresh_target=aarch64-unknown-linux-musl ;; \
-        *) echo "no fresh build for ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
-    && archive="fresh-editor-${fresh_target}.tar.gz" \
-    && curl -fsSL -o /tmp/fresh.tar.gz \
-        "https://github.com/sinelaw/fresh/releases/download/${FRESH_VERSION}/${archive}" \
-    && tar -xzf /tmp/fresh.tar.gz -C /tmp \
-    && mv "/tmp/fresh-editor-${fresh_target}/fresh" /out/fresh \
-    && rm -rf /tmp/fresh.tar.gz "/tmp/fresh-editor-${fresh_target}"
+# The provisioner every feature below is applied with: the provision package
+# behind a command of its own (cmd/discobox-image-provision). Its own stage, so
+# it copies only what that package imports: a step's cache follows the binary
+# it mounts, and this one is the same bytes until provisioning changes, where
+# the agent changes with nearly every edit to its module.
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS image-provision-builder
+ARG TARGETOS TARGETARCH
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+COPY fsdurable ./fsdurable
+COPY harness ./harness
+COPY hostscope ./hostscope
+COPY platform ./platform
+COPY provisionspec ./provisionspec
+COPY sandboxconfig ./sandboxconfig
+COPY sandboxpath ./sandboxpath
+COPY sandboxuser ./sandboxuser
+COPY sourceref ./sourceref
+COPY sandbox-agent ./sandbox-agent
+
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-image-provision ./cmd/discobox-image-provision
 
 # The discobox CLI, which a discobox calls the discobox API with through its
 # pool (ADR 0140). Its own stage: the CLI reaches much more of the root module
@@ -162,563 +163,147 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # image, which the pool image is also built FROM so a pool host that pulls both
 # pulls those layers once. See base-image/Dockerfile.
 #
-# The install steps below are split into a layer per tool group, ordered
-# stablest first. As one 4GB RUN, adding a single apt package would re-pull
-# every language runtime on every pool host and in every harness image. A layer boundary costs nothing and bounds the blast radius of
-# each edit to the tools it actually touched.
+# Everything else is the platform's features (ADR 26-10-16-423 §§3–4):
+# sandbox-agent/features/<name>, copied into the platform tree a box
+# provisions from at boot and applied here by the runner, every step blocking.
+# The tree stays in the image, and so do the runner's records of what it
+# applied, so a box's boot finds every step done and turns off what its
+# project opted out of.
+#
+# One feature per layer, stablest first, each after those it requires: a
+# provisioning step skips what an earlier layer recorded, so editing one
+# feature applies that feature and the ones after it, and not the 4GB before.
 FROM ${BASE_IMAGE} AS sandbox-agent
 
 ENV NIX_CONFIG="experimental-features = nix-command flakes"
 ENV NIX_REMOTE=daemon
 ENV PATH=/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/bin:${PATH}
 
-# Load-bearing for the `curl | sh` installers below: without pipefail a failed
-# download silently feeds an empty script to a shell that exits 0.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-# The base image enables no Docker unit, because the pool agent runs dockerd
-# outright and the sandbox socket-activates it. This is the sandbox's half of
-# that choice.
-RUN systemctl disable docker.service containerd.service \
-    && systemctl enable docker.socket
-
-# Debian's half of the toolchain: everything from the distribution, and the
-# largest layer here. It changes only when this list does.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+COPY sandbox-agent/features/build /opt/discobox/bundles/platform/features/build
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    set -eux \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        chromium \
-        chromium-sandbox \
-        dbus-x11 \
-        direnv \
-        elementary-xfce-icon-theme \
-        expect \
-        extrepo \
-        file \
-        greybird-gtk-theme \
-        jq \
-        less \
-        libnss3-tools \
-        librsvg2-bin \
-        novnc \
-        openssh-client \
-        openssh-sftp-server \
-        p11-kit-modules \
-        passwd \
-        patch \
-        poppler-utils \
-        procps \
-        psmisc \
-        python-is-python3 \
-        python3 \
-        python3-pip \
-        python3-requests \
-        python3-venv \
-        python3-websockify \
-        python3-xdg \
-        ripgrep \
-        screen \
-        scrot \
-        shellcheck \
-        socat \
-        sqlite3 \
-        sudo \
-        thunar \
-        tmux \
-        unzip \
-        util-linux \
-        vim \
-        x11vnc \
-        x11-xserver-utils \
-        xdotool \
-        xfce4-appfinder \
-        xfce4-panel \
-        xfce4-session \
-        xfce4-settings \
-        xfce4-terminal \
-        xfdesktop4 \
-        xfwm4 \
-        xserver-xorg-core \
-        xserver-xorg-video-dummy \
-        xterm \
-        xvfb \
-        xz-utils \
-        zsh \
-    && rm -rf /var/lib/apt/lists/*
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# Neovim's official stable build. Debian stable intentionally holds an older
-# release, while the upstream release provides matching amd64 and arm64
-# tarballs. Keep the version and upstream-published checksums together so a
-# bump is explicit and reproducible.
-ARG NEOVIM_VERSION=v0.12.5
-ARG NEOVIM_AMD64_SHA256=bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875
-ARG NEOVIM_ARM64_SHA256=1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725
-RUN set -eux \
-    && case "$(dpkg --print-architecture)" in \
-        amd64) \
-            neovim_arch=x86_64; \
-            neovim_sha256="$NEOVIM_AMD64_SHA256" \
-            ;; \
-        arm64) \
-            neovim_arch=arm64; \
-            neovim_sha256="$NEOVIM_ARM64_SHA256" \
-            ;; \
-        *) echo "no Neovim build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac \
-    && archive="nvim-linux-${neovim_arch}.tar.gz" \
-    && curl -fsSL -o "/tmp/${archive}" \
-        "https://github.com/neovim/neovim/releases/download/${NEOVIM_VERSION}/${archive}" \
-    && echo "${neovim_sha256}  /tmp/${archive}" | sha256sum -c - \
-    && tar -xzf "/tmp/${archive}" -C /usr/local --strip-components=1 \
-    && rm -f "/tmp/${archive}" \
-    && nvim --version
-
-# Nushell's official release build, for the people whose $SHELL it is (ADR
-# 0138): Debian does not package it. The static musl tarball is one binary with
-# no runtime, the same on every base; only `nu` is installed, not the example
-# and dataframe plugins beside it. Version and upstream-published checksums
-# move together, so a bump is explicit and reproducible.
-ARG NUSHELL_VERSION=0.115.1
-ARG NUSHELL_AMD64_SHA256=8a9722177ddd421eba927b4baae4ae341a4d1c3434504be7b1b17d998bafdd87
-ARG NUSHELL_ARM64_SHA256=86a869f44c2abd37f4a4c215af78c8da058812b76fa131476d28e62fc0262a91
-RUN set -eux \
-    && case "$(dpkg --print-architecture)" in \
-        amd64) \
-            nushell_target=x86_64-unknown-linux-musl; \
-            nushell_sha256="$NUSHELL_AMD64_SHA256" \
-            ;; \
-        arm64) \
-            nushell_target=aarch64-unknown-linux-musl; \
-            nushell_sha256="$NUSHELL_ARM64_SHA256" \
-            ;; \
-        *) echo "no Nushell build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac \
-    && dir="nu-${NUSHELL_VERSION}-${nushell_target}" \
-    && curl -fsSL -o "/tmp/${dir}.tar.gz" \
-        "https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/${dir}.tar.gz" \
-    && echo "${nushell_sha256}  /tmp/${dir}.tar.gz" | sha256sum -c - \
-    && tar -xzf "/tmp/${dir}.tar.gz" -C /tmp "${dir}/nu" \
-    && install -m 0755 "/tmp/${dir}/nu" /usr/local/bin/nu \
-    && rm -rf "/tmp/${dir}.tar.gz" "/tmp/${dir}" \
-    && echo /usr/local/bin/nu >> /etc/shells \
-    && nu --version
-
-# Nix, and the second-largest layer. Its own step so the tool groups below can
-# change without repulling it.
-RUN set -eux; \
-    unset NIX_REMOTE; \
-    # Build-time only: qemu-user (emulated cross-platform builds) cannot load
-    # seccomp BPF programs, so disable nix syscall filtering for the install
-    # steps without persisting it into the image's /etc/nix/nix.conf.
-    export NIX_CONFIG="filter-syscalls = false"; \
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
-        | sh -s -- install linux --extra-conf "sandbox = false" --init none --no-confirm; \
-    install -D -m 0644 /nix/var/nix/profiles/default/lib/systemd/system/nix-daemon.service /etc/systemd/system/nix-daemon.service; \
-    install -D -m 0644 /nix/var/nix/profiles/default/lib/systemd/system/nix-daemon.socket /etc/systemd/system/nix-daemon.socket; \
-    # The shipped unit points at a man page this image has no man pages for.
-    sed -i 's|^Documentation=man:nix-daemon https://nixos.org/manual$|Documentation=https://nixos.org/manual|' /etc/systemd/system/nix-daemon.service; \
-    systemctl enable nix-daemon.socket; \
-    nix profile install nixpkgs#devenv nixpkgs#bashInteractive; \
-    devenv --version; \
-    # ADR 0085: the stamp that guards the seed names the store it was cut
-    # from, and a pool cache that already holds another build's store merges
-    # this one in instead of overwriting the database that pool has been
-    # writing to. Both need facts only the build knows, recorded beside the
-    # seed rather than inside it: the store's identity -- a hash of its own
-    # content hashes, so an identical rebuild re-seeds nobody -- the /nix path
-    # of the nix-store binary this store delivers, and a dump of the database
-    # rows that say which paths it registered.
-    install -d -m 0755 /usr/local/lib/discobox; \
-    { \
-        echo "SEED_ID=$(LC_ALL=C ls -1 /nix/store | sha256sum | cut -d' ' -f1)"; \
-        # The profile's store path plus the name, not `readlink -f` of the
-        # binary: nix is one multi-call executable that dispatches on
-        # argv[0], so resolving the link lands on `bin/nix` and loses the
-        # nix-store personality along with `--load-db`.
-        echo "SEED_NIX_STORE=$(readlink -f /nix/var/nix/profiles/default)/bin/nix-store"; \
-    } > /usr/local/lib/discobox/nix-seed.env; \
-    nix-store --dump-db > /usr/local/lib/discobox/nix-db.dump; \
-    # ADR 0075: the store ships aside as a seed and /nix is left empty, so the
-    # pool-shared cache volume can bind over it without hiding image content.
-    # discobox-nix-seed.service copies it back on first use. The mv must stay
-    # in this layer -- moving it in a later one copies the whole store up into
-    # that layer and doubles the image instead of renaming a directory.
-    mv /nix /usr/local/lib/discobox/nix; \
-    mkdir -m 0755 /nix
-
-RUN rustup --version >/dev/null 2>&1 \
-    || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
-
-# Third-party apt repositories. Separate from Debian's layer above because
-# these track upstream release cadences and invalidate far more often.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+COPY sandbox-agent/features/cli /opt/discobox/bundles/platform/features/cli
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    set -eux \
-    && curl -fsSL https://deb.nodesource.com/setup_25.x | bash - \
-    && sed -i 's|http://|https://|g' /etc/apt/sources.list.d/nodesource.list 2>/dev/null || true \
-    && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-    && extrepo enable mise \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gh \
-        mise \
-        nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# npm's cache is build-time scratch; leaving it behind put 100MB of it in every
-# harness image, which repeats this trick to install its own CLI.
-RUN set -eux \
-    && npm install -g pnpm \
-    && rm -rf /root/.npm
+COPY sandbox-agent/features/python /opt/discobox/bundles/platform/features/python
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# Homebrew, at the one prefix its bottles are built for. Any other prefix turns
-# every formula into a source build, so `/home/linuxbrew/.linuxbrew` is not a
-# preference here — it is the whole reason this is worth shipping.
-#
-# The prefix is baked into the image and declared a `data` volume in image.json,
-# which is what makes it an overlay at boot (ADR 0007 §3): this tree is the
-# lower layer and a sandbox's own `brew install` persists to its data volume.
-# That is deliberately *not* the nix arrangement next door. ADR 0075's seed
-# unit, stamps and PATH shims exist because `/nix` had to be a pool-shared
-# *cache* volume, and a cache path is always a plain bind that would hide
-# whatever the image shipped underneath it. A data path gets the overlay for
-# free, so brew needs none of that machinery.
-#
-# Ownership is the part that needs care. The sandbox user's uid comes from the
-# manifest and is not known until a sandbox boots, so the prefix cannot be
-# chowned to it here — and chowning it at boot is worse, because a recursive
-# chown across an overlay copies every inode up into the sandbox's own volume.
-# So the tree is owned by a group instead: root:brew, group-writable, with
-# setgid directories so anything installed later keeps the group. image.json
-# lists `brew` in additionalGroups, and boot adds whatever uid the sandbox
-# turns out to run as to it. The group is `--system`, and what makes that safe
-# is that groupadd picks an unused gid at build time and nothing outside this
-# image ever names the number -- boot looks the group up by name. Not the range
-# it lands in: a sandbox created before ADR 0141 can carry a macOS client's own
-# gid, staff's 20, so "below 1000" is where those live too rather than clear of
-# them.
-#
-# A sandbox running as root -- a manifest that named no user (ADR 0025 §5) --
-# gets a working brew, not a refusal. Homebrew's own root guard stands down
-# when it sees /.dockerenv, /run/.containerenv or a container cgroup, on the
-# grounds that root is normal in a container, and every sandbox is one. So root
-# installs root-owned kegs into the overlay and everything works; the group
-# arrangement above is simply moot for it, since root can write the tree
-# whatever it is owned by.
-#
-# Pinned to a release tag, like neovim and fresh above: an unpinned clone makes
-# the build unreproducible. The tag is load-bearing twice over — brew derives
-# its version from `git describe --tags`, and a shallow clone with no tag
-# reachable reports "(shallow or no git repository)" instead of a version.
-ARG HOMEBREW_VERSION=6.0.22
-RUN set -eux \
-    && groupadd --system brew \
-    && git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
-        https://github.com/Homebrew/brew /home/linuxbrew/.linuxbrew/Homebrew \
-    && mkdir -p /home/linuxbrew/.linuxbrew/bin \
-    && ln -s ../Homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew \
-    # git refuses to operate in a repository owned by another user, and every
-    # sandbox user is another user as far as this tree is concerned. The
-    # ownership split here is the design above, not the tampering that check
-    # is looking for.
-    && git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew \
-    # Homebrew runs on its own vendored ruby and fetches it on first use.
-    # Left to first use, every sandbox would fetch it and copy it up into its
-    # own overlay; done here it is one layer they all share.
-    #
-    # A throwaway system account in the brew group runs it, and the ownership
-    # is reapplied afterwards over what it wrote. Not because brew refuses
-    # root -- above says why it does not at runtime -- but because during a
-    # build the answer is the builder's to give: BuildKit's runc executor
-    # creates no /.dockerenv, and whether /proc/1/cgroup looks like a container
-    # depends on the driver. Running as a real user is how the build stops
-    # depending on it either way.
-    && useradd --system --gid brew --no-create-home --home-dir /home/linuxbrew brew-build \
-    && chown -R root:brew /home/linuxbrew \
-    && chmod -R g+w /home/linuxbrew \
-    && setpriv --reuid brew-build --regid brew --clear-groups \
-        env HOME=/home/linuxbrew HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 \
-        /home/linuxbrew/.linuxbrew/bin/brew vendor-install ruby \
-    && setpriv --reuid brew-build --regid brew --clear-groups \
-        env HOME=/home/linuxbrew /home/linuxbrew/.linuxbrew/bin/brew --version \
-    # The download cache that vendor-install just filled is build-time scratch,
-    # and it landed inside the prefix because that is where HOME pointed.
-    && rm -rf /home/linuxbrew/.cache \
-    && userdel brew-build \
-    && chown -R root:brew /home/linuxbrew \
-    && chmod -R g+w /home/linuxbrew \
-    && find /home/linuxbrew -type d -exec chmod g+s {} +
+COPY sandbox-agent/features/shells-editors /opt/discobox/bundles/platform/features/shells-editors
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# Unpinned upstream toolchains, last among the installers because each tracks
-# its own release and would otherwise invalidate everything below it.
-RUN set -eux \
-    && GO_VERSION="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)" \
-    && curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" | tar -C /usr/local -xz
+COPY sandbox-agent/features/direnv /opt/discobox/bundles/platform/features/direnv
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-RUN set -eux \
-    && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
-    && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+COPY sandbox-agent/features/browser /opt/discobox/bundles/platform/features/browser
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# Build the complete system trust store into the image, so the boot path only
-# has to add this sandbox's MITM CA to it rather than rebuilding all 152
-# certificates to add one (see runcca.MaterializeTrustStore). Last of the
-# install steps so it sees the final ca-certificates package.
-#
-# It is built at /opt rather than /etc/ssl/certs, and by a redirected copy of
-# update-ca-certificates rather than the tool itself, because a build running
-# inside a Discobox sandbox has /etc/ssl/certs bind-mounted over by the runc
-# wrapper: writes there go to the mount and vanish when the layer commits,
-# leaving the image with an empty store. LOCALCERTSDIR is pointed away so
-# no build-time anchor is baked in; anchors belong to the sandbox that boots, and
-# it adds its own.
-RUN set -eux \
-    && mkdir -p /opt/discobox/ca-certificates \
-    && sed -e 's|^ETCCERTSDIR=.*|ETCCERTSDIR=/opt/discobox/ca-certificates|' \
-           -e 's|^LOCALCERTSDIR=.*|LOCALCERTSDIR=/nonexistent|' \
-           /usr/sbin/update-ca-certificates > /tmp/discobox-prebuild-ca-store \
-    && chmod +x /tmp/discobox-prebuild-ca-store \
-    && /tmp/discobox-prebuild-ca-store --fresh \
-    && rm -f /tmp/discobox-prebuild-ca-store \
-    && test -s /opt/discobox/ca-certificates/ca-certificates.crt
+COPY sandbox-agent/features/desktop /opt/discobox/bundles/platform/features/desktop
+# The mark and wordmark the viewer's page is drawn with, from the
+# repository's own brand directory rather than a copy in this module: it is
+# nested, so go:embed cannot reach up to them, and a second copy is a second
+# thing to keep in step with Illustrator.
+COPY assets/brand /opt/discobox/bundles/platform/features/desktop/brand
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# NSS reads the system trust store, so Chromium trusts the MITM CA. Chromium on
-# Linux takes its roots from NSS alone and ignores /etc/ssl/certs, and NSS's
-# built-in roots are Mozilla's list compiled into libnssckbi.so. Diverting that
-# module to p11-kit's trust module makes it serve /etc/ssl/certs/ca-certificates.crt
-# instead, which is the bundle discobox-ca-anchor appends this sandbox's CA to at
-# boot. So no per-user nssdb import is needed, and no boot step is added. The
-# diversion keeps a libnss3 upgrade from putting Mozilla's module back.
-RUN set -eux \
-    && nssckbi="$(dpkg -L libnss3 | grep '/libnssckbi\.so$')" \
-    && dpkg-divert --add --rename --divert "${nssckbi}.nss" "${nssckbi}" \
-    && ln -s pkcs11/p11-kit-trust.so "${nssckbi}" \
-    && test -e "$(readlink -f "${nssckbi}")"
+COPY sandbox-agent/features/nix /opt/discobox/bundles/platform/features/nix
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
-COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
-COPY sandbox-agent/image/profile.d/sandbox-desktop-scale.sh /etc/profile.d/sandbox-desktop-scale.sh
-COPY sandbox-agent/image/profile.d/sandbox-agent-store.sh /etc/profile.d/sandbox-agent-store.sh
-# zsh and nu get what bash gets from profile.d and bash.bashrc: a first shell
-# that is usable as it is, and direnv on every `cd` (ADR 0138).
-COPY sandbox-agent/image/shells/zsh-newuser /usr/share/zsh/scripts/newuser
-COPY sandbox-agent/image/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
-COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
-COPY sandbox-agent/image/systemd/discobox-sandbox-agent.path /etc/systemd/system/discobox-sandbox-agent.path
-COPY sandbox-agent/image/systemd/discobox-wire.service /etc/systemd/system/discobox-wire.service
-COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
-COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
-COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
-COPY sandbox-agent/image/systemd/discobox-render-proxy-env.service /etc/systemd/system/discobox-render-proxy-env.service
-COPY sandbox-agent/image/systemd/containerd.service.d/runc-ca.conf /etc/systemd/system/containerd.service.d/runc-ca.conf
-COPY sandbox-agent/image/systemd/docker.service.d/runc-ca.conf /etc/systemd/system/docker.service.d/runc-ca.conf
-COPY sandbox-agent/image/systemd/docker.service.d/proxy.conf /etc/systemd/system/docker.service.d/proxy.conf
-COPY sandbox-agent/image/systemd/docker.service.d/proxy-bridge.conf /etc/systemd/system/docker.service.d/proxy-bridge.conf
-COPY sandbox-agent/image/systemd/nix-daemon.service.d/proxy.conf /etc/systemd/system/nix-daemon.service.d/proxy.conf
-COPY sandbox-agent/image/systemd/nix-daemon.service.d/seed.conf /etc/systemd/system/nix-daemon.service.d/seed.conf
-COPY sandbox-agent/image/systemd/nix-daemon.socket.d/seed.conf /etc/systemd/system/nix-daemon.socket.d/seed.conf
-COPY sandbox-agent/image/systemd/discobox-nix-seed.service /etc/systemd/system/discobox-nix-seed.service
-COPY sandbox-agent/image/systemd/discobox-proxy-bridge-docker.service /etc/systemd/system/discobox-proxy-bridge-docker.service
-COPY sandbox-agent/image/daemon.json /etc/docker/daemon.json
-COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
-COPY sandbox-agent/image/systemd/x11-display.socket /etc/systemd/system/x11-display.socket
-COPY sandbox-agent/image/systemd/x11-display.service /etc/systemd/system/x11-display.service
-COPY sandbox-agent/image/systemd/x11vnc.socket /etc/systemd/system/x11vnc.socket
-COPY sandbox-agent/image/systemd/x11vnc@.service /etc/systemd/system/x11vnc@.service
-COPY sandbox-agent/image/systemd/websockify-proxy.socket /etc/systemd/system/websockify-proxy.socket
-COPY sandbox-agent/image/systemd/websockify-proxy.service /etc/systemd/system/websockify-proxy.service
-COPY sandbox-agent/image/systemd/websockify@.service /etc/systemd/system/websockify@.service
-COPY sandbox-agent/image/systemd/xvfb.service /etc/systemd/system/xvfb.service
-COPY sandbox-agent/image/systemd/discobox-desktop.socket /etc/systemd/system/discobox-desktop.socket
-COPY sandbox-agent/image/systemd/discobox-desktop.service /etc/systemd/system/discobox-desktop.service
-COPY sandbox-agent/image/systemd/discobox-session-bus.socket /etc/systemd/system/discobox-session-bus.socket
-COPY sandbox-agent/image/systemd/discobox-session-bus.service /etc/systemd/system/discobox-session-bus.service
-COPY sandbox-agent/image/systemd/xfce4-session@.service /etc/systemd/system/xfce4-session@.service
-COPY sandbox-agent/image/xorg-dummy.conf /etc/X11/xorg-dummy.conf
-COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
-# The mark and wordmark the desktop viewer's page is drawn with, served as
-# /brand/ by `discobox-sandbox-agent desktop`. Taken from the repository's
-# own brand directory rather than copied into the sandbox-agent module and
-# embedded: this module is nested, so go:embed cannot reach up to them, and a
-# second copy is a second thing to keep in step with Illustrator.
-COPY assets/brand /usr/local/share/discobox/brand
-# Xfce's defaults, replacing Debian's: the desktop is chrome, and this is what
-# makes it the brand's chrome rather than Ubuntu blue on a stock grey panel.
-# See sandbox-agent/image/desktop and sandbox-agent/desktop/DESIGN.md.
-COPY sandbox-agent/image/desktop/xfconf /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
-COPY sandbox-agent/image/desktop/panel.xml /etc/xdg/xfce4/panel/default.xml
-# The launchers the boot flow seeds into a new home's ~/Desktop, beside the
-# Home icon xfdesktop draws itself. Shipped as files rather than written from
-# Go so they sit next to the rest of the desktop's configuration.
-COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/launchers
-# The desktop's own service declaration, in the same format a repository's
-# `.discobox/services` uses and read from the same code. It declares the port
-# and what it speaks so the port watcher never has to connect to it — which for
-# a socket-activated service is what would start it (ADR 26-09-05-409, image-declared
-# services).
-COPY sandbox-agent/image/services /usr/local/share/discobox/services
-# The tools the image ships — discobox-review as diff, and fresh — declared in
-# the same format, with the defaults for what they carry in beside them. The
-# CLI lists them in `discobox tools` and the launcher's picker (ADR 0125).
-COPY sandbox-agent/image/tools /usr/local/share/discobox/tools
-# Chromium is this image's browser, so it is what a link opens. See the file.
-COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
-# And Xfce's own preferred-applications list, which is what the panel, Thunar
-# and xfdesktop actually open a URL through. See the file.
-COPY sandbox-agent/image/desktop/helpers.rc /etc/xdg/xfce4/helpers.rc
-# Chromium's own scale, which it otherwise infers twice over. See the file.
-COPY sandbox-agent/image/desktop/chromium.d /etc/chromium.d
-# Browser sign-in is turned off by machine policy. Without this, every new
-# profile opens on the full-window "Sign in to Chromium" first-run page rather
-# than a tab, which is the first thing a person sees after opening the browser
-# from the desktop. Sign-in could not work here anyway: Debian's Chromium has no
-# Google API keys, so there is no sync to sign in to. A policy rather than
-# --no-first-run in /etc/chromium.d, because that flag also skips applying
-# initial_preferences (below).
-COPY sandbox-agent/image/desktop/chromium-policies /etc/chromium/policies/managed
-COPY --chmod=0755 sandbox-agent/image/desktop/brand-theme /usr/local/libexec/discobox/brand-theme
-COPY sandbox-agent/image/desktop/wallpaper.svg /usr/local/libexec/discobox/wallpaper.svg
-# The theme is derived from Debian's Greybird-dark rather than authored, and the
-# backdrop and the panel's menu button are rasterized from the same brand SVGs
-# the viewer's page is drawn with. Two details:
-#
-#   - librsvg only follows a reference that stays inside the document's own
-#     directory, which is why the wallpaper and the wordmark it draws are copied
-#     into one directory to render.
-#   - the mark is rendered onto a page larger than itself, because the panel
-#     scales a button icon to the full height it is given and the mark would
-#     otherwise sit on the panel with its feet on both edges.
-# Debian resolves a browser two ways and both have to say Chromium: the XDG
-# default-applications list above, and the `x-www-browser` alternative that
-# `sensible-browser` and a long tail of scripts go through. `update-alternatives`
-# is not idempotent against a missing target, so this runs after the package is
-# installed and fails the build if Chromium is not there.
-#
-# The initial-preferences file turns off Chromium's own "make me your default?"
-# infobar, which is noise on a desktop where the question is already answered.
-# Both filenames are written: Debian's packaging has used `master_preferences`
-# for years and upstream renamed it to `initial_preferences`, and whichever this
-# build's Chromium reads, the other is inert.
-RUN set -eux \
-    && update-alternatives --set x-www-browser /usr/bin/chromium \
-    && mkdir -p /etc/chromium \
-    && printf '%s\n' '{"browser":{"check_default_browser":false},"distribution":{"import_bookmarks":false,"make_chrome_default":false,"suppress_first_run_bubble":true,"skip_first_run_ui":true}}' \
-        | tee /etc/chromium/master_preferences > /etc/chromium/initial_preferences \
-    && /usr/local/libexec/discobox/brand-theme \
-    && mkdir -p /usr/local/share/discobox/desktop /tmp/wallpaper \
-    && cp /usr/local/libexec/discobox/wallpaper.svg /usr/local/share/discobox/brand/wordmark-white.svg /tmp/wallpaper/ \
-    && rsvg-convert -w 2560 -h 1440 -o /usr/local/share/discobox/desktop/wallpaper.png /tmp/wallpaper/wallpaper.svg \
-    && rsvg-convert --page-width 160 --page-height 160 --top 16 --left 18 -h 128 \
-        -o /usr/local/share/discobox/desktop/mark.png /usr/local/share/discobox/brand/logo-purple.svg \
-    && rm -rf /tmp/wallpaper /usr/local/libexec/discobox/wallpaper.svg
-COPY --chmod=0755 sandbox-agent/image/nix-seed /usr/local/libexec/discobox/nix-seed
-# Installs as `nix`, `devenv` and friends on /usr/local/bin, which PATH reaches
-# only while the store's own bin directories are still empty. Starts the seed
-# unit, then execs the real binary. See ADR 0075.
-COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
-# The harness-run convention's default implementation, for an image that
-# installs no agent of its own. A harness image overwrites it. See ADR 0086 §3.
-COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harness-run
-# Prints the one JSON document in a wrapper's output, for a harness whose CLI
-# narrates its run or fences its answer: `discobox-prompt --output-schema`
-# promises one JSON document and nothing else, and the normalizing lives once
-# here rather than in each wrapper that needs it. See harness/DESIGN.md.
-COPY --chmod=0755 harness/prompt-answer.sh /usr/local/bin/discobox-prompt-answer
-# Runs the shell a client prefers when the sandbox has it, the login shell
-# otherwise; the agent starts it for `discobox shell` and console shell panes.
-# See ADR 0138.
-COPY --chmod=0755 sandbox-agent/image/discobox-shell /usr/local/bin/discobox-shell
-# The pool-cached agent store (ADR 0114): `pin` chooses the version this
-# sandbox runs and keeps it across restarts, `refresh` advances the store on a
-# stamp, and `discobox-harness-upgrade` is the by-hand "now". Both are inert in
-# an image that ships no agent.conf, so the `shell` harness carries them
-# harmlessly.
-COPY --chmod=0755 sandbox-agent/image/agent-store /usr/local/bin/discobox-agent-store
-COPY --chmod=0755 sandbox-agent/image/harness-upgrade /usr/local/bin/discobox-harness-upgrade
-# The agent, and through the links laid below every command that ships at its
-# version (ADR 26-10-16-423 §7).
-COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
-# Its own binary, not an argv[0] personality of the agent: the credential CLI is a
-# client of a portable protocol and is meant to be liftable into another
-# repository, so it must not be welded to this image's runtime (ADR 0031).
-COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-access
-# The discobox CLI, pointed at the discobox API through this discobox's pool by
-# DISCOBOX_SERVER, which the pool sets (ADR 0140 §2).
-COPY --from=discobox-cli-builder /out/discobox /usr/local/bin/discobox
-# And the skill that tells an agent the CLI is there. The image ships the
-# skills for what the image installs, and the sandbox agent copies them into
-# the harness's skill directories on the first primary launch, beside whatever
-# the repository declares (ADR 0080). It lives in the module whose flags it
-# documents, so changing them puts somebody in front of it.
-COPY access/skills /usr/local/share/discobox/skills
-# The image's own skills: `discobox`, which tells an agent what the sandbox it
-# is running in is, and `discobox-review`, whose binary comes from
-# discobox-ai/review below. Two COPYs into one directory merge, so this tree and
-# the module-owned one above share it without either hiding the other.
-#
-# `discobox` is where ADR 0080 §3 puts it — the sandbox's own behavior is this
-# module's interface. `discobox-review`'s is not: that interface is in another
-# repository; see sandbox-agent/DESIGN.md for why it is here anyway. What that
-# costs is paid at `ARG REVIEW_VERSION` in the builder stage, where the note to
-# re-read that skill on a bump lives.
-COPY sandbox-agent/image/skills /usr/local/share/discobox/skills
-COPY --from=sandbox-agent-builder /out/discobox-review /usr/local/bin/discobox-review
-COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
+COPY sandbox-agent/features/rust /opt/discobox/bundles/platform/features/rust
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
 
-# The agent's personalities, each a link it dispatches on by argv[0] (see
-# cmd/discobox-sandbox-agent):
-# - `runc`, on a directory prepended to containerd's and dockerd's PATH, so
-#   every container either one starts has the MITM CA bundles and proxy env
-#   injected into its OCI spec. See the shared runcca package.
-# - `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to give
-#   `docker build` the pool-shared BuildKit cache. Non-build commands are
-#   exec'd straight through. See the sandbox-agent/dockercache package.
-# - `discobox-power`: keepalive, sleep and wake for an agent in the sandbox. It
-#   writes the files the sandbox agent reads (ADR 0108 §4, ADR 26-10-16-337
-#   §3), which the image's discobox skill documents.
-# - `discobox-ca-anchor`, which discobox-trust-ca.service runs, and
-#   `discobox-hook-publish`, which the harnesses' hooks run.
-# - `discobox-provision`, which waits for a feature still being provisioned,
-#   and which a feature's placeholder commands run (see the provision package).
-RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
-    && chmod 0755 /usr/local/bin/discobox-review \
-    && chmod 0755 /usr/local/bin/fresh \
-    && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
-    && install -d -m 0755 /opt/discobox/bin \
-    && ln -sf /usr/local/bin/discobox-sandbox-agent /opt/discobox/bin/runc \
-    && for c in docker discobox-power discobox-ca-anchor discobox-hook-publish discobox-provision; do \
-        ln -sf /usr/local/bin/discobox-sandbox-agent "/usr/local/bin/$c"; \
-       done \
-    && for c in nix nix-build nix-env nix-shell nix-store devenv; do \
-        ln -sf /usr/local/lib/discobox/nix-shim "/usr/local/bin/$c"; \
-       done \
-    # /etc/profile covers the login shells the sandbox launches, but not the
-    # interactive shell a person starts by typing `bash` inside one. That shell
-    # inherits the environment direnv already exported and would otherwise never
-    # reload it on a `cd`, so hook it from the system-wide interactive rc too.
-    && printf '\n# Discobox: direnv in the interactive shells /etc/profile does not reach.\nif [ -r /etc/profile.d/sandbox-direnv.sh ]; then\n  . /etc/profile.d/sandbox-direnv.sh\nfi\n' >> /etc/bash.bashrc \
-    # zsh reads none of /etc/profile, so its hook goes in its own system-wide
-    # interactive rc. The environment it starts with was already exported by
-    # discobox-shell; this is what reloads it on a `cd`.
-    && printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc \
-    && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
-    && systemctl enable \
-        discobox-wire.service \
-        discobox-sandbox-agent.path \
-        discobox-proxy-bridge.service \
-        discobox-buildkit-bridge.service \
-        discobox-trust-ca.service \
-        discobox-render-proxy-env.service \
-        x11-display.socket \
-        x11vnc.socket \
-        websockify-proxy.socket \
-        discobox-desktop.socket \
-        discobox-session-bus.socket
+COPY sandbox-agent/features/node /opt/discobox/bundles/platform/features/node
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/bun /opt/discobox/bundles/platform/features/bun
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/mise /opt/discobox/bundles/platform/features/mise
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/brew /opt/discobox/bundles/platform/features/brew
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/go /opt/discobox/bundles/platform/features/go
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/docker /opt/discobox/bundles/platform/features/docker
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/review /opt/discobox/bundles/platform/features/review
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/discobox-cli /opt/discobox/bundles/platform/features/discobox-cli
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+COPY sandbox-agent/features/core /opt/discobox/bundles/platform/features/core
+# Core's files that live with what they describe: the prompt helper beside
+# the harness wrappers it serves (harness/DESIGN.md), and the discobox-access
+# skill in the module whose flags it documents (ADR 0080 §3).
+COPY harness/prompt-answer.sh /opt/discobox/bundles/platform/features/core/prompt-answer.sh
+COPY access/skills/discobox-access /opt/discobox/bundles/platform/features/core/skills/discobox-access
+RUN --mount=type=bind,from=image-provision-builder,source=/out/discobox-image-provision,target=/tmp/discobox-image-provision \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/discobox-image-provision /opt/discobox/bundles/platform
+
+# The binaries last, since they change most: each feature that runs one links
+# it from here (ADR 26-10-16-423 §7), so a new build is a new layer of files
+# and no provisioning.
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /opt/discobox/bundles/platform/features/core/discobox-sandbox-agent
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /opt/discobox/bundles/platform/features/core/discobox-access
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /opt/discobox/bundles/platform/features/review/discobox-review
+COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /opt/discobox/bundles/platform/features/discobox-cli/discobox
 
 # The manifest layer every image built FROM this one inherits: the env,
 # volumes, groups, and seed files that are true of this image's filesystem

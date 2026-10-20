@@ -15,7 +15,7 @@ import (
 // live server in server_test.go; these are the parts of it that live in the
 // image's unit files, where nothing else would catch a regression.
 
-const unitDir = "../image/systemd"
+const unitDir = "../features/desktop/systemd"
 
 func readUnit(t *testing.T, name string) string {
 	t.Helper()

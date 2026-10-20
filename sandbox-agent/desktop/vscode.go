@@ -17,7 +17,7 @@ import (
 //
 // Chromium derives its device scale factor by multiplying Xft/DPI (192 at 2x,
 // so 2) by GDK_SCALE (2), and comes out at scale squared. The image's own
-// Chromium is corrected by /etc/chromium.d (see image/desktop/chromium.d), but
+// Chromium is corrected by /etc/chromium.d (see features/browser/chromium.d), but
 // an Electron app has no such launcher hook, and measured on this desktop VS
 // Code's devicePixelRatio is 4 at 2x — and 2, the right answer, only once
 // GDK_SCALE is gone, which the rest of the desktop needs.

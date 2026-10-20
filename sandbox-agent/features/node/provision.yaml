@@ -1,0 +1,24 @@
+# Node, npm and pnpm, which most harness CLIs are installed and run with; and
+# the pool-cached agent store (ADR 0114): `pin` chooses the version a sandbox
+# runs and keeps it across restarts, `refresh` advances the store on a stamp,
+# and `discobox-harness-upgrade` is the by-hand "now". The store is inert
+# without a harness's agent.conf.
+apiVersion: discobox.ai/provision/v1
+commands: [node, npm, npx, pnpm]
+adopt:
+  commands: [node, npm]
+  # The oldest any harness CLI runs on: pi's.
+  version: {command: node, minimum: "22.19"}
+steps:
+  - name: install
+    install: true
+    apt: true
+    run: install-node.sh
+  - name: pnpm
+    run: install-pnpm.sh
+  - name: agent-store
+    file: {path: /usr/local/bin/discobox-agent-store, source: agent-store, mode: "0755"}
+  - name: harness-upgrade
+    file: {path: /usr/local/bin/discobox-harness-upgrade, source: harness-upgrade, mode: "0755"}
+  - name: profile-agent-store
+    file: {path: /etc/profile.d/sandbox-agent-store.sh, source: profile.d/sandbox-agent-store.sh}

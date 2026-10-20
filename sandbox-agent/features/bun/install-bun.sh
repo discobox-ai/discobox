@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+
+curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash

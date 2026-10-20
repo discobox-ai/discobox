@@ -1,0 +1,70 @@
+# Core (ADR 26-10-16-423 §4): not a feature, never off, and blocking. What
+# makes a box a discobox: the agent and the personalities it ships at its own
+# version, discobox-access, the units that wire the box and bridge it to the
+# pool's proxy, the trust store the egress CA joins, the shell and prompt
+# helpers every harness relies on, and the skills that teach an agent the box.
+#
+# The build puts what is not this directory's beside it: the agent and
+# discobox-access binaries, discobox-prompt-answer from harness/, and the
+# discobox-access skill from access/ (sandbox-agent/Dockerfile).
+apiVersion: discobox.ai/provision/v1
+steps:
+  # sudo and passwd for the sandbox's account (ADR 0025); procps for the
+  # agent's resource report; sftp-server, which `discobox cp` runs as an exec.
+  - name: packages
+    packages:
+      debian: [openssh-sftp-server, passwd, procps, sudo]
+
+  - name: agent
+    run: link-agent.sh
+  - name: dirs
+    run: make-dirs.sh
+
+  - name: unit-agent
+    file: {path: /etc/systemd/system/discobox-sandbox-agent.service, source: systemd/discobox-sandbox-agent.service}
+  - name: unit-agent-path
+    file: {path: /etc/systemd/system/discobox-sandbox-agent.path, source: systemd/discobox-sandbox-agent.path}
+  - name: unit-wire
+    file: {path: /etc/systemd/system/discobox-wire.service, source: systemd/discobox-wire.service}
+  - name: unit-proxy-bridge
+    file: {path: /etc/systemd/system/discobox-proxy-bridge.service, source: systemd/discobox-proxy-bridge.service}
+  - name: unit-trust-ca
+    file: {path: /etc/systemd/system/discobox-trust-ca.service, source: systemd/discobox-trust-ca.service}
+  - name: unit-render-proxy-env
+    file: {path: /etc/systemd/system/discobox-render-proxy-env.service, source: systemd/discobox-render-proxy-env.service}
+  - name: units
+    systemd:
+      enable:
+        - discobox-wire.service
+        - discobox-sandbox-agent.path
+        - discobox-proxy-bridge.service
+        - discobox-trust-ca.service
+        - discobox-render-proxy-env.service
+  - name: journald
+    file: {path: /etc/systemd/journald.conf.d/discobox-console.conf, source: systemd/journald-console.conf}
+
+  # The whole PATH and the tools' env for a login shell, which /etc/profile
+  # would otherwise overwrite; image.json's PATH is what a non-login exec gets.
+  - name: profile
+    file: {path: /etc/profile.d/sandbox-dev-tools.sh, source: profile.d/sandbox-dev-tools.sh}
+
+  # The harness-run convention's default, for a box whose harness installs no
+  # agent of its own; a harness's feature overwrites it (ADR 0086 §3).
+  - name: harness-run
+    file: {path: /usr/local/bin/discobox-harness-run, source: harness-run, mode: "0755"}
+  # The one JSON document in a wrapper's output (harness/DESIGN.md).
+  - name: prompt-answer
+    file: {path: /usr/local/bin/discobox-prompt-answer, source: prompt-answer.sh, mode: "0755"}
+  # The shell a client prefers, when the box has it (ADR 0138).
+  - name: shell
+    file: {path: /usr/local/bin/discobox-shell, source: discobox-shell, mode: "0755"}
+
+  # The skills the terminal package installs for every harness (ADR 0080).
+  - name: skill-discobox
+    file: {path: /usr/local/share/discobox/skills/discobox/SKILL.md, source: skills/discobox/SKILL.md}
+  - name: skill-discobox-access
+    file: {path: /usr/local/share/discobox/skills/discobox-access/SKILL.md, source: skills/discobox-access/SKILL.md}
+
+  # The system trust store, built whole so boot only adds the box's CA to it.
+  - name: ca-store
+    run: prebuild-ca-store.sh

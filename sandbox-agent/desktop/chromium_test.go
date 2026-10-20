@@ -17,7 +17,7 @@ func TestChromiumForcesTheScaleOnlyOnTheDesktop(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the launcher hook is POSIX shell")
 	}
-	hook, err := filepath.Abs("../image/desktop/chromium.d/discobox-scale")
+	hook, err := filepath.Abs("../features/browser/chromium.d/discobox-scale")
 	if err != nil {
 		t.Fatalf("resolve hook: %v", err)
 	}

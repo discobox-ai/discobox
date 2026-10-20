@@ -295,9 +295,31 @@ user waits on every single start.
   a table in `init` multiplies: `go-runewidth` before v0.0.31 cost 21ms of a
   ~40ms call. Check a new dependency with
   `GODEBUG=inittrace=1 /opt/discobox/bin/runc --version`.
-- **A personality is a `personalities` entry and a link in the image
-  recipe**, `Dockerfile`; a test holds the two together. A
-  link with no entry starts the agent's server under that name.
+- **A personality is a `personalities` entry and a link a feature lays**,
+  core's `link-agent.sh` or docker's `link-personalities.sh`; a test holds the
+  two together. A link with no entry starts the agent's server under that
+  name.
+- **A file the image installs is a step of the feature it belongs to**
+  (`features/<name>/provision.yaml`), never a Dockerfile `COPY` or `RUN`: the
+  Dockerfile copies feature directories in and provisions them. A new
+  directory under `features` is copied and provisioned in its own layer, after
+  what it requires; `provision/platform_tree_test.go` replays the copies and
+  fails otherwise. A script a step runs is committed executable, and is
+  idempotent: a step is applied again whenever its digest changes, which on a
+  booted box is with its volumes wired over what it installed — a script
+  that rebuilds a tree a volume now holds (`/nix`, Homebrew's prefix) must
+  refuse or touch only what it wrote.
+- **A `run` step names in `inputs` every file of its feature its script
+  reads**, or editing one changes nothing on a box that has the step
+  recorded. A pinned release file of a third-party tool, with a known
+  sha256, is a `download` step (`unpack` for an archive) rather than a
+  script's own curl: the step checks the sha256 and puts the file or tree in
+  place whole, where a script's fetch does neither unless it says so. An
+  unpinned installer (go, uv, bun, rustup) stays a `run` script.
+- **A directory named `build` is ignored by the root `.gitignore`**; the
+  `build` feature is kept by a negation there. A feature or test directory
+  of that name elsewhere needs one too, or a clean checkout lacks it while
+  the author's tree builds.
 
 ## Platform observation
 

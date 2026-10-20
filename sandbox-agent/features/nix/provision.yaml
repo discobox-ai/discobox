@@ -1,0 +1,31 @@
+# Nix and devenv, through the daemon. The store ships aside as a seed and /nix
+# is left empty, so the pool-shared cache volume can bind over it without
+# hiding provisioned content; discobox-nix-seed.service copies it back on first
+# use (ADR 0075). The shims on /usr/local/bin start the seed unit, then exec the
+# real binary.
+apiVersion: discobox.ai/provision/v1
+steps:
+  - name: install
+    run: install-nix.sh
+
+  - name: seed
+    file: {path: /usr/local/libexec/discobox/nix-seed, source: nix-seed, mode: "0755"}
+  - name: unit-seed
+    file: {path: /etc/systemd/system/discobox-nix-seed.service, source: systemd/discobox-nix-seed.service}
+  - name: daemon-proxy
+    systemd:
+      dropIn: {unit: nix-daemon.service, name: proxy.conf, source: systemd/nix-daemon.service.d/proxy.conf}
+  - name: daemon-seed
+    systemd:
+      dropIn: {unit: nix-daemon.service, name: seed.conf, source: systemd/nix-daemon.service.d/seed.conf}
+  - name: socket-seed
+    systemd:
+      dropIn: {unit: nix-daemon.socket, name: seed.conf, source: systemd/nix-daemon.socket.d/seed.conf}
+  - name: socket
+    systemd:
+      enable: [nix-daemon.socket]
+
+  - name: shim
+    file: {path: /usr/local/lib/discobox/nix-shim, source: nix-shim, mode: "0755"}
+  - name: shims
+    run: link-shims.sh

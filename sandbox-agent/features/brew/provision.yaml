@@ -1,0 +1,20 @@
+# Homebrew, at the one prefix its bottles are built for: any other prefix
+# turns every formula into a source build.
+#
+# The prefix is a `data` volume in image.json, so what is installed here is
+# the lower layer of an overlay at boot and a sandbox's own `brew install`
+# persists to its data volume (ADR 0007 §3, ADR 0107). The sandbox user's uid
+# is not known until a sandbox boots, so the tree is owned by the brew group
+# instead: root:brew, group-writable, setgid directories so anything installed
+# later keeps the group. image.json lists `brew` in additionalGroups, and boot
+# adds whatever uid the sandbox runs as to it, looking the group up by name.
+#
+# A sandbox running as root gets a working brew too: Homebrew's root guard
+# stands down in a container, and root can write the tree whoever owns it.
+apiVersion: discobox.ai/provision/v1
+commands: [brew]
+steps:
+  - name: group
+    group: {name: brew}
+  - name: install
+    run: install-brew.sh

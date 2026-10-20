@@ -389,13 +389,12 @@ func runRenderProxyEnv(args []string) int {
 
 // runProvision applies every feature of the bundle trees it is given, each
 // holding features/<name>/provision.yaml, skipping the steps already recorded
-// as applied. Every step blocks and none is turned off, as an image build or
-// a snapshot provisions; a box's boot provisions in the agent instead. See
-// the provision package.
+// as applied. Every step blocks and none is turned off, as a harness image's
+// build provisions its tree onto the platform's; a box's boot provisions in
+// the agent instead. See the provision package.
 func runProvision(ctx context.Context, args []string) int {
-	runner := provision.Runner{Root: "/"}
 	flags := flag.NewFlagSet("discobox-sandbox-agent provision", flag.ContinueOnError)
-	flags.StringVar(&runner.Records.Dir, "records", provision.RecordsDir, "directory of the box's step records")
+	records := flags.String("records", provision.RecordsDir, "directory of the box's step records")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "usage: discobox-sandbox-agent provision [--records DIR] TREE...")
 		flags.PrintDefaults()
@@ -407,17 +406,8 @@ func runProvision(ctx context.Context, args []string) int {
 		flags.Usage()
 		return 2
 	}
-	features, err := provisionspec.Load(flags.Args()...)
-	if err != nil {
-		slog.Error("provision", "error", err)
-		return 1
-	}
-	runner.Platform, err = provision.DetectPlatform("/")
-	if err != nil {
-		slog.Error("provision", "error", err)
-		return 1
-	}
-	if _, err := runner.Provision(ctx, features, provision.Options{}); err != nil {
+	self, _ := os.Executable()
+	if err := provision.Trees(ctx, slog.Default(), *records, self, flags.Args()...); err != nil {
 		slog.Error("provision", "error", err)
 		return 1
 	}

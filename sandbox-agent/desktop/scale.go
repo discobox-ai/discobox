@@ -247,8 +247,8 @@ func xresources(scale int) string {
 // Default-xhdpi for Default at scale 2 — which reaches no other theme, so a
 // custom one stays at 1x however the desktop is scaled. The image therefore
 // ships the art pre-scaled, one variant per scale, and selecting between them
-// is this function. See image/desktop/brand-theme, which generates them, and
-// image/desktop/xfconf/xfwm4.xml, which names the scale-1 theme.
+// is this function. See features/desktop/brand-theme, which generates them, and
+// features/desktop/xfconf/xfwm4.xml, which names the scale-1 theme.
 //
 // A theme change goes straight into xfconf, which xfwm4 watches, so unlike
 // GDK_SCALE the decorations follow a scale change on the windows already open.

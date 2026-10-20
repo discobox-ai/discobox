@@ -1,0 +1,34 @@
+# Chromium, the box's browser: what a link opens, trusting the egress CA
+# through the system store, with sign-in and the first-run noise turned off.
+apiVersion: discobox.ai/provision/v1
+commands: [chromium]
+steps:
+  # dbus-x11 is the session bus Chromium asks for: with nothing to satisfy
+  # that, apt picks dbus-user-session, which brings pam_systemd into every
+  # login, and the box's logind is masked.
+  - name: packages
+    packages:
+      debian: [chromium, chromium-sandbox, dbus-x11, libnss3-tools, p11-kit-modules]
+  - name: nss-trust
+    check: nss-trust-check.sh
+    run: nss-trust.sh
+  - name: default-browser
+    run: default-browser.sh
+
+  # Chromium's own scale, which it otherwise infers twice over.
+  - name: flags-scale
+    file: {path: /etc/chromium.d/discobox-scale, source: chromium.d/discobox-scale}
+  - name: flags-sandbox
+    file: {path: /etc/chromium.d/discobox-sandbox, source: chromium.d/discobox-sandbox}
+  # Browser sign-in is turned off by machine policy. Without it, every new
+  # profile opens on the full-window "Sign in to Chromium" first-run page
+  # rather than a tab. Sign-in could not work here anyway: Debian's Chromium
+  # has no Google API keys, so there is no sync to sign in to. A policy rather
+  # than --no-first-run in /etc/chromium.d, because that flag also skips the
+  # initial preferences default-browser.sh writes.
+  - name: policies
+    file: {path: /etc/chromium/policies/managed/discobox.json, source: chromium-policies/discobox.json}
+  # Chromium is what a link opens, by the XDG default-applications list. The
+  # desktop's own list, Xfce's, says so too.
+  - name: mimeapps
+    file: {path: /etc/xdg/mimeapps.list, source: mimeapps.list}

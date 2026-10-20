@@ -1,0 +1,118 @@
+# The sandbox's graphical desktop: Xfce on a dummy X server, served to a
+# browser tab by noVNC through the branded viewer on 6900, all socket-activated
+# so a box nobody looks at runs none of it (sandbox-agent/desktop/DESIGN.md).
+# The session bus is the sandbox user's one session bus, which the desktop's
+# xfconf needs and the terminals share.
+#
+# The build puts the repository's brand directory beside this file
+# (sandbox-agent/Dockerfile): the viewer's page is drawn with it, and the
+# backdrop and the panel's mark are rendered from it.
+apiVersion: discobox.ai/provision/v1
+requires: [browser]
+steps:
+  - name: packages
+    packages:
+      debian:
+        - dbus-x11
+        - elementary-xfce-icon-theme
+        - greybird-gtk-theme
+        - librsvg2-bin
+        - novnc
+        - python3-websockify
+        - python3-xdg
+        - scrot
+        - thunar
+        - x11-xserver-utils
+        - x11vnc
+        - xdotool
+        - xfce4-appfinder
+        - xfce4-panel
+        - xfce4-session
+        - xfce4-settings
+        - xfce4-terminal
+        - xfdesktop4
+        - xfwm4
+        - xserver-xorg-core
+        - xserver-xorg-video-dummy
+        - xterm
+        - xvfb
+
+  - name: unit-x11-display-socket
+    file: {path: /etc/systemd/system/x11-display.socket, source: systemd/x11-display.socket}
+  - name: unit-x11-display
+    file: {path: /etc/systemd/system/x11-display.service, source: systemd/x11-display.service}
+  - name: unit-x11vnc-socket
+    file: {path: /etc/systemd/system/x11vnc.socket, source: systemd/x11vnc.socket}
+  - name: unit-x11vnc
+    file: {path: /etc/systemd/system/x11vnc@.service, source: systemd/x11vnc@.service}
+  - name: unit-websockify-proxy-socket
+    file: {path: /etc/systemd/system/websockify-proxy.socket, source: systemd/websockify-proxy.socket}
+  - name: unit-websockify-proxy
+    file: {path: /etc/systemd/system/websockify-proxy.service, source: systemd/websockify-proxy.service}
+  - name: unit-websockify
+    file: {path: /etc/systemd/system/websockify@.service, source: systemd/websockify@.service}
+  - name: unit-xvfb
+    file: {path: /etc/systemd/system/xvfb.service, source: systemd/xvfb.service}
+  - name: unit-desktop-socket
+    file: {path: /etc/systemd/system/discobox-desktop.socket, source: systemd/discobox-desktop.socket}
+  - name: unit-desktop
+    file: {path: /etc/systemd/system/discobox-desktop.service, source: systemd/discobox-desktop.service}
+  - name: unit-session-bus-socket
+    file: {path: /etc/systemd/system/discobox-session-bus.socket, source: systemd/discobox-session-bus.socket}
+  - name: unit-session-bus
+    file: {path: /etc/systemd/system/discobox-session-bus.service, source: systemd/discobox-session-bus.service}
+  - name: unit-xfce4-session
+    file: {path: /etc/systemd/system/xfce4-session@.service, source: systemd/xfce4-session@.service}
+  - name: units
+    systemd:
+      enable:
+        - x11-display.socket
+        - x11vnc.socket
+        - websockify-proxy.socket
+        - discobox-desktop.socket
+        - discobox-session-bus.socket
+
+  - name: xorg
+    file: {path: /etc/X11/xorg-dummy.conf, source: xorg-dummy.conf}
+  - name: vnc-websockify
+    file: {path: /usr/local/bin/discobox-vnc-websockify, source: discobox-vnc-websockify, mode: "0755"}
+  - name: profile-scale
+    file: {path: /etc/profile.d/sandbox-desktop-scale.sh, source: profile.d/sandbox-desktop-scale.sh}
+  # The desktop's own service declaration, in the format a repository's
+  # .discobox/services uses: it declares the port and what it speaks, so the
+  # port watcher never connects to it, which for a socket-activated service is
+  # what would start it (ADR 26-09-05-409).
+  - name: service
+    file: {path: /usr/local/share/discobox/services/10-desktop.yaml, source: services/10-desktop.yaml}
+
+  # Xfce's defaults, replacing Debian's: the desktop is chrome, and this is
+  # what makes it the brand's chrome rather than Ubuntu blue on a stock grey
+  # panel (sandbox-agent/desktop/DESIGN.md).
+  - name: xfconf-desktop
+    file: {path: /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml, source: xfconf/xfce4-desktop.xml}
+  - name: xfconf-xfwm4
+    file: {path: /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml, source: xfconf/xfwm4.xml}
+  - name: xfconf-xsettings
+    file: {path: /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml, source: xfconf/xsettings.xml}
+  - name: panel
+    file: {path: /etc/xdg/xfce4/panel/default.xml, source: panel.xml}
+  # Xfce's preferred-applications list, which is what the panel, Thunar and
+  # xfdesktop actually open a URL through: Chromium, as the browser feature's
+  # XDG list says. See the file.
+  - name: helpers
+    file: {path: /etc/xdg/xfce4/helpers.rc, source: helpers.rc}
+  # What the boot flow seeds into a new home's ~/Desktop, beside the Home icon
+  # xfdesktop draws itself.
+  - name: launcher-terminal
+    file: {path: /usr/local/share/discobox/desktop/launchers/terminal.desktop, source: launchers/terminal.desktop}
+  - name: launcher-web-browser
+    file: {path: /usr/local/share/discobox/desktop/launchers/web-browser.desktop, source: launchers/web-browser.desktop}
+
+  - name: brand
+    run: link-brand.sh
+  # The theme is derived from Debian's Greybird-dark rather than authored.
+  - name: theme
+    run: brand-theme
+  - name: backdrop
+    run: render-backdrop.sh
+    inputs: [wallpaper.svg, brand]

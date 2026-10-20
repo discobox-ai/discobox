@@ -2,7 +2,7 @@
 #---
 # name: ShellCheck
 # type: file
-# pattern: "{**/*.sh,**/*.bash,**/*.bats,.envrc,sandbox-agent/image/*,vm-image/**}"
+# pattern: "{**/*.sh,**/*.bash,**/*.bats,.envrc,sandbox-agent/features/**,vm-image/**}"
 #---
 
 # Thin trigger. Which files are shell scripts lives in scripts/shellcheck.sh,

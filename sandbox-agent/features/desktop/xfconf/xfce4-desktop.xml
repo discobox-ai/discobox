@@ -4,7 +4,7 @@
 
   The monitor is named in the property path, which is xfdesktop's design: a
   backdrop belongs to one output on one workspace. That name is DUMMY0 and is
-  not a guess -- the image ships image/xorg-dummy.conf and the dummy driver
+  not a guess -- the image ships features/desktop/xorg-dummy.conf and the dummy driver
   names its single output that -- but it is the one line here that would have to
   move if the X server this desktop runs on ever changed.
 

@@ -2,7 +2,7 @@
 # .yaml file, and a .yaml service starts never.
 #
 # The desktop viewer is started by systemd, on demand, when something connects
-# to 6900 — see sandbox-agent/image/systemd/discobox-desktop.socket. That is
+# to 6900 — see sandbox-agent/features/desktop/systemd/discobox-desktop.socket. That is
 # also why the port has to be declared at all, twice over:
 #
 #   - The port watcher only sees sockets the sandbox user owns, and a .socket

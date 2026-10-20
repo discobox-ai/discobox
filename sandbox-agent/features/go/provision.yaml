@@ -1,0 +1,10 @@
+# Go, at upstream's latest release, under /usr/local/go.
+apiVersion: discobox.ai/provision/v1
+commands: [go, gofmt]
+adopt:
+  commands: [go]
+  version: {command: go, args: [version], minimum: "1.24"}
+steps:
+  - name: install
+    install: true
+    run: install-go.sh

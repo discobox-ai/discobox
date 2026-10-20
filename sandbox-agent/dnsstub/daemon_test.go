@@ -13,7 +13,7 @@ import (
 // address: the nested Docker hands its containers that one name server, and
 // on its default bridge there is no embedded resolver to forward for them.
 func TestNestedDockerAsksTheStub(t *testing.T) {
-	data, err := os.ReadFile("../image/daemon.json")
+	data, err := os.ReadFile("../features/docker/daemon.json")
 	if err != nil {
 		t.Fatal(err)
 	}
