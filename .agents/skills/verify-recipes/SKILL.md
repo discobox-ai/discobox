@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
@@ -561,6 +561,35 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
   /usr/local/bin/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
   it logs `waiting for a file to appear` and exits 0 on SIGTERM.
 - `docker restart` is the guest's reboot; `systemctl kill -s KILL` the crash.
+
+# Verifying feature provisioning (`sandbox-agent/provision`, provision.json)
+
+A box provisions the trees at `/opt/discobox/bundles/{platform,harness}` on
+every boot; today's image ships neither, so drop one in and restart.
+
+```bash
+# scratch repo whose settings turn features off; -o json shows config.features
+git init $S/app && mkdir $S/app/.discobox && echo '{"features":{"brew":false}}' > $S/app/.discobox/settings.json
+d new -H shell -d -C $S/app -o json        # commit something first
+# a tree: features/<name>/provision.yaml + scripts, tarred and placed by root
+d shell <box> -- sh -c 'sudo tar -xz -C /' < $S/tree.tgz
+d stop <box>; d start <box>                # a real boot: wiring in discobox-wire, the rest in the agent
+d shell <box> -- cat /run/discobox/provision.json
+```
+
+- A slow `run` step (`sleep 90`) shows readiness first: `ready: true` with the
+  feature `provisioning`, and its `commands:` as placeholders in
+  `/usr/local/lib/discobox/placeholders`; `d shell <box> -- sh -lc '<cmd>'`
+  waits, then runs the real one.
+- Edit a script in the box to re-run its step (its digest changes); the rest
+  report `how: snapshot`.
+- The status report is `d ls -o json | jq '.sandboxes[] | .runtime.agentStatus.provision'`;
+  the console shows it in place of the name under the cursor (Enter past the
+  welcome card, cursor on the row).
+- A failing blocking step (core's) fails `d attach --raw <box>` with the
+  readiness error naming the log; a failing background one fails only its
+  placeholder (exit 127).
+- Purge with `d admin box purge <box>` (`d rm` only archives).
 
 # Verifying a container's boot (`discobox-wire.service`)
 
