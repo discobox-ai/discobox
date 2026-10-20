@@ -699,7 +699,10 @@ Two constraints on any change here:
 - **An existing bundle is never replaced.** A nested sandbox boots with one its
   host's wrapper already placed, carrying the host's CA; overwriting it with the
   image's cuts off the egress path the outer proxy owns. Anchors are appended to
-  whatever is there.
+  whatever is there. The same rule is what lets a provider's machine keep its
+  trust store: it has no prebuilt store to seed from and a finished bundle of
+  its own, any CA its provider installed in it, so Discobox's CA joins it and
+  the provider's certificates and links stay as they were (ADR 26-10-16-423 §9).
 
 NSS reads the same bundle. The image replaces NSS's built-in roots module,
 `libnssckbi.so`, with p11-kit's trust module (a `dpkg-divert`, so a libnss3
