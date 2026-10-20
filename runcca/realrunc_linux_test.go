@@ -1,3 +1,6 @@
+// runc is a Linux runtime, and the search leans on its file modes and links,
+// which Windows has no counterpart of.
+
 package runcca
 
 import (
