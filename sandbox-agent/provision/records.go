@@ -123,31 +123,35 @@ func StepDigest(feature provisionspec.Feature, step provisionspec.Step) (string,
 	// A run step's inputs, each file under a directory by its path, in
 	// lexical order, and each directory by its path alone, so a file added,
 	// removed, renamed or changed changes the digest.
-	for _, input := range step.Inputs {
-		root := filepath.Join(feature.Dir, filepath.FromSlash(input))
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(feature.Dir, path)
-			if err != nil {
-				return err
-			}
-			rel = filepath.ToSlash(rel)
-			if entry.IsDir() {
-				writeField(hash, []byte(rel+"/"))
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			writeField(hash, []byte(rel))
-			writeField(hash, data)
-			return nil
-		})
+	if len(step.Inputs) > 0 {
+		// Read within the feature's directory, so a link among the inputs
+		// cannot make the digest read outside it.
+		root, err := os.OpenRoot(feature.Dir)
 		if err != nil {
-			return "", fmt.Errorf("digest %s: %w", input, err)
+			return "", err
+		}
+		defer root.Close()
+		files := root.FS()
+		for _, input := range step.Inputs {
+			err := fs.WalkDir(files, input, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					writeField(hash, []byte(path+"/"))
+					return nil
+				}
+				data, err := fs.ReadFile(files, path)
+				if err != nil {
+					return err
+				}
+				writeField(hash, []byte(path))
+				writeField(hash, data)
+				return nil
+			})
+			if err != nil {
+				return "", fmt.Errorf("digest %s: %w", input, err)
+			}
 		}
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil

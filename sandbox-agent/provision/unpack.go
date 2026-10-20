@@ -136,7 +136,9 @@ func unpackTarGz(archive, dir string, unpack provisionspec.Unpack) error {
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(out, reader)
+			// The entry's own size, and no more: the archive's sha256 was
+			// checked, but its sizes are what bound what it unpacks to.
+			_, err = io.CopyN(out, reader, header.Size)
 			if closeErr := out.Close(); err == nil {
 				err = closeErr
 			}
