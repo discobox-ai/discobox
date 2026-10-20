@@ -75,8 +75,8 @@ func readBundle(t *testing.T, storeDir string) string {
 	return string(body)
 }
 
-// The ordinary case: an empty store is seeded from the image and the sandbox's
-// own CA is added to it.
+// The ordinary case, a container from Discobox's image: an empty store is
+// seeded from the image and the sandbox's own CA is added to it.
 func TestMaterializeSeedsPrebuiltAndAddsAnchor(t *testing.T) {
 	system := selfSignedPEM(t, "system root")
 	mitm := selfSignedPEM(t, "discobox mitm")
@@ -140,6 +140,51 @@ func TestMaterializeKeepsAnExistingBundlesForeignCA(t *testing.T) {
 	}
 	if !strings.Contains(bundle, string(mine)) {
 		t.Fatal("this sandbox's own CA is missing from the bundle")
+	}
+}
+
+// A provider's machine comes with a finished trust store, with a CA of the
+// provider's own in it, anchored where Discobox's goes, and no store of
+// Discobox's image to seed from. Discobox's CA joins it: the provider's stays
+// in the bundle once, and its links are left as update-ca-certificates made
+// them (ADR 26-10-16-423 §9).
+func TestMaterializeJoinsAMachinesOwnStore(t *testing.T) {
+	system := selfSignedPEM(t, "system root")
+	provider := selfSignedPEM(t, "provider root")
+	mitm := selfSignedPEM(t, "discobox mitm")
+	anchors := anchorDir(t, map[string][]byte{"provider.crt": provider, "discobox-mitm-ffff.crt": mitm})
+
+	store := t.TempDir()
+	if err := os.WriteFile(filepath.Join(store, TrustStoreBundle), append(append([]byte{}, system...), provider...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		"provider.pem": filepath.Join(anchors, "provider.crt"),
+		"0f0f0f0f.0":   "provider.pem",
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(store, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := MaterializeTrustStore(store, filepath.Join(t.TempDir(), "absent"), []string{anchors}); err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+
+	bundle := readBundle(t, store)
+	for name, cert := range map[string][]byte{"system root": system, "provider's CA": provider, "sandbox's CA": mitm} {
+		if got := strings.Count(bundle, string(cert)); got != 1 {
+			t.Errorf("the %s is in the bundle %d times, want once", name, got)
+		}
+	}
+	for name, want := range links {
+		if got, err := os.Readlink(filepath.Join(store, name)); err != nil || got != want {
+			t.Errorf("%s -> %q, %v; want the provider's %q", name, got, err, want)
+		}
+	}
+	if target, err := os.Readlink(filepath.Join(store, "discobox-mitm-ffff.pem")); err != nil || target != filepath.Join(anchors, "discobox-mitm-ffff.crt") {
+		t.Errorf("anchor pem link = %q, %v; want the anchor path", target, err)
 	}
 }
 
