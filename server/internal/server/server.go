@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -242,6 +243,9 @@ func Run(ctx context.Context) error {
 		},
 		WSLCCommand: cfg.WSLCCommand,
 		OverlayDir:  cfg.OverlayDir,
+		// Fetched target documents are reproducible: each is fetched again,
+		// and checked against its digest, if the cache is deleted.
+		TargetDocumentDir: filepath.Join(cfg.CacheDir, "targets"),
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

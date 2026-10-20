@@ -66,6 +66,9 @@ var yamlEnumAliases = map[string]string{
 //nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
 	"AccessPolicyStatement.effect": "a policy is the root policy package's type, stored as one JSON column; policy.Allow and policy.Deny are its values and policy.Validate refuses any other",
+	"TargetDocument.kind":          "a target entry's documents are the root targetdb package's type, stored as one JSON column; targetdb.Kinds lists the values, checked against the API by the targets handler test",
+	"PutTargetDocument.kind":       "the kind a person gives a document, read into the root targetdb package's type; targetdb.Kinds lists the values",
+	"TargetTerm.kind":              "a target entry's terms are the root targetdb package's type, stored as one JSON column; targetdb.TermKinds lists the values, checked against the API by the targets handler test",
 	"Pool.health":                  "derived by Pool.Health from heartbeat freshness and reported readiness",
 	"RefreshSecretBody.via":        "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
 	"Job.status":                   "job status values are owned by the orchestration module; model.Job.Status is untagged text",

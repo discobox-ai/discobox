@@ -7509,6 +7509,267 @@ components:
                 - directory
                 - createdAt
             type: object
+        ListProjectTargetsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListProjectTargetsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                targets:
+                    items:
+                        $ref: '#/components/schemas/TargetEntry'
+                    type: array
+            required:
+                - targets
+            type: object
+        TargetEntry:
+            additionalProperties: false
+            description: What is known about a host (ADR 26-10-20-782 §6) -- its documents, the terms it offers, and the statement shapes it is known to support. It covers the hosts beneath its own, as a credential's host does.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/TargetEntry.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                host:
+                    description: The host the entry describes; it covers the hosts beneath it.
+                    type: string
+                builtin:
+                    description: Whether the entry ships with Discobox rather than being the project's own.
+                    type: boolean
+                replacesBuiltin:
+                    description: Whether the project's own entry stands in place of a built-in entry for the same host.
+                    type: boolean
+                version:
+                    description: Names what the entry says about its host -- its host, its documents' names, kinds and digests, and its terms. The statements are not part of it. A decision records the version it used.
+                    type: string
+                documents:
+                    items:
+                        $ref: '#/components/schemas/TargetDocument'
+                    type: array
+                terms:
+                    items:
+                        $ref: '#/components/schemas/TargetTerm'
+                    type: array
+                statements:
+                    items:
+                        $ref: '#/components/schemas/TargetStatementShape'
+                    type: array
+                updatedBy:
+                    description: Principal ID of the person who last put the project's entry.
+                    type: string
+                createdAt:
+                    description: When the project's entry was added; absent on a built-in.
+                    format: date-time
+                    type: string
+                updatedAt:
+                    description: When the project's entry was last put; absent on a built-in.
+                    format: date-time
+                    type: string
+            required:
+                - host
+                - builtin
+                - replacesBuiltin
+                - version
+                - documents
+                - terms
+                - statements
+            type: object
+        TargetDocument:
+            additionalProperties: false
+            description: One of an entry's documents, named by the SHA-256 digest of its text.
+            properties:
+                name:
+                    description: The document's name in its entry.
+                    type: string
+                kind:
+                    description: What the document describes the host in.
+                    enum:
+                        - openapi
+                        - graphql
+                        - prose
+                    type: string
+                url:
+                    description: Where the text is fetched from, pinned to a version; absent for text the server holds.
+                    type: string
+                sha256:
+                    description: The hex SHA-256 digest of the text.
+                    type: string
+            required:
+                - name
+                - kind
+                - sha256
+            type: object
+        TargetTerm:
+            additionalProperties: false
+            description: A word a host offers for a statement, and what it means.
+            properties:
+                word:
+                    type: string
+                kind:
+                    description: The statement slot the word fills -- an action, or a type of resource, parent or scope.
+                    enum:
+                        - action
+                        - type
+                    type: string
+                definition:
+                    type: string
+            required:
+                - word
+                - kind
+                - definition
+            type: object
+        TargetStatementShape:
+            additionalProperties: false
+            description: A statement the host is known to support, with its names as parameters -- create on issue in repository -- and the documented operations it covers.
+            properties:
+                action:
+                    type: string
+                resourceType:
+                    type: string
+                within:
+                    description: Parent types, outermost first.
+                    items:
+                        type: string
+                    type: array
+                scopeType:
+                    type: string
+                scopeWithin:
+                    description: The types the scope sits in, outermost first.
+                    items:
+                        type: string
+                    type: array
+                operations:
+                    description: The documented operations the shape covers, as its documents name them.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - action
+                - resourceType
+                - scopeType
+                - operations
+            type: object
+        PutProjectTargetBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PutProjectTargetBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                documents:
+                    items:
+                        $ref: '#/components/schemas/PutTargetDocument'
+                    type: array
+                terms:
+                    items:
+                        $ref: '#/components/schemas/TargetTerm'
+                    type: array
+                statements:
+                    items:
+                        $ref: '#/components/schemas/TargetStatementShape'
+                    type: array
+            type: object
+        PutTargetDocument:
+            additionalProperties: false
+            description: A document for a project's entry -- its text, or an https URL pinned to a version with the digest of what it answers.
+            properties:
+                name:
+                    description: The document's name in its entry -- lowercase letters, digits, '.', '_' and '-'.
+                    type: string
+                kind:
+                    enum:
+                        - openapi
+                        - graphql
+                        - prose
+                    type: string
+                url:
+                    description: Where the server fetches the text from. Requires sha256.
+                    type: string
+                sha256:
+                    description: The hex SHA-256 digest of the text. Required with url; checked when text is given.
+                    type: string
+                text:
+                    description: The text itself, which the server stores.
+                    type: string
+            required:
+                - name
+                - kind
+            type: object
+        LookupProjectTargetBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/LookupProjectTargetBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                host:
+                    description: The host the statement is for; the narrowest entry that covers it answers.
+                    type: string
+                statement:
+                    $ref: '#/components/schemas/AccessPolicyStatement'
+            required:
+                - host
+                - statement
+            type: object
+        TargetLookup:
+            additionalProperties: false
+            description: What an entry knows of one statement. An action in missing has no known shape -- its enforcement is for the documents to show.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/TargetLookup.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                host:
+                    description: The host of the entry that answered.
+                    type: string
+                version:
+                    description: The version of the entry that answered.
+                    type: string
+                matches:
+                    items:
+                        $ref: '#/components/schemas/TargetLookupMatch'
+                    type: array
+                missing:
+                    description: The statement's actions no known shape fits.
+                    items:
+                        type: string
+                    type: array
+                documents:
+                    description: The entry's documents, when an action is missing.
+                    items:
+                        $ref: '#/components/schemas/TargetDocument'
+                    type: array
+            required:
+                - host
+                - version
+                - matches
+                - missing
+                - documents
+            type: object
+        TargetLookupMatch:
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                shapes:
+                    items:
+                        $ref: '#/components/schemas/TargetStatementShape'
+                    type: array
+            required:
+                - action
+                - shapes
+            type: object
         CreateSSHKeyBody:
             additionalProperties: false
             properties:
@@ -13856,6 +14117,216 @@ paths:
             summary: Revoke an SSH key
             tags:
                 - SSHKeys
+    /projects/{projectId}/targets:
+        get:
+            operationId: list-project-targets
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListProjectTargetsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the target database as the project sees it -- the built-in entries and the project's own, which replace a built-in for the same host
+            tags:
+                - Targets
+    /projects/{projectId}/targets/{host}:
+        delete:
+            operationId: delete-project-target
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: The host the entry describes
+                  in: path
+                  name: host
+                  required: true
+                  schema:
+                    description: The host the entry describes
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Remove the project's own entry for a host; a built-in entry for it answers again
+            tags:
+                - Targets
+        get:
+            operationId: get-project-target
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: The host the entry describes
+                  in: path
+                  name: host
+                  required: true
+                  schema:
+                    description: The host the entry describes
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TargetEntry'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get the project's entry for exactly this host, its own or the built-in
+            tags:
+                - Targets
+        put:
+            operationId: put-project-target
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: The host the entry describes
+                  in: path
+                  name: host
+                  required: true
+                  schema:
+                    description: The host the entry describes
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PutProjectTargetBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TargetEntry'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Add the project's own entry for a host, or replace it; one for a host with a built-in entry replaces the built-in for this project
+            tags:
+                - Targets
+    /projects/{projectId}/targets/{host}/documents/{documentName}:
+        get:
+            operationId: get-project-target-document
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: The host the entry describes
+                  in: path
+                  name: host
+                  required: true
+                  schema:
+                    description: The host the entry describes
+                    type: string
+                - description: The document's name in its entry
+                  in: path
+                  name: documentName
+                  required: true
+                  schema:
+                    description: The document's name in its entry
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/octet-stream:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The document's text, checked against its digest.
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Read one of an entry's documents, fetching it from its URL first if the server has no copy
+            tags:
+                - Targets
+    /projects/{projectId}/target-lookup:
+        post:
+            operationId: lookup-project-target
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/LookupProjectTargetBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TargetLookup'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Find the known statement shapes of a statement in the entry that describes a host, and the documents to read for its actions that have none
+            tags:
+                - Targets
     /projects/{projectId}/approval-requests:
         get:
             operationId: list-approval-requests

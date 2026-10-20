@@ -126,9 +126,9 @@ func IsDefaultAction(action string) bool {
 	return false
 }
 
-// isReserved reports whether word means one thing everywhere, so a policy can
+// IsReserved reports whether word means one thing everywhere, so a policy can
 // neither need nor give it a definition.
-func isReserved(word string) bool {
+func IsReserved(word string) bool {
 	return IsDefaultAction(word) || word == Anything || word == Anywhere
 }
 
@@ -158,7 +158,7 @@ func (p Policy) Validate() error {
 
 	for _, word := range sortedKeys(p.Definitions) {
 		switch definition := p.Definitions[word]; {
-		case isReserved(word):
+		case IsReserved(word):
 			fail("%q means one thing everywhere and cannot be given a definition", word)
 		case !used[word]:
 			fail("%q is defined but no statement uses it", word)
@@ -166,14 +166,14 @@ func (p Policy) Validate() error {
 			fail("the definition of %q is empty", word)
 		case len(definition) > MaxTextBytes:
 			fail("the definition of %q is longer than %d bytes", word, MaxTextBytes)
-		case hasControl(definition):
+		case HasControl(definition):
 			fail("the definition of %q has a control character", word)
 		}
 	}
 	for _, word := range sortedKeys(used) {
 		// A word already refused needs no definition; asking for one would
 		// teach the wrong fix.
-		if !isReserved(word) && checkWord(word) == nil && checkSentenceWord(word) == nil {
+		if !IsReserved(word) && CheckWord(word) == nil && CheckSentenceWord(word) == nil {
 			if _, ok := p.Definitions[word]; !ok {
 				if strings.Contains(word, " ") {
 					fail("%q is not a default word and has no definition; if its last word is a name, quote it: a name is quoted or a variable", word)
@@ -192,6 +192,13 @@ func (p Policy) Validate() error {
 	return errors.Join(errs...)
 }
 
+// Validate reports every way s alone is not a statement, joined, or nil:
+// everything Policy.Validate checks of a statement except that its words have
+// definitions, which are its policy's to give.
+func (s Statement) Validate() error {
+	return errors.Join(s.validate(map[string]bool{})...)
+}
+
 // validate reports what is wrong with s, and adds each vocabulary word it uses
 // to used.
 func (s Statement) validate(used map[string]bool) []error {
@@ -203,9 +210,9 @@ func (s Statement) validate(used map[string]bool) []error {
 		if w != "" {
 			used[w] = true
 		}
-		if err := checkWord(w); err != nil {
+		if err := CheckWord(w); err != nil {
 			fail("%s: %w", what, err)
-		} else if err := checkSentenceWord(w); err != nil {
+		} else if err := CheckSentenceWord(w); err != nil {
 			fail("%s: %w", what, err)
 		}
 	}
@@ -294,7 +301,7 @@ func (s Statement) validate(used map[string]bool) []error {
 			fail("%s is empty; leave it out to state no condition", c.what)
 		case len(*c.text) > MaxTextBytes:
 			fail("%s is longer than %d bytes", c.what, MaxTextBytes)
-		case hasControl(*c.text):
+		case HasControl(*c.text):
 			fail("%s has a control character", c.what)
 		}
 	}
@@ -319,9 +326,9 @@ func (r Resource) validate(word func(what, w string)) []error {
 	return errs
 }
 
-// checkWord reports whether w can be an action or a type: printable, trimmed,
+// CheckWord reports whether w can be an action or a type: printable, trimmed,
 // and short.
-func checkWord(w string) error {
+func CheckWord(w string) error {
 	switch {
 	case w == "":
 		return errors.New("empty")
@@ -332,16 +339,16 @@ func checkWord(w string) error {
 	case strings.HasPrefix(w, "$"):
 		return fmt.Errorf("%q is a variable, not a word", w)
 	}
-	if hasControl(w) {
+	if HasControl(w) {
 		return fmt.Errorf("%q has a control character", w)
 	}
 	return nil
 }
 
-// hasControl reports whether text holds a control character. Every word and
+// HasControl reports whether text holds a control character. Every word and
 // text in a policy is shown to the person approving it, and one that can move
 // a terminal's cursor can hide what they approve.
-func hasControl(text string) bool {
+func HasControl(text string) bool {
 	for _, r := range text {
 		if r < ' ' || r == 0x7f || (r >= 0x80 && r < 0xa0) {
 			return true
@@ -359,7 +366,7 @@ func checkName(name string) error {
 		}
 		return nil
 	}
-	if err := checkWord(name); err != nil {
+	if err := CheckWord(name); err != nil {
 		return err
 	}
 	if strings.Contains(name, "$") {

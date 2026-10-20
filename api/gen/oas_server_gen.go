@@ -260,6 +260,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/skills-sources/{skillsSourceId}
 	DeleteProjectSkillsSource(ctx context.Context, params DeleteProjectSkillsSourceParams) (DeleteProjectSkillsSourceRes, error)
+	// DeleteProjectTarget implements delete-project-target operation.
+	//
+	// Remove the project's own entry for a host; a built-in entry for it answers again.
+	//
+	// DELETE /projects/{projectId}/targets/{host}
+	DeleteProjectTarget(ctx context.Context, params DeleteProjectTargetParams) (DeleteProjectTargetRes, error)
 	// DeleteSSHKey implements delete-ssh-key operation.
 	//
 	// Revoke an SSH key.
@@ -360,6 +366,18 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/gateways/{gatewayName}
 	GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (GetProjectGatewayRes, error)
+	// GetProjectTarget implements get-project-target operation.
+	//
+	// Get the project's entry for exactly this host, its own or the built-in.
+	//
+	// GET /projects/{projectId}/targets/{host}
+	GetProjectTarget(ctx context.Context, params GetProjectTargetParams) (GetProjectTargetRes, error)
+	// GetProjectTargetDocument implements get-project-target-document operation.
+	//
+	// Read one of an entry's documents, fetching it from its URL first if the server has no copy.
+	//
+	// GET /projects/{projectId}/targets/{host}/documents/{documentName}
+	GetProjectTargetDocument(ctx context.Context, params GetProjectTargetDocumentParams) (GetProjectTargetDocumentRes, error)
 	// GetSSHIngress implements get-ssh-ingress operation.
 	//
 	// Discover this server's SSH ingress endpoint and host key.
@@ -624,6 +642,13 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/skills-sources
 	ListProjectSkillsSources(ctx context.Context, params ListProjectSkillsSourcesParams) (ListProjectSkillsSourcesRes, error)
+	// ListProjectTargets implements list-project-targets operation.
+	//
+	// List the target database as the project sees it -- the built-in entries and the project's own,
+	// which replace a built-in for the same host.
+	//
+	// GET /projects/{projectId}/targets
+	ListProjectTargets(ctx context.Context, params ListProjectTargetsParams) (ListProjectTargetsRes, error)
 	// ListProjects implements list-projects operation.
 	//
 	// List projects.
@@ -751,6 +776,13 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/trust-requests
 	ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error)
+	// LookupProjectTarget implements lookup-project-target operation.
+	//
+	// Find the known statement shapes of a statement in the entry that describes a host, and the
+	// documents to read for its actions that have none.
+	//
+	// POST /projects/{projectId}/target-lookup
+	LookupProjectTarget(ctx context.Context, req *LookupProjectTargetBody, params LookupProjectTargetParams) (LookupProjectTargetRes, error)
 	// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
@@ -804,6 +836,13 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/gateways/{gatewayName}
 	PutProjectGateway(ctx context.Context, req *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error)
+	// PutProjectTarget implements put-project-target operation.
+	//
+	// Add the project's own entry for a host, or replace it; one for a host with a built-in entry
+	// replaces the built-in for this project.
+	//
+	// PUT /projects/{projectId}/targets/{host}
+	PutProjectTarget(ctx context.Context, req *PutProjectTargetBody, params PutProjectTargetParams) (PutProjectTargetRes, error)
 	// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
 	//
 	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox

@@ -929,12 +929,15 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/sandboxes` | Sandbox API service behavior, intent writes, the sandbox reconciler, agent observation ingest, and sandbox provider catalog helpers. |
 | `internal/resources/pools` | Pool resource API, the pool-agent surface (registration, status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
+| `internal/resources/targets` | The target database as a project sees it: built-in entries and a project's own, their documents fetched by digest into the cache directory, and the lookup of a statement's known shapes (ADR 26-10-20-782 §6). |
 | `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, approval rules and the reconciler that tests them against pending requests (ADR 26-10-12-330), sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/resources/peers` | Enrolled iroh peers (ADR 0095): the managed half of peer admission. |
 | `internal/resources/skillssources` | A project's skills repositories, which the creating client copies into every create; the server validates and keeps the list and never adds it to a create itself (ADR 26-10-14-894). |
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |
 | `internal/resources/gateways` | A project's gateways, which every discobox of the project is routed through by its pool's proxy, and the server environment values their headers take (ADR 26-10-16-470). |
 | `internal/harnessdefs` | Seed data for the built-in harness images and the dev image env overrides. |
+| `internal/targetdb` | The target database's contract: an entry keyed by a host it covers, its documents by digest, terms and statement shapes; validation, the version a decision records, and lookup. |
+| `internal/publicnet` | The server's requests to a URL somebody else wrote reach only public addresses: an exchange recipe's endpoint, a target document. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
@@ -983,6 +986,8 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/projects` | [`internal/resources/projects/DESIGN.md`](internal/resources/projects/DESIGN.md) |
 | `internal/resources/sandboxes` | [`internal/resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md) |
 | `internal/resources/secrets` | [`internal/resources/secrets/DESIGN.md`](internal/resources/secrets/DESIGN.md) |
+| `internal/resources/targets` | [`internal/resources/targets/DESIGN.md`](internal/resources/targets/DESIGN.md) |
+| `internal/targetdb` | [`internal/targetdb/DESIGN.md`](internal/targetdb/DESIGN.md) |
 | `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |

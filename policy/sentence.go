@@ -130,13 +130,13 @@ func formatName(name string) string {
 	return strconv.QuoteToASCII(name)
 }
 
-// checkSentenceWord reports whether w, an action or a type, can be written
+// CheckSentenceWord reports whether w, an action or a type, can be written
 // in a sentence and read back as itself, and reads as what it is: printable
 // ASCII words, one space apart, none of them a keyword. Format writes a word
 // as it is, so a rune outside ASCII could look like a space, a quote or a
 // variable and let a sentence read narrower than its statement; there is no
 // list of such runes to refuse, only a set of safe ones to allow.
-func checkSentenceWord(w string) error {
+func CheckSentenceWord(w string) error {
 	for i := 0; i < len(w); i++ {
 		switch c := w[i]; {
 		case c < ' ' || c > '~':

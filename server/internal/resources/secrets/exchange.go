@@ -6,19 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/publicnet"
 )
 
 // This file is the exchange secret's half of renewal (ADR 26-10-08-452): the
@@ -41,10 +39,10 @@ func exchangeToken(ctx context.Context, secret *model.Secret, val *model.SecretV
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseInternalTarget(ctx, req.URL.Hostname()); err != nil {
-		return nil, err
+	if err := publicnet.RefuseHost(ctx, req.URL.Hostname()); err != nil {
+		return nil, fmt.Errorf("%w: an exchange is only sent to a public endpoint", err)
 	}
-	resp, err := exchangeClient(req.URL).Do(req)
+	resp, err := publicnet.Client(tokenHTTPClient, req.URL, tokenRenewTimeout).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("exchange request: %w", err)
 	}
@@ -110,87 +108,13 @@ func exchangeRecipe(ctx context.Context, secretType, host string, given apigen.O
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	if u, err := url.Parse(recipe.URL); err == nil {
-		if err := refuseInternalTarget(ctx, u.Hostname()); err != nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		// A recipe is somebody's to write, and the server POSTing where they
+		// cannot, then reading them the answer, is a reach they never had.
+		if err := publicnet.RefuseHost(ctx, u.Hostname()); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error()+": an exchange is only sent to a public endpoint")
 		}
 	}
 	return recipe, nil
-}
-
-// internalAddress reports whether an exchange may not be sent to ip: one only
-// the control plane's own network position reaches — loopback, private,
-// carrier-grade NAT, link-local, unspecified, or multicast. A recipe is
-// somebody's to write, and the server POSTing where they cannot, then reading
-// them the answer, is a reach they never had. It is a package var so tests can
-// exchange against an httptest server on loopback.
-var internalAddress = func(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || sharedAddressSpace.Contains(ip)
-}
-
-// sharedAddressSpace is RFC 6598's carrier-grade NAT range, which netip does
-// not count as private and which cloud providers use internally.
-var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
-
-// refuseInternalTarget refuses a host that is, or resolves to, an internal
-// address. Resolving here catches a name pointed inward when a proxy does the
-// dialing; exchangeClient checks the address it actually dials, so a name
-// that answers differently a second time is caught too.
-func refuseInternalTarget(ctx context.Context, host string) error {
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-	if err != nil {
-		return fmt.Errorf("resolve %s: %w", host, err)
-	}
-	for _, ip := range ips {
-		if internalAddress(ip) {
-			what := host
-			if ip.Unmap().String() != host {
-				what = host + " resolves to " + ip.Unmap().String() + ", which"
-			}
-			return fmt.Errorf("%s is an internal address: an exchange is only sent to a public endpoint", what)
-		}
-	}
-	return nil
-}
-
-// exchangeClient is tokenHTTPClient whose dial to target itself checks the
-// address it connects to. A dial to anything else is the configured proxy,
-// which may well sit on loopback, and is left alone.
-func exchangeClient(target *url.URL) *http.Client {
-	base, _ := tokenHTTPClient.Transport.(*http.Transport)
-	if base == nil {
-		base, _ = http.DefaultTransport.(*http.Transport)
-	}
-	transport := base.Clone()
-	port := target.Port()
-	if port == "" {
-		port = "443"
-	}
-	authority := net.JoinHostPort(target.Hostname(), port)
-	plain := transport.DialContext
-	if plain == nil {
-		plain = (&net.Dialer{Timeout: tokenRenewTimeout}).DialContext
-	}
-	checked := &net.Dialer{Timeout: tokenRenewTimeout, Control: func(_, address string, _ syscall.RawConn) error {
-		addrPort, err := netip.ParseAddrPort(address)
-		if err != nil {
-			return err
-		}
-		if internalAddress(addrPort.Addr()) {
-			return fmt.Errorf("%s resolved to %s, an internal address: an exchange is only sent to a public endpoint", target.Hostname(), addrPort.Addr().Unmap())
-		}
-		return nil
-	}}
-	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if addr == authority {
-			return checked.DialContext(ctx, network, addr)
-		}
-		return plain(ctx, network, addr)
-	}
-	client := *tokenHTTPClient
-	client.Transport = transport
-	return &client
 }
 
 // firstExchange is the value an exchange secret is stored with: the fields

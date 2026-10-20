@@ -2186,5 +2186,7 @@ func AllModels() []any {
 		&HostTrustRequest{},
 		&HostTrust{},
 		&ApprovalRule{},
+		&TargetEntry{},
+		&TargetDocumentText{},
 	}
 }

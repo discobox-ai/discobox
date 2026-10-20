@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	"github.com/discobox-ai/discobox/server/internal/resources/skillssources"
 	"github.com/discobox-ai/discobox/server/internal/resources/sshkeys"
+	"github.com/discobox-ai/discobox/server/internal/resources/targets"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -49,6 +50,7 @@ type Service struct {
 	services.HostTrustService
 	services.SSHKeyService
 	services.SkillsSourceService
+	services.TargetService
 	services.GatewayService
 	services.PeerService
 
@@ -90,6 +92,9 @@ type Options struct {
 	// OverlayDir is the one directory a harness's file:// manifest reference
 	// may name a file in. Empty refuses every such reference.
 	OverlayDir string
+	// TargetDocumentDir is where target documents fetched from their URLs
+	// are kept. Empty fetches none.
+	TargetDocumentDir string
 	// ArchiveRetention is the server-wide default an archived sandbox is kept
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
@@ -177,6 +182,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		HostTrustService:               secretService,
 		SSHKeyService:                  sshkeys.NewService(store),
 		SkillsSourceService:            skillssources.NewService(store),
+		TargetService:                  targets.NewService(store, options.TargetDocumentDir),
 		GatewayService:                 gateways.NewService(store, sandboxService),
 		PeerService:                    peers.NewService(store),
 

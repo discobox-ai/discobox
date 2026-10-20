@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/netip"
 	"testing"
+
+	"github.com/discobox-ai/discobox/server/internal/publicnet"
 )
 
 // SetTokenHTTPClient makes renewals and exchanges through client's transport
@@ -23,9 +25,9 @@ func SetTokenHTTPClient(t testing.TB, client *http.Client) {
 // length of a test, whose token server listens on loopback.
 func AllowInternalExchangeTargets(t testing.TB) {
 	t.Helper()
-	previous := internalAddress
-	internalAddress = func(netip.Addr) bool { return false }
-	t.Cleanup(func() { internalAddress = previous })
+	previous := publicnet.Internal
+	publicnet.Internal = func(netip.Addr) bool { return false }
+	t.Cleanup(func() { publicnet.Internal = previous })
 }
 
 // RuleTestable is whether an approval rule may answer a request at all.
