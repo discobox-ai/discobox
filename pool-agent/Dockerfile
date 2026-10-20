@@ -23,6 +23,7 @@ COPY hostscope ./hostscope
 COPY judge ./judge
 COPY layout ./layout
 COPY platform ./platform
+COPY policy ./policy
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

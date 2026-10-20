@@ -8,7 +8,8 @@ certificate the sandbox's egress refuses to be trusted for it. A third,
 [audit](#audit--what-became-of-my-requests), reads back what the egress did
 with the sandbox's own requests.
 
-The protocol knows nothing about Discobox. It is the contract between the
+The protocol knows nothing about Discobox but the shape of a policy an ask
+may carry (below), which is the root `policy` package's. It is the contract between the
 in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
 works against Discobox's sandbox-agent and against any other implementation.
 
@@ -173,6 +174,15 @@ be asked for at `githubcopilot.com` by naming it. Discobox's registry is the roo
   "uses": [{ "description": "Open a pull request against the current repository" }]
 }
 ```
+
+An ask may also carry a `policy` beside its `uses`: statements of actions on
+resources in scopes, with a definition for every word that is not a default
+([ADR 26-10-20-782](adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
+§1; the shape is the root `policy` package). An implementation refuses one
+that does not validate as `invalid`. The granted status and `list` carry the
+approved policy, with `resolved` holding what each variable — `$this`,
+`$primary.repo` and the rest — resolved to for the calling sandbox. Discobox
+judges nothing by a policy yet; `uses` are still what `get` takes.
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls. A project may hold approval

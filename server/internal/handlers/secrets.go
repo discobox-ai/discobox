@@ -245,6 +245,11 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 			item.SetExpiresAt(serverapi.NewOptDateTime(*credential.Grant.ExpiresAt))
 		}
 		item.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(credential.Grant.Uses)))
+		policy, err := services.APIPolicy(credential.Grant.Policy)
+		if err != nil {
+			return apiError(err), nil
+		}
+		item.SetPolicy(policy)
 		if len(credential.SecretRoutes) > 0 {
 			item.SetSecretRoutes(serverapi.NewOptNilSecretRouteArray(apiSecretRoutes(credential.SecretRoutes)))
 		}
@@ -262,7 +267,7 @@ func (h *Handler) CreateSandboxCredentialRequest(ctx context.Context, req *apimo
 	if err != nil {
 		return apiError(err), nil
 	}
-	return agentCredentialRequestStatus(result, nil), nil
+	return agentCredentialRequestStatus(result, nil)
 }
 
 func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params serverapi.GetSandboxCredentialRequestParams) (serverapi.GetSandboxCredentialRequestRes, error) {
@@ -274,7 +279,7 @@ func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params server
 	if err != nil {
 		return apiError(err), nil
 	}
-	return agentCredentialRequestStatus(result, grant), nil
+	return agentCredentialRequestStatus(result, grant)
 }
 
 // credentialBrokerPrincipal authorizes an agent credentials broker call. The
@@ -292,7 +297,7 @@ func credentialBrokerPrincipal(ctx context.Context) (auth.Principal, error) {
 	return principal, nil
 }
 
-func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) *apimodel.SandboxCredentialRequestStatus {
+func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) (*apimodel.SandboxCredentialRequestStatus, error) {
 	// An empty purpose asks to use, as it does everywhere a purpose is read.
 	purpose := req.Purpose
 	if purpose == "" {
@@ -305,11 +310,16 @@ func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 	}
 	if grant != nil {
 		resp.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(grant.Uses)))
+		policy, err := services.APIPolicy(grant.Policy)
+		if err != nil {
+			return nil, err
+		}
+		resp.SetPolicy(policy)
 		if grant.ExpiresAt != nil {
 			resp.SetExpiresAt(serverapi.NewOptDateTime(*grant.ExpiresAt))
 		}
 	}
-	return resp
+	return resp, nil
 }
 
 func apiSecretUses(uses []model.SecretUse) []apimodel.SecretUse {

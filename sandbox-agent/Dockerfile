@@ -25,6 +25,7 @@ COPY harness ./harness
 COPY hostscope ./hostscope
 COPY judge ./judge
 COPY platform ./platform
+COPY policy ./policy
 COPY programstatus ./programstatus
 COPY provisionspec ./provisionspec
 COPY proxy ./proxy
@@ -132,6 +133,7 @@ COPY hostscope ./hostscope
 COPY imagecache ./imagecache
 COPY internal ./internal
 COPY platform ./platform
+COPY policy ./policy
 COPY programstatus ./programstatus
 COPY randomname ./randomname
 COPY releasemanifest ./releasemanifest

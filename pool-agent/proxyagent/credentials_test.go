@@ -6,12 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -307,5 +309,35 @@ func TestRequestStatusCarriesTheGrantedLifetime(t *testing.T) {
 	forever := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Uses: uses}.protocol()
 	if got := forever.Uses[0].ExpiresAt; got != nil {
 		t.Fatalf("expiresAt = %v on a grant that never expires, want none", got)
+	}
+}
+
+// A policy an agent asks for reaches the control plane as sent, and the one
+// approved reaches the sandbox on the status it polls (ADR 26-10-20-782).
+func TestRequestRelaysThePolicyBothWays(t *testing.T) {
+	asked := &policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}},
+		Definitions: map[string]string{"issue": "A GitHub issue.", "repository": "A GitHub repository."},
+	}
+	broker, fake := newFakeControlPlane(t, nil)
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: broker, activations: newActivations()}
+	if _, err := b.Request(context.Background(), agentcreds.RequestBody{
+		Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"},
+		Uses: []agentcreds.RequestedUse{{Description: "read issues"}}, Policy: asked,
+	}); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if len(fake.requests) != 1 || !reflect.DeepEqual(fake.requests[0].Policy, asked) {
+		t.Fatalf("relayed = %+v, want the policy as sent", fake.requests)
+	}
+
+	approved := *asked
+	approved.Resolved = map[string]string{policy.VarPrimaryRepo: "acme/web"}
+	status := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Policy: &approved}.protocol()
+	if !reflect.DeepEqual(status.Policy, &approved) {
+		t.Fatalf("status policy = %+v, want the approved one", status.Policy)
 	}
 }

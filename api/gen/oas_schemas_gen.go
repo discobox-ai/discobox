@@ -11,6 +11,318 @@ import (
 	"github.com/go-faster/jx"
 )
 
+// What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for
+// every word they use that is not a default, and, once approved, the value each variable resolved to
+// for the discobox the grant is for. A request is allowed when every part of it matches some allow
+// and no part matches any deny; order never matters.
+// Ref: #/components/schemas/AccessPolicy
+type AccessPolicy struct {
+	// The statements, in no meaningful order.
+	Statements []AccessPolicyStatement `json:"statements"`
+	// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
+	// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
+	// one.
+	Definitions OptAccessPolicyDefinitions `json:"definitions"`
+	// The value each variable the statements use resolved to at approval, for the discobox the grant is
+	// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
+	// grant is minted; ignored on input.
+	Resolved OptAccessPolicyResolved `json:"resolved"`
+}
+
+// GetStatements returns the value of Statements.
+func (s *AccessPolicy) GetStatements() []AccessPolicyStatement {
+	return s.Statements
+}
+
+// GetDefinitions returns the value of Definitions.
+func (s *AccessPolicy) GetDefinitions() OptAccessPolicyDefinitions {
+	return s.Definitions
+}
+
+// GetResolved returns the value of Resolved.
+func (s *AccessPolicy) GetResolved() OptAccessPolicyResolved {
+	return s.Resolved
+}
+
+// SetStatements sets the value of Statements.
+func (s *AccessPolicy) SetStatements(val []AccessPolicyStatement) {
+	s.Statements = val
+}
+
+// SetDefinitions sets the value of Definitions.
+func (s *AccessPolicy) SetDefinitions(val OptAccessPolicyDefinitions) {
+	s.Definitions = val
+}
+
+// SetResolved sets the value of Resolved.
+func (s *AccessPolicy) SetResolved(val OptAccessPolicyResolved) {
+	s.Resolved = val
+}
+
+// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
+// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
+// one.
+type AccessPolicyDefinitions map[string]string
+
+func (s *AccessPolicyDefinitions) init() AccessPolicyDefinitions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The value each variable the statements use resolved to at approval, for the discobox the grant is
+// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
+// grant is minted; ignored on input.
+type AccessPolicyResolved map[string]string
+
+func (s *AccessPolicyResolved) init() AccessPolicyResolved {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// A resource a statement's resource or scope sits in.
+// Ref: #/components/schemas/AccessPolicyResource
+type AccessPolicyResource struct {
+	Type string `json:"type"`
+	// A literal, a glob, or a variable; null is any name.
+	Name OptNilString `json:"name"`
+	// $this, or empty.
+	CreatedBy OptString `json:"createdBy"`
+}
+
+// GetType returns the value of Type.
+func (s *AccessPolicyResource) GetType() string {
+	return s.Type
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyResource) GetName() OptNilString {
+	return s.Name
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *AccessPolicyResource) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// SetType sets the value of Type.
+func (s *AccessPolicyResource) SetType(val string) {
+	s.Type = val
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyResource) SetName(val OptNilString) {
+	s.Name = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *AccessPolicyResource) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.
+// host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or
+// anywhere, which only a deny may use.
+// Ref: #/components/schemas/AccessPolicyScope
+type AccessPolicyScope struct {
+	Type string `json:"type"`
+	// A literal, a glob, or a variable. Empty only for anywhere.
+	Name OptString `json:"name"`
+	// The scopes this one sits in, outermost first.
+	Within []AccessPolicyResource `json:"within"`
+}
+
+// GetType returns the value of Type.
+func (s *AccessPolicyScope) GetType() string {
+	return s.Type
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyScope) GetName() OptString {
+	return s.Name
+}
+
+// GetWithin returns the value of Within.
+func (s *AccessPolicyScope) GetWithin() []AccessPolicyResource {
+	return s.Within
+}
+
+// SetType sets the value of Type.
+func (s *AccessPolicyScope) SetType(val string) {
+	s.Type = val
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyScope) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetWithin sets the value of Within.
+func (s *AccessPolicyScope) SetWithin(val []AccessPolicyResource) {
+	s.Within = val
+}
+
+// <allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when
+// <condition>] [unless <condition>].
+// Ref: #/components/schemas/AccessPolicyStatement
+type AccessPolicyStatement struct {
+	Effect AccessPolicyStatementEffect `json:"effect"`
+	// Action words. read, create, update, delete and manage (every action on the type) are defaults; any
+	// other word has a definition.
+	Actions []string `json:"actions"`
+	// The resource type, or anything for every type in the scope.
+	ResourceType string `json:"resourceType"`
+	// A literal, a glob, or a variable; null is any name.
+	Name OptNilString `json:"name"`
+	// $this limits the statement to resources the discobox it is bound to created.
+	CreatedBy OptString `json:"createdBy"`
+	// The resources this one sits in, outermost first, short of the scope.
+	Within []AccessPolicyResource `json:"within"`
+	Scope  AccessPolicyScope      `json:"scope"`
+	// A condition a request can be checked against, which must hold. null is none.
+	When OptNilString `json:"when"`
+	// A condition a request can be checked against, which must not hold. null is none.
+	Unless OptNilString `json:"unless"`
+}
+
+// GetEffect returns the value of Effect.
+func (s *AccessPolicyStatement) GetEffect() AccessPolicyStatementEffect {
+	return s.Effect
+}
+
+// GetActions returns the value of Actions.
+func (s *AccessPolicyStatement) GetActions() []string {
+	return s.Actions
+}
+
+// GetResourceType returns the value of ResourceType.
+func (s *AccessPolicyStatement) GetResourceType() string {
+	return s.ResourceType
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyStatement) GetName() OptNilString {
+	return s.Name
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *AccessPolicyStatement) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetWithin returns the value of Within.
+func (s *AccessPolicyStatement) GetWithin() []AccessPolicyResource {
+	return s.Within
+}
+
+// GetScope returns the value of Scope.
+func (s *AccessPolicyStatement) GetScope() AccessPolicyScope {
+	return s.Scope
+}
+
+// GetWhen returns the value of When.
+func (s *AccessPolicyStatement) GetWhen() OptNilString {
+	return s.When
+}
+
+// GetUnless returns the value of Unless.
+func (s *AccessPolicyStatement) GetUnless() OptNilString {
+	return s.Unless
+}
+
+// SetEffect sets the value of Effect.
+func (s *AccessPolicyStatement) SetEffect(val AccessPolicyStatementEffect) {
+	s.Effect = val
+}
+
+// SetActions sets the value of Actions.
+func (s *AccessPolicyStatement) SetActions(val []string) {
+	s.Actions = val
+}
+
+// SetResourceType sets the value of ResourceType.
+func (s *AccessPolicyStatement) SetResourceType(val string) {
+	s.ResourceType = val
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyStatement) SetName(val OptNilString) {
+	s.Name = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *AccessPolicyStatement) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetWithin sets the value of Within.
+func (s *AccessPolicyStatement) SetWithin(val []AccessPolicyResource) {
+	s.Within = val
+}
+
+// SetScope sets the value of Scope.
+func (s *AccessPolicyStatement) SetScope(val AccessPolicyScope) {
+	s.Scope = val
+}
+
+// SetWhen sets the value of When.
+func (s *AccessPolicyStatement) SetWhen(val OptNilString) {
+	s.When = val
+}
+
+// SetUnless sets the value of Unless.
+func (s *AccessPolicyStatement) SetUnless(val OptNilString) {
+	s.Unless = val
+}
+
+type AccessPolicyStatementEffect string
+
+const (
+	AccessPolicyStatementEffectAllow AccessPolicyStatementEffect = "allow"
+	AccessPolicyStatementEffectDeny  AccessPolicyStatementEffect = "deny"
+)
+
+// AllValues returns all AccessPolicyStatementEffect values.
+func (AccessPolicyStatementEffect) AllValues() []AccessPolicyStatementEffect {
+	return []AccessPolicyStatementEffect{
+		AccessPolicyStatementEffectAllow,
+		AccessPolicyStatementEffectDeny,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AccessPolicyStatementEffect) MarshalText() ([]byte, error) {
+	switch s {
+	case AccessPolicyStatementEffectAllow:
+		return []byte(s), nil
+	case AccessPolicyStatementEffectDeny:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AccessPolicyStatementEffect) UnmarshalText(data []byte) error {
+	switch AccessPolicyStatementEffect(data) {
+	case AccessPolicyStatementEffectAllow:
+		*s = AccessPolicyStatementEffectAllow
+		return nil
+	case AccessPolicyStatementEffectDeny:
+		*s = AccessPolicyStatementEffectDeny
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Records one successful discobox apply of a source's commits into a host working tree.
 // Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
 // Ref: #/components/schemas/AppliedSourceCommit
@@ -442,6 +754,9 @@ type ApproveSecretRequestBody struct {
 	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// The policy to approve in place of the one the request asked for. Omitted, the request's own is
+	// approved. Its variables are resolved for the requesting discobox.
+	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -489,6 +804,11 @@ func (s *ApproveSecretRequestBody) GetUses() OptNilSecretUseArray {
 	return s.Uses
 }
 
+// GetPolicy returns the value of Policy.
+func (s *ApproveSecretRequestBody) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
 // SetSchema sets the value of Schema.
 func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -532,6 +852,11 @@ func (s *ApproveSecretRequestBody) SetSecretMaxGrantTTLSeconds(val OptInt64) {
 // SetUses sets the value of Uses.
 func (s *ApproveSecretRequestBody) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *ApproveSecretRequestBody) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
@@ -1692,6 +2017,8 @@ type CreateSandboxCredentialRequestBody struct {
 	SandboxId string `json:"sandboxId"`
 	// Uses the agent asks for.
 	Uses []SecretUse `json:"uses"`
+	// A policy the agent asks for, beside its uses (ADR 26-10-20-782).
+	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1744,6 +2071,11 @@ func (s *CreateSandboxCredentialRequestBody) GetUses() []SecretUse {
 	return s.Uses
 }
 
+// GetPolicy returns the value of Policy.
+func (s *CreateSandboxCredentialRequestBody) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxCredentialRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -1792,6 +2124,11 @@ func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
 // SetUses sets the value of Uses.
 func (s *CreateSandboxCredentialRequestBody) SetUses(val []SecretUse) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *CreateSandboxCredentialRequestBody) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // What the agent asks the credential for, one or the other and never both. use (the default) asks to
@@ -2465,6 +2802,9 @@ type CreateSecretGrantBody struct {
 	//  Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// A policy for the grant (ADR 26-10-20-782). Its variables resolve only for a grant scoped to one
+	// sandbox; a project or harness config grant may carry a policy that uses none.
+	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do, one or the other and never both. use (the default)
 	// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
 	// authorizes nothing it sends itself; sandbox scope, with uses, only.
@@ -2511,6 +2851,11 @@ func (s *CreateSecretGrantBody) GetUses() OptNilSecretUseArray {
 	return s.Uses
 }
 
+// GetPolicy returns the value of Policy.
+func (s *CreateSecretGrantBody) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
 // GetPurpose returns the value of Purpose.
 func (s *CreateSecretGrantBody) GetPurpose() OptCreateSecretGrantBodyPurpose {
 	return s.Purpose
@@ -2554,6 +2899,11 @@ func (s *CreateSecretGrantBody) SetEnvVar(val OptString) {
 // SetUses sets the value of Uses.
 func (s *CreateSecretGrantBody) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *CreateSecretGrantBody) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // SetPurpose sets the value of Purpose.
@@ -9272,6 +9622,144 @@ func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
 }
 
+// NewOptAccessPolicy returns new OptAccessPolicy with value set to v.
+func NewOptAccessPolicy(v AccessPolicy) OptAccessPolicy {
+	return OptAccessPolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicy is optional AccessPolicy.
+type OptAccessPolicy struct {
+	Value AccessPolicy
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicy was set.
+func (o OptAccessPolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicy) Reset() {
+	var v AccessPolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicy) SetTo(v AccessPolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicy) Get() (v AccessPolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicy) Or(d AccessPolicy) AccessPolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAccessPolicyDefinitions returns new OptAccessPolicyDefinitions with value set to v.
+func NewOptAccessPolicyDefinitions(v AccessPolicyDefinitions) OptAccessPolicyDefinitions {
+	return OptAccessPolicyDefinitions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicyDefinitions is optional AccessPolicyDefinitions.
+type OptAccessPolicyDefinitions struct {
+	Value AccessPolicyDefinitions
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicyDefinitions was set.
+func (o OptAccessPolicyDefinitions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicyDefinitions) Reset() {
+	var v AccessPolicyDefinitions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicyDefinitions) SetTo(v AccessPolicyDefinitions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicyDefinitions) Get() (v AccessPolicyDefinitions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicyDefinitions) Or(d AccessPolicyDefinitions) AccessPolicyDefinitions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAccessPolicyResolved returns new OptAccessPolicyResolved with value set to v.
+func NewOptAccessPolicyResolved(v AccessPolicyResolved) OptAccessPolicyResolved {
+	return OptAccessPolicyResolved{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicyResolved is optional AccessPolicyResolved.
+type OptAccessPolicyResolved struct {
+	Value AccessPolicyResolved
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicyResolved was set.
+func (o OptAccessPolicyResolved) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicyResolved) Reset() {
+	var v AccessPolicyResolved
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicyResolved) SetTo(v AccessPolicyResolved) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicyResolved) Get() (v AccessPolicyResolved, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicyResolved) Or(d AccessPolicyResolved) AccessPolicyResolved {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
 	return OptApproveSecretRequestBodyScope{
@@ -13119,6 +13607,69 @@ func (o OptNilSecretUseArray) Get() (v []SecretUse, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSecretUseArray) Or(d []SecretUse) []SecretUse {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilString returns new OptNilString with value set to v.
+func NewOptNilString(v string) OptNilString {
+	return OptNilString{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilString is optional nullable string.
+type OptNilString struct {
+	Value string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilString was set.
+func (o OptNilString) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilString) Reset() {
+	var v string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilString) SetTo(v string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilString) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilString) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilString) Get() (v string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilString) Or(d string) string {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -24414,6 +24965,8 @@ type SandboxCredential struct {
 	Sentinel string `json:"sentinel"`
 	// Approved uses.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// The policy the grant carries, with its variables as resolved for this sandbox.
+	Policy OptAccessPolicy `json:"policy"`
 	// Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on
 	// one of them, as well as within the activation's approved use.
 	SecretRoutes OptNilSecretRouteArray `json:"secretRoutes"`
@@ -24462,6 +25015,11 @@ func (s *SandboxCredential) GetSentinel() string {
 // GetUses returns the value of Uses.
 func (s *SandboxCredential) GetUses() OptNilSecretUseArray {
 	return s.Uses
+}
+
+// GetPolicy returns the value of Policy.
+func (s *SandboxCredential) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // GetSecretRoutes returns the value of SecretRoutes.
@@ -24514,6 +25072,11 @@ func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
 }
 
+// SetPolicy sets the value of Policy.
+func (s *SandboxCredential) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
+}
+
 // SetSecretRoutes sets the value of SecretRoutes.
 func (s *SandboxCredential) SetSecretRoutes(val OptNilSecretRouteArray) {
 	s.SecretRoutes = val
@@ -24535,6 +25098,8 @@ type SandboxCredentialRequestStatus struct {
 	Status SandboxCredentialRequestStatusStatus `json:"status"`
 	// Approved uses; present once granted, and authoritative over the requested ones.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// The approved policy, once granted, with its variables as resolved for this sandbox.
+	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -24567,6 +25132,11 @@ func (s *SandboxCredentialRequestStatus) GetUses() OptNilSecretUseArray {
 	return s.Uses
 }
 
+// GetPolicy returns the value of Policy.
+func (s *SandboxCredentialRequestStatus) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
 // SetSchema sets the value of Schema.
 func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
@@ -24595,6 +25165,11 @@ func (s *SandboxCredentialRequestStatus) SetStatus(val SandboxCredentialRequestS
 // SetUses sets the value of Uses.
 func (s *SandboxCredentialRequestStatus) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *SandboxCredentialRequestStatus) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
@@ -25752,6 +26327,9 @@ type SandboxGrant struct {
 	Hosts []string `json:"hosts"`
 	// What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
 	Uses []SecretUse `json:"uses"`
+	// A policy for the grant (ADR 26-10-20-782). Its variables resolve for the sandbox being created,
+	// not the discobox creating it.
+	Policy OptAccessPolicy `json:"policy"`
 	// How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
 }
@@ -25779,6 +26357,11 @@ func (s *SandboxGrant) GetHosts() []string {
 // GetUses returns the value of Uses.
 func (s *SandboxGrant) GetUses() []SecretUse {
 	return s.Uses
+}
+
+// GetPolicy returns the value of Policy.
+func (s *SandboxGrant) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // GetGrantTTLSeconds returns the value of GrantTTLSeconds.
@@ -25809,6 +26392,11 @@ func (s *SandboxGrant) SetHosts(val []string) {
 // SetUses sets the value of Uses.
 func (s *SandboxGrant) SetUses(val []SecretUse) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *SandboxGrant) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // SetGrantTTLSeconds sets the value of GrantTTLSeconds.
@@ -29175,6 +29763,9 @@ type SecretGrant struct {
 	// Approved uses, confirmed or edited at approval time. Present on grants minted through the agent
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// The approved policy, with the value each of its variables resolved to for the sandbox the grant is
+	// for (ADR 26-10-20-782). Nothing judges by it yet.
+	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.
 	Purpose SecretGrantPurpose `json:"purpose"`
@@ -29219,6 +29810,11 @@ func (s *SecretGrant) GetEnvName() OptString {
 // GetUses returns the value of Uses.
 func (s *SecretGrant) GetUses() OptNilSecretUseArray {
 	return s.Uses
+}
+
+// GetPolicy returns the value of Policy.
+func (s *SecretGrant) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // GetPurpose returns the value of Purpose.
@@ -29299,6 +29895,11 @@ func (s *SecretGrant) SetEnvName(val OptString) {
 // SetUses sets the value of Uses.
 func (s *SecretGrant) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *SecretGrant) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // SetPurpose sets the value of Purpose.
@@ -30236,6 +30837,9 @@ type SecretRequest struct {
 	// Uses the agent asked for. Their presence is what marks a request as protocol-originated rather
 	// than one the proxy minted on hitting an unresolvable sentinel.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// The policy the agent asked for, beside its uses (ADR 26-10-20-782). Approving the request resolves
+	// its variables for the requesting discobox onto the grant.
+	Policy OptAccessPolicy `json:"policy"`
 	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
 	// Approving the request mints a grant for that purpose.
 	Purpose OptSecretRequestPurpose `json:"purpose"`
@@ -30316,6 +30920,11 @@ func (s *SecretRequest) GetName() OptString {
 // GetUses returns the value of Uses.
 func (s *SecretRequest) GetUses() OptNilSecretUseArray {
 	return s.Uses
+}
+
+// GetPolicy returns the value of Policy.
+func (s *SecretRequest) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // GetPurpose returns the value of Purpose.
@@ -30431,6 +31040,11 @@ func (s *SecretRequest) SetName(val OptString) {
 // SetUses sets the value of Uses.
 func (s *SecretRequest) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *SecretRequest) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // SetPurpose sets the value of Purpose.

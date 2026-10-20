@@ -161,6 +161,33 @@ the sandbox is already provisioned with, which anything in the sandbox can
 read. An environment variable without uses is refused rather than ignored:
 there is no delivery to name.
 
+## A policy beside the uses
+
+A protocol-originated request, a grant with uses, and a grant given on a create
+may carry a policy (`policy.Policy`, ADR 26-10-20-782 §1) beside their uses,
+stored as one JSON column. Nothing judges by it yet: a grant is still activated
+and judged by its uses, and a grant without a policy is untouched.
+
+- **Validated where it enters** (`services.PolicyFromAPI`): a policy that does
+  not validate is a 400 before anyone is asked, and whatever a client sent as
+  `resolved` is dropped.
+- **Resolved where a grant is minted** (`resolveGrantPolicy` in `mintGrantAs`,
+  and `PrepareSandboxGrants`): each variable from the record of the sandbox the
+  grant is for (`Sandbox.PolicyFacts`) — the asking discobox for an approved
+  request, the created one for a grant given on a create — so `$this` is
+  always the holder. A grant wider than one sandbox has no record to resolve against and
+  may carry only a policy that uses no variable.
+- **Only a person approves a policy, and names it.** An approval of a request
+  that carries one sends the policy it approves — the one asked for, or an
+  edit — or is refused, so nothing is recorded as approved that was not sent.
+  A rule never answers such a request (`ruleTestable`): rules are read against
+  uses. A discobox approves no policy and gives none on a create: handing a
+  credential on is judged by uses, and over policies is not decided yet (ADR
+  26-10-20-782, Deferred). Delegated grants therefore carry none.
+- **Another policy is another ask**: `asksTheSame` compares it with the uses.
+- A policy rides only beside uses: a grant without them hands its sentinel's
+  value to any request, which no policy narrows.
+
 ## Well-known credentials
 
 A request may name a well-known credential by ID, from the root `wellknown`

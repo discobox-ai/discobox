@@ -586,9 +586,12 @@ func (s *Service) liveRules(ctx context.Context, projectID string) ([]model.Appr
 // ruleTestable reports whether a rule may answer this request at all: an
 // agent's own ask for a grant, still pending. A reactive request, a refresh
 // request and a host trust stay a person's (§4), as does an ask that names no
-// uses — there is nothing to read.
+// uses — there is nothing to read. So is an ask that carries a policy: a rule
+// is read against uses alone, and approving under one would record a policy
+// nobody read as approved (ADR 26-10-20-782, Deferred: approval rules over
+// policies).
 func ruleTestable(req *model.SecretRequest) bool {
-	return req.Status == model.SecretRequestStatusPending && !req.IsRefresh() && req.FromProtocol() && req.SandboxID != ""
+	return req.Status == model.SecretRequestStatusPending && !req.IsRefresh() && req.FromProtocol() && req.SandboxID != "" && req.Policy == nil
 }
 
 // ruleTestDescriber returns what fills in, for a person reading pending

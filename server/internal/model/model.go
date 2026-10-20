@@ -19,9 +19,12 @@ import (
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -592,16 +595,50 @@ func (s *GitSource) RepositoryURL() string {
 
 // JudgeDiscobox is the part of a sandbox's row the judge is told about (ADR
 // 26-10-14-691): what was recorded when it was created, and nothing it
-// reports about itself since. Its other sources are in destination order, so
-// the facts a job states are the same every time.
+// reports about itself since. It is PolicyFacts in the judge's shape, so the
+// judge and a policy's variables cannot read two repositories for one
+// discobox.
 func (s *Sandbox) JudgeDiscobox() judge.Discobox {
-	out := judge.Discobox{SandboxID: s.ID}
+	facts := s.PolicyFacts()
+	out := judge.Discobox{SandboxID: facts.Discobox.ID, CreatedBy: facts.Discobox.CreatedBy}
+	for _, source := range facts.Sources {
+		if source.Primary {
+			primary := judgeSource(source)
+			out.Primary = &primary
+		} else {
+			out.Additional = append(out.Additional, judgeSource(source))
+		}
+	}
+	return out
+}
+
+// judgeSource is one source of PolicyFacts as the judge states it.
+func judgeSource(source policy.Source) judge.Source {
+	out := judge.Source{Commit: source.Commit}
+	if source.Remote != nil {
+		out.Remote = source.Remote.URL
+	}
+	if source.Ref != nil {
+		out.RefType, out.RefName = source.Ref.Type, source.Ref.Name
+	}
+	return out
+}
+
+// PolicyFacts is what the control plane recorded about a sandbox when it was
+// created, typed: what a policy's variables resolve from (ADR 26-10-20-782
+// §4), and what the judge is told (JudgeDiscobox). Nothing it reports about
+// itself since is read. The primary source is the one the sandbox was created
+// with; the others follow in destination order, so the facts are the same
+// every time. A source with no slug cannot be named by $sources.<slug>.repo.
+func (s *Sandbox) PolicyFacts() policy.Facts {
+	out := policy.Facts{Discobox: policy.Discobox{ID: s.ID, Project: s.ProjectID}}
 	if s.CreatedBySandboxID != nil {
-		out.CreatedBy = *s.CreatedBySandboxID
+		out.Discobox.CreatedBy = *s.CreatedBySandboxID
 	}
 	if s.Source != nil {
-		primary := s.Source.judgeSource()
-		out.Primary = &primary
+		primary := s.Source.policySource()
+		primary.Primary = true
+		out.Sources = append(out.Sources, primary)
 	}
 	destinations := make([]string, 0, len(s.SourceCodeReferences))
 	for destination := range s.SourceCodeReferences {
@@ -610,26 +647,44 @@ func (s *Sandbox) JudgeDiscobox() judge.Discobox {
 	sort.Strings(destinations)
 	for _, destination := range destinations {
 		source := s.SourceCodeReferences[destination]
-		out.Additional = append(out.Additional, source.judgeSource())
+		out.Sources = append(out.Sources, source.policySource())
 	}
 	return out
 }
 
-// judgeSource is one source as it was created.
-func (s *GitSource) judgeSource() judge.Source {
-	out := judge.Source{Remote: s.RepositoryURL()}
+// policySource is one source as it was created, as a fact.
+func (s *GitSource) policySource() policy.Source {
+	out := policy.Source{Remote: policyRemote(s.RepositoryURL())}
+	if s.Slug != nil {
+		out.Slug = *s.Slug
+	}
 	if checkout := s.Checkout; checkout != nil {
-		if checkout.RefType != nil {
-			out.RefType = *checkout.RefType
-		}
-		if checkout.RefName != nil {
-			out.RefName = *checkout.RefName
+		if checkout.RefName != nil && *checkout.RefName != "" {
+			out.Ref = &policy.Ref{Name: *checkout.RefName}
+			if checkout.RefType != nil {
+				out.Ref.Type = *checkout.RefType
+			}
 		}
 		if checkout.Commit != nil {
 			out.Commit = *checkout.Commit
 		}
 	}
 	return out
+}
+
+// policyRemote is a source's remote, in any spelling git accepts, as a fact:
+// nil when it names no repository on a network. A remote on a pool's origins
+// host resolves only inside the discobox that has it, so it is none.
+func policyRemote(remote string) *policy.Remote {
+	normalized := sourceref.NormalizeRemote(remote)
+	if normalized == "" || sourcecache.OnPoolOriginsHost(remote) {
+		return nil
+	}
+	host, repo, ok := strings.Cut(normalized, "/")
+	if !ok || repo == "" {
+		return nil
+	}
+	return &policy.Remote{Host: host, Repo: repo, URL: "https://" + normalized}
 }
 
 // GitSourceCheckout identifies the immutable checkout and user-facing ref.
@@ -1613,6 +1668,11 @@ type SecretRequest struct {
 	EnvName       string      `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
 	Justification string      `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
 	Uses          []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Uses the agent asked for; approval mints their IDs onto the grant"`
+	// Policy is what the agent asked the credential to authorize, as
+	// statements (ADR 26-10-20-782 §1), beside its uses. Nil on every request
+	// that asked with uses alone, which is every request written before
+	// policies.
+	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The policy the agent asked for, beside its uses; approving the request resolves its variables onto the grant"`
 	// GrantTTL is how long the agent asked the grant to live, in seconds. It is
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever — an
@@ -1742,6 +1802,12 @@ type SecretGrant struct {
 	// plain standing authorization; one with uses is what the agent credentials
 	// protocol reports and activates against (ADR 0031 §5).
 	Uses []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
+	// Policy is what the grant authorizes, as approved (ADR 26-10-20-782 §1):
+	// its statements, their definitions, and the value each variable resolved
+	// to for the sandbox the grant is for. Nil on a grant approved with uses
+	// alone; nothing judges by it yet, and such a grant is judged by its uses
+	// until it lapses.
+	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The approved policy, with the value each of its variables resolved to for the sandbox the grant is for"`
 	// EnvName is the variable an agent receives the credential in, on a grant
 	// that carries uses. It lives here rather than only on the binding because
 	// a grant wider than one sandbox has no binding yet: the binding is minted
