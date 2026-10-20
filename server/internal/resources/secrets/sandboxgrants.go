@@ -11,9 +11,11 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/wellknown"
 	"golang.org/x/sync/errgroup"
@@ -121,6 +123,22 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		if len(uses) == 0 {
 			return SandboxGrants{}, apperrors.NewStatusError(http.StatusBadRequest, "a grant for a new discobox requires at least one use")
 		}
+		// A policy given to a new discobox is for it, so its variables
+		// resolve from the new discobox's record — $this is the discobox
+		// created, not the one creating it (ADR 26-10-20-782 §4).
+		var approved *policy.Policy
+		givenPolicy, err := services.PolicyFromAPI(in.Policy)
+		if err != nil {
+			return SandboxGrants{}, err
+		}
+		if givenPolicy != nil && byDiscobox {
+			return SandboxGrants{}, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox cannot give the discobox it creates a grant with a policy; handing a policy on is judged by nothing yet")
+		}
+		if givenPolicy != nil {
+			resolved := givenPolicy.Resolve(sandbox.PolicyFacts())
+			approved = &resolved
+		}
 		grant := &model.SecretGrant{
 			ProjectID: projectID,
 			SecretID:  secret.ID,
@@ -129,6 +147,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 			Hosts:     hosts,
 			GrantedBy: grantedBy,
 			Uses:      uses,
+			Policy:    approved,
 			EnvName:   envName,
 			Purpose:   model.SecretGrantPurposeUse,
 		}

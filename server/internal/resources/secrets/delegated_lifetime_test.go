@@ -71,7 +71,7 @@ func TestAGrantFittedToADelegationEndsNoLaterThanIt(t *testing.T) {
 		t.Fatalf("fit to the delegation: %v", err)
 	}
 	grant, err := svc.mintGrantAs(ctx, now, "project-1", secret, model.SecretGrantScopeSandbox, "sbx-worker", []string{"github.com"}, "GITHUB_TOKEN",
-		ttl, []model.SecretUse{{UseID: "use-1", Description: "read issue 43"}}, model.SecretGrantPurposeUse, "")
+		ttl, []model.SecretUse{{UseID: "use-1", Description: "read issue 43"}}, nil, model.SecretGrantPurposeUse, "")
 	if err != nil {
 		t.Fatalf("mint the grant: %v", err)
 	}

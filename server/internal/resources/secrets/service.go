@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -572,6 +573,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	// to the asking sandbox, it mints approved uses, and it binds a stable
 	// sentinel the agent never sees.
 	var approvedUses []model.SecretUse
+	var approvedPolicy *policy.Policy
 	// The grant is for what the agent asked: to use the credential, or to
 	// delegate it. A reactive request asked for nothing but use.
 	purpose, err := grantPurpose(req.Purpose)
@@ -599,6 +601,23 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 		if len(approvedUses) == 0 {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "approving an agent credential request requires at least one use")
+		}
+		// The approver approves the policy they send (ADR 26-10-20-782 §3):
+		// the one asked for, or an edit of it. A request that asks for one is
+		// approved only by an approval naming the policy approved, so nothing
+		// is recorded as approved that the approver did not send. A discobox
+		// approves no policy: handing one on is judged by nothing yet
+		// (Deferred: delegations over policies).
+		if approvedPolicy, err = services.PolicyFromAPI(input.Policy); err != nil {
+			return nil, err
+		}
+		switch {
+		case (approvedPolicy != nil || req.Policy != nil) && approverIsSandbox:
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox cannot approve a request that carries a policy; a person approves it")
+		case approvedPolicy == nil && req.Policy != nil:
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"this request asks for a policy; approve it by sending the policy you approve")
 		}
 	}
 
@@ -660,6 +679,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		scopeKey: scopeKey,
 		hosts:    hosts,
 		uses:     approvedUses,
+		policy:   approvedPolicy,
 		purpose:  purpose,
 		rule:     rule,
 	}
@@ -730,7 +750,10 @@ type approvalWrite struct {
 	scope, scopeKey string
 	hosts           []string
 	uses            []model.SecretUse
-	purpose         string
+	// policy is the policy approved, before its variables are resolved for
+	// the sandbox the grant is for.
+	policy  *policy.Policy
+	purpose string
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
@@ -805,7 +828,7 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			}
 			ruleID = a.rule.ID
 		}
-		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.purpose, ruleID)
+		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.policy, a.purpose, ruleID)
 		if err != nil {
 			return err
 		}
@@ -1176,11 +1199,21 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 			"an environment variable is only meaningful with uses: without them the grant authorizes the sentinel the sandbox already holds")
 	}
 
+	// A policy rides beside uses (ADR 26-10-20-782 §1): a grant without them
+	// hands its sentinel's value to any request, which no policy narrows.
+	granted, err := services.PolicyFromAPI(input.Policy)
+	if err != nil {
+		return nil, err
+	}
+	if granted != nil && len(uses) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a policy is granted only beside uses")
+	}
+
 	purpose, err := grantPurpose(string(input.Purpose.Or("")))
 	if err != nil {
 		return nil, err
 	}
-	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, purpose, "")
+	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, granted, purpose, "")
 	if err != nil {
 		return nil, err
 	}
@@ -1350,7 +1383,7 @@ func formatTTL(seconds int64) string {
 // now is the instant the grant's lifetime runs from: its expiry is now plus
 // ttlSeconds, and never a later reading of the clock, so a lifetime a caller
 // fitted at now ends where it was fitted to.
-func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, purpose, ruleID string) (*model.SecretGrant, error) {
+func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, asked *policy.Policy, purpose, ruleID string) (*model.SecretGrant, error) {
 	hosts = hostscope.List(hosts...)
 	if err := guardGrantHosts(secret, hosts); err != nil {
 		return nil, err
@@ -1359,6 +1392,10 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 		return nil, err
 	}
 	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, uses, purpose); err != nil {
+		return nil, err
+	}
+	approved, err := s.resolveGrantPolicy(ctx, projectID, scope, scopeKey, asked)
+	if err != nil {
 		return nil, err
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
@@ -1371,6 +1408,7 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 		Hosts:     hosts,
 		GrantedBy: grantedBy,
 		Uses:      uses,
+		Policy:    approved,
 		EnvName:   strings.TrimSpace(envName),
 		Purpose:   purpose,
 		RuleID:    ruleID,
@@ -1383,6 +1421,31 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 		return nil, apperrors.NotFound(err, fmt.Sprintf("%s %s does not exist, so nothing can be granted to it", scope, scopeKey))
 	}
 	return grant, nil
+}
+
+// resolveGrantPolicy is asked as approved for the grant it will be on: each
+// variable it uses resolved from the control plane's record of the sandbox the
+// grant is for (ADR 26-10-20-782 §4): the discobox that holds it, never the
+// one that approved it. A grant wider than one sandbox has no discobox to
+// resolve against, and may carry a policy only if it uses no variable.
+func (s *Service) resolveGrantPolicy(ctx context.Context, projectID, scope, scopeKey string, asked *policy.Policy) (*policy.Policy, error) {
+	if asked == nil {
+		return nil, nil
+	}
+	if scope != model.SecretGrantScopeSandbox {
+		if variables := asked.Variables(); len(variables) > 0 {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+				"a policy that uses variables (%s) can only be granted to one sandbox, which they resolve against", strings.Join(variables, ", ")))
+		}
+		approved := asked.Resolve(policy.Facts{})
+		return &approved, nil
+	}
+	sandbox, err := s.store.GetSandbox(ctx, projectID, scopeKey)
+	if err != nil {
+		return nil, apperrors.NotFound(err, fmt.Sprintf("sandbox %s does not exist, so nothing can be granted to it", scopeKey))
+	}
+	approved := asked.Resolve(sandbox.PolicyFacts())
+	return &approved, nil
 }
 
 // grantedByOf is who a grant records as having made it. A sandbox acts as the

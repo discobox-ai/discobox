@@ -1,7 +1,9 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -89,6 +92,13 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err != nil {
 		return nil, err
 	}
+	// A policy rides beside the uses (ADR 26-10-20-782 §1). Nothing judges by
+	// it yet; it is validated now so that one a person could not approve is
+	// refused before anyone is asked.
+	askedPolicy, err := services.PolicyFromAPI(input.Policy)
+	if err != nil {
+		return nil, err
+	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
 	// its limit is raised to meet the ask.
@@ -118,7 +128,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, err
 	}
 	for i := range pending {
-		if asksTheSame(pending[i], uses, grantTTL) {
+		if asksTheSame(pending[i], uses, askedPolicy, grantTTL) {
 			return &pending[i], nil
 		}
 	}
@@ -136,6 +146,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		EnvName:       envName,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
 		Uses:          uses,
+		Policy:        askedPolicy,
 		GrantTTL:      grantTTL,
 		Purpose:       purpose,
 		WellKnownID:   wellKnownID,
@@ -151,11 +162,12 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 }
 
 // asksTheSame reports whether an open request asks for what a new ask does:
-// the same uses, in the same order, for the same lifetime. The justification
+// the same uses, in the same order, and the same policy, for the same
+// lifetime. The justification
 // is left out; it argues for a grant and does not change which one approval
 // mints, so a retry reworded is still a retry.
-func asksTheSame(open model.SecretRequest, uses []model.SecretUse, grantTTL int64) bool {
-	if open.GrantTTL != grantTTL || len(open.Uses) != len(uses) {
+func asksTheSame(open model.SecretRequest, uses []model.SecretUse, asked *policy.Policy, grantTTL int64) bool {
+	if open.GrantTTL != grantTTL || len(open.Uses) != len(uses) || !samePolicy(open.Policy, asked) {
 		return false
 	}
 	for i := range uses {
@@ -164,6 +176,17 @@ func asksTheSame(open model.SecretRequest, uses []model.SecretUse, grantTTL int6
 		}
 	}
 	return true
+}
+
+// samePolicy reports whether two policies say the same thing, as their JSON:
+// a list sent empty and one left out are one policy.
+func samePolicy(a, b *policy.Policy) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	left, errA := json.Marshal(a)
+	right, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(left, right)
 }
 
 // GetSandboxCredentialRequest reads one of a sandbox's own credential requests

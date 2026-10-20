@@ -3,13 +3,16 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -477,6 +480,56 @@ func TestResolveSandboxSecretNamesTheSecret(t *testing.T) {
 	}
 }
 
+// A grant and a request carry their policy through the API as stored, with
+// what each variable resolved to (ADR 26-10-20-782).
+func TestSecretGrantsAndRequestsCarryTheirPolicy(t *testing.T) {
+	name := "discobox/*"
+	want := &policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionUpdate}, ResourceType: "branch", Name: &name,
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}},
+		Definitions: map[string]string{"branch": "A Git branch.", "repository": "A GitHub repository."},
+		Resolved:    map[string]string{policy.VarPrimaryRepo: "acme/web"},
+	}
+	request, grant := fakeSecretRequest(), fakeSecretGrant()
+	request.Policy, grant.Policy = want, want
+	read := func(what string, from any) *policy.Policy {
+		t.Helper()
+		got, err := svcapi.Convert[apimodel.SecretGrant](from)
+		if err != nil {
+			t.Fatalf("convert %s: %v", what, err)
+		}
+		sent, ok := got.Policy.Get()
+		if !ok {
+			t.Fatalf("%s carries no policy", what)
+		}
+		data, err := sent.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back policy.Policy
+		if err := json.Unmarshal(data, &back); err != nil {
+			t.Fatal(err)
+		}
+		return &back
+	}
+	if got := read("grant", grant); !reflect.DeepEqual(got, want) {
+		t.Fatalf("grant policy = %+v, want %+v", got, want)
+	}
+	if got, err := svcapi.Convert[apimodel.SecretRequest](request); err != nil || !got.Policy.IsSet() {
+		t.Fatalf("request = %+v, %v; want its policy", got.Policy, err)
+	}
+
+	status, err := agentCredentialRequestStatus(&request, &grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := status.Policy.Get(); !ok || len(got.Statements) != 1 || got.Resolved.Value[policy.VarPrimaryRepo] != "acme/web" {
+		t.Fatalf("status policy = %+v, want the grant's", status.Policy)
+	}
+}
+
 // A grant and a request carry their hosts (ADR 26-10-02-393).
 func TestSecretGrantsAndRequestsCarryTheirHosts(t *testing.T) {
 	h := New(svcapi.Services{Secrets: fakeSecretService{}})
@@ -508,12 +561,18 @@ func TestSandboxCredentialRequestStatusCarriesTheGrantedLifetime(t *testing.T) {
 	uses := []model.SecretUse{{UseID: "use-1", Description: "Push the branch"}}
 
 	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
-	timed := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses, ExpiresAt: &expires})
+	timed, err := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses, ExpiresAt: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got, ok := timed.ExpiresAt.Get(); !ok || !got.Equal(expires) {
 		t.Fatalf("expiresAt = %v (set %v), want %v", got, ok, expires)
 	}
 
-	forever := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses})
+	forever, err := agentCredentialRequestStatus(approved, &model.SecretGrant{Uses: uses})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if forever.ExpiresAt.IsSet() {
 		t.Fatalf("expiresAt = %v on a grant that never expires, want it absent", forever.ExpiresAt)
 	}

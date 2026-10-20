@@ -13,6 +13,7 @@ import (
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/secretroute"
 	"github.com/discobox-ai/discobox/wellknown"
@@ -68,6 +69,7 @@ type credentialDoc struct {
 	Format    string             `json:"format,omitempty"`
 	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
 	Uses      []credentialUseDoc `json:"uses,omitempty"`
+	Policy    *policy.Policy     `json:"policy,omitempty"`
 	// SecretRoutes are where the credential may be sent (ADR 26-10-02-924),
 	// which an activation of it is held to as well as to the grant's use.
 	SecretRoutes []secretroute.Route `json:"secretRoutes,omitempty"`
@@ -98,6 +100,7 @@ type createCredentialRequestDoc struct {
 	Uses            []credentialUseDoc `json:"uses"`
 	GrantTTLSeconds int64              `json:"grantTTLSeconds,omitempty"`
 	Purpose         string             `json:"purpose,omitempty"`
+	Policy          *policy.Policy     `json:"policy,omitempty"`
 }
 
 type credentialRequestStatusDoc struct {
@@ -105,6 +108,7 @@ type credentialRequestStatusDoc struct {
 	Status    string             `json:"status"`
 	Purpose   string             `json:"purpose,omitempty"`
 	Uses      []credentialUseDoc `json:"uses,omitempty"`
+	Policy    *policy.Policy     `json:"policy,omitempty"`
 	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
 }
 
@@ -239,6 +243,7 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 			EnvVar: doc.EnvVar,
 			Hosts:  doc.Hosts,
 			Uses:   protocolUses(doc.Uses, doc.ExpiresAt),
+			Policy: doc.Policy,
 		})
 	}
 	return out, nil
@@ -266,6 +271,7 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		Uses:            uses,
 		GrantTTLSeconds: body.GrantTTLSeconds,
 		Purpose:         body.Purpose,
+		Policy:          body.Policy,
 	})
 	if err != nil {
 		return agentcreds.RequestStatus{}, err
@@ -283,7 +289,7 @@ func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) 
 
 // protocol is the status as the sandbox is answered with it.
 func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
-	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, d.ExpiresAt)}
+	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, d.ExpiresAt), Policy: d.Policy}
 }
 
 // Get mints one ephemeral sentinel for one approved use, once the project's

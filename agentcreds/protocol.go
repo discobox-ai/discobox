@@ -16,7 +16,11 @@
 // docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md.
 package agentcreds
 
-import "time"
+import (
+	"time"
+
+	"github.com/discobox-ai/discobox/policy"
+)
 
 // Version is the protocol version every route is served under.
 const Version = "v1"
@@ -107,6 +111,9 @@ type Credential struct {
 	EnvVar string   `json:"envVar"`
 	Hosts  []string `json:"hosts,omitempty"`
 	Uses   []Use    `json:"uses,omitempty"`
+	// Policy is what the grant authorizes, as approved, when it carries one
+	// (ADR 26-10-20-782 §1).
+	Policy *policy.Policy `json:"policy,omitempty"`
 }
 
 // ListResponse is the list operation's body.
@@ -198,6 +205,10 @@ type RequestBody struct {
 	Uses            []RequestedUse `json:"uses,omitempty"`
 	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
 	Purpose         string         `json:"purpose,omitempty"`
+	// Policy is what the agent asks the credential to authorize, as
+	// statements, beside its uses (ADR 26-10-20-782 §1). An implementation
+	// refuses one that does not validate.
+	Policy *policy.Policy `json:"policy,omitempty"`
 }
 
 // RequestStatus is what request and its poll both answer with. Uses is
@@ -214,6 +225,9 @@ type RequestStatus struct {
 	Status    string `json:"status"`
 	Purpose   string `json:"purpose,omitempty"`
 	Uses      []Use  `json:"uses,omitempty"`
+	// Policy is the approved policy once granted, authoritative over the one
+	// asked for as Uses is over the requested uses.
+	Policy *policy.Policy `json:"policy,omitempty"`
 }
 
 // Settled reports whether a request has reached a terminal status, which is

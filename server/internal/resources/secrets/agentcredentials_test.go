@@ -557,7 +557,12 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 	}).Error; err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	if err := write.Create(&model.Sandbox{ID: testSandboxID, ProjectID: "project-1", Name: "sandbox", PoolID: testPoolID}).Error; err != nil {
+	// Created from a repository, so a policy's variables have something to
+	// resolve from.
+	slug, remote, branch, refType := "primary", "https://github.com/acme/web.git", "main", "branch"
+	if err := write.Create(&model.Sandbox{ID: testSandboxID, ProjectID: "project-1", Name: "sandbox", PoolID: testPoolID, Source: &model.GitSource{
+		Kind: "git", Slug: &slug, URL: &remote, Checkout: &model.GitSourceCheckout{RefName: &branch, RefType: &refType},
+	}}).Error; err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
 	// The lead the delegation tests act as: a grant names a discobox that

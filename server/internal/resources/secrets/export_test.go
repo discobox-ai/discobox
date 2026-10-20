@@ -27,3 +27,6 @@ func AllowInternalExchangeTargets(t testing.TB) {
 	internalAddress = func(netip.Addr) bool { return false }
 	t.Cleanup(func() { internalAddress = previous })
 }
+
+// RuleTestable is whether an approval rule may answer a request at all.
+var RuleTestable = ruleTestable

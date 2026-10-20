@@ -5,6 +5,10 @@ package model
 
 import apigen "github.com/discobox-ai/discobox/api/gen"
 
+type AccessPolicy = apigen.AccessPolicy
+type AccessPolicyResource = apigen.AccessPolicyResource
+type AccessPolicyScope = apigen.AccessPolicyScope
+type AccessPolicyStatement = apigen.AccessPolicyStatement
 type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApprovalRequest = apigen.ApprovalRequest
 type ApprovalRule = apigen.ApprovalRule

@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -30,6 +31,44 @@ func Convert[To any](from any) (To, error) {
 		return to, err
 	}
 	return to, nil
+}
+
+// PolicyFromAPI is the policy a client sent, validated, or nil when it sent
+// none (ADR 26-10-20-782 §1). A policy that does not validate is a 400. What a
+// client sent as resolved is dropped: a variable's value is the server's to
+// resolve, from its own record, when a grant is minted.
+func PolicyFromAPI(value serverapi.OptAccessPolicy) (*policy.Policy, error) {
+	sent, ok := value.Get()
+	if !ok {
+		return nil, nil
+	}
+	// The generated type encodes itself: encoding/json cannot write an
+	// optional field it left unset.
+	data, err := sent.MarshalJSON()
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
+	}
+	var p policy.Policy
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
+	}
+	p.Resolved = nil
+	if err := p.Validate(); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+	return &p, nil
+}
+
+// APIPolicy is p as the API answers with it, or unset for none.
+func APIPolicy(p *policy.Policy) (serverapi.OptAccessPolicy, error) {
+	if p == nil {
+		return serverapi.OptAccessPolicy{}, nil
+	}
+	out, err := Convert[apimodel.AccessPolicy](p)
+	if err != nil {
+		return serverapi.OptAccessPolicy{}, fmt.Errorf("encode policy: %w", err)
+	}
+	return serverapi.NewOptAccessPolicy(out), nil
 }
 
 func OptStringPtr(value OptString) *string {

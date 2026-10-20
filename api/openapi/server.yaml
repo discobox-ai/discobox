@@ -501,6 +501,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretUse'
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: A policy for the grant (ADR 26-10-20-782). Its variables resolve for the sandbox being created, not the discobox creating it.
                 grantTTLSeconds:
                     description: How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
                     format: int64
@@ -3647,6 +3650,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The policy the grant carries, with its variables as resolved for this sandbox.
                 secretRoutes:
                     description: Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on one of them, as well as within the activation's approved use.
                     items:
@@ -3724,6 +3730,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretUse'
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: A policy the agent asks for, beside its uses (ADR 26-10-20-782).
             required:
                 - sandboxId
                 - name
@@ -3765,6 +3774,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The approved policy, once granted, with its variables as resolved for this sandbox.
             required:
                 - requestId
                 - status
@@ -5540,6 +5552,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The policy to approve in place of the one the request asked for. Omitted, the request's own is approved. Its variables are resolved for the requesting discobox.
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -5643,6 +5658,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: A policy for the grant (ADR 26-10-20-782). Its variables resolve only for a grant scoped to one sandbox; a project or harness config grant may carry a policy that uses none.
                 purpose:
                     description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it delegate the credential to other discoboxes and authorizes nothing it sends itself; sandbox scope, with uses, only.
                     enum:
@@ -5934,6 +5952,106 @@ components:
             required:
                 - description
             type: object
+        AccessPolicy:
+            additionalProperties: false
+            description: What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for every word they use that is not a default, and, once approved, the value each variable resolved to for the discobox the grant is for. A request is allowed when every part of it matches some allow and no part matches any deny; order never matters.
+            properties:
+                statements:
+                    description: The statements, in no meaningful order.
+                    items:
+                        $ref: '#/components/schemas/AccessPolicyStatement'
+                    type: array
+                definitions:
+                    additionalProperties:
+                        type: string
+                    description: What each non-default word means -- an action, a resource type, a parent's or a scope's type. The defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given one.
+                    type: object
+                resolved:
+                    additionalProperties:
+                        type: string
+                    description: The value each variable the statements use resolved to at approval, for the discobox the grant is for. A variable used but absent did not resolve and matches nothing. Set by the server when a grant is minted; ignored on input.
+                    type: object
+            required:
+                - statements
+            type: object
+        AccessPolicyStatement:
+            additionalProperties: false
+            description: '<allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when <condition>] [unless <condition>].'
+            properties:
+                effect:
+                    enum:
+                        - allow
+                        - deny
+                    type: string
+                actions:
+                    description: Action words. read, create, update, delete and manage (every action on the type) are defaults; any other word has a definition.
+                    items:
+                        type: string
+                    type: array
+                resourceType:
+                    description: The resource type, or anything for every type in the scope.
+                    type: string
+                name:
+                    description: A literal, a glob, or a variable; null is any name.
+                    nullable: true
+                    type: string
+                createdBy:
+                    description: $this limits the statement to resources the discobox it is bound to created.
+                    type: string
+                within:
+                    description: The resources this one sits in, outermost first, short of the scope.
+                    items:
+                        $ref: '#/components/schemas/AccessPolicyResource'
+                    type: array
+                scope:
+                    $ref: '#/components/schemas/AccessPolicyScope'
+                when:
+                    description: A condition a request can be checked against, which must hold. null is none.
+                    nullable: true
+                    type: string
+                unless:
+                    description: A condition a request can be checked against, which must not hold. null is none.
+                    nullable: true
+                    type: string
+            required:
+                - effect
+                - actions
+                - resourceType
+                - scope
+            type: object
+        AccessPolicyResource:
+            additionalProperties: false
+            description: A resource a statement's resource or scope sits in.
+            properties:
+                type:
+                    type: string
+                name:
+                    description: A literal, a glob, or a variable; null is any name.
+                    nullable: true
+                    type: string
+                createdBy:
+                    description: $this, or empty.
+                    type: string
+            required:
+                - type
+            type: object
+        AccessPolicyScope:
+            additionalProperties: false
+            description: Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or anywhere, which only a deny may use.
+            properties:
+                type:
+                    type: string
+                name:
+                    description: A literal, a glob, or a variable. Empty only for anywhere.
+                    type: string
+                within:
+                    description: The scopes this one sits in, outermost first.
+                    items:
+                        $ref: '#/components/schemas/AccessPolicyResource'
+                    type: array
+            required:
+                - type
+            type: object
         SecretGrant:
             additionalProperties: false
             properties:
@@ -5952,6 +6070,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). Nothing judges by it yet.
                 purpose:
                     description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
                     enum:
@@ -6219,6 +6340,9 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The policy the agent asked for, beside its uses (ADR 26-10-20-782). Approving the request resolves its variables for the requesting discobox onto the grant.
                 purpose:
                     description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request mints a grant for that purpose.
                     enum:
