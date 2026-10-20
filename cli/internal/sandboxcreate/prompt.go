@@ -241,11 +241,23 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 //
 // The skills repositories of --skills come last, each a reference marked for
 // its skills (setSkillsSources).
+//
+// The same settings say which of the box's features the repository turns off,
+// which the request carries too: the client is their reader, as it is the
+// sources' (ADR 26-10-16-423 §11).
 func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary resolvedRunSource, sourceOptions runSourceOptions, skillsRepos []SkillsRepository) error {
-	declared, err := declaredPromptSources(ctx, opts, primary)
+	settings, err := declaredPromptSettings(ctx, opts, primary)
 	if err != nil {
 		return err
 	}
+	if len(settings.Features) > 0 {
+		features := make(apiclientgen.SandboxCreateConfigFeatures, len(settings.Features))
+		for name, feature := range settings.Features {
+			features[name] = apiclientgen.SandboxFeature{Enabled: feature.Enabled}
+		}
+		body.Config.SetFeatures(apiclientgen.NewOptSandboxCreateConfigFeatures(features))
+	}
+	declared := settings.Sources
 	if len(opts.Include) == 0 && len(declared) == 0 && len(skillsRepos) == 0 {
 		return nil
 	}
@@ -348,8 +360,19 @@ func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, prim
 	return key == primary.Destination.Directory
 }
 
-// declaredPromptSources are the sources the primary source's repository
-// declares, or nothing when the caller opted out.
+// declaredSettings is what the client reads of the primary source's
+// repository settings.
+type declaredSettings struct {
+	// Sources are the sources it declares, checked, or nothing when the
+	// caller opted out of them.
+	Sources map[string]string
+	// Features are its features, which a box provisions unless they are
+	// turned off.
+	Features map[string]sandboxconfig.Feature
+}
+
+// declaredPromptSettings is what the primary source's repository settings
+// declare: its sources, unless the caller opted out of them, and its features.
 //
 // For a source on this machine the file is read out of its directory here,
 // not the one it takes in the sandbox: the sandbox does not exist yet, and off
@@ -360,10 +383,7 @@ func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, prim
 // A repository read through the files settings.json replaces, or whose
 // settings.json sets keys this client does not know, is warned about (Warn): they are still read, since they live in repositories nobody here can
 // migrate, but the person creating the box is the one who can.
-func declaredPromptSources(ctx context.Context, opts PromptOptions, primary resolvedRunSource) (map[string]string, error) {
-	if opts.SkipDeclaredSources {
-		return nil, nil
-	}
+func declaredPromptSettings(ctx context.Context, opts PromptOptions, primary resolvedRunSource) (declaredSettings, error) {
 	var settings sandboxconfig.RepositorySettings
 	var where string
 	var err error
@@ -375,10 +395,18 @@ func declaredPromptSources(ctx context.Context, opts PromptOptions, primary reso
 		where = primary.URL + "@" + primary.Checkout.Commit[:min(len(primary.Checkout.Commit), 12)]
 		settings, err = readRemoteSettings(ctx, primary.URL, primary.Checkout.Commit, primary.Checkout.RefName)
 	default:
-		return nil, nil
+		return declaredSettings{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return declaredSettings{}, err
+	}
+	parsed, err := settings.Settings()
+	if err != nil {
+		return declaredSettings{}, fmt.Errorf("%s: %w", where, err)
+	}
+	declared := declaredSettings{Features: parsed.Features}
+	if opts.SkipDeclaredSources {
+		return declared, nil
 	}
 	if opts.Warn != nil {
 		if warning := settings.LegacyWarning(); warning != "" {
@@ -391,7 +419,8 @@ func declaredPromptSources(ctx context.Context, opts PromptOptions, primary reso
 				where, sandboxconfig.SettingsFile, quoteKeys(unknown)))
 		}
 	}
-	return declaredSources(settings, where)
+	declared.Sources, err = declaredSources(settings, where)
+	return declared, err
 }
 
 type promptSandboxCreator interface {

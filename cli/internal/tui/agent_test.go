@@ -83,3 +83,25 @@ func lineWith(out, s string) string {
 	}
 	return ""
 }
+
+// Under the cursor a box still provisioning a feature says which, and an
+// agent blocked on a person still comes first.
+func TestTheCursorRowSaysWhatIsStillProvisioning(t *testing.T) {
+	boxes := agentBoxes()
+	boxes[0].Provisioning = "provisioning docker"
+	boxes[1].Provisioning = "provisioning docker"
+	l := listForTest(Session{}, boxes)
+	l.moveTo(1)
+	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "❯ ● ▶ provisioning d") {
+		t.Fatalf("the cursor row does not say what is provisioning:\n%s", out)
+	}
+	if !strings.Contains(out, "blocked-box") {
+		t.Fatalf("a row off the cursor lost its name:\n%s", out)
+	}
+	l.moveTo(0)
+	out = ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "❯ ● ◆ Allow rm") {
+		t.Fatalf("provisioning displaced what the agent is blocked on:\n%s", out)
+	}
+}

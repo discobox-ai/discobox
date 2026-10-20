@@ -3,10 +3,13 @@ package sandboxcreate
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // A repository declaring foo means the ../foo the caller already has: the
@@ -336,8 +339,9 @@ func TestDeclaredSourcesOfEachSettingsLayout(t *testing.T) {
 				writeSettingsFile(t, primary, name, content)
 			}
 			var warnings []string
-			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
+			settings, err := declaredPromptSettings(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
 				resolvedRunSource{LocalDirectory: primary})
+			declared := settings.Sources
 			checkSettingsLayout(t, layout.lib, layout.warned, layout.unknownWarned, declared, warnings, err)
 		})
 	}
@@ -362,7 +366,8 @@ func TestRemoteDeclaredSourcesOfEachSettingsLayout(t *testing.T) {
 				Checkout: resolvedRunSourceCheckout{Commit: strings.TrimSpace(git("rev-parse", "HEAD")), RefName: "main", RefType: runSourceRefTypeBranch},
 			}
 			var warnings []string
-			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }}, primary)
+			settings, err := declaredPromptSettings(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }}, primary)
+			declared := settings.Sources
 			checkSettingsLayout(t, layout.lib, layout.warned, layout.unknownWarned, declared, warnings, err)
 			if len(warnings) > 0 && !strings.HasPrefix(warnings[0], primary.URL+"@") {
 				t.Fatalf("warning %q does not name the remote", warnings[0])
@@ -388,8 +393,9 @@ func TestASettingsFileInTheShapeOfASourcesFile(t *testing.T) {
 			primary := newRunSourceTestRepoIn(t, testWorkspace(t), "app")
 			writeSettingsFile(t, primary, "settings.json", tc.content)
 			var warnings []string
-			declared, err := declaredPromptSources(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
+			settings, err := declaredPromptSettings(context.Background(), PromptOptions{Warn: func(w string) { warnings = append(warnings, w) }},
 				resolvedRunSource{LocalDirectory: primary})
+			declared := settings.Sources
 			if tc.refused {
 				if err == nil || !strings.Contains(err.Error(), `holds "lib" at its top level`) {
 					t.Fatalf("declared = %v, %v; want the file refused, naming the key", declared, err)
@@ -549,12 +555,13 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 		Checkout:    resolvedRunSourceCheckout{Commit: declaring, RefName: "main", RefType: runSourceRefTypeBranch},
 		Destination: defaultRunDestination(linuxSandbox),
 	}
-	got, err := declaredPromptSources(context.Background(), PromptOptions{}, primary)
+	declared, err := declaredPromptSettings(context.Background(), PromptOptions{}, primary)
+	got := declared.Sources
 	if err != nil || got["lib"] == "" {
 		t.Fatalf("declared sources of a remote primary = %v, %v", got, err)
 	}
-	if skipped, err := declaredPromptSources(context.Background(), PromptOptions{SkipDeclaredSources: true}, primary); err != nil || skipped != nil {
-		t.Fatalf("declared sources when opted out = %v, %v", skipped, err)
+	if skipped, err := declaredPromptSettings(context.Background(), PromptOptions{SkipDeclaredSources: true}, primary); err != nil || skipped.Sources != nil {
+		t.Fatalf("declared sources when opted out = %v, %v", skipped.Sources, err)
 	}
 	arg, report := resolveDeclaredSourceArg(context.Background(), "", "lib", got["lib"])
 	if arg != got["lib"] || report.Local || report.Checkout != "" {
@@ -573,7 +580,24 @@ func TestARemotePrimarySourceDeclaresItsSources(t *testing.T) {
 	}
 	git("commit", "-am", "declare a path")
 	primary.Checkout.Commit = strings.TrimSpace(git("rev-parse", "HEAD"))
-	if _, err := declaredPromptSources(context.Background(), PromptOptions{}, primary); err == nil || !strings.Contains(err.Error(), "not a Git URL") {
+	if _, err := declaredPromptSettings(context.Background(), PromptOptions{}, primary); err == nil || !strings.Contains(err.Error(), "not a Git URL") {
 		t.Fatalf("a declared path was accepted: %v", err)
+	}
+}
+
+// A repository's features ride the create request whether or not its declared
+// sources are brought in: turning a feature off is not a source.
+func TestDeclaredFeaturesAreReadEvenWithoutDeclaredSources(t *testing.T) {
+	primary := newRunSourceTestRepoIn(t, testWorkspace(t), "app")
+	writeSettingsFile(t, primary, "settings.json", map[string]any{"features": map[string]any{"brew": false, "nix": map[string]any{"enabled": true}}})
+	for _, skip := range []bool{false, true} {
+		settings, err := declaredPromptSettings(context.Background(), PromptOptions{SkipDeclaredSources: skip}, resolvedRunSource{LocalDirectory: primary})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]sandboxconfig.Feature{"brew": {Enabled: false}, "nix": {Enabled: true}}
+		if !maps.Equal(settings.Features, want) {
+			t.Errorf("skip %v: features = %v, want %v", skip, settings.Features, want)
+		}
 	}
 }

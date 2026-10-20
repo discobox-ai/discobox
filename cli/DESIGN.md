@@ -1321,6 +1321,12 @@ status it posted, and a state this client does not know reads as none. The
 program's text is made displayable before it is kept: no control characters,
 bidirectional overrides or invisible formatting.
 
+The same status carries the box's provisioning (`runtime.agentStatus.provision`,
+its `provision.json`, ADR 26-10-16-423 §6), read the same way
+(`sandboxProvisioning`) into one line: the features still provisioning, or the
+ones that failed, and nothing once all are ready. Under the console's cursor
+it takes the name's place, after an error and a blocked agent's text.
+
 ## Sandbox Display Name
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
@@ -2649,7 +2655,13 @@ resolved exactly like `--include`:
   `settings.json` beside either is refused rather than merged.
 - `--declared-sources=false` leaves them out, for a caller who wants only what
   they named — or does not want a large clone on every run. The settings are
-  then not read at all.
+  still read, for their `features`, so a malformed file fails the create
+  either way.
+- **The same file's `features` ride the create request** (`config.features`),
+  whatever `--declared-sources` says: which of the box's features the
+  repository turns off ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §§4, 11). The client is their only reader; the server checks the names and
+  the box provisions every other feature.
 
 `sandboxcreate` resolves them and reports through
 `PromptOptions.ReportDeclaredSource`, and warns through `PromptOptions.Warn`;
