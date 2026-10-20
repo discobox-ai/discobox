@@ -325,6 +325,11 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 - `$!` of a backgrounded shell function is the subshell, not the server.
   Stop the server by its own pid (`pgrep -f $S/discobox-server`) *before*
   removing its pools, or it recreates them.
+- `env -i` drops the box's proxy, and a discobox reaches the internet only
+  through it: a server that fetches anything outward (a target document, an
+  exchange) fails with `network is unreachable`. Pass `HTTPS_PROXY`,
+  `HTTP_PROXY` and `NO_PROXY` through, and give your own `curl` to the
+  server `--noproxy '*'`.
 - The server's config file is found by XDG (`~/.config/discobox`), not
   `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env.
 - With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
