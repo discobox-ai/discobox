@@ -313,14 +313,15 @@ type fakeSource struct {
 	pushCalls []string
 
 	// Calls, in order.
-	drafts []string // "folder prompt"
-	views  []savedView
-	// freshFolder is a folder no window has narrowed yet, which opens on
+	drafts      []string
+	views       []ListView
+	lastSources []string
+	// nothingSaved is a machine no window has narrowed yet, which opens on
 	// every server, folder and tag rather than on its own folder.
-	freshFolder bool
-	runs        []RunRequest
-	did         []string // "verb id"
-	renames     []string // "id name"
+	nothingSaved bool
+	runs         []RunRequest
+	did          []string // "verb id"
+	renames      []string // "id name"
 	// titles is what each renamed box was showing before it was given a name,
 	// which is what clearing the name shows again.
 	titles      map[string]string
@@ -439,7 +440,7 @@ func testHarnesses() []Harness {
 // one folder's discoboxes, which is what a window left narrowed there opens on.
 func (f *fakeSource) Session(context.Context) (Session, error) {
 	s := f.session
-	if !f.freshFolder && s.View.IsZero() {
+	if !f.nothingSaved && s.View.IsZero() {
 		own := s.folder()
 		s.View = ListView{FolderKey: own.key, FolderLabel: own.label, FolderSource: own.source, FolderLocal: own.local}
 	}
@@ -455,22 +456,24 @@ func (f *fakeSource) MarkWelcomed(context.Context) error {
 
 // SaveDraft records what the window handed the store, in order, so a test can
 // see both what was saved and how often.
-func (f *fakeSource) SaveDraft(_ context.Context, folder, prompt string) error {
-	f.drafts = append(f.drafts, folder+" "+prompt)
+func (f *fakeSource) SaveDraft(_ context.Context, prompt string) error {
+	f.drafts = append(f.drafts, prompt)
 	return f.draftErr
 }
 
-// savedView is one SaveView call.
-type savedView struct {
-	folder string
-	view   ListView
-}
-
 // SaveView records the filters the window handed the store, in order.
-func (f *fakeSource) SaveView(_ context.Context, folder string, view ListView) error {
+func (f *fakeSource) SaveView(_ context.Context, view ListView) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.views = append(f.views, savedView{folder: folder, view: view})
+	f.views = append(f.views, view)
+	return nil
+}
+
+// SaveLastSource records each source a create was cut from, in order.
+func (f *fakeSource) SaveLastSource(_ context.Context, source string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastSources = append(f.lastSources, source)
 	return nil
 }
 

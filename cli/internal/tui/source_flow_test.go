@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -156,8 +157,8 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 
 	// Answering it creates: the answer is what the run was waiting for. It is
 	// where this one discobox is cut from, not a filter, so the header stays on
-	// every folder and the next create asks again.
-	sourceBefore := m.opts.opts[optSource].selected()
+	// every folder and the next create asks again. The Source row takes it,
+	// and the next window is told it.
 	send(t, m, keyPress("2"))
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %v, want the create the question interrupted", ds.runs)
@@ -171,8 +172,11 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	if m.list.folder.key != everyFolder.key {
 		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
 	}
-	if got := m.opts.opts[optSource].selected(); got != sourceBefore {
-		t.Fatalf("source row = %q, want it left at %q", got, sourceBefore)
+	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
+		t.Fatalf("source row = %q, want the answer", got)
+	}
+	if !slices.Equal(ds.lastSources, []string{"/src/obot"}) {
+		t.Fatalf("saved = %v, want the answer kept for the next window", ds.lastSources)
 	}
 	if m.opts.folder != "" {
 		t.Fatalf("panel folder = %q, want it left on every folder", m.opts.folder)
@@ -317,8 +321,8 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	if m.list.folder.key != everyFolder.key || m.opts.folder != "" {
 		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
 	}
-	if got := m.opts.opts[optSource].selected(); got == "/src/elsewhere" {
-		t.Fatalf("source row = %q, want the answer left off the row", got)
+	if got := m.opts.opts[optSource].selected(); got != "/src/elsewhere" {
+		t.Fatalf("source row = %q, want the answer", got)
 	}
 	// A path typed by hand is not in the listing, but the next asking still
 	// offers it and opens on it.
@@ -327,5 +331,84 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	}
 	if got := cardSource(t, m.dialog); got != "/src/elsewhere" {
 		t.Fatalf("question opens on %q, want the typed path", got)
+	}
+}
+
+// Where the last create was cut from is kept across windows, wherever they are
+// opened: the next one leads its sources with it and opens the card on it,
+// whatever folder the header is on.
+func TestTheLastSourceLeadsTheNextWindow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.session.LastSource = "/src/obot"
+	m := newTestModel(t, ds)
+	if m.list.folder.key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the header on the window's own", m.list.folder.label)
+	}
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+
+	if got := cardSources(t, m.dialog)[0]; got != "/src/obot" {
+		t.Fatalf("first source = %q, want the last one cut from", got)
+	}
+	if got := cardSource(t, m.dialog); got != "/src/obot" {
+		t.Fatalf("card opens on %q, want the last one cut from", got)
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
+		t.Fatalf("runs = %v, want one cut from the last source", ds.runs)
+	}
+}
+
+// With the header on one folder, the card still opens on the last answer once
+// there is one: the header picks what is listed, the last create where the next
+// is cut from. Moving the header afterwards names a place again.
+func TestTheCardOpensOnTheLastAnswerWithOneFolderShown(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("one")...)
+	send(t, m, keyPress("enter"))
+	if got := cardSource(t, m.dialog); got != "/src/disco2 @ main" {
+		t.Fatalf("card opens on %q, want the folder the header is on", got)
+	}
+	labels := cardSources(t, m.dialog)
+	key := itoa(slices.Index(labels, "/src/obot") + 1)
+	send(t, m, keyPress(key))
+	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
+		t.Fatalf("runs = %v, want one cut from /src/obot", ds.runs)
+	}
+	m.dialog = nil
+
+	if !m.askHowToCreate() {
+		t.Fatal("the next create should ask")
+	}
+	if got := cardSource(t, m.dialog); got != "/src/obot" {
+		t.Fatalf("card opens on %q, want the last answer", got)
+	}
+	if got := cardSources(t, m.dialog)[0]; got != "/src/obot" {
+		t.Fatalf("first source = %q, want the last answer", got)
+	}
+	if m.list.folder.key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the header left where it was", m.list.folder.label)
+	}
+}
+
+// -C names the source this window cuts from, so the last window's answer only
+// leads the list rather than being where the card opens.
+func TestTheCommandLineOutranksTheLastSource(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.session.LastSource = "/src/obot"
+	ds.session.SourceChosen = true
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+
+	if got := cardSources(t, m.dialog)[0]; got != "/src/obot" {
+		t.Fatalf("first source = %q, want the last one cut from", got)
+	}
+	if got := cardSource(t, m.dialog); got != "/src/disco2 @ main" {
+		t.Fatalf("card opens on %q, want the one -C named", got)
 	}
 }

@@ -1256,8 +1256,7 @@ because the filter a choice leaves in place is part of what the choice will
 list.
 
 **The server on screen is the server the prompt creates on.** The header filter
-and the run options' Server row are one control in both directions, the way the
-folder and the Source row are: `applyFilter` (and `cycleServer` on the
+and the run options' Server row are one control in both directions: `applyFilter` (and `cycleServer` on the
 harnesses and secrets screens) → `optionSet.setServer`, and
 `Model.followServer` back the other way when the row is cycled in the panel. So
 narrowing the list to a machine is also the way to send the next prompt there.
@@ -2690,37 +2689,38 @@ one thing the renderer cannot redraw its way out of.
 Pool preload is reported through the sandbox launch's normal busy status. The
 console has no independent prepull subscription or reserved setup row.
 
-**The header's filters are kept per folder** (`view.go`,
-[ADR 26-09-30-188](../../../docs/adr/26-09-30-188-the-consoles-filters-open-on-everything-and-are-kept-per-directory.md)). A window opens on
-`Session.View`: the server, folder and tags the last window in the session's
-directory was left on, or — in a directory never narrowed — every server, every
-folder and every tag, the zero `ListView`, narrowed by what the command line
-named (`Session.ServerChosen`, `SourceChosen`): `--server` opens on the primary
-it made, and `-C` on the window's own folder — already the absolute project
-root, so `-C ../foo` is `/home/…/foo`. That narrowing is taken as what the store
-has, so it is saved only once the filters move off it, and a saved view
-outranks it: the flags choose the default and nothing else. They are written through
-`DataSource.SaveView` exactly when a draft is, on the listing's tick when they
-have moved and from `closeWindow` on the way out, and never by a one-shot
-window, whose header nobody chose. The folder is carried whole (key, label,
-source) because the window opens on it before any listing has landed to name
-it; a saved server no longer registered opens as every server. A view saved
-when the filter held one tag (`tag` in the state file) opens on that tag and is
-rewritten as `tags` the next time it moves. A create's
+**The header's filters are kept, one set per machine** (`view.go`,
+[ADR 26-10-20-596](../../../docs/adr/26-10-20-596-the-console-keeps-one-memory-per-machine-and-the-last-source-leads.md)). A window opens on
+`Session.View`: the server, folder and tags the last window on this machine was
+left on, whatever directory it is opened in — or, with nothing saved, every
+server, every folder and every tag, the zero `ListView`. What the command line
+named outranks it (`Session.ServerChosen`, `SourceChosen`): `--server` opens on
+the primary it made, and `-C` on the window's own folder — already the absolute
+project root, so `-C ../foo` is `/home/…/foo`. That narrowing is taken as what
+the store has, so it is saved only once the filters move off it. They are
+written through `DataSource.SaveView` exactly when a draft is, on the listing's
+tick when they have moved and from `closeWindow` on the way out, and never by a
+one-shot window, whose header nobody chose. The folder is carried whole (key,
+label, source) because the window opens on it before any listing has landed to
+name it; a saved server no longer registered opens as every server. A create's
 card is answered with where that one discobox is cut from (`askHowToCreate`),
 and answering it leaves the view where it was.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
-is written through `DataSource.SaveDraft`, keyed by the session's directory, and
-`Session.Draft` is what the next window in that folder opens holding. Closing a
+is written through `DataSource.SaveDraft`, one draft per machine, and
+`Session.Draft` is what the next window opens holding, wherever it is opened. Closing a
 terminal is not a decision to throw away several lines you thought about.
 
-Written on the listing's own tick, and only when the field has moved since the
-store last had it, so an idle window writes nothing and a window killed outright
-loses seconds rather than the prompt. The keys that close the window
-(`closeWindow`) write it from `Update` instead — a command batched with
-`tea.Quit` races the runtime shutting down, and a prompt lost on the way out is
-the whole of what this exists to prevent. A failed write is reported and not
+Written on the listing's own tick, and only when the field has moved since this
+window last wrote it, so an idle window writes nothing while it is open and a
+window killed outright loses seconds rather than the prompt. The keys that close
+the window (`closeWindow`) write it from `Update` instead — a command batched
+with `tea.Quit` races the runtime shutting down, and a prompt lost on the way out
+is the whole of what this exists to prevent. On the way out a prompt still in the
+composer is written whether or not it moved, the restored draft included: the
+draft is one per machine and another window may have written over it since, so
+the window closed last is the one whose prompt comes back. Only an empty composer
+that was never anything else writes nothing. A failed write is reported and not
 retried until the prompt changes again: the alternative is a window repeating
 itself about the same broken disk every five seconds.
 
@@ -2939,8 +2939,8 @@ repository when the source resolved to one (above). Otherwise it is an origin ke
 a machine, and where the discoboxes in it had their source from — a directory or
 a repository URL — matched by the key the server stored on each row
 (`Sandbox.OriginKey`) and named by that source, so a URL is a folder the way a
-directory is. The header opens on the folder the directory's saved view names,
-or on `allFolders` (see "The header's filters are kept per folder"); the window's
+directory is. The header opens on the folder the saved view names,
+or on `allFolders` (see "The header's filters are kept, one set per machine"); the window's
 own folder (`Session.RepositoryKey` when its checkout is on GitHub, otherwise
 `Session.OriginKey`, where a discobox cut here is filed) leads the
 filter card's folders, with every folder something is filed in beside it. A folder of this machine's also holds its
@@ -3024,13 +3024,15 @@ compares `Sandbox.OriginHostID` against `Session.HostID` and writes the
 qualifier itself. An unknown local identity marks nothing at all — a window
 that cannot say what is local cannot say what is remote either.
 
-The folder is also *where Enter creates*, not just what the list is filtered to:
-`optionSet.setFolder` points the run source at it, so the header is one control
-rather than two that look alike. `request()` leaves `Source` empty when the
-folder is the session's own directory, since that is already what `discobox new`
-resolves to, and the chip strip shows the source only when an override makes it
-differ from what the header says — a strip repeating the header is one you stop
-reading.
+Moving the folder also moves *where Enter creates*: `optionSet.setFolder` points
+the run source at it. The two are not one control, though: a window opens its
+Source row on the last create's source (`Session.LastSource`) whatever folder the
+header opens on, and each create leaves the row on its answer without moving the
+header (ADR 26-10-20-596), so the next create opens there. `request()` leaves
+`Source` empty when it is the session's own directory, since that is already
+what `discobox new` resolves to, and the chip strip shows the source only when
+it differs from what the header says — a strip repeating the header is one you
+stop reading.
 
 **The Source row is a selector, and it moves the header back** (`options.go`).
 It offers what the project has actually been cut from — `sandboxList.sources()`,
@@ -3099,11 +3101,14 @@ additional sources), where it asks for another value and the field returns to
 the card.
 
 - **The source answered is this one discobox's, not a filter.** `request` takes
-  it without the Source row or the header moving, so the list shows what it
-  showed once the create is done. A header on one folder opens the card on that
-  folder. "All folders" is not a place — it used to fall back silently to the
-  directory the window was running in — so there the card opens on the last
-  answer (`lastCut`), which lives as long as the window and is not saved.
+  it without the header moving, so the list shows what it showed once the
+  create is done. It is the last answer (`lastCut`): it leads the Source row,
+  the row is set to it (`optionSet.cutFrom`), and `DataSource.SaveLastSource`
+  keeps it for the next window, which opens its row on `Session.LastSource`
+  unless `-C` named a source (ADR 26-10-20-596). The card opens on the row's
+  choice, so the next create is one Enter from the same place until the header
+  or the row is moved to name another; with nothing ever answered, that is the
+  folder the header is on, or the window's own directory on "all folders".
 - **The settings are the run options' own rows**, not copies: what is changed
   on the card is what the panel and the chip strip say afterwards, the Server
   row moves the header as it does from the panel (`followServer`), and a
@@ -3370,7 +3375,7 @@ the newest one where the busy line goes.
 | `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `new.skills`, added to and removed from by what a value is |
 | `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
-| `draft.go` | the unsent prompt, saved per folder and restored |
+| `draft.go` | the unsent prompt, saved per machine and restored |
 | `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |
 | `zones.go` | the hit map a frame records as it draws |
 | `chrome.go` | the chrome selection over the composed frame |

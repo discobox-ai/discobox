@@ -432,13 +432,12 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	if branch, ok := gitutil.CurrentBranch(ctx, dir); ok {
 		session.Branch = branch
 	}
-	// Whatever was left unsent here last time. It is local state, not the
-	// project's: a draft belongs to the checkout it was written in and to the
-	// machine it was written on. See drafts.go.
-	session.Draft = promptDraftFor(session.Directory)
-	// And the header's filters the last window here was left on, by the same
-	// rule: they belong to this checkout on this machine. See consoleviews.go.
-	session.View = consoleViewFor(session.Directory)
+	// Whatever the last window on this machine was left holding: the prompt
+	// left unsent, the header's filters and where the last create was cut
+	// from. It is this machine's state, not the project's, and not the
+	// directory's either. See consolestate.go.
+	state := loadConsoleState()
+	session.Draft, session.View, session.LastSource = state.Draft, state.View.listView(), state.LastSource
 	session.ServerChosen, session.SourceChosen = d.serverChosen, d.sourceChosen
 	// The harnesses are not here: they are read on their own by Harnesses,
 	// which is what both the run options and the harnesses screen are drawn
@@ -469,21 +468,26 @@ func (d *apiDataSource) MarkWelcomed(ctx context.Context) error {
 	return err
 }
 
-// SaveDraft keeps the composer's contents against the folder they were typed
-// in, for the next window that opens on it.
+// SaveDraft keeps the composer's contents for the next window.
 //
 // The context is not used and is not wanted: this is a local file, and the
 // window's last call is the one it makes on the way out, when the context it
 // is holding may already be on its way down with the program.
-func (d *apiDataSource) SaveDraft(_ context.Context, folder, prompt string) error {
-	return savePromptDraft(folder, prompt)
+func (d *apiDataSource) SaveDraft(_ context.Context, prompt string) error {
+	return savePromptDraft(prompt)
 }
 
-// SaveView keeps the header's filters against the folder the window is open
-// in, for the next window that opens on it. The context is unused, for the
-// reason SaveDraft's is.
-func (d *apiDataSource) SaveView(_ context.Context, folder string, view tui.ListView) error {
-	return saveConsoleView(folder, view)
+// SaveView keeps the header's filters for the next window. The context is
+// unused, for the reason SaveDraft's is.
+func (d *apiDataSource) SaveView(_ context.Context, view tui.ListView) error {
+	return saveConsoleView(view)
+}
+
+// SaveLastSource keeps where the last create was cut from, which the next
+// window's Source row opens on. The context is unused, for the reason
+// SaveDraft's is.
+func (d *apiDataSource) SaveLastSource(_ context.Context, source string) error {
+	return saveLastSource(source)
 }
 
 // List is every sandbox in the project, newest-created first — the same

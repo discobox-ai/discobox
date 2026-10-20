@@ -8,7 +8,7 @@ import (
 )
 
 // The prompt survives the window. What was in the composer when it closed is
-// what the next window in that folder opens holding, because a prompt is
+// what the next window opens holding, wherever it is opened, because a prompt is
 // usually the most considered thing on the screen and closing a terminal is
 // not a decision to throw one away.
 func TestThePromptComesBackWithTheSession(t *testing.T) {
@@ -24,7 +24,7 @@ func TestThePromptComesBackWithTheSession(t *testing.T) {
 	if got, want := m.prompt.Line(), m.prompt.LineCount()-1; got != want {
 		t.Errorf("cursor on line %d, want the last line %d", got, want)
 	}
-	if !strings.Contains(frameText(m), "the prompt you left here is back") {
+	if !strings.Contains(frameText(m), "the prompt you left is back") {
 		t.Errorf("the window should say why there is text in the field:\n%s", frameText(m))
 	}
 	// It is a draft, not a save: Enter still runs it, and the composer has
@@ -68,7 +68,7 @@ func TestTheDraftIsSavedOnTheTick(t *testing.T) {
 
 	send(t, m, typeString("half a thought")...)
 	send(t, m, tickMsg{})
-	if want := []string{"/src/disco2 half a thought"}; !slices.Equal(ds.drafts, want) {
+	if want := []string{"half a thought"}; !slices.Equal(ds.drafts, want) {
 		t.Fatalf("drafts = %v, want %v", ds.drafts, want)
 	}
 
@@ -92,8 +92,31 @@ func TestClosingTheWindowSavesTheDraft(t *testing.T) {
 	if !m.quit {
 		t.Fatal("ctrl+c should close the window")
 	}
-	if want := []string{"/src/disco2 unsent"}; !slices.Equal(ds.drafts, want) {
+	if want := []string{"unsent"}; !slices.Equal(ds.drafts, want) {
 		t.Fatalf("drafts = %v, want %v", ds.drafts, want)
+	}
+}
+
+// There is one draft on the machine, so a prompt this window already saved may
+// have been written over by another window since. Closing with it still in the
+// composer writes it again, so it is what the next window opens holding; an
+// idle window with nothing in it writes nothing over another's.
+func TestClosingWritesThePromptAgain(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("important")...)
+	send(t, m, tickMsg{})
+	send(t, m, keyPress("ctrl+c"))
+	if want := []string{"important", "important"}; !slices.Equal(ds.drafts, want) {
+		t.Fatalf("drafts = %v, want the prompt written again on the way out", ds.drafts)
+	}
+
+	idle := newFakeSource(testSandboxes()...)
+	m = newTestModel(t, idle)
+	send(t, m, keyPress("ctrl+c"))
+	if len(idle.drafts) != 0 {
+		t.Fatalf("drafts = %v, want an idle window to write nothing", idle.drafts)
 	}
 }
 
@@ -117,7 +140,7 @@ func TestQuittingOnAnEmptiedPromptDropsTheDraft(t *testing.T) {
 	if !m.quit {
 		t.Fatal("ctrl+d on an empty prompt should close the window")
 	}
-	if want := []string{"/src/disco2 "}; !slices.Equal(ds.drafts, want) {
+	if want := []string{""}; !slices.Equal(ds.drafts, want) {
 		t.Fatalf("drafts = %v, want the draft dropped", ds.drafts)
 	}
 }
@@ -151,7 +174,7 @@ func TestExitAndQuitCloseTheWindowInsteadOfRunning(t *testing.T) {
 		if len(ds.runs) != 0 {
 			t.Fatalf("runs = %v, want %q never run", ds.runs, typed)
 		}
-		if got := ds.drafts[len(ds.drafts)-1]; got != "/src/disco2 " {
+		if got := ds.drafts[len(ds.drafts)-1]; got != "" {
 			t.Fatalf("last write = %q, want %q not kept as a draft", got, typed)
 		}
 	}
@@ -170,7 +193,7 @@ func TestRunningThePromptDropsTheDraft(t *testing.T) {
 	send(t, m, promptSpentMsg{req: RunRequest{Prompt: []string{"build it"}}})
 	send(t, m, tickMsg{})
 
-	if got := ds.drafts[len(ds.drafts)-1]; got != "/src/disco2 " {
+	if got := ds.drafts[len(ds.drafts)-1]; got != "" {
 		t.Fatalf("last write = %q, want the draft dropped", got)
 	}
 }
@@ -191,9 +214,9 @@ func TestAFailedDraftSaveIsReported(t *testing.T) {
 	}
 }
 
-// A window with no folder resolved has nothing to key a draft by, and a draft
-// nothing can be keyed by is one nothing can return.
-func TestNoFolderNoDraft(t *testing.T) {
+// A window whose session did not land was never handed the draft, so what it
+// would write is not an edit of it but a stranger's overwrite.
+func TestNoSessionNoDraft(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Directory = ""

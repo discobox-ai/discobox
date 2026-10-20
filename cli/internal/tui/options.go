@@ -148,10 +148,10 @@ type optionSet struct {
 	// is kept here for the list to follow it there.
 	named Source
 	// lastCut is the source the last create card was answered with
-	// (askHowToCreate). It is not the row's setting — that answer is not a
-	// filter — but with the header on every folder it is what the next card
-	// opens on, so creating again from the same place is one Enter. Empty
-	// until a card has been answered.
+	// (askHowToCreate), in this window or — through Session.LastSource — the
+	// last one on this machine. It leads the Source row, and answering a card
+	// sets the row to it, so creating again from the same place is one Enter.
+	// Empty until a card has ever been answered.
 	lastCut string
 }
 
@@ -477,13 +477,14 @@ func (o *optionSet) setSources(known []Source) {
 	o.rebuildSources()
 }
 
-// rebuildSources lays the Source row out: the directory this window is running
-// in, then every other source the project has been cut from, then "no source".
+// rebuildSources lays the Source row out: the source the last create was cut
+// from, the directory this window is running in, then every other source the
+// project has been cut from, then "no source".
 //
-// The order is fixed and does not follow what is chosen. Leading with the
-// folder the header is on would reorder the row every time the list followed a
-// source to its folder, and left-right would then only ever reach the first two
-// entries. Which one counts as unchanged is carried by the row instead, so the
+// The order does not follow what is chosen; only a create moves it, by moving
+// what leads it. Leading with the folder the header is on would reorder the row
+// every time the list followed a source to its folder, and left-right would
+// then only ever reach the first two entries. Which one counts as unchanged is carried by the row instead, so the
 // panel can say "this is not where the header is" without the order saying it.
 func (o *optionSet) rebuildSources() {
 	opt := o.opts[optSource]
@@ -504,19 +505,22 @@ func (o *optionSet) rebuildSources() {
 		choices = append(choices, o.sourceChoiceLabel(value))
 		values = append(values, value)
 	}
+	// The last create's answer leads, and is added whether or not the listing
+	// holds it: it can be a path typed by hand that nothing has been cut from
+	// since, or one whose discoboxes have all gone, and it is still where the
+	// next create opens.
+	add(o.lastCut)
 	add(o.session.source())
 	for _, source := range o.known {
 		add(source.Value)
 	}
-	// The folder the header is on, a source named by hand, and the last
-	// create's answer are all things the listing cannot be relied on to hold:
-	// a folder whose discoboxes were all cut from somewhere else is still a
-	// folder you can cut from, a path typed into the field has to survive the
-	// next refresh of the listing, and the last answer can be such a path,
-	// which the next create's question has to be able to open on.
+	// The folder the header is on and a source named by hand are things the
+	// listing cannot be relied on to hold either: a folder whose discoboxes
+	// were all cut from somewhere else is still a folder you can cut from, and
+	// a path typed into the field has to survive the next refresh of the
+	// listing.
 	add(o.sourceDir())
 	add(o.source)
-	add(o.lastCut)
 	choices = append(choices, noSourceChoice)
 	values = append(values, sourceNone)
 
@@ -538,6 +542,26 @@ func (o *optionSet) sourceChoiceLabel(value string) string {
 		return o.session.sourceLabel()
 	}
 	return sourceref.Display(value, o.session.Home)
+}
+
+// cutFrom records the source a create was cut from and sets the row to it, so
+// the next create opens there whatever the header is on. The header is not
+// moved: the answer is where a discobox comes from, not a filter.
+func (o *optionSet) cutFrom(source string) {
+	o.lastCut = source
+	o.chooseSource(source)
+}
+
+// openOnLastCut sets the row to where the last window's last create was cut
+// from (Session.LastSource), unless the command line named a source: -C is
+// saying which you mean.
+func (o *optionSet) openOnLastCut(source string) {
+	if source == "" || o.session.SourceChosen {
+		o.lastCut = source
+		o.rebuildSources()
+		return
+	}
+	o.cutFrom(source)
 }
 
 // cycleSource moves the Source row and records what it landed on, since the row

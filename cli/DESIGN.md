@@ -365,26 +365,21 @@ private key another principal can reach, and reports only "Bad owner or
 permissions". `privatefs.Check` in the tests checks the real thing on each
 platform — the mode on Unix, the owner and every ACE on Windows.
 
-The JSON memories under it — `recent-selections.json`, `prompt-drafts.json` and
-`console-views.json` —
+The JSON memories under it — `recent-selections.json` and `console.json` —
 are written by `writeStateFile` (`internal/cli/statefile.go`) through a
 temporary file beside the target, so a crash mid-write cannot leave a reader
-parsing half a file for the rest of the install's life. Each is bounded to a
-number of entries and each is best-effort on every read and write: a missing,
-unwritable or corrupt file costs the convenience and never the command.
+parsing half a file for the rest of the install's life. Each is best-effort on
+every read and write: a missing, unwritable or corrupt file costs the
+convenience and never the command.
 
-- `prompt-drafts.json` (`internal/cli/drafts.go`) is the console's composer
-  contents per project directory: what `tui.Session.Draft` is loaded from and
-  what `DataSource.SaveDraft` writes. Keyed by the window's own
-  directory (`sandboxcreate.LocalProjectDirectory`), because a prompt written in one checkout must not come
-  back in another. An empty prompt deletes its entry rather than storing nothing
-  under it, and a prompt past the cap is cut on a rune boundary — a state file
-  is not where a pasted log belongs.
-- `console-views.json` (`internal/cli/consoleviews.go`) is the console header's
-  server, folder and tag filters per project directory, keyed the same way:
-  what `tui.Session.View` is loaded from and what `DataSource.SaveView` writes.
-  A directory with no entry opens on every server, folder and tag, and saving
-  that default deletes the entry.
+- `console.json` (`internal/cli/consolestate.go`) is the console's memory,
+  one of each on this machine whatever directory a window opens in (ADR
+  26-10-20-596): the composer's unsent prompt (`tui.Session.Draft`,
+  `DataSource.SaveDraft`), the header's server, folder and tag filters
+  (`Session.View`, `SaveView`), and the source the last create was cut from
+  (`Session.LastSource`, `SaveLastSource`). Each save rewrites one field and
+  keeps the rest, serialized within the process. A prompt past the cap is cut
+  on a rune boundary — a state file is not where a pasted log belongs.
 
 ## Client Configuration (ADR 26-10-09-389)
 

@@ -942,13 +942,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.list.session = msg.session
 		m.sessionRead = true
 		cmd := m.restoreDraft(msg.session.Draft)
-		// The window opens on the filters the last window in this folder was
-		// left on, and on every server, folder and tag in a folder that has
-		// never been narrowed: seeing everything side by side is the listing
-		// ADR 0116 §4 describes. See view.go.
+		// The window opens on the filters the last window was left on, and on
+		// every server, folder and tag when nothing has been narrowed: seeing
+		// everything side by side is the listing ADR 0116 §4 describes. See
+		// view.go.
 		m.restoreView(msg.session.View)
 		m.opts = newOptions(msg.session)
 		m.opts.setFolder(m.list.folder.source)
+		m.opts.openOnLastCut(msg.session.LastSource)
 		m.opts.setServer(m.list.server)
 		// The listing can land first, and what it says the project was cut
 		// from is what the Source row and the create card offer.
@@ -2594,17 +2595,17 @@ func (m *Model) run() tea.Cmd {
 // discobox is cut from, and under that the harness, the server and what is
 // brought in beside the source. It reports whether the run was stopped.
 //
-// It is asked of every create, whatever the header says. A header on one
-// folder has named a place, and the card opens with its cursor there, so that
-// create is one more Enter; the header on "all folders" has named none, and
-// the card opens on the last one's answer (optionSet.lastCut). Asking only in
-// the second case was a card that sometimes appeared, and the one place to
-// look at the harness before a create was a panel that had to be remembered.
+// It is asked of every create, whatever the header says. The card opens with
+// its cursor on the Source row's choice: the last create's answer, kept across
+// windows, until the header or the row is moved to name another place. Asking
+// only when the header named none was a card that sometimes appeared, and the
+// one place to look at the harness before a create was a panel that had to be
+// remembered.
 //
 // The source answered is where this one discobox is cut from, not a filter:
-// the Source row and the header stay where they were (cutFrom), so the list
-// shows what it showed once the create is done. The settings under it are the
-// run options' own rows, and stay as they are left.
+// the header stays where it was (cutFrom), so the list shows what it showed
+// once the create is done. The settings under it are the run options' own
+// rows, and stay as they are left.
 //
 // A window whose session has not landed yet has no directory or sources to
 // offer. It is left to `discobox new`'s own resolution, the way a prompt
@@ -2717,20 +2718,26 @@ type itemResolvedMsg struct {
 }
 
 // cutFrom carries on the create a card was answered for. Its answer is where
-// this one discobox comes from, not a filter: the Source row and the header
-// are not moved, so the list still shows what it showed once the create is
-// done. With the header on every folder the next card opens on this answer,
-// so that the same place is one Enter away.
+// this one discobox comes from, not a filter: the header is not moved, so the
+// list still shows what it showed once the create is done. The Source row is,
+// and the answer is kept for the next window too, so the same place is one
+// Enter away from now on.
 func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
-	m.opts.lastCut = source
-	m.opts.rebuildSources()
+	m.opts.cutFrom(source)
 	if card.base != nil {
 		// The card stood in for the window's wait screen (startPendingRun),
 		// and the run it answered goes back to it rather than to the list.
 		m.exitErr = nil
 		m.dialog = m.waitDialog(creatingTitle, "starting")
 	}
-	return m.runRequest(card.requestFrom(source))
+	ds, ctx := m.ds, m.ctx
+	save := func() tea.Msg {
+		if err := ds.SaveLastSource(ctx, source); err != nil {
+			return statusMsg{text: "cannot save where this was cut from: " + err.Error(), err: true}
+		}
+		return nil
+	}
+	return tea.Batch(save, m.runRequest(card.requestFrom(source)))
 }
 
 // runRequest is a run past the questions about the harness it lands on, from
@@ -4297,9 +4304,9 @@ func (m *Model) helpText() string {
 		"    Ctrl-T / Alt-T     transpose characters / words",
 		"    Alt-U / Alt-L / Alt-C   upper / lower / capitalize the next word",
 		"",
-		"  The prompt is remembered per folder: what is in it when the window",
-		"  closes is there the next time one opens here. Running it or",
-		"  clearing it discards it.",
+		"  The prompt is remembered: what is in it when the window closes is",
+		"  there the next time one opens, wherever it is opened. Running it",
+		"  or clearing it discards it.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The discobox list",

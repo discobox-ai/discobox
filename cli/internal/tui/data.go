@@ -461,21 +461,25 @@ type Session struct {
 	HostID string
 	Host   string
 
-	// Draft is the prompt that was left unsent in Directory when a window was
-	// last open on it, and is what the composer opens holding. See
-	// DataSource.SaveDraft.
+	// Draft is the prompt the last window on this machine left unsent, and is
+	// what the composer opens holding. See DataSource.SaveDraft.
 	Draft string
 
-	// View is how the header's filters were left in Directory when a window
-	// was last open on it, and is what the window opens on. The zero value is
-	// every server, every folder and every tag. See DataSource.SaveView.
+	// View is how the last window on this machine left the header's filters,
+	// and is what the window opens on. The zero value is every server, every
+	// folder and every tag. See DataSource.SaveView.
 	View ListView
+
+	// LastSource is the source the last create on this machine was cut from,
+	// as the Source row spells it, and is what the row opens on and leads
+	// with. Empty when nothing has been created yet. See
+	// DataSource.SaveLastSource.
+	LastSource string
 
 	// ServerChosen and SourceChosen are whether the command line named the
 	// server (--server, which makes it the primary) and the source (-C, which
-	// makes it the window's own folder). A folder with no saved View opens
-	// narrowed to what was named rather than on everything: naming one is
-	// saying which you mean.
+	// makes it the window's own folder). What was named outranks what was
+	// saved: naming one is saying which you mean.
 	ServerChosen bool
 	SourceChosen bool
 
@@ -2247,19 +2251,21 @@ type DataSource interface {
 	// options panel are drawn from.
 	Session(ctx context.Context) (Session, error)
 
-	// SaveDraft records the prompt as it stands against the folder it is being
-	// typed in, so that closing the window mid-sentence does not throw the
-	// sentence away: Session hands it back the next time a window opens on
-	// that folder. An empty prompt drops the draft — there is nothing left to
-	// come back to — and a folder is required, since a draft nothing can be
-	// keyed by is one nothing can return.
-	SaveDraft(ctx context.Context, folder, prompt string) error
+	// SaveDraft records the prompt as it stands, so that closing the window
+	// mid-sentence does not throw the sentence away: Session hands it back the
+	// next time a window opens. An empty prompt drops the draft — there is
+	// nothing left to come back to.
+	SaveDraft(ctx context.Context, prompt string) error
 
-	// SaveView records the header's filters against the folder the window is
-	// open in, so the next window there opens on them: Session hands them back
-	// as Session.View. The zero view is the default, and saving it drops what
-	// was kept. A folder is required, the way it is for a draft.
-	SaveView(ctx context.Context, folder string, view ListView) error
+	// SaveView records the header's filters, so the next window opens on
+	// them: Session hands them back as Session.View. The zero view is the
+	// default, and saving it drops what was kept.
+	SaveView(ctx context.Context, view ListView) error
+
+	// SaveLastSource records the source a create was just cut from, as the
+	// Source row spells it, so the next window opens cutting from it: Session
+	// hands it back as Session.LastSource.
+	SaveLastSource(ctx context.Context, source string) error
 
 	// MarkWelcomed records that the project has shown its introduction, so no
 	// window on it opens on the welcome again. It is the project that
