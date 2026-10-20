@@ -293,6 +293,10 @@ type JudgeForPoolRes interface {
 	judgeForPoolRes()
 }
 
+type JudgeSandboxPolicyRes interface {
+	judgeSandboxPolicyRes()
+}
+
 type JudgeSandboxRes interface {
 	judgeSandboxRes()
 }

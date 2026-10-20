@@ -15,6 +15,318 @@ func (s *ErrorResponseStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for
+// every word they use that is not a default, and, once approved, the value each variable resolved to
+// for the discobox the grant is for. A request is allowed when every part of it matches some allow
+// and no part matches any deny; order never matters.
+// Ref: #/components/schemas/AccessPolicy
+type AccessPolicy struct {
+	// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
+	// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
+	// one.
+	Definitions OptAccessPolicyDefinitions `json:"definitions"`
+	// The value each variable the statements use resolved to at approval, for the discobox the grant is
+	// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
+	// grant is minted; ignored on input.
+	Resolved OptAccessPolicyResolved `json:"resolved"`
+	// The statements, in no meaningful order.
+	Statements []AccessPolicyStatement `json:"statements"`
+}
+
+// GetDefinitions returns the value of Definitions.
+func (s *AccessPolicy) GetDefinitions() OptAccessPolicyDefinitions {
+	return s.Definitions
+}
+
+// GetResolved returns the value of Resolved.
+func (s *AccessPolicy) GetResolved() OptAccessPolicyResolved {
+	return s.Resolved
+}
+
+// GetStatements returns the value of Statements.
+func (s *AccessPolicy) GetStatements() []AccessPolicyStatement {
+	return s.Statements
+}
+
+// SetDefinitions sets the value of Definitions.
+func (s *AccessPolicy) SetDefinitions(val OptAccessPolicyDefinitions) {
+	s.Definitions = val
+}
+
+// SetResolved sets the value of Resolved.
+func (s *AccessPolicy) SetResolved(val OptAccessPolicyResolved) {
+	s.Resolved = val
+}
+
+// SetStatements sets the value of Statements.
+func (s *AccessPolicy) SetStatements(val []AccessPolicyStatement) {
+	s.Statements = val
+}
+
+// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
+// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
+// one.
+type AccessPolicyDefinitions map[string]string
+
+func (s *AccessPolicyDefinitions) init() AccessPolicyDefinitions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The value each variable the statements use resolved to at approval, for the discobox the grant is
+// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
+// grant is minted; ignored on input.
+type AccessPolicyResolved map[string]string
+
+func (s *AccessPolicyResolved) init() AccessPolicyResolved {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// A resource a statement's resource or scope sits in.
+// Ref: #/components/schemas/AccessPolicyResource
+type AccessPolicyResource struct {
+	// $this, or empty.
+	CreatedBy OptString `json:"createdBy"`
+	// A literal, a glob, or a variable; null is any name.
+	Name OptNilString `json:"name"`
+	Type string       `json:"type"`
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *AccessPolicyResource) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyResource) GetName() OptNilString {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *AccessPolicyResource) GetType() string {
+	return s.Type
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *AccessPolicyResource) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyResource) SetName(val OptNilString) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *AccessPolicyResource) SetType(val string) {
+	s.Type = val
+}
+
+// Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.
+// host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or
+// anywhere, which only a deny may use.
+// Ref: #/components/schemas/AccessPolicyScope
+type AccessPolicyScope struct {
+	// A literal, a glob, or a variable. Empty only for anywhere.
+	Name OptString `json:"name"`
+	Type string    `json:"type"`
+	// The scopes this one sits in, outermost first.
+	Within []AccessPolicyResource `json:"within"`
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyScope) GetName() OptString {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *AccessPolicyScope) GetType() string {
+	return s.Type
+}
+
+// GetWithin returns the value of Within.
+func (s *AccessPolicyScope) GetWithin() []AccessPolicyResource {
+	return s.Within
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyScope) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *AccessPolicyScope) SetType(val string) {
+	s.Type = val
+}
+
+// SetWithin sets the value of Within.
+func (s *AccessPolicyScope) SetWithin(val []AccessPolicyResource) {
+	s.Within = val
+}
+
+// <allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when
+// <condition>] [unless <condition>].
+// Ref: #/components/schemas/AccessPolicyStatement
+type AccessPolicyStatement struct {
+	// Action words. read, create, update, delete and manage (every action on the type) are defaults; any
+	// other word has a definition.
+	Actions []string `json:"actions"`
+	// $this limits the statement to resources the discobox it is bound to created.
+	CreatedBy OptString                   `json:"createdBy"`
+	Effect    AccessPolicyStatementEffect `json:"effect"`
+	// A literal, a glob, or a variable; null is any name.
+	Name OptNilString `json:"name"`
+	// The resource type, or anything for every type in the scope.
+	ResourceType string            `json:"resourceType"`
+	Scope        AccessPolicyScope `json:"scope"`
+	// A condition a request can be checked against, which must not hold. null is none.
+	Unless OptNilString `json:"unless"`
+	// A condition a request can be checked against, which must hold. null is none.
+	When OptNilString `json:"when"`
+	// The resources this one sits in, outermost first, short of the scope.
+	Within []AccessPolicyResource `json:"within"`
+}
+
+// GetActions returns the value of Actions.
+func (s *AccessPolicyStatement) GetActions() []string {
+	return s.Actions
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *AccessPolicyStatement) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetEffect returns the value of Effect.
+func (s *AccessPolicyStatement) GetEffect() AccessPolicyStatementEffect {
+	return s.Effect
+}
+
+// GetName returns the value of Name.
+func (s *AccessPolicyStatement) GetName() OptNilString {
+	return s.Name
+}
+
+// GetResourceType returns the value of ResourceType.
+func (s *AccessPolicyStatement) GetResourceType() string {
+	return s.ResourceType
+}
+
+// GetScope returns the value of Scope.
+func (s *AccessPolicyStatement) GetScope() AccessPolicyScope {
+	return s.Scope
+}
+
+// GetUnless returns the value of Unless.
+func (s *AccessPolicyStatement) GetUnless() OptNilString {
+	return s.Unless
+}
+
+// GetWhen returns the value of When.
+func (s *AccessPolicyStatement) GetWhen() OptNilString {
+	return s.When
+}
+
+// GetWithin returns the value of Within.
+func (s *AccessPolicyStatement) GetWithin() []AccessPolicyResource {
+	return s.Within
+}
+
+// SetActions sets the value of Actions.
+func (s *AccessPolicyStatement) SetActions(val []string) {
+	s.Actions = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *AccessPolicyStatement) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetEffect sets the value of Effect.
+func (s *AccessPolicyStatement) SetEffect(val AccessPolicyStatementEffect) {
+	s.Effect = val
+}
+
+// SetName sets the value of Name.
+func (s *AccessPolicyStatement) SetName(val OptNilString) {
+	s.Name = val
+}
+
+// SetResourceType sets the value of ResourceType.
+func (s *AccessPolicyStatement) SetResourceType(val string) {
+	s.ResourceType = val
+}
+
+// SetScope sets the value of Scope.
+func (s *AccessPolicyStatement) SetScope(val AccessPolicyScope) {
+	s.Scope = val
+}
+
+// SetUnless sets the value of Unless.
+func (s *AccessPolicyStatement) SetUnless(val OptNilString) {
+	s.Unless = val
+}
+
+// SetWhen sets the value of When.
+func (s *AccessPolicyStatement) SetWhen(val OptNilString) {
+	s.When = val
+}
+
+// SetWithin sets the value of Within.
+func (s *AccessPolicyStatement) SetWithin(val []AccessPolicyResource) {
+	s.Within = val
+}
+
+type AccessPolicyStatementEffect string
+
+const (
+	AccessPolicyStatementEffectAllow AccessPolicyStatementEffect = "allow"
+	AccessPolicyStatementEffectDeny  AccessPolicyStatementEffect = "deny"
+)
+
+// AllValues returns all AccessPolicyStatementEffect values.
+func (AccessPolicyStatementEffect) AllValues() []AccessPolicyStatementEffect {
+	return []AccessPolicyStatementEffect{
+		AccessPolicyStatementEffectAllow,
+		AccessPolicyStatementEffectDeny,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AccessPolicyStatementEffect) MarshalText() ([]byte, error) {
+	switch s {
+	case AccessPolicyStatementEffectAllow:
+		return []byte(s), nil
+	case AccessPolicyStatementEffectDeny:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AccessPolicyStatementEffect) UnmarshalText(data []byte) error {
+	switch AccessPolicyStatementEffect(data) {
+	case AccessPolicyStatementEffectAllow:
+		*s = AccessPolicyStatementEffectAllow
+		return nil
+	case AccessPolicyStatementEffectDeny:
+		*s = AccessPolicyStatementEffectDeny
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type AttachSandboxExecOnceOK struct {
 	Data io.Reader
 }
@@ -604,6 +916,10 @@ type JudgeJob struct {
 	// hand a credential on by approving another's request, or whether what a discobox asked for is
 	// within an approval rule's uses.
 	Kind JudgeJobKind `json:"kind"`
+	// For a request job whose grant carries a policy, what it is judged against in place of purpose (ADR
+	// 26-10-20-782 section 8). Such a job is put to the judge runtime's judge/policy route as small
+	// questions about each statement, and the control plane combines the answers.
+	Policy OptAccessPolicy `json:"policy"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
 	// For a delegation or rule job, what it is judged against in place of purpose, one use each — the
@@ -618,6 +934,10 @@ type JudgeJob struct {
 	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it
 	// asked for, judged against purposes.
 	Uses []string `json:"uses"`
+	// For a job judged against a policy, the value each of its variables binds to for this decision --
+	// only those that resolved at approval and resolve to the same value now. A variable the policy uses
+	// and this leaves out matches nothing.
+	Variables OptJudgeJobVariables `json:"variables"`
 }
 
 // GetCommand returns the value of Command.
@@ -648,6 +968,11 @@ func (s *JudgeJob) GetHost() string {
 // GetKind returns the value of Kind.
 func (s *JudgeJob) GetKind() JudgeJobKind {
 	return s.Kind
+}
+
+// GetPolicy returns the value of Policy.
+func (s *JudgeJob) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // GetPurpose returns the value of Purpose.
@@ -685,6 +1010,11 @@ func (s *JudgeJob) GetUses() []string {
 	return s.Uses
 }
 
+// GetVariables returns the value of Variables.
+func (s *JudgeJob) GetVariables() OptJudgeJobVariables {
+	return s.Variables
+}
+
 // SetCommand sets the value of Command.
 func (s *JudgeJob) SetCommand(val []string) {
 	s.Command = val
@@ -713,6 +1043,11 @@ func (s *JudgeJob) SetHost(val string) {
 // SetKind sets the value of Kind.
 func (s *JudgeJob) SetKind(val JudgeJobKind) {
 	s.Kind = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *JudgeJob) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // SetPurpose sets the value of Purpose.
@@ -748,6 +1083,11 @@ func (s *JudgeJob) SetStdin(val OptJudgeInput) {
 // SetUses sets the value of Uses.
 func (s *JudgeJob) SetUses(val []string) {
 	s.Uses = val
+}
+
+// SetVariables sets the value of Variables.
+func (s *JudgeJob) SetVariables(val OptJudgeJobVariables) {
+	s.Variables = val
 }
 
 // What is being judged: a command about to run, a request the proxy observed, a discobox about to
@@ -808,6 +1148,20 @@ func (s *JudgeJobKind) UnmarshalText(data []byte) error {
 	}
 }
 
+// For a job judged against a policy, the value each of its variables binds to for this decision --
+// only those that resolved at approval and resolve to the same value now. A variable the policy uses
+// and this leaves out matches nothing.
+type JudgeJobVariables map[string]string
+
+func (s *JudgeJobVariables) init() JudgeJobVariables {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // The judge asking to be shown a request's body, with a budget it may name and Discobox caps. It
 // names no form; the body is always shown in one shape (ADR 26-09-26-240).
 // Ref: #/components/schemas/JudgeNeed
@@ -835,6 +1189,142 @@ func (s *JudgeNeed) SetBody(val bool) {
 // SetBytes sets the value of Bytes.
 func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
+}
+
+// One question about a request judged against a policy, answered.
+// Ref: #/components/schemas/JudgePolicyAnswer
+type JudgePolicyAnswer struct {
+	// Yes, no, or unsure -- which is not known, never either.
+	Answer JudgePolicyAnswerAnswer `json:"answer"`
+	// The question's ID.
+	ID string `json:"id"`
+	// The model's own sentence.
+	Reason string `json:"reason"`
+}
+
+// GetAnswer returns the value of Answer.
+func (s *JudgePolicyAnswer) GetAnswer() JudgePolicyAnswerAnswer {
+	return s.Answer
+}
+
+// GetID returns the value of ID.
+func (s *JudgePolicyAnswer) GetID() string {
+	return s.ID
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgePolicyAnswer) GetReason() string {
+	return s.Reason
+}
+
+// SetAnswer sets the value of Answer.
+func (s *JudgePolicyAnswer) SetAnswer(val JudgePolicyAnswerAnswer) {
+	s.Answer = val
+}
+
+// SetID sets the value of ID.
+func (s *JudgePolicyAnswer) SetID(val string) {
+	s.ID = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgePolicyAnswer) SetReason(val string) {
+	s.Reason = val
+}
+
+// Yes, no, or unsure -- which is not known, never either.
+type JudgePolicyAnswerAnswer string
+
+const (
+	JudgePolicyAnswerAnswerYes    JudgePolicyAnswerAnswer = "yes"
+	JudgePolicyAnswerAnswerNo     JudgePolicyAnswerAnswer = "no"
+	JudgePolicyAnswerAnswerUnsure JudgePolicyAnswerAnswer = "unsure"
+)
+
+// AllValues returns all JudgePolicyAnswerAnswer values.
+func (JudgePolicyAnswerAnswer) AllValues() []JudgePolicyAnswerAnswer {
+	return []JudgePolicyAnswerAnswer{
+		JudgePolicyAnswerAnswerYes,
+		JudgePolicyAnswerAnswerNo,
+		JudgePolicyAnswerAnswerUnsure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgePolicyAnswerAnswer) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgePolicyAnswerAnswerYes:
+		return []byte(s), nil
+	case JudgePolicyAnswerAnswerNo:
+		return []byte(s), nil
+	case JudgePolicyAnswerAnswerUnsure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgePolicyAnswerAnswer) UnmarshalText(data []byte) error {
+	switch JudgePolicyAnswerAnswer(data) {
+	case JudgePolicyAnswerAnswerYes:
+		*s = JudgePolicyAnswerAnswerYes
+		return nil
+	case JudgePolicyAnswerAnswerNo:
+		*s = JudgePolicyAnswerAnswerNo
+		return nil
+	case JudgePolicyAnswerAnswerUnsure:
+		*s = JudgePolicyAnswerAnswerUnsure
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What the judge's model answered about a request judged against a policy (ADR 26-10-20-782 section
+// 8) -- an answer to every question it was asked. It decides nothing, and asks for nothing; the
+// control plane combines the answers with the policy, and asks for the body when an unsure answer
+// could change the decision.
+// Ref: #/components/schemas/JudgePolicyReply
+type JudgePolicyReply struct {
+	// One answer per question.
+	Answers []JudgePolicyAnswer `json:"answers"`
+	// The version of the words the runtime asked them in, which the verdict records.
+	PromptVersion string `json:"promptVersion"`
+	// The digest of the questions the runtime asked. The control plane reads the answers only when it is
+	// the digest of the questions it would have asked, since an answer under an ID is an answer to that
+	// ID's words.
+	QuestionsDigest string `json:"questionsDigest"`
+}
+
+// GetAnswers returns the value of Answers.
+func (s *JudgePolicyReply) GetAnswers() []JudgePolicyAnswer {
+	return s.Answers
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *JudgePolicyReply) GetPromptVersion() string {
+	return s.PromptVersion
+}
+
+// GetQuestionsDigest returns the value of QuestionsDigest.
+func (s *JudgePolicyReply) GetQuestionsDigest() string {
+	return s.QuestionsDigest
+}
+
+// SetAnswers sets the value of Answers.
+func (s *JudgePolicyReply) SetAnswers(val []JudgePolicyAnswer) {
+	s.Answers = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *JudgePolicyReply) SetPromptVersion(val string) {
+	s.PromptVersion = val
+}
+
+// SetQuestionsDigest sets the value of QuestionsDigest.
+func (s *JudgePolicyReply) SetQuestionsDigest(val string) {
+	s.QuestionsDigest = val
 }
 
 // The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
@@ -1282,6 +1772,144 @@ func (s *ListHarnessHooksOrder) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// NewOptAccessPolicy returns new OptAccessPolicy with value set to v.
+func NewOptAccessPolicy(v AccessPolicy) OptAccessPolicy {
+	return OptAccessPolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicy is optional AccessPolicy.
+type OptAccessPolicy struct {
+	Value AccessPolicy
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicy was set.
+func (o OptAccessPolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicy) Reset() {
+	var v AccessPolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicy) SetTo(v AccessPolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicy) Get() (v AccessPolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicy) Or(d AccessPolicy) AccessPolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAccessPolicyDefinitions returns new OptAccessPolicyDefinitions with value set to v.
+func NewOptAccessPolicyDefinitions(v AccessPolicyDefinitions) OptAccessPolicyDefinitions {
+	return OptAccessPolicyDefinitions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicyDefinitions is optional AccessPolicyDefinitions.
+type OptAccessPolicyDefinitions struct {
+	Value AccessPolicyDefinitions
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicyDefinitions was set.
+func (o OptAccessPolicyDefinitions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicyDefinitions) Reset() {
+	var v AccessPolicyDefinitions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicyDefinitions) SetTo(v AccessPolicyDefinitions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicyDefinitions) Get() (v AccessPolicyDefinitions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicyDefinitions) Or(d AccessPolicyDefinitions) AccessPolicyDefinitions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAccessPolicyResolved returns new OptAccessPolicyResolved with value set to v.
+func NewOptAccessPolicyResolved(v AccessPolicyResolved) OptAccessPolicyResolved {
+	return OptAccessPolicyResolved{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAccessPolicyResolved is optional AccessPolicyResolved.
+type OptAccessPolicyResolved struct {
+	Value AccessPolicyResolved
+	Set   bool
+}
+
+// IsSet returns true if OptAccessPolicyResolved was set.
+func (o OptAccessPolicyResolved) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAccessPolicyResolved) Reset() {
+	var v AccessPolicyResolved
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAccessPolicyResolved) SetTo(v AccessPolicyResolved) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAccessPolicyResolved) Get() (v AccessPolicyResolved, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAccessPolicyResolved) Or(d AccessPolicyResolved) AccessPolicyResolved {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -1744,6 +2372,52 @@ func (o OptJudgeInput) Or(d JudgeInput) JudgeInput {
 	return d
 }
 
+// NewOptJudgeJobVariables returns new OptJudgeJobVariables with value set to v.
+func NewOptJudgeJobVariables(v JudgeJobVariables) OptJudgeJobVariables {
+	return OptJudgeJobVariables{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeJobVariables is optional JudgeJobVariables.
+type OptJudgeJobVariables struct {
+	Value JudgeJobVariables
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeJobVariables was set.
+func (o OptJudgeJobVariables) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeJobVariables) Reset() {
+	var v JudgeJobVariables
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeJobVariables) SetTo(v JudgeJobVariables) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeJobVariables) Get() (v JudgeJobVariables, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeJobVariables) Or(d JudgeJobVariables) JudgeJobVariables {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptJudgeNeed returns new OptJudgeNeed with value set to v.
 func NewOptJudgeNeed(v JudgeNeed) OptJudgeNeed {
 	return OptJudgeNeed{
@@ -2198,6 +2872,69 @@ func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilString returns new OptNilString with value set to v.
+func NewOptNilString(v string) OptNilString {
+	return OptNilString{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilString is optional nullable string.
+type OptNilString struct {
+	Value string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilString was set.
+func (o OptNilString) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilString) Reset() {
+	var v string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilString) SetTo(v string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilString) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilString) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilString) Get() (v string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilString) Or(d string) string {
 	if v, ok := o.Get(); ok {
 		return v
 	}

@@ -165,8 +165,10 @@ there is no delivery to name.
 
 A protocol-originated request, a grant with uses, and a grant given on a create
 may carry a policy (`policy.Policy`, ADR 26-10-20-782 §1) beside their uses,
-stored as one JSON column. Nothing judges by it yet: a grant is still activated
-and judged by its uses, and a grant without a policy is untouched.
+stored as one JSON column. A grant is still activated by its uses, and
+`ApprovedUse` hands the policy over with the use, so a request under it is
+judged against the policy (`judges`, ADR 26-10-20-782 §8); a command is still
+judged against the use's sentence, and a grant without a policy is untouched.
 
 - **Validated where it enters** (`services.PolicyFromAPI`): a policy that does
   not validate is a 400 before anyone is asked, and whatever a client sent as

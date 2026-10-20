@@ -517,6 +517,16 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
 	JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (JudgeSandboxRes, error)
+	// JudgeSandboxPolicy implements judge-sandbox-policy operation.
+	//
+	// Puts the questions about one request judged against a policy (ADR 26-10-20-782 section 8) to this
+	// discobox's harness and returns its answers. Only a discobox in judge mode answers, and only a
+	// token carrying judge:run may ask. The caller supplies the job, with its policy; the questions, the
+	// prompt, the schema, the model role and the tools restriction are the judge runtime's own. It
+	// decides nothing -- the control plane combines the answers -- and a job with no policy is refused.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/policy
+	JudgeSandboxPolicy(ctx context.Context, req *JudgeJob, params JudgeSandboxPolicyParams) (JudgeSandboxPolicyRes, error)
 	// ListApprovalRequests implements list-approval-requests operation.
 	//
 	// List the project's credential and trust requests as one inbox.

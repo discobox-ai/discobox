@@ -21,6 +21,7 @@ const (
 	GetSandboxSourceProjectLayerOperation   OperationName = "GetSandboxSourceProjectLayer"
 	GetSandboxSourceStatesOperation         OperationName = "GetSandboxSourceStates"
 	JudgeSandboxOperation                   OperationName = "JudgeSandbox"
+	JudgeSandboxPolicyOperation             OperationName = "JudgeSandboxPolicy"
 	ListExecEventsOperation                 OperationName = "ListExecEvents"
 	ListHarnessHooksOperation               OperationName = "ListHarnessHooks"
 	ListSandboxExecEventsOperation          OperationName = "ListSandboxExecEvents"

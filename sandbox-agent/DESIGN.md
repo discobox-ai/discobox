@@ -776,6 +776,17 @@ development images without a registry.
   The route has its own scope (`judge:run`),
   which no token for a discobox's own work carries, and a discobox that is not
   a judge refuses the ask outright.
+- **The same runtime answers a policy's questions** (`terminal.JudgePolicy`,
+  `POST .../judge/policy`; [ADR 26-10-20-782](../docs/adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
+  §8). A request job that carries a policy is refused at `.../judge` and asked
+  here: the same run, with `judge.PolicySystemFor` and `judge.PolicySchema`,
+  the questions built from the job by `judge.PolicyQuestions` as the control
+  plane builds them, and the reply decoded with `judge.DecodePolicyReply`. It
+  says beside the answers the digest of the questions it asked and the version
+  of its words, which the control plane checks against its own. It
+  answers each question and decides nothing, not even whether to see the body:
+  the control plane combines the answers, and asks for the body when an unsure
+  one could change the decision.
 - **The same runtime writes an approval rule's proposal** (`terminal.Propose`,
   `POST .../judge/proposal`; [ADR 26-10-12-330](../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
   §7). It is a run like a judging one — the same wrapper, role, `--no-tools`,

@@ -53,8 +53,11 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// that cannot come up refuses now rather than holding the request that is
 	// waiting on it (ADR 26-09-22-838 §1).
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/judge", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
-	// The same runtime writes the wording of an approval rule a person asked
-	// to be proposed (ADR 26-10-12-330 §7), on the same scope.
+	// The same runtime answers the questions about a request judged against
+	// a policy (ADR 26-10-20-782 §8), and writes the wording of an approval
+	// rule a person asked to be proposed (ADR 26-10-12-330 §7), on the same
+	// scope.
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/judge/policy", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/judge/proposal", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 
 	// A service is an exec (ADR 0070), reached the same way and gated by the
@@ -230,7 +233,7 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	// Below the exec block, as the sandbox agent has it: an exec called
 	// "judge" is an exec, and the two tables answering differently is how one
 	// hop ends up checking a scope the other does not.
-	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
+	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/policy") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
 		if r.Method == http.MethodPost {
 			return ScopeJudgeRun
 		}

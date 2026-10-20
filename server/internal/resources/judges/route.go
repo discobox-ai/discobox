@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -252,6 +253,14 @@ type answered struct {
 	// unsure is Jev's refusal because it could not tell (jev.Verdict.Unsure):
 	// the one answer of Jev's a judge discobox may be asked to decide instead.
 	unsure bool
+	// policyJob is an answer about a request judged against its grant's
+	// policy (ADR 26-10-20-782 §8), whose questions are versioned apart from
+	// a use's; policy is how the answers were combined, when they were.
+	policyJob bool
+	policy    *judge.PolicyDecision
+	// promptVersion is the version of the words a judge discobox says it
+	// asked a policy's questions in, which its verdict records.
+	promptVersion string
 }
 
 // stamp writes who answered, and how long it took, onto the verdict that
@@ -267,12 +276,19 @@ func (a answered) stamp(row *model.CredentialVerdict) {
 		row.Probabilities = a.probabilities
 		row.JevInput = a.input
 		row.PromptVersion = jev.QuestionsVersion
+		if a.policyJob {
+			row.PromptVersion = jev.PolicyQuestionsVersion
+		}
 	}
+	row.PolicyDecision = a.policy
 	if a.sandbox == nil {
 		return
 	}
 	row.Role = judge.Role
 	row.PromptVersion = judge.PromptVersion
+	if a.policyJob {
+		row.PromptVersion = a.promptVersion
+	}
 	row.JudgeSandboxID = a.sandbox.ID
 	row.Image = a.sandbox.Image
 	row.ImageDigest = a.sandbox.ImageDigest
@@ -338,7 +354,8 @@ func (s *Service) putJev(ctx context.Context, job judge.Job, bound time.Duration
 	verdict, err := s.jev.Judge(ctx, job)
 	if err == nil {
 		return answered{Answer: verdict.Answer, latency: time.Since(start), model: verdict.Model,
-			probabilities: verdict.Probabilities, input: verdict.Input, unsure: verdict.Unsure}, nil
+			probabilities: verdict.Probabilities, input: verdict.Input, unsure: verdict.Unsure,
+			policyJob: job.Policy != nil, policy: verdict.Policy}, nil
 	}
 	var status *jev.StatusError
 	switch {
@@ -421,7 +438,13 @@ func (s *Service) putSandbox(ctx context.Context, project *model.Project, judgeS
 	}
 	defer lease.Release()
 
-	target, err := sandboxagentclient.TargetURL(lease.BaseURL, sandboxModel.ProjectID, sandboxModel.PoolID, sandboxModel.ID, "/judge")
+	// A request judged against a policy is put as its questions, at a route
+	// of its own, and what comes back is answers this side combines.
+	route := "/judge"
+	if job.Policy != nil {
+		route = "/judge/policy"
+	}
+	target, err := sandboxagentclient.TargetURL(lease.BaseURL, sandboxModel.ProjectID, sandboxModel.PoolID, sandboxModel.ID, route)
 	if err != nil {
 		return answered{}, err
 	}
@@ -430,7 +453,10 @@ func (s *Service) putSandbox(ctx context.Context, project *model.Project, judgeS
 	// each unset optional field to marshal — and an unset one writes nothing,
 	// which fails the whole encode. The generated encoder is the only one that
 	// knows to leave an unset field out.
-	jobBody := judgeJobBody(job)
+	jobBody, err := judgeJobBody(job)
+	if err != nil {
+		return answered{}, err
+	}
 	body, err := json.Marshal(&jobBody)
 	if err != nil {
 		return answered{}, err
@@ -452,6 +478,19 @@ func (s *Service) putSandbox(ctx context.Context, project *model.Project, judgeS
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
 		return answered{}, judgeError(response)
+	}
+	if job.Policy != nil {
+		var reply sandboxapi.JudgePolicyReply
+		if err := json.NewDecoder(io.LimitReader(response.Body, int64(judge.MaxOutput))).Decode(&reply); err != nil {
+			return answered{}, apperrors.NewStatusError(http.StatusBadGateway,
+				fmt.Sprintf("the project's judge answered with something unreadable: %v", err))
+		}
+		decided, err := policyAnswer(job, reply)
+		if err != nil {
+			return answered{}, err
+		}
+		decided.latency, decided.sandbox = time.Since(start), judgeSandbox
+		return decided, nil
 	}
 	var reply sandboxapi.JudgeAnswer
 	if err := json.NewDecoder(io.LimitReader(response.Body, int64(judge.MaxOutput))).Decode(&reply); err != nil {
@@ -554,9 +593,10 @@ func admitsTarget(projectID string, job judge.Job, route judge.Route) error {
 // decided it, before the answer goes back: an allow with no record of it is no
 // verdict, standing or not.
 func (s *Service) standing(ctx context.Context, projectID string, ask services.JudgeAsk, job judge.Job, use services.ApprovedUse) (judge.Answer, bool, error) {
-	if job.Round != 1 {
+	if job.Round != 1 || job.Policy != nil {
 		// A later round is the judge asking to be shown the body, and an
-		// allow that stands never needed one.
+		// allow that stands never needed one. A request judged against a
+		// policy is never let stand: neither judge proposes a route for one.
 		return judge.Answer{}, false, nil
 	}
 	if job.Request.OperationInBody() != "" {
@@ -666,6 +706,15 @@ func (s *Service) job(ctx context.Context, projectID, poolID string, ask service
 	if job.Facts, err = s.requestFacts(ctx, projectID, ask.SandboxID, ask.Request); err != nil {
 		return judge.Job{}, services.ApprovedUse{}, err
 	}
+	// A grant that carries a policy is judged by it, and the sentence beside
+	// it is not read (ADR 26-10-20-782 §8). Its variables bind to the
+	// discobox asking, now.
+	if use.Policy != nil {
+		job.Purpose, job.Policy = "", use.Policy
+		if job.Variables, err = s.variables(ctx, projectID, ask.SandboxID, *use.Policy); err != nil {
+			return judge.Job{}, services.ApprovedUse{}, err
+		}
+	}
 	if err := job.Validate(); err != nil {
 		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -724,7 +773,7 @@ func optString(value string) sandboxapi.OptString {
 }
 
 // judgeJobBody is the job on the wire to the judge's agent.
-func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
+func judgeJobBody(job judge.Job) (sandboxapi.JudgeJob, error) {
 	body := sandboxapi.JudgeJob{
 		Kind:     sandboxapi.JudgeJobKind(job.Kind),
 		Purpose:  optString(job.Purpose),
@@ -754,8 +803,24 @@ func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 			RefSubject:       optString(r.RefSubject),
 		})
 	}
+	if job.Policy != nil {
+		// The policy package's type and the generated one are one shape in
+		// JSON, and the generated one decodes itself.
+		data, err := json.Marshal(job.Policy)
+		if err != nil {
+			return sandboxapi.JudgeJob{}, err
+		}
+		var sent sandboxapi.AccessPolicy
+		if err := sent.UnmarshalJSON(data); err != nil {
+			return sandboxapi.JudgeJob{}, fmt.Errorf("the policy does not fit the judge's wire: %w", err)
+		}
+		body.Policy = sandboxapi.NewOptAccessPolicy(sent)
+	}
+	if len(job.Variables) > 0 {
+		body.Variables = sandboxapi.NewOptJudgeJobVariables(sandboxapi.JudgeJobVariables(job.Variables))
+	}
 	if job.Request == nil {
-		return body
+		return body, nil
 	}
 	evidence := sandboxapi.JudgeRequestEvidence{Method: job.Request.Method, URL: job.Request.URL}
 	if len(job.Request.Headers) > 0 {
@@ -794,7 +859,7 @@ func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 		evidence.Body = sandboxapi.NewOptJudgeRequestBody(requestBody)
 	}
 	body.Request = sandboxapi.NewOptJudgeRequestEvidence(evidence)
-	return body
+	return body, nil
 }
 
 // recognitionBody is a recognition on the wire to the judge's agent.
@@ -805,6 +870,37 @@ func recognitionBody(recognized *judge.Recognition) sandboxapi.OptJudgeRecogniti
 	return sandboxapi.NewOptJudgeRecognition(sandboxapi.JudgeRecognition{
 		Name: recognized.Name, Version: int64(recognized.Version),
 	})
+}
+
+// policyAnswer is a judge discobox's answers about a request judged against a
+// policy, combined here with the policy (judge.DecidePolicy): the judge
+// answered, and this side decides. They are read only as answers to the
+// questions this side would have asked: a runtime of another version may put
+// other words under the same ID, and an answer read against words it was not
+// given is no answer. Questions that differ are no verdict, so the request is
+// refused, and the operator's log says why.
+func policyAnswer(job judge.Job, reply sandboxapi.JudgePolicyReply) (answered, error) {
+	questions, err := judge.PolicyQuestions(job)
+	if err != nil {
+		return answered{}, err
+	}
+	if reply.QuestionsDigest != judge.QuestionsDigest(questions) {
+		return answered{}, apperrors.NewStatusError(http.StatusBadGateway,
+			fmt.Sprintf("the project's judge asked other questions about the policy than this server would (its words are %q), so it is not asked until they agree", reply.PromptVersion))
+	}
+	answers := make(map[string]judge.PolicyAnswer, len(reply.Answers))
+	for _, said := range reply.Answers {
+		answer := judge.PolicyAnswer{ID: said.ID, Answer: policy.Unknown, Reason: said.Reason}
+		switch said.Answer {
+		case sandboxapi.JudgePolicyAnswerAnswerYes:
+			answer.Answer = policy.Yes
+		case sandboxapi.JudgePolicyAnswerAnswerNo:
+			answer.Answer = policy.No
+		}
+		answers[said.ID] = answer
+	}
+	decided, decision, _ := judge.DecidePolicy(job, questions, answers, "the judge's")
+	return answered{policyJob: true, Answer: decided, policy: &decision, promptVersion: reply.PromptVersion}, nil
 }
 
 // answer is what the judge said, in the words this server passes on.
