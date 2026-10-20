@@ -382,6 +382,11 @@ type Sandbox struct {
 	// cursor: the error a box settled on, or what a repair nobody typed is
 	// answering while it runs.
 	Message string
+	// Provisioning is what the box reports of its provisioning, shown when the
+	// row is under the cursor: the features still being provisioned, or the
+	// ones that failed (ADR 26-10-16-423 §6). Empty once all are ready. It
+	// was written by the box and made displayable already.
+	Provisioning string
 
 	// Repaired is the last automatic repair of this box, once it is over. It is
 	// carried because a repair that works clears the failure it answered, and

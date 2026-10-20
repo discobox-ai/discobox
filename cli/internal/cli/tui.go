@@ -954,6 +954,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	if agent, ok := sandboxProgramStatus(sb); ok {
 		row.Agent = agent
 	}
+	row.Provisioning = sandboxProvisioning(sb)
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
