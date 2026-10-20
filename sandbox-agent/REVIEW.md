@@ -30,6 +30,33 @@
   reaches login shells only, a variable a non-login exec needs still belongs
   in the manifest's env.
 
+- **A runtime integration reads `provision.json`, never the box.** Whether a
+  feature is there is decided once, by provisioning (ADR 26-10-16-423 §4); a
+  boot step or service that wires one checks `provisionspec.FeatureOff` (or
+  the agent's `Tracker`), and treats a feature the box does not report as its
+  image's. Probing for a binary instead disagrees with an `off` feature still
+  on disk.
+- **Every string in `provision.json` is the box's.** Feature names, steps,
+  errors and logs come from bundle trees and scripts; a reader outside the box
+  escapes them as it does all text a discobox wrote (`cli/REVIEW.md`).
+- **Never wait on provisioning from the agent's start.** The agent serves
+  first; only the readiness gates wait (`Tracker.AwaitReady`).
+- **Every terminal launch waits for provisioning, not only the primary's,
+  and a terminal that needs no launch does not.** `terminal.Service.awaitProvisioned` is called by
+  `Create`, the primary's launch, and `Revive` — an attach by a terminal's own
+  id revives it without the primary's launch. A new launch path calls it too,
+  on the caller's context before the detached single-flight launch, or a
+  harness starts after a reboot before what it requires is back. A terminal
+  still running, or a launch already in flight (which the caller joins), skips
+  the wait: an agent restart provisions again under a live harness, and an
+  attach to it must not wait on that run or fail with it.
+- **A blocking feature needs all of what it requires.** Everything the
+  harness requires, and everything core requires unless core itself is
+  `async`, blocks readiness whole, its `async` marks overridden
+  (`featurePlan.whole`); an `async` step in core defers itself and every step
+  after it. Readiness reported while a requirement is in the background runs
+  core's steps without it.
+
 ## Run identity
 
 Getting "which user does this run as" wrong is the most repeated mistake in this

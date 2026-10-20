@@ -103,6 +103,12 @@ type ServiceConfig struct {
 	// launch waits on it: by the time anything is revived, the source it was
 	// waiting for has been there for the whole life of the record.
 	AwaitSources func(context.Context) error
+	// AwaitProvision blocks until what a terminal needs is provisioned —
+	// core, what the harness requires, and every feature's wiring (ADR
+	// 26-10-16-423 §5) — and is why it failed when it did. Unlike
+	// AwaitSources it gates every launch, a revive's too: a box provisions
+	// on every boot.
+	AwaitProvision func(context.Context) error
 }
 
 // Service is the harness-terminal layer over execs.Manager.
@@ -127,11 +133,12 @@ type Service struct {
 	judging chan struct{}
 	// judgingWait bounds how long an ask waits for a slot in judging
 	// (judgeQueueWait).
-	judgingWait   time.Duration
-	bootPrompt    []string
-	skills        sandboxconfig.Skills
-	skillsSources []sandboxconfig.SkillsSource
-	awaitSources  func(context.Context) error
+	judgingWait    time.Duration
+	bootPrompt     []string
+	skills         sandboxconfig.Skills
+	skillsSources  []sandboxconfig.SkillsSource
+	awaitSources   func(context.Context) error
+	awaitProvision func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -179,24 +186,25 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	s := &Service{
-		execs:         cfg.Execs,
-		harness:       cloneHarness(cfg.Harness),
-		env:           cloneMap(cfg.Env),
-		secretEnv:     cfg.SecretEnv,
-		fileSecrets:   append([]string(nil), cfg.Harness.FileSecrets...),
-		defaultUser:   defaultUser,
-		installer:     cfg.Installer,
-		primaryState:  cfg.PrimaryState,
-		homeDirectory: strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
-		harnessMode:   strings.TrimSpace(cfg.HarnessMode),
-		judging:       make(chan struct{}, maxJudgingRuns),
-		judgingWait:   judgeQueueWait,
-		bootPrompt:    append([]string(nil), cfg.Prompt...),
-		skills:        cfg.Skills,
-		skillsSources: append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
-		awaitSources:  cfg.AwaitSources,
-		installing:    map[string]struct{}{},
-		launches:      map[string]*terminalLaunch{},
+		execs:          cfg.Execs,
+		harness:        cloneHarness(cfg.Harness),
+		env:            cloneMap(cfg.Env),
+		secretEnv:      cfg.SecretEnv,
+		fileSecrets:    append([]string(nil), cfg.Harness.FileSecrets...),
+		defaultUser:    defaultUser,
+		installer:      cfg.Installer,
+		primaryState:   cfg.PrimaryState,
+		homeDirectory:  strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
+		harnessMode:    strings.TrimSpace(cfg.HarnessMode),
+		judging:        make(chan struct{}, maxJudgingRuns),
+		judgingWait:    judgeQueueWait,
+		bootPrompt:     append([]string(nil), cfg.Prompt...),
+		skills:         cfg.Skills,
+		skillsSources:  append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
+		awaitSources:   cfg.AwaitSources,
+		awaitProvision: cfg.AwaitProvision,
+		installing:     map[string]struct{}{},
+		launches:       map[string]*terminalLaunch{},
 	}
 	if s.installer == nil {
 		// Where this sandbox's terminals start, resolved by the exec layer that
@@ -275,6 +283,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// agent asks for one, and this is what keeps an attach from asking.
 	if s.harnessMode == config.HarnessModeJudge {
 		return execs.Exec{}, errors.New("a judge runs no terminal")
+	}
+	if err := s.awaitProvisioned(ctx); err != nil {
+		return execs.Exec{}, err
 	}
 	harness, harnessID, err := s.resolveHarness(req.HarnessID)
 	if err != nil {
@@ -391,6 +402,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 // the socket the first one's shim has just bound, leaving a live run nothing
 // can attach to.
 func (s *Service) Revive(ctx context.Context, id string) (execs.Exec, error) {
+	// Only a relaunch waits: a terminal still running needs nothing the box
+	// provisions, and attaching to it must not wait on, or fail with, a run
+	// started under it by an agent restart.
+	if exec, ok := s.execs.Get(id); (!ok || s.Relaunches(exec)) && !s.launching(id) {
+		if err := s.awaitProvisioned(ctx); err != nil {
+			return execs.Exec{}, err
+		}
+	}
 	return s.singleFlightLaunch(ctx, id, func(ctx context.Context) (execs.Exec, error) {
 		return s.revive(ctx, id)
 	})
@@ -417,6 +436,47 @@ func (s *Service) Relaunches(exec execs.Exec) bool {
 		return s.harnessMode != config.HarnessModeConfig
 	}
 	return false
+}
+
+// launching reports whether a launch under key is in flight, which a caller
+// joins (singleFlightLaunch).
+func (s *Service) launching(key string) bool {
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	_, ok := s.launches[key]
+	return ok
+}
+
+// runningPrimary is the primary terminal when one is running.
+func (s *Service) runningPrimary() (execs.Exec, bool) {
+	for _, exec := range s.List() {
+		if IsPrimary(exec) && exec.Status == execs.StatusRunning {
+			return exec, true
+		}
+	}
+	return execs.Exec{}, false
+}
+
+// awaitProvisioned waits for what a terminal's harness needs to be
+// provisioned (ServiceConfig.AwaitProvision). Every launch of a terminal goes
+// through it — Create, the primary's launch, and Revive, which an attach by a
+// terminal's own id reaches without the primary's — since a box provisions on
+// every boot. A terminal still running is not a launch, and does not wait.
+// It waits on the caller's context, ahead of the single-flight launch, which
+// runs detached from it: a wait the caller's deadline cut short then says the
+// box is still provisioning, not only that time ran out.
+func (s *Service) awaitProvisioned(ctx context.Context) error {
+	if s.awaitProvision == nil {
+		return nil
+	}
+	err := s.awaitProvision(ctx)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("the sandbox is still provisioning what its terminals need; try again once it is ready: %w", err)
+	}
+	return fmt.Errorf("provision the sandbox: %w", err)
 }
 
 func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
@@ -676,6 +736,15 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 // shim is listening, so a caller that checked liveness outside the latch would
 // return a terminal nothing can attach to yet.
 func (s *Service) ensurePrimary(ctx context.Context, prompt []string) (execs.Exec, error) {
+	// A launch in flight is joined, and a primary still running needs no
+	// launch: neither waits, since an agent restart provisions again under a
+	// harness that never stopped, and attaching to it must not wait on that
+	// run or fail with it.
+	if _, running := s.runningPrimary(); !running && !s.launching(primaryLaunchKey) {
+		if err := s.awaitProvisioned(ctx); err != nil {
+			return execs.Exec{}, err
+		}
+	}
 	return s.singleFlightLaunch(ctx, primaryLaunchKey, func(ctx context.Context) (execs.Exec, error) {
 		return s.launchPrimary(ctx, prompt)
 	})

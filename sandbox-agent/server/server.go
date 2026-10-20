@@ -29,6 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
@@ -91,6 +92,11 @@ type Config struct {
 	// document carries is the one the idle stop starts with; nil leaves the
 	// routes answering that there is no intake.
 	RuntimeConfig *intake.Intake
+	// Provision is the box's provisioning this boot, which the binary runs
+	// beside the server (ADR 26-10-16-423 §5): the primary terminal and the
+	// declared services wait for its readiness, and the status report
+	// carries its document. nil waits for nothing and reports none.
+	Provision *provision.Tracker
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -144,6 +150,9 @@ type agentRuntime struct {
 	// a second, independently constructed copy of "wait for delivery" is how
 	// one of them goes stale.
 	awaitSources func(context.Context) error
+	// awaitProvision is provisioning's readiness, nil when nothing is
+	// provisioned.
+	awaitProvision func(context.Context) error
 	// sourceConverger clones the sources the runtime-config document names
 	// and answers their origins' credential helper (ADR 0126 §4).
 	sourceConverger *sourceconverge.Converger
@@ -207,23 +216,28 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// nil only for a sandbox no pool delivers runtime config to and whose
 	// sources were in place before its container was created.
 	awaitSources := sourcesready.Gate(cfg.Sources, cfg.AwaitsRuntimeConfig, "", slog.Default())
+	var awaitProvision func(context.Context) error
+	if cfg.Provision != nil {
+		awaitProvision = cfg.Provision.AwaitReady
+	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:         execManager,
-		Harness:       cfg.Harness,
-		SandboxConfig: cfg.SandboxConfig,
-		WorkingRoot:   cfg.WorkingRoot,
-		RuntimeDir:    cfg.RuntimeDir,
-		Env:           cfg.Env,
-		SecretEnv:     cfg.SecretEnv,
-		ExecDefaults:  cfg.ExecDefaults,
-		Units:         cfg.ExecUnitManager,
-		Installer:     cfg.Installer,
-		PrimaryState:  localStore,
-		HarnessMode:   cfg.HarnessMode,
-		Prompt:        cfg.Prompt,
-		Skills:        cfg.Skills,
-		SkillsSources: cfg.SkillsSources,
-		AwaitSources:  awaitSources,
+		Execs:          execManager,
+		Harness:        cfg.Harness,
+		SandboxConfig:  cfg.SandboxConfig,
+		WorkingRoot:    cfg.WorkingRoot,
+		RuntimeDir:     cfg.RuntimeDir,
+		Env:            cfg.Env,
+		SecretEnv:      cfg.SecretEnv,
+		ExecDefaults:   cfg.ExecDefaults,
+		Units:          cfg.ExecUnitManager,
+		Installer:      cfg.Installer,
+		PrimaryState:   localStore,
+		HarnessMode:    cfg.HarnessMode,
+		Prompt:         cfg.Prompt,
+		Skills:         cfg.Skills,
+		SkillsSources:  cfg.SkillsSources,
+		AwaitSources:   awaitSources,
+		AwaitProvision: awaitProvision,
 	})
 	if err != nil {
 		return agentRuntime{}, err
@@ -233,7 +247,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// directory an exec that names no workdir starts in. Asking the exec
 	// manager rather than reading the config keeps the two from disagreeing
 	// about where that is (ADR 0070 §1).
-	serviceManager, err := newServiceManager(execManager)
+	serviceManager, err := newServiceManager(execManager, cfg.Provision)
 	if err != nil {
 		// A sandbox whose default workdir does not resolve is broken for every
 		// exec, not just for services, and it has to come up far enough to be
@@ -318,6 +332,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		meta:              metaFile,
 		runtimeConfig:     cfg.RuntimeConfig,
 		sourceConverger:   sourceConverger,
+		provision:         cfg.Provision,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
@@ -369,6 +384,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		listenAddr:   cfg.ListenAddress,
 		awaitSources: awaitSources,
 
+		awaitProvision:  awaitProvision,
 		sourceConverger: sourceConverger,
 	}, nil
 }
@@ -387,13 +403,18 @@ func gitCredentialHelper(runtimeDir string) string {
 }
 
 // newServiceManager resolves where this sandbox's service declarations live
-// and wires the service layer to the exec primitive that runs them.
-func newServiceManager(execManager *execs.Manager) (*services.Manager, error) {
+// and wires the service layer to the exec primitive that runs them, and to
+// the features provisioning turned off.
+func newServiceManager(execManager *execs.Manager, tracker *provision.Tracker) (*services.Manager, error) {
 	root, err := execManager.SourceRoot()
 	if err != nil {
 		return nil, err
 	}
-	return services.NewManager(services.ManagerConfig{Execs: execManager, Root: root})
+	cfg := services.ManagerConfig{Execs: execManager, Root: root}
+	if tracker != nil {
+		cfg.FeatureOff = func(feature string) bool { return tracker.Status().Off(feature) }
+	}
+	return services.NewManager(cfg)
 }
 
 // newPortsWatcher wires the listening-port watcher to the identity the sandbox
@@ -618,7 +639,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// none, since it exists to run one setup command and end, not to be worked
 	// in.
 	if config.WorkedIn(cfg.HarnessMode) && built.services != nil {
-		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
+		go startDeclaredServices(ctx, logger, []func(context.Context) error{built.awaitSources, built.awaitProvision}, built.services.EnsureStarted)
 	}
 	// Exec state converges on notifications rather than a poll (ADR 0115): the
 	// shim's own runtime write for an ordinary exit, and systemd's unit signals
@@ -729,14 +750,17 @@ func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath strin
 // error, since most repositories declare none, so starting before delivery did
 // not fail: it found nothing, said nothing, and never looked again. The same
 // gate the primary terminal's first launch clears is what this clears.
-func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(context.Context) error, start func(context.Context, *slog.Logger) error) {
-	if await != nil {
+func startDeclaredServices(ctx context.Context, logger *slog.Logger, gates []func(context.Context) error, start func(context.Context, *slog.Logger) error) {
+	for _, await := range gates {
+		if await == nil {
+			continue
+		}
 		switch err := await(ctx); {
 		case err == nil:
 		case errors.Is(err, context.Canceled):
 			return
 		default:
-			logger.Error("wait for the sandbox's sources before starting its services", "error", err)
+			logger.Error("wait for the sandbox to be ready before starting its services", "error", err)
 			return
 		}
 	}

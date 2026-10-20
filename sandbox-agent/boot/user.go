@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
@@ -608,11 +611,31 @@ type booter struct {
 	run    func(name string, args ...string) error
 	lookup func(name string, args ...string) (string, bool)
 	exists func(name string, args ...string) bool
+	// wireFeatures provisions the box's features' wiring before the account
+	// exists (provision.Runner.Wire); nil wires none.
+	wireFeatures func(logger *slog.Logger, features map[string]sandboxconfig.Feature)
+	// statusPath is the box's provision.json, which says which features are
+	// off; empty turns none off.
+	statusPath string
+}
+
+// off reports whether provisioning turned feature off, so a boot step that
+// wires it is skipped (ADR 26-10-16-423 §4).
+func (b *booter) off(feature string) bool {
+	return b.statusPath != "" && provisionspec.FeatureOff(b.statusPath, feature)
 }
 
 func newBooter() *booter {
 	ctx := context.Background()
-	b := &booter{}
+	b := &booter{statusPath: provisionspec.StatusPath}
+	b.wireFeatures = func(logger *slog.Logger, features map[string]sandboxconfig.Feature) {
+		// Not fatal: what failed is in provision.json, and the agent's run
+		// tries again and fails readiness if it still fails.
+		tracker := provision.NewTracker(provisionspec.StatusPath)
+		if err := provision.Boot(ctx, logger, tracker, features, true); err != nil {
+			logger.Warn("provision the box's wiring", "error", err)
+		}
+	}
 	b.run = func(name string, args ...string) error {
 		cmd := exec.CommandContext(ctx, name, args...)
 		cmd.Stdout = os.Stderr

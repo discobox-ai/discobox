@@ -681,13 +681,15 @@ COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
 #   §3), which the image's discobox skill documents.
 # - `discobox-ca-anchor`, which discobox-trust-ca.service runs, and
 #   `discobox-hook-publish`, which the harnesses' hooks run.
+# - `discobox-provision`, which waits for a feature still being provisioned,
+#   and which a feature's placeholder commands run (see the provision package).
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /usr/local/bin/discobox-review \
     && chmod 0755 /usr/local/bin/fresh \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && install -d -m 0755 /opt/discobox/bin \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /opt/discobox/bin/runc \
-    && for c in docker discobox-power discobox-ca-anchor discobox-hook-publish; do \
+    && for c in docker discobox-power discobox-ca-anchor discobox-hook-publish discobox-provision; do \
         ln -sf /usr/local/bin/discobox-sandbox-agent "/usr/local/bin/$c"; \
        done \
     && for c in nix nix-build nix-env nix-shell nix-store devenv; do \

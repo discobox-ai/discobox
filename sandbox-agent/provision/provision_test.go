@@ -31,6 +31,7 @@ type box struct {
 	runner *Runner
 	tools  []string
 	served map[string]string
+	opts   Options
 }
 
 func newBox(t *testing.T) *box {
@@ -45,13 +46,13 @@ func newBox(t *testing.T) *box {
 		Root:     b.root,
 		Records:  Records{Dir: filepath.Join(b.root, "opt/discobox/provision")},
 		Platform: ubuntu,
-		Command: func(ctx context.Context, dir string, env []string, name string, args ...string) error {
+		Command: func(ctx context.Context, out io.Writer, dir string, env []string, name string, args ...string) error {
 			switch name {
 			case "systemctl", "groupadd", "apt-get":
 				b.tools = append(b.tools, strings.Join(append([]string{name}, args...), " "))
 				return nil
 			}
-			return runCommand(ctx, dir, env, name, args...)
+			return runCommand(ctx, out, dir, env, name, args...)
 		},
 		Fetch: func(_ context.Context, url string) (io.ReadCloser, error) {
 			body, ok := b.served[url]
@@ -93,7 +94,7 @@ func (b *box) apply() ([]Outcome, error) {
 	if err != nil {
 		b.t.Fatalf("load: %v", err)
 	}
-	return b.runner.Apply(context.Background(), features)
+	return b.runner.Provision(context.Background(), features, b.opts)
 }
 
 func (b *box) mustApply() []Outcome {
@@ -234,7 +235,7 @@ func TestEnvProfileIsSourceable(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "out")
 	b := newBox(t)
-	err := b.runner.command(context.Background(), "/", []string{"PATH=/b:/usr/bin:/bin"}, "/bin/sh", "-c", `. "$1"; . "$1"; printf '%s|%s' "$A" "$PATH" > "$2"`, "sh", path, out)
+	err := b.runner.command(context.Background(), os.Stderr, "/", []string{"PATH=/b:/usr/bin:/bin"}, "/bin/sh", "-c", `. "$1"; . "$1"; printf '%s|%s' "$A" "$PATH" > "$2"`, "sh", path, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +473,7 @@ func TestRequiresOrdersAndAFailureStopsDependents(t *testing.T) {
 	b.feature("c-needs-broken", map[string]string{provisionspec.FileName: step("b-broken"), "s.sh": script("c-needs-broken", false)})
 	b.feature("z-core", map[string]string{provisionspec.FileName: step(""), "s.sh": script("z-core", false)})
 	_, err := b.apply()
-	if err == nil || !strings.Contains(err.Error(), `"c-needs-broken": not applied: it requires "b-broken"`) {
+	if err == nil || !strings.Contains(err.Error(), `"c-needs-broken": not provisioned: it requires "b-broken"`) {
 		t.Fatalf("error = %v", err)
 	}
 	ran, _ := os.ReadFile(order)

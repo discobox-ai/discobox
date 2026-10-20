@@ -155,6 +155,13 @@ func bootstrapIdentity(bootstrap sandboxconfig.Config) (identity, error) {
 	return id, nil
 }
 
+// The features whose wiring boot does, skipped when provisioning reports one
+// off. A feature the box does not report is its image's, and is wired.
+const (
+	featureDirenv  = "direnv"
+	featureDesktop = "desktop"
+)
+
 // recordsDir holds the box's provisioning records, the sandbox phase's among
 // them (ADR 26-10-16-423 §3). A variable so a test does not write the
 // machine's own.
@@ -183,8 +190,13 @@ func removeLegacyMarker(path string) error {
 }
 
 // writeUnitDropins binds the image's per-user units -- the session bus and the
-// desktop -- to the sandbox user, and seeds the desktop's starting scale.
-func writeUnitDropins(logger *slog.Logger, id identity) error {
+// desktop -- to the sandbox user, and seeds the desktop's starting scale. A
+// desktop turned off gets none of them: the session bus is the desktop's
+// (ADR 26-09-25-146).
+func writeUnitDropins(logger *slog.Logger, id identity, desktopOff bool) error {
+	if desktopOff {
+		return nil
+	}
 	if err := writeDesktopDropins(id); err != nil {
 		return fmt.Errorf("desktop: %w", err)
 	}
@@ -204,7 +216,7 @@ func writeUnitDropins(logger *slog.Logger, id identity) error {
 // reloadUserUnits writes the units bound to the sandbox user and has systemd,
 // already running wherever this is called, read them.
 func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
-	if err := writeUnitDropins(logger, id); err != nil {
+	if err := writeUnitDropins(logger, id, b.off(featureDesktop)); err != nil {
 		return fmt.Errorf("write unit drop-ins: %w", err)
 	}
 	return b.run("systemctl", "daemon-reload")
@@ -216,6 +228,12 @@ func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
 // pool's container), and only then are the config volume, the declared volumes
 // and the sources wired from them.
 func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, wire bool) error {
+	// The features' groups and env go first, before the account exists, so
+	// the account joins groups already there (ADR 26-10-16-423 §5); it also
+	// decides which features are off, which the steps below read.
+	if b.wireFeatures != nil {
+		b.wireFeatures(logger, bootstrap.Features)
+	}
 	if err := b.ensureUser(id); err != nil {
 		return fmt.Errorf("ensure user: %w", err)
 	}
@@ -255,13 +273,17 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	// After seedHome for the same reason, and before wireSources only
 	// because it reads the manifest's targets rather than the trees. It
 	// writes straight to its final owner: nothing chowns home afterwards.
-	if err := b.seedDirenvConfig(id, bootstrap.Sources); err != nil {
-		return fmt.Errorf("seed direnv config: %w", err)
+	if !b.off(featureDirenv) {
+		if err := b.seedDirenvConfig(id, bootstrap.Sources); err != nil {
+			return fmt.Errorf("seed direnv config: %w", err)
+		}
 	}
 	// After seedHome for the same reason, and written straight to their
 	// final owner.
-	if err := b.seedDesktopLaunchers(id, desktop.LauncherDir); err != nil {
-		return fmt.Errorf("seed desktop launchers: %w", err)
+	if !b.off(featureDesktop) {
+		if err := b.seedDesktopLaunchers(id, desktop.LauncherDir); err != nil {
+			return fmt.Errorf("seed desktop launchers: %w", err)
+		}
 	}
 	if !wire {
 		return nil

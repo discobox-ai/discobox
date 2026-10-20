@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -289,4 +290,52 @@ func TestConfigureDoesNotReviveAnEndedPrimary(t *testing.T) {
 		t.Fatalf("unit starts = %d, want the configure command run once", len(units.starts))
 	}
 
+}
+
+// Reviving a terminal by its own id, as an attach does, waits for what the
+// box provisions, as the primary's launch does; a wait the caller's deadline
+// cut short says the box is still provisioning (ADR 26-10-16-423 §5).
+func TestReviveWaitsForProvisioning(t *testing.T) {
+	fx := newReviveService(t, config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}, "")
+	svc, units := fx.svc, fx.units
+	created, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	markExited(t, svc, created.ID)
+
+	svc.awaitProvision = func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := svc.Revive(ctx, created.ID); err == nil || !strings.Contains(err.Error(), "still provisioning") {
+		t.Fatalf("revive while provisioning: %v", err)
+	}
+	if len(units.starts) != 1 {
+		t.Fatalf("unit starts = %d: relaunched before provisioning was ready", len(units.starts))
+	}
+
+	svc.awaitProvision = func(context.Context) error {
+		return errors.New(`feature "core": step "s": exit status 2 (log: /var/log/discobox/provision/core.log)`)
+	}
+	if _, err := svc.Revive(context.Background(), created.ID); err == nil || !strings.Contains(err.Error(), "core.log") {
+		t.Fatalf("revive after provisioning failed: %v", err)
+	}
+	if _, err := svc.Create(context.Background(), CreateRequest{}); err == nil {
+		t.Fatal("a new terminal launched after provisioning failed")
+	}
+
+	svc.awaitProvision = func(context.Context) error { return nil }
+	if _, err := svc.Revive(context.Background(), created.ID); err != nil {
+		t.Fatalf("revive once provisioned: %v", err)
+	}
+
+	// Running again: an agent restart's provisioning, failed under it, does
+	// not keep anyone from attaching.
+	svc.awaitProvision = func(context.Context) error { return errors.New("exit status 2") }
+	if live, err := svc.Revive(context.Background(), created.ID); err != nil || live.ID != created.ID {
+		t.Fatalf("attach to a running terminal while provisioning failed: %v", err)
+	}
 }

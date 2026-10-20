@@ -16,8 +16,12 @@ export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 # for good, and the failure is a build that succeeds in the wrong place. Brew
 # still precedes /usr/bin, which is the whole point of having it.
 #
+# The placeholders of features still being provisioned go last, so a feature's
+# real command shadows its placeholder the moment it is installed (ADR
+# 26-10-16-423 §5; sandbox-agent/provision).
+#
 # Keep this in step with image.json's PATH, which is what a non-login exec gets.
-export PATH="$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/go/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/go/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/lib/discobox/placeholders"
 
 if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
   # shellcheck disable=SC1091 # Nix's own, present only once a profile exists.

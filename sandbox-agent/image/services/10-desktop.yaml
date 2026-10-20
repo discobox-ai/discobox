@@ -22,6 +22,9 @@
 # See docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md
 # and docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md.
 id: ai.discobox.desktop
+# The feature the desktop is: a box whose project turned it off serves no
+# desktop, so this declaration is not read (ADR 26-10-16-423 §4).
+feature: desktop
 name: Desktop
 description: The sandbox's graphical desktop, in a browser tab.
 port: 6900

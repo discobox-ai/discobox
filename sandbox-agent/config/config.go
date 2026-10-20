@@ -50,8 +50,10 @@ type Config struct {
 	// SkillsSources are the skills sources' directories, linked in after
 	// Skills on that same launch (ADR 26-10-14-294 §3).
 	SkillsSources []sandboxconfig.SkillsSource `json:"skillsSources,omitempty"`
-	SandboxConfig map[string]any               `json:"-"`
-	Resources     ResourceConfig               `json:"resources"`
+	// Features turns the box's features off by name (ADR 26-10-16-423 §4).
+	Features      map[string]sandboxconfig.Feature `json:"features,omitempty"`
+	SandboxConfig map[string]any                   `json:"-"`
+	Resources     ResourceConfig                   `json:"resources"`
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime-config
 	// documents, and nothing else (ADR 26-10-08-127 §3). Empty for a sandbox no
 	// pool delivers to.
@@ -205,6 +207,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Sources:               effective.Sources,
 		Skills:                effective.Skills,
 		SkillsSources:         effective.SkillsSources,
+		Features:              effective.Features,
 	}
 	if sampleInterval := strings.TrimSpace(effective.AgentRuntime.ResourceSampleInterval); sampleInterval != "" {
 		if parsed, err := time.ParseDuration(sampleInterval); err == nil {

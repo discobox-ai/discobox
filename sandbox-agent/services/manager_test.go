@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -665,5 +666,47 @@ func TestEnsureStartedIsQuietAboutDeclarationsThatStartNothing(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "skipping sandbox service declaration") {
 		t.Fatalf("a declaration that starts nothing was warned about: %s", logged.String())
+	}
+}
+
+// The image's desktop declaration belongs to the desktop feature: a box that
+// turned it off neither lists the desktop nor declares its port, and a
+// repository's declaration naming a feature is not dropped.
+func TestAnImageDeclarationOfAFeatureTurnedOffIsNotRead(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	desktop, err := os.ReadFile("../image/services/10-desktop.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manager.builtinDir, "10-desktop.yaml"), desktop, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeService(t, root, "20-mine.yaml", "id: mine\nfeature: desktop\nport: 7000\nprotocol: http\n", 0o644)
+	ids := func() []string {
+		listed, err := manager.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, service := range listed {
+			ids = append(ids, service.ID)
+		}
+		return ids
+	}
+	if got := ids(); !slices.Equal(got, []string{"ai.discobox.desktop", "mine"}) {
+		t.Fatalf("with the desktop on: %v", got)
+	}
+	manager.featureOff = func(feature string) bool { return feature == "desktop" }
+	if got := ids(); !slices.Equal(got, []string{"mine"}) {
+		t.Fatalf("with the desktop off: %v", got)
+	}
+	declarations, err := manager.Declarations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range declarations {
+		if declaration.Port == 6900 {
+			t.Errorf("the desktop's port is declared: %+v", declaration)
+		}
 	}
 }
