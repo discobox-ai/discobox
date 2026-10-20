@@ -31,7 +31,8 @@ resource type, within parent types, in a scope type, plus the documented
 operations it covers. The effect, names, conditions and creator are not part of
 it, since the rules that recognize a request are the same for each of them.
 Every word a shape uses is a default action or one of its entry's terms of the
-right kind.
+right kind. Its action is never `manage`: that is every action, which a
+statement may say and Lookup widens, but a shape is one action's.
 
 **Lookup is code.** An action fits a shape when its action, resource type,
 parent types, scope type and scope parent types are equal. `manage` fits every

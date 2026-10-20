@@ -58,6 +58,7 @@ func TestValidateRefuses(t *testing.T) {
 		"a term offered twice":                        {func(e *Entry) { e.Terms[1].Word = "issue" }, `"issue" is a type twice`},
 		"a statement with a word the entry lacks":     {func(e *Entry) { e.Statements[0].ResourceType = "gist" }, `"gist" is not one of the entry's types`},
 		"an action offered only as a type":            {func(e *Entry) { e.Statements[0].Action = "issue" }, `action "issue" is not a default`},
+		"manage as a statement's action":              {func(e *Entry) { e.Statements[0].Action = policy.ActionManage }, `"manage" is every action, not one`},
 		"anything as a statement's type":              {func(e *Entry) { e.Statements[0].ResourceType = policy.Anything }, "names no one type"},
 		"a statement listed twice":                    {func(e *Entry) { e.Statements[1].Action = "create" }, "is listed twice"},
 		"a statement that covers no operation":        {func(e *Entry) { e.Statements[0].Operations = nil }, "at least one documented operation"},

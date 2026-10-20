@@ -273,6 +273,12 @@ func (s Shape) validate(offered map[TermKind]map[string]bool) []error {
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	switch {
+	case s.Action == policy.ActionManage:
+		// manage is every action on a type: a statement may say it, and
+		// Lookup widens it to every shape of the type, but a shape is one
+		// action's rules, and one stored as manage would answer no statement
+		// of a concrete action.
+		fail("action %q is every action, not one; a statement is one action's shape", s.Action)
 	case policy.IsDefaultAction(s.Action):
 	case policy.IsReserved(s.Action):
 		fail("action %q is not an action", s.Action)
