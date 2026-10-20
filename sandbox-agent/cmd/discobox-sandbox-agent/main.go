@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -47,6 +48,8 @@ var personalities = map[string]func(args []string) int{
 	"discobox-hook-publish": runHookPublish,
 	"discobox-ca-anchor":    runCAAnchor,
 	"discobox-power":        runPower,
+	// Waits for a feature, and is what a placeholder command runs.
+	"discobox-provision": runProvisionCommand,
 	// On a directory prepended to containerd's and dockerd's PATH.
 	"runc": runRunc,
 	// Ahead of the real CLI on PATH. See the dockercache package.
@@ -159,8 +162,23 @@ func run(name string, args []string) int {
 	if err != nil {
 		slog.Warn("restore runtime config", "error", err)
 	}
+	// The box provisions in the background while the agent serves (ADR
+	// 26-10-16-423 §5): the primary terminal and the declared services wait
+	// for its readiness, never the agent. Only a Linux box provisions, and
+	// only it keeps provision.json.
+	statusPath := ""
+	if runtime.GOOS == "linux" {
+		statusPath = provisionspec.StatusPath
+	}
+	tracker := provision.NewTracker(statusPath)
+	go func() {
+		if err := provision.Boot(ctx, slog.Default(), tracker, cfg.Features, false); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("provision", "error", err)
+		}
+	}()
 	serverConfig := server.ConfigFromHarnessConfig(cfg)
 	serverConfig.RuntimeConfig = runtimeConfig
+	serverConfig.Provision = tracker
 	if err := server.Serve(ctx, slog.Default(), serverConfig); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("serve sandbox agent", "error", err)
 		return 1
@@ -371,7 +389,9 @@ func runRenderProxyEnv(args []string) int {
 
 // runProvision applies every feature of the bundle trees it is given, each
 // holding features/<name>/provision.yaml, skipping the steps already recorded
-// as applied. See the provision package.
+// as applied. Every step blocks and none is turned off, as an image build or
+// a snapshot provisions; a box's boot provisions in the agent instead. See
+// the provision package.
 func runProvision(ctx context.Context, args []string) int {
 	runner := provision.Runner{Root: "/"}
 	flags := flag.NewFlagSet("discobox-sandbox-agent provision", flag.ContinueOnError)
@@ -397,7 +417,7 @@ func runProvision(ctx context.Context, args []string) int {
 		slog.Error("provision", "error", err)
 		return 1
 	}
-	if _, err := runner.Apply(ctx, features); err != nil {
+	if _, err := runner.Provision(ctx, features, provision.Options{}); err != nil {
 		slog.Error("provision", "error", err)
 		return 1
 	}

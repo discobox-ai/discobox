@@ -58,6 +58,28 @@ jq '{sandboxId, user, git, sources, harnessMode, prompt, volumes,
 
 No command allowlist, no approval prompts. The isolation is the boundary.
 
+## Tools still being installed
+
+A box can be ready before all of its tools are. Discobox provisions each
+*feature* — `docker`, `node`, `brew`, `nix`, `desktop`, and the rest — and
+what the harness needs comes first; others may still be installing while you
+work. `/run/discobox/provision.json` says where each stands:
+
+```bash
+jq '.features | map_values({state, how, step, log, reason, error})' /run/discobox/provision.json
+```
+
+- `state` is `pending`, `provisioning`, `ready`, `failed` or `off`. `log` is
+  the feature's log; read it when one failed.
+- Wait for one with `discobox-provision wait docker` (any number of names). It
+  exits non-zero if one failed or is off, and says why.
+- A command of a feature still installing is a placeholder: run it and it says
+  so on stderr, waits, then runs the real one. You need not wait first.
+- **`off` was the project's choice**, in its `.discobox/settings.json`
+  `features`. Do not install that tool by hand to get around it; say it is
+  off, and let the user turn it on.
+- A tool the file does not list came with the box's image, and is there.
+
 ## What you cannot reach
 
 The user's machine: no host filesystem, no processes, no network, no SSH keys,

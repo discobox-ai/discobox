@@ -116,6 +116,10 @@ type Definition struct {
 	// Builtin marks a declaration that came from the image rather than from the
 	// repository being worked on.
 	Builtin bool
+	// Feature is the feature an image's declaration belongs to, empty when
+	// it names none: when the box reports that feature off, the declaration
+	// is not read (ADR 26-10-16-423 §4). A repository's is ignored.
+	Feature string
 	// Problem is why this declaration cannot run, empty when it can.
 	Problem string
 }
@@ -174,6 +178,9 @@ func discoverDir(dir string, builtin bool) ([]Definition, error) {
 	for _, file := range files {
 		def := definition(file)
 		def.Builtin = builtin
+		if builtin {
+			def.Feature = firstField(file.Fields, "feature")
+		}
 		// The reserved namespace belongs to the image. Enforced here rather
 		// than in definition because only the caller knows which directory the
 		// file came out of.

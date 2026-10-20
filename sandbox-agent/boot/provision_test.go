@@ -154,3 +154,37 @@ func writeBootstrap(t *testing.T, dir, sandboxID string) string {
 	}
 	return path
 }
+
+// The features' wiring goes before the account, with the bootstrap's
+// features, and a feature provisioning reports off is not wired: its direnv
+// whitelist is not seeded.
+func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
+	id := selfIdentity(t)
+	b, git := newFakeGitBooter(nil)
+	root := t.TempDir()
+	b.statusPath = filepath.Join(root, "provision.json")
+	status := `{"state":"provisioning","ready":false,"updatedAt":"2026-10-20T00:00:00Z","features":{"direnv":{"state":"off","reason":"turned off"}}}`
+	if err := os.WriteFile(b.statusPath, []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var wired map[string]sandboxconfig.Feature
+	runsBefore := -1
+	b.wireFeatures = func(_ *slog.Logger, features map[string]sandboxconfig.Feature) {
+		wired, runsBefore = features, len(git.runs)
+	}
+	source := filepath.Join(root, "workspace", "repo")
+	bootstrap := sandboxconfig.Config{
+		AgentRuntime: sandboxconfig.AgentRuntime{WorkingRoot: filepath.Join(root, "workspace")},
+		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
+		Features:     map[string]sandboxconfig.Feature{"direnv": {Enabled: false}},
+	}
+	if err := b.provision(slog.Default(), id, &bootstrap, false); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if runsBefore != 0 || len(wired) != 1 || wired["direnv"].Enabled {
+		t.Fatalf("wired %v after %d runs; want the bootstrap's features, before anything ran", wired, runsBefore)
+	}
+	if direnv, ok := readDirenvConfig(t, id.home); ok {
+		t.Fatalf("direnv.toml = %q; direnv is off", direnv)
+	}
+}

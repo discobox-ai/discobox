@@ -105,7 +105,7 @@ func mergePatch(doc, patch map[string]any) map[string]any {
 // applySystemd writes the drop-in first, so a unit enabled in the same step
 // is enabled with it. It reloads the manager only on a running system: units
 // enabled on one that is not are read when it boots.
-func (r *Runner) applySystemd(ctx context.Context, feature provisionspec.Feature, step *provisionspec.SystemdStep) error {
+func (r *Runner) applySystemd(ctx context.Context, out io.Writer, feature provisionspec.Feature, step *provisionspec.SystemdStep) error {
 	if drop := step.DropIn; drop != nil {
 		data, err := os.ReadFile(filepath.Join(feature.Dir, filepath.FromSlash(drop.Source)))
 		if err != nil {
@@ -117,31 +117,31 @@ func (r *Runner) applySystemd(ctx context.Context, feature provisionspec.Feature
 		}
 	}
 	if len(step.Mask) > 0 {
-		if err := r.systemctl(ctx, append([]string{"mask"}, step.Mask...)...); err != nil {
+		if err := r.systemctl(ctx, out, append([]string{"mask"}, step.Mask...)...); err != nil {
 			return err
 		}
 	}
 	if len(step.Enable) > 0 {
-		if err := r.systemctl(ctx, append([]string{"enable"}, step.Enable...)...); err != nil {
+		if err := r.systemctl(ctx, out, append([]string{"enable"}, step.Enable...)...); err != nil {
 			return err
 		}
 	}
 	if step.DropIn != nil && r.root() == "/" && dirExists("/run/systemd/system") {
-		return r.systemctl(ctx, "daemon-reload")
+		return r.systemctl(ctx, out, "daemon-reload")
 	}
 	return nil
 }
 
-func (r *Runner) systemctl(ctx context.Context, args ...string) error {
+func (r *Runner) systemctl(ctx context.Context, out io.Writer, args ...string) error {
 	if r.root() != "/" {
 		args = append([]string{"--root=" + r.root()}, args...)
 	}
-	return r.command(ctx, "/", nil, "systemctl", args...)
+	return r.command(ctx, out, "/", nil, "systemctl", args...)
 }
 
 // applyGroup makes the group unless it is there. One already there with
 // another id is refused rather than renumbered: files are owned by its id.
-func (r *Runner) applyGroup(ctx context.Context, step *provisionspec.GroupStep) error {
+func (r *Runner) applyGroup(ctx context.Context, out io.Writer, step *provisionspec.GroupStep) error {
 	if gid, ok := runuser.LookupGroupID(step.Name); ok {
 		if step.GID != nil && int64(*step.GID) != int64(gid) {
 			return fmt.Errorf("group %q is already there with gid %d, not %d", step.Name, gid, *step.GID)
@@ -152,7 +152,7 @@ func (r *Runner) applyGroup(ctx context.Context, step *provisionspec.GroupStep) 
 	if step.GID != nil {
 		args = []string{"--gid", strconv.Itoa(*step.GID)}
 	}
-	return r.command(ctx, "/", nil, "groupadd", append(args, step.Name)...)
+	return r.command(ctx, out, "/", nil, "groupadd", append(args, step.Name)...)
 }
 
 // EnvProfilePath is where an env step's profile script is written. "--"
@@ -169,8 +169,9 @@ const envProfilePrefix = "zz-discobox-"
 // pruneEnvProfiles removes a feature's env scripts that none of its steps
 // selecting this box writes any more, and their records: a step renamed or
 // removed must not leave its environment behind in every login shell. A step
-// that became another kind under the same name keeps its record.
-func (r *Runner) pruneEnvProfiles(feature provisionspec.Feature) error {
+// that became another kind under the same name keeps its record. off removes
+// every one, for a feature turned off.
+func (r *Runner) pruneEnvProfiles(feature provisionspec.Feature, off bool) error {
 	keep := map[string]bool{}
 	// A step of another kind now under the name owns the record, which
 	// was written for it; only the script goes.
@@ -178,7 +179,7 @@ func (r *Runner) pruneEnvProfiles(feature provisionspec.Feature) error {
 	for _, step := range feature.Spec.Steps {
 		if step.Env == nil {
 			otherKind[step.Name] = true
-		} else if r.Platform.Selects(step.When) {
+		} else if !off && r.Platform.Selects(step.When) {
 			keep[r.path(EnvProfilePath(feature.Name, step.Name))] = true
 		}
 	}
@@ -352,16 +353,19 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 }
 
 // applyPackages installs a Debian family box's packages, refreshing the
-// package lists once per run.
-func (r *Runner) applyPackages(ctx context.Context, step *provisionspec.PackagesStep) error {
+// package lists once per run. It holds the apt lock, which features
+// provisioning at once share.
+func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisionspec.PackagesStep) error {
+	r.apt.Lock()
+	defer r.apt.Unlock()
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
 	if !r.aptUpdated {
-		if err := r.command(ctx, "/", env, "apt-get", "update"); err != nil {
+		if err := r.command(ctx, out, "/", env, "apt-get", "update"); err != nil {
 			return err
 		}
 		r.aptUpdated = true
 	}
-	return r.command(ctx, "/", env, "apt-get", append([]string{"install", "-y", "--no-install-recommends"}, step.Debian...)...)
+	return r.command(ctx, out, "/", env, "apt-get", append([]string{"install", "-y", "--no-install-recommends"}, step.Debian...)...)
 }
 
 func fileMode(mode string) os.FileMode {

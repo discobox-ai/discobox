@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,9 @@ type ManagerConfig struct {
 	// BuiltinDir is where the image's own declarations live. Empty uses
 	// BuiltinDir, which is where the image installs them.
 	BuiltinDir string
+	// FeatureOff reports whether the box turned a feature off, which drops
+	// the image's declarations that belong to it; nil turns nothing off.
+	FeatureOff func(feature string) bool
 }
 
 // Manager runs the sandbox's declared services.
@@ -86,6 +90,7 @@ type Manager struct {
 	// builtinDir is where the image's own declarations live. A field rather
 	// than the constant directly so a test can point it somewhere real.
 	builtinDir string
+	featureOff func(feature string) bool
 
 	// lifecycle serializes start/stop/restart per service id. Deciding whether
 	// to create an exec or relaunch the existing one is a check-then-act over
@@ -115,15 +120,28 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		execs:      cfg.Execs,
 		root:       cfg.Root,
 		builtinDir: builtinDir,
+		featureOff: cfg.FeatureOff,
 		lifecycle:  map[string]*sync.Mutex{},
 	}, nil
+}
+
+// discover is every declaration, less the image's for a feature the box
+// turned off: the desktop's port is not served when the desktop is off.
+func (m *Manager) discover() ([]Definition, error) {
+	defs, err := Discover(m.builtinDir, m.root)
+	if err != nil || m.featureOff == nil {
+		return defs, err
+	}
+	return slices.DeleteFunc(defs, func(def Definition) bool {
+		return def.Builtin && def.Feature != "" && m.featureOff(def.Feature)
+	}), nil
 }
 
 // List is every declared service with the state of its run, in declaration
 // order. It takes no context because it cancels nothing: discovery is a
 // directory read and run state is already-collected exec records.
 func (m *Manager) List() ([]Service, error) {
-	defs, err := Discover(m.builtinDir, m.root)
+	defs, err := m.discover()
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +189,7 @@ func declaredProtocol(declared string) ports.Protocol {
 // A declaration that cannot run still contributes its ports. The file says the
 // port exists; a missing executable bit says nothing about that either way.
 func (m *Manager) Declarations() ([]ports.Declaration, error) {
-	defs, err := Discover(m.builtinDir, m.root)
+	defs, err := m.discover()
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +323,7 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	defs, err := Discover(m.builtinDir, m.root)
+	defs, err := m.discover()
 	if err != nil {
 		return err
 	}
@@ -391,7 +409,7 @@ func (m *Manager) definition(id string) (Definition, error) {
 	if id == "" {
 		return Definition{}, ErrNotFound
 	}
-	defs, err := Discover(m.builtinDir, m.root)
+	defs, err := m.discover()
 	if err != nil {
 		return Definition{}, err
 	}

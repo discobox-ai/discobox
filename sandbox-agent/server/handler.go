@@ -14,12 +14,14 @@ import (
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/provisionspec"
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
@@ -53,6 +55,8 @@ type handler struct {
 	// sourceConverger clones the sources the applied document names (ADR
 	// 0126 §4), nil when the handler was built without one.
 	sourceConverger *sourceconverge.Converger
+	// provision is the box's provisioning this boot; nil reports none.
+	provision *provision.Tracker
 	// runtimeConfigMu makes applying a delivered document and setting the
 	// idle timeout it carries one step (PutSandboxRuntimeConfig).
 	runtimeConfigMu sync.Mutex
@@ -578,6 +582,11 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		if revision := h.runtimeConfig.Revision(); revision > 0 {
 			response.RuntimeConfigRevision = sandboxapi.NewOptInt64(revision)
 		}
+	}
+	// The box's provisioning rides it too, so the console shows a feature
+	// still provisioning without entering the box (ADR 26-10-16-423 §6).
+	if h.provision != nil {
+		response.Provision = sandboxapi.NewOptSandboxAgentProvisionStatus(sandboxAgentProvisionStatus(h.provision.Status()))
 	}
 	// Per-source convergence rides the same poll: the pool waits on a source
 	// being materialized before it reads its project layer (ADR 0126 §4).
@@ -1136,4 +1145,41 @@ func stringMap[M ~map[string]string](in M) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+// sandboxAgentProvisionStatus is provision.json as the status report carries
+// it (ADR 26-10-16-423 §6).
+func sandboxAgentProvisionStatus(status provisionspec.Status) sandboxapi.SandboxAgentProvisionStatus {
+	out := sandboxapi.SandboxAgentProvisionStatus{
+		State:     sandboxapi.SandboxAgentProvisionStatusState(status.State),
+		Ready:     status.Ready,
+		UpdatedAt: status.UpdatedAt,
+		Features:  make(sandboxapi.SandboxAgentProvisionStatusFeatures, len(status.Features)),
+	}
+	if status.Error != "" {
+		out.Error = sandboxapi.NewOptString(status.Error)
+	}
+	for name, feature := range status.Features {
+		item := sandboxapi.SandboxAgentProvisionFeature{
+			State:   sandboxapi.SandboxAgentProvisionFeatureState(feature.State),
+			Async:   sandboxapi.NewOptBool(feature.Async),
+			Version: optStringNonEmpty(feature.Version),
+			Step:    optStringNonEmpty(feature.Step),
+			Log:     optStringNonEmpty(feature.Log),
+			Reason:  optStringNonEmpty(feature.Reason),
+			Error:   optStringNonEmpty(feature.Error),
+		}
+		if feature.How != "" {
+			item.How = sandboxapi.NewOptSandboxAgentProvisionFeatureHow(sandboxapi.SandboxAgentProvisionFeatureHow(feature.How))
+		}
+		out.Features[name] = item
+	}
+	return out
+}
+
+func optStringNonEmpty(s string) sandboxapi.OptString {
+	if s == "" {
+		return sandboxapi.OptString{}
+	}
+	return sandboxapi.NewOptString(s)
 }
