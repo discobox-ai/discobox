@@ -139,7 +139,9 @@ Write these down before writing scripts; most become ADR sections.
 
 | File | Contract |
 | --- | --- |
-| `Dockerfile` | `FROM ${SANDBOX_AGENT_IMAGE}`; refuse an empty `HARNESS_METADATA`; `npm install -g` then `rm -rf /root/.npm`; install `agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>`, `launch.sh` → `/usr/local/bin/discobox-harness-run`, `prompt.sh` → `/usr/local/bin/discobox-prompt` |
+| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>` (`0755`), `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`), `prompt.sh` → `/usr/local/bin/discobox-prompt` (`0755`) |
+| `install-cli.sh` | executable; `npm install -g` the CLI, then `rm -rf /root/.npm` |
+| `Dockerfile` | `FROM ${SANDBOX_AGENT_IMAGE}`; refuse an empty `HARNESS_METADATA`; `COPY` every file `provision.yaml` names, and it, into `/opt/discobox/bundles/harness/features/<id>/`; `RUN discobox-sandbox-agent provision /opt/discobox/bundles/platform /opt/discobox/bundles/harness` (`harness/feature_test.go` checks the copy is whole) |
 | `image.json` | `apiVersion`, `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,config.{command,reminder,ports}}`. No `runCommand` — the convention is the command. Every localhost callback port a sign-in uses goes in `config.ports` — its number when fixed, `{"ephemeral": true}` when it changes each run — with an `unavailable` message naming the fallback (device code, an API key) |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
 | `driver.go` | `ID()` and `Definition()` naming `harness.ImageRef("discobox-harness-<id>")` |
@@ -202,7 +204,7 @@ Every place the last harness touched (find them: `git grep -il <last-id> -- ':!h
 - Docs: `harness/DESIGN.md` (driver list, managed layers, updater list, judge
   notes, memory, a configure-flow section), `README.md`,
   `sandbox-agent/DESIGN.md` (watcher's image list),
-  `sandbox-agent/image/skills/discobox/SKILL.md` (harness row).
+  `sandbox-agent/features/core/skills/discobox/SKILL.md` (harness row).
 
 ## 5. Test
 

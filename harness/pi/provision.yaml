@@ -1,0 +1,38 @@
+# The pi harness's own feature (ADR 26-10-16-423 §4): its CLI, its wrappers
+# and its policy files. A harness's features block readiness, and so does
+# everything they require. It requires core, whose no-op
+# discobox-harness-run its launcher replaces, so it is applied after core.
+apiVersion: discobox.ai/provision/v1
+requires: [core, node]
+steps:
+  # pi looks for fd (or Debian's fdfind) and ripgrep on PATH, and downloads
+  # whichever is missing from GitHub on its first interactive run, into the
+  # home. The cli feature has ripgrep; fd-find is the other.
+  - name: fd
+    packages:
+      debian: [fd-find]
+  - name: cli
+    run: install-cli.sh
+  # pi's lifecycle reaches JavaScript and never a command, so this extension
+  # is what the other harnesses declare as command hooks. pi has no system
+  # layer for extensions: the manifest's harness files put a one-line
+  # re-export of it in ~/.pi/agent/extensions (ADR 26-10-15-259 §3).
+  - name: hook-extension
+    file: {path: /usr/local/libexec/discobox/pi-hook-extension.js, source: hook-extension.js}
+  # The agent this harness installs, for the pool-cached version store
+  # (ADR 0114 §7). The store is generic; this file is the only
+  # harness-specific part of it.
+  - name: agent-conf
+    file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-pi, source: configure.sh, mode: "0755"}
+  # The harness-run convention (ADR 0086 §3): the harness installs its agent
+  # under this name, over core's no-op, and the runtime types it. On PATH,
+  # not in libexec, because the runtime resolves it by name.
+  - name: harness-run
+    check: check-launcher.sh
+    file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
+  # The one-shot prompting interface in-sandbox tools ask for a model
+  # through (ADR 0079). On PATH: its callers resolve it by name.
+  - name: prompt
+    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}

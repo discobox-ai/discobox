@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
 
@@ -287,12 +288,8 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	dockerfile, err := os.ReadFile("Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "launch.sh /usr/local/bin/" + harness.RunCommand; !strings.Contains(string(dockerfile), want) {
-		t.Fatalf("Dockerfile does not install the launcher as %q", want)
+	if got, want := featuretest.Load(t).Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
+		t.Fatalf("the feature installs the launcher at %q, want %q", got, want)
 	}
 	scriptBytes, err := os.ReadFile("launch.sh")
 	if err != nil {

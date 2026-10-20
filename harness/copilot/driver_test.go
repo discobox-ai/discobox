@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 	"github.com/discobox-ai/discobox/secretroute"
 )
@@ -121,19 +122,18 @@ func TestImagePolicy(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	dockerfile, err := os.ReadFile("Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"launch.sh /usr/local/bin/" + harness.RunCommand,
-		"prompt.sh /usr/local/bin/discobox-prompt",
-		"hooks.json /etc/github-copilot/policy.d/",
-		"agent.conf /usr/local/libexec/discobox/agent.conf",
+	feature := featuretest.Load(t)
+	for source, want := range map[string]string{
+		"launch.sh":  "/usr/local/bin/" + harness.RunCommand,
+		"prompt.sh":  "/usr/local/bin/discobox-prompt",
+		"agent.conf": "/usr/local/libexec/discobox/agent.conf",
 	} {
-		if !strings.Contains(string(dockerfile), want) {
-			t.Errorf("Dockerfile does not install %q", want)
+		if got := feature.Installs(source); got != want {
+			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
 		}
+	}
+	if got := feature.Installs("hooks.json"); !strings.HasPrefix(got, "/etc/github-copilot/policy.d/") {
+		t.Errorf("the feature installs hooks.json at %q, not in Copilot's policy.d", got)
 	}
 }
 

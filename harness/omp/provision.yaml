@@ -1,0 +1,41 @@
+# The omp harness's own feature (ADR 26-10-16-423 §4): its CLI, its wrappers
+# and its policy files. A harness's features block readiness, and so does
+# everything they require. It requires core, whose no-op
+# discobox-harness-run its launcher replaces, so it is applied after core.
+apiVersion: discobox.ai/provision/v1
+requires: [bun, core, node]
+steps:
+  - name: cli
+    run: install-cli.sh
+  # omp's lifecycle reaches JavaScript and never a command, so this extension
+  # is what the other harnesses declare as command hooks. omp has no system
+  # layer for extensions: the manifest's harness files put a one-line
+  # re-export of it in ~/.omp/agent/extensions (ADR 26-10-14-718 §3).
+  - name: hook-extension
+    file: {path: /usr/local/libexec/discobox/omp-hook-extension.js, source: hook-extension.js}
+  # The settings overlay the manifest's env names in PI_CONFIG_FILES: the
+  # policy baseline a configure capture cannot replace (ADR 26-10-14-718 §4).
+  - name: settings
+    file: {path: /etc/omp/discobox.yml, source: discobox.yml}
+  # PI_PROXY from HTTPS_PROXY, for omp's Anthropic transport, which reads no
+  # other proxy variable (ADR 26-10-14-718 §4). A login shell sources it; the
+  # launcher, configure command and discobox-prompt source it themselves.
+  - name: proxy-env
+    file: {path: /etc/profile.d/omp-proxy.sh, source: proxy-env.sh}
+  # The agent this harness installs, for the pool-cached version store
+  # (ADR 0114 §7). The store is generic; this file is the only
+  # harness-specific part of it.
+  - name: agent-conf
+    file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-omp, source: configure.sh, mode: "0755"}
+  # The harness-run convention (ADR 0086 §3): the harness installs its agent
+  # under this name, over core's no-op, and the runtime types it. On PATH,
+  # not in libexec, because the runtime resolves it by name.
+  - name: harness-run
+    check: check-launcher.sh
+    file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
+  # The one-shot prompting interface in-sandbox tools ask for a model
+  # through (ADR 0079). On PATH: its callers resolve it by name.
+  - name: prompt
+    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}

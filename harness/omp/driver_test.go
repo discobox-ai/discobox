@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
 
@@ -172,8 +173,8 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if !strings.Contains(readFile(t, "Dockerfile"), "hook-extension.js "+installedHookExt) {
-		t.Errorf("Dockerfile does not install the extension at %s", installedHookExt)
+	if got := featuretest.Load(t).Installs("hook-extension.js"); got != installedHookExt {
+		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
 
@@ -217,18 +218,21 @@ func TestImagePolicy(t *testing.T) {
 	if scalars["startup.setupWizard"] != false || scalars["startup.checkUpdate"] != false {
 		t.Fatalf("overlay = %v, want the setup wizard and the update check off", scalars)
 	}
-	for _, build := range []struct{ file, want string }{
-		{"Dockerfile", "discobox.yml " + overlayPath},
-		{"Dockerfile", "proxy-env.sh /etc/profile.d/omp-proxy.sh"},
-		{"Dockerfile", "launch.sh /usr/local/bin/" + harness.RunCommand},
-		{"Dockerfile", "prompt.sh /usr/local/bin/discobox-prompt"},
-		{"Dockerfile", "configure.sh " + image.Harness.Config.Command[0]},
-		{"Dockerfile", "agent.conf /usr/local/libexec/discobox/agent.conf"},
-		{"Dockerfile", "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent"},
+	feature := featuretest.Load(t)
+	for source, want := range map[string]string{
+		"discobox.yml": overlayPath,
+		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",
+		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
+		"prompt.sh":    "/usr/local/bin/discobox-prompt",
+		"configure.sh": image.Harness.Config.Command[0],
+		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
 	} {
-		if !strings.Contains(readFile(t, build.file), build.want) {
-			t.Errorf("%s does not install %q", build.file, build.want)
+		if got := feature.Installs(source); got != want {
+			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
 		}
+	}
+	if !feature.Runs(t, "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent") {
+		t.Error("the feature does not install omp with onnxruntime's CUDA download skipped")
 	}
 	if !strings.Contains(readFile(t, "agent.conf"), "AGENT_BIN=omp\n") {
 		t.Error("agent.conf does not name the omp binary")

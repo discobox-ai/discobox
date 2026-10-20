@@ -1,0 +1,48 @@
+# The opencode harness's own feature (ADR 26-10-16-423 §4): its CLI, its wrappers
+# and its policy files. A harness's features block readiness, and so does
+# everything they require. It requires core, whose no-op
+# discobox-harness-run its launcher replaces, so it is applied after core.
+apiVersion: discobox.ai/provision/v1
+requires: [core, node]
+steps:
+  - name: cli
+    run: install-cli.sh
+  # opencode's lifecycle reaches plugins and never a command, so this plugin is
+  # what the other harnesses declare as command hooks (ADR 0144). opencode
+  # resolves it by the absolute path the managed config names, and takes a
+  # plugin as a directory whose `server` module it loads.
+  - name: hook-plugin-server
+    file: {path: /usr/local/libexec/discobox/opencode-hook-plugin/server.js, source: hook-plugin/server.js}
+  - name: hook-plugin-package
+    file: {path: /usr/local/libexec/discobox/opencode-hook-plugin/package.json, source: hook-plugin/package.json}
+  # The one owner of the harness's credential entries (`own`) and of what was
+  # delivered (`delivered`): the launcher's sync, configure and the judge all
+  # go through it (ADR 26-10-15-848 §3, §4).
+  - name: credentials
+    file: {path: /usr/local/libexec/discobox/opencode-credentials, source: credentials.sh, mode: "0755"}
+  # The model a session starts on, for the judge and configure's check.
+  - name: model
+    file: {path: /usr/local/libexec/discobox/opencode-model, source: model.sh, mode: "0755"}
+  # opencode's managed configuration layer, read after the user's own and a
+  # project's, and the only layer the configure flow's capture cannot
+  # replace. Plugin entries accumulate across layers, so naming this one never
+  # drops a plugin the user added.
+  - name: managed-config
+    file: {path: /etc/opencode/opencode.json, source: managed-config.json}
+  # The agent this harness installs, for the pool-cached version store
+  # (ADR 0114 §7). The store is generic; this file is the only
+  # harness-specific part of it.
+  - name: agent-conf
+    file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-opencode, source: configure.sh, mode: "0755"}
+  # The harness-run convention (ADR 0086 §3): the harness installs its agent
+  # under this name, over core's no-op, and the runtime types it. On PATH,
+  # not in libexec, because the runtime resolves it by name.
+  - name: harness-run
+    check: check-launcher.sh
+    file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
+  # The one-shot prompting interface in-sandbox tools ask for a model
+  # through (ADR 0079). On PATH: its callers resolve it by name.
+  - name: prompt
+    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}

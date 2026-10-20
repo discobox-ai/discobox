@@ -1,0 +1,31 @@
+# The copilot harness's own feature (ADR 26-10-16-423 §4): its CLI, its wrappers
+# and its policy files. A harness's features block readiness, and so does
+# everything they require. It requires core, whose no-op
+# discobox-harness-run its launcher replaces, so it is applied after core.
+apiVersion: discobox.ai/provision/v1
+requires: [core, node]
+steps:
+  - name: cli
+    run: install-cli.sh
+  # Copilot loads every file here as a *policy* hook source: read beside the
+  # user's own hooks rather than instead of them, and kept on by policy when
+  # the user's settings say disableAllHooks (ADR 26-10-02-840 §4).
+  - name: hooks
+    file: {path: /etc/github-copilot/policy.d/discobox.json, source: hooks.json}
+  # The agent this harness installs, for the pool-cached version store
+  # (ADR 0114 §7). The store is generic; this file is the only
+  # harness-specific part of it.
+  - name: agent-conf
+    file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-copilot, source: configure.sh, mode: "0755"}
+  # The harness-run convention (ADR 0086 §3): the harness installs its agent
+  # under this name, over core's no-op, and the runtime types it. On PATH,
+  # not in libexec, because the runtime resolves it by name.
+  - name: harness-run
+    check: check-launcher.sh
+    file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
+  # The one-shot prompting interface in-sandbox tools ask for a model
+  # through (ADR 0079). On PATH: its callers resolve it by name.
+  - name: prompt
+    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
