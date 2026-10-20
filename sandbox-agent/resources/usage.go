@@ -2,6 +2,8 @@ package resources
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,9 +37,10 @@ const processCandidates = 15
 type Usage struct {
 	ObservedAt time.Time `json:"observedAt"`
 	// Source names where the totals came from: "cgroup" when this sandbox's
-	// own cgroup was readable, "proc" when the per-process rollup had to
-	// stand in for it. A consumer that cares about page cache should check
-	// it, because the rollup cannot see any.
+	// own cgroup was readable, "machine" when the sandbox is a whole machine
+	// and the totals are its kernel's, "proc" when the per-process rollup had
+	// to stand in for either. A consumer that cares about page cache should
+	// check it, because the rollup cannot see any.
 	Source       string         `json:"source"`
 	CPU          CPUUsage       `json:"cpu"`
 	Memory       MemoryUsage    `json:"memory"`
@@ -53,7 +56,8 @@ type CPUUsage struct {
 	// LimitVCPUs is the cgroup's own quota in whole-CPU units, zero when the
 	// cgroup is unlimited. Sandbox containers are created with no CPU limit
 	// today, so this is normally zero and a rate has no ceiling to be read
-	// against (ADR 0071, resource accounting, context).
+	// against (ADR 0071, resource accounting, context). A machine's is its
+	// online CPUs.
 	LimitVCPUs float64 `json:"limitVcpus,omitempty"`
 }
 
@@ -95,6 +99,9 @@ type ProcessUsage struct {
 type Procfs struct {
 	ProcRoot   string
 	CgroupRoot string
+	// ContainerFile is systemd's record that it runs in a container, which
+	// it writes at boot whatever the container's cgroup namespace.
+	ContainerFile string
 	// PageSize is the size of a page in bytes, for converting the page counts
 	// /proc reports. Zero uses the running system's.
 	PageSize int
@@ -107,6 +114,9 @@ func (s Procfs) normalized() Procfs {
 	if s.CgroupRoot == "" {
 		s.CgroupRoot = "/sys/fs/cgroup"
 	}
+	if s.ContainerFile == "" {
+		s.ContainerFile = systemdContainerFile
+	}
 	if s.PageSize <= 0 {
 		s.PageSize = os.Getpagesize()
 	}
@@ -118,9 +128,13 @@ func (s Procfs) normalized() Procfs {
 // The cgroup read is the authoritative total when it succeeds. Inside a
 // container with a private cgroup namespace — Docker's default on cgroup v2 —
 // CgroupRoot is this container's own cgroup presented as the root, so the
-// files there describe exactly this sandbox and nothing else. When they cannot
-// be read the per-process rollup stands in, which sees no page cache and no
-// kernel memory; Source records which happened.
+// files there describe exactly this sandbox and nothing else. On a machine,
+// a provider's VM the box has to itself, CgroupRoot is the hierarchy's real
+// root, which is no cgroup of the box's: the whole machine is the sandbox, so
+// its totals are the kernel's for the machine, and Source is "machine" (ADR
+// 26-10-16-423 §9). When neither can be read the per-process rollup stands
+// in, which sees no page cache and no kernel memory; Source records which
+// happened.
 func (s Procfs) Sample(context.Context) Usage {
 	s = s.normalized()
 	usage := Usage{ObservedAt: time.Now().UTC(), Source: "proc"}
@@ -132,6 +146,24 @@ func (s Procfs) Sample(context.Context) Usage {
 	// these are the sandbox's totals, and the candidates are a ranking.
 	usage.Memory.VirtualBytes, usage.Memory.ResidentBytes = s.memoryRollup()
 
+	if s.isMachine() {
+		cpu, cpuOK := s.machineCPU()
+		memory, memoryOK := s.machineMemory()
+		if cpuOK && memoryOK {
+			usage.Source = "machine"
+			usage.CPU = cpu
+			usage.Memory.CurrentBytes = memory.CurrentBytes
+			usage.Memory.AnonBytes = memory.AnonBytes
+			usage.Memory.FileBytes = memory.FileBytes
+			usage.Memory.LimitBytes = memory.LimitBytes
+			return usage
+		}
+		// The root cgroup is the host's, never the box's own, so it does
+		// not stand in: the rollup does.
+		usage.CPU = s.procCPU()
+		usage.Memory.CurrentBytes = usage.Memory.ResidentBytes
+		return usage
+	}
 	if cpu, ok := s.cgroupCPU(); ok {
 		usage.CPU = cpu
 		usage.Source = "cgroup"
@@ -150,6 +182,106 @@ func (s Procfs) Sample(context.Context) Usage {
 		usage.Memory.CurrentBytes = usage.Memory.ResidentBytes
 	}
 	return usage
+}
+
+// systemdContainerFile is where systemd, as PID 1, records the container
+// manager it detected; it is absent outside a container.
+const systemdContainerFile = "/run/systemd/container"
+
+// isMachine reports whether the box is a whole machine: CgroupRoot is the
+// root of a cgroup v2 hierarchy rather than a cgroup of its own — only a
+// non-root cgroup has cgroup.type, whatever namespace it is seen from — and
+// systemd saw no container. Both are the kernel's and init's to say, read
+// rather than declared. A container sees the host's /proc/stat and
+// /proc/meminfo as its own, so anything short of both falls to the rollup: a
+// cgroup v1 mount, or none, has no cgroup.controllers, and a container
+// sharing its host's cgroup namespace sees the root but has the file.
+func (s Procfs) isMachine() bool {
+	if _, err := os.Stat(filepath.Join(s.CgroupRoot, "cgroup.controllers")); err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(s.CgroupRoot, "cgroup.type")); !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	_, err := os.Stat(s.ContainerFile)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// machineCPU is the machine's CPU time from /proc/stat's "cpu" line, and its
+// online CPUs as its limit. Steal is time the hypervisor gave elsewhere, and
+// idle and iowait are not use; guest time is already counted in user.
+func (s Procfs) machineCPU() (CPUUsage, bool) {
+	text, ok := readTrimmed(filepath.Join(s.ProcRoot, "stat"))
+	if !ok {
+		return CPUUsage{}, false
+	}
+	var cpu CPUUsage
+	var found bool
+	var cpus int
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], "cpu") {
+			continue
+		}
+		if fields[0] != "cpu" {
+			cpus++
+			continue
+		}
+		// user nice system idle iowait irq softirq, in ticks.
+		if len(fields) < 8 {
+			return CPUUsage{}, false
+		}
+		var ticks [7]uint64
+		for i := range ticks {
+			value, err := strconv.ParseUint(fields[i+1], 10, 64)
+			if err != nil {
+				return CPUUsage{}, false
+			}
+			ticks[i] = value
+		}
+		user, nice, system, irq, softirq := ticks[0], ticks[1], ticks[2], ticks[5], ticks[6]
+		cpu.UserUsec = ticksToUsec(user + nice)
+		cpu.SystemUsec = ticksToUsec(system + irq + softirq)
+		cpu.UsageUsec = cpu.UserUsec + cpu.SystemUsec
+		found = true
+	}
+	cpu.LimitVCPUs = float64(cpus)
+	return cpu, found
+}
+
+// machineMemory is the machine's memory in use — every page but the free
+// ones, page cache included, as a cgroup's memory.current includes it — and
+// its size as the limit, from /proc/meminfo.
+func (s Procfs) machineMemory() (MemoryUsage, bool) {
+	text, ok := readTrimmed(filepath.Join(s.ProcRoot, "meminfo"))
+	if !ok {
+		return MemoryUsage{}, false
+	}
+	kB := map[string]int64{}
+	for _, line := range strings.Split(text, "\n") {
+		key, value, cut := strings.Cut(line, ":")
+		if !cut {
+			continue
+		}
+		fields := strings.Fields(value)
+		if len(fields) == 0 {
+			continue
+		}
+		if parsed, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+			kB[key] = parsed
+		}
+	}
+	total, hasTotal := kB["MemTotal"]
+	free, hasFree := kB["MemFree"]
+	if !hasTotal || !hasFree {
+		return MemoryUsage{}, false
+	}
+	return MemoryUsage{
+		CurrentBytes: max(total-free, 0) * 1024,
+		AnonBytes:    kB["AnonPages"] * 1024,
+		FileBytes:    (kB["Buffers"] + kB["Cached"]) * 1024,
+		LimitBytes:   total * 1024,
+	}, true
 }
 
 func (s Procfs) cgroupCPU() (CPUUsage, bool) {

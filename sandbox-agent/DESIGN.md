@@ -62,8 +62,15 @@ terminal, and service runtime.
 The status endpoint reports this sandbox's own CPU and memory as **cumulative
 counters, never rates** (ADR 0071). On Linux, `resources.Procfs` reads cgroup
 v2 at `/sys/fs/cgroup` — a private cgroup namespace makes that this container's
-own cgroup presented as the root — and falls back to a per-process rollup over
-`/proc` when it cannot, recording which in `source`. On darwin the sandbox is a
+own cgroup presented as the root. On a machine — a provider's VM the box has
+to itself — `/sys/fs/cgroup` is the hierarchy's real root (it has no
+`cgroup.type`) and systemd recorded no container (`/run/systemd/container`),
+facts the kernel and init own, so they are read rather than declared. The root
+is no cgroup of the box's: the whole machine is the
+sandbox, so the totals are `/proc/stat`'s and `/proc/meminfo`'s, memory in use
+being everything but free pages, against the machine's size and online CPUs
+(`source: machine`). It falls back to a per-process rollup over `/proc` when
+neither can be read, recording which in `source`. On darwin the sandbox is a
 whole guest with no cgroup, so its CPU totals are always the rollup (`source:
 proc`), read from `ps` and the kernel's process table, plus the CPU time of
 every process seen to exit, at its last sample — without that a sum over live

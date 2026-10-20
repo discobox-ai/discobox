@@ -62,13 +62,17 @@ func TestSampleReadsCgroupTotalsAndProcessRollup(t *testing.T) {
 
 	writeProc(t, procRoot, 100, "node", 300, 100, 55, 2<<30, 1000, "node\x00server.js\x00")
 	writeProc(t, procRoot, 101, "gopls", 10, 5, 60, 1<<30, 500, "gopls\x00")
+	// A container's own cgroup, which is not the hierarchy's root: it has a
+	// cgroup.type.
 	writeCgroup(t, cgroupRoot, map[string]string{
-		"cpu.stat":       "usage_usec 8204113\nuser_usec 6000000\nsystem_usec 2204113\nnr_periods 0\n",
-		"cpu.max":        "max 100000\n",
-		"memory.current": "6442450944\n",
-		"memory.peak":    "7000000000\n",
-		"memory.max":     "max\n",
-		"memory.stat":    "anon 4000000000\nfile 2000000000\nslab 1234\n",
+		"cgroup.controllers": "cpu memory pids\n",
+		"cgroup.type":        "domain\n",
+		"cpu.stat":           "usage_usec 8204113\nuser_usec 6000000\nsystem_usec 2204113\nnr_periods 0\n",
+		"cpu.max":            "max 100000\n",
+		"memory.current":     "6442450944\n",
+		"memory.peak":        "7000000000\n",
+		"memory.max":         "max\n",
+		"memory.stat":        "anon 4000000000\nfile 2000000000\nslab 1234\n",
 	})
 
 	usage := Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot, PageSize: pageSize}.Sample(context.Background())
@@ -102,6 +106,98 @@ func TestSampleReadsCgroupTotalsAndProcessRollup(t *testing.T) {
 	}
 	if usage.ProcessCount != 2 {
 		t.Errorf("processCount = %d, want 2", usage.ProcessCount)
+	}
+}
+
+// On a machine /sys/fs/cgroup is the hierarchy's root, which has no
+// cgroup.type and is no cgroup of the box's: the totals are the machine's own,
+// and the root's cpu.stat is not read.
+func TestSampleOnAMachineReadsTheMachine(t *testing.T) {
+	procRoot := t.TempDir()
+	cgroupRoot := t.TempDir()
+	writeProc(t, procRoot, 1, "systemd", 50, 50, 1, 1<<20, 100, "/sbin/init\x00")
+	writeCgroup(t, procRoot, map[string]string{
+		// user nice system idle iowait irq softirq steal guest guest_nice
+		"stat": "cpu  1000 200 300 90000 400 10 20 70 0 0\n" +
+			"cpu0 500 100 150 45000 200 5 10 35 0 0\n" +
+			"cpu1 500 100 150 45000 200 5 10 35 0 0\n" +
+			"intr 12345\nctxt 6789\n",
+		"meminfo": "MemTotal:       16384000 kB\nMemFree:         4096000 kB\nMemAvailable:   12000000 kB\n" +
+			"Buffers:          100000 kB\nCached:          6000000 kB\nAnonPages:       5000000 kB\n",
+	})
+	writeCgroup(t, cgroupRoot, map[string]string{
+		"cgroup.controllers": "cpu memory pids\n",
+		"cpu.stat":           "usage_usec 1\nuser_usec 1\nsystem_usec 0\n",
+	})
+
+	usage := Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot, ContainerFile: filepath.Join(t.TempDir(), "container"), PageSize: 4096}.Sample(context.Background())
+
+	if usage.Source != "machine" {
+		t.Fatalf("source = %q, want machine", usage.Source)
+	}
+	// user+nice 1200 ticks and system+irq+softirq 330, at 100Hz.
+	if usage.CPU.UserUsec != 12_000_000 || usage.CPU.SystemUsec != 3_300_000 || usage.CPU.UsageUsec != 15_300_000 {
+		t.Errorf("cpu = %+v, want user 12s, system 3.3s, usage 15.3s", usage.CPU)
+	}
+	if usage.CPU.LimitVCPUs != 2 {
+		t.Errorf("limitVcpus = %v, want the machine's 2 CPUs", usage.CPU.LimitVCPUs)
+	}
+	if want := int64(16384000-4096000) * 1024; usage.Memory.CurrentBytes != want {
+		t.Errorf("currentBytes = %d, want everything but the free pages, %d", usage.Memory.CurrentBytes, want)
+	}
+	if want := int64(16384000) * 1024; usage.Memory.LimitBytes != want {
+		t.Errorf("limitBytes = %d, want the machine's %d", usage.Memory.LimitBytes, want)
+	}
+	if usage.Memory.AnonBytes != 5000000*1024 || usage.Memory.FileBytes != 6100000*1024 {
+		t.Errorf("anon/file = %d/%d", usage.Memory.AnonBytes, usage.Memory.FileBytes)
+	}
+	if want := int64(100) * 4096; usage.Memory.ResidentBytes != want || usage.ProcessCount != 1 {
+		t.Errorf("rollup = %d resident over %d processes, want %d over 1", usage.Memory.ResidentBytes, usage.ProcessCount, want)
+	}
+}
+
+// A machine whose /proc cannot say its totals is not read from its root
+// cgroup instead: the rollup stands in, as it does without a cgroup.
+func TestSampleOnAMachineWithoutItsTotalsFallsBackToProc(t *testing.T) {
+	procRoot := t.TempDir()
+	cgroupRoot := t.TempDir()
+	writeProc(t, procRoot, 7, "sh", 100, 50, 5, 1<<20, 64, "sh\x00")
+	writeCgroup(t, cgroupRoot, map[string]string{
+		"cgroup.controllers": "cpu memory pids\n",
+		"cpu.stat":           "usage_usec 99999999\nuser_usec 1\nsystem_usec 0\n",
+	})
+
+	usage := Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot, ContainerFile: filepath.Join(t.TempDir(), "container"), PageSize: 4096}.Sample(context.Background())
+
+	if usage.Source != "proc" {
+		t.Fatalf("source = %q, want proc", usage.Source)
+	}
+	if want := int64(1_500_000); usage.CPU.UsageUsec != want {
+		t.Errorf("usageUsec = %d, want the rollup's %d", usage.CPU.UsageUsec, want)
+	}
+}
+
+// A container sharing its host's cgroup namespace sees the hierarchy's root
+// too, and the host's /proc/stat: systemd's record that it is a container is
+// what keeps it from reporting the host as itself.
+func TestSampleInAContainerOnTheHostsCgroupIsNoMachine(t *testing.T) {
+	procRoot := t.TempDir()
+	cgroupRoot := t.TempDir()
+	writeProc(t, procRoot, 7, "sh", 100, 50, 5, 1<<20, 64, "sh\x00")
+	writeCgroup(t, procRoot, map[string]string{
+		"stat":    "cpu  99999 0 99999 0 0 0 0 0 0 0\ncpu0 99999 0 99999 0 0 0 0 0 0 0\n",
+		"meminfo": "MemTotal:       99999999 kB\nMemFree:         1 kB\n",
+	})
+	writeCgroup(t, cgroupRoot, map[string]string{"cgroup.controllers": "cpu memory pids\n"})
+	container := filepath.Join(t.TempDir(), "container")
+	if err := os.WriteFile(container, []byte("docker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	usage := Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot, ContainerFile: container, PageSize: 4096}.Sample(context.Background())
+
+	if usage.Source == "machine" {
+		t.Fatalf("source = machine: a container reported its host's totals as its own")
 	}
 }
 

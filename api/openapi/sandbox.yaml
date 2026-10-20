@@ -807,9 +807,10 @@ components:
                         $ref: '#/components/schemas/SandboxAgentProcessUsage'
                     type: array
                 source:
-                    description: Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+                    description: Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine and the totals are its kernel's own, page cache included, against the machine's size and CPUs; proc means neither could be read and a per-process rollup stood in, which sees no page cache and no kernel memory.
                     enum:
                         - cgroup
+                        - machine
                         - proc
                     type: string
             required:
