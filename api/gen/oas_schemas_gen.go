@@ -14016,6 +14016,98 @@ func (o OptSandboxAgentProgramStatusKind) Or(d SandboxAgentProgramStatusKind) Sa
 	return d
 }
 
+// NewOptSandboxAgentProvisionFeatureHow returns new OptSandboxAgentProvisionFeatureHow with value set to v.
+func NewOptSandboxAgentProvisionFeatureHow(v SandboxAgentProvisionFeatureHow) OptSandboxAgentProvisionFeatureHow {
+	return OptSandboxAgentProvisionFeatureHow{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionFeatureHow is optional SandboxAgentProvisionFeatureHow.
+type OptSandboxAgentProvisionFeatureHow struct {
+	Value SandboxAgentProvisionFeatureHow
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionFeatureHow was set.
+func (o OptSandboxAgentProvisionFeatureHow) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionFeatureHow) Reset() {
+	var v SandboxAgentProvisionFeatureHow
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionFeatureHow) SetTo(v SandboxAgentProvisionFeatureHow) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionFeatureHow) Get() (v SandboxAgentProvisionFeatureHow, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionFeatureHow) Or(d SandboxAgentProvisionFeatureHow) SandboxAgentProvisionFeatureHow {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxAgentProvisionStatus returns new OptSandboxAgentProvisionStatus with value set to v.
+func NewOptSandboxAgentProvisionStatus(v SandboxAgentProvisionStatus) OptSandboxAgentProvisionStatus {
+	return OptSandboxAgentProvisionStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionStatus is optional SandboxAgentProvisionStatus.
+type OptSandboxAgentProvisionStatus struct {
+	Value SandboxAgentProvisionStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionStatus was set.
+func (o OptSandboxAgentProvisionStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionStatus) Reset() {
+	var v SandboxAgentProvisionStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionStatus) SetTo(v SandboxAgentProvisionStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionStatus) Get() (v SandboxAgentProvisionStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionStatus) Or(d SandboxAgentProvisionStatus) SandboxAgentProvisionStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -14246,6 +14338,52 @@ func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
 	return d
 }
 
+// NewOptSandboxConfigFeatures returns new OptSandboxConfigFeatures with value set to v.
+func NewOptSandboxConfigFeatures(v SandboxConfigFeatures) OptSandboxConfigFeatures {
+	return OptSandboxConfigFeatures{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigFeatures is optional SandboxConfigFeatures.
+type OptSandboxConfigFeatures struct {
+	Value SandboxConfigFeatures
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigFeatures was set.
+func (o OptSandboxConfigFeatures) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigFeatures) Reset() {
+	var v SandboxConfigFeatures
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigFeatures) SetTo(v SandboxConfigFeatures) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigFeatures) Get() (v SandboxConfigFeatures, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigFeatures) Or(d SandboxConfigFeatures) SandboxConfigFeatures {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
 func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
 	return OptSandboxConfigHarnessMode{
@@ -14378,6 +14516,52 @@ func (o OptSandboxCreateConfigEnv) Get() (v SandboxCreateConfigEnv, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCreateConfigEnv) Or(d SandboxCreateConfigEnv) SandboxCreateConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCreateConfigFeatures returns new OptSandboxCreateConfigFeatures with value set to v.
+func NewOptSandboxCreateConfigFeatures(v SandboxCreateConfigFeatures) OptSandboxCreateConfigFeatures {
+	return OptSandboxCreateConfigFeatures{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigFeatures is optional SandboxCreateConfigFeatures.
+type OptSandboxCreateConfigFeatures struct {
+	Value SandboxCreateConfigFeatures
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigFeatures was set.
+func (o OptSandboxCreateConfigFeatures) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigFeatures) Reset() {
+	var v SandboxCreateConfigFeatures
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigFeatures) SetTo(v SandboxCreateConfigFeatures) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigFeatures) Get() (v SandboxCreateConfigFeatures, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigFeatures) Or(d SandboxCreateConfigFeatures) SandboxCreateConfigFeatures {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -22235,6 +22419,360 @@ func (s *SandboxAgentProgramStatusState) UnmarshalText(data []byte) error {
 	}
 }
 
+// One feature's provisioning.
+// Ref: #/components/schemas/SandboxAgentProvisionFeature
+type SandboxAgentProvisionFeature struct {
+	// Pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be
+	// installed by hand.
+	State SandboxAgentProvisionFeatureState `json:"state"`
+	// Where a ready feature came from. installed - this boot installed or wired some of it; adopted -
+	// the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+	How OptSandboxAgentProvisionFeatureHow `json:"how"`
+	// The version the adopted copy reported.
+	Version OptString `json:"version"`
+	// Whether the feature is provisioned in the background, after the sandbox is ready.
+	Async OptBool `json:"async"`
+	// The step being applied now.
+	Step OptString `json:"step"`
+	// The feature's log inside the sandbox.
+	Log OptString `json:"log"`
+	// Why the feature is off.
+	Reason OptString `json:"reason"`
+	// Why the feature failed.
+	Error OptString `json:"error"`
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentProvisionFeature) GetState() SandboxAgentProvisionFeatureState {
+	return s.State
+}
+
+// GetHow returns the value of How.
+func (s *SandboxAgentProvisionFeature) GetHow() OptSandboxAgentProvisionFeatureHow {
+	return s.How
+}
+
+// GetVersion returns the value of Version.
+func (s *SandboxAgentProvisionFeature) GetVersion() OptString {
+	return s.Version
+}
+
+// GetAsync returns the value of Async.
+func (s *SandboxAgentProvisionFeature) GetAsync() OptBool {
+	return s.Async
+}
+
+// GetStep returns the value of Step.
+func (s *SandboxAgentProvisionFeature) GetStep() OptString {
+	return s.Step
+}
+
+// GetLog returns the value of Log.
+func (s *SandboxAgentProvisionFeature) GetLog() OptString {
+	return s.Log
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxAgentProvisionFeature) GetReason() OptString {
+	return s.Reason
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentProvisionFeature) GetError() OptString {
+	return s.Error
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentProvisionFeature) SetState(val SandboxAgentProvisionFeatureState) {
+	s.State = val
+}
+
+// SetHow sets the value of How.
+func (s *SandboxAgentProvisionFeature) SetHow(val OptSandboxAgentProvisionFeatureHow) {
+	s.How = val
+}
+
+// SetVersion sets the value of Version.
+func (s *SandboxAgentProvisionFeature) SetVersion(val OptString) {
+	s.Version = val
+}
+
+// SetAsync sets the value of Async.
+func (s *SandboxAgentProvisionFeature) SetAsync(val OptBool) {
+	s.Async = val
+}
+
+// SetStep sets the value of Step.
+func (s *SandboxAgentProvisionFeature) SetStep(val OptString) {
+	s.Step = val
+}
+
+// SetLog sets the value of Log.
+func (s *SandboxAgentProvisionFeature) SetLog(val OptString) {
+	s.Log = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxAgentProvisionFeature) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentProvisionFeature) SetError(val OptString) {
+	s.Error = val
+}
+
+// Where a ready feature came from. installed - this boot installed or wired some of it; adopted -
+// the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+type SandboxAgentProvisionFeatureHow string
+
+const (
+	SandboxAgentProvisionFeatureHowInstalled SandboxAgentProvisionFeatureHow = "installed"
+	SandboxAgentProvisionFeatureHowAdopted   SandboxAgentProvisionFeatureHow = "adopted"
+	SandboxAgentProvisionFeatureHowSnapshot  SandboxAgentProvisionFeatureHow = "snapshot"
+)
+
+// AllValues returns all SandboxAgentProvisionFeatureHow values.
+func (SandboxAgentProvisionFeatureHow) AllValues() []SandboxAgentProvisionFeatureHow {
+	return []SandboxAgentProvisionFeatureHow{
+		SandboxAgentProvisionFeatureHowInstalled,
+		SandboxAgentProvisionFeatureHowAdopted,
+		SandboxAgentProvisionFeatureHowSnapshot,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionFeatureHow) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionFeatureHowInstalled:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureHowAdopted:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureHowSnapshot:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionFeatureHow) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionFeatureHow(data) {
+	case SandboxAgentProvisionFeatureHowInstalled:
+		*s = SandboxAgentProvisionFeatureHowInstalled
+		return nil
+	case SandboxAgentProvisionFeatureHowAdopted:
+		*s = SandboxAgentProvisionFeatureHowAdopted
+		return nil
+	case SandboxAgentProvisionFeatureHowSnapshot:
+		*s = SandboxAgentProvisionFeatureHowSnapshot
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be
+// installed by hand.
+type SandboxAgentProvisionFeatureState string
+
+const (
+	SandboxAgentProvisionFeatureStatePending      SandboxAgentProvisionFeatureState = "pending"
+	SandboxAgentProvisionFeatureStateProvisioning SandboxAgentProvisionFeatureState = "provisioning"
+	SandboxAgentProvisionFeatureStateReady        SandboxAgentProvisionFeatureState = "ready"
+	SandboxAgentProvisionFeatureStateFailed       SandboxAgentProvisionFeatureState = "failed"
+	SandboxAgentProvisionFeatureStateOff          SandboxAgentProvisionFeatureState = "off"
+)
+
+// AllValues returns all SandboxAgentProvisionFeatureState values.
+func (SandboxAgentProvisionFeatureState) AllValues() []SandboxAgentProvisionFeatureState {
+	return []SandboxAgentProvisionFeatureState{
+		SandboxAgentProvisionFeatureStatePending,
+		SandboxAgentProvisionFeatureStateProvisioning,
+		SandboxAgentProvisionFeatureStateReady,
+		SandboxAgentProvisionFeatureStateFailed,
+		SandboxAgentProvisionFeatureStateOff,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionFeatureState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionFeatureStatePending:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateProvisioning:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateReady:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateFailed:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateOff:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionFeatureState) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionFeatureState(data) {
+	case SandboxAgentProvisionFeatureStatePending:
+		*s = SandboxAgentProvisionFeatureStatePending
+		return nil
+	case SandboxAgentProvisionFeatureStateProvisioning:
+		*s = SandboxAgentProvisionFeatureStateProvisioning
+		return nil
+	case SandboxAgentProvisionFeatureStateReady:
+		*s = SandboxAgentProvisionFeatureStateReady
+		return nil
+	case SandboxAgentProvisionFeatureStateFailed:
+		*s = SandboxAgentProvisionFeatureStateFailed
+		return nil
+	case SandboxAgentProvisionFeatureStateOff:
+		*s = SandboxAgentProvisionFeatureStateOff
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is
+// text the sandbox wrote.
+// Ref: #/components/schemas/SandboxAgentProvisionStatus
+type SandboxAgentProvisionStatus struct {
+	// Pending - not started; provisioning - a feature is still being provisioned; ready - every feature
+	// is; failed - all are done, and one failed or readiness did.
+	State SandboxAgentProvisionStatusState `json:"state"`
+	// Whether what the sandbox waits for before it launches anything is in place - core, what the
+	// harness requires, and every feature's wiring. Features provisioned in the background may still be
+	// provisioning.
+	Ready bool `json:"ready"`
+	// Why readiness failed, or why provisioning could not start.
+	Error     OptString `json:"error"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	// Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+	Features SandboxAgentProvisionStatusFeatures `json:"features"`
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentProvisionStatus) GetState() SandboxAgentProvisionStatusState {
+	return s.State
+}
+
+// GetReady returns the value of Ready.
+func (s *SandboxAgentProvisionStatus) GetReady() bool {
+	return s.Ready
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentProvisionStatus) GetError() OptString {
+	return s.Error
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SandboxAgentProvisionStatus) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetFeatures returns the value of Features.
+func (s *SandboxAgentProvisionStatus) GetFeatures() SandboxAgentProvisionStatusFeatures {
+	return s.Features
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentProvisionStatus) SetState(val SandboxAgentProvisionStatusState) {
+	s.State = val
+}
+
+// SetReady sets the value of Ready.
+func (s *SandboxAgentProvisionStatus) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentProvisionStatus) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SandboxAgentProvisionStatus) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetFeatures sets the value of Features.
+func (s *SandboxAgentProvisionStatus) SetFeatures(val SandboxAgentProvisionStatusFeatures) {
+	s.Features = val
+}
+
+// Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+type SandboxAgentProvisionStatusFeatures map[string]SandboxAgentProvisionFeature
+
+func (s *SandboxAgentProvisionStatusFeatures) init() SandboxAgentProvisionStatusFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxAgentProvisionFeature{}
+		*s = m
+	}
+	return m
+}
+
+// Pending - not started; provisioning - a feature is still being provisioned; ready - every feature
+// is; failed - all are done, and one failed or readiness did.
+type SandboxAgentProvisionStatusState string
+
+const (
+	SandboxAgentProvisionStatusStatePending      SandboxAgentProvisionStatusState = "pending"
+	SandboxAgentProvisionStatusStateProvisioning SandboxAgentProvisionStatusState = "provisioning"
+	SandboxAgentProvisionStatusStateReady        SandboxAgentProvisionStatusState = "ready"
+	SandboxAgentProvisionStatusStateFailed       SandboxAgentProvisionStatusState = "failed"
+)
+
+// AllValues returns all SandboxAgentProvisionStatusState values.
+func (SandboxAgentProvisionStatusState) AllValues() []SandboxAgentProvisionStatusState {
+	return []SandboxAgentProvisionStatusState{
+		SandboxAgentProvisionStatusStatePending,
+		SandboxAgentProvisionStatusStateProvisioning,
+		SandboxAgentProvisionStatusStateReady,
+		SandboxAgentProvisionStatusStateFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionStatusState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionStatusStatePending:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateProvisioning:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateReady:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionStatusState) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionStatusState(data) {
+	case SandboxAgentProvisionStatusStatePending:
+		*s = SandboxAgentProvisionStatusStatePending
+		return nil
+	case SandboxAgentProvisionStatusStateProvisioning:
+		*s = SandboxAgentProvisionStatusStateProvisioning
+		return nil
+	case SandboxAgentProvisionStatusStateReady:
+		*s = SandboxAgentProvisionStatusStateReady
+		return nil
+	case SandboxAgentProvisionStatusStateFailed:
+		*s = SandboxAgentProvisionStatusStateFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // The sandbox's own resource consumption at one moment, as cumulative counters.
 // Ref: #/components/schemas/SandboxAgentResourceUsage
 type SandboxAgentResourceUsage struct {
@@ -22711,7 +23249,10 @@ type SandboxAgentStatusResponse struct {
 	// How far the sandbox has converged each source the applied runtime-config document names (ADR 0126
 	// §4). Absent while no document names a source.
 	SourceStates []SandboxAgentSourceState `json:"sourceStates"`
-	ObservedAt   time.Time                 `json:"observedAt"`
+	// The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6).
+	// Absent from a sandbox agent that predates it.
+	Provision  OptSandboxAgentProvisionStatus `json:"provision"`
+	ObservedAt time.Time                      `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.
@@ -22757,6 +23298,11 @@ func (s *SandboxAgentStatusResponse) GetRuntimeConfigRevision() OptInt64 {
 // GetSourceStates returns the value of SourceStates.
 func (s *SandboxAgentStatusResponse) GetSourceStates() []SandboxAgentSourceState {
 	return s.SourceStates
+}
+
+// GetProvision returns the value of Provision.
+func (s *SandboxAgentStatusResponse) GetProvision() OptSandboxAgentProvisionStatus {
+	return s.Provision
 }
 
 // GetObservedAt returns the value of ObservedAt.
@@ -22807,6 +23353,11 @@ func (s *SandboxAgentStatusResponse) SetRuntimeConfigRevision(val OptInt64) {
 // SetSourceStates sets the value of SourceStates.
 func (s *SandboxAgentStatusResponse) SetSourceStates(val []SandboxAgentSourceState) {
 	s.SourceStates = val
+}
+
+// SetProvision sets the value of Provision.
+func (s *SandboxAgentStatusResponse) SetProvision(val OptSandboxAgentProvisionStatus) {
+	s.Provision = val
 }
 
 // SetObservedAt sets the value of ObservedAt.
@@ -23210,6 +23761,9 @@ type SandboxConfig struct {
 	// The directories of skills sources whose skills the sandbox links into the harness's skill
 	// directories on its first launch, in order.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
+	// The repository's features by name, as the client read them from its .discobox/settings.json at
+	// create. The sandbox provisions every feature but those whose enabled is false. Fixed at create.
+	Features OptSandboxConfigFeatures `json:"features"`
 	// Sandbox base image.
 	Image string `json:"image"`
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
@@ -23270,6 +23824,11 @@ func (s *SandboxConfig) GetSkillNames() []string {
 // GetSkillsSources returns the value of SkillsSources.
 func (s *SandboxConfig) GetSkillsSources() []SandboxSkillsSource {
 	return s.SkillsSources
+}
+
+// GetFeatures returns the value of Features.
+func (s *SandboxConfig) GetFeatures() OptSandboxConfigFeatures {
+	return s.Features
 }
 
 // GetImage returns the value of Image.
@@ -23352,6 +23911,11 @@ func (s *SandboxConfig) SetSkillsSources(val []SandboxSkillsSource) {
 	s.SkillsSources = val
 }
 
+// SetFeatures sets the value of Features.
+func (s *SandboxConfig) SetFeatures(val OptSandboxConfigFeatures) {
+	s.Features = val
+}
+
 // SetImage sets the value of Image.
 func (s *SandboxConfig) SetImage(val string) {
 	s.Image = val
@@ -23394,6 +23958,19 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The repository's features by name, as the client read them from its .discobox/settings.json at
+// create. The sandbox provisions every feature but those whose enabled is false. Fixed at create.
+type SandboxConfigFeatures map[string]SandboxFeature
+
+func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxFeature{}
 		*s = m
 	}
 	return m
@@ -23497,6 +24074,10 @@ type SandboxCreateConfig struct {
 	// Each names a sourceCodeReferences entry whose purpose is skills, and each such entry is named at
 	// least once.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
+	// The repository's features by name, from its .discobox/settings.json. The sandbox provisions every
+	// feature but those whose enabled is false; a feature the harness requires cannot be turned off
+	// unless the box already has a usable one. Fixed at create.
+	Features OptSandboxCreateConfigFeatures `json:"features"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Sandbox name.
@@ -23567,6 +24148,11 @@ func (s *SandboxCreateConfig) GetSkills() OptSandboxCreateConfigSkills {
 // GetSkillsSources returns the value of SkillsSources.
 func (s *SandboxCreateConfig) GetSkillsSources() []SandboxSkillsSource {
 	return s.SkillsSources
+}
+
+// GetFeatures returns the value of Features.
+func (s *SandboxCreateConfig) GetFeatures() OptSandboxCreateConfigFeatures {
+	return s.Features
 }
 
 // GetImage returns the value of Image.
@@ -23659,6 +24245,11 @@ func (s *SandboxCreateConfig) SetSkillsSources(val []SandboxSkillsSource) {
 	s.SkillsSources = val
 }
 
+// SetFeatures sets the value of Features.
+func (s *SandboxCreateConfig) SetFeatures(val OptSandboxCreateConfigFeatures) {
+	s.Features = val
+}
+
 // SetImage sets the value of Image.
 func (s *SandboxCreateConfig) SetImage(val OptString) {
 	s.Image = val
@@ -23701,6 +24292,20 @@ func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The repository's features by name, from its .discobox/settings.json. The sandbox provisions every
+// feature but those whose enabled is false; a feature the harness requires cannot be turned off
+// unless the box already has a usable one. Fixed at create.
+type SandboxCreateConfigFeatures map[string]SandboxFeature
+
+func (s *SandboxCreateConfigFeatures) init() SandboxCreateConfigFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxFeature{}
 		*s = m
 	}
 	return m
@@ -25073,6 +25678,23 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 }
 
 func (*SandboxExecsResponse) listSandboxExecsRes() {}
+
+// One of a repository's features, as its .discobox/settings.json sets it.
+// Ref: #/components/schemas/SandboxFeature
+type SandboxFeature struct {
+	// Whether the sandbox provisions the feature. false turns it off.
+	Enabled bool `json:"enabled"`
+}
+
+// GetEnabled returns the value of Enabled.
+func (s *SandboxFeature) GetEnabled() bool {
+	return s.Enabled
+}
+
+// SetEnabled sets the value of Enabled.
+func (s *SandboxFeature) SetEnabled(val bool) {
+	s.Enabled = val
+}
 
 // Git authorship identity for work done inside the sandbox. Both fields are
 // optional; omitting the whole object leaves the sandbox's git identity

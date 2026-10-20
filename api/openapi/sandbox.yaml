@@ -785,6 +785,79 @@ components:
                 - state
                 - reportedAt
             type: object
+        SandboxAgentProvisionFeature:
+            additionalProperties: false
+            description: One feature's provisioning.
+            properties:
+                async:
+                    description: Whether the feature is provisioned in the background, after the sandbox is ready.
+                    type: boolean
+                error:
+                    description: Why the feature failed.
+                    type: string
+                how:
+                    description: Where a ready feature came from. installed - this boot installed or wired some of it; adopted - the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+                    enum:
+                        - installed
+                        - adopted
+                        - snapshot
+                    type: string
+                log:
+                    description: The feature's log inside the sandbox.
+                    type: string
+                reason:
+                    description: Why the feature is off.
+                    type: string
+                state:
+                    description: pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be installed by hand.
+                    enum:
+                        - pending
+                        - provisioning
+                        - ready
+                        - failed
+                        - "off"
+                    type: string
+                step:
+                    description: The step being applied now.
+                    type: string
+                version:
+                    description: The version the adopted copy reported.
+                    type: string
+            required:
+                - state
+            type: object
+        SandboxAgentProvisionStatus:
+            additionalProperties: false
+            description: Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is text the sandbox wrote.
+            properties:
+                error:
+                    description: Why readiness failed, or why provisioning could not start.
+                    type: string
+                features:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxAgentProvisionFeature'
+                    description: Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+                    type: object
+                ready:
+                    description: Whether what the sandbox waits for before it launches anything is in place - core, what the harness requires, and every feature's wiring. Features provisioned in the background may still be provisioning.
+                    type: boolean
+                state:
+                    description: pending - not started; provisioning - a feature is still being provisioned; ready - every feature is; failed - all are done, and one failed or readiness did.
+                    enum:
+                        - pending
+                        - provisioning
+                        - ready
+                        - failed
+                    type: string
+                updatedAt:
+                    format: date-time
+                    type: string
+            required:
+                - state
+                - ready
+                - updatedAt
+                - features
+            type: object
         SandboxAgentResourceUsage:
             additionalProperties: false
             description: The sandbox's own resource consumption at one moment, as cumulative counters.
@@ -911,6 +984,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
+                provision:
+                    $ref: '#/components/schemas/SandboxAgentProvisionStatus'
+                    description: The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6). Absent from a sandbox agent that predates it.
                 resources:
                     $ref: '#/components/schemas/SandboxAgentResourceUsage'
                     description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.

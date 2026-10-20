@@ -344,6 +344,11 @@ components:
                     items:
                         "$ref": "#/components/schemas/SandboxSkillsSource"
                     type: array
+                features:
+                    description: The repository's features by name, as the client read them from its settings.json; the sandbox provisions every one but those turned off (ADR 26-10-16-423 §4).
+                    additionalProperties:
+                        "$ref": "#/components/schemas/SandboxFeature"
+                    type: object
                 image:
                     type: string
                 imageDigest:
@@ -426,6 +431,15 @@ components:
                     type: string
                 userName:
                     type: string
+            type: object
+        SandboxFeature:
+            additionalProperties: false
+            properties:
+                enabled:
+                    description: Whether the sandbox provisions the feature.
+                    type: boolean
+            required:
+            - enabled
             type: object
         SandboxSkillsSource:
             additionalProperties: false

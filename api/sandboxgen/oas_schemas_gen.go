@@ -2480,6 +2480,98 @@ func (o OptSandboxAgentProgramStatusKind) Or(d SandboxAgentProgramStatusKind) Sa
 	return d
 }
 
+// NewOptSandboxAgentProvisionFeatureHow returns new OptSandboxAgentProvisionFeatureHow with value set to v.
+func NewOptSandboxAgentProvisionFeatureHow(v SandboxAgentProvisionFeatureHow) OptSandboxAgentProvisionFeatureHow {
+	return OptSandboxAgentProvisionFeatureHow{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionFeatureHow is optional SandboxAgentProvisionFeatureHow.
+type OptSandboxAgentProvisionFeatureHow struct {
+	Value SandboxAgentProvisionFeatureHow
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionFeatureHow was set.
+func (o OptSandboxAgentProvisionFeatureHow) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionFeatureHow) Reset() {
+	var v SandboxAgentProvisionFeatureHow
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionFeatureHow) SetTo(v SandboxAgentProvisionFeatureHow) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionFeatureHow) Get() (v SandboxAgentProvisionFeatureHow, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionFeatureHow) Or(d SandboxAgentProvisionFeatureHow) SandboxAgentProvisionFeatureHow {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxAgentProvisionStatus returns new OptSandboxAgentProvisionStatus with value set to v.
+func NewOptSandboxAgentProvisionStatus(v SandboxAgentProvisionStatus) OptSandboxAgentProvisionStatus {
+	return OptSandboxAgentProvisionStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionStatus is optional SandboxAgentProvisionStatus.
+type OptSandboxAgentProvisionStatus struct {
+	Value SandboxAgentProvisionStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionStatus was set.
+func (o OptSandboxAgentProvisionStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionStatus) Reset() {
+	var v SandboxAgentProvisionStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionStatus) SetTo(v SandboxAgentProvisionStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionStatus) Get() (v SandboxAgentProvisionStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionStatus) Or(d SandboxAgentProvisionStatus) SandboxAgentProvisionStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -4224,6 +4316,360 @@ func (s *SandboxAgentProgramStatusState) UnmarshalText(data []byte) error {
 	}
 }
 
+// One feature's provisioning.
+// Ref: #/components/schemas/SandboxAgentProvisionFeature
+type SandboxAgentProvisionFeature struct {
+	// Whether the feature is provisioned in the background, after the sandbox is ready.
+	Async OptBool `json:"async"`
+	// Why the feature failed.
+	Error OptString `json:"error"`
+	// Where a ready feature came from. installed - this boot installed or wired some of it; adopted -
+	// the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+	How OptSandboxAgentProvisionFeatureHow `json:"how"`
+	// The feature's log inside the sandbox.
+	Log OptString `json:"log"`
+	// Why the feature is off.
+	Reason OptString `json:"reason"`
+	// Pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be
+	// installed by hand.
+	State SandboxAgentProvisionFeatureState `json:"state"`
+	// The step being applied now.
+	Step OptString `json:"step"`
+	// The version the adopted copy reported.
+	Version OptString `json:"version"`
+}
+
+// GetAsync returns the value of Async.
+func (s *SandboxAgentProvisionFeature) GetAsync() OptBool {
+	return s.Async
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentProvisionFeature) GetError() OptString {
+	return s.Error
+}
+
+// GetHow returns the value of How.
+func (s *SandboxAgentProvisionFeature) GetHow() OptSandboxAgentProvisionFeatureHow {
+	return s.How
+}
+
+// GetLog returns the value of Log.
+func (s *SandboxAgentProvisionFeature) GetLog() OptString {
+	return s.Log
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxAgentProvisionFeature) GetReason() OptString {
+	return s.Reason
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentProvisionFeature) GetState() SandboxAgentProvisionFeatureState {
+	return s.State
+}
+
+// GetStep returns the value of Step.
+func (s *SandboxAgentProvisionFeature) GetStep() OptString {
+	return s.Step
+}
+
+// GetVersion returns the value of Version.
+func (s *SandboxAgentProvisionFeature) GetVersion() OptString {
+	return s.Version
+}
+
+// SetAsync sets the value of Async.
+func (s *SandboxAgentProvisionFeature) SetAsync(val OptBool) {
+	s.Async = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentProvisionFeature) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetHow sets the value of How.
+func (s *SandboxAgentProvisionFeature) SetHow(val OptSandboxAgentProvisionFeatureHow) {
+	s.How = val
+}
+
+// SetLog sets the value of Log.
+func (s *SandboxAgentProvisionFeature) SetLog(val OptString) {
+	s.Log = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxAgentProvisionFeature) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentProvisionFeature) SetState(val SandboxAgentProvisionFeatureState) {
+	s.State = val
+}
+
+// SetStep sets the value of Step.
+func (s *SandboxAgentProvisionFeature) SetStep(val OptString) {
+	s.Step = val
+}
+
+// SetVersion sets the value of Version.
+func (s *SandboxAgentProvisionFeature) SetVersion(val OptString) {
+	s.Version = val
+}
+
+// Where a ready feature came from. installed - this boot installed or wired some of it; adopted -
+// the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+type SandboxAgentProvisionFeatureHow string
+
+const (
+	SandboxAgentProvisionFeatureHowInstalled SandboxAgentProvisionFeatureHow = "installed"
+	SandboxAgentProvisionFeatureHowAdopted   SandboxAgentProvisionFeatureHow = "adopted"
+	SandboxAgentProvisionFeatureHowSnapshot  SandboxAgentProvisionFeatureHow = "snapshot"
+)
+
+// AllValues returns all SandboxAgentProvisionFeatureHow values.
+func (SandboxAgentProvisionFeatureHow) AllValues() []SandboxAgentProvisionFeatureHow {
+	return []SandboxAgentProvisionFeatureHow{
+		SandboxAgentProvisionFeatureHowInstalled,
+		SandboxAgentProvisionFeatureHowAdopted,
+		SandboxAgentProvisionFeatureHowSnapshot,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionFeatureHow) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionFeatureHowInstalled:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureHowAdopted:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureHowSnapshot:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionFeatureHow) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionFeatureHow(data) {
+	case SandboxAgentProvisionFeatureHowInstalled:
+		*s = SandboxAgentProvisionFeatureHowInstalled
+		return nil
+	case SandboxAgentProvisionFeatureHowAdopted:
+		*s = SandboxAgentProvisionFeatureHowAdopted
+		return nil
+	case SandboxAgentProvisionFeatureHowSnapshot:
+		*s = SandboxAgentProvisionFeatureHowSnapshot
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be
+// installed by hand.
+type SandboxAgentProvisionFeatureState string
+
+const (
+	SandboxAgentProvisionFeatureStatePending      SandboxAgentProvisionFeatureState = "pending"
+	SandboxAgentProvisionFeatureStateProvisioning SandboxAgentProvisionFeatureState = "provisioning"
+	SandboxAgentProvisionFeatureStateReady        SandboxAgentProvisionFeatureState = "ready"
+	SandboxAgentProvisionFeatureStateFailed       SandboxAgentProvisionFeatureState = "failed"
+	SandboxAgentProvisionFeatureStateOff          SandboxAgentProvisionFeatureState = "off"
+)
+
+// AllValues returns all SandboxAgentProvisionFeatureState values.
+func (SandboxAgentProvisionFeatureState) AllValues() []SandboxAgentProvisionFeatureState {
+	return []SandboxAgentProvisionFeatureState{
+		SandboxAgentProvisionFeatureStatePending,
+		SandboxAgentProvisionFeatureStateProvisioning,
+		SandboxAgentProvisionFeatureStateReady,
+		SandboxAgentProvisionFeatureStateFailed,
+		SandboxAgentProvisionFeatureStateOff,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionFeatureState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionFeatureStatePending:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateProvisioning:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateReady:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateFailed:
+		return []byte(s), nil
+	case SandboxAgentProvisionFeatureStateOff:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionFeatureState) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionFeatureState(data) {
+	case SandboxAgentProvisionFeatureStatePending:
+		*s = SandboxAgentProvisionFeatureStatePending
+		return nil
+	case SandboxAgentProvisionFeatureStateProvisioning:
+		*s = SandboxAgentProvisionFeatureStateProvisioning
+		return nil
+	case SandboxAgentProvisionFeatureStateReady:
+		*s = SandboxAgentProvisionFeatureStateReady
+		return nil
+	case SandboxAgentProvisionFeatureStateFailed:
+		*s = SandboxAgentProvisionFeatureStateFailed
+		return nil
+	case SandboxAgentProvisionFeatureStateOff:
+		*s = SandboxAgentProvisionFeatureStateOff
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is
+// text the sandbox wrote.
+// Ref: #/components/schemas/SandboxAgentProvisionStatus
+type SandboxAgentProvisionStatus struct {
+	// Why readiness failed, or why provisioning could not start.
+	Error OptString `json:"error"`
+	// Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+	Features SandboxAgentProvisionStatusFeatures `json:"features"`
+	// Whether what the sandbox waits for before it launches anything is in place - core, what the
+	// harness requires, and every feature's wiring. Features provisioned in the background may still be
+	// provisioning.
+	Ready bool `json:"ready"`
+	// Pending - not started; provisioning - a feature is still being provisioned; ready - every feature
+	// is; failed - all are done, and one failed or readiness did.
+	State     SandboxAgentProvisionStatusState `json:"state"`
+	UpdatedAt time.Time                        `json:"updatedAt"`
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentProvisionStatus) GetError() OptString {
+	return s.Error
+}
+
+// GetFeatures returns the value of Features.
+func (s *SandboxAgentProvisionStatus) GetFeatures() SandboxAgentProvisionStatusFeatures {
+	return s.Features
+}
+
+// GetReady returns the value of Ready.
+func (s *SandboxAgentProvisionStatus) GetReady() bool {
+	return s.Ready
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentProvisionStatus) GetState() SandboxAgentProvisionStatusState {
+	return s.State
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SandboxAgentProvisionStatus) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentProvisionStatus) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetFeatures sets the value of Features.
+func (s *SandboxAgentProvisionStatus) SetFeatures(val SandboxAgentProvisionStatusFeatures) {
+	s.Features = val
+}
+
+// SetReady sets the value of Ready.
+func (s *SandboxAgentProvisionStatus) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentProvisionStatus) SetState(val SandboxAgentProvisionStatusState) {
+	s.State = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SandboxAgentProvisionStatus) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+type SandboxAgentProvisionStatusFeatures map[string]SandboxAgentProvisionFeature
+
+func (s *SandboxAgentProvisionStatusFeatures) init() SandboxAgentProvisionStatusFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxAgentProvisionFeature{}
+		*s = m
+	}
+	return m
+}
+
+// Pending - not started; provisioning - a feature is still being provisioned; ready - every feature
+// is; failed - all are done, and one failed or readiness did.
+type SandboxAgentProvisionStatusState string
+
+const (
+	SandboxAgentProvisionStatusStatePending      SandboxAgentProvisionStatusState = "pending"
+	SandboxAgentProvisionStatusStateProvisioning SandboxAgentProvisionStatusState = "provisioning"
+	SandboxAgentProvisionStatusStateReady        SandboxAgentProvisionStatusState = "ready"
+	SandboxAgentProvisionStatusStateFailed       SandboxAgentProvisionStatusState = "failed"
+)
+
+// AllValues returns all SandboxAgentProvisionStatusState values.
+func (SandboxAgentProvisionStatusState) AllValues() []SandboxAgentProvisionStatusState {
+	return []SandboxAgentProvisionStatusState{
+		SandboxAgentProvisionStatusStatePending,
+		SandboxAgentProvisionStatusStateProvisioning,
+		SandboxAgentProvisionStatusStateReady,
+		SandboxAgentProvisionStatusStateFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentProvisionStatusState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentProvisionStatusStatePending:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateProvisioning:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateReady:
+		return []byte(s), nil
+	case SandboxAgentProvisionStatusStateFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentProvisionStatusState) UnmarshalText(data []byte) error {
+	switch SandboxAgentProvisionStatusState(data) {
+	case SandboxAgentProvisionStatusStatePending:
+		*s = SandboxAgentProvisionStatusStatePending
+		return nil
+	case SandboxAgentProvisionStatusStateProvisioning:
+		*s = SandboxAgentProvisionStatusStateProvisioning
+		return nil
+	case SandboxAgentProvisionStatusStateReady:
+		*s = SandboxAgentProvisionStatusStateReady
+		return nil
+	case SandboxAgentProvisionStatusStateFailed:
+		*s = SandboxAgentProvisionStatusStateFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // The sandbox's own resource consumption at one moment, as cumulative counters.
 // Ref: #/components/schemas/SandboxAgentResourceUsage
 type SandboxAgentResourceUsage struct {
@@ -4636,6 +5082,9 @@ type SandboxAgentStatusResponse struct {
 	// snapshot from a standing watcher rather than computed per request, since classifying a port means
 	// connecting to it; it can be up to one watcher interval stale.
 	Ports []SandboxAgentListeningPort `json:"ports"`
+	// The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6).
+	// Absent from a sandbox agent that predates it.
+	Provision OptSandboxAgentProvisionStatus `json:"provision"`
 	// This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where
 	// neither the cgroup nor procfs could be read.
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
@@ -4674,6 +5123,11 @@ func (s *SandboxAgentStatusResponse) GetObservedAt() time.Time {
 // GetPorts returns the value of Ports.
 func (s *SandboxAgentStatusResponse) GetPorts() []SandboxAgentListeningPort {
 	return s.Ports
+}
+
+// GetProvision returns the value of Provision.
+func (s *SandboxAgentStatusResponse) GetProvision() OptSandboxAgentProvisionStatus {
+	return s.Provision
 }
 
 // GetResources returns the value of Resources.
@@ -4724,6 +5178,11 @@ func (s *SandboxAgentStatusResponse) SetObservedAt(val time.Time) {
 // SetPorts sets the value of Ports.
 func (s *SandboxAgentStatusResponse) SetPorts(val []SandboxAgentListeningPort) {
 	s.Ports = val
+}
+
+// SetProvision sets the value of Provision.
+func (s *SandboxAgentStatusResponse) SetProvision(val OptSandboxAgentProvisionStatus) {
+	s.Provision = val
 }
 
 // SetResources sets the value of Resources.

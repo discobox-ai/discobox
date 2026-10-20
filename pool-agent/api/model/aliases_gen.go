@@ -38,6 +38,7 @@ type PoolSandboxUpdateRequest = poolagentapi.PoolSandboxUpdateRequest
 type PoolSyncRequest = poolagentapi.PoolSyncRequest
 type ResolvedHarnessConfig = poolagentapi.ResolvedHarnessConfig
 type SandboxConfig = poolagentapi.SandboxConfig
+type SandboxFeature = poolagentapi.SandboxFeature
 type SandboxGitIdentity = poolagentapi.SandboxGitIdentity
 type SandboxSkill = poolagentapi.SandboxSkill
 type SandboxSkillFile = poolagentapi.SandboxSkillFile
