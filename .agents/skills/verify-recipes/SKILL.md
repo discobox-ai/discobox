@@ -565,7 +565,11 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
 # Verifying feature provisioning (`sandbox-agent/provision`, provision.json)
 
 A box provisions the trees at `/opt/discobox/bundles/{platform,harness}` on
-every boot; today's image ships neither, so drop one in and restart.
+every boot. The images ship both, provisioned at build with their step
+records, so a fresh dev box reports every feature `ready`/`snapshot`
+(`jq -r '.features|to_entries[]|select(.value.how != "snapshot")|.key'
+/run/discobox/provision.json` prints nothing). To try a feature of your own,
+drop a tree in and restart:
 
 ```bash
 # scratch repo whose settings turn features off; -o json shows config.features
@@ -590,6 +594,18 @@ d shell <box> -- cat /run/discobox/provision.json
   readiness error naming the log; a failing background one fails only its
   placeholder (exit 127).
 - Purge with `d admin box purge <box>` (`d rm` only archives).
+- A change to a feature (`sandbox-agent/features/*`, `harness/*/provision.yaml`)
+  is proved by the image it builds, not only the box: build `main`'s image
+  from `git archive HEAD | tar -x -C $S/base` and this tree's, run one script
+  in each (`docker run --rm --entrypoint sh -v $S/inv:/inv:ro <image>
+  /inv/inventory.sh`) listing `dpkg-query -W`, the commands on PATH, the
+  links and file hashes under `/etc/systemd/system`, `/etc/profile.d`,
+  `/etc/xdg` and `/usr/local/share/discobox`, and each tool's `--version`, and
+  diff the two. It catches what feature order changes: a package's conffile
+  written before the package, `ldconfig` from a later install undoing a link,
+  apt resolving an alternative another feature used to satisfy.
+- `admin harness configure <id>` in a tmux pane reaches a login harness's CLI
+  in a box of its image without credentials; answer `n` to leave it.
 
 # Verifying a container's boot (`discobox-wire.service`)
 
