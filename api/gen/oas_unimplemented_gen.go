@@ -373,6 +373,15 @@ func (UnimplementedHandler) DeleteProjectSkillsSource(ctx context.Context, param
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteProjectTarget implements delete-project-target operation.
+//
+// Remove the project's own entry for a host; a built-in entry for it answers again.
+//
+// DELETE /projects/{projectId}/targets/{host}
+func (UnimplementedHandler) DeleteProjectTarget(ctx context.Context, params DeleteProjectTargetParams) (r DeleteProjectTargetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteSSHKey implements delete-ssh-key operation.
 //
 // Revoke an SSH key.
@@ -518,6 +527,24 @@ func (UnimplementedHandler) GetProject(ctx context.Context, params GetProjectPar
 //
 // GET /projects/{projectId}/gateways/{gatewayName}
 func (UnimplementedHandler) GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (r GetProjectGatewayRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetProjectTarget implements get-project-target operation.
+//
+// Get the project's entry for exactly this host, its own or the built-in.
+//
+// GET /projects/{projectId}/targets/{host}
+func (UnimplementedHandler) GetProjectTarget(ctx context.Context, params GetProjectTargetParams) (r GetProjectTargetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetProjectTargetDocument implements get-project-target-document operation.
+//
+// Read one of an entry's documents, fetching it from its URL first if the server has no copy.
+//
+// GET /projects/{projectId}/targets/{host}/documents/{documentName}
+func (UnimplementedHandler) GetProjectTargetDocument(ctx context.Context, params GetProjectTargetDocumentParams) (r GetProjectTargetDocumentRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -901,6 +928,16 @@ func (UnimplementedHandler) ListProjectSkillsSources(ctx context.Context, params
 	return r, ht.ErrNotImplemented
 }
 
+// ListProjectTargets implements list-project-targets operation.
+//
+// List the target database as the project sees it -- the built-in entries and the project's own,
+// which replace a built-in for the same host.
+//
+// GET /projects/{projectId}/targets
+func (UnimplementedHandler) ListProjectTargets(ctx context.Context, params ListProjectTargetsParams) (r ListProjectTargetsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListProjects implements list-projects operation.
 //
 // List projects.
@@ -1088,6 +1125,16 @@ func (UnimplementedHandler) ListTrustRequests(ctx context.Context, params ListTr
 	return r, ht.ErrNotImplemented
 }
 
+// LookupProjectTarget implements lookup-project-target operation.
+//
+// Find the known statement shapes of a statement in the entry that describes a host, and the
+// documents to read for its actions that have none.
+//
+// POST /projects/{projectId}/target-lookup
+func (UnimplementedHandler) LookupProjectTarget(ctx context.Context, req *LookupProjectTargetBody, params LookupProjectTargetParams) (r LookupProjectTargetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
 //
 // Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
@@ -1156,6 +1203,16 @@ func (UnimplementedHandler) PurgeSandbox(ctx context.Context, params PurgeSandbo
 //
 // PUT /projects/{projectId}/gateways/{gatewayName}
 func (UnimplementedHandler) PutProjectGateway(ctx context.Context, req *PutProjectGatewayBody, params PutProjectGatewayParams) (r PutProjectGatewayRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// PutProjectTarget implements put-project-target operation.
+//
+// Add the project's own entry for a host, or replace it; one for a host with a built-in entry
+// replaces the built-in for this project.
+//
+// PUT /projects/{projectId}/targets/{host}
+func (UnimplementedHandler) PutProjectTarget(ctx context.Context, req *PutProjectTargetBody, params PutProjectTargetParams) (r PutProjectTargetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -107,6 +107,9 @@ type AppOptions struct {
 	// OverlayDir is the one directory a harness's file:// manifest reference
 	// may name a file in. Empty refuses every such reference.
 	OverlayDir string
+	// TargetDocumentDir is where target documents fetched from their URLs
+	// are kept. Empty fetches none.
+	TargetDocumentDir string
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own. Zero is left zero rather
@@ -155,7 +158,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	if err != nil {
 		return nil, err
 	}
-	router.Mount("/", boundInventoryReports(generated))
+	router.Mount("/", boundInventoryReports(boundTargetPuts(generated)))
 	return router, nil
 }
 
@@ -219,6 +222,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 		OverlayDir:                     opts.OverlayDir,
+		TargetDocumentDir:              opts.TargetDocumentDir,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	if opts.SecretSealer != nil {
@@ -246,6 +250,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		HostTrusts:     appServices,
 		SSHKeys:        appServices,
 		SkillsSources:  appServices,
+		Targets:        appServices,
 		Gateways:       appServices,
 		Peers:          appServices,
 		Judges:         appServices.Judges(),
@@ -291,6 +296,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, services.Services{}, nil, nil, err
 	}
-	router.Mount("/", boundInventoryReports(generated))
+	router.Mount("/", boundInventoryReports(boundTargetPuts(generated)))
 	return router, svc, appStore, appServices.Stop, nil
 }

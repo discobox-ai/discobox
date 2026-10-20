@@ -279,6 +279,12 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/skills-sources/{skillsSourceId}
 	DeleteProjectSkillsSource(ctx context.Context, params DeleteProjectSkillsSourceParams) (DeleteProjectSkillsSourceRes, error)
+	// DeleteProjectTarget invokes delete-project-target operation.
+	//
+	// Remove the project's own entry for a host; a built-in entry for it answers again.
+	//
+	// DELETE /projects/{projectId}/targets/{host}
+	DeleteProjectTarget(ctx context.Context, params DeleteProjectTargetParams) (DeleteProjectTargetRes, error)
 	// DeleteSSHKey invokes delete-ssh-key operation.
 	//
 	// Revoke an SSH key.
@@ -379,6 +385,18 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/gateways/{gatewayName}
 	GetProjectGateway(ctx context.Context, params GetProjectGatewayParams) (GetProjectGatewayRes, error)
+	// GetProjectTarget invokes get-project-target operation.
+	//
+	// Get the project's entry for exactly this host, its own or the built-in.
+	//
+	// GET /projects/{projectId}/targets/{host}
+	GetProjectTarget(ctx context.Context, params GetProjectTargetParams) (GetProjectTargetRes, error)
+	// GetProjectTargetDocument invokes get-project-target-document operation.
+	//
+	// Read one of an entry's documents, fetching it from its URL first if the server has no copy.
+	//
+	// GET /projects/{projectId}/targets/{host}/documents/{documentName}
+	GetProjectTargetDocument(ctx context.Context, params GetProjectTargetDocumentParams) (GetProjectTargetDocumentRes, error)
 	// GetSSHIngress invokes get-ssh-ingress operation.
 	//
 	// Discover this server's SSH ingress endpoint and host key.
@@ -643,6 +661,13 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/skills-sources
 	ListProjectSkillsSources(ctx context.Context, params ListProjectSkillsSourcesParams) (ListProjectSkillsSourcesRes, error)
+	// ListProjectTargets invokes list-project-targets operation.
+	//
+	// List the target database as the project sees it -- the built-in entries and the project's own,
+	// which replace a built-in for the same host.
+	//
+	// GET /projects/{projectId}/targets
+	ListProjectTargets(ctx context.Context, params ListProjectTargetsParams) (ListProjectTargetsRes, error)
 	// ListProjects invokes list-projects operation.
 	//
 	// List projects.
@@ -770,6 +795,13 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/trust-requests
 	ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error)
+	// LookupProjectTarget invokes lookup-project-target operation.
+	//
+	// Find the known statement shapes of a statement in the entry that describes a host, and the
+	// documents to read for its actions that have none.
+	//
+	// POST /projects/{projectId}/target-lookup
+	LookupProjectTarget(ctx context.Context, request *LookupProjectTargetBody, params LookupProjectTargetParams) (LookupProjectTargetRes, error)
 	// MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
@@ -823,6 +855,13 @@ type Invoker interface {
 	//
 	// PUT /projects/{projectId}/gateways/{gatewayName}
 	PutProjectGateway(ctx context.Context, request *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error)
+	// PutProjectTarget invokes put-project-target operation.
+	//
+	// Add the project's own entry for a host, or replace it; one for a host with a built-in entry
+	// replaces the built-in for this project.
+	//
+	// PUT /projects/{projectId}/targets/{host}
+	PutProjectTarget(ctx context.Context, request *PutProjectTargetBody, params PutProjectTargetParams) (PutProjectTargetRes, error)
 	// PutSandboxRuntimeConfig invokes put-sandbox-runtime-config operation.
 	//
 	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
@@ -5038,6 +5077,117 @@ func (c *Client) sendDeleteProjectSkillsSource(ctx context.Context, params Delet
 	return result, nil
 }
 
+// DeleteProjectTarget invokes delete-project-target operation.
+//
+// Remove the project's own entry for a host; a built-in entry for it answers again.
+//
+// DELETE /projects/{projectId}/targets/{host}
+func (c *Client) DeleteProjectTarget(ctx context.Context, params DeleteProjectTargetParams) (DeleteProjectTargetRes, error) {
+	res, err := c.sendDeleteProjectTarget(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteProjectTarget(ctx context.Context, params DeleteProjectTargetParams) (res DeleteProjectTargetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-project-target"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/targets/{host}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteProjectTargetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/targets/"
+	{
+		// Encode "host" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "host",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Host))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteProjectTargetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteSSHKey invokes delete-ssh-key operation.
 //
 // Revoke an SSH key.
@@ -6873,6 +7023,247 @@ func (c *Client) sendGetProjectGateway(ctx context.Context, params GetProjectGat
 
 	stage = "DecodeResponse"
 	result, err := decodeGetProjectGatewayResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetProjectTarget invokes get-project-target operation.
+//
+// Get the project's entry for exactly this host, its own or the built-in.
+//
+// GET /projects/{projectId}/targets/{host}
+func (c *Client) GetProjectTarget(ctx context.Context, params GetProjectTargetParams) (GetProjectTargetRes, error) {
+	res, err := c.sendGetProjectTarget(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetProjectTarget(ctx context.Context, params GetProjectTargetParams) (res GetProjectTargetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-project-target"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/targets/{host}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetProjectTargetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/targets/"
+	{
+		// Encode "host" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "host",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Host))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetProjectTargetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetProjectTargetDocument invokes get-project-target-document operation.
+//
+// Read one of an entry's documents, fetching it from its URL first if the server has no copy.
+//
+// GET /projects/{projectId}/targets/{host}/documents/{documentName}
+func (c *Client) GetProjectTargetDocument(ctx context.Context, params GetProjectTargetDocumentParams) (GetProjectTargetDocumentRes, error) {
+	res, err := c.sendGetProjectTargetDocument(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetProjectTargetDocument(ctx context.Context, params GetProjectTargetDocumentParams) (res GetProjectTargetDocumentRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-project-target-document"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/targets/{host}/documents/{documentName}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetProjectTargetDocumentOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [6]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/targets/"
+	{
+		// Encode "host" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "host",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Host))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/documents/"
+	{
+		// Encode "documentName" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "documentName",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.DocumentName))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetProjectTargetDocumentResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -11787,6 +12178,100 @@ func (c *Client) sendListProjectSkillsSources(ctx context.Context, params ListPr
 	return result, nil
 }
 
+// ListProjectTargets invokes list-project-targets operation.
+//
+// List the target database as the project sees it -- the built-in entries and the project's own,
+// which replace a built-in for the same host.
+//
+// GET /projects/{projectId}/targets
+func (c *Client) ListProjectTargets(ctx context.Context, params ListProjectTargetsParams) (ListProjectTargetsRes, error) {
+	res, err := c.sendListProjectTargets(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListProjectTargets(ctx context.Context, params ListProjectTargetsParams) (res ListProjectTargetsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-project-targets"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/targets"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListProjectTargetsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/targets"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListProjectTargetsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListProjects invokes list-projects operation.
 //
 // List projects.
@@ -14197,6 +14682,103 @@ func (c *Client) sendListTrustRequests(ctx context.Context, params ListTrustRequ
 	return result, nil
 }
 
+// LookupProjectTarget invokes lookup-project-target operation.
+//
+// Find the known statement shapes of a statement in the entry that describes a host, and the
+// documents to read for its actions that have none.
+//
+// POST /projects/{projectId}/target-lookup
+func (c *Client) LookupProjectTarget(ctx context.Context, request *LookupProjectTargetBody, params LookupProjectTargetParams) (LookupProjectTargetRes, error) {
+	res, err := c.sendLookupProjectTarget(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendLookupProjectTarget(ctx context.Context, request *LookupProjectTargetBody, params LookupProjectTargetParams) (res LookupProjectTargetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("lookup-project-target"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/target-lookup"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, LookupProjectTargetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/target-lookup"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeLookupProjectTargetRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeLookupProjectTargetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
 //
 // Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
@@ -14868,6 +15450,121 @@ func (c *Client) sendPutProjectGateway(ctx context.Context, request *PutProjectG
 
 	stage = "DecodeResponse"
 	result, err := decodePutProjectGatewayResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PutProjectTarget invokes put-project-target operation.
+//
+// Add the project's own entry for a host, or replace it; one for a host with a built-in entry
+// replaces the built-in for this project.
+//
+// PUT /projects/{projectId}/targets/{host}
+func (c *Client) PutProjectTarget(ctx context.Context, request *PutProjectTargetBody, params PutProjectTargetParams) (PutProjectTargetRes, error) {
+	res, err := c.sendPutProjectTarget(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPutProjectTarget(ctx context.Context, request *PutProjectTargetBody, params PutProjectTargetParams) (res PutProjectTargetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("put-project-target"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/targets/{host}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PutProjectTargetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/targets/"
+	{
+		// Encode "host" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "host",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Host))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePutProjectTargetRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePutProjectTargetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

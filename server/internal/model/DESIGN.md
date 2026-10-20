@@ -30,6 +30,7 @@ Public REST API schema types live under the root `api/model` package.
 | `SSHKey` | Project-scoped public key authorizing SSH to the project's sandboxes (ADR 0024). |
 | `ProjectGateway` | A gateway every discobox of the project is routed through by its pool's proxy (ADR 26-10-16-470): addressed by `name`, its `match` unique in the project, stored as `gateway.Normalize` writes it. A header value from the server's environment is stored as the variable's name, never its value. |
 | `ProjectSkillsSource` | One skills repository (`url`, `ref`, `directory`) every discobox of the project is created with, in the order added. The creating client copies the list into its create request; the server never adds it to one (ADR 26-10-14-894). |
+| `TargetEntry`, `TargetDocumentText` | A project's own entry in the target database for one host (ADR 26-10-20-782 §6): documents, terms and statement shapes as the root `targetdb` package's types in JSON columns, and the version of what they say. The text of a document a person uploaded is a `TargetDocumentText` row, kept apart so reading an entry loads none. Built-in entries have no rows. `Builtin` and `ReplacesBuiltin` are derived. |
 | `Peer` | Machine permitted to connect to this server, keyed by peer ID (ADR 0095). Not project-scoped. |
 | `Job` | Non-persisted, read-only API view of a pending reconcile mark. |
 

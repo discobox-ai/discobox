@@ -145,6 +145,10 @@ type DeleteProjectSkillsSourceRes interface {
 	deleteProjectSkillsSourceRes()
 }
 
+type DeleteProjectTargetRes interface {
+	deleteProjectTargetRes()
+}
+
 type DeleteSSHKeyRes interface {
 	deleteSSHKeyRes()
 }
@@ -207,6 +211,14 @@ type GetProjectGatewayRes interface {
 
 type GetProjectRes interface {
 	getProjectRes()
+}
+
+type GetProjectTargetDocumentRes interface {
+	getProjectTargetDocumentRes()
+}
+
+type GetProjectTargetRes interface {
+	getProjectTargetRes()
 }
 
 type GetSSHIngressRes interface {
@@ -361,6 +373,10 @@ type ListProjectSkillsSourcesRes interface {
 	listProjectSkillsSourcesRes()
 }
 
+type ListProjectTargetsRes interface {
+	listProjectTargetsRes()
+}
+
 type ListProjectsRes interface {
 	listProjectsRes()
 }
@@ -441,6 +457,10 @@ type ListTrustRequestsRes interface {
 	listTrustRequestsRes()
 }
 
+type LookupProjectTargetRes interface {
+	lookupProjectTargetRes()
+}
+
 type MintSandboxAgentStatusTokensRes interface {
 	mintSandboxAgentStatusTokensRes()
 }
@@ -463,6 +483,10 @@ type PurgeSandboxRes interface {
 
 type PutProjectGatewayRes interface {
 	putProjectGatewayRes()
+}
+
+type PutProjectTargetRes interface {
+	putProjectTargetRes()
 }
 
 type PutSandboxRuntimeConfigRes interface {

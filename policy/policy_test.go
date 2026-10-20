@@ -130,3 +130,13 @@ func sortStrings(s []string) []string {
 	}
 	return sortedKeys(m)
 }
+
+func TestAStatementAloneValidatesButForDefinitions(t *testing.T) {
+	repo := Scope{Type: "repository", Name: VarPrimaryRepo}
+	if err := (Statement{Effect: Allow, Actions: []string{"push"}, ResourceType: "branch", Scope: repo}).Validate(); err != nil {
+		t.Fatalf("a statement whose words have no definitions yet: %v", err)
+	}
+	if err := (Statement{Effect: Allow, Actions: []string{ActionRead}, ResourceType: "issue", Scope: Scope{Type: Anywhere}}).Validate(); err == nil {
+		t.Fatal("an allow anywhere validated")
+	}
+}

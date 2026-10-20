@@ -3842,6 +3842,11 @@ type DeleteProjectSkillsSourceNoContent struct{}
 
 func (*DeleteProjectSkillsSourceNoContent) deleteProjectSkillsSourceRes() {}
 
+// DeleteProjectTargetNoContent is response for DeleteProjectTarget operation.
+type DeleteProjectTargetNoContent struct{}
+
+func (*DeleteProjectTargetNoContent) deleteProjectTargetRes() {}
+
 // DeleteSSHKeyNoContent is response for DeleteSSHKey operation.
 type DeleteSSHKeyNoContent struct{}
 
@@ -4104,6 +4109,7 @@ func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteProjectGatewayRes()             {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
 func (*ErrorModelStatusCode) deleteProjectSkillsSourceRes()        {}
+func (*ErrorModelStatusCode) deleteProjectTargetRes()              {}
 func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()           {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
@@ -4119,6 +4125,8 @@ func (*ErrorModelStatusCode) getJobRes()                           {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
 func (*ErrorModelStatusCode) getProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
+func (*ErrorModelStatusCode) getProjectTargetDocumentRes()         {}
+func (*ErrorModelStatusCode) getProjectTargetRes()                 {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
@@ -4145,6 +4153,7 @@ func (*ErrorModelStatusCode) listPoolHostTrustsRes()               {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectGatewaysRes()              {}
 func (*ErrorModelStatusCode) listProjectSkillsSourcesRes()         {}
+func (*ErrorModelStatusCode) listProjectTargetsRes()               {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
 func (*ErrorModelStatusCode) listSandboxCredentialsRes()           {}
@@ -4158,11 +4167,13 @@ func (*ErrorModelStatusCode) listSecretRejectionsRes()             {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
 func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
+func (*ErrorModelStatusCode) lookupProjectTargetRes()              {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) putProjectGatewayRes()                {}
+func (*ErrorModelStatusCode) putProjectTargetRes()                 {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
@@ -4509,6 +4520,22 @@ func (s *GatewayHeaderValueSource) GetEnv() string {
 func (s *GatewayHeaderValueSource) SetEnv(val string) {
 	s.Env = val
 }
+
+type GetProjectTargetDocumentOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetProjectTargetDocumentOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*GetProjectTargetDocumentOK) getProjectTargetDocumentRes() {}
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
@@ -8940,6 +8967,35 @@ func (s *ListProjectSkillsSourcesBody) SetSkillsSources(val []ProjectSkillsSourc
 
 func (*ListProjectSkillsSourcesBody) listProjectSkillsSourcesRes() {}
 
+// Ref: #/components/schemas/ListProjectTargetsBody
+type ListProjectTargetsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema  OptURI        `json:"$schema"`
+	Targets []TargetEntry `json:"targets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListProjectTargetsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetTargets returns the value of Targets.
+func (s *ListProjectTargetsBody) GetTargets() []TargetEntry {
+	return s.Targets
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListProjectTargetsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetTargets sets the value of Targets.
+func (s *ListProjectTargetsBody) SetTargets(val []TargetEntry) {
+	s.Targets = val
+}
+
+func (*ListProjectTargetsBody) listProjectTargetsRes() {}
+
 // Ref: #/components/schemas/ListProjectsBody
 type ListProjectsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -9431,6 +9487,45 @@ func (s *ListTrustRequestsStatus) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/LookupProjectTargetBody
+type LookupProjectTargetBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The host the statement is for; the narrowest entry that covers it answers.
+	Host      string                `json:"host"`
+	Statement AccessPolicyStatement `json:"statement"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *LookupProjectTargetBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHost returns the value of Host.
+func (s *LookupProjectTargetBody) GetHost() string {
+	return s.Host
+}
+
+// GetStatement returns the value of Statement.
+func (s *LookupProjectTargetBody) GetStatement() AccessPolicyStatement {
+	return s.Statement
+}
+
+// SetSchema sets the value of Schema.
+func (s *LookupProjectTargetBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHost sets the value of Host.
+func (s *LookupProjectTargetBody) SetHost(val string) {
+	s.Host = val
+}
+
+// SetStatement sets the value of Statement.
+func (s *LookupProjectTargetBody) SetStatement(val AccessPolicyStatement) {
+	s.Statement = val
 }
 
 // Ref: #/components/schemas/MintSandboxAgentStatusTokensBody
@@ -20056,6 +20151,168 @@ func (s *PutProjectGatewayBody) SetTarget(val string) {
 // SetRequestHeaders sets the value of RequestHeaders.
 func (s *PutProjectGatewayBody) SetRequestHeaders(val OptGatewayHeaderModifier) {
 	s.RequestHeaders = val
+}
+
+// Ref: #/components/schemas/PutProjectTargetBody
+type PutProjectTargetBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema     OptURI                 `json:"$schema"`
+	Documents  []PutTargetDocument    `json:"documents"`
+	Terms      []TargetTerm           `json:"terms"`
+	Statements []TargetStatementShape `json:"statements"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PutProjectTargetBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDocuments returns the value of Documents.
+func (s *PutProjectTargetBody) GetDocuments() []PutTargetDocument {
+	return s.Documents
+}
+
+// GetTerms returns the value of Terms.
+func (s *PutProjectTargetBody) GetTerms() []TargetTerm {
+	return s.Terms
+}
+
+// GetStatements returns the value of Statements.
+func (s *PutProjectTargetBody) GetStatements() []TargetStatementShape {
+	return s.Statements
+}
+
+// SetSchema sets the value of Schema.
+func (s *PutProjectTargetBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDocuments sets the value of Documents.
+func (s *PutProjectTargetBody) SetDocuments(val []PutTargetDocument) {
+	s.Documents = val
+}
+
+// SetTerms sets the value of Terms.
+func (s *PutProjectTargetBody) SetTerms(val []TargetTerm) {
+	s.Terms = val
+}
+
+// SetStatements sets the value of Statements.
+func (s *PutProjectTargetBody) SetStatements(val []TargetStatementShape) {
+	s.Statements = val
+}
+
+// A document for a project's entry -- its text, or an https URL pinned to a version with the digest
+// of what it answers.
+// Ref: #/components/schemas/PutTargetDocument
+type PutTargetDocument struct {
+	// The document's name in its entry -- lowercase letters, digits, '.', '_' and '-'.
+	Name string                `json:"name"`
+	Kind PutTargetDocumentKind `json:"kind"`
+	// Where the server fetches the text from. Requires sha256.
+	URL OptString `json:"url"`
+	// The hex SHA-256 digest of the text. Required with url; checked when text is given.
+	SHA256 OptString `json:"sha256"`
+	// The text itself, which the server stores.
+	Text OptString `json:"text"`
+}
+
+// GetName returns the value of Name.
+func (s *PutTargetDocument) GetName() string {
+	return s.Name
+}
+
+// GetKind returns the value of Kind.
+func (s *PutTargetDocument) GetKind() PutTargetDocumentKind {
+	return s.Kind
+}
+
+// GetURL returns the value of URL.
+func (s *PutTargetDocument) GetURL() OptString {
+	return s.URL
+}
+
+// GetSHA256 returns the value of SHA256.
+func (s *PutTargetDocument) GetSHA256() OptString {
+	return s.SHA256
+}
+
+// GetText returns the value of Text.
+func (s *PutTargetDocument) GetText() OptString {
+	return s.Text
+}
+
+// SetName sets the value of Name.
+func (s *PutTargetDocument) SetName(val string) {
+	s.Name = val
+}
+
+// SetKind sets the value of Kind.
+func (s *PutTargetDocument) SetKind(val PutTargetDocumentKind) {
+	s.Kind = val
+}
+
+// SetURL sets the value of URL.
+func (s *PutTargetDocument) SetURL(val OptString) {
+	s.URL = val
+}
+
+// SetSHA256 sets the value of SHA256.
+func (s *PutTargetDocument) SetSHA256(val OptString) {
+	s.SHA256 = val
+}
+
+// SetText sets the value of Text.
+func (s *PutTargetDocument) SetText(val OptString) {
+	s.Text = val
+}
+
+type PutTargetDocumentKind string
+
+const (
+	PutTargetDocumentKindOpenapi PutTargetDocumentKind = "openapi"
+	PutTargetDocumentKindGraphql PutTargetDocumentKind = "graphql"
+	PutTargetDocumentKindProse   PutTargetDocumentKind = "prose"
+)
+
+// AllValues returns all PutTargetDocumentKind values.
+func (PutTargetDocumentKind) AllValues() []PutTargetDocumentKind {
+	return []PutTargetDocumentKind{
+		PutTargetDocumentKindOpenapi,
+		PutTargetDocumentKindGraphql,
+		PutTargetDocumentKindProse,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PutTargetDocumentKind) MarshalText() ([]byte, error) {
+	switch s {
+	case PutTargetDocumentKindOpenapi:
+		return []byte(s), nil
+	case PutTargetDocumentKindGraphql:
+		return []byte(s), nil
+	case PutTargetDocumentKindProse:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PutTargetDocumentKind) UnmarshalText(data []byte) error {
+	switch PutTargetDocumentKind(data) {
+	case PutTargetDocumentKindOpenapi:
+		*s = PutTargetDocumentKindOpenapi
+		return nil
+	case PutTargetDocumentKindGraphql:
+		*s = PutTargetDocumentKindGraphql
+		return nil
+	case PutTargetDocumentKindProse:
+		*s = PutTargetDocumentKindProse
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/RefreshSecretBody
@@ -31934,6 +32191,509 @@ func (s *SuspendSandboxBody) GetSchema() OptURI {
 // SetSchema sets the value of Schema.
 func (s *SuspendSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// One of an entry's documents, named by the SHA-256 digest of its text.
+// Ref: #/components/schemas/TargetDocument
+type TargetDocument struct {
+	// The document's name in its entry.
+	Name string `json:"name"`
+	// What the document describes the host in.
+	Kind TargetDocumentKind `json:"kind"`
+	// Where the text is fetched from, pinned to a version; absent for text the server holds.
+	URL OptString `json:"url"`
+	// The hex SHA-256 digest of the text.
+	SHA256 string `json:"sha256"`
+}
+
+// GetName returns the value of Name.
+func (s *TargetDocument) GetName() string {
+	return s.Name
+}
+
+// GetKind returns the value of Kind.
+func (s *TargetDocument) GetKind() TargetDocumentKind {
+	return s.Kind
+}
+
+// GetURL returns the value of URL.
+func (s *TargetDocument) GetURL() OptString {
+	return s.URL
+}
+
+// GetSHA256 returns the value of SHA256.
+func (s *TargetDocument) GetSHA256() string {
+	return s.SHA256
+}
+
+// SetName sets the value of Name.
+func (s *TargetDocument) SetName(val string) {
+	s.Name = val
+}
+
+// SetKind sets the value of Kind.
+func (s *TargetDocument) SetKind(val TargetDocumentKind) {
+	s.Kind = val
+}
+
+// SetURL sets the value of URL.
+func (s *TargetDocument) SetURL(val OptString) {
+	s.URL = val
+}
+
+// SetSHA256 sets the value of SHA256.
+func (s *TargetDocument) SetSHA256(val string) {
+	s.SHA256 = val
+}
+
+// What the document describes the host in.
+type TargetDocumentKind string
+
+const (
+	TargetDocumentKindOpenapi TargetDocumentKind = "openapi"
+	TargetDocumentKindGraphql TargetDocumentKind = "graphql"
+	TargetDocumentKindProse   TargetDocumentKind = "prose"
+)
+
+// AllValues returns all TargetDocumentKind values.
+func (TargetDocumentKind) AllValues() []TargetDocumentKind {
+	return []TargetDocumentKind{
+		TargetDocumentKindOpenapi,
+		TargetDocumentKindGraphql,
+		TargetDocumentKindProse,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s TargetDocumentKind) MarshalText() ([]byte, error) {
+	switch s {
+	case TargetDocumentKindOpenapi:
+		return []byte(s), nil
+	case TargetDocumentKindGraphql:
+		return []byte(s), nil
+	case TargetDocumentKindProse:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *TargetDocumentKind) UnmarshalText(data []byte) error {
+	switch TargetDocumentKind(data) {
+	case TargetDocumentKindOpenapi:
+		*s = TargetDocumentKindOpenapi
+		return nil
+	case TargetDocumentKindGraphql:
+		*s = TargetDocumentKindGraphql
+		return nil
+	case TargetDocumentKindProse:
+		*s = TargetDocumentKindProse
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What is known about a host (ADR 26-10-20-782 §6) -- its documents, the terms it offers, and the
+// statement shapes it is known to support. It covers the hosts beneath its own, as a credential's
+// host does.
+// Ref: #/components/schemas/TargetEntry
+type TargetEntry struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The host the entry describes; it covers the hosts beneath it.
+	Host string `json:"host"`
+	// Whether the entry ships with Discobox rather than being the project's own.
+	Builtin bool `json:"builtin"`
+	// Whether the project's own entry stands in place of a built-in entry for the same host.
+	ReplacesBuiltin bool `json:"replacesBuiltin"`
+	// Names what the entry says about its host -- its host, its documents' names, kinds and digests, and
+	// its terms. The statements are not part of it. A decision records the version it used.
+	Version    string                 `json:"version"`
+	Documents  []TargetDocument       `json:"documents"`
+	Terms      []TargetTerm           `json:"terms"`
+	Statements []TargetStatementShape `json:"statements"`
+	// Principal ID of the person who last put the project's entry.
+	UpdatedBy OptString `json:"updatedBy"`
+	// When the project's entry was added; absent on a built-in.
+	CreatedAt OptDateTime `json:"createdAt"`
+	// When the project's entry was last put; absent on a built-in.
+	UpdatedAt OptDateTime `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *TargetEntry) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHost returns the value of Host.
+func (s *TargetEntry) GetHost() string {
+	return s.Host
+}
+
+// GetBuiltin returns the value of Builtin.
+func (s *TargetEntry) GetBuiltin() bool {
+	return s.Builtin
+}
+
+// GetReplacesBuiltin returns the value of ReplacesBuiltin.
+func (s *TargetEntry) GetReplacesBuiltin() bool {
+	return s.ReplacesBuiltin
+}
+
+// GetVersion returns the value of Version.
+func (s *TargetEntry) GetVersion() string {
+	return s.Version
+}
+
+// GetDocuments returns the value of Documents.
+func (s *TargetEntry) GetDocuments() []TargetDocument {
+	return s.Documents
+}
+
+// GetTerms returns the value of Terms.
+func (s *TargetEntry) GetTerms() []TargetTerm {
+	return s.Terms
+}
+
+// GetStatements returns the value of Statements.
+func (s *TargetEntry) GetStatements() []TargetStatementShape {
+	return s.Statements
+}
+
+// GetUpdatedBy returns the value of UpdatedBy.
+func (s *TargetEntry) GetUpdatedBy() OptString {
+	return s.UpdatedBy
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *TargetEntry) GetCreatedAt() OptDateTime {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *TargetEntry) GetUpdatedAt() OptDateTime {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *TargetEntry) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHost sets the value of Host.
+func (s *TargetEntry) SetHost(val string) {
+	s.Host = val
+}
+
+// SetBuiltin sets the value of Builtin.
+func (s *TargetEntry) SetBuiltin(val bool) {
+	s.Builtin = val
+}
+
+// SetReplacesBuiltin sets the value of ReplacesBuiltin.
+func (s *TargetEntry) SetReplacesBuiltin(val bool) {
+	s.ReplacesBuiltin = val
+}
+
+// SetVersion sets the value of Version.
+func (s *TargetEntry) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetDocuments sets the value of Documents.
+func (s *TargetEntry) SetDocuments(val []TargetDocument) {
+	s.Documents = val
+}
+
+// SetTerms sets the value of Terms.
+func (s *TargetEntry) SetTerms(val []TargetTerm) {
+	s.Terms = val
+}
+
+// SetStatements sets the value of Statements.
+func (s *TargetEntry) SetStatements(val []TargetStatementShape) {
+	s.Statements = val
+}
+
+// SetUpdatedBy sets the value of UpdatedBy.
+func (s *TargetEntry) SetUpdatedBy(val OptString) {
+	s.UpdatedBy = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *TargetEntry) SetCreatedAt(val OptDateTime) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *TargetEntry) SetUpdatedAt(val OptDateTime) {
+	s.UpdatedAt = val
+}
+
+func (*TargetEntry) getProjectTargetRes() {}
+func (*TargetEntry) putProjectTargetRes() {}
+
+// What an entry knows of one statement. An action in missing has no known shape -- its enforcement
+// is for the documents to show.
+// Ref: #/components/schemas/TargetLookup
+type TargetLookup struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The host of the entry that answered.
+	Host string `json:"host"`
+	// The version of the entry that answered.
+	Version string              `json:"version"`
+	Matches []TargetLookupMatch `json:"matches"`
+	// The statement's actions no known shape fits.
+	Missing []string `json:"missing"`
+	// The entry's documents, when an action is missing.
+	Documents []TargetDocument `json:"documents"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *TargetLookup) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHost returns the value of Host.
+func (s *TargetLookup) GetHost() string {
+	return s.Host
+}
+
+// GetVersion returns the value of Version.
+func (s *TargetLookup) GetVersion() string {
+	return s.Version
+}
+
+// GetMatches returns the value of Matches.
+func (s *TargetLookup) GetMatches() []TargetLookupMatch {
+	return s.Matches
+}
+
+// GetMissing returns the value of Missing.
+func (s *TargetLookup) GetMissing() []string {
+	return s.Missing
+}
+
+// GetDocuments returns the value of Documents.
+func (s *TargetLookup) GetDocuments() []TargetDocument {
+	return s.Documents
+}
+
+// SetSchema sets the value of Schema.
+func (s *TargetLookup) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHost sets the value of Host.
+func (s *TargetLookup) SetHost(val string) {
+	s.Host = val
+}
+
+// SetVersion sets the value of Version.
+func (s *TargetLookup) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetMatches sets the value of Matches.
+func (s *TargetLookup) SetMatches(val []TargetLookupMatch) {
+	s.Matches = val
+}
+
+// SetMissing sets the value of Missing.
+func (s *TargetLookup) SetMissing(val []string) {
+	s.Missing = val
+}
+
+// SetDocuments sets the value of Documents.
+func (s *TargetLookup) SetDocuments(val []TargetDocument) {
+	s.Documents = val
+}
+
+func (*TargetLookup) lookupProjectTargetRes() {}
+
+// Ref: #/components/schemas/TargetLookupMatch
+type TargetLookupMatch struct {
+	Action string                 `json:"action"`
+	Shapes []TargetStatementShape `json:"shapes"`
+}
+
+// GetAction returns the value of Action.
+func (s *TargetLookupMatch) GetAction() string {
+	return s.Action
+}
+
+// GetShapes returns the value of Shapes.
+func (s *TargetLookupMatch) GetShapes() []TargetStatementShape {
+	return s.Shapes
+}
+
+// SetAction sets the value of Action.
+func (s *TargetLookupMatch) SetAction(val string) {
+	s.Action = val
+}
+
+// SetShapes sets the value of Shapes.
+func (s *TargetLookupMatch) SetShapes(val []TargetStatementShape) {
+	s.Shapes = val
+}
+
+// A statement the host is known to support, with its names as parameters -- create on issue in
+// repository -- and the documented operations it covers.
+// Ref: #/components/schemas/TargetStatementShape
+type TargetStatementShape struct {
+	Action       string `json:"action"`
+	ResourceType string `json:"resourceType"`
+	// Parent types, outermost first.
+	Within    []string `json:"within"`
+	ScopeType string   `json:"scopeType"`
+	// The types the scope sits in, outermost first.
+	ScopeWithin []string `json:"scopeWithin"`
+	// The documented operations the shape covers, as its documents name them.
+	Operations []string `json:"operations"`
+}
+
+// GetAction returns the value of Action.
+func (s *TargetStatementShape) GetAction() string {
+	return s.Action
+}
+
+// GetResourceType returns the value of ResourceType.
+func (s *TargetStatementShape) GetResourceType() string {
+	return s.ResourceType
+}
+
+// GetWithin returns the value of Within.
+func (s *TargetStatementShape) GetWithin() []string {
+	return s.Within
+}
+
+// GetScopeType returns the value of ScopeType.
+func (s *TargetStatementShape) GetScopeType() string {
+	return s.ScopeType
+}
+
+// GetScopeWithin returns the value of ScopeWithin.
+func (s *TargetStatementShape) GetScopeWithin() []string {
+	return s.ScopeWithin
+}
+
+// GetOperations returns the value of Operations.
+func (s *TargetStatementShape) GetOperations() []string {
+	return s.Operations
+}
+
+// SetAction sets the value of Action.
+func (s *TargetStatementShape) SetAction(val string) {
+	s.Action = val
+}
+
+// SetResourceType sets the value of ResourceType.
+func (s *TargetStatementShape) SetResourceType(val string) {
+	s.ResourceType = val
+}
+
+// SetWithin sets the value of Within.
+func (s *TargetStatementShape) SetWithin(val []string) {
+	s.Within = val
+}
+
+// SetScopeType sets the value of ScopeType.
+func (s *TargetStatementShape) SetScopeType(val string) {
+	s.ScopeType = val
+}
+
+// SetScopeWithin sets the value of ScopeWithin.
+func (s *TargetStatementShape) SetScopeWithin(val []string) {
+	s.ScopeWithin = val
+}
+
+// SetOperations sets the value of Operations.
+func (s *TargetStatementShape) SetOperations(val []string) {
+	s.Operations = val
+}
+
+// A word a host offers for a statement, and what it means.
+// Ref: #/components/schemas/TargetTerm
+type TargetTerm struct {
+	Word string `json:"word"`
+	// The statement slot the word fills -- an action, or a type of resource, parent or scope.
+	Kind       TargetTermKind `json:"kind"`
+	Definition string         `json:"definition"`
+}
+
+// GetWord returns the value of Word.
+func (s *TargetTerm) GetWord() string {
+	return s.Word
+}
+
+// GetKind returns the value of Kind.
+func (s *TargetTerm) GetKind() TargetTermKind {
+	return s.Kind
+}
+
+// GetDefinition returns the value of Definition.
+func (s *TargetTerm) GetDefinition() string {
+	return s.Definition
+}
+
+// SetWord sets the value of Word.
+func (s *TargetTerm) SetWord(val string) {
+	s.Word = val
+}
+
+// SetKind sets the value of Kind.
+func (s *TargetTerm) SetKind(val TargetTermKind) {
+	s.Kind = val
+}
+
+// SetDefinition sets the value of Definition.
+func (s *TargetTerm) SetDefinition(val string) {
+	s.Definition = val
+}
+
+// The statement slot the word fills -- an action, or a type of resource, parent or scope.
+type TargetTermKind string
+
+const (
+	TargetTermKindAction TargetTermKind = "action"
+	TargetTermKindType   TargetTermKind = "type"
+)
+
+// AllValues returns all TargetTermKind values.
+func (TargetTermKind) AllValues() []TargetTermKind {
+	return []TargetTermKind{
+		TargetTermKindAction,
+		TargetTermKindType,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s TargetTermKind) MarshalText() ([]byte, error) {
+	switch s {
+	case TargetTermKindAction:
+		return []byte(s), nil
+	case TargetTermKindType:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *TargetTermKind) UnmarshalText(data []byte) error {
+	switch TargetTermKind(data) {
+	case TargetTermKindAction:
+		*s = TargetTermKindAction
+		return nil
+	case TargetTermKindType:
+		*s = TargetTermKindType
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // The certificate a host trust verifies the host against. ca pins a CA the chain must verify to,

@@ -42,21 +42,44 @@ func PolicyFromAPI(value serverapi.OptAccessPolicy) (*policy.Policy, error) {
 	if !ok {
 		return nil, nil
 	}
-	// The generated type encodes itself: encoding/json cannot write an
-	// optional field it left unset.
-	data, err := sent.MarshalJSON()
+	p, err := decodeAPI[policy.Policy]("policy", &sent)
 	if err != nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
-	}
-	var p policy.Policy
-	if err := json.Unmarshal(data, &p); err != nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
+		return nil, err
 	}
 	p.Resolved = nil
 	if err := p.Validate(); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+strings.ReplaceAll(err.Error(), "\n", "; "))
 	}
 	return &p, nil
+}
+
+// PolicyStatementFromAPI is one statement a client sent, validated as a
+// policy's statements are but for its words' definitions, which are in no
+// policy yet. One that does not validate is a 400.
+func PolicyStatementFromAPI(sent apimodel.AccessPolicyStatement) (policy.Statement, error) {
+	s, err := decodeAPI[policy.Statement]("statement", &sent)
+	if err != nil {
+		return s, err
+	}
+	if err := s.Validate(); err != nil {
+		return s, apperrors.NewStatusError(http.StatusBadRequest, "statement: "+strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+	return s, nil
+}
+
+// decodeAPI reads a generated type into the root package's own, which shares
+// its JSON. The generated type encodes itself: encoding/json cannot write an
+// optional field it left unset. Either failing is a 400 naming what.
+func decodeAPI[T any](what string, sent interface{ MarshalJSON() ([]byte, error) }) (T, error) {
+	var out T
+	data, err := sent.MarshalJSON()
+	if err != nil {
+		return out, apperrors.NewStatusError(http.StatusBadRequest, what+": "+err.Error())
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, apperrors.NewStatusError(http.StatusBadRequest, what+": "+err.Error())
+	}
+	return out, nil
 }
 
 // APIPolicy is p as the API answers with it, or unset for none.

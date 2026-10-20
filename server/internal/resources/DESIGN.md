@@ -19,6 +19,7 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | [secrets](secrets/DESIGN.md) | Credentials, their approval lifecycle, approval rules, and sandbox delivery | `ruleRequest` |
 | `skillssources` | A project's skills repositories, which the creating client copies into every create (ADR 26-10-14-894) | none |
 | `sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes | none |
+| [targets](targets/DESIGN.md) | The target database as a project sees it: built-in entries, a project's own in place of one, and their documents fetched by digest (ADR 26-10-20-782 §6) | none |
 | `gateways` | A project's gateways (ADR 26-10-16-470), and the server environment values their headers take, which only a pool asks for | none |
 
 `peers`, `skillssources` and `sshkeys` are plain store-backed CRUD services with no design doc of

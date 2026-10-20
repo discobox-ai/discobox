@@ -11,11 +11,13 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/targetdb"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
@@ -33,6 +35,7 @@ type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type CreateProjectSkillsSourceBody = apimodel.CreateProjectSkillsSourceBody
+type PutProjectTargetBody = apimodel.PutProjectTargetBody
 type CreatePeerBody = apimodel.CreatePeerBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
@@ -515,6 +518,22 @@ type SSHKeyService interface {
 	DeleteSSHKey(ctx context.Context, projectID, keyID string) error
 }
 
+// TargetService is the target database as a project sees it (ADR
+// 26-10-20-782 §6): the built-in entries, and the project's own, each in place
+// of a built-in for the same host. Only a person reads or writes it.
+type TargetService interface {
+	ListProjectTargets(ctx context.Context, projectID string) ([]model.TargetEntry, error)
+	GetProjectTarget(ctx context.Context, projectID, host string) (*model.TargetEntry, error)
+	PutProjectTarget(ctx context.Context, projectID, host string, input PutProjectTargetBody) (*model.TargetEntry, error)
+	DeleteProjectTarget(ctx context.Context, projectID, host string) error
+	// GetProjectTargetDocument returns the text of one of an entry's
+	// documents, checked against its digest.
+	GetProjectTargetDocument(ctx context.Context, projectID, host, name string) (io.ReadCloser, error)
+	// LookupProjectTarget finds the known shapes of statement in the entry
+	// that describes host, and returns that entry with them.
+	LookupProjectTarget(ctx context.Context, projectID, host string, statement policy.Statement) (*model.TargetEntry, targetdb.Lookup, error)
+}
+
 // SkillsSourceService manages a project's skills sources: the skills
 // repositories every discobox of the project is created with, which the
 // creating client copies into its request (ADR 26-10-14-894).
@@ -637,6 +656,7 @@ type Services struct {
 	HostTrusts     HostTrustService
 	SSHKeys        SSHKeyService
 	SkillsSources  SkillsSourceService
+	Targets        TargetService
 	Gateways       GatewayService
 	Peers          PeerService
 	// Judges answers a pool asking for a verdict from the project's judge
