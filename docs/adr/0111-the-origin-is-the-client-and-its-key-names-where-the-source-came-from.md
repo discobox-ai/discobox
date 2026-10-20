@@ -5,6 +5,8 @@
   §3's header filtering by the origin key, for a source on a GitHub
   repository, superseded by [ADR 26-10-14-585](26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
   §3's `ls` and picker scope and `--all` superseded by [ADR 26-10-10-954](26-10-10-954-ls-lists-every-discobox-and-narrows-by-on-source-and-tag.md);
+  §2's per-folder prompt draft and default source narrowed by
+  [ADR 26-10-20-596](26-10-20-596-the-console-keeps-one-memory-per-machine-and-the-last-source-leads.md);
   the rest stands)
 - **Date**: 2026-09-11
 - **Supersedes**: [0001](0001-sandbox-origin-and-remote-source-push.md) §1's
