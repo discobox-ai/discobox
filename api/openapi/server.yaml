@@ -5984,12 +5984,12 @@ components:
                         - deny
                     type: string
                 actions:
-                    description: Action words. read, create, update, delete and manage (every action on the type) are defaults; any other word has a definition.
+                    description: Action words. read, create, update, delete and manage (every action on the type) are defaults; any other word has a definition. A word is printable ASCII, its parts one space apart, and holds no quote, comma, $, or sentence keyword (on, within, in, of, when, unless, created), so every statement has a sentence form.
                     items:
                         type: string
                     type: array
                 resourceType:
-                    description: The resource type, or anything for every type in the scope.
+                    description: The resource type, or anything for every type in the scope. A word as an action is.
                     type: string
                 name:
                     description: A literal, a glob, or a variable; null is any name.
@@ -6024,6 +6024,7 @@ components:
             description: A resource a statement's resource or scope sits in.
             properties:
                 type:
+                    description: The parent's type, a word as a statement's action is.
                     type: string
                 name:
                     description: A literal, a glob, or a variable; null is any name.
@@ -6040,6 +6041,7 @@ components:
             description: Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or anywhere, which only a deny may use.
             properties:
                 type:
+                    description: The scope's type, a word as a statement's action is, or anywhere.
                     type: string
                 name:
                     description: A literal, a glob, or a variable. Empty only for anywhere.

@@ -90,6 +90,7 @@ func (s *AccessPolicyResolved) init() AccessPolicyResolved {
 // A resource a statement's resource or scope sits in.
 // Ref: #/components/schemas/AccessPolicyResource
 type AccessPolicyResource struct {
+	// The parent's type, a word as a statement's action is.
 	Type string `json:"type"`
 	// A literal, a glob, or a variable; null is any name.
 	Name OptNilString `json:"name"`
@@ -132,6 +133,7 @@ func (s *AccessPolicyResource) SetCreatedBy(val OptString) {
 // anywhere, which only a deny may use.
 // Ref: #/components/schemas/AccessPolicyScope
 type AccessPolicyScope struct {
+	// The scope's type, a word as a statement's action is, or anywhere.
 	Type string `json:"type"`
 	// A literal, a glob, or a variable. Empty only for anywhere.
 	Name OptString `json:"name"`
@@ -175,9 +177,11 @@ func (s *AccessPolicyScope) SetWithin(val []AccessPolicyResource) {
 type AccessPolicyStatement struct {
 	Effect AccessPolicyStatementEffect `json:"effect"`
 	// Action words. read, create, update, delete and manage (every action on the type) are defaults; any
-	// other word has a definition.
+	// other word has a definition. A word is printable ASCII, its parts one space apart, and holds no
+	// quote, comma, $, or sentence keyword (on, within, in, of, when, unless, created), so every
+	// statement has a sentence form.
 	Actions []string `json:"actions"`
-	// The resource type, or anything for every type in the scope.
+	// The resource type, or anything for every type in the scope. A word as an action is.
 	ResourceType string `json:"resourceType"`
 	// A literal, a glob, or a variable; null is any name.
 	Name OptNilString `json:"name"`
