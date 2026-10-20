@@ -692,6 +692,8 @@ func (s SandboxAgentResourceUsageSource) Validate() error {
 	switch s {
 	case "cgroup":
 		return nil
+	case "machine":
+		return nil
 	case "proc":
 		return nil
 	default:

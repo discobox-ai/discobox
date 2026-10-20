@@ -36077,6 +36077,8 @@ func (s *SandboxAgentResourceUsageSource) Decode(d *jx.Decoder) error {
 	switch SandboxAgentResourceUsageSource(v) {
 	case SandboxAgentResourceUsageSourceCgroup:
 		*s = SandboxAgentResourceUsageSourceCgroup
+	case SandboxAgentResourceUsageSourceMachine:
+		*s = SandboxAgentResourceUsageSourceMachine
 	case SandboxAgentResourceUsageSourceProc:
 		*s = SandboxAgentResourceUsageSourceProc
 	default:

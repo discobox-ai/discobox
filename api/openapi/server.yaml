@@ -1159,7 +1159,7 @@ components:
                     format: date-time
                     type: string
                 source:
-                    description: What the sandbox said its totals came from. cgroup is authoritative; proc means it could not read its own cgroup and a per-process rollup stood in, which sees no page cache.
+                    description: What the sandbox said its totals came from. cgroup is authoritative; machine means the sandbox is a whole machine and the totals are its kernel's own; proc means it could read neither and a per-process rollup stood in, which sees no page cache.
                     type: string
                 cpu:
                     $ref: '#/components/schemas/SandboxCPUConsumption'
@@ -1326,9 +1326,10 @@ components:
                     format: date-time
                     type: string
                 source:
-                    description: Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+                    description: Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine and the totals are its kernel's own, page cache included, against the machine's size and CPUs; proc means neither could be read and a per-process rollup stood in, which sees no page cache and no kernel memory.
                     enum:
                         - cgroup
+                        - machine
                         - proc
                     type: string
                 cpu:

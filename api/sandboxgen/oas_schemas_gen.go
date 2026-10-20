@@ -4237,8 +4237,10 @@ type SandboxAgentResourceUsage struct {
 	ProcessCount int64 `json:"processCount"`
 	// Candidate processes - the union of the busiest by cumulative CPU and the largest by resident size.
 	Processes []SandboxAgentProcessUsage `json:"processes"`
-	// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
-	// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+	// Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine
+	// and the totals are its kernel's own, page cache included, against the machine's size and CPUs;
+	// proc means neither could be read and a per-process rollup stood in, which sees no page cache and
+	// no kernel memory.
 	Source SandboxAgentResourceUsageSource `json:"source"`
 }
 
@@ -4302,19 +4304,23 @@ func (s *SandboxAgentResourceUsage) SetSource(val SandboxAgentResourceUsageSourc
 	s.Source = val
 }
 
-// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
-// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+// Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine
+// and the totals are its kernel's own, page cache included, against the machine's size and CPUs;
+// proc means neither could be read and a per-process rollup stood in, which sees no page cache and
+// no kernel memory.
 type SandboxAgentResourceUsageSource string
 
 const (
-	SandboxAgentResourceUsageSourceCgroup SandboxAgentResourceUsageSource = "cgroup"
-	SandboxAgentResourceUsageSourceProc   SandboxAgentResourceUsageSource = "proc"
+	SandboxAgentResourceUsageSourceCgroup  SandboxAgentResourceUsageSource = "cgroup"
+	SandboxAgentResourceUsageSourceMachine SandboxAgentResourceUsageSource = "machine"
+	SandboxAgentResourceUsageSourceProc    SandboxAgentResourceUsageSource = "proc"
 )
 
 // AllValues returns all SandboxAgentResourceUsageSource values.
 func (SandboxAgentResourceUsageSource) AllValues() []SandboxAgentResourceUsageSource {
 	return []SandboxAgentResourceUsageSource{
 		SandboxAgentResourceUsageSourceCgroup,
+		SandboxAgentResourceUsageSourceMachine,
 		SandboxAgentResourceUsageSourceProc,
 	}
 }
@@ -4323,6 +4329,8 @@ func (SandboxAgentResourceUsageSource) AllValues() []SandboxAgentResourceUsageSo
 func (s SandboxAgentResourceUsageSource) MarshalText() ([]byte, error) {
 	switch s {
 	case SandboxAgentResourceUsageSourceCgroup:
+		return []byte(s), nil
+	case SandboxAgentResourceUsageSourceMachine:
 		return []byte(s), nil
 	case SandboxAgentResourceUsageSourceProc:
 		return []byte(s), nil
@@ -4336,6 +4344,9 @@ func (s *SandboxAgentResourceUsageSource) UnmarshalText(data []byte) error {
 	switch SandboxAgentResourceUsageSource(data) {
 	case SandboxAgentResourceUsageSourceCgroup:
 		*s = SandboxAgentResourceUsageSourceCgroup
+		return nil
+	case SandboxAgentResourceUsageSourceMachine:
+		*s = SandboxAgentResourceUsageSourceMachine
 		return nil
 	case SandboxAgentResourceUsageSourceProc:
 		*s = SandboxAgentResourceUsageSourceProc

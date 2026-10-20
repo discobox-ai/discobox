@@ -141,7 +141,8 @@ type SandboxResourceUsage struct {
 	SandboxID  string     `json:"sandboxId"`
 	ObservedAt *time.Time `json:"observedAt,omitempty"`
 	// Source is what the sandbox said its own totals came from: "cgroup" is
-	// authoritative, "proc" means it could not read its cgroup and a
+	// authoritative, "machine" means the sandbox is a whole machine and the
+	// totals are its kernel's, "proc" means it could read neither and a
 	// per-process rollup stood in, which sees no page cache.
 	Source       string                 `json:"source,omitempty"`
 	CPU          *SandboxCPUUsage       `json:"cpu,omitempty"`

@@ -22241,8 +22241,10 @@ type SandboxAgentResourceUsage struct {
 	// When this sample was taken. Rates are computed against this, never against the reporting tick's
 	// wall clock, so poll skew inside a tick cannot distort one.
 	ObservedAt time.Time `json:"observedAt"`
-	// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
-	// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+	// Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine
+	// and the totals are its kernel's own, page cache included, against the machine's size and CPUs;
+	// proc means neither could be read and a per-process rollup stood in, which sees no page cache and
+	// no kernel memory.
 	Source SandboxAgentResourceUsageSource `json:"source"`
 	CPU    SandboxAgentCPUUsage            `json:"cpu"`
 	Memory SandboxAgentMemoryUsage         `json:"memory"`
@@ -22313,19 +22315,23 @@ func (s *SandboxAgentResourceUsage) SetProcesses(val []SandboxAgentProcessUsage)
 	s.Processes = val
 }
 
-// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
-// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+// Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine
+// and the totals are its kernel's own, page cache included, against the machine's size and CPUs;
+// proc means neither could be read and a per-process rollup stood in, which sees no page cache and
+// no kernel memory.
 type SandboxAgentResourceUsageSource string
 
 const (
-	SandboxAgentResourceUsageSourceCgroup SandboxAgentResourceUsageSource = "cgroup"
-	SandboxAgentResourceUsageSourceProc   SandboxAgentResourceUsageSource = "proc"
+	SandboxAgentResourceUsageSourceCgroup  SandboxAgentResourceUsageSource = "cgroup"
+	SandboxAgentResourceUsageSourceMachine SandboxAgentResourceUsageSource = "machine"
+	SandboxAgentResourceUsageSourceProc    SandboxAgentResourceUsageSource = "proc"
 )
 
 // AllValues returns all SandboxAgentResourceUsageSource values.
 func (SandboxAgentResourceUsageSource) AllValues() []SandboxAgentResourceUsageSource {
 	return []SandboxAgentResourceUsageSource{
 		SandboxAgentResourceUsageSourceCgroup,
+		SandboxAgentResourceUsageSourceMachine,
 		SandboxAgentResourceUsageSourceProc,
 	}
 }
@@ -22334,6 +22340,8 @@ func (SandboxAgentResourceUsageSource) AllValues() []SandboxAgentResourceUsageSo
 func (s SandboxAgentResourceUsageSource) MarshalText() ([]byte, error) {
 	switch s {
 	case SandboxAgentResourceUsageSourceCgroup:
+		return []byte(s), nil
+	case SandboxAgentResourceUsageSourceMachine:
 		return []byte(s), nil
 	case SandboxAgentResourceUsageSourceProc:
 		return []byte(s), nil
@@ -22347,6 +22355,9 @@ func (s *SandboxAgentResourceUsageSource) UnmarshalText(data []byte) error {
 	switch SandboxAgentResourceUsageSource(data) {
 	case SandboxAgentResourceUsageSourceCgroup:
 		*s = SandboxAgentResourceUsageSourceCgroup
+		return nil
+	case SandboxAgentResourceUsageSourceMachine:
+		*s = SandboxAgentResourceUsageSourceMachine
 		return nil
 	case SandboxAgentResourceUsageSourceProc:
 		*s = SandboxAgentResourceUsageSourceProc
@@ -25895,8 +25906,9 @@ type SandboxResourceConsumption struct {
 	// the reporting tick, so poll skew cannot distort one. Zero when the sandbox reported no counters at
 	// all, in which case only storage below is meaningful.
 	ObservedAt OptDateTime `json:"observedAt"`
-	// What the sandbox said its totals came from. cgroup is authoritative; proc means it could not read
-	// its own cgroup and a per-process rollup stood in, which sees no page cache.
+	// What the sandbox said its totals came from. cgroup is authoritative; machine means the sandbox is
+	// a whole machine and the totals are its kernel's own; proc means it could read neither and a
+	// per-process rollup stood in, which sees no page cache.
 	Source       OptString                   `json:"source"`
 	CPU          OptSandboxCPUConsumption    `json:"cpu"`
 	Memory       OptSandboxMemoryConsumption `json:"memory"`
