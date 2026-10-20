@@ -24,7 +24,7 @@ import (
 // scriptPath is the agent-store script as it sits in the image context,
 // relative to this directory. The Dockerfile installs it as
 // /usr/local/bin/discobox-agent-store.
-const scriptPath = "../image/agent-store"
+const scriptPath = "../features/node/agent-store"
 
 // box is one sandbox's view of the world: its own HOME (where the pin lives, on
 // what would be its data volume) and a store directory (what would be the pool

@@ -3,7 +3,7 @@
 #
 # A shell script is a file named *.sh, *.bash, or *.bats, one whose first line
 # is a sh or bash shebang (the image's extensionless helpers, such as
-# sandbox-agent/image/harness-run), or .envrc. Files sourced rather than run
+# sandbox-agent/features/core/harness-run), or .envrc. Files sourced rather than run
 # have no shebang and say which shell they are with a `# shellcheck shell=`
 # directive instead.
 #

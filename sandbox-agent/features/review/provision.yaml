@@ -1,0 +1,16 @@
+# discobox-review, the review window the console opens as the `diff` tool and
+# the skill that drives it. The binary is built from discobox-ai/review at the
+# version sandbox-agent/Dockerfile pins, and the build puts it beside this file.
+apiVersion: discobox.ai/provision/v1
+commands: [discobox-review]
+steps:
+  - name: binary
+    run: link-review.sh
+  # What has changed, in discobox-review, declared as a tool (ADR 0125).
+  - name: tool-diff
+    file: {path: /usr/local/share/discobox/tools/10-diff.yaml, source: tools/10-diff.yaml}
+  # The skill documents another repository's interface; see
+  # sandbox-agent/DESIGN.md for why it is here, and re-read it whenever the
+  # Dockerfile's REVIEW_VERSION moves.
+  - name: skill
+    file: {path: /usr/local/share/discobox/skills/discobox-review/SKILL.md, source: skills/discobox-review/SKILL.md}

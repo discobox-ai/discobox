@@ -1,0 +1,10 @@
+# mise, from its apt repository, which extrepo knows.
+apiVersion: discobox.ai/provision/v1
+commands: [mise]
+steps:
+  - name: extrepo
+    packages:
+      debian: [extrepo]
+  - name: install
+    apt: true
+    run: install-mise.sh

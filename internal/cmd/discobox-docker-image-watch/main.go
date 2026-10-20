@@ -438,8 +438,10 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	for _, harnessImage := range harnessImages {
 		seen := copyFiles(commonSandboxSeen)
 		harnessDir := filepath.Join("harness", harnessImage.dir)
-		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
-			addFile(repoRoot, filepath.Join(harnessDir, name), seen)
+		// The whole directory: it is the harness's feature, whose every file
+		// the image may install (provision.yaml names them).
+		if err := addTree(filepath.Join(repoRoot, harnessDir), seen); err != nil {
+			return nil, err
 		}
 		// An image that declares nothing has no manifest file and no build
 		// argument for one: its whole manifest is the base layer it inherits
@@ -573,8 +575,14 @@ func addTree(root string, seen map[string]struct{}) error {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "build", "node_modules", "testdata":
+			case ".git", "node_modules", "testdata":
 				return filepath.SkipDir
+			case "build":
+				// A build output at the tree's top, never a directory of
+				// that name within it, such as the platform's build feature.
+				if filepath.Dir(path) == root {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}

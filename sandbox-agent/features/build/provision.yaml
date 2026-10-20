@@ -1,0 +1,6 @@
+# A C toolchain and make, for whatever builds from source.
+apiVersion: discobox.ai/provision/v1
+steps:
+  - name: packages
+    packages:
+      debian: [build-essential, patch]

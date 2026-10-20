@@ -1,0 +1,23 @@
+# The command-line tools a working box is expected to have, and gh.
+apiVersion: discobox.ai/provision/v1
+commands: [gh]
+steps:
+  - name: packages
+    packages:
+      debian:
+        - expect
+        - file
+        - jq
+        - less
+        - openssh-client
+        - poppler-utils
+        - psmisc
+        - ripgrep
+        - shellcheck
+        - socat
+        - sqlite3
+        - unzip
+        - xz-utils
+  - name: gh
+    apt: true
+    run: install-gh.sh

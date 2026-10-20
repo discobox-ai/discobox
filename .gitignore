@@ -1,4 +1,6 @@
 build/
+# The platform's build feature, which is not a build output.
+!/sandbox-agent/features/build/
 .tmp/
 .direnv/
 .env

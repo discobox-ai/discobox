@@ -11,7 +11,7 @@ import (
 // seedDesktopLaunchers puts the image's desktop launchers on a new desktop, so
 // a person opening the viewer finds a terminal and a browser rather than an
 // empty backdrop. The Home icon beside them is not a file at all — xfdesktop
-// draws it from `show-home` in image/desktop/xfconf/xfce4-desktop.xml.
+// draws it from `show-home` in features/desktop/xfconf/xfce4-desktop.xml.
 //
 // Keyed on ~/Desktop being absent, not on each file being absent. The directory
 // belongs to whoever is using the sandbox: somebody who deletes the browser

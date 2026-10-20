@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"maps"
 	"net/url"
 	"os"
 	"os/exec"
@@ -237,10 +238,21 @@ func TestRemoteURLPathNeverRunsIntoTheHost(t *testing.T) {
 	}
 }
 
+// shippedTools is the declarations the platform's features install, each
+// feature's own directory of them: diff with review, fresh with the editors.
+func shippedTools(t *testing.T) map[string]Definition {
+	t.Helper()
+	defs := map[string]Definition{}
+	for _, feature := range []string{"review", "shells-editors"} {
+		maps.Copy(defs, discover(t, filepath.Join("..", "sandbox-agent", "features", feature, "tools"), LayerImage))
+	}
+	return defs
+}
+
 // The declarations the image actually ships, parsed from the tree it is built
 // from: a typo in one is a tool that never appears in any discobox.
 func TestTheShippedImageToolsAreValid(t *testing.T) {
-	defs := discover(t, filepath.Join("..", "sandbox-agent", "image", "tools"), LayerImage)
+	defs := shippedTools(t)
 	for _, id := range []string{DiffID, "fresh"} {
 		def, ok := defs[id]
 		if !ok {
@@ -265,7 +277,7 @@ func TestTheShippedImageToolsAreValid(t *testing.T) {
 // dictates — says it in a vim modeline within the first five lines, before the
 // object where a comment is legal.
 func TestTheShippedFreshConfigDeclaresItsFormat(t *testing.T) {
-	fresh := discover(t, filepath.Join("..", "sandbox-agent", "image", "tools"), LayerImage)["fresh"]
+	fresh := shippedTools(t)["fresh"]
 	var config File
 	for _, file := range fresh.Files {
 		if file.Name == "config.jsonc" {
@@ -297,7 +309,7 @@ func TestTheShippedFreshConfigDeclaresItsFormat(t *testing.T) {
 // The live-diff seed is plugin state parsed by a strict JSON reader: a comment
 // would take the whole file, and the enable with it, silently.
 func TestTheShippedLiveDiffSeedIsStrictJSON(t *testing.T) {
-	fresh := discover(t, filepath.Join("..", "sandbox-agent", "image", "tools"), LayerImage)["fresh"]
+	fresh := shippedTools(t)["fresh"]
 	for _, file := range fresh.Files {
 		if file.Name != "live_diff.json" {
 			continue
@@ -344,7 +356,7 @@ func TestTheShippedFreshScriptTrustsItsWorkingDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the script runs in the discobox, under sh")
 	}
-	script, err := filepath.Abs(filepath.Join("..", "sandbox-agent", "image", "tools", "20-fresh.sh"))
+	script, err := filepath.Abs(filepath.Join("..", "sandbox-agent", "features", "shells-editors", "tools", "20-fresh.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}

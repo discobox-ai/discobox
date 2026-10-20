@@ -320,7 +320,7 @@ the viewer, in every sandbox, whether or not anybody wanted a desktop.
 So the port is neither discovered nor probed. The image declares it, in the same
 format a repository's `.discobox/services` uses and read by the same code
 ([ADR 26-09-05-409](../../docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)) —
-`sandbox-agent/image/services/10-desktop.yaml`, installed at
+`sandbox-agent/features/desktop/services/10-desktop.yaml`, installed at
 `/usr/local/share/discobox/services`:
 
 ```yaml
@@ -369,7 +369,7 @@ this one only offers itself when there is something to offer.
 Three icons: **Home**, drawn by xfdesktop itself from `show-home` in
 `xfce4-desktop.xml`, and **Terminal** and **Web Browser**, which are launchers
 seeded into `~/Desktop` by `boot.seedDesktopLaunchers` from
-`image/desktop/launchers`.
+`features/desktop/launchers`.
 
 Seeded on the directory being absent, not per file: `~/Desktop` belongs to
 whoever is using the sandbox, and somebody who deletes the browser icon has said
@@ -401,7 +401,7 @@ launcher sources:
   drops the desktop's `GDK_SCALE`, which Chromium would otherwise multiply in.
 - **`--no-sandbox`, but only when probed.** `chromium-sandbox` is a Recommends,
   which `--no-install-recommends` leaves out, and without it Chromium refuses
-  to start at all, so the Dockerfile names it. The flag is added only where
+  to start at all, so the browser feature's packages name it. The flag is added only where
   `unshare --user --pid` fails — a container's seccomp profile commonly refuses the namespace clone
   even to the setuid helper. Nothing is given up where the probe succeeds.
 
@@ -585,7 +585,7 @@ absolute path. Nothing notifies the agent; a person does.
 ## The desktop inside the frame
 
 What this page shows is Xfce, wearing the same palette the page does. The image
-side of that lives in [`image/desktop`](../image/desktop) — the Xfce defaults,
+side of that lives in the [`desktop` feature](../features/desktop) — the Xfce defaults,
 the derived GTK and xfwm4 theme, the backdrop — and is described in
 [`sandbox-agent/DESIGN.md`](../DESIGN.md).
 

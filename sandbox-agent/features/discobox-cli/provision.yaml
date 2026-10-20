@@ -1,0 +1,8 @@
+# The discobox CLI, which a discobox calls the discobox API with through its
+# pool, DISCOBOX_SERVER set by the pool (ADR 0140). The build puts the binary
+# beside this file.
+apiVersion: discobox.ai/provision/v1
+commands: [discobox]
+steps:
+  - name: binary
+    run: link-cli.sh

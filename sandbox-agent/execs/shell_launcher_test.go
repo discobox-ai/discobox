@@ -11,7 +11,7 @@ import (
 
 // launcherScript is the image's discobox-shell as it sits in the image context,
 // relative to this directory. The Dockerfile installs it as shellLauncher.
-const launcherScript = "../image/discobox-shell"
+const launcherScript = "../features/core/discobox-shell"
 
 // launcherBox is a sandbox as far as the launcher can tell: a login shell to
 // fall back to, and a profile that — like direnv loading a repository's flake —

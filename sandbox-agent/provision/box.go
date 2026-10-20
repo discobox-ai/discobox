@@ -101,3 +101,22 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features m
 	_, err = runner.Provision(ctx, loaded, opts)
 	return err
 }
+
+// Trees provisions every feature of the bundle trees onto this box,
+// recording each step under records, with every step blocking and none
+// turned off: what an image build or a snapshot provisions (ADR 26-10-16-423
+// §8). self is the sandbox agent's executable when the agent is what runs
+// it (Runner.Self), and empty otherwise. A box's boot provisions with Boot
+// instead.
+func Trees(ctx context.Context, logger *slog.Logger, records, self string, trees ...string) error {
+	features, err := provisionspec.Load(trees...)
+	if err != nil {
+		return err
+	}
+	runner := &Runner{Root: "/", Records: Records{Dir: records}, Self: self, Logger: logger}
+	if runner.Platform, err = DetectPlatform("/"); err != nil {
+		return err
+	}
+	_, err = runner.Provision(ctx, features, Options{})
+	return err
+}

@@ -9,17 +9,30 @@ import (
 )
 
 var (
-	agentLink = regexp.MustCompile(`^\s*(?:&& )?ln -sf /usr/local/bin/discobox-sandbox-agent "?([^"\s]+)"?`)
+	agentLink = regexp.MustCompile(`^\s*ln -sf /usr/local/bin/discobox-sandbox-agent "?([^"\s]+)"?$`)
 	anyLink   = regexp.MustCompile(`\bln\b.*discobox-sandbox-agent`)
-	linkLoop  = regexp.MustCompile(`for c in ([^;]+); do`)
+	// agentItself is the link that installs the agent from its tree, which
+	// is no personality.
+	agentItself = regexp.MustCompile(`\bln\b.*\s/usr/local/bin/discobox-sandbox-agent$`)
+	linkLoop    = regexp.MustCompile(`for c in ([^;]+); do`)
 )
 
-// linkedPaths is every link to the agent that an image recipe lays,
+// linkedPaths is every link to the agent that the features' scripts lay,
 // expanding the `for c in ...` loop that lays several. A line that links the
 // agent some other way fails the test rather than going unseen.
-func linkedPaths(t *testing.T, recipe string) []string {
+func linkedPaths(t *testing.T, scripts ...string) []string {
 	t.Helper()
-	data, err := os.ReadFile(recipe)
+	var paths []string
+	for _, script := range scripts {
+		paths = append(paths, scriptLinks(t, script)...)
+	}
+	slices.Sort(paths)
+	return paths
+}
+
+func scriptLinks(t *testing.T, script string) []string {
+	t.Helper()
+	data, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,12 +41,12 @@ func linkedPaths(t *testing.T, recipe string) []string {
 		if m := linkLoop.FindStringSubmatch(line); m != nil {
 			loop = strings.Fields(m[1])
 		}
-		if !anyLink.MatchString(line) {
+		if !anyLink.MatchString(line) || agentItself.MatchString(line) {
 			continue
 		}
 		m := agentLink.FindStringSubmatch(line)
 		if m == nil {
-			t.Errorf("%s: links the agent in a form this test does not read: %q", recipe, strings.TrimSpace(line))
+			t.Errorf("%s: links the agent in a form this test does not read: %q", script, strings.TrimSpace(line))
 			continue
 		}
 		if strings.Contains(m[1], "$c") {
@@ -44,7 +57,6 @@ func linkedPaths(t *testing.T, recipe string) []string {
 		}
 		paths = append(paths, m[1])
 	}
-	slices.Sort(paths)
 	return paths
 }
 
@@ -63,7 +75,10 @@ func TestImageLinksEveryPersonalityAndNothingElse(t *testing.T) {
 		want = append(want, dir+name)
 	}
 	slices.Sort(want)
-	if got := linkedPaths(t, "../../Dockerfile"); !slices.Equal(got, want) {
-		t.Errorf("Dockerfile links the agent as %v, want %v", got, want)
+	// Core lays its own personalities, and the docker feature the two that
+	// are Docker's (ADR 26-10-16-423 §7).
+	scripts := []string{"../../features/core/link-agent.sh", "../../features/docker/link-personalities.sh"}
+	if got := linkedPaths(t, scripts...); !slices.Equal(got, want) {
+		t.Errorf("the features link the agent as %v, want %v", got, want)
 	}
 }

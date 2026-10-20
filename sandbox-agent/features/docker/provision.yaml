@@ -1,0 +1,38 @@
+# Nested Docker, wired the Discobox way onto the box's own Docker: the daemon
+# socket-activated, the runc personality that injects the egress CA and proxy
+# into every container it starts (ADR 0020), the `docker` personality that
+# gives `docker build` the pool's BuildKit cache (ADR 0044 §8), and the bridges
+# that carry the daemon's and BuildKit's traffic to the pool's proxy.
+#
+# It installs no Docker: the image the box starts from has one.
+apiVersion: discobox.ai/provision/v1
+steps:
+  - name: socket-activation
+    run: socket-activation.sh
+  - name: personalities
+    run: link-personalities.sh
+
+  # Merged over the box's own, so what a provider set that ours does not
+  # stays (ADR 26-10-16-423 §9).
+  - name: daemon-json
+    file: {path: /etc/docker/daemon.json, source: daemon.json, merge: json}
+  - name: containerd-runc-ca
+    systemd:
+      dropIn: {unit: containerd.service, name: runc-ca.conf, source: systemd/containerd.service.d/runc-ca.conf}
+  - name: docker-runc-ca
+    systemd:
+      dropIn: {unit: docker.service, name: runc-ca.conf, source: systemd/docker.service.d/runc-ca.conf}
+  - name: docker-proxy
+    systemd:
+      dropIn: {unit: docker.service, name: proxy.conf, source: systemd/docker.service.d/proxy.conf}
+  - name: docker-proxy-bridge
+    systemd:
+      dropIn: {unit: docker.service, name: proxy-bridge.conf, source: systemd/docker.service.d/proxy-bridge.conf}
+
+  - name: unit-buildkit-bridge
+    file: {path: /etc/systemd/system/discobox-buildkit-bridge.service, source: systemd/discobox-buildkit-bridge.service}
+  - name: unit-proxy-bridge-docker
+    file: {path: /etc/systemd/system/discobox-proxy-bridge-docker.service, source: systemd/discobox-proxy-bridge-docker.service}
+  - name: units
+    systemd:
+      enable: [discobox-buildkit-bridge.service]

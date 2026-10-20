@@ -504,7 +504,7 @@ func TestTheImageMayUseTheReservedNamespace(t *testing.T) {
 // to obey them, because a typo in it is a desktop that never appears — or
 // worse, one probed into starting.
 func TestTheShippedDesktopDeclarationIsValid(t *testing.T) {
-	defs, err := Discover(filepath.Join("..", "image", "services"), t.TempDir())
+	defs, err := Discover(filepath.Join("..", "features", "desktop", "services"), t.TempDir())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}

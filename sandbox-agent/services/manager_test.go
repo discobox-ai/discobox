@@ -674,7 +674,7 @@ func TestEnsureStartedIsQuietAboutDeclarationsThatStartNothing(t *testing.T) {
 // repository's declaration naming a feature is not dropped.
 func TestAnImageDeclarationOfAFeatureTurnedOffIsNotRead(t *testing.T) {
 	manager, _, root := newTestManager(t)
-	desktop, err := os.ReadFile("../image/services/10-desktop.yaml")
+	desktop, err := os.ReadFile("../features/desktop/services/10-desktop.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
