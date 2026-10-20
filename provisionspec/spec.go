@@ -27,6 +27,12 @@ const APIVersion = "discobox.ai/provision/v1"
 // FileName is a feature's step file, in its own directory.
 const FileName = "provision.yaml"
 
+// Core is the platform's feature that is not optional (ADR 26-10-16-423
+// §4): it blocks readiness, along with every feature it requires, and a
+// repository's settings cannot turn it off. A bundle names it
+// features/core.
+const Core = "core"
+
 // FeaturesDir is where a bundle tree holds its features, one directory each
 // (ADR 26-10-16-423 §2).
 const FeaturesDir = "features"
@@ -34,9 +40,52 @@ const FeaturesDir = "features"
 // Spec is one feature's provision.yaml.
 type Spec struct {
 	APIVersion string `yaml:"apiVersion"`
-	// Requires names the features this one is applied after.
+	// Requires names the features this one is applied after. A feature
+	// required by one that is on is on too (ADR 26-10-16-423 §4).
 	Requires []string `yaml:"requires,omitempty"`
+	// Async provisions the feature in the background, after the box is
+	// ready (§5). Every feature is async unless core or the harness
+	// requires it, so this matters to core alone: core marked async takes
+	// what it requires to the background with it. A feature core or the
+	// harness requires blocks whole, whatever it says.
+	Async bool `yaml:"async,omitempty"`
+	// Adopt is what makes a copy the box already has usable, so the feature
+	// adopts it instead of installing its own (§4). Unset, the feature is
+	// always installed.
+	Adopt *Adopt `yaml:"adopt,omitempty"`
+	// Commands are the feature's commands that stand as placeholders on the
+	// system PATH while it provisions in the background: run early, one says
+	// it is waiting, waits, and runs the real command (§5).
+	Commands []string `yaml:"commands,omitempty"`
 	Steps    []Step   `yaml:"steps"`
+}
+
+// Adopt is a feature's usability check. A box's own copy is usable when
+// every command is on the system PATH and reachable by every user (no
+// directory on the way in a user's home or closed to others), the version
+// floor is met, and every writable path can be written. It is the agent's,
+// not a script's, so a link into one user's nvm cannot pass it.
+type Adopt struct {
+	Commands []string `yaml:"commands"`
+	Version  *Version `yaml:"version,omitempty"`
+	Writable []string `yaml:"writable,omitempty"`
+}
+
+// Version is a version floor: Command run with Args prints a version, the
+// first dotted number in its output, which must be at least Minimum.
+type Version struct {
+	Command string `yaml:"command"`
+	// Args are what make Command print its version; unset is --version.
+	Args    []string `yaml:"args,omitempty"`
+	Minimum string   `yaml:"minimum"`
+}
+
+// VersionArgs is the arguments that print the command's version.
+func (v Version) VersionArgs() []string {
+	if len(v.Args) == 0 {
+		return []string{"--version"}
+	}
+	return v.Args
 }
 
 // Step is one typed step. Exactly one kind is set; Name keys its record, so
@@ -49,6 +98,19 @@ type Step struct {
 	// the step put in place is still there. It is run only for a step already
 	// recorded, and a non-zero exit is drift, which applies the step again.
 	Check string `yaml:"check,omitempty"`
+	// Install marks a step that installs the feature's own copy, skipped
+	// when the feature adopts the box's. Every other step is wiring, applied
+	// either way. Only a feature with adopt has one.
+	Install bool `yaml:"install,omitempty"`
+	// Async, in core, runs the step and every step after it in the
+	// background, so the steps still run in the order written. It is
+	// overridden in a feature core or the harness requires, which blocks
+	// whole, and means nothing in one already in the background. A group or
+	// env step is never async: it is the cheap wiring that goes first.
+	Async bool `yaml:"async,omitempty"`
+	// Apt says a run step uses apt or dpkg, so it takes the lock every
+	// packages step takes, and no two of them run at once.
+	Apt bool `yaml:"apt,omitempty"`
 
 	File     *FileStep     `yaml:"file,omitempty"`
 	Systemd  *SystemdStep  `yaml:"systemd,omitempty"`
@@ -146,6 +208,12 @@ type PackagesStep struct {
 	Debian []string `yaml:"debian,omitempty"`
 }
 
+// Wiring reports whether the step is the cheap wiring every feature that is
+// on applies first, before the account exists: a group, or env (§5).
+func (s Step) Wiring() bool {
+	return s.Group != nil || s.Env != nil
+}
+
 // Kind names the step's kind.
 func (s Step) Kind() string {
 	kinds := s.kinds()
@@ -218,6 +286,10 @@ var (
 	unitPattern    = regexp.MustCompile(`^[A-Za-z0-9:_.@-]+\.(service|socket|timer|path|mount|target|slice|scope)$`)
 	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	modePattern    = regexp.MustCompile(`^0?[0-7]{3}$`)
+	// commandPattern is a command's file name.
+	commandPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+	// versionPattern is a dotted version floor.
+	versionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
 	// packagePattern is Debian policy's package name, with an optional
 	// =version pin.
 	packagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+(=[A-Za-z0-9.+~:-]+)?$`)
@@ -227,6 +299,11 @@ var (
 	knownOS   = []string{"linux", "darwin", "windows"}
 	knownArch = []string{"amd64", "arm64"}
 )
+
+// ValidName reports whether name is a feature's name.
+func ValidName(name string) bool {
+	return namePattern.MatchString(name)
+}
 
 // Load reads the features of each tree's features directory. A feature named
 // in two trees is refused: a layer adds features and never replaces another's
@@ -327,6 +404,16 @@ func (s Spec) Validate() error {
 			return fmt.Errorf("requires: %q is not a valid feature name", name)
 		}
 	}
+	for _, command := range s.Commands {
+		if !commandPattern.MatchString(command) {
+			return fmt.Errorf("commands: %q is not a command name", command)
+		}
+	}
+	if s.Adopt != nil {
+		if err := s.Adopt.validate(); err != nil {
+			return fmt.Errorf("adopt: %w", err)
+		}
+	}
 	names := map[string]bool{}
 	for i, step := range s.Steps {
 		if !namePattern.MatchString(step.Name) {
@@ -339,6 +426,34 @@ func (s Spec) Validate() error {
 		if err := step.validate(); err != nil {
 			return fmt.Errorf("step %q: %w", step.Name, err)
 		}
+		if step.Install && s.Adopt == nil {
+			return fmt.Errorf("step %q: install: the feature has no adopt check, so it is always installed", step.Name)
+		}
+	}
+	return nil
+}
+
+func (a *Adopt) validate() error {
+	if len(a.Commands) == 0 {
+		return errors.New("names no command")
+	}
+	for _, command := range a.Commands {
+		if !commandPattern.MatchString(command) {
+			return fmt.Errorf("%q is not a command name", command)
+		}
+	}
+	if v := a.Version; v != nil {
+		if !commandPattern.MatchString(v.Command) {
+			return fmt.Errorf("version: %q is not a command name", v.Command)
+		}
+		if !versionPattern.MatchString(v.Minimum) {
+			return fmt.Errorf("version: minimum %q is not a dotted version", v.Minimum)
+		}
+	}
+	for _, p := range a.Writable {
+		if err := validAbsolute("writable", p); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -350,6 +465,12 @@ func (s Step) validate() error {
 	case 1:
 	default:
 		return fmt.Errorf("names more than one kind: %s", strings.Join(kinds, ", "))
+	}
+	if s.Wiring() && (s.Install || s.Async) {
+		return errors.New("a group or env step is wiring: never install, never async")
+	}
+	if s.Apt && s.Run == "" {
+		return errors.New("apt: only a run step says it uses apt; a packages step always takes the lock")
 	}
 	if s.When != nil {
 		if err := s.When.validate(); err != nil {
