@@ -659,3 +659,92 @@ func TestATornRecordIsNoRecord(t *testing.T) {
 		t.Fatalf("outcomes = %v", got)
 	}
 }
+
+// A merged file is the feature's alone on a box whose Docker came with none,
+// as Discobox's base image's does, and merged over the one a provider's
+// machine came with, which keeps every member the feature does not set (ADR
+// 26-10-16-423 §9).
+func TestMergedJSONFileKeepsWhatTheBoxHad(t *testing.T) {
+	// A null removes a member the box set.
+	const ours = `{"dns": ["169.254.53.53"], "features": {"containerd-snapshotter": true}, "insecure-registries": ["discobox-pool-proxy:5000"], "userns-remap": null}`
+	for _, tc := range []struct {
+		name     string
+		existing string
+		want     string
+	}{
+		{name: "container", want: `{
+  "dns": [
+    "169.254.53.53"
+  ],
+  "features": {
+    "containerd-snapshotter": true
+  },
+  "insecure-registries": [
+    "discobox-pool-proxy:5000"
+  ]
+}
+`},
+		{
+			name:     "machine",
+			existing: `{"dns": ["10.0.0.2"], "features": {"buildkit": true}, "log-driver": "journald", "max-concurrent-downloads": 9007199254740993, "userns-remap": "default"}`,
+			want: `{
+  "dns": [
+    "169.254.53.53"
+  ],
+  "features": {
+    "buildkit": true,
+    "containerd-snapshotter": true
+  },
+  "insecure-registries": [
+    "discobox-pool-proxy:5000"
+  ],
+  "log-driver": "journald",
+  "max-concurrent-downloads": 9007199254740993
+}
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newBox(t)
+			if tc.existing != "" {
+				if err := os.MkdirAll(filepath.Join(b.root, "etc/docker"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(b.root, "etc/docker/daemon.json"), []byte(tc.existing), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b.feature("docker", map[string]string{
+				provisionspec.FileName: "apiVersion: discobox.ai/provision/v1\nsteps:\n  - name: daemon\n    file: {path: /etc/docker/daemon.json, source: daemon.json, merge: json}\n",
+				"daemon.json":          ours,
+			})
+			b.mustApply()
+			if got := b.read("etc/docker/daemon.json"); got != tc.want {
+				t.Errorf("daemon.json =\n%s\nwant\n%s", got, tc.want)
+			}
+			if got := results(b.mustApply()); got["docker/daemon"] != Skipped {
+				t.Errorf("second run: %v, want skipped", got)
+			}
+		})
+	}
+}
+
+// A file that is not a JSON object is the box's, and is left as it is rather
+// than replaced by the feature's.
+func TestMergedJSONFileRefusesAFileItCannotRead(t *testing.T) {
+	b := newBox(t)
+	const existing = "# not JSON\n"
+	if err := os.WriteFile(filepath.Join(b.root, "etc/daemon.json"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.feature("docker", map[string]string{
+		provisionspec.FileName: "apiVersion: discobox.ai/provision/v1\nsteps:\n  - name: daemon\n    file: {path: /etc/daemon.json, source: daemon.json, merge: json}\n",
+		"daemon.json":          `{"dns": ["169.254.53.53"]}`,
+	})
+	if _, err := b.apply(); err == nil {
+		t.Fatal("apply merged into a file that is not JSON")
+	}
+	if got := b.read("etc/daemon.json"); got != existing {
+		t.Errorf("daemon.json = %q, want it left as %q", got, existing)
+	}
+}

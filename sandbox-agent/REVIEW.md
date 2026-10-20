@@ -15,6 +15,13 @@
 
 - **An env step's `path` goes ahead of `/usr/local/bin`.** Its script sorts
   after the box's own profile scripts (`zz-discobox-…`), so every directory
+- **A `merge: json` source that stops setting a member sets it to `null`
+  instead of dropping it.** The merge keeps every member the file there has
+  and the source does not name, which is what keeps a provider's settings; it
+  cannot tell those from one an earlier version of the source wrote, so a
+  member simply removed stays on every box provisioned before, for good. The
+  box's own value of a member the source overwrote is not kept either.
+
   it lists shadows the `docker` and `nix` shims there (ADR 0044 §8, ADR 0075
   §4). A feature that moves a toolchain onto an env step must not list a
   directory holding a `docker` or `nix` of its own; and since the script

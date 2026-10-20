@@ -1,9 +1,11 @@
 package provision
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,7 +29,77 @@ func (r *Runner) applyFile(feature provisionspec.Feature, step *provisionspec.Fi
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(r.path(step.Path), data, fileMode(step.Mode))
+	target := r.path(step.Path)
+	if step.Merge == provisionspec.MergeJSON {
+		if data, err = mergeJSONFile(target, data); err != nil {
+			return fmt.Errorf("merge %s into %s: %w", step.Source, step.Path, err)
+		}
+	}
+	return writeFileAtomic(target, data, fileMode(step.Mode))
+}
+
+// mergeJSONFile is the file at path with patch merged into it
+// (provisionspec.MergeJSON). A file there that is not a JSON object is
+// refused rather than replaced: it is the box's, and what it says would be
+// lost.
+func mergeJSONFile(path string, patch []byte) ([]byte, error) {
+	with, err := jsonObject(patch)
+	if err != nil {
+		return nil, fmt.Errorf("the source: %w", err)
+	}
+	doc := map[string]any{}
+	existing, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return nil, err
+	case len(bytes.TrimSpace(existing)) > 0:
+		if doc, err = jsonObject(existing); err != nil {
+			return nil, fmt.Errorf("the file there: %w", err)
+		}
+	}
+	merged, err := json.MarshalIndent(mergePatch(doc, with), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(merged, '\n'), nil
+}
+
+// jsonObject decodes a JSON object, keeping its numbers as written: a float64
+// would round an integer past 2^53.
+func jsonObject(data []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var object map[string]any
+	if err := decoder.Decode(&object); err != nil {
+		return nil, err
+	}
+	if object == nil {
+		return nil, errors.New("not a JSON object")
+	}
+	if decoder.More() {
+		return nil, errors.New("more than one JSON value")
+	}
+	return object, nil
+}
+
+// mergePatch applies patch to doc as RFC 7396 says, in place.
+func mergePatch(doc, patch map[string]any) map[string]any {
+	for key, value := range patch {
+		switch value := value.(type) {
+		case nil:
+			delete(doc, key)
+		case map[string]any:
+			into, ok := doc[key].(map[string]any)
+			if !ok {
+				into = map[string]any{}
+			}
+			doc[key] = mergePatch(into, value)
+		default:
+			doc[key] = value
+		}
+	}
+	return doc
 }
 
 // applySystemd writes the drop-in first, so a unit enabled in the same step

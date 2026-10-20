@@ -76,7 +76,18 @@ type FileStep struct {
 	Source string `yaml:"source"`
 	// Mode is octal, as a string ("0755"); unset is 0644.
 	Mode string `yaml:"mode,omitempty"`
+	// Merge, when set, merges Source into a file already at Path rather than
+	// replacing it, so a file the box came with keeps what it says that
+	// Source does not (ADR 26-10-16-423 §9). Its only value is MergeJSON.
+	Merge string `yaml:"merge,omitempty"`
 }
+
+// MergeJSON merges a JSON object as an RFC 7396 merge patch: objects merge
+// member by member, any other value of the source's replaces the file's, and
+// a null removes the member. A file not there yet is an empty object. A
+// source retires a member by setting it to null: one simply dropped stays on
+// every box merged before, which cannot tell it from the box's own.
+const MergeJSON = "json"
 
 // SystemdStep enables or masks units and writes a drop-in. Any combination
 // may be set, and at least one is.
@@ -392,6 +403,9 @@ func (f *FileStep) validate() error {
 	}
 	if f.Source == "" {
 		return errors.New("file: names no source")
+	}
+	if f.Merge != "" && f.Merge != MergeJSON {
+		return fmt.Errorf("file: merge %q is not %q", f.Merge, MergeJSON)
 	}
 	return validMode("file", f.Mode)
 }
