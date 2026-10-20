@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 )
 
 // Grammar is a statement's sentence form, shown with every SyntaxError so an
@@ -63,7 +62,10 @@ func ParseStatements(sentences []string) ([]Statement, error) {
 }
 
 // Format writes s as its canonical sentence. Parse reads it back to s for
-// every statement Validate accepts.
+// every statement Validate accepts. Quoted text is written in ASCII, every
+// other rune escaped: outside ASCII a letter, a mark or a blank can pass for a
+// closing quote, and no rule short of ASCII was found that shows only runes
+// that cannot.
 func Format(s Statement) string {
 	var b strings.Builder
 	b.WriteString(string(s.Effect))
@@ -89,11 +91,11 @@ func Format(s Statement) string {
 	}
 	if s.When != nil {
 		b.WriteString(" when ")
-		b.WriteString(quote(*s.When))
+		b.WriteString(strconv.QuoteToASCII(*s.When))
 	}
 	if s.Unless != nil {
 		b.WriteString(" unless ")
-		b.WriteString(quote(*s.Unless))
+		b.WriteString(strconv.QuoteToASCII(*s.Unless))
 	}
 	return b.String()
 }
@@ -125,7 +127,7 @@ func formatName(name string) string {
 	if IsVariable(name) {
 		return name
 	}
-	return quote(name)
+	return strconv.QuoteToASCII(name)
 }
 
 // checkSentenceWord reports whether w, an action or a type, can be written
@@ -156,42 +158,6 @@ func checkSentenceWord(w string) error {
 		}
 	}
 	return nil
-}
-
-// quote writes text as a Go string literal that shows itself: a rune that
-// could pass for a quote, render blank, or not render at all is escaped,
-// so quoted text cannot seem to end early. strconv.Unquote reads it back.
-func quote(text string) string {
-	b := []byte{'"'}
-	for i := 0; i < len(text); {
-		r, size := utf8.DecodeRuneInString(text[i:])
-		switch {
-		case r == utf8.RuneError && size == 1:
-			b = fmt.Appendf(b, `\x%02x`, text[i])
-		case r == '"' || r == '\\':
-			b = append(b, '\\', byte(r))
-		case r >= ' ' && r <= '~', r > '~' && unicode.IsPrint(r) && !looksLikeAnother(r):
-			b = utf8.AppendRune(b, r)
-		default:
-			q := strconv.QuoteRuneToASCII(r)
-			b = append(b, q[1:len(q)-1]...)
-		}
-		i += size
-	}
-	return string(append(b, '"'))
-}
-
-// looksLikeAnother reports whether r, though printable, can pass for a quote
-// or for nothing.
-func looksLikeAnother(r rune) bool {
-	switch {
-	case unicode.In(r, unicode.Quotation_Mark, unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector):
-		return true
-	case r >= 0x2032 && r <= 0x2037, r == 0x02ba, r == 0x02dd, r == 0x3003, r == 0x2800:
-		// Primes, double primes, ditto marks, and the blank braille pattern.
-		return true
-	}
-	return false
 }
 
 type tokenKind int
@@ -397,8 +363,11 @@ func (p *parser) statement() (Statement, error) {
 // expectedAfter says what may follow the part of s already read.
 func (p *parser) expectedAfter(s Statement) string {
 	var next []string
-	if s.Scope.Type == "" {
+	switch noCondition := s.When == nil && s.Unless == nil; {
+	case noCondition && s.Scope.Type == "":
 		next = append(next, `"within" and a parent`, `"in" and the scope`)
+	case noCondition:
+		next = append(next, `"of" and what the scope is in`)
 	}
 	if s.When == nil {
 		next = append(next, `"when" and a condition`)

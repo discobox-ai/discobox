@@ -81,9 +81,9 @@ name      := quoted | variable
   in anywhere`.
 - **`within` and `of` read inside out**; the structure keeps parents outermost
   first. `within issue "43" within project "p"` is `Within: [project, issue]`.
-- **Quoted text is a Go string literal**, escapes and all. `Format` also
-  escapes a rune that could pass for a quote or render blank, so quoted text
-  cannot seem to end early. Conditions are always quoted; only a variable a
+- **Quoted text is a Go string literal**, escapes and all. `Format` writes it
+  in ASCII (`strconv.QuoteToASCII`), so quoted text cannot seem to end early;
+  `Parse` reads any rune, escaped or not. Conditions are always quoted; only a variable a
   policy may use is written bare.
 - **Parsing does not validate.** `Parse` reads structure only, and a statement
   with no scope parses. A malformed sentence is a `SyntaxError` naming the
