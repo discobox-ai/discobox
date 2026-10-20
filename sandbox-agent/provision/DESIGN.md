@@ -19,8 +19,12 @@ which also puts its `path` ahead of `/usr/local/bin`'s shims; it reaches login
 shells only, never an exec that gets the manifest's env; a feature's scripts
 no step selecting the box still writes are removed with their records),
 `download` (fetched through the environment's proxy, given up after a minute
-without a byte, and moved into place only once its sha256 matches), `packages`
-(`apt-get`), and `run`, each selected by `os`, `arch` and os-release
+without a byte, and moved into place only once its sha256 matches; with
+`unpack`, a gzipped tar unpacked beside its directory and swapped in whole,
+refusing an entry or link that would land outside it), `packages`
+(`apt-get`, keeping a configuration file already in a package's way rather
+than asking), and `run` (whose `inputs` name the files and directories its script reads
+beside itself, so the digest covers them), each selected by `os`, `arch` and os-release
 `ID`/`ID_LIKE`. Each step is keyed by a digest of its definition and every
 file it names, recorded under `/opt/discobox/provision/steps/` on the root
 filesystem, never a declared volume; a step whose record matches is skipped
@@ -34,7 +38,16 @@ runs, unless it has no features to provision.
 |---|---|---|
 | The agent, every boot | `Boot(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
 | `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
-| `discobox-sandbox-agent provision TREE...` | `Runner.Provision`, no options | Every step blocking, nothing off: an image build or a snapshot |
+| `discobox-image-provision TREE...` | `Trees` → `Runner.Provision`, no options | Every step blocking, nothing off: the platform image's build, one feature per layer |
+| `discobox-sandbox-agent provision TREE...` | `Trees` → `Runner.Provision`, no options | The same: a harness image's build, its tree onto the platform's |
+
+The images build their trees in place: the platform's features
+(`sandbox-agent/features`) and a harness's own (`harness/<id>`, whose
+directory is its feature) are copied to where boot looks for them and
+applied, and the trees and the records stay in the image, so its boxes find
+every step applied and provision only what drifted or changed. A step that
+lays a binary the build made links it from the tree rather than copying it,
+so a new build is a new file and no step applied again.
 
 At boot the trees are `/opt/discobox/bundles/platform` and
 `/opt/discobox/bundles/harness`, each when present (`BootPlan`); the harness

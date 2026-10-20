@@ -121,6 +121,10 @@ type Step struct {
 	// Run names a script in the feature's directory, run with the feature's
 	// directory as its working directory.
 	Run string `yaml:"run,omitempty"`
+	// Inputs names the files and directories of the feature's that a run
+	// step's script reads beside itself. The step's digest covers them as it
+	// covers the script, so changing one applies the step again (§3).
+	Inputs []string `yaml:"inputs,omitempty"`
 }
 
 // Selector selects boxes by GOOS, GOARCH and os-release. Each list that is
@@ -194,6 +198,22 @@ type DownloadStep struct {
 	// Arch maps a GOARCH to what to fetch on it. A box whose architecture is
 	// not here fails the step: select the step with `when` instead.
 	Arch map[string]Download `yaml:"arch"`
+	// Unpack, when set, says what is fetched is a gzipped tar: Path is then
+	// the directory it is unpacked into, replaced whole once the sha256
+	// matches, and Mode is unused.
+	Unpack *Unpack `yaml:"unpack,omitempty"`
+}
+
+// Unpack is how a downloaded archive is unpacked.
+type Unpack struct {
+	// Strip is how many leading components of each entry's name are dropped,
+	// as tar's --strip-components; an entry with no more than that is
+	// skipped.
+	Strip int `yaml:"strip,omitempty"`
+	// Only, when set, names the entries unpacked, after Strip, each a file or
+	// a directory with everything under it; the rest of the archive is
+	// skipped.
+	Only []string `yaml:"only,omitempty"`
 }
 
 // Download is one architecture's URL and the sha256 of what it serves.
@@ -370,6 +390,13 @@ func LoadFeature(dir string) (Feature, error) {
 			return feature, fmt.Errorf("feature %q: %s is not a file", name, file)
 		}
 	}
+	for _, step := range spec.Steps {
+		for _, input := range step.Inputs {
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(input))); err != nil {
+				return feature, fmt.Errorf("feature %q: step %q: input %s: %w", name, step.Name, input, err)
+			}
+		}
+	}
 	feature.Spec = spec
 	return feature, nil
 }
@@ -471,6 +498,14 @@ func (s Step) validate() error {
 	}
 	if s.Apt && s.Run == "" {
 		return errors.New("apt: only a run step says it uses apt; a packages step always takes the lock")
+	}
+	if len(s.Inputs) > 0 && s.Run == "" {
+		return errors.New("inputs: only a run step's script reads files beside it; every other kind names its own")
+	}
+	for _, input := range s.Inputs {
+		if err := validRelative(input); err != nil {
+			return fmt.Errorf("inputs: %w", err)
+		}
 	}
 	if s.When != nil {
 		if err := s.When.validate(); err != nil {
@@ -605,6 +640,19 @@ func (d *DownloadStep) validate() error {
 		}
 		if !sha256Pattern.MatchString(download.SHA256) {
 			return fmt.Errorf("download: %s: sha256 %q is not a lowercase hex sha256", arch, download.SHA256)
+		}
+	}
+	if d.Unpack != nil {
+		if d.Unpack.Strip < 0 {
+			return fmt.Errorf("download: unpack: strip %d is negative", d.Unpack.Strip)
+		}
+		if d.Mode != "" {
+			return errors.New("download: an unpacked archive keeps its own modes; mode is for a single file")
+		}
+		for _, only := range d.Unpack.Only {
+			if err := validRelative(only); err != nil {
+				return fmt.Errorf("download: unpack: only: %w", err)
+			}
 		}
 	}
 	return validMode("download", d.Mode)
