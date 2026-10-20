@@ -1,8 +1,8 @@
 # 26-10-20-782 — Approved access is a policy, decided at the network boundary by a generated fast path before any judge
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-20
-- **Supersedes** (on acceptance):
+- **Supersedes**:
   - [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
     §5 in part: a grant's approved uses as sentences `[]{useId, description}`.
     A grant carries one policy instead (§1).

@@ -1,6 +1,7 @@
 # 26-09-22-838 — A dedicated pool harness judges commands and credential-bearing requests
 
 - **Status**: Accepted
+- **§3 superseded, and §§4–5 in part, by**: [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md) — commands are not judged, and a request is decided against its grant's whole policy; reasonable association survives only in the fallback judge
 - **Date**: 2026-09-22
 - **Superseded in part by**: [26-09-25-428](26-09-25-428-the-judge-may-let-its-allow-stand-for-a-route.md)
   — the judge, not only an endpoint rule, may let an allow stand (§7); and

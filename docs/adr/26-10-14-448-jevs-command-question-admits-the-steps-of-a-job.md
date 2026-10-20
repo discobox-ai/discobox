@@ -1,6 +1,6 @@
 # 26-10-14-448 — Jev's command question admits the steps of a job
 
-- **Status**: Proposed
+- **Status**: Rejected by [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md), which stops judging commands, so there is no command question left to reword
 - **Date**: 2026-10-14
 - **Supersedes**: in [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
   §3: the command job's noul, "does the command carry out the purpose without
