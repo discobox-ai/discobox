@@ -412,3 +412,19 @@ func TestTheCommandLineOutranksTheLastSource(t *testing.T) {
 		t.Fatalf("card opens on %q, want the one -C named", got)
 	}
 }
+
+// "All folders" names no place, so moving the header there goes back to the
+// last create's source rather than to the directory the window runs in.
+func TestAllFoldersGoesBackToTheLastSource(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.session.LastSource = "/src/obot"
+	m := newTestModel(t, ds)
+	showAllFolders(t, m)
+	send(t, m, keyPress("esc"))
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+	if got := cardSource(t, m.dialog); got != "/src/obot" {
+		t.Fatalf("card opens on %q, want the last one cut from", got)
+	}
+}

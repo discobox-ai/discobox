@@ -378,8 +378,9 @@ convenience and never the command.
   `DataSource.SaveDraft`), the header's server, folder and tag filters
   (`Session.View`, `SaveView`), and the source the last create was cut from
   (`Session.LastSource`, `SaveLastSource`). Each save rewrites one field and
-  keeps the rest, serialized within the process. A prompt past the cap is cut
-  on a rune boundary — a state file is not where a pasted log belongs.
+  keeps the rest, serialized across processes by `console.lock` beside it
+  (`acquireFileLock`, as the server registry's lock is). A prompt past the cap
+  is cut on a rune boundary — a state file is not where a pasted log belongs.
 
 ## Client Configuration (ADR 26-10-09-389)
 

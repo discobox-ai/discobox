@@ -462,9 +462,16 @@ func (o *optionSet) setHarnesses(all []Harness) {
 // header is where the folder is chosen, so a source chosen earlier gives way to
 // it: leaving a stale override behind would mean the window says one thing and
 // creates in another.
+//
+// "All folders" names no place to cut from, so there the row goes to the last
+// create's source when there is one, rather than falling back silently to the
+// directory the window happens to be running in.
 func (o *optionSet) setFolder(folder string) {
 	o.folder = folder
 	o.source = o.sourceDir()
+	if folder == "" && o.lastCut != "" {
+		o.source = o.lastCut
+	}
 	o.rebuildSources()
 }
 
