@@ -1092,8 +1092,8 @@ flowchart LR
   the stub claims it on the sandbox's loopback, so Docker's resolver, which
   forwards from inside the sandbox's network namespace, delivers locally and
   nothing crosses the network in the clear. It drops anything for that address
-  arriving on the pool's network (`eth+`), which a neighbor could otherwise
-  route there. The sandbox's `nameserver` stays `127.0.0.11`, so container
+  arriving on the pool's network (`eth+`, or a machine's `en+`), which a
+  neighbor could otherwise route there. The sandbox's `nameserver` stays `127.0.0.11`, so container
   names resolve as before. The sandbox's nested Docker names the same address
   for its own containers ([ADR 26-10-15-760](../docs/adr/26-10-15-760-nested-docker-containers-resolve-through-the-sandboxs-stub.md)).
 - The stub's two settings are in `bridge.json` beside the credentials endpoint,
