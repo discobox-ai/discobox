@@ -2480,6 +2480,52 @@ func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
 	return d
 }
 
+// NewOptSandboxConfigFeatures returns new OptSandboxConfigFeatures with value set to v.
+func NewOptSandboxConfigFeatures(v SandboxConfigFeatures) OptSandboxConfigFeatures {
+	return OptSandboxConfigFeatures{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigFeatures is optional SandboxConfigFeatures.
+type OptSandboxConfigFeatures struct {
+	Value SandboxConfigFeatures
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigFeatures was set.
+func (o OptSandboxConfigFeatures) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigFeatures) Reset() {
+	var v SandboxConfigFeatures
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigFeatures) SetTo(v SandboxConfigFeatures) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigFeatures) Get() (v SandboxConfigFeatures, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigFeatures) Or(d SandboxConfigFeatures) SandboxConfigFeatures {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
 func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
 	return OptSandboxConfigHarnessMode{
@@ -4912,7 +4958,10 @@ type SandboxConfig struct {
 	// Directories of skills sources whose skills the sandbox links into the harness's skill directories
 	// on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
-	Image         OptString             `json:"image"`
+	// The repository's features by name, as the client read them from its settings.json; the sandbox
+	// provisions every one but those turned off (ADR 26-10-16-423 §4).
+	Features OptSandboxConfigFeatures `json:"features"`
+	Image    OptString                `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
 	// built from any other, so a moved tag never silently changes a running sandbox.
 	ImageDigest OptString `json:"imageDigest"`
@@ -4981,6 +5030,11 @@ func (s *SandboxConfig) GetSkills() OptSandboxConfigSkills {
 // GetSkillsSources returns the value of SkillsSources.
 func (s *SandboxConfig) GetSkillsSources() []SandboxSkillsSource {
 	return s.SkillsSources
+}
+
+// GetFeatures returns the value of Features.
+func (s *SandboxConfig) GetFeatures() OptSandboxConfigFeatures {
+	return s.Features
 }
 
 // GetImage returns the value of Image.
@@ -5078,6 +5132,11 @@ func (s *SandboxConfig) SetSkillsSources(val []SandboxSkillsSource) {
 	s.SkillsSources = val
 }
 
+// SetFeatures sets the value of Features.
+func (s *SandboxConfig) SetFeatures(val OptSandboxConfigFeatures) {
+	s.Features = val
+}
+
 // SetImage sets the value of Image.
 func (s *SandboxConfig) SetImage(val OptString) {
 	s.Image = val
@@ -5129,6 +5188,19 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The repository's features by name, as the client read them from its settings.json; the sandbox
+// provisions every one but those turned off (ADR 26-10-16-423 §4).
+type SandboxConfigFeatures map[string]SandboxFeature
+
+func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxFeature{}
 		*s = m
 	}
 	return m
@@ -5204,6 +5276,22 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/SandboxFeature
+type SandboxFeature struct {
+	// Whether the sandbox provisions the feature.
+	Enabled bool `json:"enabled"`
+}
+
+// GetEnabled returns the value of Enabled.
+func (s *SandboxFeature) GetEnabled() bool {
+	return s.Enabled
+}
+
+// SetEnabled sets the value of Enabled.
+func (s *SandboxFeature) SetEnabled(val bool) {
+	s.Enabled = val
 }
 
 // Git authorship identity, forwarded to the sandbox verbatim. Authorship, not

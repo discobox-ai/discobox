@@ -1695,6 +1695,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxAgentSourceState'
                     type: array
+                provision:
+                    $ref: '#/components/schemas/SandboxAgentProvisionStatus'
+                    description: The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6). Absent from a sandbox agent that predates it.
                 observedAt:
                     format: date-time
                     type: string
@@ -1703,6 +1706,79 @@ components:
                 - sessions
                 - ports
                 - observedAt
+            type: object
+        SandboxAgentProvisionStatus:
+            additionalProperties: false
+            description: Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is text the sandbox wrote.
+            properties:
+                state:
+                    description: pending - not started; provisioning - a feature is still being provisioned; ready - every feature is; failed - all are done, and one failed or readiness did.
+                    enum:
+                        - pending
+                        - provisioning
+                        - ready
+                        - failed
+                    type: string
+                ready:
+                    description: Whether what the sandbox waits for before it launches anything is in place - core, what the harness requires, and every feature's wiring. Features provisioned in the background may still be provisioning.
+                    type: boolean
+                error:
+                    description: Why readiness failed, or why provisioning could not start.
+                    type: string
+                updatedAt:
+                    format: date-time
+                    type: string
+                features:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxAgentProvisionFeature'
+                    description: Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
+                    type: object
+            required:
+                - state
+                - ready
+                - updatedAt
+                - features
+            type: object
+        SandboxAgentProvisionFeature:
+            additionalProperties: false
+            description: One feature's provisioning.
+            properties:
+                state:
+                    description: pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be installed by hand.
+                    enum:
+                        - pending
+                        - provisioning
+                        - ready
+                        - failed
+                        - "off"
+                    type: string
+                how:
+                    description: Where a ready feature came from. installed - this boot installed or wired some of it; adopted - the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
+                    enum:
+                        - installed
+                        - adopted
+                        - snapshot
+                    type: string
+                version:
+                    description: The version the adopted copy reported.
+                    type: string
+                async:
+                    description: Whether the feature is provisioned in the background, after the sandbox is ready.
+                    type: boolean
+                step:
+                    description: The step being applied now.
+                    type: string
+                log:
+                    description: The feature's log inside the sandbox.
+                    type: string
+                reason:
+                    description: Why the feature is off.
+                    type: string
+                error:
+                    description: Why the feature failed.
+                    type: string
+            required:
+                - state
             type: object
         SandboxAgentSourceState:
             additionalProperties: false
@@ -3339,6 +3415,11 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxSkillsSource'
                     type: array
+                features:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxFeature'
+                    description: The repository's features by name, as the client read them from its .discobox/settings.json at create. The sandbox provisions every feature but those whose enabled is false. Fixed at create.
+                    type: object
                 image:
                     description: Sandbox base image
                     type: string
@@ -3415,6 +3496,11 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxSkillsSource'
                     type: array
+                features:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxFeature'
+                    description: The repository's features by name, from its .discobox/settings.json. The sandbox provisions every feature but those whose enabled is false; a feature the harness requires cannot be turned off unless the box already has a usable one. Fixed at create.
+                    type: object
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -4643,6 +4729,16 @@ components:
                 userName:
                     description: Value for git's user.name inside the sandbox.
                     type: string
+            type: object
+        SandboxFeature:
+            additionalProperties: false
+            description: One of a repository's features, as its .discobox/settings.json sets it.
+            properties:
+                enabled:
+                    description: Whether the sandbox provisions the feature. false turns it off.
+                    type: boolean
+            required:
+                - enabled
             type: object
         SandboxSkillsSource:
             additionalProperties: false
