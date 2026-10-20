@@ -1,0 +1,177 @@
+{
+  "name": "policy-copilot-chat-completion",
+  "why": "A Copilot twin under the policy rewritten from Copilot's own use: the chat completion every model turn sends, its body described.",
+  "expect": "allow-or-ask",
+  "job": {
+    "kind": "request",
+    "host": "api.individual.githubcopilot.com",
+    "round": 1,
+    "request": {
+      "method": "POST",
+      "url": "https://api.individual.githubcopilot.com/chat/completions",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "copilot/1.0.91 (linux v24.20.0) term/unknown"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "48211"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 48211,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "tools",
+            "temperature"
+          ]
+        }
+      }
+    },
+    "credential": "COPILOT_GITHUB_TOKEN",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "Copilot setting",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.github.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "model list",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "create"
+          ],
+          "resourceType": "chat completion",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "create"
+          ],
+          "resourceType": "telemetry event",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "telemetry.individual.githubcopilot.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "*/*"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "host",
+            "name": "api.github.com"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resourceType": "anything",
+          "name": null,
+          "scope": {
+            "type": "repository",
+            "name": "*/*"
+          },
+          "when": null,
+          "unless": null
+        },
+        {
+          "effect": "deny",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "Actions secret",
+          "name": null,
+          "scope": {
+            "type": "anywhere"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "Copilot setting": "The Copilot entitlement, policy and settings GitHub serves the signed-in user under /copilot_internal.",
+        "model list": "The list of models Copilot may use.",
+        "chat completion": "A model turn: a chat or completion request Copilot sends to its model service.",
+        "telemetry event": "A usage event Copilot reports to its own telemetry endpoint.",
+        "host": "A service Discobox reaches, named by its hostname.",
+        "repository": "A GitHub repository, named owner/name. Reading one reads its files, code and metadata, by REST, GraphQL or GitHub's MCP server.",
+        "Actions secret": "A GitHub Actions secret of a repository or organization, or the list of them."
+      }
+    }
+  }
+}

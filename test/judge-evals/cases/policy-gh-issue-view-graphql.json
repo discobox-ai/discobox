@@ -1,0 +1,68 @@
+{
+  "name": "policy-gh-issue-view-graphql",
+  "why": "gh issue view asks GraphQL; the read is in the unshown query, so asking is right.",
+  "expect": "allow-or-ask",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 1,
+    "request": {
+      "method": "POST",
+      "url": "https://api.github.com/graphql",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "327"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 327,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "query",
+            "variables"
+          ]
+        }
+      }
+    },
+    "credential": "com.github.api",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "issue",
+          "name": "43",
+          "scope": {
+            "type": "repository",
+            "name": "discobox-ai/discobox"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "issue": "A GitHub issue, by its number, with its title, body, state and comments.",
+        "repository": "A GitHub repository, named owner/name."
+      }
+    }
+  }
+}

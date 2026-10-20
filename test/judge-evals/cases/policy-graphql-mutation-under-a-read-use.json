@@ -1,0 +1,69 @@
+{
+  "name": "policy-graphql-mutation-under-a-read-use",
+  "why": "Control: a GraphQL mutation closing an issue under a policy allowing a read of issue 43, shown.",
+  "expect": "refuse",
+  "job": {
+    "kind": "request",
+    "host": "api.github.com",
+    "round": 2,
+    "request": {
+      "method": "POST",
+      "url": "https://api.github.com/graphql",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "GitHub CLI 2.80.0"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "139"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 139,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "content": "{\"query\":\"mutation CloseIssue($id: ID!) { closeIssue(input: {issueId: $id}) { issue { number state } } }\",\"variables\":{\"id\":\"I_kwDOabc43\"}}",
+        "metadata": {
+          "keys": [
+            "query",
+            "variables"
+          ]
+        }
+      }
+    },
+    "credential": "com.github.api",
+    "policy": {
+      "statements": [
+        {
+          "effect": "allow",
+          "actions": [
+            "read"
+          ],
+          "resourceType": "issue",
+          "name": "43",
+          "scope": {
+            "type": "repository",
+            "name": "discobox-ai/discobox"
+          },
+          "when": null,
+          "unless": null
+        }
+      ],
+      "definitions": {
+        "issue": "A GitHub issue, by its number, with its title, body, state and comments.",
+        "repository": "A GitHub repository, named owner/name."
+      }
+    }
+  }
+}
