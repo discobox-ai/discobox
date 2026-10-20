@@ -53,6 +53,7 @@ func TestValidateRefuses(t *testing.T) {
 		"a URL that is not https":                     {func(e *Entry) { e.Documents[0].URL = "http://example.com/a.json" }, "not an https URL"},
 		"a URL with credentials":                      {func(e *Entry) { e.Documents[0].URL = "https://u:p@example.com/a.json" }, "not an https URL"},
 		"a default given a definition":                {func(e *Entry) { e.Terms[0].Word = "read" }, "means one thing everywhere"},
+		"a term a sentence reads as a keyword":        {func(e *Entry) { e.Terms[0].Word = "comment on issue" }, `which a sentence reads as a keyword`},
 		"a term with no definition":                   {func(e *Entry) { e.Terms[0].Definition = " " }, "definition is empty"},
 		"a definition with a control character":       {func(e *Entry) { e.Terms[0].Definition = "an \x1b[2Jissue" }, "control character"},
 		"a term offered twice":                        {func(e *Entry) { e.Terms[1].Word = "issue" }, `"issue" is a type twice`},

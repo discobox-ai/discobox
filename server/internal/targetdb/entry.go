@@ -248,7 +248,11 @@ func (d Document) validate() []error {
 func (t Term) validate() []error {
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	// A term is a word a policy uses, so it is held to what a statement's
+	// word is: one that could not be written in a sentence could not be used.
 	if err := policy.CheckWord(t.Word); err != nil {
+		fail("%w", err)
+	} else if err := policy.CheckSentenceWord(t.Word); err != nil {
 		fail("%w", err)
 	} else if policy.IsReserved(t.Word) {
 		fail("%q means one thing everywhere and cannot be given a definition", t.Word)

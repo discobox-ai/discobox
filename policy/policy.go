@@ -173,7 +173,7 @@ func (p Policy) Validate() error {
 	for _, word := range sortedKeys(used) {
 		// A word already refused needs no definition; asking for one would
 		// teach the wrong fix.
-		if !IsReserved(word) && CheckWord(word) == nil && checkSentenceWord(word) == nil {
+		if !IsReserved(word) && CheckWord(word) == nil && CheckSentenceWord(word) == nil {
 			if _, ok := p.Definitions[word]; !ok {
 				if strings.Contains(word, " ") {
 					fail("%q is not a default word and has no definition; if its last word is a name, quote it: a name is quoted or a variable", word)
@@ -212,7 +212,7 @@ func (s Statement) validate(used map[string]bool) []error {
 		}
 		if err := CheckWord(w); err != nil {
 			fail("%s: %w", what, err)
-		} else if err := checkSentenceWord(w); err != nil {
+		} else if err := CheckSentenceWord(w); err != nil {
 			fail("%s: %w", what, err)
 		}
 	}
