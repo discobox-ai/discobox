@@ -85,6 +85,14 @@ func TestParseRefuses(t *testing.T) {
 		"trailing separator":  head + "  - name: a-\n    run: a.sh\n",
 		"numeric group":       head + "  - name: a\n    group: {name: \"997\"}\n",
 		"group with zero gid": head + "  - name: a\n    group: {name: g, gid: 0}\n",
+		"install, no adopt":   head + "  - name: a\n    install: true\n    run: a.sh\n",
+		"async wiring":        head + "  - name: a\n    async: true\n    env: {vars: {A: b}}\n",
+		"install wiring":      "apiVersion: discobox.ai/provision/v1\nadopt: {commands: [g]}\nsteps:\n  - name: a\n    install: true\n    group: {name: g}\n",
+		"apt on packages":     head + "  - name: a\n    apt: true\n    packages: {debian: [jq]}\n",
+		"adopt no command":    "apiVersion: discobox.ai/provision/v1\nadopt: {commands: []}\nsteps: []\n",
+		"adopt bad version":   "apiVersion: discobox.ai/provision/v1\nadopt: {commands: [node], version: {command: node, minimum: v22}}\nsteps: []\n",
+		"adopt relative path": "apiVersion: discobox.ai/provision/v1\nadopt: {commands: [node], writable: [usr/lib]}\nsteps: []\n",
+		"bad command":         "apiVersion: discobox.ai/provision/v1\ncommands: [\"a b\"]\nsteps: []\n",
 	}
 	for name, data := range cases {
 		if _, err := Parse([]byte(data)); err == nil {
@@ -93,5 +101,9 @@ func TestParseRefuses(t *testing.T) {
 	}
 	if _, err := Parse([]byte(head + "  - name: a\n    packages: {debian: [jq, \"git=1:2.43.0-1\"]}\n")); err != nil {
 		t.Errorf("a pinned package: %v", err)
+	}
+	feature := "apiVersion: discobox.ai/provision/v1\nasync: true\ncommands: [node, npm]\nadopt:\n  commands: [node]\n  version: {command: node, minimum: \"22.1\"}\n  writable: [/usr/local/lib/node_modules]\nsteps:\n  - name: a\n    install: true\n    apt: true\n    run: a.sh\n"
+	if _, err := Parse([]byte(feature)); err != nil {
+		t.Errorf("a feature with adopt, commands and async: %v", err)
 	}
 }
