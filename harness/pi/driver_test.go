@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
 
@@ -181,8 +182,8 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if !strings.Contains(readFile(t, "Dockerfile"), "hook-extension.js "+installedHookExt) {
-		t.Errorf("Dockerfile does not install the extension at %s", installedHookExt)
+	if got := featuretest.Load(t).Installs("hook-extension.js"); got != installedHookExt {
+		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
 
@@ -203,17 +204,22 @@ func TestImagePolicy(t *testing.T) {
 	if v, ok := image.Env["PI_PROXY"]; ok {
 		t.Errorf("manifest sets PI_PROXY=%q, which pi does not read", v)
 	}
-	for _, build := range []struct{ file, want string }{
-		{"Dockerfile", "apt-get install -y --no-install-recommends fd-find"},
-		{"Dockerfile", "npm install -g @earendil-works/pi-coding-agent"},
-		{"Dockerfile", "launch.sh /usr/local/bin/" + harness.RunCommand},
-		{"Dockerfile", "prompt.sh /usr/local/bin/discobox-prompt"},
-		{"Dockerfile", "configure.sh " + image.Harness.Config.Command[0]},
-		{"Dockerfile", "agent.conf /usr/local/libexec/discobox/agent.conf"},
+	feature := featuretest.Load(t)
+	for source, want := range map[string]string{
+		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
+		"prompt.sh":    "/usr/local/bin/discobox-prompt",
+		"configure.sh": image.Harness.Config.Command[0],
+		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
 	} {
-		if !strings.Contains(readFile(t, build.file), build.want) {
-			t.Errorf("%s does not install %q", build.file, build.want)
+		if got := feature.Installs(source); got != want {
+			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
 		}
+	}
+	if !feature.InstallsPackage("fd-find") {
+		t.Error("the feature does not install fd-find")
+	}
+	if !feature.Runs(t, "npm install -g @earendil-works/pi-coding-agent") {
+		t.Error("the feature does not install pi's CLI")
 	}
 	conf := readFile(t, "agent.conf")
 	if !strings.Contains(conf, "AGENT_PACKAGE=@earendil-works/pi-coding-agent\n") || !strings.Contains(conf, "AGENT_BIN=pi\n") {

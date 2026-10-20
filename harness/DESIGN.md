@@ -156,9 +156,15 @@ launchers, and configure scripts.
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
 - Each harness folder owns its `Dockerfile`, `image.json` (when it needs one),
-  configure script, and other image-specific assets. `harness/shell`
-  needs none: it installs nothing, declares nothing, and *is* its inherited
-  base layer.
+  configure script, and other image-specific assets. The folder is the
+  harness's feature ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
+  each file where the harness reads it, requiring the platform features it
+  runs on (`node`, and `bun` for omp). The Dockerfile copies the files the
+  feature names into the harness tree, `/opt/discobox/bundles/harness`, and
+  runs `discobox-sandbox-agent provision` over the platform's tree and it.
+  `harness/shell` needs none: it installs nothing, declares nothing, and *is*
+  its inherited base layer.
 - **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
   argument passed labels the image with the empty string, which is a build
   mistake that produces a working image nothing can register — so

@@ -14,30 +14,11 @@ RUN [ -n "${HARNESS_METADATA}" ] || { \
     }
 LABEL io.discobox.image.v1=${HARNESS_METADATA}
 
-# npm's cache is build-time scratch. Left behind it put 130MB of it in this
-# image, half the delta this layer is supposed to be.
-RUN npm install -g @openai/codex \
-    && rm -rf /root/.npm \
-    && install -d -m 0755 /usr/local/libexec/discobox /etc/codex
-
-# Codex's system config layer: below the user's ~/.codex/config.toml, so these
-# are defaults a user (or the configure flow's captured settings) can override,
-# and above nothing the sandbox writes. The sandbox is itself the isolation
-# boundary, so Codex's own approval prompts and inner sandbox would only ask
-# about a machine that exists to be written to.
-COPY --chmod=0644 system-config.toml /etc/codex/config.toml
-# The agent this image installed, for the pool-cached version store
-# (ADR 0114 §7). The store is generic; this file is the only harness-specific
-# part of it.
-COPY --chmod=0644 agent.conf /usr/local/libexec/discobox/agent.conf
-COPY --chmod=0644 hooks.json /etc/codex/hooks.json
-
-COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-codex
-# The harness-run convention (ADR 0086 §3): the image installs its agent
-# under this name, overwriting the base image's no-op shim, and the runtime
-# types it. On PATH, not in libexec, because the runtime resolves it by name.
-COPY --chmod=0755 launch.sh /usr/local/bin/discobox-harness-run
-
-# The one-shot prompting interface in-sandbox tools ask for a model through
-# (ADR 0079). On PATH, not in libexec: its callers resolve it by name.
-COPY --chmod=0755 prompt.sh /usr/local/bin/discobox-prompt
+# The harness's own feature (provision.yaml), copied into the harness tree a
+# box provisions from at boot and applied onto the platform's by the agent's
+# runner, every step blocking (ADR 26-10-16-423 §§3–4). The platform's steps
+# are recorded already, so only this feature's run.
+COPY agent.conf check-launcher.sh configure.sh hooks.json install-cli.sh launch.sh prompt.sh provision.yaml system-config.toml /opt/discobox/bundles/harness/features/codex-cli/
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    discobox-sandbox-agent provision /opt/discobox/bundles/platform /opt/discobox/bundles/harness
