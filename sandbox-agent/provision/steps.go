@@ -31,6 +31,8 @@ func (r *Runner) applyFile(feature provisionspec.Feature, step *provisionspec.Fi
 	}
 	target := r.path(step.Path)
 	if step.Merge == provisionspec.MergeJSON {
+		r.merge.Lock()
+		defer r.merge.Unlock()
 		if data, err = mergeJSONFile(target, data); err != nil {
 			return fmt.Errorf("merge %s into %s: %w", step.Source, step.Path, err)
 		}

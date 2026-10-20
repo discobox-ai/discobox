@@ -448,3 +448,24 @@ func TestAnAsyncStepDefersTheStepsAfterIt(t *testing.T) {
 		t.Errorf("ran %q", ran)
 	}
 }
+
+// Features provisioning in parallel that merge into one file each keep their
+// keys: a merge's read and write are one step under the merge lock.
+func TestParallelMergesIntoOneFileKeepEveryKey(t *testing.T) {
+	b := newBox(t)
+	names := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	for _, name := range names {
+		b.feature("merge-"+name, map[string]string{
+			provisionspec.FileName: head + "steps:\n  - name: s\n    file: {path: /etc/shared.json, source: patch.json, merge: json}\n",
+			"patch.json":           `{"` + name + `": true}`,
+		})
+	}
+	b.tracked()
+	b.mustApply()
+	got := b.read("etc/shared.json")
+	for _, name := range names {
+		if !strings.Contains(got, `"`+name+`": true`) {
+			t.Fatalf("%q lost from %s", name, got)
+		}
+	}
+}

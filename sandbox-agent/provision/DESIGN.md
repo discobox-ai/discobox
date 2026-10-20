@@ -8,7 +8,25 @@ package is what is done with them.
 
 ## Steps
 
-A feature's steps are the runner's typed kinds: `file` (with `merge: json`, an RFC 7396 merge patch over the file the box already has, which is refused rather than replaced when it is not a JSON object, so a provider's `daemon.json` keeps what ours does not set), `systemd` (enable, mask, drop-in, through `systemctl`), `group` (asked of `runuser`, then `groupadd`), `env` (a `/etc/profile.d/zz-discobox-<feature>--<step>.sh` script, named to sort after the box's own profile scripts so one that sets PATH outright does not drop it, which also puts its `path` ahead of `/usr/local/bin`'s shims; it reaches login shells only, never an exec that gets the manifest's env; a feature's scripts no step selecting the box still writes are removed with their records), `download` (fetched through the environment's proxy, given up after a minute without a byte, and moved into place only once its sha256 matches), `packages` (`apt-get`), and `run`, each selected by `os`, `arch` and os-release `ID`/`ID_LIKE`. Each step is keyed by a digest of its definition and every file it names, recorded under `/opt/discobox/provision/steps/` on the root filesystem, never a declared volume; a step whose record matches is skipped unless its `check` exits non-zero (drift), so a second run changes nothing. A box that is not Linux of the Debian family is refused by name before any step runs, unless it has no features to provision.
+A feature's steps are the runner's typed kinds: `file` (with `merge: json`, an
+RFC 7396 merge patch over the file the box already has, which is refused
+rather than replaced when it is not a JSON object, so a provider's
+`daemon.json` keeps what ours does not set), `systemd` (enable, mask, drop-in,
+through `systemctl`), `group` (asked of `runuser`, then `groupadd`), `env` (a
+`/etc/profile.d/zz-discobox-<feature>--<step>.sh` script, named to sort after
+the box's own profile scripts so one that sets PATH outright does not drop it,
+which also puts its `path` ahead of `/usr/local/bin`'s shims; it reaches login
+shells only, never an exec that gets the manifest's env; a feature's scripts
+no step selecting the box still writes are removed with their records),
+`download` (fetched through the environment's proxy, given up after a minute
+without a byte, and moved into place only once its sha256 matches), `packages`
+(`apt-get`), and `run`, each selected by `os`, `arch` and os-release
+`ID`/`ID_LIKE`. Each step is keyed by a digest of its definition and every
+file it names, recorded under `/opt/discobox/provision/steps/` on the root
+filesystem, never a declared volume; a step whose record matches is skipped
+unless its `check` exits non-zero (drift), so a second run changes nothing. A
+box that is not Linux of the Debian family is refused by name before any step
+runs, unless it has no features to provision.
 
 ## Who runs it
 
@@ -60,7 +78,9 @@ flowchart TD
 - **Failure.** A failed step is not recorded, fails its feature and those
   requiring it, and nothing else. A failure before readiness fails it, and
   its error names each failed feature's log.
-- **Apt.** `packages` steps and `run` steps marked `apt` take one lock.
+- **Locks.** `packages` steps and `run` steps marked `apt` take one lock; a
+  `file` step with `merge: json` takes another across its read and its write,
+  so features merging into one file in parallel keep each other's keys.
 
 ## Its state
 

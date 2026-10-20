@@ -81,7 +81,11 @@ type Runner struct {
 	// status is the run's tracker: Tracker, or one of its own.
 	status *Tracker
 	// apt is the lock every step using apt or dpkg takes.
-	apt        sync.Mutex
+	apt sync.Mutex
+	// merge is the lock a file step merging into a file takes across its
+	// read and its write: features provisioning in parallel may merge into
+	// the same file (a daemon.json), and two unlocked merges lose one's keys.
+	merge      sync.Mutex
 	aptUpdated bool
 }
 

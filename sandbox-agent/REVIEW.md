@@ -50,6 +50,12 @@
   still running, or a launch already in flight (which the caller joins), skips
   the wait: an agent restart provisions again under a live harness, and an
   attach to it must not wait on that run or fail with it.
+- **A step that reads what it then writes takes a lock.** Background
+  features run in parallel, so a read-modify-write of a file two features
+  touch — a `merge: json` file step into `daemon.json` — loses one's change
+  unless it holds a lock across both (`Runner.merge`, as `Runner.apt` for apt
+  and dpkg). Both steps are then recorded as applied, and the loss is never
+  repaired.
 - **A blocking feature needs all of what it requires.** Everything the
   harness requires, and everything core requires unless core itself is
   `async`, blocks readiness whole, its `async` marks overridden
