@@ -99,6 +99,14 @@ A grant's authorization is a policy: a set of statements, each
   against. Never an example, a qualifier, or an intention. "Such as …" and
   "light" are not conditions.
 - Names are literals, globs, or variables.
+- **Written as a sentence**, a name is quoted or a variable, so a type of
+  several words is unambiguous (`allow push on branch "discobox/issue-46" in
+  repository $primary.repo`); the bare names above are notation. So that
+  every statement can be written and read back, an action or a type holds no
+  sentence keyword (`on`, `within`, `in`, `of`, `when`, `unless`, `created`),
+  and is printable ASCII with no quote, comma or `$`, so it shows as itself.
+  The grammar is `policy/DESIGN.md`'s. (Amended in issue #295, before
+  anything wrote or read a sentence.)
 
 ### 2. Two phases, and order never matters
 
