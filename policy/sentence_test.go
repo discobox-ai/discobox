@@ -126,7 +126,7 @@ func TestFormatIsCanonical(t *testing.T) {
 // statement Validate accepts, Parse(Format(s)) is s, and formatting it again
 // changes nothing.
 func TestParseFormatRoundTripsGeneratedStatements(t *testing.T) {
-	r := rand.New(rand.NewPCG(295, 1))
+	r := rand.New(rand.NewPCG(295, 1)) //nolint:gosec // G404: a fixed seed makes the generated statements reproducible; nothing here is secret.
 	for range 5000 {
 		s := randomStatement(r)
 		p := Policy{Statements: []Statement{s}, Definitions: map[string]string{}}
