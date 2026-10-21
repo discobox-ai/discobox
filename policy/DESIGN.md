@@ -10,11 +10,11 @@ nothing here decides whether a request is one of a statement's actions.
 
 | File | What it holds |
 | --- | --- |
-| `policy.go` | `Policy`, `Statement`, `Resource`, `Scope`, and `Validate`: the shape a person approves, and every way one is refused. `Variables` lists the variables the statements use. |
+| `policy.go` | `Policy`, `Statement`, `Resource`, `Scope`, and `Validate`: the shape a person approves, and every way one is refused; `ValidateDefinitions`, the part a reader of bound statements still asks. `Words` and `Variables` list the words and the variables the statements use. |
 | `evaluate.go` | `Match`, `Parts`, `Atom`, and `Evaluate`: decided parts of each statement, and whether the atom is a supporting read, per atom of a request, combined in the two phases of §2. |
 | `sentence.go` | `Parse` and `Format`, and `ParseStatements` and `FormatStatements` for a policy's list: a statement's sentence form, and its structure, converted without loss. `Tokens` is that sentence as its tokens, each named for what it is (`Join(Tokens(s))` is `Format(s)`), for a reader that highlights it; `FormatScope` and `ScopeTokens` are a scope as a sentence writes it, for a rendering that groups by scope. |
 | `within.go` | `Within`: whether a policy handed on is within the one delegated (ADR 26-10-20-782 §11), each side as its own values resolve it — every allow covered, every delegated deny carried, shared words defined alike — and the allows whose conditions only a judge can compare (`Unsettled`). |
-| `facts.go` | `Facts`, the shape of the control plane's record of a discobox (§4; built by the server's `Sandbox.PolicyFacts`), the variables a policy may use, `Variables` listing each with its value for an agent to read, `Resolve` at approval and `Bind` at a decision. |
+| `facts.go` | `Facts`, the shape of the control plane's record of a discobox (§4; built by the server's `Sandbox.PolicyFacts`), the variables a policy may use, `Variables` listing each with its value for an agent to read, `Resolve` at approval, `Bind` at a decision, and `Bound`: the statements as a reader at that decision sees them. |
 
 It imports only the standard library, so `agentcreds` can carry a policy and
 stay portable.
@@ -52,6 +52,13 @@ it mints a grant, and ignores any `resolved` a client sends. `Bind` reads the
 facts again: a variable matches only when it resolved then and resolves now to
 the same value. A policy handed to another discobox resolves and binds against
 that discobox.
+
+**What a judge reads is bound.** `Bound` writes each variable that binds as
+its value, so a judge reads `repository "acme/web"`, never a variable it would
+have to resolve itself. An allow with a variable that does not bind covers
+nothing and is left out; a deny with one is kept as written, since a reader
+that cannot tell it matches nothing refuses more, never less. Definitions go
+with the statements that use them.
 
 ## Sentences
 

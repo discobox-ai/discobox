@@ -132,7 +132,7 @@ func TestParseFormatRoundTripsGeneratedStatements(t *testing.T) {
 		s := randomStatement(r)
 		p := Policy{Statements: []Statement{s}, Definitions: map[string]string{}}
 		for _, w := range usedWords(s) {
-			if !isReserved(w) {
+			if !IsReserved(w) {
 				p.Definitions[w] = "A word."
 			}
 		}

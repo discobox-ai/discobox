@@ -172,3 +172,61 @@ func TestADelegatedPolicyBindsToTheReceivingDiscobox(t *testing.T) {
 		t.Fatal("a policy approved for the receiver bound $this at the giver")
 	}
 }
+
+func TestBoundWritesEachVariableAsTheValueItMatches(t *testing.T) {
+	p := pullRequests()
+	p.Statements = append(p.Statements, Statement{
+		Effect: Allow, Actions: []string{ActionRead}, ResourceType: "issue comment",
+		Within: []Resource{{Type: "issue", Name: ptr("43"), CreatedBy: VarThis}},
+		Scope:  Scope{Type: "repository", Name: VarPrimaryRepo},
+	})
+	p.Definitions["issue"] = "A GitHub issue."
+	p.Definitions["issue comment"] = "A comment on a GitHub issue."
+	approved := p.Resolve(discobox("sbx_1", "acme/web"))
+	got := approved.Bound(discobox("sbx_1", "acme/web"))
+	if got.Resolved != nil {
+		t.Fatalf("Resolved = %v, want none", got.Resolved)
+	}
+	want := []string{
+		`allow create, update on pull request in repository "acme/web" when "its head is discobox/issue-46 and its base is main"`,
+		`deny force-push on branch in anywhere`,
+		`allow read on issue comment within issue "43" created by "sbx_1" in repository "acme/web"`,
+	}
+	if sentences := FormatStatements(got.Statements); !reflect.DeepEqual(sentences, want) {
+		t.Fatalf("Bound = %q, want %q", sentences, want)
+	}
+	// Bound, a statement names the discobox it was created by, which
+	// Validate refuses; its definitions still fit it.
+	if err := got.ValidateDefinitions(); err != nil {
+		t.Errorf("ValidateDefinitions() error = %v", err)
+	}
+	if again := FormatStatements(approved.Statements); again[0] != `allow create, update on pull request in repository $primary.repo when "its head is discobox/issue-46 and its base is main"` ||
+		*approved.Statements[2].Within[0].Name != "43" || approved.Statements[2].Within[0].CreatedBy != VarThis {
+		t.Fatalf("Bound changed the policy it was called on: %q", again)
+	}
+}
+
+// A variable that does not bind matches nothing: an allow naming one covers
+// nothing and is left out, and a deny naming one is kept as written, because
+// leaving a deny out could only widen what a reader allows.
+func TestBoundLeavesOutAnAllowWhoseVariableDoesNotBind(t *testing.T) {
+	p := pullRequests()
+	p.Statements[1].Scope = Scope{Type: "repository", Name: VarPrimaryUpstream}
+	approved := p.Resolve(discobox("sbx_1", "acme/web"))
+	for name, facts := range map[string]Facts{
+		"no longer resolves":       discobox("sbx_1", ""),
+		"changed since approval":   discobox("sbx_1", "acme/other"),
+		"resolved for nobody here": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := approved.Bound(facts)
+			if sentences := FormatStatements(got.Statements); !reflect.DeepEqual(sentences, []string{`deny force-push on branch in repository $primary.upstream`}) {
+				t.Fatalf("Bound = %q, want the deny as written", sentences)
+			}
+			// The allow's words went with it; the deny's stay defined.
+			if want := map[string]string{"force-push": p.Definitions["force-push"], "branch": p.Definitions["branch"], "repository": p.Definitions["repository"]}; !reflect.DeepEqual(got.Definitions, want) {
+				t.Fatalf("Definitions = %v, want %v", got.Definitions, want)
+			}
+		})
+	}
+}
