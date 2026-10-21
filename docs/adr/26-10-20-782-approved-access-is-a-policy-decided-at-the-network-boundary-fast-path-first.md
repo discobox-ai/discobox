@@ -323,6 +323,11 @@ code, on each side's statements as resolved for its own discobox (§4):
   policy needs a delegation whose policy covers it and whose uses the judge
   finds hold its uses; a request with uses alone is judged against the uses as
   before. A delegation without a policy hands on no policy.
+- **Until every grant carries a policy, uses alone are still handed on.**
+  Agents cannot write a policy until `discobox-access` can, so a hand-off of
+  uses alone is judged by its uses and is not bound by a delegation's allows
+  and denies. That is accepted until every grant must carry a policy, which
+  ends it; nothing is decided by a policy before then (§8).
 
 Nothing a discobox hands on is shown to a person, so the check is the
 approval; there is no shown value to hold it to. (Amended in issue #298,

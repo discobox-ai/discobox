@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/discobox-ai/discobox/policy"
 	"net/http"
 	"slices"
 	"strings"
@@ -92,6 +93,15 @@ func delegateFor(t *testing.T, st *store.Store, secret *model.Secret, host strin
 	for i, use := range uses {
 		grant.Uses = append(grant.Uses, model.SecretUse{UseID: fmt.Sprintf("use-delegated-%d", i), Description: use})
 	}
+	// A discobox hands a credential on only as a policy within its
+	// delegation's (ADR 26-10-20-782 §11), so every delegation here carries
+	// one wide enough for what the tests hand on.
+	delegated := handedOnPolicy()
+	delegated.Statements[0].Actions = []string{policy.ActionManage}
+	delegated.Statements[0].ResourceType = policy.Anything
+	delegated.Definitions = map[string]string{"repository": handedOnPolicy().Definitions["repository"]}
+	resolved := delegated.Resolve(policy.Facts{Discobox: policy.Discobox{ID: leadID}})
+	grant.Policy = &resolved
 	if lifetime > 0 {
 		expires := time.Now().UTC().Add(lifetime)
 		grant.ExpiresAt = &expires
@@ -105,9 +115,11 @@ func delegateFor(t *testing.T, st *store.Store, secret *model.Secret, host strin
 // workerRequest is a worker's ask, as discobox-access files it.
 func workerRequest(t *testing.T, svc *resourcesecrets.Service, change func(*services.CreateSandboxCredentialRequestBody)) *model.SecretRequest {
 	t.Helper()
+	handed := handedOnPolicy()
 	body := services.CreateSandboxCredentialRequestBody{
 		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
-		Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
+		Uses:   []apimodel.SecretUse{{Description: "read issue 43"}},
+		Policy: apiPolicy(t, handed),
 	}
 	if change != nil {
 		change(&body)
@@ -119,8 +131,27 @@ func workerRequest(t *testing.T, svc *resourcesecrets.Service, change func(*serv
 	return req
 }
 
+// approveAsLead approves req as the lead, sending the policy it asks for
+// when the input names none, as `approve --policy-as-asked` does.
 func approveAsLead(svc *resourcesecrets.Service, req *model.SecretRequest, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
+	if !input.Policy.IsSet() && req.Policy != nil {
+		if sent, err := services.APIPolicy(req.Policy); err == nil {
+			input.Policy = sent
+		}
+	}
 	return svc.ApproveSecretRequest(asLead(), "project-1", req.ID, input)
+}
+
+// handedOnPolicy is the policy a worker asks for in these tests, in its own
+// repository: within every delegation delegateFor makes.
+func handedOnPolicy() policy.Policy {
+	return policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: "acme/web"},
+		}},
+		Definitions: map[string]string{"issue": "A GitHub issue.", "repository": "A GitHub repository, owner/name."},
+	}
 }
 
 // A discobox approves within a delegation grant it holds, with that grant's
@@ -488,7 +519,7 @@ func TestACreatesGrantsAreHeldToTheirDelegationsWhenStored(t *testing.T) {
 
 	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
 		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
+		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy()),
 	}})
 	if err != nil {
 		t.Fatalf("prepare grants: %v", err)
@@ -522,14 +553,14 @@ func TestACreatesSecretNotDelegatedAnswersAsIfItDidNotExist(t *testing.T) {
 	grant := func(secretID string) []apimodel.SandboxGrant {
 		return []apimodel.SandboxGrant{{
 			SecretId: serverapi.NewOptString(secretID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
+			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy()),
 		}}
 	}
 	for _, named := range []string{other.ID, other.ID[:len(other.ID)-3], "sec_doesnotexist"} {
 		_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, grant(named))
 		requireStatus(t, err, http.StatusForbidden)
 	}
-	wellKnown := []apimodel.SandboxGrant{{WellKnownId: serverapi.NewOptString("com.github.api"), Uses: []apimodel.SecretUse{{Description: "read issue 43"}}}}
+	wellKnown := []apimodel.SandboxGrant{{WellKnownId: serverapi.NewOptString("com.github.api"), Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy())}}
 	_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, wellKnown)
 	requireStatus(t, err, http.StatusForbidden)
 
@@ -562,9 +593,9 @@ func TestEachGrantACreateGivesIsJudged(t *testing.T) {
 	delegate(t, st, secret, "github.com", time.Hour)
 	grants := []apimodel.SandboxGrant{
 		{SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}},
+			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy())},
 		{SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 44"}}},
+			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 44"}}, Policy: apiPolicy(t, handedOnPolicy())},
 	}
 	judging := &countingJudge{allow: true}
 	svc.SetJudge(judging)
@@ -782,7 +813,7 @@ func TestACreatesGrantIsMadeUnderADelegationThatHoldsItsUses(t *testing.T) {
 
 	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
 		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}},
+		Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy()),
 	}})
 	if err != nil {
 		t.Fatalf("prepare grants: %v", err)

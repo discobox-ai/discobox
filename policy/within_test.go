@@ -157,3 +157,28 @@ func TestWithinLeavesConditionsToAJudge(t *testing.T) {
 		t.Fatalf("given = %q", got)
 	}
 }
+
+// A name with an escape is a pattern, not the literal it looks like: one the
+// delegated glob matches as text can mean a name it excludes. And a value a
+// variable resolved to is a literal, however much it looks like a glob.
+func TestWithinReadsEscapesAsTheGlobsTheyAre(t *testing.T) {
+	delegated := mustParse(t, `allow push on branch "release-[^m]*" in repository "acme/web"`)
+	given := mustParse(t, `allow push on branch "release-\\main" in repository "acme/web"`)
+	if _, err := Within(given, workerValues, delegated, leadValues); err == nil {
+		t.Fatal(`release-\\main, which matches release-main, was within release-[^m]*`)
+	}
+	ok := mustParse(t, `allow push on branch "release-1" in repository "acme/web"`)
+	if _, err := Within(ok, workerValues, delegated, leadValues); err != nil {
+		t.Fatalf("a literal the glob matches was refused: %v", err)
+	}
+
+	byVariable := mustParse(t, `allow push on branch $primary.branch in repository "acme/web"`)
+	wide := mustParse(t, `allow push on branch "*" in repository "acme/web"`)
+	if _, err := Within(wide, map[string]string{}, byVariable, map[string]string{VarPrimaryBranch: "*"}); err == nil {
+		t.Fatal(`a branch named * by a variable covered every branch`)
+	}
+	same := mustParse(t, `allow push on branch $primary.branch in repository "acme/web"`)
+	if _, err := Within(same, map[string]string{VarPrimaryBranch: "*"}, byVariable, map[string]string{VarPrimaryBranch: "*"}); err != nil {
+		t.Fatalf("the same value on both sides was refused: %v", err)
+	}
+}

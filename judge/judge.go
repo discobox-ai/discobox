@@ -95,7 +95,9 @@ const (
 	// approving another discobox's request, judged before the grant is
 	// minted: whether the uses it would hand on fall within the uses it was
 	// delegated (ADR 26-09-30-782 §3). Both are authorization, and there is no
-	// request evidence.
+	// request evidence. For a policy handed on, its purposes and uses are one
+	// delegated statement and one statement handed on, whose conditions alone
+	// are in question (ADR 26-10-20-782 §11).
 	KindDelegation = "delegation"
 	// KindRule is whether what a discobox asked a credential for falls within
 	// the uses of an approval rule, judged before the rule approves the

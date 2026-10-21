@@ -203,3 +203,29 @@ func TestTheWindowsRequestKeepsItsPolicyAsSent(t *testing.T) {
 		t.Fatalf("sent back %s, want %s", data, askedPolicyJSON)
 	}
 }
+
+// Text a discobox wrote reaches the window escaped in the form the window
+// draws: a definition in a policy token's note, and the raw request's JSON,
+// whose encoder would pass a C1 control through.
+func TestTheWindowsRequestIsEscapedWhereItIsDrawn(t *testing.T) {
+	hostile := strings.Replace(policyRequestJSON, `"send commits to a branch"`, `"send commits\u001b]8;;https://evil\u0007 to a branch"`, 1)
+	hostile = strings.Replace(hostile, `"name":"github"`, `"name":"github","justification":"read \u009b31m this"`, 1)
+	var read apimodel.SecretRequest
+	if err := read.UnmarshalJSON([]byte(hostile)); err != nil {
+		t.Fatal(err)
+	}
+	req := toTUICredentialRequest(read)
+	for _, l := range req.PolicyLines {
+		for _, tok := range l.Tokens {
+			if strings.ContainsAny(tok.Text+tok.Note, "\x1b\x07") {
+				t.Fatalf("token drawn raw: %+v", tok)
+			}
+		}
+	}
+	if strings.ContainsRune(req.Raw, '\u009b') || strings.ContainsRune(req.Raw, '\x1b') {
+		t.Fatalf("raw request carries a control:\n%q", req.Raw)
+	}
+	if req.Policy == nil || !strings.Contains(req.Policy.Definitions["push"], "\x1b") {
+		t.Fatal("the policy sent back on approval was changed; only what is drawn is escaped")
+	}
+}

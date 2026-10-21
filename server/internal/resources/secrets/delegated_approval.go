@@ -357,8 +357,10 @@ func lapsingDelegation() error {
 // and each delegation's as it is bound now for the discobox holding it. Where
 // code leaves an allow's conditions unsettled, the judge is asked whether
 // they are within the delegated ones, as it is about uses; no judge, or no
-// answer, hands nothing on. A nil policy hands none on, and every delegation
-// stays: its uses are judged as they always were.
+// answer, hands nothing on. A hand-off with no policy keeps every delegation,
+// and its uses alone are judged, as before policies: agents cannot write a
+// policy until discobox-access can (#297), so until then a hand-off of uses
+// alone is not bound by a delegation's allows and denies.
 //
 // Which of those the hand-off is made under is still the uses' judging to
 // settle (judgeDelegations), so a delegation that covers the policy but not
