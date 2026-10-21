@@ -26,8 +26,9 @@ const policyRequestJSON = `{"id":"request-1","projectId":"project-1","requestedB
 	`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 
 // A request that asks for a policy shows it as the person approving it reads
-// it: grouped by scope with the variable resolved, the deny that applies
-// anywhere once, the condition under its statement, every word defined.
+// it: grouped by scope, the variable followed by its value, the deny that
+// applies anywhere once under "global", the condition under its statement,
+// and every word defined where it is first used.
 func TestSecretRequestGetRendersItsPolicy(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -55,19 +56,12 @@ func TestSecretRequestGetRendersItsPolicy(t *testing.T) {
 		}
 	}
 	want := []string{
-		"POLICY        in repository $primary.repo — discobox-ai/discobox",
-		`                allow push on branch "discobox/issue-46"`,
-		"                allow create, update on pull request",
+		"POLICY        in repository (a GitHub repository) $primary.repo (discobox-ai/discobox)",
+		`                allow push (send commits to a branch) on branch (a Git branch) "discobox/issue-46"`,
+		"                allow create, update on pull request (a GitHub pull request)",
 		`                  when "its base is main"`,
-		"              everywhere, whatever else is allowed",
+		"              global",
 		"                deny delete on anything",
-		"              words",
-		"                branch: a Git branch",
-		"                pull request: a GitHub pull request",
-		"                push: send commits to a branch",
-		"                repository: a GitHub repository",
-		"              variables",
-		"                $primary.repo: discobox-ai/discobox",
 	}
 	if !reflect.DeepEqual(policy, want) {
 		t.Fatalf("policy rows:\n%s\nwant:\n%s\nwhole output:\n%s", strings.Join(policy, "\n"), strings.Join(want, "\n"), out.String())
@@ -173,7 +167,7 @@ func TestSecretGrantListRendersEachPolicy(t *testing.T) {
 		t.Fatalf("a grant with no policy was given one:\n%s", got)
 	}
 	_, block, ok := strings.Cut(got, "\nPOLICY OF grant-policy\n")
-	if !ok || !strings.HasPrefix(block, "  in repository $primary.repo — discobox-ai/discobox\n") ||
+	if !ok || !strings.HasPrefix(block, "  in repository (a GitHub repository) $primary.repo (discobox-ai/discobox)\n") ||
 		!strings.Contains(block, "\n    deny delete on anything\n") {
 		t.Fatalf("grant listing lacks grant-policy's rendered policy:\n%s", got)
 	}

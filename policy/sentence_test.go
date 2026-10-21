@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"reflect"
 	"strconv"
@@ -399,5 +400,38 @@ func TestFormatWritesQuotedTextInASCII(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, s) {
 		t.Fatalf("Parse:\n got %#v\nwant %#v", got, s)
+	}
+}
+
+// Tokens are Format's sentence, each part named for what it is, so a reader
+// can highlight a sentence without parsing it again: Join(Tokens(s)) is
+// Format(s).
+func TestTokensNameEachPartOfTheSentence(t *testing.T) {
+	s, err := Parse(`allow create, update on pull request created by $this within issue "43" in repository $primary.repo of org "acme" when "its base is main" unless "it is a draft"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := Tokens(s)
+	if got := Join(tokens); got != Format(s) {
+		t.Fatalf("Join(Tokens) = %q, Format = %q", got, Format(s))
+	}
+	var got []string
+	for _, tok := range tokens {
+		got = append(got, fmt.Sprintf("%d:%s", tok.Kind, tok.Text))
+	}
+	want := []string{
+		fmt.Sprintf("%d:allow", TokenEffect), fmt.Sprintf("%d:create", TokenAction), fmt.Sprintf("%d:,", TokenPunct), fmt.Sprintf("%d:update", TokenAction),
+		fmt.Sprintf("%d:on", TokenKeyword), fmt.Sprintf("%d:pull request", TokenType), fmt.Sprintf("%d:created by", TokenKeyword), fmt.Sprintf("%d:$this", TokenVariable),
+		fmt.Sprintf("%d:within", TokenKeyword), fmt.Sprintf("%d:issue", TokenType), fmt.Sprintf("%d:\"43\"", TokenName),
+		fmt.Sprintf("%d:in", TokenKeyword), fmt.Sprintf("%d:repository", TokenType), fmt.Sprintf("%d:$primary.repo", TokenVariable),
+		fmt.Sprintf("%d:of", TokenKeyword), fmt.Sprintf("%d:org", TokenType), fmt.Sprintf("%d:\"acme\"", TokenName),
+		fmt.Sprintf("%d:when", TokenKeyword), fmt.Sprintf("%d:\"its base is main\"", TokenCondition),
+		fmt.Sprintf("%d:unless", TokenKeyword), fmt.Sprintf("%d:\"it is a draft\"", TokenCondition),
+	}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("tokens:\n%s\nwant:\n%s", strings.Join(got, " | "), strings.Join(want, " | "))
+	}
+	if !tokens[2].Glued || tokens[3].Glued {
+		t.Fatalf("the comma is glued to the action before it, and only it: %+v", tokens[2:4])
 	}
 }

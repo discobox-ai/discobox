@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -191,6 +193,12 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Created:       r.CreatedAt,
 	}
 	req.Hosts = r.Hosts
+	if data, err := r.MarshalJSON(); err == nil {
+		var indented bytes.Buffer
+		if json.Indent(&indented, data, "", "  ") == nil {
+			req.Raw = indented.String()
+		}
+	}
 	if r.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
 		req.Refresh = &tui.RefreshAsk{
 			SecretID: strings.TrimSpace(r.SecretId.Or("")),

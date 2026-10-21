@@ -1496,6 +1496,8 @@ type CredentialRequest struct {
 	// for this discobox, made safe to draw by the data source.
 	Policy      *policy.Policy
 	PolicyLines []policyview.Line
+	// Raw is the request as the server sent it, as indented JSON.
+	Raw string
 	// GrantTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
 	GrantTTL time.Duration

@@ -14,9 +14,12 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // The credential inbox: what the window does about a request waiting on a
@@ -224,10 +227,15 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			detail: "approve this, and requests like it from now on, under a rule you read first", enabled: true})
 	}
 	items = append(items, action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true})
+	if req.Raw != "" {
+		items = append(items, action{key: "raw", press: "r", label: "Raw request…", detail: "the request as JSON, as the server sent it", enabled: true})
+	}
 
 	d := actionsDialog("Credential request", "", items, func(result string) tea.Cmd {
 		a := approval{req: req, secrets: secrets}
 		switch {
+		case result == "raw":
+			return m.showRawRequest(req, func() tea.Cmd { return m.askAboutCredential(req, secrets) })
 		case result == "deny":
 			return m.denyCredential(req)
 		case result == "auto":
@@ -244,6 +252,30 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	d.sections = credentialAsk(req, m.secrets.now())
 	d.answerLabel = "which secret answers this?"
 	d.keys = []hint{pressing("enter chooses the highlighted secret", "enter"), pressing("esc leaves it waiting", "esc")}
+	m.dialog = d
+	return nil
+}
+
+// showRawRequest is the request as the server sent it, as JSON highlighted
+// the way a code block in a comment is. back is the request card.
+func (m *Model) showRawRequest(req CredentialRequest, back func() tea.Cmd) tea.Cmd {
+	rendered := req.Raw
+	if r, err := glamour.NewTermRenderer(glamour.WithStyles(markdownStyle(m.st)), glamour.WithWordWrap(0)); err == nil {
+		if out, err := r.Render("```json\n" + req.Raw + "\n```"); err == nil {
+			rendered = out
+		}
+	}
+	plain := func(*styles) lipgloss.Style { return lipgloss.NewStyle() }
+	var lines []line
+	for _, row := range strings.Split(strings.Trim(rendered, "\n"), "\n") {
+		lines = append(lines, line{spans: []span{{text: strings.TrimRight(row, " "), style: plain}}})
+	}
+	d := actionsDialog("Raw request", "", []action{{key: "back", press: "enter", label: "Back to the request", enabled: true}},
+		func(string) tea.Cmd { return back() })
+	d.titleRight = req.ID
+	d.sections = []section{{label: "as the server sent it", lines: lines}}
+	d.keys = []hint{pressing("enter or esc goes back", "esc")}
+	d.onCancel = back
 	m.dialog = d
 	return nil
 }
@@ -655,25 +687,55 @@ func useLines(use string, t tone) []line {
 	return out
 }
 
-// policyLines is a policy's rendering as a card draws it: each scope it
-// applies in a heading, its statements set in under it and their conditions
-// under those, and a variable that resolved to nothing in the alert tone,
-// since it matches nothing whatever it was meant to name. A line too long for
-// the card wraps onto rows set in past the deepest line, a condition's, so a
+// policyLines is a policy's rendering as a card draws it, highlighted as
+// syntax (policySpans): each scope it applies in a heading, its statements set
+// in under it and their conditions under those. A line too long for the card
+// wraps onto rows set in past the deepest line, a condition's, so a
 // statement's tail never reads as another statement, nor a heading's as one.
 func policyLines(rendered []policyview.Line) []line {
 	out := make([]line, 0, len(rendered))
 	for _, l := range rendered {
-		next := line{text: l.Text, indent: l.Indent, hang: 3 - l.Indent}
-		switch l.Kind {
-		case policyview.Heading:
-			next.tone = toneAccent
-		case policyview.Definition:
-			next.tone = toneDim
-		case policyview.Unresolved:
-			next.tone = toneAlert
+		out = append(out, line{text: l.Text, indent: l.Indent, hang: 3 - l.Indent, spans: policySpans(l)})
+	}
+	return out
+}
+
+// policySpans highlights a line's tokens as syntax, in the syntax palette a
+// code block uses: the effect green for an allow and red for a deny,
+// keywords, types, quoted names and conditions, and variables each in their
+// kind's color, actions as plain words. A token's note — a variable's value,
+// a word's definition — follows it muted, in parentheses; a variable that
+// does not resolve is noted in the alert color, since it matches nothing.
+func policySpans(l policyview.Line) []span {
+	deny := len(l.Tokens) > 0 && l.Tokens[0].Kind == policy.TokenEffect && l.Tokens[0].Text == string(policy.Deny)
+	out := make([]span, 0, len(l.Tokens))
+	for _, t := range l.Tokens {
+		var style func(*styles) lipgloss.Style
+		switch t.Kind {
+		case policy.TokenEffect:
+			style = func(st *styles) lipgloss.Style { return st.synAllow }
+			if deny {
+				style = func(st *styles) lipgloss.Style { return st.synDeny }
+			}
+		case policy.TokenKeyword:
+			style = func(st *styles) lipgloss.Style { return st.synKeyword }
+		case policy.TokenType:
+			style = func(st *styles) lipgloss.Style { return st.synType }
+		case policy.TokenName, policy.TokenCondition:
+			style = func(st *styles) lipgloss.Style { return st.synString }
+		case policy.TokenVariable:
+			style = func(st *styles) lipgloss.Style { return st.synVariable }
+		default:
+			style = func(st *styles) lipgloss.Style { return st.name }
 		}
-		out = append(out, next)
+		out = append(out, span{text: t.Text, style: style, glued: t.Glued})
+		if t.Note != "" {
+			note := func(st *styles) lipgloss.Style { return st.synValue }
+			if l.Kind == policyview.Unresolved && t.Kind == policy.TokenVariable {
+				note = func(st *styles) lipgloss.Style { return st.statusER }
+			}
+			out = append(out, span{text: "(" + t.Note + ")", style: note})
+		}
 	}
 	return out
 }
