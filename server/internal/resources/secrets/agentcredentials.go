@@ -104,9 +104,9 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err != nil {
 		return nil, err
 	}
-	// A policy rides beside the uses (ADR 26-10-20-782 §1). Nothing judges by
-	// it yet; it is validated now so that one a person could not approve is
-	// refused before anyone is asked.
+	// A policy rides beside the uses (ADR 26-10-20-782 §1). It is validated
+	// now so that one a person could not approve is refused before anyone is
+	// asked.
 	askedPolicy, err := services.PolicyFromAPI(input.Policy)
 	if err != nil {
 		return nil, err
@@ -465,6 +465,7 @@ func (s *Service) secretOwnUse(ctx context.Context, sandbox *model.Sandbox, cred
 func approvedCredentialUse(credential store.AgentCredential, use model.SecretUse, host string) services.ApprovedUse {
 	return services.ApprovedUse{
 		Purpose:    use.Description,
+		Policy:     credential.Grant.Policy,
 		Credential: credential.Name,
 		Host:       host,
 		GrantID:    credential.Grant.ID,

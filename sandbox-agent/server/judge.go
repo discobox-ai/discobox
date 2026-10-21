@@ -67,6 +67,9 @@ func judgeJob(in *sandboxapi.JudgeJob) judge.Job {
 		Facts:      in.Facts,
 		Uses:       in.Uses,
 	}
+	if definitions, ok := in.Definitions.Get(); ok && len(definitions) > 0 {
+		job.Definitions = map[string]string(definitions)
+	}
 	if stdin, ok := in.Stdin.Get(); ok {
 		job.Stdin = &judge.Input{Content: stdin.Content, Missing: stdin.Missing.Or("")}
 	}

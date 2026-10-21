@@ -608,40 +608,9 @@ func (s *GitSource) RepositoryURL() string {
 	return ""
 }
 
-// JudgeDiscobox is the part of a sandbox's row the judge is told about (ADR
-// 26-10-14-691): what was recorded when it was created, and nothing it
-// reports about itself since. It is PolicyFacts in the judge's shape, so the
-// judge and a policy's variables cannot read two repositories for one
-// discobox.
-func (s *Sandbox) JudgeDiscobox() judge.Discobox {
-	facts := s.PolicyFacts()
-	out := judge.Discobox{SandboxID: facts.Discobox.ID, CreatedBy: facts.Discobox.CreatedBy}
-	for _, source := range facts.Sources {
-		if source.Primary {
-			primary := judgeSource(source)
-			out.Primary = &primary
-		} else {
-			out.Additional = append(out.Additional, judgeSource(source))
-		}
-	}
-	return out
-}
-
-// judgeSource is one source of PolicyFacts as the judge states it.
-func judgeSource(source policy.Source) judge.Source {
-	out := judge.Source{Commit: source.Commit}
-	if source.Remote != nil {
-		out.Remote = source.Remote.URL
-	}
-	if source.Ref != nil {
-		out.RefType, out.RefName = source.Ref.Type, source.Ref.Name
-	}
-	return out
-}
-
 // PolicyFacts is what the control plane recorded about a sandbox when it was
 // created, typed: what a policy's variables resolve from (ADR 26-10-20-782
-// §4), and what the judge is told (JudgeDiscobox). Nothing it reports about
+// §4), and what the judge is told (judge.DiscoboxOf). Nothing it reports about
 // itself since is read. The primary source is the one the sandbox was created
 // with; the others follow in destination order, so the facts are the same
 // every time. A source with no slug cannot be named by $sources.<slug>.repo.
@@ -1819,9 +1788,10 @@ type SecretGrant struct {
 	Uses []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
 	// Policy is what the grant authorizes, as approved (ADR 26-10-20-782 §1):
 	// its statements, their definitions, and the value each variable resolved
-	// to for the sandbox the grant is for. Nil on a grant approved with uses
-	// alone; nothing judges by it yet, and such a grant is judged by its uses
-	// until it lapses.
+	// to for the sandbox the grant is for. A command or request under a grant
+	// that carries one is judged against it, bound to the discobox asking,
+	// rather than against a use's sentence. Nil on a grant approved with uses
+	// alone, which is judged by its uses until it lapses.
 	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The approved policy, with the value each of its variables resolved to for the sandbox the grant is for"`
 	// EnvName is the variable an agent receives the credential in, on a grant
 	// that carries uses. It lives here rather than only on the binding because

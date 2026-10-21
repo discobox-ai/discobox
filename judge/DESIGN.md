@@ -10,11 +10,11 @@ it.
 
 | File | What it holds |
 | --- | --- |
-| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated — or, for a policy, one statement it would grant against a delegated statement that covers it but for its conditions, as their sentences resolved, ADR 26-10-20-782 §11), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
+| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated — or, for a policy, one statement it would grant against a delegated statement that covers it but for its conditions, as their sentences resolved, ADR 26-10-20-782 §11), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found; `UnderPolicy`, which builds a command or request job from a grant's policy bound to the discobox asking, `ErrPolicyAllowsNothing`, and `MaxPolicyBytes` and `PolicyFits`, the most of a policy a job can carry. |
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the uses a person starts an approval rule from — the same work on any target of its kind. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
-| `facts.go` | `Discobox`, `Facts` and `DelegationFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries. |
+| `facts.go` | `Discobox`, `Facts` and `DelegationFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries, and `DiscoboxOf`, the one conversion from the control plane's typed record (`policy.Facts`) to a `Discobox`. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
 | `recognized.go` | `Recognition`, the names of the protocols, endpoints and parsers a pool recognizes, and `GuidanceFor`: the trusted words that go with each name. |
 | `jev/` | The same jobs put to TypeSafe's Jev rather than a model behind `discobox-prompt` (ADR 26-10-01-324): its HTTP client, the yes/no questions a job becomes, and the code that decides a `judge.Answer` from their probabilities. |
@@ -75,6 +75,23 @@ as the reason. A built-in harness is re-pinned to the release's image when the
 server is upgraded, and a judge is replaced when its image changes, so that is
 a window; a custom harness built FROM an older sandbox-agent image is judged
 by nothing until it is rebuilt.
+
+**A grant's policy is judged whole, as a list.** A grant's authorization is
+its policy (ADR 26-10-20-782 §1), and commands and requests are judged against
+what a grant authorizes (ADR 26-10-02-054), so a command or request job under
+a grant that carries one carries no `Purpose`: `UnderPolicy` puts the policy's
+statements in `Purposes`, bound to the discobox asking
+(`policy.Policy.Bound`) and written as sentences, and the words they use in
+`Definitions`, whichever of the grant's uses the command named. `Validate`
+holds such a job to statements that parse with an allow among them,
+definitions only of words they use and never of a reserved one, and
+`MaxPolicyBytes`; `ErrPolicyAllowsNothing` is a policy left with no allow,
+which nobody is asked about. `PolicyFits` is the same bound where a policy
+enters, so one a judge could not be shown is refused before a person approves
+it. Every part of what a job does must fall under some allow — different parts
+under different allows, as a push of a branch and its tag — and no part under
+any deny, which wins. `System` says so to the judge discobox in one answer;
+Jev is asked the two as questions of their own (below).
 
 **A use that drops a limit is wider** (ADR 26-10-14-223). A delegation or
 rule job's purposes
@@ -188,6 +205,16 @@ answers typed questions with probabilities and writes no text, so `System`,
 - **A rule's job.** A `rule` job is one `use_N` question per use asked for,
   with the rule's uses in the instructions and the uses asked for as the
   state, and the claim-of-approval hazard, told what its evidence is.
+- **A policy's allows and denies.** A command or request job under a policy
+  asks `allowed` — within's own question, with only the allows as
+  `approved_purpose` and told that different parts may fall under different
+  ones — and, when the policy has a deny, `denied` — does any part fall under
+  one — in place of `within`, in the same request. Each question's
+  instructions hold only its own statements, with the definitions. Asked
+  afresh as a question about every part, Jev was less sure of the same
+  requests (0.46–0.79 where within read 0.87–0.96). Code combines them: a sure `denied` refuses, an allow
+  needs a sure `allowed` and a sure no on `denied`, and anything between is
+  unsure. Asked as one question, Jev weighs a deny against an allow itself.
 - **A use keeps its limits.** A delegation or rule job also asks one
   `keep_N` question per use: does it keep every limit of the purpose it falls
   under? (Its words call each purpose a line: the server takes a use on one
@@ -240,7 +267,10 @@ and counts what it was unsure of and what it refused alone on a case a correct
 judge does not refuse; change a question or a threshold there and run it.
 A proposer case has the wrapper write a proposal (`ProposalSystem`) and the
 same judge score it: the written uses, and the uses as asked, cover the
-request, and neither covers a control.
+request, and neither covers a control. A command or request case with a
+`policy` is asked again as `<name>@policy`, built by `UnderPolicy` as the
+server builds it, and the run compares the two: a policy is held to scoring
+at least as well as the sentence it rewrites.
 
 **A job says beside its request whether the judge may still ask.** `Prompt`
 derives `BodyCanBeShown` and `AsksLeft` — a request job before its last round,

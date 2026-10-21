@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/egress"
@@ -55,6 +56,11 @@ func PolicyFromAPI(value serverapi.OptAccessPolicy) (*policy.Policy, error) {
 	p.Resolved = nil
 	if err := p.Validate(); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+	// A policy a judge cannot be shown would be approved and then judge
+	// nothing, so it is refused before anyone is asked to approve it.
+	if err := judge.PolicyFits(p); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
 	}
 	return &p, nil
 }

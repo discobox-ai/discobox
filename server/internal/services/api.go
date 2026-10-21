@@ -788,7 +788,11 @@ type CommandAsk struct {
 // approved, the credential in the words they read it as, and the host the
 // grant is limited to.
 type ApprovedUse struct {
-	Purpose    string
+	Purpose string
+	// Policy is the grant's policy as approved, with what its variables
+	// resolved to, when the grant carries one (ADR 26-10-20-782 §1). A job
+	// under it is judged against the whole policy rather than Purpose.
+	Policy     *policy.Policy
 	Credential string
 	Host       string
 	// GrantID is the grant the use belongs to, which a verdict is recorded

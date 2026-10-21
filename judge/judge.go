@@ -14,8 +14,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/policy"
 )
 
 const (
@@ -25,7 +28,7 @@ const (
 	Role = "judge"
 	// PromptVersion changes whenever System changes. A stored verdict names
 	// it, so a decision can be read against the words that produced it.
-	PromptVersion = "14"
+	PromptVersion = "15"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
 	//
@@ -67,6 +70,14 @@ const (
 	// a body the judge asked for and cannot be shown. Validate is the backstop
 	// either way, since a job is refused whole rather than sent truncated.
 	MaxBodyBytes = 8 << 10
+	// MaxPolicyBytes is the most a grant's policy may be as a judge reads it:
+	// its statements and definitions as the job's JSON. A body shown at its
+	// worst is about 48 KiB of MaxInput (MaxBodyBytes); what is left is the
+	// rest of the job, and a policy has to fit in it beside the request, the
+	// guidance and the facts. policy.Validate alone allows far more — 64
+	// statements and 128 definitions of up to 1000 bytes each — so a policy
+	// within its bounds is not necessarily one a judge can read.
+	MaxPolicyBytes = 8 << 10
 	// MaxMetadataBytes is the most a parser may say about a body, as JSON.
 	// Metadata is in every ask, the first included, so it is held to a small
 	// fraction of what a body shown on request may be: it is what the
@@ -83,7 +94,8 @@ const (
 	MaxFacts = 8
 )
 
-// The kinds of job. Each is judged against one approved use.
+// The kinds of job. Each is judged against what a person approved: one use, a
+// list of uses, or a grant's policy.
 const (
 	// KindCommand is a command a discobox is about to run under an approved
 	// use, judged before any credential is minted for it.
@@ -108,20 +120,27 @@ const (
 )
 
 // Job is one question, and everything the judge is allowed to see in order to
-// answer it. Purpose (for a delegation or rule job, Purposes) and Host are the
+// answer it. Purpose (or Purposes, with their Definitions) and Host are the
 // authorization — what a person approved and where that credential may go.
 // Everything else is evidence, and evidence is data to weigh, never
 // instructions to follow.
 type Job struct {
 	Kind string `json:"kind"`
 	// Purpose is the approved use, in the words it was approved in, for a
-	// command or request job.
+	// command or request job under a grant that carries no policy.
 	Purpose string `json:"purpose,omitempty"`
-	// Purposes are the uses a delegation or rule job is judged against, one
-	// each: what the discobox was delegated, or the rule's uses. They are a
-	// list rather than lines of one Purpose, so no use's words decide where
-	// another begins.
+	// Purposes are what a job is judged against when it is more than one
+	// sentence, one each. For a delegation or rule job they are uses: what the
+	// discobox was delegated, or the rule's uses. For a command or request job
+	// under a grant that carries a policy (ADR 26-10-20-782 §1) they are the
+	// policy's statements as sentences, bound to the discobox asking
+	// (UnderPolicy). They are a list rather than lines of one Purpose, so no
+	// entry's words decide where another begins.
 	Purposes []string `json:"purposes,omitempty"`
+	// Definitions are what each word a policy's statements use means, other
+	// than the defaults, as a person approved them with the statements. Only a
+	// command or request job judged against a policy carries them.
+	Definitions map[string]string `json:"definitions,omitempty"`
 	// Host is the host the use was approved for.
 	Host string `json:"host"`
 	// Credential names the credential in the words a person reads, never its
@@ -333,9 +352,12 @@ func (j Job) Validate() error {
 			}
 		}
 	default:
-		if strings.TrimSpace(j.Purpose) == "" || len(j.Purposes) > 0 {
-			return errors.New("a job is judged against an approved use and its host")
+		if err := j.validatePolicy(); err != nil {
+			return err
 		}
+	}
+	if len(j.Definitions) > 0 && (j.Kind == KindDelegation || j.Kind == KindRule || len(j.Purposes) == 0) {
+		return errors.New("only a job judged against a policy carries the definitions of its words")
 	}
 	if j.Round < 1 || j.Round > MaxRounds {
 		return fmt.Errorf("round %d is outside the %d a job may be asked", j.Round, MaxRounds)
@@ -436,6 +458,85 @@ func (j Job) Validate() error {
 		return errors.New("the evidence for one job exceeds what a judge may be shown")
 	}
 	return nil
+}
+
+// validatePolicy checks what a command or request job is judged against: an
+// approved use's sentence, or a policy's statements — each one that parses,
+// at least one of them an allow, definitions as policy.Validate holds them at
+// approval (one for every word they use but the reserved ones, and for no
+// other), and all of it within MaxPolicyBytes — and never both.
+func (j Job) validatePolicy() error {
+	if len(j.Purposes) == 0 {
+		if strings.TrimSpace(j.Purpose) == "" {
+			return errors.New("a job is judged against an approved use and its host")
+		}
+		return nil
+	}
+	if j.Purpose != "" {
+		return errors.New("a job is judged against an approved use or a policy, never both")
+	}
+	statements, err := policy.ParseStatements(j.Purposes)
+	if err != nil {
+		return fmt.Errorf("a policy's statements are sentences: %w", err)
+	}
+	if !slices.ContainsFunc(statements, func(s policy.Statement) bool { return s.Effect == policy.Allow }) {
+		return ErrPolicyAllowsNothing
+	}
+	// The definitions are held to what policy.Validate holds them to at
+	// approval, since a definition could quietly widen read (ADR 26-10-20-782
+	// §1); the statements are bound, which Validate itself would refuse.
+	if err := (policy.Policy{Statements: statements, Definitions: j.Definitions}).ValidateDefinitions(); err != nil {
+		return fmt.Errorf("a policy's definitions: %w", err)
+	}
+	return checkPolicySize(j.Purposes, j.Definitions)
+}
+
+// PolicyFits reports whether p, as it is written, is small enough for a judge
+// job to carry beside the largest evidence one may show: a policy that is not
+// could be approved and then judge nothing. Where a policy enters, it is
+// refused before anyone is asked to approve it. Binding a variable to its
+// value can lengthen a statement, and a job built from a bound policy is held
+// to the same bound by Validate.
+func PolicyFits(p policy.Policy) error {
+	return checkPolicySize(policy.FormatStatements(p.Statements), p.Definitions)
+}
+
+func checkPolicySize(statements []string, definitions map[string]string) error {
+	data, err := json.Marshal(struct {
+		Statements  []string          `json:"purposes"`
+		Definitions map[string]string `json:"definitions,omitempty"`
+	}{statements, definitions})
+	if err != nil {
+		return err
+	}
+	if len(data) > MaxPolicyBytes {
+		return fmt.Errorf("the policy's statements and definitions are %d bytes as a judge reads them, more than the %d a judge may be shown with a request", len(data), MaxPolicyBytes)
+	}
+	return nil
+}
+
+// ErrPolicyAllowsNothing is a policy with no allow left once its variables are
+// bound to the discobox asking: every allow names a variable that has no value
+// there, or never had one. Nothing is asked about it, since a judge could only
+// refuse.
+var ErrPolicyAllowsNothing = errors.New("the policy allows nothing for this discobox: no allow is left once its variables are bound, since a variable with no value matches nothing")
+
+// UnderPolicy is j judged against a grant's policy rather than one use's
+// sentence, since a grant's authorization is its policy (ADR 26-10-20-782
+// §1): Purposes are p's statements bound to the discobox f describes
+// (policy.Policy.Bound) and written as sentences, and Definitions the words
+// they use. A command job and a request job alike are judged against the
+// whole policy, whichever of the grant's uses the command named. It is
+// ErrPolicyAllowsNothing when no allow is left.
+func (j Job) UnderPolicy(p policy.Policy, f policy.Facts) (Job, error) {
+	bound := p.Bound(f)
+	j.Purpose = ""
+	j.Purposes = policy.FormatStatements(bound.Statements)
+	j.Definitions = bound.Definitions
+	if !slices.ContainsFunc(bound.Statements, func(s policy.Statement) bool { return s.Effect == policy.Allow }) {
+		return j, ErrPolicyAllowsNothing
+	}
+	return j, nil
 }
 
 func (r *Reported) validate() error {

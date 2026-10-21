@@ -165,12 +165,17 @@ there is no delivery to name.
 
 A protocol-originated request, a grant with uses, and a grant given on a create
 may carry a policy (`policy.Policy`, ADR 26-10-20-782 §1) beside their uses,
-stored as one JSON column. Nothing judges by it yet: a grant is still activated
-and judged by its uses, and a grant without a policy is untouched.
+stored as one JSON column. A grant is still activated by its uses, and a grant
+without a policy is judged by them as before.
 
+- **Judged against whole** (`ApprovedUse`, `ApprovedCredentialUse`): a command
+  or request under a grant that carries a policy is judged against the policy
+  rather than the sentence of the use it named, whichever use that was; the
+  judges package binds it to the discobox asking.
 - **Validated where it enters** (`services.PolicyFromAPI`): a policy that does
-  not validate is a 400 before anyone is asked, and whatever a client sent as
-  `resolved` is dropped.
+  not validate, or that is larger than a judge job can carry
+  (`judge.PolicyFits`), is a 400 before anyone is asked, and whatever a client
+  sent as `resolved` is dropped.
 - **Resolved where a grant is minted** (`resolveGrantPolicy` in `mintGrantAs`,
   and `PrepareSandboxGrants`): each variable from the record of the sandbox the
   grant is for (`Sandbox.PolicyFacts`) — the asking discobox for an approved

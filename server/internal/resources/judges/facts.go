@@ -10,48 +10,34 @@ import (
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
-// facts is what the judge is told about the discobox asking (ADR
-// 26-10-14-691), read from its row for every job: a use can be held by more
-// than one discobox, and "this discobox" is the one asking now. The pool names
-// the discobox, and the caller has already checked that against the use; what
-// is said about it is read here.
-func (s *Service) facts(ctx context.Context, projectID, sandboxID string) ([]string, error) {
-	asking, err := s.asking(ctx, projectID, sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	return judge.Facts(asking), nil
-}
-
-// requestFacts is what the judge is told about a request: the discobox asking,
-// and, when the request is a call to the discobox API that names a discobox in
+// requestFacts is what the judge is told about a request: the discobox asking
+// (ADR 26-10-14-691), read from its row for every job — a use can be held by
+// more than one discobox, and "this discobox" is the one asking now — and,
+// when the request is a call to the discobox API that names a discobox in
 // the project, that discobox too (ADR 26-10-14-320 §5). The call names its
 // target only by an ID; what that discobox was created with, and by whom, is
 // read from its row here, as the asking discobox's is.
-func (s *Service) requestFacts(ctx context.Context, projectID, sandboxID string, request *judge.Request) ([]string, error) {
-	asking, err := s.asking(ctx, projectID, sandboxID)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) requestFacts(ctx context.Context, projectID string, asking *model.Sandbox, request *judge.Request) ([]string, error) {
 	targetID, _, ok := namedDiscobox(projectID, request)
 	if !ok {
-		return judge.Facts(asking), nil
+		return judge.Facts(judge.DiscoboxOf(asking.PolicyFacts())), nil
 	}
 	target, err := s.store.GetSandbox(ctx, projectID, targetID)
 	if errors.Is(err, store.ErrNotFound) {
 		// A discobox that is not in the project is no target to state: the
 		// sandbox role refuses the call when it reaches the control plane.
-		return judge.Facts(asking), nil
+		return judge.Facts(judge.DiscoboxOf(asking.PolicyFacts())), nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return judge.TargetFacts(asking, target.JudgeDiscobox()), nil
+	return judge.TargetFacts(judge.DiscoboxOf(asking.PolicyFacts()), judge.DiscoboxOf(target.PolicyFacts())), nil
 }
 
 // namedDiscobox is the discobox a request to the discobox API names in its
@@ -93,14 +79,32 @@ func (s *Service) delegationFacts(ctx context.Context, projectID string, ask ser
 	if err != nil {
 		return nil, err
 	}
-	return judge.DelegationFacts(giving, ask.For.JudgeDiscobox()), nil
+	return judge.DelegationFacts(judge.DiscoboxOf(giving.PolicyFacts()), judge.DiscoboxOf(ask.For.PolicyFacts())), nil
 }
 
-// asking is the record of the discobox asking.
-func (s *Service) asking(ctx context.Context, projectID, sandboxID string) (judge.Discobox, error) {
+// asking is the record of the discobox asking. The pool names the discobox,
+// and the caller has already checked that against the use; what is said about
+// it, and what a policy's variables bind to, is read here.
+func (s *Service) asking(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return judge.Discobox{}, apperrors.NotFound(err, "the discobox asking was not found")
+		return nil, apperrors.NotFound(err, "the discobox asking was not found")
 	}
-	return sandbox.JudgeDiscobox(), nil
+	return sandbox, nil
+}
+
+// underPolicy is job as it is judged under use: against the grant's policy,
+// bound to the discobox asking, when the grant carries one (ADR 26-10-20-782
+// §1), and otherwise against the use's sentence, as it was built. A policy
+// with no allow left for this discobox is refused here, since a judge could
+// only refuse it too.
+func underPolicy(job judge.Job, use services.ApprovedUse, asking *model.Sandbox) (judge.Job, error) {
+	if use.Policy == nil {
+		return job, nil
+	}
+	job, err := job.UnderPolicy(*use.Policy, asking.PolicyFacts())
+	if errors.Is(err, judge.ErrPolicyAllowsNothing) {
+		return judge.Job{}, apperrors.NewStatusError(http.StatusForbidden, err.Error())
+	}
+	return job, err
 }
