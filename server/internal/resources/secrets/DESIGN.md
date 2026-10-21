@@ -182,17 +182,28 @@ and judged by its uses, and a grant without a policy is untouched.
   the form a person approves shows its variables' values (§3). The request
   keeps its policy unresolved; a discobox that is gone resolves nothing, and
   every variable shows as matching nothing.
-- **Only a person approves a policy, and names it.** An approval of a request
+- **An approval names the policy it approves.** An approval of a request
   that carries one sends the policy it approves — the one asked for, or an
   edit — or is refused, so nothing is recorded as approved that was not sent.
-  Its `resolved` is the values the person was shown: `commitApproval` holds
+  A person's `resolved` is the values they were shown: `commitApproval` holds
   the grant's to them inside the transaction, and a value that resolves
   otherwise, or a variable shown as matching nothing that resolves now, is a
   409 that grants nothing (`errPolicyResolvedOtherwise`).
   A rule never answers such a request, nor is proposed or made from one
-  (`ruleTestable`, `ruleProposable`): rules are read against uses. A discobox approves no policy and gives none on a create: handing a
-  credential on is judged by uses, and over policies is not decided yet (ADR
-  26-10-20-782, Deferred). Delegated grants therefore carry none.
+  (`ruleTestable`, `ruleProposable`): rules are read against uses.
+- **A discobox hands on a policy only within its own** (ADR 26-10-20-782
+  §11), approving a request of a discobox it created or giving one on a
+  create. `delegationsCovering` keeps, of the delegations the hand-off's
+  facts fit, those that carry a policy the given one is `policy.Within` —
+  the given policy resolved for the discobox it goes to, each delegation's
+  bound now for its holder — and asks the judge only about conditions code
+  left unsettled (`judgeConditions`), the two statements as they resolved,
+  in the question it answers about uses. `judgeDelegations` then reads the
+  uses among those, as for any hand-off, so a policy and its uses are both
+  within one delegation. A delegation without a policy hands on none; a
+  hand-off with uses alone is judged by uses whatever the delegation carries.
+  Nothing a discobox hands on is shown to a person, so there is no shown
+  value to hold it to.
 - **Another policy is another ask**: `asksTheSame` compares it with the uses.
 - A policy rides only beside uses: a grant without them hands its sentinel's
   value to any request, which no policy narrows.

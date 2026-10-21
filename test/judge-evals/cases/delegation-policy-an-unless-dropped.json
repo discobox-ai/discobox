@@ -1,0 +1,17 @@
+{
+  "name": "delegation-policy-an-unless-dropped",
+  "why": "A lead was delegated pushes to its branches unless forced, and hands on pushes with no exception: a force push the delegation excludes would be allowed. An unless is a limit, and dropping it widens the statement (ADR 26-10-20-782 §11).",
+  "expect": "refuse",
+  "job": {
+    "kind": "delegation",
+    "purposes": [
+      "allow push on branch \"discobox/*\" in repository \"discobox-ai/discobox\" unless \"it is a force push\""
+    ],
+    "host": "api.github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "allow push on branch \"discobox/issue-46\" in repository \"discobox-ai/discobox\""
+    ]
+  }
+}

@@ -647,8 +647,8 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		// the one asked for, or an edit of it. A request that asks for one is
 		// approved only by an approval naming the policy approved, so nothing
 		// is recorded as approved that the approver did not send. A discobox
-		// approves no policy: handing one on is judged by nothing yet
-		// (Deferred: delegations over policies).
+		// approves one only within a policy it was delegated (§11), which is
+		// held to below with the uses.
 		if approvedPolicy, err = services.PolicyFromAPI(input.Policy); err != nil {
 			return nil, err
 		}
@@ -658,11 +658,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if sent, ok := input.Policy.Get(); ok {
 			shownResolved = sent.Resolved.Or(nil)
 		}
-		switch {
-		case (approvedPolicy != nil || req.Policy != nil) && approverIsSandbox:
-			return nil, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox cannot approve a request that carries a policy; a person approves it")
-		case approvedPolicy == nil && req.Policy != nil:
+		if approvedPolicy == nil && req.Policy != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				"this request asks for a policy; approve it by sending the policy you approve (read it with `discobox secret request get`, then `discobox secret request approve --policy-as-asked`)")
 		}
@@ -711,6 +707,12 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		requester, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
 		if err != nil {
 			return nil, apperrors.NotFound(err, "the discobox that asked was not found")
+		}
+		// A policy is handed on only under a delegation whose own policy it
+		// is within (ADR 26-10-20-782 §11); its uses are then judged as any
+		// are, among those.
+		if delegations, err = s.delegationsCovering(ctx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
+			return nil, err
 		}
 		if delegation, err = s.judgeDelegations(ctx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, requester); err != nil {
 			return nil, err
@@ -890,7 +892,9 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		// now, or resolves where the form said it matched nothing, is not
 		// what they approved. Only the variables the approved policy uses
 		// count: one an edit dropped was shown, and grants nothing.
-		if a.policy != nil {
+		// A discobox handing a policy on is shown nothing: it is held to its
+		// delegation's policy instead (§11).
+		if a.policy != nil && !a.delegated {
 			shown := map[string]string{}
 			for _, variable := range a.policy.Variables() {
 				if value, ok := a.shown[variable]; ok {
