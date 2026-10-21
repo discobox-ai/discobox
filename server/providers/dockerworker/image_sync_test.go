@@ -27,13 +27,25 @@ type fakeImageDaemon struct {
 	archive     []byte
 	loadCount   int
 	loadPayload []byte
+	// containerd says the daemon keeps images in containerd's store.
+	containerd bool
+	// layers are each image ID's layer diff IDs, and env its config's Env.
+	layers map[string][]string
+	env    map[string][]string
+	// rendersEmpty has the daemon report a config's unset lists and maps as
+	// empty rather than leave them out, as one Docker version may.
+	rendersEmpty bool
 }
 
 func (d *fakeImageDaemon) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	path := stripDockerAPIVersion(request.URL.Path)
 	switch {
 	case request.Method == http.MethodGet && path == "/info":
-		writeDockerJSON(w, map[string]string{"ID": d.id})
+		info := map[string]any{"ID": d.id}
+		if d.containerd {
+			info["DriverStatus"] = [][2]string{{"driver-type", containerdSnapshotter}}
+		}
+		writeDockerJSON(w, info)
 	case request.Method == http.MethodGet && path == "/images/get":
 		w.Header().Set("Content-Type", "application/x-tar")
 		_, _ = w.Write(d.archive)
@@ -71,7 +83,15 @@ func (d *fakeImageDaemon) serveHTTP(w http.ResponseWriter, request *http.Request
 			writeDockerJSON(w, map[string]string{"message": "No such image: " + reference})
 			return
 		}
-		writeDockerJSON(w, map[string]string{"Id": id})
+		config := map[string]any{"Env": d.env[id]}
+		if d.rendersEmpty {
+			config["Volumes"], config["OnBuild"] = map[string]any{}, []string{}
+		}
+		writeDockerJSON(w, map[string]any{
+			"Id":     id,
+			"RootFS": map[string]any{"Type": "layers", "Layers": d.layers[id]},
+			"Config": config,
+		})
 	default:
 		http.Error(w, request.Method+" "+path, http.StatusNotFound)
 	}
@@ -256,5 +276,79 @@ func TestDisabledDevelopmentImageSyncDoesNotReport(t *testing.T) {
 	})
 	if err := synchronizer.Ensure(context.Background(), nil, reporter, "pool"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A source daemon keeping images in containerd's store names an image by its
+// index digest, and a classic destination names the same image, loaded, by
+// its config's. Its config and layers say it is the same image: it is loaded
+// once, and is current from then on. An image whose layers differ is not, nor
+// one that differs only in its config, as a rebuild changing an ENV does.
+func TestDevelopmentImageSynchronizerComparesImagesAcrossImageStores(t *testing.T) {
+	images := []devimage.Image{{Reference: "discobox-pool-agent:dev-index", ID: "sha256:index"}}
+	layers := []string{"sha256:layer-a", "sha256:layer-b"}
+	for _, c := range []struct {
+		name         string
+		loadedLayers []string
+		loadedEnv    []string
+		rendersEmpty bool
+		wantErr      bool
+	}{
+		{"the same image", layers, []string{"A=1"}, false, false},
+		{"the same config rendered with empty fields", layers, []string{"A=1"}, true, false},
+		{"other layers", []string{"sha256:layer-a"}, []string{"A=1"}, false, true},
+		{"another config", layers, []string{"A=2"}, false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sourceDaemon := &fakeImageDaemon{
+				id: "source", containerd: true,
+				images:  imageMap(images),
+				layers:  map[string][]string{"sha256:index": layers},
+				env:     map[string][]string{"sha256:index": {"A=1"}},
+				archive: []byte("archive"),
+			}
+			destinationDaemon := &fakeImageDaemon{
+				id:           "destination",
+				images:       map[string]string{},
+				loadImages:   map[string]string{"discobox-pool-agent:dev-index": "sha256:config"},
+				layers:       map[string][]string{"sha256:config": c.loadedLayers},
+				env:          map[string][]string{"sha256:config": c.loadedEnv},
+				rendersEmpty: c.rendersEmpty,
+			}
+			sourceServer := httptest.NewServer(http.HandlerFunc(sourceDaemon.serveHTTP))
+			defer sourceServer.Close()
+			destinationServer := httptest.NewServer(http.HandlerFunc(destinationDaemon.serveHTTP))
+			defer destinationServer.Close()
+			synchronizer, err := newDevelopmentImageSynchronizer(images, func() (*client.Client, error) {
+				return testDockerClient(sourceServer.URL)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination, err := testDockerClient(destinationServer.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer destination.Close()
+
+			err = synchronizer.Ensure(context.Background(), destination, nil, "pool")
+			if c.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "not the source's after load") {
+					t.Fatalf("Ensure error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := synchronizer.Ensure(context.Background(), destination, nil, "pool"); err != nil {
+				t.Fatal(err)
+			}
+			destinationDaemon.mu.Lock()
+			defer destinationDaemon.mu.Unlock()
+			if destinationDaemon.loadCount != 1 {
+				t.Fatalf("load count = %d, want 1", destinationDaemon.loadCount)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package dockerworker
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,12 +109,74 @@ func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *
 		return errors.New("destination Docker daemon reported no ID")
 	}
 	_, err, _ = s.group.Do(daemonID+":"+s.fingerprint, func() (any, error) {
-		return nil, s.ensure(ctx, daemonID, destination, reporter, poolID)
+		source := &imageSource{open: s.source}
+		defer source.close()
+		return nil, s.ensure(ctx, daemonID, destination, usesContainerdStore(info.Info), source, reporter, poolID)
 	})
 	return err
 }
 
-func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID string, destination *client.Client, reporter sandbox.PoolProgressReporter, poolID string) error {
+// imageSource is the developer's Docker daemon, opened on first use: only
+// copy-mode images that are not current on the destination need it, so a
+// build-mode-only manifest never touches it, which is what lets a host
+// without Docker (Windows, macOS) converge images.
+type imageSource struct {
+	open   dockerClientSource
+	client *client.Client
+	// containerdStore is whether the daemon keeps images in containerd's
+	// store, read when it is opened.
+	containerdStore bool
+}
+
+func (s *imageSource) get(ctx context.Context) (*client.Client, error) {
+	if s.client != nil {
+		return s.client, nil
+	}
+	cli, err := s.open()
+	if err != nil {
+		return nil, fmt.Errorf("open development image source Docker daemon: %w", err)
+	}
+	info, err := cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		_ = cli.Close()
+		return nil, fmt.Errorf("inspect development image source Docker daemon: %w", err)
+	}
+	s.client, s.containerdStore = cli, usesContainerdStore(info.Info)
+	return cli, nil
+}
+
+func (s *imageSource) close() {
+	if s.client != nil {
+		_ = s.client.Close()
+	}
+}
+
+// sameImage reports whether the destination's image is the source's. An
+// image ID is its daemon's image store's: the config's digest in the classic
+// store, the index's or manifest's in containerd's. So the same image has the
+// same ID on two daemons only when both keep the same store. Across stores
+// the image is what its config and its layers say — the layers by their
+// uncompressed digests, which neither store changes — since a rebuild that
+// changes only the config (an ENV, a LABEL) adds no layer.
+func sameImage(sourceContainerd, destinationContainerd bool, source, destination client.ImageInspectResult) bool {
+	if sourceContainerd == destinationContainerd {
+		return source.ID == destination.ID
+	}
+	return len(source.RootFS.Layers) > 0 && slices.Equal(source.RootFS.Layers, destination.RootFS.Layers) &&
+		source.Os == destination.Os && source.Architecture == destination.Architecture &&
+		sameConfig(source.Config, destination.Config)
+}
+
+// sameConfig compares two daemons' renderings of an image config by their
+// JSON, whose omitempty fields make an empty list or map and an absent one
+// the same: two Docker versions need not agree on which they report.
+func sameConfig(source, destination any) bool {
+	a, errA := json.Marshal(source)
+	b, errB := json.Marshal(destination)
+	return errA == nil && errB == nil && bytes.Equal(a, b)
+}
+
+func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID string, destination *client.Client, destinationContainerd bool, source *imageSource, reporter sandbox.PoolProgressReporter, poolID string) error {
 	retags := make([]devimage.Image, 0, len(s.images))
 	missing := make([]devimage.Image, 0, len(s.images))
 	missingBuilds := make([]devimage.Image, 0, len(s.images))
@@ -136,7 +200,17 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 		switch {
 		case err == nil && inspect.ID == image.ID:
 			continue
-		case err != nil && !cerrdefs.IsNotFound(err):
+		case err == nil:
+			// Another ID is another image, or the same one in another image
+			// store: the source says which.
+			current, err := s.sourceImage(ctx, source, image)
+			if err != nil {
+				return err
+			}
+			if sameImage(source.containerdStore, destinationContainerd, current, inspect) {
+				continue
+			}
+		case !cerrdefs.IsNotFound(err):
 			return fmt.Errorf("inspect development image %s on Docker daemon %s: %w", image.Reference, daemonID, err)
 		}
 
@@ -173,34 +247,26 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 		return nil
 	}
 
-	// Only copy-mode images reach here, so the source daemon is opened only when
-	// one is actually needed. A build-mode-only manifest never touches it, which
-	// is what lets a host without Docker (Windows, macOS) converge images.
-	source, err := s.source()
-	if err != nil {
-		return fmt.Errorf("open development image source Docker daemon: %w", err)
-	}
-	defer func() {
-		_ = source.Close()
-	}()
-
 	references := make([]string, 0, len(missing))
+	sourced := make(map[string]client.ImageInspectResult, len(missing))
 	for _, image := range missing {
-		inspect, err := source.ImageInspect(ctx, image.Reference)
+		inspect, err := s.sourceImage(ctx, source, image)
 		if err != nil {
-			return fmt.Errorf("inspect source development image %s: %w", image.Reference, err)
+			return err
 		}
-		if inspect.ID != image.ID {
-			return fmt.Errorf("source development image %s has ID %s, manifest requires %s", image.Reference, inspect.ID, image.ID)
-		}
+		sourced[image.Reference] = inspect
 		references = append(references, image.Reference)
+	}
+	sourceClient, err := source.get(ctx)
+	if err != nil {
+		return err
 	}
 
 	started := time.Now()
 	slog.InfoContext(ctx, "synchronizing development Docker images",
 		"daemon_id", daemonID,
 		"images", references)
-	if err := transferImages(ctx, source, destination, references); err != nil {
+	if err := transferImages(ctx, sourceClient, destination, references); err != nil {
 		return fmt.Errorf("synchronize development images to Docker daemon %s: %w", daemonID, err)
 	}
 	for _, image := range missing {
@@ -208,8 +274,8 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 		if err != nil {
 			return fmt.Errorf("verify development image %s on Docker daemon %s: %w", image.Reference, daemonID, err)
 		}
-		if inspect.ID != image.ID {
-			return fmt.Errorf("development image %s on Docker daemon %s has ID %s after load, want %s", image.Reference, daemonID, inspect.ID, image.ID)
+		if !sameImage(source.containerdStore, destinationContainerd, sourced[image.Reference], inspect) {
+			return fmt.Errorf("development image %s on Docker daemon %s is not the source's after load: ID %s, want %s", image.Reference, daemonID, inspect.ID, image.ID)
 		}
 	}
 	slog.InfoContext(ctx, "synchronized development Docker images",
@@ -217,6 +283,23 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 		"images", references,
 		"duration", time.Since(started))
 	return nil
+}
+
+// sourceImage inspects a copy-mode image on the source daemon, which must
+// still be the image the manifest names.
+func (s *DevelopmentImageSynchronizer) sourceImage(ctx context.Context, source *imageSource, image devimage.Image) (client.ImageInspectResult, error) {
+	cli, err := source.get(ctx)
+	if err != nil {
+		return client.ImageInspectResult{}, err
+	}
+	inspect, err := cli.ImageInspect(ctx, image.Reference)
+	if err != nil {
+		return client.ImageInspectResult{}, fmt.Errorf("inspect source development image %s: %w", image.Reference, err)
+	}
+	if inspect.ID != image.ID {
+		return client.ImageInspectResult{}, fmt.Errorf("source development image %s has ID %s, manifest requires %s", image.Reference, inspect.ID, image.ID)
+	}
+	return inspect, nil
 }
 
 func transferImages(ctx context.Context, source, destination *client.Client, references []string) error {
