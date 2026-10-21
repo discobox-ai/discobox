@@ -2,6 +2,7 @@ package secrets_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -479,4 +481,65 @@ func TestARuleNeverTestsARequestWithAPolicy(t *testing.T) {
 	if resourcesecrets.RuleTestable(req) {
 		t.Fatal("a request carrying a policy may be approved by a rule")
 	}
+}
+
+// A policy that fits a judge job as written may not once its variables are
+// bound: a repository's name is longer than $primary.repo. The grant is held
+// to what a judge would be shown, so one every job under it would refuse is
+// never minted.
+func TestAGrantWhosePolicyBoundIsTooLargeToJudgeIsRefused(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	repo := "acme/" + strings.Repeat("a-repository-name-", 5)
+	sandbox, err := st.GetSandbox(ctx, "project-1", testSandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://github.com/" + repo
+	sandbox.Source.URL = &url
+	if err := st.UpdateSandbox(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ten statements naming $primary.repo, their conditions as long as lets
+	// the policy fit as written and not once bound.
+	statements := func(condition string) policy.Policy {
+		p := policy.Policy{Definitions: map[string]string{"issue": "A GitHub issue.", "repository": "A GitHub repository."}}
+		for i := range 10 {
+			when := fmt.Sprintf("%s %d", condition, i)
+			p.Statements = append(p.Statements, policy.Statement{
+				Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+				Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo}, When: &when,
+			})
+		}
+		return p
+	}
+	var asked policy.Policy
+	for n := 500; n < policy.MaxTextBytes; n++ {
+		p := statements(strings.Repeat("x", n))
+		facts := sandbox.PolicyFacts()
+		if judge.PolicyFits(p) == nil && judge.PolicyFits(p.Resolve(facts).Bound(facts)) != nil {
+			asked = p
+			break
+		}
+	}
+	if asked.Statements == nil {
+		t.Fatal("no policy fits as written and not once bound")
+	}
+
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "read issues"}},
+		Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatalf("a policy that fits as written was refused as asked: %v", err)
+	}
+	shown := asked
+	shown.Resolved = map[string]string{policy.VarPrimaryRepo: repo}
+	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, shown),
+	})
+	wantStatus(t, err, http.StatusBadRequest, "more than the 8192 a judge may be shown")
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -1525,7 +1526,14 @@ func (s *Service) resolveGrantPolicy(ctx context.Context, projectID, scope, scop
 	if err != nil {
 		return nil, apperrors.NotFound(err, fmt.Sprintf("sandbox %s does not exist, so nothing can be granted to it", scopeKey))
 	}
-	approved := asked.Resolve(sandbox.PolicyFacts())
+	facts := sandbox.PolicyFacts()
+	approved := asked.Resolve(facts)
+	// Bound, a value can be longer than its variable, and escaped longer
+	// still: what a judge is shown is held to what a judge job can carry, so
+	// a grant every job under it would refuse is never minted.
+	if err := judge.PolicyFits(approved.Bound(facts)); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
+	}
 	return &approved, nil
 }
 

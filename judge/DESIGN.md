@@ -88,7 +88,8 @@ definitions only of words they use and never of a reserved one, and
 `MaxPolicyBytes`; `ErrPolicyAllowsNothing` is a policy left with no allow,
 which nobody is asked about. `PolicyFits` is the same bound where a policy
 enters, so one a judge could not be shown is refused before a person approves
-it. Every part of what a job does must fall under some allow — different parts
+it, and again on the policy as bound where a grant is minted, since a value
+can be longer than its variable. Every part of what a job does must fall under some allow — different parts
 under different allows, as a push of a branch and its tag — and no part under
 any deny, which wins. `System` says so to the judge discobox in one answer;
 Jev is asked the two as questions of their own (below).

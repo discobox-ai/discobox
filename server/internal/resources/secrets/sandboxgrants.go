@@ -11,6 +11,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -138,7 +139,13 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 			givenPolicies = append(givenPolicies, givenPolicy)
 		}
 		if givenPolicy != nil {
-			resolved := givenPolicy.Resolve(sandbox.PolicyFacts())
+			facts := sandbox.PolicyFacts()
+			resolved := givenPolicy.Resolve(facts)
+			// Bound, a value can be longer than its variable: what a judge is
+			// shown is held to what a judge job can carry (judge.PolicyFits).
+			if err := judge.PolicyFits(resolved.Bound(facts)); err != nil {
+				return SandboxGrants{}, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
+			}
 			approved = &resolved
 		}
 		grant := &model.SecretGrant{
