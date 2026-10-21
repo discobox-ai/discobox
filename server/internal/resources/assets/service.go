@@ -277,7 +277,7 @@ type damagedBlob struct {
 func (d *damagedBlob) Read(p []byte) (int, error) {
 	n, err := d.ReadCloser.Read(p)
 	if err != nil && !errors.Is(err, io.EOF) {
-		_ = d.ReadCloser.Close()
+		_ = d.Close()
 		if removeErr := d.blobs.RemoveBlob(d.digest); removeErr != nil {
 			slog.Warn("remove damaged asset blob", "digest", d.digest, "error", removeErr)
 		}
