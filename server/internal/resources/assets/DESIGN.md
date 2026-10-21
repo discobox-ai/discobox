@@ -1,0 +1,111 @@
+# Assets Design
+
+`resources/assets` is the asset API
+([ADR 26-10-16-423](../../../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+§13): the server serves bundles to pools by blob, so neither a pool nor a box
+pulls a bundle from a registry, and registry credentials stay with the server.
+Only a pool reaches it.
+
+## Routes
+
+Pool routes, addressed as OCI distribution addresses content, under the pool
+prefix so `PoolAuthenticator` binds the signed pool to the route's. The
+allow-list's `assets` action takes up to three trailing segments
+([`auth/DESIGN.md`](../../auth/DESIGN.md#authentication)).
+
+| Route | Answers |
+|---|---|
+| `GET /api/pools/{poolId}/assets/{name}` | The manifest a name in scope is pinned to now (`ResolveAssetName`). 404 for no such pin, 409 when two pins in scope share the name |
+| `GET /api/pools/{poolId}/assets/{name}/manifests/{digest}` | A pinned manifest, or one a pinned index lists, under its pin's name |
+| `GET /api/pools/{poolId}/assets/blobs/{digest}` | A config or layer some manifest in scope references |
+
+- **A name** is the last component of a reference's repository:
+  `ghcr.io/discobox-ai/discobox-platform:v1` and a development build's
+  `discobox-platform:local` are both `discobox-platform`.
+- **A manifest goes out byte for byte**, as its own media type, with
+  `Docker-Content-Digest` and `Content-Length`. `api/gen/ogen.yml` aliases the
+  four manifest media types to raw bytes, so the generated encoder never
+  re-encodes one as JSON.
+- **Out of scope is a 404**, never a 403, so the answer discloses nothing of
+  what another project pins.
+
+## Scope
+
+A pool is answered the pins of the project it serves (`scope`), and nothing
+else — never a tag's answer that no pin records:
+
+- **the platform bundle the release pins**, as every digest its reference has
+  resolved to while this server runs (`platformPins`). The release pins it by
+  reference and nothing records the digest a box was handed, so an answered
+  digest is never dropped when the tag moves: a pool part way through a fetch
+  is not cut off. The reference is asked again after a minute, after ten
+  seconds once it failed, and on every name resolution of it. While it has
+  never resolved, a read nothing else in scope answers is a 502, not a 404.
+- **each harness config's** `Bundle`/`BundleDigest`. Its name resolves to the
+  recorded digest: a moved tag is followed only once the config is re-pinned
+  (ADR 0016).
+
+A sandbox pins no bundle of its own: it runs its harness's runnable image. A
+pin whose digest is no `sha256:` digest (a build-mode development image, its
+own reference until a pool builds it) has no content and is left out. A blob
+is in scope when a pin's manifest — or, under an index, any manifest it lists
+that can be read — names it as config or layer; what the store holds is
+looked at before a listed manifest is fetched.
+
+## Blob store
+
+One `imagecache.Layout` at `assetDir` (`<cacheDir>/assets`), holding blobs no
+index entry names. It is cache: every byte is fetched again by digest. It is
+not the CLI's staged layout, whose staging prunes blobs no entry names, and
+that layout is no source: it holds no bundle, since the release's staging list
+names none (`releasemanifest.Images.References`).
+
+```mermaid
+flowchart LR
+    pool[Pool agent] -->|manifest or blob by digest| svc[assets.Service]
+    svc -->|in scope?| db[(harness configs, platform pins)]
+    svc -->|present?| store[(asset store)]
+    svc -.->|missing, release's own| daemon[Local Docker daemon]
+    svc -.->|missing| registry[Registry]
+    daemon --> store
+    registry --> store
+```
+
+- **Filled lazily**, the first time a read wants a digest, from the first
+  source holding it: the local Docker daemon, then the registry.
+- **The daemon serves the release's references alone** — on a development
+  server, what the image watcher built. It holds whatever this host built or
+  pulled, with any credentials, for any project, so a reference a project
+  supplied is never looked up there. Its content is what it saves: every blob
+  of the save goes in at once, once per pinned digest, found by the digest
+  harness registration pinned (`localimage.Digest`).
+- **Credentials**: the server's keychain pulls only the references the release
+  names — the platform bundle and the built-in harnesses' bundles. A
+  project-supplied reference is pulled anonymously: a project configures no
+  registry credentials, and the server's are not the project's to use.
+- **The store is shared across projects**, and a digest fetched for one pin is
+  answered for any pin whose manifest lists it. What it holds is public
+  content pulled anonymously, or the release's, which every pool is answered:
+  nothing in it is any one project's to keep from another.
+- **One fetch per digest**, shared by every read wanting it (singleflight),
+  detached from the first reader's cancellation and bounded by
+  `fetchTimeout`.
+- **Removal is by reference** (`Prune`, hourly): a blob goes once no pin
+  reaches it — any project's harness config, or a platform digest this server
+  answered — and it is older than an hour, so one fetched for a pin made
+  since the sweep read the pins stays. Reach is read from the store alone.
+  While the platform cannot be resolved nothing goes.
+
+## Digests
+
+- **In:** `PutBlob` writes to a temporary and renames only bytes that are the
+  digest's, so a name in the store is a claim about its content. A source
+  handing in other bytes fails the read with 502 and stores nothing.
+- **Out:** every body is re-hashed as it is served. A blob or manifest whose
+  bytes on disk are not its digest's is removed — a blob when the read that
+  would end it fails, a manifest when it is read, and then fetched again — so
+  the next read fetches it rather than failing the same way. The handler
+  aborts the response (`http.ErrAbortHandler`) rather than letting the
+  encoder's error be written into a body already begun, so the client sees a
+  response cut short of its `Content-Length`, never a complete one that is not
+  the blob.

@@ -66,8 +66,11 @@ Current authenticators:
   the default user.
 - `PoolAuthenticator` applies only to pool agent runtime routes:
   `/api/pools/{poolId}/{action}` where `action` is in the `poolRuntimeActions`
-  allow-list, plus a trailing resource ID only for actions marked as taking
-  one. Unlisted routes are not pool routes, so they fail closed; add the action
+  allow-list, plus trailing segments only for an action that takes them, and
+  no more than it takes: a resource ID for one addressing a resource, and the
+  OCI-distribution-shaped paths of the asset API under `assets`
+  ([ADR 26-10-16-423](../../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §13). Unlisted routes are not pool routes, so they fail closed; add the action
   in the same change that adds the route. On an applicable route it requires a
   bearer PASETO assertion, loads the route pool, rejects a revoked pool or
   unsupported key type, verifies the assertion with the pool's stored Ed25519

@@ -938,6 +938,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
+| `internal/localimage` | What the server pins an image its own Docker daemon holds to — its registry digest, or its image ID for a local build — the one rule harness registration pins a bundle by and the asset API finds that pin on the daemon by. |
 | `internal/registryauth` | The keychain for the server's direct registry reads: Docker's credentials, degraded to anonymous when the credential store cannot be read, so a broken helper cannot stop a public image from being pulled. |
 | `internal/config` | Server configuration loading: defaults, `server.yaml`, environment. |
 | `internal/config/genschema` | Generates `config.schema.json` and `server.example.yaml` from `config.Config`'s struct tags. |

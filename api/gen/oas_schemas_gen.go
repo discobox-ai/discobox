@@ -4138,6 +4138,8 @@ func (*ErrorModelStatusCode) getApprovalRuleRes()                  {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
+func (*ErrorModelStatusCode) getPoolAssetBlobRes()                 {}
+func (*ErrorModelStatusCode) getPoolAssetManifestRes()             {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
 func (*ErrorModelStatusCode) getProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
@@ -4198,6 +4200,7 @@ func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
 func (*ErrorModelStatusCode) reportSandboxInventoriesRes()         {}
 func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()     {}
 func (*ErrorModelStatusCode) resolveGatewayHeadersRes()            {}
+func (*ErrorModelStatusCode) resolvePoolAssetRes()                 {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -4532,6 +4535,273 @@ func (s *GatewayHeaderValueSource) GetEnv() string {
 func (s *GatewayHeaderValueSource) SetEnv(val string) {
 	s.Env = val
 }
+
+type GetPoolAssetBlobOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetPoolAssetBlobOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// GetPoolAssetBlobOKHeaders wraps GetPoolAssetBlobOK with response headers.
+type GetPoolAssetBlobOKHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            GetPoolAssetBlobOK
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *GetPoolAssetBlobOKHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *GetPoolAssetBlobOKHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *GetPoolAssetBlobOKHeaders) GetResponse() GetPoolAssetBlobOK {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *GetPoolAssetBlobOKHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *GetPoolAssetBlobOKHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *GetPoolAssetBlobOKHeaders) SetResponse(val GetPoolAssetBlobOK) {
+	s.Response = val
+}
+
+func (*GetPoolAssetBlobOKHeaders) getPoolAssetBlobRes() {}
+
+type GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders wraps GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON with response headers.
+type GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetResponse() GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetResponse(val GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSON) {
+	s.Response = val
+}
+
+func (*GetPoolAssetManifestOKApplicationVndDockerDistributionManifestListV2JSONHeaders) getPoolAssetManifestRes() {
+}
+
+type GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders wraps GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON with response headers.
+type GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetResponse() GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetResponse(val GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSON) {
+	s.Response = val
+}
+
+func (*GetPoolAssetManifestOKApplicationVndDockerDistributionManifestV2JSONHeaders) getPoolAssetManifestRes() {
+}
+
+type GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders wraps GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON with response headers.
+type GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) GetResponse() GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) SetResponse(val GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSON) {
+	s.Response = val
+}
+
+func (*GetPoolAssetManifestOKApplicationVndOciImageIndexV1JSONHeaders) getPoolAssetManifestRes() {}
+
+type GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders wraps GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON with response headers.
+type GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) GetResponse() GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) SetResponse(val GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSON) {
+	s.Response = val
+}
+
+func (*GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) getPoolAssetManifestRes() {}
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
@@ -21145,6 +21415,220 @@ func (s *ResolveGatewayHeadersResponseValues) init() ResolveGatewayHeadersRespon
 	}
 	return m
 }
+
+type ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders wraps ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON with response headers.
+type ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) GetResponse() ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) SetResponse(val ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSON) {
+	s.Response = val
+}
+
+func (*ResolvePoolAssetOKApplicationVndDockerDistributionManifestListV2JSONHeaders) resolvePoolAssetRes() {
+}
+
+type ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders wraps ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON with response headers.
+type ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) GetResponse() ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) SetResponse(val ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSON) {
+	s.Response = val
+}
+
+func (*ResolvePoolAssetOKApplicationVndDockerDistributionManifestV2JSONHeaders) resolvePoolAssetRes() {
+}
+
+type ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders wraps ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON with response headers.
+type ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) GetResponse() ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) SetResponse(val ResolvePoolAssetOKApplicationVndOciImageIndexV1JSON) {
+	s.Response = val
+}
+
+func (*ResolvePoolAssetOKApplicationVndOciImageIndexV1JSONHeaders) resolvePoolAssetRes() {}
+
+type ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+// ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders wraps ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON with response headers.
+type ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders struct {
+	ContentLength       OptInt64
+	DockerContentDigest OptString
+	Response            ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON
+}
+
+// GetContentLength returns the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) GetContentLength() OptInt64 {
+	return s.ContentLength
+}
+
+// GetDockerContentDigest returns the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) GetDockerContentDigest() OptString {
+	return s.DockerContentDigest
+}
+
+// GetResponse returns the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) GetResponse() ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON {
+	return s.Response
+}
+
+// SetContentLength sets the value of ContentLength.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) SetContentLength(val OptInt64) {
+	s.ContentLength = val
+}
+
+// SetDockerContentDigest sets the value of DockerContentDigest.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) SetDockerContentDigest(val OptString) {
+	s.DockerContentDigest = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) SetResponse(val ResolvePoolAssetOKApplicationVndOciImageManifestV1JSON) {
+	s.Response = val
+}
+
+func (*ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) resolvePoolAssetRes() {}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.

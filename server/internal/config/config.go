@@ -204,6 +204,11 @@ type Config struct {
 	// launches; a server started otherwise keeps one under its cache.
 	ImageCacheDir string `yaml:"imageCacheDir" env:"DISCOBOX_IMAGE_CACHE_DIR" doc:"OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to <cacheDir>/images." example:"/var/cache/discobox/images"`
 
+	// AssetDir is the server's blob store, which bundles are served to pools
+	// from by digest (ADR 26-10-16-423 §13). Every byte in it is fetched again
+	// by digest when it is gone, so it lives under the cache.
+	AssetDir string `yaml:"assetDir" env:"DISCOBOX_ASSET_DIR" doc:"Blob store the server serves bundles to pools from, by digest. Every blob in it is fetched again when it is missing. Defaults to <cacheDir>/assets." example:"/var/cache/discobox/assets"`
+
 	// OverlayDir is where the overlays of templates with no image are staged
 	// (ADR 0145 §2), and the one directory a harness's file:// manifest
 	// reference may name a file in. A harness config is registered over the
@@ -365,6 +370,9 @@ func Load() (*Config, error) {
 	// Empty counts as absent for the reason the image store's does: a blank
 	// line would otherwise leave no directory at all, and every manifest file
 	// refused.
+	if !configured("assetDir") || strings.TrimSpace(cfg.AssetDir) == "" {
+		cfg.AssetDir = filepath.Join(cfg.CacheDir, "assets")
+	}
 	if !configured("overlayDir") || strings.TrimSpace(cfg.OverlayDir) == "" {
 		cfg.OverlayDir = filepath.Join(cfg.CacheDir, "overlays")
 	}

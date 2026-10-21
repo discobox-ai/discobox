@@ -1,6 +1,13 @@
 generator:
   ignore_not_implemented:
     - unsupported content types
+  # An OCI manifest is served byte for byte: its digest is over its bytes, so
+  # it is never decoded and re-encoded as JSON (ADR 26-10-16-423 §13).
+  content_type_aliases:
+    application/vnd.oci.image.index.v1+json: application/octet-stream
+    application/vnd.oci.image.manifest.v1+json: application/octet-stream
+    application/vnd.docker.distribution.manifest.list.v2+json: application/octet-stream
+    application/vnd.docker.distribution.manifest.v2+json: application/octet-stream
   features:
     disable:
       - webhooks/client

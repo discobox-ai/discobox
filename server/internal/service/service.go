@@ -14,6 +14,7 @@ import (
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/assets"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
@@ -61,6 +62,7 @@ type Service struct {
 	poolControlPlane *pools.ControlPlane
 	harnessConfigs   *harnessconfigs.Service
 	judges           *judges.Service
+	assets           *assets.Service
 	// ruleRequests tests approval rules against pending credential requests.
 	ruleRequests *secrets.RuleRequests
 }
@@ -91,6 +93,9 @@ type Options struct {
 	// OverlayDir is the one directory a harness's file:// manifest reference
 	// may name a file in. Empty refuses every such reference.
 	OverlayDir string
+	// AssetDir is the blob store bundles are served to pools from (ADR
+	// 26-10-16-423 §13).
+	AssetDir string
 	// ArchiveRetention is the server-wide default an archived sandbox is kept
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
@@ -167,6 +172,17 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// Approval rules are tested against a request when it is filed and when
 	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
 	secretService.SetDirtier(engine)
+	// The bundles a release names are the ones the server's own registry
+	// credentials pull; a project's are pulled without them.
+	var releaseBundles []string
+	for _, seed := range harnessdefs.Seeds(options.Harnesses, options.ServerDefaults.Release != nil) {
+		releaseBundles = append(releaseBundles, seed.Bundle)
+	}
+	assetService := assets.New(store, assets.Options{
+		Dir:            options.AssetDir,
+		PlatformBundle: options.Harnesses.PlatformBundle,
+		ReleaseBundles: releaseBundles,
+	})
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService, sandboxService),
 		HarnessConfigService:           harnessConfigService,
@@ -190,6 +206,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		poolControlPlane: poolControlPlane,
 		harnessConfigs:   harnessConfigService,
 		judges:           judgeService,
+		assets:           assetService,
 		ruleRequests:     secretService.RuleRequests(),
 	}
 }
@@ -231,6 +248,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return err
 	}
 	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
+	s.assets.StartPruning(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -294,3 +312,6 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 
 // Judges answers a pool asking for a verdict from the project's judge.
 func (s *Service) Judges() *judges.Service { return s.judges }
+
+// Assets is the asset API's service, which only a pool reaches.
+func (s *Service) Assets() *assets.Service { return s.assets }

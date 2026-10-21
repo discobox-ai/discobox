@@ -260,48 +260,53 @@ func bearerToken(authorization string) string {
 // answers 403 to the real agent. Add the action here in the same change that
 // adds the route.
 //
-// The value reports whether the action addresses a specific resource, i.e.
-// whether one trailing path segment (its ID) belongs to the route.
-var poolRuntimeActions = map[string]bool{
-	"sandbox-states":         false,
-	"status":                 false,
-	"resolve-sandbox-secret": false,
+// The value is how many path segments after the action its routes take at
+// most: none for most, one for an action addressing a resource by its ID.
+var poolRuntimeActions = map[string]int{
+	"sandbox-states":         0,
+	"status":                 0,
+	"resolve-sandbox-secret": 0,
 	// A gateway's header values from the server's environment (ADR
 	// 26-10-16-470 §4). One call names its gateway in the body.
-	"resolve-gateway-headers": false,
+	"resolve-gateway-headers": 0,
 	// What an upstream made of a swapped credential (ADR 0132). One call
 	// reports one verdict, so it takes no trailing ID.
-	"sandbox-secret-rejections": false,
+	"sandbox-secret-rejections": 0,
 	// Putting a job to the project's judge (ADR 26-09-22-838 §2). One call is one
 	// job, so it takes no trailing ID.
-	"judge": false,
+	"judge": 0,
 	// Judging a command before its credential is minted (ADR 26-09-22-838
 	// §3). One call is one command, so it takes no trailing ID.
-	"judge-commands":              false,
-	"sandbox-agent-status-tokens": false,
-	"sandbox-agent-status":        false,
+	"judge-commands":              0,
+	"sandbox-agent-status-tokens": 0,
+	"sandbox-agent-status":        0,
 	// What each sandbox's list reads answer, posted when it changes
 	// (ADR 26-10-11-657 §2). One call reports a batch, so it takes no
 	// trailing ID.
-	"sandbox-inventories": false,
+	"sandbox-inventories": 0,
 	// The pool's resource report (ADR 0071, resource accounting). It addresses the pool itself, so
 	// it takes no trailing ID.
-	"resources": false,
+	"resources": 0,
 	// Every sandbox the control plane holds on the pool, which bounds what its
 	// volume reaper may collect (ADR 26-10-01-876). It lists, so it takes no
 	// trailing ID.
-	"sandboxes": false,
+	"sandboxes": 0,
 	// The agent credentials broker (ADR 0031).
-	"sandbox-credentials":         false,
-	"sandbox-credential-requests": true, // .../{requestId} polls one request
+	"sandbox-credentials":         0,
+	"sandbox-credential-requests": 1, // .../{requestId} polls one request
 	// A sandbox's policy facts, read for the protocol's facts verb (ADR
 	// 26-10-20-782 §4). The sandbox is a query parameter, so it takes no
 	// trailing ID.
-	"sandbox-policy-facts": false,
+	"sandbox-policy-facts": 0,
 	// Host trust (ADR 0149): an agent's ask, polled by its ID, and the pool's
 	// read of every live trust its proxy enforces.
-	"sandbox-trust-requests": true, // .../{requestId} polls one request
-	"sandbox-host-trusts":    false,
+	"sandbox-trust-requests": 1, // .../{requestId} polls one request
+	"sandbox-host-trusts":    0,
+	// The asset API (ADR 26-10-16-423 §13), addressed as OCI distribution
+	// addresses content: assets/{name}, assets/{name}/manifests/{digest} and
+	// assets/blobs/{digest}. Every route under it is the asset API's, which
+	// answers only what the pool's scope pins.
+	"assets": 3,
 }
 
 func isPoolRuntimePath(path string) bool {
@@ -315,17 +320,17 @@ func poolRuntimeAction(path string) (string, bool) {
 		return "", false
 	}
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) < 4 || len(segments) > 5 {
+	if len(segments) < 4 {
 		return "", false
 	}
-	allowsResourceID, ok := poolRuntimeActions[segments[3]]
+	trailing, ok := poolRuntimeActions[segments[3]]
 	if !ok {
 		return "", false
 	}
-	// A trailing segment is only ever a resource ID, and only for the actions
-	// that take one. Accepting it everywhere would let an unlisted subroute of a
-	// listed action inherit pool access.
-	if len(segments) == 5 && !allowsResourceID {
+	// Trailing segments belong only to the actions that take them, and no more
+	// of them than the action's routes have. Accepting them everywhere would
+	// let an unlisted subroute of a listed action inherit pool access.
+	if len(segments)-4 > trailing {
 		return "", false
 	}
 	return segments[3], true

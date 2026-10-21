@@ -348,6 +348,23 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/pools/{poolId}
 	GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error)
+	// GetPoolAssetBlob implements get-pool-asset-blob operation.
+	//
+	// One blob — a config or a layer — by digest (ADR 26-10-16-423 §13). Answered only for a blob a
+	// manifest in the pool's scope references; anything else is a 404. The bytes are checked against the
+	// digest as they are sent, and a blob that does not match is cut off rather than completed.
+	// Immutable and cacheable forever.
+	//
+	// GET /api/pools/{poolId}/assets/blobs/{digest}
+	GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error)
+	// GetPoolAssetManifest implements get-pool-asset-manifest operation.
+	//
+	// A pinned index or manifest, by digest (ADR 26-10-16-423 §13). Answered only for a manifest pinned
+	// by the release or by a harness config of the pool's project, or one such an index lists, under the
+	// name its pin carries; anything else is a 404. Immutable.
+	//
+	// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+	GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error)
 	// GetProject implements get-project operation.
 	//
 	// Get a project.
@@ -910,6 +927,17 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/resolve-gateway-headers
 	ResolveGatewayHeaders(ctx context.Context, req *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
+	// ResolvePoolAsset implements resolve-pool-asset operation.
+	//
+	// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the
+	// platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle,
+	// the digest a harness config of the pool's project records, which a moved tag changes only once the
+	// config is re-pinned. Read for registration and re-pinning; the digest it is served under is the
+	// Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of
+	// different digests share is a 409, and a platform that cannot be resolved is a 502.
+	//
+	// GET /api/pools/{poolId}/assets/{name}
+	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
