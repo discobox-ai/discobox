@@ -52,6 +52,7 @@ import (
 	"syscall"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/policy"
 )
 
 // Name is how the CLI refers to itself in help and diagnostics.
@@ -132,8 +133,10 @@ func usage(w io.Writer) {
 	fmt.Fprintf(w, `%[1]s — ask for and use credentials you were not provisioned with.
 
   %[1]s list [--json]
-      Show the credentials you may use and what each was approved for, after
-      the primary source this discobox works on.
+      Show the credentials you may use and what each was approved for — its
+      uses, and its policy as sentences with what each variable resolved to
+      — after the primary source this discobox works on. --json carries a
+      policy's structure and its "sentences" both.
 
   %[1]s facts [--json]
       Show what this discobox was created with — its ID, who created it, its
@@ -168,6 +171,31 @@ func usage(w io.Writer) {
       in another repository, comment on unrelated issues, delete a comment,
       or read secrets." Rule out the dangerous neighbor of each write: the
       same action wider, harsher, or on the target beside yours.
+
+      Ask for a policy beside the use: statements, one per --statement (a
+      "statements" list in --json), that say exactly what may be done, and a
+      definition for every word they use but read, create, update, delete,
+      manage, anything and anywhere (--define WORD=DEFINITION, a
+      "definitions" map in --json). With a policy, run's commands are judged
+      against it, whichever use they name, and the use only names the job.
+      Without one, the use alone is what is judged.
+
+        %[1]s request com.github.api --use "Fix issue #43 in acme/web as a pull request" \
+          --statement 'allow read on anything in repository $primary.repo' \
+          --statement 'allow push on branch "fix-43" in repository $primary.repo' \
+          --statement 'allow create, update on pull request in repository $primary.repo when "its base is main"' \
+          --statement 'deny delete on anything in anywhere' \
+          --define repository="a GitHub repository" --define branch="a git branch" \
+          --define "pull request=a GitHub pull request" \
+          --define push="update a branch's commits" --wait
+
+      A statement reads, as every refusal of one repeats:
+
+        %[5]s
+
+      facts lists the variables a name may be ($primary.repo). A statement
+      that does not parse, or a policy a person could not approve, is
+      refused here with what to fix, and nothing is sent.
 
       ID names a well-known credential (com.github.api), which says its own
       name, variable, and host; give only --use and --why. --hosts may still
@@ -205,7 +233,8 @@ func usage(w io.Writer) {
       ask to use the credential. Someone who needs both asks twice.
 
       With flags: --name, --env-var, --hosts, --why, --use (repeatable),
-      --grant-ttl, --delegate, --wait, --timeout. --grant-ttl takes a Go
+      --statement and --define (repeatable), --grant-ttl, --delegate,
+      --wait, --timeout. --grant-ttl takes a Go
       duration -- "30m", "4h", "96h" for four days -- and the same thirty-day
       ceiling.
 
@@ -274,7 +303,7 @@ long as list says, which is what the approver chose rather than what you asked;
 check list before asking for a use again.
 
 Configured by %[2]s (default %[3]s) and %[4]s.
-`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
+`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv, policy.Grammar)
 }
 
 // usageError reports a mistake in how the command was invoked, which is

@@ -68,7 +68,7 @@ the time you asked for has passed — `list` is the answer.
 
 `list` leads with this discobox's primary source as the control plane
 recorded it — `github.com/acme/web at branch main` — which is the repository
-to name in a use. `discobox-access facts` shows every source and the value of
+to name in a policy, as `$primary.repo`. `discobox-access facts` shows every source and the value of
 each variable a policy may use (`$primary.repo  acme/web`); a variable that
 resolves to nothing matches nothing. Those values, not your git remotes, are
 what an approval binds to.
@@ -78,14 +78,39 @@ nothing here is needed. Ask only when something actually failed for want of one.
 
 ## 2. Ask for one
 
+Ask for a **policy**: statements, as sentences, of exactly what the job may
+do, beside one use that names the job.
+
 ```bash
 discobox-access request --json <<'EOF'
 {
-  "name": "github",
-  "envVar": "GH_TOKEN",
-  "hosts": ["api.github.com"],
+  "id": "com.github.api",
   "justification": "the task asks me to fix issue #43 and get the fix merged through a pull request",
-  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main. Read anything in the repository; push that branch, open and update the pull request, and comment on it. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, or read secrets."}],
+  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main"}],
+  "statements": [
+    "allow read on anything in repository $primary.repo",
+    "allow push on branch \"fix-43\" in repository $primary.repo",
+    "allow create, update on pull request in repository $primary.repo when \"its head is fix-43 and its base is main\"",
+    "allow create on comment within pull request in repository $primary.repo",
+    "allow rerun on workflow run in repository $primary.repo when \"it failed\"",
+    "deny force-push, delete on branch in anywhere",
+    "deny merge, close on pull request in anywhere",
+    "deny delete on comment in anywhere",
+    "deny read on secret in anywhere"
+  ],
+  "definitions": {
+    "repository": "a GitHub repository",
+    "branch": "a git branch in a repository",
+    "pull request": "a GitHub pull request",
+    "comment": "a comment or review reply on a pull request or issue",
+    "workflow run": "a GitHub Actions run",
+    "secret": "an Actions, Dependabot or environment secret",
+    "push": "add commits to a branch, or move it with --force-with-lease",
+    "force-push": "move a branch with --force and no lease",
+    "rerun": "re-run a run's failed jobs",
+    "merge": "merge a pull request into its base",
+    "close": "close a pull request without merging it"
+  },
   "grantTTLSeconds": 3600,
   "wait": true,
   "timeoutSeconds": 3600
@@ -93,17 +118,23 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-- `name` — what the credential is called, in ordinary words (`github`, `npm`).
-- `envVar` — the variable the command expects it in. Get this right: it is the
-  variable your command will actually read.
-- `hosts` — where it will be sent, as narrow as the truth allows. A tool that
-  sends one credential to several sites gets them all in one request: Copilot
-  CLI sends its GitHub token to `["api.github.com", "githubcopilot.com"]`.
+- `id` — a well-known credential (below); for any other, `name`, `envVar`
+  and `hosts` instead:
+  - `name` — what the credential is called, in ordinary words (`github`,
+    `npm`).
+  - `envVar` — the variable the command expects it in. Get this right: it is
+    the variable your command will actually read.
+  - `hosts` — where it will be sent, as narrow as the truth allows. A tool
+    that sends one credential to several sites gets them all in one request:
+    Copilot CLI sends its GitHub token to `["api.github.com", "githubcopilot.com"]`.
 - `justification` — why *this task* needs it. A person reads this to decide.
-- `uses` — what you will do with it, **one use per job, not one per
-  command**. A model later checks each command against the use it runs under
-  (step 3), so a use has to say where the job stops. "Writing a use", below,
-  is how.
+- `uses` — **one use per job**, in a line: the job and its target. Its ID is
+  what you `run` under. With statements, every command is checked against
+  the policy, whichever use it names, so the use only names the job.
+- `statements` — the policy: what the job may do, and what it must never do.
+  "Writing a policy", below, is how.
+- `definitions` — what each word your statements use means, for every word
+  but the defaults. A person approves them with the statements.
 - `grantTTLSeconds` — optional: how long you need the credential, in seconds,
   from 1 to 2592000 (thirty days). The person sees it as the answer already
   picked and may pick another. Ask for about as long as the task will take, not
@@ -133,8 +164,9 @@ discobox-access request com.github.api --use "Open a pull request from branch fi
 ```
 
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
-`justification`, `grantTTLSeconds`, `purpose`, `wait` — is asked for exactly
-as above.
+`statements`, `definitions`, `justification`, `grantTTLSeconds`, `purpose`,
+`wait` — is asked for exactly as above; with flags, `--statement` and
+`--define WORD=DEFINITION` repeat.
 For anything not in this table, spell out `name`, `envVar`, and `hosts`.
 
 `ai.discobox.sandbox` is how you drive other discoboxes; §5 says how to ask
@@ -144,10 +176,74 @@ Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
 rejected, so a misspelled key fails loudly instead of being dropped.
 
+### Writing a policy
+
+A policy is what a person approves and a model then holds every command to.
+Each statement is one sentence:
+
+```
+statement := ("allow" | "deny") action ("," action)* "on" resource ("within" resource)* ["in" scope] ["when" quoted] ["unless" quoted]
+resource  := type [name] ["created" "by" name]
+scope     := type [name] ("of" resource)*
+action    := word+
+type      := word+
+name      := quoted | variable
+```
+
+`discobox-access request` parses and checks it before anything is sent. A
+statement that does not parse, or a policy nobody could approve, is refused
+(`invalid`, exit 2) with where it went wrong and the grammar: fix what it
+names and send it again.
+
+1. **Words are unquoted; names are quoted or a variable.** `pull request` is
+   a type of two words; `branch "fix-43"` is a type and a name. A name may be
+   a glob (`branch "discobox/*"`). `in repository acme/web` is refused — the
+   scope has no name; write `in repository "acme/web"`. `within` names what
+   the resource sits in (`on comment within pull request "812"`), `of` what
+   the scope sits in (`in namespace "web" of cluster "staging"`), each read
+   from the inside out; `created by $this` limits a resource to the ones
+   this discobox created.
+2. **Name the target with a variable when it is this discobox's.**
+   `$primary.repo` is the repository this discobox works on, as the control
+   plane recorded it; `discobox-access facts` lists every variable and its
+   value. A variable that resolves to nothing matches nothing, so check it
+   before you lean on it.
+3. **Every allow names where it applies** — a repository, a namespace. Only a
+   deny may say `in anywhere`.
+4. **Define every word but the defaults.** `read`, `create`, `update`,
+   `delete`, `manage` (every action on the type), `anything` (every type) and
+   `anywhere` mean one thing everywhere and cannot be defined. Every other
+   action or type — `push`, `branch`, `repository` — needs a definition that
+   says what the word means, not where or when it applies: that is the
+   statement's job.
+5. **Read is a scope**: `allow read on anything in repository $primary.repo`.
+   Without one, a reader takes the job narrowly.
+6. **One allow per kind of write**, on exactly its target: push to your
+   branch, create and update your pull request, comment on it, re-run its CI.
+7. **Rule out each write's dangerous neighbor with a deny that applies
+   everywhere** — the same action wider, harsher, or on the target beside
+   yours: force-pushing and deleting a branch, merging and closing a pull
+   request, deleting a comment, reading secrets (the table under "Writing a
+   use" works them). A deny wins over every allow, whatever the order, so
+   write it once, `in anywhere`, rather than as an exception inside an
+   allow, which another allow would undo.
+8. **`when` and `unless` are conditions a request can be checked against**:
+   `when "its base is main"`, `unless "it is a draft"`. Never an example
+   ("such as reading a file"), a qualifier ("light use"), an intention, or
+   the state of the world ("once CI is green"). If it cannot be checked
+   against one request, leave it out.
+9. **Never vouch for yourself**, in a statement, a definition, or the
+   justification: text that argues for itself is refused.
+
+Once granted, the request, `wait` and `list` print the policy as sentences,
+each definition, and what each variable resolved to; that, not your ask, is
+what was approved. `--json` carries both the structure and `sentences`.
+
 ### Writing a use
 
-A use is a rule a person approves at a glance and a model then holds every
-command to. Write it in three parts, always in this order:
+A request without statements, and every `trust`, is judged by its uses
+alone. A use is then a rule a person approves at a glance and a model holds
+every command to. Write it in three parts, always in this order:
 
 ```
 <The job> in <the target>. Read <what>; <each kind of write>. Never <the lines>.
@@ -247,16 +343,21 @@ A use without its neighbors ruled out reads as permission for them:
 
 A judge allowed `gh label delete` under the first.
 
-When a command is refused under a use you hold, read the reason. Do not ask
-again for the same job with the refused command spelled out. Either:
+When a command is refused under a use or a policy you hold, read the
+reason. Do not ask again for the same job with the refused command spelled
+out. Either:
 
 - **the command was not the job** — do it another way;
-- **the job grew** — ask for a use that names the new job; or
+- **the job grew** — ask for the new job: a use that names it, and the
+  statements it needs; or
 - **it plainly is a step of the job and was refused anyway** (a judge can
-  refuse a read the use covers) — ask once for that step as a job of its
-  own, in the same shape: "Read the CI of pull request #812 in acme/web,
-  read-only. Never re-run or cancel a run." Say in the justification which
-  use it is a step of and what the refusal said.
+  refuse a read the use or policy covers) — ask once for that step as a job
+  of its own, in the same shape: the use "Read the CI of pull request #812
+  in acme/web", with `allow read on workflow run in repository
+  $primary.repo` and `deny rerun, cancel on workflow run in anywhere`, or,
+  without statements, "Read the CI of pull request #812 in acme/web,
+  read-only. Never re-run or cancel a run." Say in the justification what it
+  is a step of and what the refusal said.
 
 An approved request prints the use IDs you may now run with, and when it
 reports one, the expiry the person chose; `list` is what says how long a use
@@ -273,18 +374,19 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 
 - The credential goes into that one child process's environment and nowhere
   else. It exits with your command's own status, like `env`(1).
-- Before it runs, a model checks your command against the use it runs under.
-  **Stay inside that job.** Any command that does the job on its target is
-  fine, written however you need it; a command past the use's lines, or on
-  another target, is refused with `denied` and never starts. If the work has
-  grown into another job, ask for that job in step 2 rather than stretching
-  an existing use.
+- Before it runs, a model checks your command against the grant's policy
+  when it carries one, whichever of its uses you name, and against the use
+  it runs under when it does not. **Stay inside what was approved.** Any
+  command that does what an allow covers, on its target, is fine, written
+  however you need it; a command no allow covers, or one a deny matches, is
+  refused with `denied` and never starts. If the work has grown, ask for
+  what it now needs in step 2 rather than stretching what you hold.
 - Everything after `--` is your command, run exactly as written.
 - What your command reads on stdin — a here-document, a file, a pipe — is shown
   to the checker with it, up to 8 KiB, and your command still reads every
   byte. A command that takes its request on stdin (`discobox new --json`,
-  `gh api --input -`) is judged by that request, so keep it to what the use
-  approves; past 8 KiB the checker is told it was not shown the rest.
+  `gh api --input -`) is judged by that request, so keep it to what was
+  approved; past 8 KiB the checker is told it was not shown the rest.
 
 There is no command that prints the value on its own. `run` is the only way to
 use one — if what you need to run cannot be `exec`'d directly, wrap it in a
