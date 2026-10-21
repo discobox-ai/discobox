@@ -148,8 +148,14 @@ func TestASandboxIsShownTheValuesItsPolicyResolvesTo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The person approves the request as a read of it shows it, the values
+	// its variables resolve to included.
+	read, err := svc.GetSecretRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, asked),
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, *read.Policy),
 	})
 	if err != nil {
 		t.Fatal(err)
