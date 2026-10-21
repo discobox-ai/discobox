@@ -96,6 +96,12 @@
   for its box would stay on the user's tab, claiming the box is working long
   after the window that knew is gone.
 
+- **The window's terminal is asked for DA1 once, by the program-status
+  probe, and every DA1 answer is taken as that probe settling** (`Update` →
+  `isProbeSettled`). A second DA1 request from the window, or from a newer
+  Bubble Tea, never sees its answer: the probe swallows it. Anything else that
+  needs DA1 shares the probe's.
+
 - **Every frame is on the alternate screen.** Nothing is printed inline: rows
   left on the primary screen surface again on the way out or around a
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a
