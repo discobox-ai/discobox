@@ -163,6 +163,11 @@ components:
                 credential:
                     description: The credential in the words a person reads, never its value.
                     type: string
+                definitions:
+                    additionalProperties:
+                        type: string
+                    description: For a command or request job judged against a policy, what each word its statements use means, other than the defaults, as a person approved it.
+                    type: object
                 facts:
                     description: What the control plane recorded about the discoboxes the job concerns when they were created, in its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what the purpose refers to; they never authorize.
                     items:
@@ -189,7 +194,7 @@ components:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
                 purposes:
-                    description: For a delegation or rule job, what it is judged against in place of purpose, one use each — the uses the discobox was delegated, or the rule's uses.
+                    description: What a job is judged against in place of purpose, one entry each — for a delegation or rule job the uses the discobox was delegated, or the rule's uses; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
                     items:
                         type: string
                     type: array

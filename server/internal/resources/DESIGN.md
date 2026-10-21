@@ -56,6 +56,13 @@ answered with the judging-disabled problem before a judge is looked for: for a
 request the proxy allows it, for a command the pool mints with no verdict, and
 a delegation is refused.
 
+A command or request job is built from the live grant (`Uses`): the use's
+sentence, or, when the grant carries a policy — its authorization
+(ADR 26-10-20-782 §1) — the policy bound to the discobox asking
+(`underPolicy`, `judge.Job.UnderPolicy`), whichever use was named. A policy with no allow left for that discobox is
+refused before any judge is asked. A standing allow covers a later request
+only under the same sentence, or the same bound statements and definitions.
+
 An approval rule is a third reason to keep a judge, and hangs on neither switch
 ([ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
 §6): a project with a rule switched on (`store.HasEnabledApprovalRule`) wants

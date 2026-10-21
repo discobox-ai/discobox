@@ -148,8 +148,9 @@ func usage(w io.Writer) {
       COMMAND's own status. Prefer this: the command it runs is the command it
       declares, and the value never leaves that one child process.
 
-      COMMAND is judged against the use it was approved for before it runs,
-      outside this sandbox. A command broader than the approved use is
+      COMMAND is judged against the use it was approved for, or against the
+      grant's policy when it carries one, before it runs, outside this
+      sandbox. A command broader than what was approved is
       refused with code "denied" and the judge's reason, and never started.
       What COMMAND reads on stdin, from a file or a pipe, is shown to the
       judge too, up to 8 KiB; COMMAND still reads every byte.

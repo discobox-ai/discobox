@@ -514,7 +514,7 @@ func (s *Service) ruleAsk(ctx context.Context, rule *model.ApprovalRule, req *mo
 		RuleID:     rule.ID,
 		RequestID:  req.ID,
 		SandboxID:  req.SandboxID,
-		Asking:     asking.JudgeDiscobox(),
+		Asking:     judge.DiscoboxOf(asking.PolicyFacts()),
 		RuleUses:   rule.Uses,
 		Uses:       useDescriptions(req.Uses),
 		Credential: ruleCredential(rule),

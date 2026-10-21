@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -610,7 +612,8 @@ func (s *Service) standing(ctx context.Context, projectID string, ask services.J
 }
 
 // covers reports whether one standing allow covers this request. The grant
-// and the sentence are compared as well as the use ID, because a standing
+// and the sentence — or the policy's statements as bound to the discobox
+// asking, and their definitions — are compared as well as the use ID, because a standing
 // allow was the judge's reading of the purpose it was shown, and a use that
 // now approves something else has not been read by anyone.
 //
@@ -627,7 +630,8 @@ func covers(projectID string, granted *model.CredentialVerdict, job judge.Job, u
 	if err := json.Unmarshal([]byte(granted.Prompt), &asked); err != nil {
 		return false
 	}
-	if asked.Purpose != job.Purpose || asked.Host != job.Host || asked.Credential != job.Credential {
+	if asked.Purpose != job.Purpose || !slices.Equal(asked.Purposes, job.Purposes) || !maps.Equal(asked.Definitions, job.Definitions) ||
+		asked.Host != job.Host || asked.Credential != job.Credential {
 		return false
 	}
 	route, err := judge.ParseRoute(granted.StandingRoute)
@@ -663,7 +667,14 @@ func (s *Service) job(ctx context.Context, projectID, poolID string, ask service
 		// side's (ADR 26-09-26-240 §4).
 		Guidance: judge.GuidanceFor(ask.Request),
 	}
-	if job.Facts, err = s.requestFacts(ctx, projectID, ask.SandboxID, ask.Request); err != nil {
+	asking, err := s.asking(ctx, projectID, ask.SandboxID)
+	if err != nil {
+		return judge.Job{}, services.ApprovedUse{}, err
+	}
+	if job.Facts, err = s.requestFacts(ctx, projectID, asking, ask.Request); err != nil {
+		return judge.Job{}, services.ApprovedUse{}, err
+	}
+	if job, err = underPolicy(job, use, asking); err != nil {
 		return judge.Job{}, services.ApprovedUse{}, err
 	}
 	if err := job.Validate(); err != nil {
@@ -738,6 +749,9 @@ func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {
 	}
 	if job.Credential != "" {
 		body.Credential = sandboxapi.NewOptString(job.Credential)
+	}
+	if len(job.Definitions) > 0 {
+		body.Definitions = sandboxapi.NewOptJudgeJobDefinitions(sandboxapi.JudgeJobDefinitions(job.Definitions))
 	}
 	if in := job.Stdin; in != nil {
 		stdin := sandboxapi.JudgeInput{Content: in.Content}

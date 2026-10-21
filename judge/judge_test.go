@@ -2,10 +2,12 @@ package judge_test
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 )
 
 func requestJob() judge.Job {
@@ -192,7 +194,49 @@ func TestAJobIsJudgeableOrRefusedBeforeAModelReadsIt(t *testing.T) {
 		}), false},
 		{"a delegation with a purpose beside its list", withDelegation(func(j *judge.Job) { j.Purpose = "read issues in org/repo" }), false},
 		{"a rule with a blank use", withRule(func(j *judge.Job) { j.Purposes = append(j.Purposes, " ") }), false},
-		{"a command with a list of purposes", withCommand(func(j *judge.Job) { j.Purposes = []string{"open a pull request in org/repo"} }), false},
+		{"a command with a list of uses rather than a policy", withCommand(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{"open a pull request in org/repo"}
+		}), false},
+		// Under a grant's policy, a command or request job is judged against
+		// its statements, which parse, at least one of which allows.
+		{"a request under a policy", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo"`, `deny delete on anything in anywhere`}
+			j.Definitions = map[string]string{"pull request": "A GitHub pull request.", "repository": "A GitHub repository."}
+		}), true},
+		{"a command under a policy", withCommand(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo"`}
+			j.Definitions = map[string]string{"pull request": "A GitHub pull request.", "repository": "A GitHub repository."}
+		}), true},
+		{"a policy word with no definition", withCommand(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo"`}
+		}), false},
+		{"a policy beside a sentence use", withCommand(func(j *judge.Job) {
+			j.Purposes = []string{`allow create on pull request in repository "org/repo"`}
+		}), false},
+		{"a policy that only denies", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`deny delete on anything in anywhere`}
+		}), false},
+		{"a policy with a blank definition", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo"`}
+			j.Definitions = map[string]string{"pull request": " "}
+		}), false},
+		{"a definition of a default word", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow read on pull request in repository "org/repo"`}
+			j.Definitions = map[string]string{"read": "Read, and merge.", "pull request": "A GitHub pull request.", "repository": "A GitHub repository."}
+		}), false},
+		{"a definition no statement uses", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo"`}
+			j.Definitions = map[string]string{"merge": "Merge a pull request."}
+		}), false},
+		{"a policy larger than a judge may be shown", withRequest(func(j *judge.Job) {
+			j.Purpose, j.Purposes = "", []string{`allow create on pull request in repository "org/repo" when "` + strings.Repeat("x", judge.MaxPolicyBytes) + `"`}
+		}), false},
+		{"definitions beside a sentence use", withCommand(func(j *judge.Job) {
+			j.Definitions = map[string]string{"pull request": "A GitHub pull request."}
+		}), false},
+		{"definitions on a delegation", withDelegation(func(j *judge.Job) {
+			j.Definitions = map[string]string{"issue": "A GitHub issue."}
+		}), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -371,5 +415,79 @@ func TestTheSystemPromptSaysWhatTheContractSays(t *testing.T) {
 		if !strings.Contains(judge.System, phrase) {
 			t.Fatalf("the system prompt never mentions %q, which the contract relies on", phrase)
 		}
+	}
+}
+
+// A command or request job under a grant's policy is judged against its
+// statements bound to the discobox asking, with the words they use defined:
+// a variable that binds is its value, an allow whose variable does not bind
+// is gone, and a policy with no allow left is never asked about.
+func TestAJobUnderAPolicyIsJudgedAgainstItsBoundStatements(t *testing.T) {
+	t.Parallel()
+	repo := policy.VarPrimaryRepo
+	approved := policy.Policy{
+		Statements: []policy.Statement{
+			{Effect: policy.Allow, Actions: []string{"push"}, ResourceType: "branch", Name: shown("discobox/issue-46"), Scope: policy.Scope{Type: "repository", Name: repo}},
+			{Effect: policy.Allow, Actions: []string{policy.ActionCreate}, ResourceType: "issue", Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryUpstream}},
+			{Effect: policy.Deny, Actions: []string{"force-push"}, ResourceType: "branch", Scope: policy.Scope{Type: policy.Anywhere}},
+		},
+		Definitions: map[string]string{"push": "Update a Git ref.", "force-push": "Rewrite a ref.", "branch": "A Git branch.", "repository": "A GitHub repository.", "issue": "A GitHub issue."},
+	}
+	facts := policy.Facts{
+		Discobox: policy.Discobox{ID: "sbx_1"},
+		Sources:  []policy.Source{{Slug: "primary", Primary: true, Remote: &policy.Remote{Host: "github.com", Repo: "org/repo"}}},
+	}
+	approved = approved.Resolve(facts)
+
+	job, err := commandJob().UnderPolicy(approved, facts)
+	if err != nil {
+		t.Fatalf("UnderPolicy() error = %v", err)
+	}
+	want := []string{`allow push on branch "discobox/issue-46" in repository "org/repo"`, `deny force-push on branch in anywhere`}
+	if job.Purpose != "" || strings.Join(job.Purposes, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("job = %q, %q; want no purpose and %q", job.Purpose, job.Purposes, want)
+	}
+	if _, ok := job.Definitions["issue"]; ok || job.Definitions["push"] != "Update a Git ref." || len(job.Definitions) != 4 {
+		t.Fatalf("definitions = %v, want those of the statements left", job.Definitions)
+	}
+	if _, err := judge.Prompt(job); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+
+	// Another discobox, created from another repository, binds nothing the
+	// grant was approved for: only the deny is left, and nothing is asked.
+	elsewhere := facts
+	elsewhere.Sources = []policy.Source{{Slug: "primary", Primary: true, Remote: &policy.Remote{Host: "github.com", Repo: "org/other"}}}
+	job, err = requestJob().UnderPolicy(approved, elsewhere)
+	if !errors.Is(err, judge.ErrPolicyAllowsNothing) {
+		t.Fatalf("UnderPolicy() error = %v, want ErrPolicyAllowsNothing", err)
+	}
+	if !errors.Is(job.Validate(), judge.ErrPolicyAllowsNothing) {
+		t.Fatalf("Validate() = %v, want the same refusal", job.Validate())
+	}
+}
+
+// A policy within policy.Validate's bounds may still be more than a judge can
+// be shown beside a request; it is refused where it enters, before a person
+// approves something that would judge nothing.
+func TestAPolicyTooLargeToJudgeDoesNotFit(t *testing.T) {
+	t.Parallel()
+	condition := strings.Repeat("its title names the issue it fixes; ", 27)
+	big := policy.Policy{Definitions: map[string]string{"pull request": "A GitHub pull request.", "repository": "A GitHub repository."}}
+	for range 12 {
+		big.Statements = append(big.Statements, policy.Statement{
+			Effect: policy.Allow, Actions: []string{policy.ActionCreate}, ResourceType: "pull request",
+			Scope: policy.Scope{Type: "repository", Name: "org/repo"}, When: &condition,
+		})
+	}
+	if err := big.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want a policy within its own bounds", err)
+	}
+	if err := judge.PolicyFits(big); err == nil {
+		t.Fatal("PolicyFits() accepted a policy larger than a judge may be shown")
+	}
+	big.Statements = big.Statements[:1]
+	if err := judge.PolicyFits(big); err != nil {
+		t.Fatalf("PolicyFits() error = %v, want a small policy to fit", err)
 	}
 }

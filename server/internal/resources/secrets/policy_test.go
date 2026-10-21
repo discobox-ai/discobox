@@ -114,6 +114,22 @@ func TestAPolicyRoundTripsFromRequestToGrant(t *testing.T) {
 	if len(credentials) != 1 || !reflect.DeepEqual(credentials[0].Grant.Policy, grant.Policy) {
 		t.Fatalf("listed credentials = %+v, want the grant's policy", credentials)
 	}
+
+	// What a command or a request under the grant is judged against is its
+	// policy as approved, whichever use it names (ADR 26-10-20-782 §1).
+	forCommand, err := svc.ApprovedCredentialUse(ctx, testPoolID, testSandboxID, grant.Uses[0].UseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forRequest, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, grant.Uses[0].UseID, "api.github.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, use := range []services.ApprovedUse{forCommand, forRequest} {
+		if use.Policy == nil || !reflect.DeepEqual(*use.Policy, *grant.Policy) {
+			t.Fatalf("approved use policy = %+v, want the grant's", use.Policy)
+		}
+	}
 }
 
 // What a sandbox is shown as its facts is what a policy it writes resolves to

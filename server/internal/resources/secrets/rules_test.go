@@ -1255,7 +1255,7 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest, err := judge.Digest(services.RuleAsk{
-		Asking:   asking.JudgeDiscobox(),
+		Asking:   judge.DiscoboxOf(asking.PolicyFacts()),
 		RuleUses: []string{issueRule}, Uses: []string{issueUse}, Credential: wellknown.GitHubAPI, Hosts: []string{"github.com"},
 	}.Job())
 	if err != nil {

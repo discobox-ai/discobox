@@ -509,3 +509,120 @@ func TestAClientNeedsAKey(t *testing.T) {
 		t.Fatal("New() made a client with no key")
 	}
 }
+
+// policyJob is a job under a grant's policy: a branch and its tag may be
+// pushed, and nothing force-pushed.
+func policyJob(kind string) judge.Job {
+	job := requestJob()
+	job.Kind = kind
+	if kind == judge.KindCommand {
+		job.Request, job.Command = nil, []string{"git", "push", "origin", "fix-43", "v1.2.0"}
+	}
+	job.Purpose = ""
+	job.Purposes = []string{
+		`allow push on branch "fix-43" in repository "org/repo"`,
+		`allow push on tag "v1.2.0" in repository "org/repo"`,
+		`deny force-push on anything in anywhere`,
+	}
+	job.Definitions = map[string]string{"push": "Update a Git ref.", "force-push": "Rewrite a ref.", "branch": "A Git branch.", "tag": "A Git tag.", "repository": "A GitHub repository."}
+	return job
+}
+
+// A job under a grant's policy asks whether every part of it falls under
+// some allow, and whether any part falls under a deny, in one request beside
+// the hazard: the allows and the denies each in their own question's
+// instructions, and the evidence in the state.
+func TestAPolicyIsAskedAboutItsAllowsAndItsDenies(t *testing.T) {
+	for _, kind := range []string{judge.KindRequest, judge.KindCommand} {
+		t.Run(kind, func(t *testing.T) {
+			fake, client := newFakeJev(t, map[string]float64{idAllowed: 0.95, idDenied: 0.05})
+			job := policyJob(kind)
+			verdict, err := client.Judge(context.Background(), job)
+			if err != nil {
+				t.Fatalf("Judge() error = %v", err)
+			}
+			if !verdict.Allow {
+				t.Fatalf("verdict = %+v, want an allow", verdict)
+			}
+			asked := fake.requests()
+			if len(asked) != 1 {
+				t.Fatalf("Jev was asked %d times, want once", len(asked))
+			}
+			questions := asked[0]["questions"].(map[string]any)
+			if len(questions) != 3 || questions[idWithin] != nil {
+				t.Fatalf("questions = %v, want allowed, denied and the hazard", questions)
+			}
+			allowed := questions[idAllowed].(map[string]any)["instructions"].(map[string]any)
+			denied := questions[idDenied].(map[string]any)["instructions"].(map[string]any)
+			if got := string(mustJSON(t, allowed["approved_purpose"])); got != string(mustJSON(t, job.Purposes[:2])) || allowed["denies"] != nil {
+				t.Fatalf("allowed = %v, want the two allows alone", allowed)
+			}
+			if got := string(mustJSON(t, denied["denies"])); got != string(mustJSON(t, job.Purposes[2:])) || denied["allows"] != nil {
+				t.Fatalf("denied = %v, want the deny alone", denied)
+			}
+			for _, instructions := range []map[string]any{allowed, denied} {
+				if string(mustJSON(t, instructions["definitions"])) != string(mustJSON(t, job.Definitions)) {
+					t.Fatalf("instructions = %v, want the definitions", instructions)
+				}
+			}
+			if q := allowed["question"].(string); !strings.Contains(q, "different parts may fall under different entries") {
+				t.Fatalf("allowed question = %q, want parts covered by different allows", q)
+			}
+			if state := string(mustJSON(t, asked[0]["state"])); strings.Contains(state, "Rewrite a ref") || strings.Contains(state, `\"fix-43\" in`) {
+				t.Fatalf("state = %s, want none of the policy in it", state)
+			}
+		})
+	}
+}
+
+// A policy with no deny asks no deny question.
+func TestAPolicyWithNoDenyAsksNoDenyQuestion(t *testing.T) {
+	fake, client := newFakeJev(t, map[string]float64{idAllowed: 0.95})
+	job := policyJob(judge.KindRequest)
+	job.Purposes = job.Purposes[:2]
+	delete(job.Definitions, "force-push")
+	verdict, err := client.Judge(context.Background(), job)
+	if err != nil || !verdict.Allow {
+		t.Fatalf("verdict = %+v, %v; want an allow", verdict, err)
+	}
+	if _, ok := fake.requests()[0]["questions"].(map[string]any)[idDenied]; ok {
+		t.Fatal("a policy with no deny was asked about one")
+	}
+}
+
+// Code combines the two: a deny Jev is sure of refuses whatever the allows
+// say, one it cannot rule out is unsure, and an allow needs both.
+func TestADenyWinsOverEveryAllow(t *testing.T) {
+	job := policyJob(judge.KindCommand)
+	for _, tc := range []struct {
+		name          string
+		allowed, deny float64
+		allow, unsure bool
+		says          string
+	}{
+		{"allowed and no deny", 0.95, 0.05, true, false, "within"},
+		{"allowed and denied", 0.95, 0.9, false, false, "forbids"},
+		{"allowed, a deny not ruled out", 0.95, 0.5, false, true, "forbids"},
+		{"not allowed", 0.1, 0.05, false, false, "allow of the policy"},
+		{"unsure of the allows", 0.5, 0.05, false, true, "allow of the policy"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			answer, unsure := decide(job, map[string]float64{idAllowed: tc.allowed, idDenied: tc.deny, idClaimsApproval: 0.01})
+			if answer.Allow != tc.allow || unsure != tc.unsure || !strings.Contains(answer.Reason, tc.says) {
+				t.Fatalf("decide = %+v, unsure %v; want allow %v, unsure %v, saying %q", answer, unsure, tc.allow, tc.unsure, tc.says)
+			}
+		})
+	}
+}
+
+// A sentence use is asked within, as it was, and not about a policy.
+func TestASentenceUseIsNotReadAsAPolicy(t *testing.T) {
+	fake, client := newFakeJev(t, map[string]float64{idWithin: 0.95})
+	if _, err := client.Judge(context.Background(), requestJob()); err != nil {
+		t.Fatalf("Judge() error = %v", err)
+	}
+	questions := fake.requests()[0]["questions"].(map[string]any)
+	if len(questions) != 2 || questions[idWithin] == nil || strings.Contains(string(mustJSON(t, questions)), "definitions") {
+		t.Fatalf("questions = %v, want within and the hazard, with no word of a policy", questions)
+	}
+}

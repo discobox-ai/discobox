@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/sourcecache"
 	"github.com/discobox-ai/discobox/sourceref"
 )
@@ -42,6 +43,29 @@ type Source struct {
 	RefType string
 	RefName string
 	Commit  string
+}
+
+// DiscoboxOf is the control plane's typed record of a discobox
+// (policy.Facts, which a policy's variables resolve from) as the judge states
+// it. Every reader of a discobox's facts goes through here, so the judge and a
+// policy's variables cannot read two repositories for one discobox.
+func DiscoboxOf(f policy.Facts) Discobox {
+	out := Discobox{SandboxID: f.Discobox.ID, CreatedBy: f.Discobox.CreatedBy}
+	for _, s := range f.Sources {
+		source := Source{Commit: s.Commit}
+		if s.Remote != nil {
+			source.Remote = s.Remote.URL
+		}
+		if s.Ref != nil {
+			source.RefType, source.RefName = s.Ref.Type, s.Ref.Name
+		}
+		if s.Primary {
+			out.Primary = &source
+		} else {
+			out.Additional = append(out.Additional, source)
+		}
+	}
+	return out
 }
 
 // Facts is what the judge is told about the discobox asking, in Discobox's

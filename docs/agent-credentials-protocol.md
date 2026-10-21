@@ -184,8 +184,9 @@ resources in scopes, with a definition for every word that is not a default
 §1; the shape is the root `policy` package). An implementation refuses one
 that does not validate as `invalid`. The granted status and `list` carry the
 approved policy, with `resolved` holding what each variable — `$this`,
-`$primary.repo` and the rest — resolved to for the calling sandbox. Discobox
-judges nothing by a policy yet; `uses` are still what `get` takes.
+`$primary.repo` and the rest — resolved to for the calling sandbox. `uses` are
+still what `get` takes; where Discobox judges what a use is spent on, a grant
+that carries a policy is judged against the policy, whichever use was named.
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls. A project may hold approval

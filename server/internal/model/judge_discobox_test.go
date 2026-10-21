@@ -36,7 +36,7 @@ func TestTheDiscoboxIsReadFromWhatItWasCreatedWith(t *testing.T) {
 		"Another source sbx_worker was created with is the Git repository github.com/org/alpha.",
 		"Another source sbx_worker was created with is the Git repository github.com/org/zeta.",
 	}
-	if got := judge.Facts(sandbox.JudgeDiscobox()); !slices.Equal(got, want) {
+	if got := judge.Facts(judge.DiscoboxOf(sandbox.PolicyFacts())); !slices.Equal(got, want) {
 		t.Fatalf("facts =\n%q\nwant\n%q", got, want)
 	}
 }
@@ -58,7 +58,7 @@ func TestTheDiscoboxsRepositoryIsTheOneItsRulesAreComparedWith(t *testing.T) {
 		t.Fatalf("RepositoryURL() = %q, want the URL", got)
 	}
 	want := "The primary source sbx_child was created with is the Git repository github.com/acme/web."
-	if got := judge.Facts(sandbox.JudgeDiscobox()); len(got) < 2 || got[1] != want {
+	if got := judge.Facts(judge.DiscoboxOf(sandbox.PolicyFacts())); len(got) < 2 || got[1] != want {
 		t.Fatalf("facts = %q, want %q", got, want)
 	}
 }

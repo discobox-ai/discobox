@@ -591,6 +591,9 @@ type JudgeJob struct {
 	Command []string `json:"command"`
 	// The credential in the words a person reads, never its value.
 	Credential OptString `json:"credential"`
+	// For a command or request job judged against a policy, what each word its statements use means,
+	// other than the defaults, as a person approved it.
+	Definitions OptJudgeJobDefinitions `json:"definitions"`
 	// What the control plane recorded about the discoboxes the job concerns when they were created, in
 	// its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what
 	// the purpose refers to; they never authorize.
@@ -606,8 +609,9 @@ type JudgeJob struct {
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
-	// For a delegation or rule job, what it is judged against in place of purpose, one use each — the
-	// uses the discobox was delegated, or the rule's uses.
+	// What a job is judged against in place of purpose, one entry each — for a delegation or rule job
+	// the uses the discobox was delegated, or the rule's uses; for a command or request job under a
+	// grant that carries a policy, its statements as sentences, bound to the discobox asking.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
@@ -628,6 +632,11 @@ func (s *JudgeJob) GetCommand() []string {
 // GetCredential returns the value of Credential.
 func (s *JudgeJob) GetCredential() OptString {
 	return s.Credential
+}
+
+// GetDefinitions returns the value of Definitions.
+func (s *JudgeJob) GetDefinitions() OptJudgeJobDefinitions {
+	return s.Definitions
 }
 
 // GetFacts returns the value of Facts.
@@ -695,6 +704,11 @@ func (s *JudgeJob) SetCredential(val OptString) {
 	s.Credential = val
 }
 
+// SetDefinitions sets the value of Definitions.
+func (s *JudgeJob) SetDefinitions(val OptJudgeJobDefinitions) {
+	s.Definitions = val
+}
+
 // SetFacts sets the value of Facts.
 func (s *JudgeJob) SetFacts(val []string) {
 	s.Facts = val
@@ -748,6 +762,19 @@ func (s *JudgeJob) SetStdin(val OptJudgeInput) {
 // SetUses sets the value of Uses.
 func (s *JudgeJob) SetUses(val []string) {
 	s.Uses = val
+}
+
+// For a command or request job judged against a policy, what each word its statements use means,
+// other than the defaults, as a person approved it.
+type JudgeJobDefinitions map[string]string
+
+func (s *JudgeJobDefinitions) init() JudgeJobDefinitions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // What is being judged: a command about to run, a request the proxy observed, a discobox about to
@@ -1738,6 +1765,52 @@ func (o OptJudgeInput) Get() (v JudgeInput, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptJudgeInput) Or(d JudgeInput) JudgeInput {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeJobDefinitions returns new OptJudgeJobDefinitions with value set to v.
+func NewOptJudgeJobDefinitions(v JudgeJobDefinitions) OptJudgeJobDefinitions {
+	return OptJudgeJobDefinitions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeJobDefinitions is optional JudgeJobDefinitions.
+type OptJudgeJobDefinitions struct {
+	Value JudgeJobDefinitions
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeJobDefinitions was set.
+func (o OptJudgeJobDefinitions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeJobDefinitions) Reset() {
+	var v JudgeJobDefinitions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeJobDefinitions) SetTo(v JudgeJobDefinitions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeJobDefinitions) Get() (v JudgeJobDefinitions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeJobDefinitions) Or(d JudgeJobDefinitions) JudgeJobDefinitions {
 	if v, ok := o.Get(); ok {
 		return v
 	}
