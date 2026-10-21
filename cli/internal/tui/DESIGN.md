@@ -910,7 +910,18 @@ The window also speaks it to the terminal it runs in (`programstatus.go`, §6):
 once that terminal answers the probe `Init` sends, the status of the box the
 window is on — the workspace's box, or the list's cursor row while the list
 has focus — is sent as that terminal's root record, again whenever it changes,
-and as a clear when there is none. The workspace's box speaks from its primary
+and as a clear when there is none. The probe is the OSC 7501 query followed by a
+DA1 request: a terminal answers in order, so device attributes with no 7501
+answer before them are a terminal that does not know the protocol. That
+terminal is sent no record; instead the primary box's status leads the window
+title as the row's glyph (`statusTitlePrefix`, `▶ Claude Code`). The shim
+answers the probe for the program in the box whatever the outer terminal
+knows (ADR §1), and a program told the protocol is there may stop putting its
+activity in its title, as Claude Code does, so the bare title
+would say less than the program meant to. Plain `discobox attach` has no
+such fallback: it relays the program's bytes untouched (ADR §6), so it has
+no title of its own to lead with a glyph, and a terminal without the
+protocol there shows the program's title as the program wrote it. The workspace's box speaks from its primary
 pane's stream (`termpane.WithOSC`) while the last report it heard is newer
 than the poll, which lags nothing; a poll observed since then wins, since it
 carries the shim's lifetime rules — a record dropped because its process left
@@ -2505,7 +2516,8 @@ the overlay's — because it is read from outside the window, where what matters
 is which discobox this is and what its agent is doing; a tab or a report is
 something you are doing inside the window and already looking at. With no
 primary the terminal's title is left exactly as the shell that started the
-window left it. Messages the window does not handle fall through to the pane, because the
+window left it. On a terminal that does not know OSC 7501 the title is led by the
+primary box's status glyph (see the agent glyph section above). Messages the window does not handle fall through to the pane, because the
 terminal's output arrives as `termpane`'s own unexported messages and nothing
 here can name them.
 

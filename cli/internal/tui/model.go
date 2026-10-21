@@ -56,9 +56,9 @@ type Model struct {
 	unreachable          string
 	unreachableIsPrimary bool
 
-	// statusTerminal is whether the window's terminal answered the OSC 7501
+	// statusTerminal is what the window's terminal answered the OSC 7501
 	// probe, and statusSent the record last sent to it; see programstatus.go.
-	statusTerminal bool
+	statusTerminal statusSupport
 	statusSent     string
 
 	// The three things the window re-reads on the beat, each one at a time:
@@ -892,11 +892,17 @@ func status(format string, args ...any) tea.Cmd {
 // in update below; what is here is what has to happen around every message
 // rather than in any handler.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// The terminal's answer to the program-status probe is the window's, not
-	// input for anything on screen.
+	// The terminal's answers to the program-status probe are the window's,
+	// not input for anything on screen.
 	if isProgramStatusReply(msg) {
-		m.statusTerminal = true
+		m.statusTerminal = statusSpoken
 		return m, m.syncProgramStatus()
+	}
+	if isProbeSettled(msg) {
+		if m.statusTerminal == statusUnanswered {
+			m.statusTerminal = statusTitled
+		}
+		return m, nil
 	}
 	cmd := m.update(msg)
 	// Whatever just happened may have changed which pane is on screen, and a
@@ -3697,15 +3703,21 @@ func (m *Model) headerHints() []hint {
 // With no primary it is empty, which leaves the title as whatever started this
 // window set it: a launcher with nothing running in it has nothing to say that
 // the terminal's own title does not already.
+//
+// On a terminal that does not know OSC 7501 the box's status leads the title
+// as its one glyph (statusTitlePrefix): the program in the box was told the
+// protocol is there, and a program told that may stop putting its activity in
+// its title, so the title alone would say less than the program meant to.
 func (m *Model) windowTitle() string {
 	p := m.primary()
 	if p == nil {
 		return ""
 	}
-	if title := strings.TrimSpace(p.term.Title()); title != "" {
-		return title
+	title := strings.TrimSpace(p.term.Title())
+	if title == "" {
+		title = displayName(p.sandbox)
 	}
-	return displayName(p.sandbox)
+	return m.statusTitlePrefix() + title
 }
 
 // viewPrompt draws the composer the way Claude Code draws its own: a rule

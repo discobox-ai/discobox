@@ -48,7 +48,7 @@ func TestTheFocusedBoxsStatusIsSentAsFocusMoves(t *testing.T) {
 	m := statusModel(t)
 	m.list.moveTo(0) // blocked-box
 	_, cmd := m.Update(uv.UnknownOscEvent("\x1b]7501;?\x1b\\"))
-	if !m.statusTerminal {
+	if m.statusTerminal != statusSpoken {
 		t.Fatal("the probe's answer was not taken")
 	}
 	want := programstatus.Record{State: programstatus.Blocked, Progress: -1, Title: "blocked-box", Msg: "Allow rm -rf build?"}.Sequence()
@@ -76,7 +76,7 @@ func TestTheFocusedBoxsStatusIsSentAsFocusMoves(t *testing.T) {
 // heard a report, the polled status standing in until then.
 func TestTheWorkspacesBoxSpeaksFromItsStream(t *testing.T) {
 	m := statusModel(t)
-	m.statusTerminal = true
+	m.statusTerminal = statusSpoken
 	box := m.list.all[1] // working-box, polled working
 	p := &pane{id: 1, primary: true, sandbox: box}
 	m.paneBox = box
@@ -130,5 +130,55 @@ func TestTheWindowClearsWhatItSentOnItsWayOut(t *testing.T) {
 	m.clearProgramStatus(&out)
 	if out.String() != programstatus.ClearSequence {
 		t.Fatalf("wrote %q, want the clear", out.String())
+	}
+}
+
+// A terminal whose device attributes arrive with no answer to the probe
+// before them does not know the protocol: it is sent no record, and the
+// primary box's status leads the window title instead, since the program in
+// the box was told the protocol is there and may have taken its activity out
+// of its title.
+func TestATerminalThatDoesNotKnowTheProtocolGetsTheStatusInItsTitle(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	term.send("\x1b]2;Claude Code\x07")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+
+	if _, cmd := m.Update(uv.PrimaryDeviceAttributesEvent{62, 22}); rawSent(t, cmd) != "" {
+		t.Fatal("sent a record to a terminal that does not know the protocol")
+	}
+	if got := rawSent(t, m.syncProgramStatus()); got != "" {
+		t.Fatalf("sent %q to a terminal that does not know the protocol", got)
+	}
+	if m.statusTerminal != statusTitled {
+		t.Fatalf("support = %v after attributes with no answer, want titled", m.statusTerminal)
+	}
+	term.send("\x1b]7501;state=blocked:kind=permission\x1b\\")
+	d.wait("the status in the title", func() bool { return m.View().WindowTitle == "◆ Claude Code" })
+	term.send("\x1b]7501;state=working\x1b\\")
+	d.wait("the new status in the title", func() bool { return m.View().WindowTitle == "▶ Claude Code" })
+	term.send("\x1b]7501;state=clear\x1b\\")
+	d.wait("the status gone from the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+}
+
+// A terminal that knows the protocol shows the status its own way: the
+// attributes after its answer change nothing, and the title carries no glyph.
+func TestATerminalThatKnowsTheProtocolKeepsItsTitlePlain(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	d.dispatch(uv.UnknownOscEvent("\x1b]7501;?\x1b\\"))
+	d.dispatch(uv.PrimaryDeviceAttributesEvent{62, 22})
+	if m.statusTerminal != statusSpoken {
+		t.Fatalf("support = %v, want spoken", m.statusTerminal)
+	}
+	term.send("\x1b]2;Claude Code\x1b\\\x1b]7501;state=working\x1b\\")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+	if rec, ok := m.focusedProgramStatus(); !ok || rec.State != programstatus.Working {
+		t.Fatalf("status = %+v, %v; want working heard", rec, ok)
+	}
+	if got := m.View().WindowTitle; got != "Claude Code" {
+		t.Fatalf("title = %q, want no glyph", got)
 	}
 }

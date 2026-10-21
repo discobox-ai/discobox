@@ -765,17 +765,35 @@ func (l *sandboxList) stateStyle(st *styles, s Sandbox) lipgloss.Style {
 // blank cell for no report. Each is its own shape as well as its own color,
 // so working and blocked are told apart where the colors are close.
 func agentGlyph(st *styles, state programstatus.State) string {
+	mark := agentMark(state)
 	switch state {
 	case programstatus.Working:
-		return st.name.Render("▶")
+		return st.name.Render(mark)
 	case programstatus.Idle:
-		return st.dimText.Render("◇")
-	case programstatus.Blocked:
-		return st.statusER.Render("◆")
+		return st.dimText.Render(mark)
+	case programstatus.Blocked, programstatus.Error:
+		return st.statusER.Render(mark)
 	case programstatus.Done:
-		return st.add.Render("✓")
+		return st.add.Render(mark)
+	default:
+		return mark
+	}
+}
+
+// agentMark is the shape agentGlyph draws, uncolored, for the places that
+// take no color: the window title (statusTitlePrefix).
+func agentMark(state programstatus.State) string {
+	switch state {
+	case programstatus.Working:
+		return "▶"
+	case programstatus.Idle:
+		return "◇"
+	case programstatus.Blocked:
+		return "◆"
+	case programstatus.Done:
+		return "✓"
 	case programstatus.Error:
-		return st.statusER.Render("×")
+		return "×"
 	default:
 		return " "
 	}
