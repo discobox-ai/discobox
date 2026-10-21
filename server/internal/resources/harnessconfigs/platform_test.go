@@ -164,6 +164,7 @@ func TestSeedBuiltInsRewritesABuiltInWhosePlatformsMoved(t *testing.T) {
 	const image = "discobox-harness-codex:v1"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
+		Bundle: image, BundleDigest: "sha256:same",
 		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
 	}); err != nil {
 		t.Fatal(err)

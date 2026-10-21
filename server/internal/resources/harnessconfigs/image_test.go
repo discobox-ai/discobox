@@ -480,6 +480,7 @@ func TestSeedBuiltInsRewritesABuiltInWhoseSecretDeclarationsMoved(t *testing.T) 
 	const image = "discobox-harness-claude-code:v1"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", BuiltIn: true,
+		Bundle: image, BundleDigest: "sha256:same",
 		Image: image, ImageDigest: "sha256:same", ImageKind: platform.OCI,
 		Secrets: []model.HarnessConfigSecret{{Name: "API_KEY", Required: true}},
 	}); err != nil {
