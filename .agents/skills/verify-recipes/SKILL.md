@@ -292,6 +292,28 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   section below).
 - Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret delete N`.
 
+## A request carrying a policy, and its approval forms
+
+- The dev loop's pool may run the released
+  `ghcr.io/discobox-ai/discobox-pool-agent:latest` (`docker ps`), which drops
+  any protocol field newer than the release — a request's `policy` arrives as
+  `null`. Use the isolated server below with
+  `DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local` and
+  `DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local`.
+- With no `shell` harness image, `go tool task build:harness-stub-image`,
+  then `admin harness create --image discobox-harness-stub:local` and
+  `admin harness configure stub`; `new -d -H stub`. Configuring it stores a
+  `stub-token` secret: delete it with the harness.
+- Until `discobox-access` writes policies, file one from inside the box:
+  `d cp req.json <box>:/tmp/` and `d shell <box> -- sh -c 'curl -sS -X POST
+  -H "Content-Type: application/json" --data @/tmp/req.json
+  $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests'` (the agentcreds
+  `RequestBody`, with `policy` as `policy.Policy`'s JSON). A box from a local
+  checkout records its `origin`, so `$primary.repo` resolves; `$primary.upstream`
+  never does yet, for the "matches nothing" form.
+- A shell function `d` does not reach `timeout`; zsh does not split `$D`
+  either. Put the CLI and its `--server` in a two-line script.
+
 # Verifying a server/API change against an isolated server
 
 The `task dev` loop's server is the user's; run a second one from your own
