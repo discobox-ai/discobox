@@ -219,7 +219,7 @@ without a policy is judged by them as before.
   here, for the protocol's facts verb. The variables are resolved on the
   control plane, not the pool, so what an agent is shown is what approval
   records whatever version its pool runs; the judge's facts
-  (`JudgeDiscobox`) are derived from the same record.
+  (`judge.DiscoboxOf`) are derived from the same record.
 
 ## Well-known credentials
 
