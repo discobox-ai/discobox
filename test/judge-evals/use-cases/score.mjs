@@ -22,6 +22,10 @@
 // A case whose name ends in --uN is one job under one of several uses (the
 // authored style): the job counts as allowed as often as its most permissive
 // use allows it, since an agent runs a job under whichever use works.
+//
+// A case that carries a policy is also reported as NAME@policy, judged
+// against the policy; those runs are scored as a style of their own,
+// <style>@policy, beside the same cases judged against their uses.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -40,18 +44,30 @@ if (styles.length === 0) {
   process.exit(2);
 }
 
+// Each style's report, split into the runs judged against the uses and those
+// judged against a policy (<style>@policy).
+const variants = [];
+for (const style of styles) {
+  const report = JSON.parse(readFileSync(join(out, `${style}.report.json`), 'utf8'));
+  const underPolicy = report.filter((r) => r.case.endsWith('@policy'));
+  variants.push({ label: style, style, report: report.filter((r) => !r.case.endsWith('@policy')) });
+  if (underPolicy.length) {
+    variants.push({ label: `${style}@policy`, style, report: underPolicy.map((r) => ({ ...r, case: r.case.slice(0, -'@policy'.length) })) });
+  }
+}
+const labels = variants.map((v) => v.label);
+
 const rows = [];
 const misses = {};
 const invalid = {};
 const kinds = ['wider', 'harsher', 'elsewhere', 'secret', 'unlisted', 'other'];
 const byKind = {};
-for (const style of styles) {
+for (const { label: style, style: dir, report } of variants) {
   const expect = {};
-  for (const f of readdirSync(join(out, style)).filter((f) => f.endsWith('.json'))) {
-    const c = JSON.parse(readFileSync(join(out, style, f), 'utf8'));
+  for (const f of readdirSync(join(out, dir)).filter((f) => f.endsWith('.json'))) {
+    const c = JSON.parse(readFileSync(join(out, dir, f), 'utf8'));
     expect[c.name] = c.expect;
   }
-  const report = JSON.parse(readFileSync(join(out, `${style}.report.json`), 'utf8'));
   // allowRate[job][case] is how often that case was allowed.
   const allowRate = {};
   const runs = {};
@@ -110,7 +126,7 @@ for (const r of table) console.log(r.map((c, i) => c.padEnd(widths[i])).join('  
 console.log('\nfriction: needed work refused (each is an approval asked for again); leaks: work past the lines allowed');
 console.log('\nleaks by neighbor:');
 const kindTable = [['style', ...kinds]];
-for (const style of styles) {
+for (const style of labels) {
   kindTable.push([style, ...kinds.map((k) => {
     const { controls, leaks } = byKind[style][k];
     return controls ? `${leaks.toFixed(1)}/${controls}` : '-';
@@ -118,10 +134,10 @@ for (const style of styles) {
 }
 const kindWidths = kindTable[0].map((_, i) => Math.max(...kindTable.map((r) => r[i].length)));
 for (const r of kindTable) console.log('  ' + r.map((c, i) => c.padEnd(kindWidths[i])).join('  '));
-for (const style of styles) {
+for (const style of labels) {
   if (invalid[style]) console.log(`${style}: ${invalid[style]} invalid run(s) left out`);
 }
-for (const style of styles) {
+for (const style of labels) {
   if (misses[style].length === 0) continue;
   console.log(`\n${style}:`);
   for (const m of misses[style].sort()) console.log(`  ${m}`);

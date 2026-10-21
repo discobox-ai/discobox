@@ -16,7 +16,7 @@
 //
 // generate.mjs writes these as judge-eval cases; see README.md.
 
-const REPO = 'discobox-ai/discobox';
+export const REPO = 'discobox-ai/discobox';
 const GH = `https://github.com/${REPO}`;
 
 // git as the skills run it: the token handed to git through a one-shot

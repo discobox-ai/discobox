@@ -734,7 +734,7 @@ tasks:
       - node test/judge-evals/use-cases/score.mjs {{.OUT}}
 
   eval:judge:use-cases:authored:
-    desc: "Have a headless Claude Code write the uses for each use-case scenario's task with the discobox-access skill, then judge the scenario's work under them (AUTHOR_MODEL=sonnet, RUNS=3, OUT=build/use-case-evals)"
+    desc: "Have a headless Claude Code write the uses and policy for each use-case scenario's task with the discobox-access skill, then judge the scenario's work under them (AUTHOR_MODEL=sonnet, RUNS=3, OUT=build/use-case-evals)"
     vars:
       OUT: '{{.OUT | default "build/use-case-evals"}}'
     env:
@@ -743,7 +743,7 @@ tasks:
       AUTHOR_MODEL: '{{.AUTHOR_MODEL | default "sonnet"}}'
     cmds:
       - test/judge-evals/use-cases/author.sh {{.OUT}}
-      - node test/judge-evals/use-cases/generate.mjs {{.OUT}} --uses {{.OUT}}/authored-uses.json
+      - node test/judge-evals/use-cases/generate.mjs {{.OUT}} --authored {{.OUT}}/authored.json
       - go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "3"}} -json {{.OUT}}/authored.report.json {{.CLI_ARGS}} {{.OUT}}/authored > {{.OUT}}/authored.txt || true
       - node test/judge-evals/use-cases/score.mjs {{.OUT}}
 

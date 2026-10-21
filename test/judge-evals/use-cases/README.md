@@ -9,8 +9,8 @@ is past its lines.
 
 `scenarios.mjs` holds the evidence. Each scenario is one approval as a skill
 asks for it, in two styles: `command` is how the skills asked before, and
-`use-case` is the text they ask with now (the `discobox-access` skill's
-"Writing a use"). A third style, `no-never`, is generated from `use-case` by
+`use-case` is a use written as the `discobox-access` skill's "Writing a use"
+says, which is how it asks for a trust and a request without statements. A third style, `no-never`, is generated from `use-case` by
 dropping each use's closing "Never …" sentence. It is the poorly worded use
 the guide's rule 5 exists to prevent, and it shows what ruling out a write's
 neighbors buys. Its jobs are what an agent doing that work sends: commands,
@@ -50,10 +50,20 @@ or elsewhere control.
 The `use-case` style is our own wording. `author.sh` checks the other half:
 whether an agent that reads only the skill writes uses that work. It gives a
 headless Claude Code each scenario's `task`, with `discobox-access` replaced
-by a stub that records the request and denies it. The uses it wrote then
-become a fourth style, `authored`, judged on the same jobs. An agent picks
-whichever of its uses fits a command, so a job under several authored uses
-counts as allowed by the most permissive one, for friction and for leaks.
+by a stub that holds the request to the real CLI's own checks (a statement
+that does not parse or validate is refused as it would be), then records it
+and denies it. The uses it wrote then become a fourth style, `authored`,
+judged on the same jobs. An agent picks whichever of its uses fits a
+command, so a job under several authored uses counts as allowed by the most
+permissive one, for friction and for leaks.
+
+The skill teaches a policy beside a one-line use, so what the agent wrote is
+mostly its statements. Every authored case carries them as its `policy`
+(the runner's [Policies](../README.md#policies)), with the record of a
+discobox whose primary source is the scenarios' repository — what the stub's
+`facts` reports — and is asked again as `<name>@policy`. `score.mjs` scores
+those runs as `authored@policy`: that row, not `authored`, measures the skill
+when the agent wrote statements.
 
 The skill's examples must not be any scenario's answer, or this pass only
 measures copying. They use `acme/web`, and the scenarios use
