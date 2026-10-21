@@ -23,5 +23,14 @@
       }
     },
     "credential": "ghcr"
+  },
+  "policy": {
+    "statements": [
+      "allow read on image \"acme/web\" in registry \"ghcr.io\""
+    ],
+    "definitions": {
+      "image": "A container image repository: its manifests, tags and blobs.",
+      "registry": "A container registry, by its host."
+    }
   }
 }

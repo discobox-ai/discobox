@@ -23,5 +23,14 @@
       }
     },
     "credential": "gcloud"
+  },
+  "policy": {
+    "statements": [
+      "allow read on compute instance in project \"acme-staging\""
+    ],
+    "definitions": {
+      "compute instance": "A Google Compute Engine VM instance.",
+      "project": "A Google Cloud project, by its ID."
+    }
   }
 }

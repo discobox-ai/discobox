@@ -23,5 +23,15 @@
       }
     },
     "credential": "ghcr"
+  },
+  "policy": {
+    "statements": [
+      "allow push on image tag \"acme/web:pr-61\" in registry \"ghcr.io\""
+    ],
+    "definitions": {
+      "image tag": "A tag of a container image repository, repository:tag.",
+      "push": "Upload an image's blobs and manifest to the registry so the tag names it.",
+      "registry": "A container registry, by its host."
+    }
   }
 }

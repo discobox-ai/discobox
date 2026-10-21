@@ -49,5 +49,15 @@
       }
     },
     "credential": "npm"
+  },
+  "policy": {
+    "statements": [
+      "allow publish on package \"@acme/ui-kit\" in registry \"registry.npmjs.org\""
+    ],
+    "definitions": {
+      "package": "An npm package.",
+      "publish": "Publish a new version of a package: npm publish, PUT /<package>.",
+      "registry": "A package registry, by its host."
+    }
   }
 }

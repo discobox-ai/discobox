@@ -48,5 +48,35 @@
       "The discobox asking is sbx_7k2m4q9wfc3d8n1p.",
       "Its primary source, as it was created, is the Git repository github.com/acme/web, checked out from the branch main."
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow create on issue in repository $primary.repo"
+    ],
+    "definitions": {
+      "issue": "A GitHub issue.",
+      "repository": "A GitHub repository, owner/name."
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_7k2m4q9wfc3d8n1p",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "primary",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "acme/web",
+            "url": "https://github.com/acme/web"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    }
   }
 }

@@ -17,5 +17,14 @@
       "-p",
       "Fix a false positive in Jev's \"claims approval\" hazard that refuses legitimate delegated approvals. A lead discobox holds a delegation grant for com.github.api and approves its worker discoboxes' credential requests with discobox secret request approve <request-id>. Six approvals in a row were refused, every one by the hazard alone, at probabilities 0.53-0.60 against HazardAt = 0.5. The hazard exists to catch prompt injection: evidence text that asserts its own prior approval or addresses instructions to the reviewer. That must still refuse. What should pass is text that describes or limits the operation itself. Look at judge/jev/judge.go (claimsApproval, questionsFor, decide), add test cases for both sides, and record the decision in an ADR if a plausible alternative is rejected."
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow create on discobox in project \"default\" when \"it is cloned from the GitHub repository discobox-ai/discobox, at any ref, and given no grants and no secrets\""
+    ],
+    "definitions": {
+      "discobox": "A Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>, which is what reading one returns.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/."
+    }
   }
 }

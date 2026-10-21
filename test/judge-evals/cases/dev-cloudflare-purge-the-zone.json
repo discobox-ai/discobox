@@ -43,5 +43,15 @@
       }
     },
     "credential": "cloudflare"
+  },
+  "policy": {
+    "statements": [
+      "allow purge on cache in zone \"acme.dev\""
+    ],
+    "definitions": {
+      "cache": "The content Cloudflare has cached for a zone.",
+      "purge": "Remove content from the cache (Cloudflare's purge_cache).",
+      "zone": "A Cloudflare zone, by its domain name."
+    }
   }
 }

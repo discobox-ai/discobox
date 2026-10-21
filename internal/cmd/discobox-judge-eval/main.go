@@ -12,6 +12,11 @@
 //
 //	discobox-judge-eval [-wrapper CMD] [-model ROLE] [-runs N] [-parallel N] [-case GLOB] [-json FILE] [-logs DIR] CASES_DIR
 //
+// A command or request case may carry its approval as a policy too
+// (ADR 26-10-20-782 §1), and is then also asked as <name>@policy, judged
+// against the policy's statements bound to the discobox asking as the
+// server judges a grant that carries one; the summary compares the two.
+//
 // The wrapper is any harness's discobox-prompt — harness/claude-code/prompt.sh,
 // harness/codex-cli/prompt.sh — run with this environment, so its CLI and its
 // credentials are whatever this environment has. With -jev it asks TypeSafe's
@@ -23,6 +28,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -37,6 +43,7 @@ import (
 
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/policy"
 )
 
 // Expectation is what a correct judge may answer a case with.
@@ -88,7 +95,77 @@ type Case struct {
 	Proposal *judge.ProposalJob `json:"proposal,omitempty"`
 	// Controls are what a proposer case's rule may not cover.
 	Controls *Controls `json:"controls,omitempty"`
-	path     string
+	// Policy is the same approval as a grant's policy (ADR 26-10-20-782 §1):
+	// a command or request case with one is also judged against it, as the
+	// case named with policySuffix, so the two forms score side by side.
+	Policy *CasePolicy `json:"policy,omitempty"`
+	path   string
+	// sentence is the case a policy case was derived from, by name.
+	sentence string
+	// allowsNothing is a policy case whose policy has no allow left once its
+	// variables are bound: the server refuses it without asking, and so does
+	// this runner.
+	allowsNothing bool
+}
+
+// CasePolicy is a case's approval written as a policy, as a person would have
+// approved it for the discobox asking.
+type CasePolicy struct {
+	// Statements are the policy's statements as sentences (policy.Parse).
+	Statements []string `json:"statements"`
+	// Definitions say what each word the statements use means, other than
+	// the defaults.
+	Definitions map[string]string `json:"definitions,omitempty"`
+	// Facts are the control plane's record of the discobox asking, which the
+	// statements' variables resolve against at approval and bind to when it
+	// is judged. A case whose discobox has no record has none, and a variable
+	// then matches nothing.
+	Facts *policy.Facts `json:"facts,omitempty"`
+	// Target is the record of the discobox a call to the discobox API names,
+	// for a case that makes one.
+	Target *policy.Facts `json:"target,omitempty"`
+}
+
+// policySuffix names the case judged against a case's policy rather than its
+// sentence use.
+const policySuffix = "@policy"
+
+// underPolicy is c judged against its policy, as the server builds the job:
+// the policy approved for the discobox its facts describe, then bound to it.
+func (c Case) underPolicy() (Case, error) {
+	statements, err := policy.ParseStatements(c.Policy.Statements)
+	if err != nil {
+		return Case{}, err
+	}
+	var facts policy.Facts
+	if c.Policy.Facts != nil {
+		facts = *c.Policy.Facts
+	}
+	approved := policy.Policy{Statements: statements, Definitions: c.Policy.Definitions}
+	if err := approved.Validate(); err != nil {
+		return Case{}, err
+	}
+	approved = approved.Resolve(facts)
+	derived := c
+	derived.Name, derived.sentence, derived.Policy = c.Name+policySuffix, c.Name, nil
+	// A case with a record is told what the server states from it, by the
+	// functions the server states it with, so the facts and the record a
+	// policy's variables bind to are one record. One without keeps the facts
+	// it was recorded with.
+	switch {
+	case c.Policy.Target != nil && c.Policy.Facts == nil:
+		return Case{}, errors.New("a target is stated beside the discobox asking: give facts too")
+	case c.Policy.Target != nil:
+		derived.Job.Facts = judge.TargetFacts(judge.DiscoboxOf(facts), judge.DiscoboxOf(*c.Policy.Target))
+	case c.Policy.Facts != nil:
+		derived.Job.Facts = judge.Facts(judge.DiscoboxOf(facts))
+	}
+	derived.Job, err = derived.Job.UnderPolicy(approved, facts)
+	if errors.Is(err, judge.ErrPolicyAllowsNothing) {
+		derived.allowsNothing = true
+		return derived, nil
+	}
+	return derived, err
 }
 
 // Controls are what a proposed rule must not cover: asks that are not the
@@ -230,7 +307,7 @@ func loadCases(dir, glob string) ([]Case, error) {
 		if c.Name == "" {
 			c.Name = strings.TrimSuffix(filepath.Base(path), ".json")
 		}
-		if ok, _ := filepath.Match(glob, c.Name); !ok {
+		if !matches(glob, c.Name) && (c.Policy == nil || !matches(glob, c.Name+policySuffix)) {
 			continue
 		}
 		if !slices.Contains([]Expectation{ExpectAllow, ExpectRefuse, ExpectAllowOrAsk, ExpectRefuseOrAsk}, c.Expect) {
@@ -260,6 +337,26 @@ func loadCases(dir, glob string) ([]Case, error) {
 		if _, err := judge.Prompt(c.Job); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
+		if c.Policy != nil {
+			if c.Job.Kind != judge.KindCommand && c.Job.Kind != judge.KindRequest {
+				return nil, fmt.Errorf("%s: only a command or request case has a policy", path)
+			}
+			derived, err := c.underPolicy()
+			if err != nil {
+				return nil, fmt.Errorf("%s: policy: %w", path, err)
+			}
+			if !derived.allowsNothing {
+				if _, err := judge.Prompt(derived.Job); err != nil {
+					return nil, fmt.Errorf("%s: policy: %w", path, err)
+				}
+			}
+			if matches(glob, derived.Name) {
+				cases = append(cases, derived)
+			}
+		}
+		if !matches(glob, c.Name) {
+			continue
+		}
 		cases = append(cases, c)
 	}
 	if len(cases) == 0 {
@@ -267,6 +364,11 @@ func loadCases(dir, glob string) ([]Case, error) {
 	}
 	sort.Slice(cases, func(i, j int) bool { return cases[i].Name < cases[j].Name })
 	return cases, nil
+}
+
+func matches(glob, name string) bool {
+	ok, _ := filepath.Match(glob, name)
+	return ok
 }
 
 // jevKeyEnv is where -jev reads its key: the variable a server reads it from.
@@ -291,7 +393,13 @@ func ask(ctx context.Context, asker func(context.Context, Case, time.Duration, s
 				if logs != "" {
 					log = filepath.Join(logs, fmt.Sprintf("%s.%d.log", w.c.Name, w.n))
 				}
-				run := asker(ctx, w.c, timeout, log)
+				var run Run
+				if w.c.allowsNothing {
+					// Refused as the server refuses it: nothing is asked.
+					run = Run{Case: w.c.Name, Outcome: OutcomeRefuse, Pass: w.c.Expect.accepts(OutcomeRefuse), Answer: judge.ErrPolicyAllowsNothing.Error()}
+				} else {
+					run = asker(ctx, w.c, timeout, log)
+				}
 				mu.Lock()
 				results = append(results, run)
 				mu.Unlock()
@@ -573,6 +681,7 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 		fmt.Fprintln(os.Stderr, err)
 	}
 	fmt.Fprintf(w, "\n%d of %d runs failed their case (prompt version %s)\n", failed, total, version)
+	comparePolicies(w, cases, byCase)
 	if jevAsked {
 		// The two numbers ADR 26-10-12-669 is held to: how much goes on to a
 		// judge discobox, and what Jev refused alone that it should not have.
@@ -586,6 +695,49 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 		}
 	}
 	return failed > 0
+}
+
+// comparePolicies prints, over the cases asked both ways, how the same
+// approval scored as a sentence use and as a policy: the measure a policy is
+// held to is at least as many runs passing.
+func comparePolicies(w *os.File, cases []Case, byCase map[string][]Run) {
+	asked := map[string]bool{}
+	for _, c := range cases {
+		asked[c.Name] = true
+	}
+	var pairs, sentencePassed, sentenceRuns, policyPassed, policyRuns int
+	var worse []string
+	for _, c := range cases {
+		if c.sentence == "" || !asked[c.sentence] {
+			continue
+		}
+		pairs++
+		passed := func(runs []Run) (n int) {
+			for _, r := range runs {
+				if r.Pass {
+					n++
+				}
+			}
+			return n
+		}
+		s, p := byCase[c.sentence], byCase[c.Name]
+		sentencePassed += passed(s)
+		sentenceRuns += len(s)
+		policyPassed += passed(p)
+		policyRuns += len(p)
+		if len(s) > 0 && len(p) > 0 && passed(p)*len(s) < passed(s)*len(p) {
+			worse = append(worse, c.sentence)
+		}
+	}
+	if pairs == 0 {
+		return
+	}
+	fmt.Fprintf(w, "%d cases asked both ways: %d of %d runs passed under the sentence use, %d of %d under the policy\n",
+		pairs, sentencePassed, sentenceRuns, policyPassed, policyRuns)
+	if len(worse) > 0 {
+		slices.Sort(worse)
+		fmt.Fprintf(w, "worse under the policy: %s\n", strings.Join(worse, ", "))
+	}
 }
 
 func dedupe(in []string) []string {

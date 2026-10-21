@@ -67,6 +67,26 @@ it, as the control plane does. Real refusals come from the proxy's audit
 record and the verdict a judge gave; controls are requests that must stay
 refused whatever a prompt change does.
 
+## Policies
+
+A command or request case may also carry its approval as a grant's policy
+(ADR 26-10-20-782 §1): `policy` holds the `statements` as sentences, the
+`definitions` of their words, and, when a statement uses a variable, the typed
+`facts` of the discobox asking that it resolves against and binds to — with
+the `target`'s, for a call that names a discobox. The case is then asked
+twice, as recorded and as `<name>@policy` — judged against the statements
+bound to that discobox, as a server judges a grant that carries one — and the
+summary compares the two. A policy case with `facts` is told what the server
+states from them (`judge.Facts`, `judge.TargetFacts`), in place of the facts
+it was recorded with. A policy whose allows bind to nothing there is refused
+without asking, as the server refuses it. The runner's own test loads every
+case and policy, so `go tool task test` fails on a broken one; `-case
+'*@policy'` asks the policies alone.
+
+The policies are rewritten from the cases' uses, one per use, the way
+ADR 26-10-20-782 §3's rewrite would write them: the same targets, the use's
+limits as conditions or denies, and nothing it did not name.
+
 ## Use-case evals
 
 `use-cases/` asks a different question of the same runner: whether a use

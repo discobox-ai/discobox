@@ -42,5 +42,15 @@
         }
       }
     }
+  },
+  "policy": {
+    "statements": [
+      "allow approve on secret request in project \"default\""
+    ],
+    "definitions": {
+      "approve": "Answer a pending credential request with a grant: POST .../secret-requests/<id>/approve, optionally naming the secret and the use.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/.",
+      "secret request": "A discobox's pending request for a credential."
+    }
   }
 }

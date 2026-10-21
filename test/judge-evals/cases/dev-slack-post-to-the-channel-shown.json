@@ -44,5 +44,14 @@
       }
     },
     "credential": "slack"
+  },
+  "policy": {
+    "statements": [
+      "allow create on message in channel \"#web-deploys\""
+    ],
+    "definitions": {
+      "channel": "A Slack channel, by its name.",
+      "message": "A Slack message, posted with chat.postMessage."
+    }
   }
 }

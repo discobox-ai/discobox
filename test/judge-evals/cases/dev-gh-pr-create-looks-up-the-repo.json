@@ -23,5 +23,14 @@
       }
     },
     "credential": "com.github.api"
+  },
+  "policy": {
+    "statements": [
+      "allow create on pull request in repository \"acme/web\" when \"its head is fix-43 and its base is main\""
+    ],
+    "definitions": {
+      "pull request": "A GitHub pull request.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

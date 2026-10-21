@@ -46,5 +46,16 @@
         }
       }
     }
+  },
+  "policy": {
+    "statements": [
+      "allow read on issue \"42\" in repository \"discobox-ai/discobox\"",
+      "allow read on issue comment within issue \"42\" in repository \"discobox-ai/discobox\""
+    ],
+    "definitions": {
+      "issue": "A GitHub issue.",
+      "issue comment": "A comment on a GitHub issue.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

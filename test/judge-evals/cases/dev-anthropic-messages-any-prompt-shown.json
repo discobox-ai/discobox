@@ -45,5 +45,14 @@
       }
     },
     "credential": "anthropic"
+  },
+  "policy": {
+    "statements": [
+      "allow create on message in service \"api.anthropic.com\""
+    ],
+    "definitions": {
+      "message": "A call to the Anthropic Messages API, POST /v1/messages, which sends a prompt, any prompt, and gets the model's reply.",
+      "service": "An HTTP API, named by its host."
+    }
   }
 }

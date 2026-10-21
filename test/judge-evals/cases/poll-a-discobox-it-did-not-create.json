@@ -30,5 +30,27 @@
     "facts": [
       "sbx_99sxwvjtnv0sgsdw, the discobox this request reads, was not created by the discobox asking; a person created it."
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow create on discobox in project \"default\" when \"it is created with no grants and no secrets, and its prompt is this one with #N one of 43 to 52 and N that same number: Implement discobox-ai/discobox issue #N, a Wave 1 sub-issue of epic #42. Read it by asking discobox-access for com.github.api read-only (gh api GET repos/discobox-ai/discobox/issues/N and issues/N/comments). Follow CLAUDE.md and update DESIGN.md, run its tests and go tool task check-hooks, drive discobox-review to sign-off, and commit locally on main. Do not push, open a PR, or write to GitHub.\"",
+      "allow read on discobox created by $this in project \"default\""
+    ],
+    "definitions": {
+      "discobox": "A Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>, which is what reading one returns.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/."
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_lead",
+        "project": "default"
+      }
+    },
+    "target": {
+      "discobox": {
+        "id": "sbx_99sxwvjtnv0sgsdw",
+        "project": "default"
+      }
+    }
   }
 }

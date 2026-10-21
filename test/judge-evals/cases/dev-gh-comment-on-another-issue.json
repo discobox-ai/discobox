@@ -43,5 +43,15 @@
       }
     },
     "credential": "com.github.api"
+  },
+  "policy": {
+    "statements": [
+      "allow create on issue comment within issue \"43\" in repository \"acme/web\""
+    ],
+    "definitions": {
+      "issue": "A GitHub issue.",
+      "issue comment": "A comment on a GitHub issue.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

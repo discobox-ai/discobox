@@ -19,5 +19,14 @@
       "-p",
       "Implement discobox-ai/discobox issue #44 and push it."
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow create on discobox in project \"default\" when \"it is cloned from the GitHub repository discobox-ai/discobox, at any ref, and given no grants and no secrets\""
+    ],
+    "definitions": {
+      "discobox": "A Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>, which is what reading one returns.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/."
+    }
   }
 }

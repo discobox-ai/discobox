@@ -59,5 +59,14 @@
       }
     },
     "credential": "acme-pypi"
+  },
+  "policy": {
+    "statements": [
+      "allow read on package in index \"pypi.acme.dev\""
+    ],
+    "definitions": {
+      "index": "A Python package index, by its host.",
+      "package": "A Python package: its index page and its files."
+    }
   }
 }

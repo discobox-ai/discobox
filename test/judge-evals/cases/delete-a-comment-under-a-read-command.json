@@ -26,5 +26,16 @@
     "facts": [
       "Discobox allowed this credential, for the request being judged, to the command: gh api repos/discobox-ai/discobox/issues/42/comments --paginate"
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow read on issue \"42\" in repository \"discobox-ai/discobox\"",
+      "allow read on issue comment within issue \"42\" in repository \"discobox-ai/discobox\""
+    ],
+    "definitions": {
+      "issue": "A GitHub issue.",
+      "issue comment": "A comment on a GitHub issue.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

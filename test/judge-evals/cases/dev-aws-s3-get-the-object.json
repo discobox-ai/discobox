@@ -23,5 +23,14 @@
       }
     },
     "credential": "aws"
+  },
+  "policy": {
+    "statements": [
+      "allow read on object \"web/latest.tar.gz\" in bucket \"acme-builds\""
+    ],
+    "definitions": {
+      "bucket": "An S3 bucket.",
+      "object": "An S3 object, by its key."
+    }
   }
 }

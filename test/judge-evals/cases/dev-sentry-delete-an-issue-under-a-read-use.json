@@ -23,5 +23,17 @@
       }
     },
     "credential": "sentry"
+  },
+  "policy": {
+    "statements": [
+      "allow read on issue in project \"web\" of organization \"acme\"",
+      "allow read on event in project \"web\" of organization \"acme\""
+    ],
+    "definitions": {
+      "event": "A Sentry event.",
+      "issue": "A Sentry issue.",
+      "organization": "A Sentry organization, by its slug.",
+      "project": "A Sentry project, by its slug."
+    }
   }
 }

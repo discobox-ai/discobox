@@ -44,5 +44,15 @@
       }
     },
     "credential": "linear"
+  },
+  "policy": {
+    "statements": [
+      "allow read on issue in team \"ENG\" when \"it is assigned to the user the credential belongs to\"",
+      "deny create, update, delete on anything in anywhere"
+    ],
+    "definitions": {
+      "issue": "A Linear issue.",
+      "team": "A Linear team, by its key."
+    }
   }
 }
