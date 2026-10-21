@@ -401,8 +401,10 @@ func TestResolvingANameAnswersItsPin(t *testing.T) {
 	read(t, content)
 	// The platform is what the release's reference names now, asked afresh
 	// even while its last resolution is recent.
-	if _, err := f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform"); err != nil {
+	if content, err := f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform"); err != nil {
 		t.Fatal(err)
+	} else {
+		read(t, content)
 	}
 	f.registry.tags[platformRef] = f.registry.index(t, f.registry.image(t, "platform v2"))
 	content, err = f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform")
@@ -425,8 +427,10 @@ func TestAPlatformDigestOnceAnsweredStaysInScope(t *testing.T) {
 	read(t, mustBlob(t, f, f.platform.layer))
 	moved := f.registry.image(t, "platform v2")
 	f.registry.tags[platformRef] = f.registry.index(t, moved)
-	if _, err := f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform"); err != nil {
+	if content, err := f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform"); err != nil {
 		t.Fatal(err)
+	} else {
+		read(t, content)
 	}
 	for _, digest := range []string{f.platform.layer, moved.layer} {
 		read(t, mustBlob(t, f, digest))

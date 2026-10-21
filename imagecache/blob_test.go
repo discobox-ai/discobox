@@ -52,7 +52,6 @@ func TestOpenBlobFailsTheReadOfADamagedBlob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer body.Close()
 	// Not one byte past what precedes the read that completes it: the caller
 	// never holds all of a blob that is not its digest's.
 	if got, err := io.ReadAll(body); err == nil || len(got) >= len(data) {
@@ -61,6 +60,8 @@ func TestOpenBlobFailsTheReadOfADamagedBlob(t *testing.T) {
 	if n, err := body.Read(make([]byte, 8)); n != 0 || err == nil || errors.Is(err, io.EOF) {
 		t.Fatalf("a read after the mismatch = %d, %v; want the mismatch again", n, err)
 	}
+	// Closed before it is removed: Windows does not remove an open file.
+	_ = body.Close()
 	if err := layout.RemoveBlob(digest); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,10 @@ func TestPruneBlobsRemovesOnlyOldBlobsNothingKeeps(t *testing.T) {
 		t.Fatalf("PruneBlobs = %d, %v; want 1", removed, err)
 	}
 	for digest, want := range map[string]bool{kept: true, old: false, fresh: true} {
-		_, _, err := layout.OpenBlob(digest)
+		body, _, err := layout.OpenBlob(digest)
+		if err == nil {
+			_ = body.Close()
+		}
 		if got := err == nil; got != want {
 			t.Fatalf("%s present = %v, want %v", digest, got, want)
 		}

@@ -267,7 +267,7 @@ func (s *Service) open(digest, mediaType string) (services.AssetContent, error) 
 
 // damagedBlob gives up a blob whose bytes on disk turn out not to be its
 // digest's, so the next read fetches it again rather than failing the same
-// way.
+// way. Its file is closed first: Windows does not remove a file that is open.
 type damagedBlob struct {
 	io.ReadCloser
 	blobs  *imagecache.Layout
@@ -277,6 +277,7 @@ type damagedBlob struct {
 func (d *damagedBlob) Read(p []byte) (int, error) {
 	n, err := d.ReadCloser.Read(p)
 	if err != nil && !errors.Is(err, io.EOF) {
+		_ = d.ReadCloser.Close()
 		if removeErr := d.blobs.RemoveBlob(d.digest); removeErr != nil {
 			slog.Warn("remove damaged asset blob", "digest", d.digest, "error", removeErr)
 		}
