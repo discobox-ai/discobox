@@ -161,6 +161,7 @@ COPY --chmod=0755 vm-image/discobox-sync-clock /usr/local/sbin/discobox-sync-clo
 COPY vm-image/discobox-timesync.service /etc/systemd/system/discobox-timesync.service
 COPY vm-image/discobox-timesync.timer /etc/systemd/system/discobox-timesync.timer
 COPY vm-image/docker.service.d/10-discobox.conf /etc/systemd/system/docker.service.d/10-discobox.conf
+COPY vm-image/docker-daemon.json /etc/docker/daemon.json
 COPY vm-image/systemd-networkd-wait-online.service.d/10-discobox.conf /etc/systemd/system/systemd-networkd-wait-online.service.d/10-discobox.conf
 COPY vm-image/10-discobox.network /etc/systemd/network/10-discobox.network
 COPY vm-image/fstab /etc/fstab
