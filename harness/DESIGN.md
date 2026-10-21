@@ -388,20 +388,23 @@ launchers, and configure scripts.
 
 ## Driver Model
 
-- `harness.Driver` identifies one built-in harness's included image through
-  `ID()` and `Definition()`, and nothing else. The definition catalog is an
-  image shortcut — seeding reads only a definition's `ID` (the slug), `Name`,
-  and `Image` (`harnessdefs.Seeds`); runtime metadata comes from the
-  registered image label. A driver
-  holds no behavior a harness image cannot declare for itself — that is what
-  keeps a third-party harness a pure image-registration story.
-- A `Definition` names its image through `harness.ImageRef`, never as a
-  literal. One `ImageRegistry`/`ImageTag` pair backs every one, unset and
-  `local` by default and overwritten at link time by a release
+- `harness.Driver` identifies one built-in harness's included bundle and
+  image through `ID()` and `Definition()`, and nothing else. The definition
+  catalog is a registration shortcut — seeding reads only a definition's `ID`
+  (the slug), `Name`, `Bundle` and `Image` (`harnessdefs.Seeds`); runtime
+  metadata comes from the bundle's labels, composed on the platform layer, and
+  nothing reads the runnable image's. A driver holds no behavior a harness
+  bundle cannot declare for itself — that is what keeps a third-party harness
+  a pure registration story.
+- A `Definition` names its two references, the bundle
+  `discobox-harness-<id>` and the runnable image `discobox-harness-<id>-image`,
+  through `harness.ImageRef`, never as literals, as `PlatformBundleRef` names
+  the platform bundle. One `ImageRegistry`/`ImageTag` pair backs every one,
+  unset and `local` by default and overwritten at link time by a release
   (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
-  are the images that shipped with it. One pair rather than a reference per
-  harness: a release publishes them together, and independent references
-  could disagree about which release a sandbox is running.
+  are the bundles and images that shipped with it. One pair rather than a
+  reference per artifact: a release publishes them together, and independent
+  references could disagree about which release a sandbox is running.
 - A harness's **platform** is not a definition's to declare (ADR 0145 §1). The
   image is the template, and what declares where it runs is its index: the
   control plane records every platform the image is published for when it
