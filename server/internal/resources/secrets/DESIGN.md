@@ -202,8 +202,7 @@ and judged by its uses, and a grant without a policy is untouched.
   uses among those, as for any hand-off, so a policy and its uses are both
   within one delegation. A delegation without a policy hands on none; a
   hand-off with uses alone is judged by uses whatever the delegation carries,
-  and is not bound by its allows and denies — accepted until every grant must
-  carry a policy (ADR 26-10-20-782 §11).
+  and is not bound by its allows and denies (ADR 26-10-20-782 §11, Deferred).
   Nothing a discobox hands on is shown to a person, so there is no shown
   value to hold it to.
 - **Another policy is another ask**: `asksTheSame` compares it with the uses.
