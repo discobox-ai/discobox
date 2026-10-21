@@ -1,7 +1,9 @@
 package policy
 
 import (
+	"path"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -228,5 +230,30 @@ func TestBoundLeavesOutAnAllowWhoseVariableDoesNotBind(t *testing.T) {
 				t.Fatalf("Definitions = %v, want %v", got.Definitions, want)
 			}
 		})
+	}
+}
+
+// A value is a literal wherever it came from. A repository recorded as
+// "acme/*" — a remote a discobox's creator named — is written so it names
+// that repository and no other, as Within writes it, never as a pattern a
+// reader takes for every repository in acme.
+func TestBoundWritesAValueAsALiteral(t *testing.T) {
+	p := pullRequests()
+	approved := p.Resolve(discobox("sbx_1", `acme/*`))
+	got := approved.Bound(discobox("sbx_1", `acme/*`))
+	if name := got.Statements[0].Scope.Name; name != `acme/\*` {
+		t.Fatalf("scope = %q, want the value escaped", name)
+	}
+	if sentence := Format(got.Statements[0]); !strings.Contains(sentence, `repository "acme/\\*"`) {
+		t.Fatalf("sentence = %s, want the escaped value quoted", sentence)
+	}
+	for _, value := range []string{"acme/[web]", `acme\web`, "acme/w?b"} {
+		bound := p.Resolve(discobox("sbx_1", value)).Bound(discobox("sbx_1", value))
+		if matched, err := path.Match(bound.Statements[0].Scope.Name, value); err != nil || !matched {
+			t.Errorf("%q bound as %q, which does not match itself", value, bound.Statements[0].Scope.Name)
+		}
+		if matched, _ := path.Match(bound.Statements[0].Scope.Name, "acme/other"); matched {
+			t.Errorf("%q bound as %q, which matches another repository", value, bound.Statements[0].Scope.Name)
+		}
 	}
 }

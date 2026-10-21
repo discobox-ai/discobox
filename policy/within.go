@@ -34,7 +34,7 @@ func Within(given Policy, givenValues map[string]string, delegated Policy, deleg
 	}
 	var allows, givenDenies []Statement
 	for _, s := range given.Statements {
-		concrete, ok := bound(s, givenValues)
+		concrete, ok := boundStatement(s, givenValues)
 		switch {
 		case !ok:
 			// A statement a variable of which does not resolve matches
@@ -47,7 +47,7 @@ func Within(given Policy, givenValues map[string]string, delegated Policy, deleg
 	}
 	var delegatedAllows []Statement
 	for _, s := range delegated.Statements {
-		concrete, ok := bound(s, delegatedValues)
+		concrete, ok := boundStatement(s, delegatedValues)
 		if !ok {
 			continue
 		}
@@ -84,9 +84,9 @@ func Within(given Policy, givenValues map[string]string, delegated Policy, deleg
 	return unsettled, nil
 }
 
-// bound is s with each variable it names replaced by its value, written as a
+// boundStatement is s with each variable it names replaced by its value, written as a
 // literal, or false when one has no value.
-func bound(s Statement, values map[string]string) (Statement, bool) {
+func boundStatement(s Statement, values map[string]string) (Statement, bool) {
 	ok := true
 	name := func(n string) string {
 		if !IsVariable(n) {

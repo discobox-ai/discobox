@@ -249,55 +249,37 @@ func (p Policy) Bind(f Facts) map[string]Binding {
 
 // Bound is p as it reads at one decision for the discobox f describes, for
 // whatever reads a statement rather than matches it — a judge: each variable
-// that binds (Bind) written as the value it matches, and the definitions of
-// the words the statements left still use. Resolved is empty: nothing in it is
-// a variable any more, or it did not bind.
+// that binds (Bind) written as the value it matches, escaped as Within writes
+// it (boundStatement), so a value matches itself and nothing else whatever it holds,
+// and the definitions of the words the statements left still use. Resolved is
+// empty: nothing in it is a variable any more, or it did not bind.
 //
 // A variable that does not bind matches nothing. An allow that uses one covers
-// nothing, so it is left out; a deny that uses one is kept with the variable as
-// written, since keeping a deny only ever narrows what is allowed. A policy
+// nothing, so it is left out; a deny that uses one is kept with that variable
+// as written, since keeping a deny only ever narrows what is allowed. A policy
 // that allowed something may so allow nothing here.
 func (p Policy) Bound(f Facts) Policy {
-	var bound Policy
-	bindings := p.Bind(f)
-	for _, s := range p.Statements {
-		unbound := false
-		name := func(n string) string {
-			if !IsVariable(n) {
-				return n
-			}
-			if value, ok := bindings[n].Value(); ok {
-				return value
-			}
-			unbound = true
-			return n
-		}
-		namePtr := func(n *string) *string {
-			if n == nil {
-				return nil
-			}
-			v := name(*n)
-			return &v
-		}
-		resources := func(in []Resource) []Resource {
-			if in == nil {
-				return nil
-			}
-			out := make([]Resource, len(in))
-			for i, r := range in {
-				out[i] = Resource{Type: r.Type, Name: namePtr(r.Name), CreatedBy: name(r.CreatedBy)}
-			}
-			return out
-		}
-		s.Actions = slices.Clone(s.Actions)
-		s.Name = namePtr(s.Name)
-		s.CreatedBy = name(s.CreatedBy)
-		s.Within = resources(s.Within)
-		s.Scope = Scope{Type: s.Scope.Type, Name: name(s.Scope.Name), Within: resources(s.Scope.Within)}
-		if unbound && s.Effect != Deny {
+	values, asWritten := map[string]string{}, map[string]string{}
+	for variable, binding := range p.Bind(f) {
+		value, ok := binding.Value()
+		if !ok {
+			// Escaped, a variable is still itself: no variable a policy may
+			// use holds a pattern character.
+			asWritten[variable] = variable
 			continue
 		}
-		bound.Statements = append(bound.Statements, s)
+		values[variable], asWritten[variable] = value, value
+	}
+	var bound Policy
+	for _, s := range p.Statements {
+		concrete, ok := boundStatement(s, values)
+		if !ok {
+			if s.Effect != Deny {
+				continue
+			}
+			concrete, _ = boundStatement(s, asWritten)
+		}
+		bound.Statements = append(bound.Statements, concrete)
 	}
 	for _, word := range bound.Words() {
 		if definition, ok := p.Definitions[word]; ok {
