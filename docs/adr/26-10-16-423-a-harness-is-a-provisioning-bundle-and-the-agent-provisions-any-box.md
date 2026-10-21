@@ -19,7 +19,7 @@
   project file becomes `.discobox/settings.json`;
   [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) and
   [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md), whose
-  explicit re-pin now covers the harness bundle and not the platform (§7);
+  explicit re-pin now covers the harness bundle and the platform (§7);
   [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §3,
   [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md),
   [0107](0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)
@@ -309,13 +309,23 @@ index (`linux/amd64`, `linux/arm64`; darwin and windows later). It holds:
   the `discobox-cli` and `review` features. Third-party tools (`fresh`,
   neovim, nushell) are `download` steps, not bundle content.
 
-The platform bundle is pinned by the **server's release**: a compiled-in
+The platform bundle is named by the **server's release**: a compiled-in
 default a release overwrites at link time, the release manifest, and server
-and provider overrides, as `DefaultPoolImage` is resolved. It is not part of
-a sandbox's pin: a box runs the platform its server ships, from its next
-start. A harness bundle is pinned by its harness config and follows 0016,
-0021 and 0082 as a harness image does: an explicit re-pin, and a stopped
-sandbox tracking its harness. Every box applies the two together.
+and provider overrides, as `DefaultPoolImage` is resolved. A harness bundle
+is named by its harness config. A sandbox pins both, each by digest, and both
+follow 0016, 0021 and 0082 as a harness image does: pinned at create, moved
+by an explicit upgrade or a repair, and moved for a stopped sandbox when what
+its server names moves — the platform when the release's reference resolves
+to a new digest, the harness bundle when its config is re-pinned. Every box
+applies the two together.
+
+*Amended 2026-10-21, before anything shipped against it:* the platform is part
+of a sandbox's pin. This section first had a box run the platform its server
+ships from its next start, but a start is not a create — the server's start,
+restart and ensure-running carry no spec, and a pool starts a box on use
+without asking — so the pool's record of what a box may fetch (§13) could only
+follow the server's platform through a pin that a create carries, as the image
+pin always has.
 
 - **The pool places only the agent layer**, and only when the box lacks its
   digest. A container gets it copied into its filesystem by the pool agent's
@@ -349,9 +359,10 @@ sandbox tracking its harness. Every box applies the two together.
 - **Run.** The agent runs from its layer through a stable
   `/opt/discobox/current`.
 
-Server–agent version skew goes away with it: the agent is always the release
-the server shipped with, and the capability labels that described an older
-baked-in agent are retired. What drifts is the box, which provisioning
+Server–agent version skew narrows to what a pin holds back: a box stopped
+when its server's release moves follows it, one running then once it is
+upgraded or repaired, and the capability labels that described an older baked-in agent are
+retired. What drifts is the box, which provisioning
 converges.
 
 ### 8. A snapshot is a cache, never a requirement
@@ -529,8 +540,8 @@ wrote them as `/api/assets/…`, a path no pool route can be.
   type=oci,dest=build/assets/<name>.tar`, records each digest in the
   development manifest (`devimage`) beside the two images it still syncs, and
   the server re-pins built-in harnesses when a digest moves, as `SeedBuiltIns`
-  does for images today (0082). A rebuilt agent reaches a box on its next
-  start; a rebuilt harness bundle, when that re-pin reaches its sandbox.
+  does for images today (0082). A rebuilt agent or harness bundle reaches a
+  box when its re-pin does (§7, as amended).
 
 ### 14. An account in the sandbox account's way is deleted
 
