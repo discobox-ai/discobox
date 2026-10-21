@@ -323,11 +323,9 @@ code, on each side's statements as resolved for its own discobox (§4):
   policy needs a delegation whose policy covers it and whose uses the judge
   finds hold its uses; a request with uses alone is judged against the uses as
   before. A delegation without a policy hands on no policy.
-- **Until every grant carries a policy, uses alone are still handed on.**
-  Agents cannot write a policy until `discobox-access` can, so a hand-off of
-  uses alone is judged by its uses and is not bound by a delegation's allows
-  and denies. That is accepted until every grant must carry a policy, which
-  ends it; nothing is decided by a policy before then (§8).
+- **Uses alone are still handed on, and are not bound by the delegation's
+  policy.** A hand-off of uses alone is judged by its uses, so it may be wider
+  than the policy the delegation carries (Deferred).
 
 Nothing a discobox hands on is shown to a person, so the check is the
 approval; there is no shown value to hold it to. (Amended in issue #298,
@@ -420,6 +418,11 @@ Use writing and judging are measured by `go tool task eval:uses` and
 
 ## Deferred
 
+- **Requiring a policy on every grant, a hand-off's included.** Until then a
+  discobox may hand on uses alone, unbound by its delegation's policy (§11).
+  It must be closed before any request is decided by a grant's policy
+  (§§7–8): from then a hand-off of uses alone could be wider than what was
+  delegated. Revisit when an agent can write a policy.
 - **Approval rules over policies.** Testing a rule is still judged by
   comparing uses (ADR 26-10-12-330). A policy makes most of that a structural
   comparison, as §11 makes it for a delegation. Revisit once policies are
