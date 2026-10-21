@@ -72,6 +72,22 @@ deliberately answered the same way for both:
   timeout, because `docker0` and the per-sandbox bridges are networkd-managed
   too and only exist once `dockerd` is already running, so waiting for every
   link would deadlock against the service waiting on it.
+- **Docker keeps images in containerd's store.** `daemon.json` turns on
+  `containerd-snapshotter`, as current Docker does by default and as a
+  sandbox's nested Docker does. An image ID is then the index digest a sandbox
+  is pinned by, whichever way the image arrived: pulled, loaded from the image
+  cache, or copied from a developer's daemon by the development image sync,
+  which the classic store would give a config digest and no registry digest.
+  A pool whose guest moves from the classic store loses sight of everything
+  that store held: its images, pulled again as its sandboxes need them, and
+  its containers, the pool agent's and every sandbox's. Each sandbox is
+  rebuilt on its pinned image the next time it starts, as a repair rebuilds
+  one; its data, caches and sources are binds from the pool's state, not
+  Docker's, and are kept, while what was installed outside them is gone. The
+  classic store's data stays on the data disk, unused, until it is removed by
+  hand (`/var/lib/docker/{overlay2,image,containers}`). The store also keeps
+  each layer's compressed blob beside its unpacked snapshot, so the same
+  images take more of the data disk than they did.
 - **The host share is `nofail`.** `vz` attaches `/Users` over virtiofs; libkrun
   attaches nothing. A guest whose host shares nothing comes up with an empty
   `/Users` rather than dropping to an emergency shell. It also prints
