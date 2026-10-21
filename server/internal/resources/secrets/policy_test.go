@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -340,48 +339,6 @@ func TestAPolicyGivenOnCreateBindsToTheNewDiscobox(t *testing.T) {
 	}
 }
 
-// Nothing approves a policy unread: a rule is read against uses alone, so a
-// request that carries one is never put to a rule, and a discobox — which
-// hands a credential on by a judge reading uses — approves no policy and gives
-// none to a discobox it creates (ADR 26-10-20-782, Deferred).
-func TestOnlyAPersonApprovesAPolicy(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	svc.SetJudge(&delegationJudge{allow: true})
-	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegate(t, st, secret, "github.com", time.Hour)
-	asked := pullRequestPolicy()
-
-	t.Run("a rule", func(t *testing.T) {
-		req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, asked) })
-		if resourcesecrets.RuleTestable(req) {
-			t.Fatal("a request carrying a policy may be approved by a rule")
-		}
-	})
-	t.Run("a discobox approving the policy asked for", func(t *testing.T) {
-		req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
-			b.Policy = apiPolicy(t, asked)
-			b.Uses = []apimodel.SecretUse{{Description: "read issue 44"}}
-		})
-		_, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
-		wantStatus(t, err, http.StatusForbidden, "a person approves it")
-	})
-	t.Run("a discobox adding a policy", func(t *testing.T) {
-		req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
-			b.Uses = []apimodel.SecretUse{{Description: "read issue 45"}}
-		})
-		_, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
-		wantStatus(t, err, http.StatusForbidden, "a person approves it")
-	})
-	t.Run("a discobox creating one", func(t *testing.T) {
-		_, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
-			SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"), Hosts: []string{"api.github.com"},
-			Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, asked),
-		}})
-		wantStatus(t, err, http.StatusForbidden, "cannot give the discobox it creates a grant with a policy")
-	})
-}
-
 // A request read for the person approving it carries what each variable of
 // its policy resolves to for the discobox that asked — the values the form
 // shows, from the same record the grant is resolved from — while the request
@@ -495,5 +452,15 @@ func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, *read.Policy),
 	}); err != nil {
 		t.Fatalf("approving what the read showed: %v", err)
+	}
+}
+
+// A rule is read against uses alone, so a request that carries a policy is
+// never put to one (ADR 26-10-20-782, Deferred: approval rules over policies).
+func TestARuleNeverTestsARequestWithAPolicy(t *testing.T) {
+	svc, _ := newAgentCredentialService(t)
+	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, pullRequestPolicy()) })
+	if resourcesecrets.RuleTestable(req) {
+		t.Fatal("a request carrying a policy may be approved by a rule")
 	}
 }

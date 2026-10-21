@@ -761,11 +761,12 @@ type ApproveSecretRequestBody struct {
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
 	// The policy approved -- the one the request asked for, as read, or one in its place. A request that
-	// asks for a policy is refused an approval without one, so nothing is approved that was not sent.
-	// Its resolved is the values the approver was shown, absent for none; each variable the approved
-	// policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it,
-	// or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A
-	// value shown for a variable the approved policy does not use is ignored.
+	// asks for a policy is refused an approval without one, so nothing is approved that was not sent. A
+	// discobox approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section
+	// 11). A person's resolved is the values they were shown, absent for none; each variable the
+	// approved policy uses, resolved for the requesting discobox, must resolve to exactly the value
+	// shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants
+	// nothing. A value shown for a variable the approved policy does not use is ignored.
 	Policy OptAccessPolicy `json:"policy"`
 }
 

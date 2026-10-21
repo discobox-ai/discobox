@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -348,4 +349,117 @@ func outlastsDelegation() error {
 func lapsingDelegation() error {
 	return apperrors.NewStatusError(http.StatusForbidden,
 		"the delegation grant this would be made under is lapsing, with nothing left to hand on; leave it for a person")
+}
+
+// delegationsCovering are those of delegations a policy may be handed on
+// under (ADR 26-10-20-782 §11): ones that carry a policy the given one is
+// within, as code compares them, the given policy as it resolves for forSandbox
+// and each delegation's as it is bound now for the discobox holding it. Where
+// code leaves an allow's conditions unsettled, the judge is asked whether
+// they are within the delegated ones, as it is about uses; no judge, or no
+// answer, hands nothing on. A nil policy hands none on, and every delegation
+// stays: its uses are judged as they always were.
+//
+// Which of those the hand-off is made under is still the uses' judging to
+// settle (judgeDelegations), so a delegation that covers the policy but not
+// the uses hands nothing on either.
+func (s *Service) delegationsCovering(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, given *policy.Policy, forSandbox *model.Sandbox, requestID, credential string, hosts []string) ([]*model.SecretGrant, error) {
+	if given == nil {
+		return delegations, nil
+	}
+	holder, err := s.store.GetSandbox(ctx, projectID, approverID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "the discobox handing the policy on was not found")
+	}
+	holderFacts := holder.PolicyFacts()
+	givenValues := given.Resolve(forSandbox.PolicyFacts()).Resolved
+	var kept []*model.SecretGrant
+	var reasons []string
+	var unanswered error
+	for _, delegation := range delegations {
+		if delegation.Policy == nil {
+			reasons = append(reasons, "under "+delegation.ID+", the delegation carries no policy to hand on")
+			continue
+		}
+		delegatedValues := map[string]string{}
+		for variable, binding := range delegation.Policy.Bind(holderFacts) {
+			if value, ok := binding.Value(); ok {
+				delegatedValues[variable] = value
+			}
+		}
+		unsettled, err := policy.Within(*given, givenValues, *delegation.Policy, delegatedValues)
+		if err != nil {
+			reasons = append(reasons, "under "+delegation.ID+", "+err.Error())
+			continue
+		}
+		reason, err := s.judgeConditions(ctx, projectID, approverID, delegation, unsettled, requestID, forSandbox, credential, hosts)
+		switch {
+		case err != nil:
+			if unanswered == nil {
+				unanswered = err
+			}
+		case reason != "":
+			reasons = append(reasons, "under "+delegation.ID+", "+reason)
+		default:
+			kept = append(kept, delegation)
+		}
+	}
+	if len(kept) > 0 {
+		return kept, nil
+	}
+	if unanswered != nil {
+		return nil, unanswered
+	}
+	return nil, apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf(
+		"this policy is not within what this discobox was delegated: %s; narrow it, or leave it for a person", strings.Join(reasons, "; ")))
+}
+
+// judgeConditions asks the judge, of each allow whose conditions code left
+// unsettled, whether its conditions are within those of one of the delegated
+// allows that cover it otherwise: the two statements as they resolved, as the
+// delegated and the given, in the question the judge answers about uses. It
+// is the reason one is not, or nothing when every one is.
+func (s *Service) judgeConditions(ctx context.Context, projectID, approverID string, delegation *model.SecretGrant, unsettled []policy.Unsettled, requestID string, forSandbox *model.Sandbox, credential string, hosts []string) (string, error) {
+	if len(unsettled) == 0 {
+		return "", nil
+	}
+	if s.judge == nil {
+		return "no judge can say whether its conditions are within the delegation's", nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, services.DelegationBound)
+	defer cancel()
+	for _, u := range unsettled {
+		within := false
+		var why []string
+		for _, theirs := range u.Delegated {
+			answer, err := s.judge.JudgeDelegation(ctx, projectID, services.DelegationAsk{
+				ApproverID:        approverID,
+				RequestID:         requestID,
+				For:               forSandbox,
+				DelegationGrantID: delegation.ID,
+				Delegated:         []string{policy.Format(theirs)},
+				Uses:              []string{policy.Format(u.Given)},
+				Credential:        credential,
+				Hosts:             hosts,
+			})
+			if err != nil {
+				return "", err
+			}
+			if answer.Decided() && answer.Allow {
+				within = true
+				break
+			}
+			if reason := strings.TrimSpace(answer.Reason); reason != "" {
+				why = append(why, reason)
+			}
+		}
+		if !within {
+			reason := policy.Format(u.Given) + ": the judge did not find its conditions within the delegation's"
+			if len(why) > 0 {
+				reason += " (" + strings.Join(why, "; ") + ")"
+			}
+			return reason, nil
+		}
+	}
+	return "", nil
 }

@@ -131,9 +131,18 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		if err != nil {
 			return SandboxGrants{}, err
 		}
+		// A discobox gives a policy only within one it was delegated (ADR
+		// 26-10-20-782 §11): of the delegations its lifetime fits, those
+		// whose policy it is within, whose uses the judge then reads.
 		if givenPolicy != nil && byDiscobox {
-			return SandboxGrants{}, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox cannot give the discobox it creates a grant with a policy; handing a policy on is judged by nothing yet")
+			credential := secret.Name
+			if id := strings.TrimSpace(in.WellKnownId.Or("")); id != "" {
+				credential = id
+			}
+			last := len(fitting) - 1
+			if fitting[last], err = s.delegationsCovering(ctx, projectID, principal.SandboxID, fitting[last], givenPolicy, sandbox, "", credential, hosts); err != nil {
+				return SandboxGrants{}, err
+			}
 		}
 		if givenPolicy != nil {
 			resolved := givenPolicy.Resolve(sandbox.PolicyFacts())
