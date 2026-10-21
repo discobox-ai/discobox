@@ -683,15 +683,13 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 - Approving `com.github.api` with a secret bound only to `api.github.com`
   needs `--hosts api.github.com`: the well-known credential's default hosts
   include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
-- A grant that carries a policy: `discobox-access request` cannot send one
-  and `secret request approve` cannot approve one, so post the request from
-  the box (`curl -X POST -H "Authorization: Bearer
+- A grant that carries a policy: `discobox-access request` cannot send one,
+  so post the request from the box (`curl -X POST -H "Authorization: Bearer
   $DISCOBOX_CREDENTIALS_TOKEN" --data @req.json
   "$DISCOBOX_CREDENTIALS_URL/v1/credentials/requests"`, the body
   `discobox-access request --json` takes plus a `policy` in its JSON shape),
-  and approve it on the API, sending the policy back:
-  `POST /projects/<p>/secret-requests/<id>/approve` with `{"secretId": …,
-  "policy": <the request's .policy>}`. Create the box with `-C
+  and approve it with `secret request approve <id> --secret-id N
+  --policy-as-asked`. Create the box with `-C
   https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
   The grant's `.policy.resolved` (`GET /projects/<p>/secret-grants`) shows
   what bound.
