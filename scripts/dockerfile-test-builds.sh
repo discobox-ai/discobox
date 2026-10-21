@@ -34,7 +34,9 @@ cd "$workspace"
 export BASE_IMAGE="discobot-dockerfile-test:base"
 export POOL_AGENT_IMAGE="discobot-dockerfile-test:pool-agent"
 export SANDBOX_AGENT_IMAGE="discobot-dockerfile-test:sandbox-agent"
-export HARNESS_IMAGE="discobot-dockerfile-test:harness"
+export PLATFORM_BUNDLE="discobot-dockerfile-test:platform"
+export HARNESS_BUNDLE="discobot-dockerfile-test:harness"
+export HARNESS_IMAGE="discobot-dockerfile-test:harness-image"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to test-build Dockerfiles" >&2
@@ -83,7 +85,9 @@ build_dockerfile() {
       run_task "$dockerfile" build:pool-agent-image
       ;;
     sandbox-agent/Dockerfile)
+      # Two artifacts, two stages: the runnable image and the platform bundle.
       run_task "$dockerfile" build:sandbox-agent-image
+      run_task "$dockerfile" build:platform-bundle
       ;;
     harness/*/Dockerfile)
       # Every harness at once, rather than build:harness-image for the one that
@@ -100,9 +104,16 @@ build_dockerfile() {
       # names a tag whose image is not built yet, which a test build then tries
       # to pull. A test build only has to answer whether the Dockerfile still
       # builds, so it takes the Dockerfile's own default base and never pulls.
+      # Both stages, as for every harness: the bundle and the runnable twin,
+      # each of which refuses to build without its manifest.
       echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"
-      DOCKER_BUILDKIT=1 docker build --pull=false \
+      DOCKER_BUILDKIT=1 docker build --pull=false --target bundle \
+        --build-arg "HARNESS_METADATA=$(jq -c . "$(dirname "$dockerfile")/image.json")" \
         --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
+        --file "$dockerfile" "$(dirname "$dockerfile")"
+      DOCKER_BUILDKIT=1 docker build --pull=false --target image \
+        --build-arg "HARNESS_METADATA=$(jq -c . "$(dirname "$dockerfile")/image.json")" \
+        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")-image" \
         --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
     vm-image/Dockerfile)

@@ -12,6 +12,7 @@ import (
 	"github.com/discobox-ai/discobox/judge/jev"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
@@ -65,7 +66,7 @@ type Service struct {
 }
 
 type Options struct {
-	HarnessImages                  map[string]string
+	Harnesses                      harnessdefs.References
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
 	// DevelopmentImages is the watcher-built image set. Harness seeding reads
@@ -131,7 +132,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	sandboxService.SetServerPeerID(options.ServerPeerID)
-	harnessConfigService := harnessconfigs.NewService(store, options.HarnessImages, options.ServerDefaults.Release != nil, options.OverlayDir)
+	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil, options.OverlayDir)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.

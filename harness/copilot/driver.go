@@ -9,6 +9,6 @@ func (Driver) ID() string { return "copilot" }
 func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID: "copilot", Name: "GitHub Copilot", Description: "GitHub Copilot CLI coding harness.",
-		Image: harness.ImageRef("discobox-harness-copilot"),
+		Bundle: harness.ImageRef("discobox-harness-copilot"), Image: harness.ImageRef("discobox-harness-copilot-image"),
 	}
 }

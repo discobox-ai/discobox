@@ -3124,6 +3124,12 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Bundle.Set {
+			e.FieldStart("bundle")
+			s.Bundle.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("image")
 		e.Str(s.Image)
 	}
@@ -3141,12 +3147,13 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateHarnessConfigBody = [5]string{
+var jsonFieldsNameOfCreateHarnessConfigBody = [6]string{
 	0: "$schema",
 	1: "files",
-	2: "image",
-	3: "name",
-	4: "slug",
+	2: "bundle",
+	3: "image",
+	4: "name",
+	5: "slug",
 }
 
 // Decode decodes CreateHarnessConfigBody from json.
@@ -3178,8 +3185,18 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
+		case "bundle":
+			if err := func() error {
+				s.Bundle.Reset()
+				if err := s.Bundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundle\"")
+			}
 		case "image":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Image = string(v)
@@ -3220,7 +3237,7 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000100,
+		0b00001000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -10779,6 +10796,18 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		e.Str(s.ID)
 	}
 	{
+		if s.Bundle.Set {
+			e.FieldStart("bundle")
+			s.Bundle.Encode(e)
+		}
+	}
+	{
+		if s.BundleDigest.Set {
+			e.FieldStart("bundleDigest")
+			s.BundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -10852,7 +10881,7 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [29]string{
+var jsonFieldsNameOfHarnessConfig = [31]string{
 	0:  "egress",
 	1:  "imageEgressHosts",
 	2:  "$schema",
@@ -10870,18 +10899,20 @@ var jsonFieldsNameOfHarnessConfig = [29]string{
 	14: "env",
 	15: "files",
 	16: "id",
-	17: "image",
-	18: "imageDigest",
-	19: "imageKind",
-	20: "name",
-	21: "platforms",
-	22: "projectId",
-	23: "relaunchCommand",
-	24: "runCommand",
-	25: "secrets",
-	26: "slug",
-	27: "updatedAt",
-	28: "volumes",
+	17: "bundle",
+	18: "bundleDigest",
+	19: "image",
+	20: "imageDigest",
+	21: "imageKind",
+	22: "name",
+	23: "platforms",
+	24: "projectId",
+	25: "relaunchCommand",
+	26: "runCommand",
+	27: "secrets",
+	28: "slug",
+	29: "updatedAt",
+	30: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -11071,6 +11102,26 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
+		case "bundle":
+			if err := func() error {
+				s.Bundle.Reset()
+				if err := s.Bundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundle\"")
+			}
+		case "bundleDigest":
+			if err := func() error {
+				s.BundleDigest.Reset()
+				if err := s.BundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundleDigest\"")
+			}
 		case "image":
 			if err := func() error {
 				s.Image.Reset()
@@ -11102,7 +11153,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -11133,7 +11184,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platforms\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -11184,7 +11235,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[3] |= 1 << 2
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -11196,7 +11247,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -11229,8 +11280,8 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	for i, mask := range [4]uint8{
 		0b00100000,
 		0b00101000,
-		0b01010001,
-		0b00001100,
+		0b01000001,
+		0b00110001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -56444,6 +56495,12 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Bundle.Set {
+			e.FieldStart("bundle")
+			s.Bundle.Encode(e)
+		}
+	}
+	{
 		if s.Name.Set {
 			e.FieldStart("name")
 			s.Name.Encode(e)
@@ -56451,12 +56508,13 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateHarnessConfigBody = [5]string{
+var jsonFieldsNameOfUpdateHarnessConfigBody = [6]string{
 	0: "egress",
 	1: "$schema",
 	2: "configuredFiles",
 	3: "files",
-	4: "name",
+	4: "bundle",
+	5: "name",
 }
 
 // Decode decodes UpdateHarnessConfigBody from json.
@@ -56506,6 +56564,16 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"files\"")
+			}
+		case "bundle":
+			if err := func() error {
+				s.Bundle.Reset()
+				if err := s.Bundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundle\"")
 			}
 		case "name":
 			if err := func() error {

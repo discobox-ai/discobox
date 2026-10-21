@@ -1,4 +1,4 @@
-# Stub harness image
+# Stub harness
 
 A test-only harness whose configure flow succeeds instantly without any real
 credential. It exists to exercise and troubleshoot the harness configure
@@ -6,7 +6,7 @@ pipeline end to end — the only other way to drive that pipeline is a real
 harness (codex, claude-code), which stops at an interactive
 credential prompt.
 
-One run of `configure` against this image proves the whole chain:
+One run of `configure` against this harness proves the whole chain:
 
 - the ephemeral `harnessMode=config` sandbox starts and defers its primary
   terminal
@@ -26,7 +26,7 @@ as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live grant covers
 it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
 the previous generation instead of leaking it).
 
-Set `STUB_CONFIGURE_KEEP=1` in the image's env to exercise the other half of
+Set `STUB_CONFIGURE_KEEP=1` in the bundle's env to exercise the other half of
 that path: the command returns `usePrevious` instead of a value, and the
 secret from the first run must survive with its ID, binding, and grant intact.
 It only keeps when there is something to keep — claiming `usePrevious` on a
@@ -35,12 +35,13 @@ offering to keep a credential.
 
 `test/bats/harness_configure.bats` automates all of the above; run it with
 `go tool task test:docker:bats BATS_SUITE=test/bats/harness_configure.bats`.
-The keep case runs against a derived `discobox-harness-stub-keep:local`,
-registered beside the stub under its own slug.
+The keep case runs against a derived bundle, `discobox-harness-stub-keep:local`,
+built `FROM` the stub's with only its label changed and registered beside the
+stub under its own slug, over the stub's own runnable image.
 
-The toggle has to reach the configure command as image env, and image env comes
-from the image's `io.discobox.image.v1` label: its `env` is merged into the
-sandbox's manifest, and the sandbox-agent applies the manifest's env when it
+The toggle has to reach the configure command as harness env, and harness env
+comes from the bundle's `io.discobox.image.v1` label: its `env` is merged into
+the sandbox's manifest, and the sandbox-agent applies the manifest's env when it
 starts the command. A Dockerfile `ENV` does not work — that belongs to the
 container, whose PID 1 is systemd, and systemd does not pass its own
 environment to the services it starts.
@@ -49,7 +50,7 @@ environment to the services it starts.
 
 ```bash
 go tool task build:harness-stub-image   # uses the dev sandbox-agent image from .env when present
-discobox admin harness create --image discobox-harness-stub:local
+discobox admin harness create --bundle discobox-harness-stub:local --image discobox-harness-stub-image:local
 discobox admin harness configure stub        # non-interactive; exits on its own
 discobox admin harness deconfigure stub      # removes the secret + file, marks unconfigured
 discobox admin harness delete stub
@@ -57,24 +58,29 @@ discobox admin harness delete stub
 
 To exercise the failure path (commit must record `configureError` and leave the
 harness unconfigured), add `STUB_CONFIGURE_EXIT` with a non-zero value to
-`image.json`'s `env` and rebuild the image, so it reaches the label.
+`image.json`'s `env` and rebuild the bundle, so it reaches the label.
 
 ## Notes
 
-- `Dockerfile` builds `FROM` the sandbox agent image, sets the label from
-  `image.json` (the `HARNESS_METADATA` build arg), and installs `configure.sh`
-  as `/usr/local/libexec/discobox/configure-stub`, the config-mode command
-  `image.json` declares. `create` takes the slug `stub` from the harness id.
-- The image must be rebuilt when the sandbox-agent base changes; the build task
-  resolves the base from `.env` (`DISCOBOX_DEFAULT_SANDBOX_IMAGE`) so it tracks
-  the image watcher's dev builds, falling back to
+- `Dockerfile` has two stages, as every harness's does. `bundle` is `FROM
+  scratch` and carries only the label, from `image.json` (the required
+  `HARNESS_METADATA` build arg) — it holds no feature, because nothing reads a
+  file from it. `image`, the runnable twin, is `FROM` the sandbox agent image
+  and installs `configure.sh` as `/usr/local/libexec/discobox/configure-stub`,
+  the config-mode command `image.json` declares. It labels `image.json` too
+  (the same required argument), which nothing reads: it is there so the
+  digest a sandbox pins moves with every manifest edit.
+  `create` takes the slug `stub` from the harness id.
+- The runnable image must be rebuilt when the sandbox-agent base changes; the
+  build task resolves the base from `.env` (`DISCOBOX_DEFAULT_SANDBOX_IMAGE`)
+  so it tracks the image watcher's dev builds, falling back to
   `discobox-sandbox-agent:local`.
-- `image.json` is the authoring source for this image's own
-  `io.discobox.image.v1` label and nothing else — there is no file inside the
-  image (ADR 0012 §6). It declares only what is this stub's: env, volumes and
-  groups come from the base layer it inherits by being built `FROM` the sandbox
-  agent image, and that inherited layer is also what makes it registrable at all
-  (ADR 0086 §1).
+- `image.json` is the authoring source for the bundle's `io.discobox.image.v1`
+  label and nothing else — there is no file inside either image (ADR 0012 §6).
+  It declares only what is this stub's, plus the `platformAPIVersion` every
+  harness bundle must name: env, volumes and groups come from the platform
+  bundle's layer, which the server composes under the bundle's own
+  (ADR 26-10-16-423 §2).
 - This directory is deliberately under `test/`, not `harness/`: it is a
   fixture, not a shipped harness, and the image watcher and server seeding do
   not know about it.

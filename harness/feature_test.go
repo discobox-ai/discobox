@@ -10,11 +10,12 @@ import (
 	"github.com/discobox-ai/discobox/provisionspec"
 )
 
-// Each harness image installs its harness as a feature (ADR 26-10-16-423 §4):
-// its directory is the feature, and its Dockerfile copies the files the
-// feature names into the harness tree. The feature must load, require only
-// what the platform provides, and have everything it names copied, or the
-// image build is the first thing to say so.
+// Each harness bundle carries its harness as a feature (ADR 26-10-16-423
+// §§2, 4): its directory is the feature, and its Dockerfile's bundle stage
+// copies the files the feature names into /features/<name>/, which the
+// runnable twin copies into the harness tree. The feature must load, require
+// only what the platform provides, and have everything it names copied, or
+// the image build is the first thing to say so.
 func TestEveryHarnessFeatureLoadsAndIsCopiedWhole(t *testing.T) {
 	platform, err := os.ReadDir("../sandbox-agent/features")
 	if err != nil {
@@ -49,8 +50,12 @@ func TestEveryHarnessFeatureLoadsAndIsCopiedWhole(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tree := filepath.ToSlash(filepath.Join("/opt/discobox/bundles/harness", provisionspec.FeaturesDir, feature.Name))
+			tree := "/" + provisionspec.FeaturesDir + "/" + feature.Name
 			copied := copiedInto(string(dockerfile), tree)
+			twin := "COPY --from=bundle /" + provisionspec.FeaturesDir + "/ /opt/discobox/bundles/harness/" + provisionspec.FeaturesDir + "/"
+			if !strings.Contains(string(dockerfile), twin+"\n") {
+				t.Errorf("the Dockerfile's runnable image does not copy the bundle's features into the harness tree (%s)", twin)
+			}
 			files := []string{provisionspec.FileName}
 			for _, step := range feature.Spec.Steps {
 				files = append(files, step.Files()...)

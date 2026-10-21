@@ -303,8 +303,9 @@ user waits on every single start.
   (`features/<name>/provision.yaml`), never a Dockerfile `COPY` or `RUN`: the
   Dockerfile copies feature directories in and provisions them. A new
   directory under `features` is copied and provisioned in its own layer, after
-  what it requires; `provision/platform_tree_test.go` replays the copies and
-  fails otherwise. A script a step runs is committed executable, and is
+  what it requires, and copied into the `platform` bundle stage under
+  `/features/` from the same source; `provision/platform_tree_test.go` replays
+  the copies, holds the two lists equal, and fails otherwise. A script a step runs is committed executable, and is
   idempotent: a step is applied again whenever its digest changes, which on a
   booted box is with its volumes wired over what it installed — a script
   that rebuilds a tree a volume now holds (`/nix`, Homebrew's prefix) must

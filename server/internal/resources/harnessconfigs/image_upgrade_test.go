@@ -15,7 +15,7 @@ func TestRefreshingACustomHarnessImageUpgradesItsSandboxes(t *testing.T) {
 	st := newTestStore(t)
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "custom", Name: "Custom",
-		Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
+		Bundle: "registry.example/custom:v1", Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -24,7 +24,7 @@ func TestRefreshingACustomHarnessImageUpgradesItsSandboxes(t *testing.T) {
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
 		"registry.example/custom:v1": {Digest: "sha256:two"},
 	}}
-	svc := &Service{store: st, inspector: inspector, sandboxes: runtime}
+	svc := &Service{store: st, inspector: inspector, harnesses: testReferences, sandboxes: runtime}
 
 	if _, err := svc.RefreshHarnessConfigImage(ctx, "project-1", config.ID); err != nil {
 		t.Fatalf("refresh harness config image: %v", err)
@@ -53,7 +53,7 @@ func TestReseedingABuiltInImageUpgradesItsSandboxes(t *testing.T) {
 	const image = "discobox-harness-stub:local"
 
 	overrides := map[string]string{}
-	for _, seed := range harnessdefs.Seeds(nil, false) {
+	for _, seed := range harnessdefs.Seeds(harnessdefs.References{}, false) {
 		overrides[seed.Slug] = image
 	}
 	if len(overrides) == 0 {
@@ -61,7 +61,7 @@ func TestReseedingABuiltInImageUpgradesItsSandboxes(t *testing.T) {
 	}
 	runtime := &stubSandboxRuntime{}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: {Digest: "sha256:one"}}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: overrides, sandboxes: runtime}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(overrides), sandboxes: runtime}
 
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed built-ins: %v", err)

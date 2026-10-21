@@ -127,7 +127,7 @@ agent has no `runc` personality: restore what was there, never a fixed link.
 # Verifying the sandbox's DNS stub (`sandbox-agent/dnsstub`, nested DNS)
 
 Wait for the image watcher to rebuild both `discobox-sandbox-agent:local` and
-`discobox-harness-shell:local` (`docker run --rm --entrypoint sh <img> -c
+`discobox-harness-shell-image:local` (`docker run --rm --entrypoint sh <img> -c
 'grep -c "<new string>" /usr/local/bin/discobox-sandbox-agent'`), then `d new
 -d -H shell --no-source -p x`. In the box (`d shell <id> -- ...`): `sudo
 iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
@@ -636,13 +636,14 @@ server above, register a stub harness whose `discobox-prompt` logs `--prompt`
 and allows, and make it the project's default, which brings up a judge.
 
 ```bash
-# Dockerfile: FROM the dev sandbox-agent image (.env's DISCOBOX_DEFAULT_SANDBOX_IMAGE);
-# LABEL io.discobox.image.v1 from test/harness-stub/image.json with a new harness.id;
-# COPY test/harness-stub/configure.sh to /usr/local/libexec/discobox/configure-stub;
+# Bundle discobox-harness-judgestub:local: FROM discobox-harness-stub:local (task
+# build:harness-stub-image), LABEL io.discobox.image.v1 from
+# test/harness-stub/image.json with a new harness.id.
+# Image discobox-harness-judgestub-image:local: FROM discobox-harness-stub-image:local;
 # COPY a /usr/local/bin/discobox-prompt that appends its --prompt to
 # /var/tmp/judge-prompts.jsonl and prints {"allow": true, "reason": "stub"}.
 e() { ./build/discobox --server http://127.0.0.1:18471 "$@"; }   # the isolated server, never the dev loop's
-e admin harness create --image discobox-harness-judgestub:local
+e admin harness create --bundle discobox-harness-judgestub:local --image discobox-harness-judgestub-image:local
 e admin harness configure judgestub && e admin harness set-default judgestub
 docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 ```

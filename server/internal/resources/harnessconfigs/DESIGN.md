@@ -32,11 +32,23 @@ true of it, and true *by rule* rather than by slug:
 
 ## Registration and image metadata
 
-- The image's manifest **labels** are authoritative. `image.go` inspects the
-  image **once** (local Docker daemon first, registry fallback) and resolves
-  them through `harness.ResolveImageLabels` — every inherited
-  `io.discobox.image.v1.<NN>-<name>` layer, then the image's own
-  `io.discobox.image.v1` — before validating the merged result and snapshotting
+- A harness is registered as **two references** (ADR 26-10-16-423 §2): its
+  **bundle**, the `FROM scratch` image of its features whose labels are its
+  manifest, and its **image**, the runnable image built from the platform's
+  with that bundle provisioned into it, which a sandbox pins and a pool runs
+  until the agent applies bundles itself. A config records both, each with
+  its digest (`Bundle`/`BundleDigest`, `Image`/`ImageDigest`). The image's
+  labels are never read: it carries the manifest's labels only so its digest
+  moves with them (below), and nothing makes it carry the right ones. A `file://` manifest file is the one registration with no bundle —
+  it is the whole manifest of a template with no image — and a bundle beside
+  one is refused.
+- The bundle's manifest **labels** are authoritative. `resolveHarness`
+  inspects the bundle and the image **once** each (local Docker daemon first,
+  registry fallback) and composes the bundle's labels on the platform
+  bundle's through `harness.ComposeBundleLabels` — the platform's
+  `10-platform` layer, then every `io.discobox.image.v1.<NN>-<name>` layer
+  the bundle carries, then its own `io.discobox.image.v1` — before validating
+  the merged result and snapshotting
   the digest, run/relaunch/configure argv, configure reminder and ports, files,
   secret declarations, env, volumes, additional groups, and declared egress
   hosts onto the config (`snapshotImageMetadata`). Nothing re-reads the labels
@@ -44,6 +56,38 @@ true of it, and true *by rule* rather than by slug:
   number each, declared once, or as the single numberless ephemeral entry; the
   forward they ask for is the CLI's, not this service's — see
   `cli/internal/cli` → `forwardConfigurePorts`.
+- The **platform bundle** is the one the server's release pins
+  (`harnessdefs.References.PlatformBundle`, which server configuration
+  resolves: the release manifest's `Bundles.Platform`, `platformBundle` in
+  `server.yaml`, or the compiled-in `harness.PlatformBundleRef`; none
+  configured is an error), inspected once per registration or seeding pass
+  (`platformBundle`). A harness bundle carrying a `10-platform`
+  or `10-sandbox-base` layer of its own was built `FROM` the platform, and is
+  refused: a harness extends a harness, never the platform. A harness names
+  the `platformAPIVersion` it needs, which must be the one the platform's
+  layer provides.
+- **A bundle carrying a whiteout is refused**, read from its layers
+  (`refuseWhiteouts`): from the registry, the layers of its manifest (the
+  platform bundle's for this machine's platform, of its index); from the local
+  daemon, what it saves, for its own platform where the daemon can be asked.
+  A bundle's tree is its layers side by side, so a deletion has nothing to
+  mean. The verdict is its digest's, so each digest's layers are read once
+  per process (`verifiedBundles`): the platform bundle's are the agent's
+  binaries, and seeding runs on every project and every start. The layers
+  are read only once the labels admit the bundle (`InspectBundle`'s
+  `admit`): a harness bundle once its manifest composes, the platform once it
+  carries its layer — and, first, either one only if it carries no
+  `ReclaimLabel`, which every runnable image inherits from `discobox-base`
+  and no `FROM scratch` bundle has. So a runnable image of several GB named
+  as either bundle is refused for its labels and never saved.
+- **The runnable image's digest moves with the manifest.** It is what a
+  sandbox pins, what an upgrade re-pins and what recreates a container, and
+  the harness env, files and volumes reach a container only when it is
+  created. So every input the snapshot is composed from is part of that
+  image: a harness's twin carries its bundle's label, and the sandbox agent
+  image the platform layer's, though nothing reads them off it. A manifest
+  edit then moves `ImageDigest`, which seeding compares and
+  `applyResolvedImageDigest` fans out.
 - The harness's egress level is two fields: `ImageEgressHosts`, the hosts the
   image declares, replaced by every re-snapshot, and `Egress`, what a person
   set, which a re-snapshot never touches (ADR 26-10-01-032 §3) and only
@@ -103,25 +147,32 @@ true of it, and true *by rule* rather than by slug:
   that label set). Its digest is the file's sha256, so a changed overlay moves
   the pin as a rebuilt tag does, its platforms are the one platform the
   file declares, which it must, and its image kind is the disco-vm kind it
-  must declare as well: a manifest file is no OCI image. Both sources require the base layer and judge
-  the merged result by its platform (`harness.ImageMetadata.ValidateFor`): an
-  image is Linux's, and a label naming a platform, an account or a shell is
-  refused — its platforms are its registry's to say. A manifest file may be
+  must declare as well: a manifest file is no OCI image. It requires the
+  overlay's `10-sandbox-base` layer, its proof of lineage (ADR 0086 §1). Both
+  sources judge the merged result by its platform
+  (`harness.ImageMetadata.ValidateFor`): a bundle is a Linux box's, and a
+  label naming a platform, an image kind, an account or a shell is refused —
+  its steps select the platform they run on, and its kind is the provider's,
+  `oci` for the runnable image a pool runs it as. A manifest file may be
   Linux's — a boxd sandbox's template — because its kind, not its platform,
   keeps it off a Docker pool of that platform. The account, shell and features are validated
   here and not snapshotted: nothing reads them from a config yet, and the
   change that does adds them to the snapshot with its migration.
 - In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:
-  it rebuilds the label set, inherited base layer included, from the dev image
-  manifest's build args, because the image does not exist anywhere until a pool
-  builds it. The reference itself stands in for the digest.
-- Registration **requires the base layer**. An image carrying no
-  `10-sandbox-base` layer was not built `FROM discobox-sandbox-agent`, and is
-  rejected saying so: the runtime contract lives in that image's filesystem, so
-  such an image cannot run a sandbox whatever it declares (ADR 0086 §1).
-- The whole manifest is **optional**. An image that declares nothing registers
-  under the caller's `--name`/`--slug`, inherits its env and volumes from the
-  base layer, and takes the harness-run convention for its commands.
+  it rebuilds each bundle's label from the dev image manifest's build args —
+  a harness bundle's (`bundle` target) own label from `HARNESS_METADATA`, the
+  platform's (`platform` target) `10-platform` layer from
+  `IMAGE_LAYER_METADATA` — because nothing exists anywhere until a pool builds
+  it. The reference itself stands in for each digest.
+- **A harness registered before bundles** keeps the manifest its image's
+  labels gave it, and an empty bundle (adding the columns backfills nothing).
+  A refresh has nothing to read it again from and is refused, saying so;
+  `UpdateHarnessConfig` with a `bundle` registers one, read before anything
+  is saved. A built-in is given its bundle by its next seed.
+- The rest of the manifest is **optional**. A bundle that declares only its
+  `platformAPIVersion` registers under the caller's `--name`/`--slug`,
+  inherits its env and volumes from the platform layer, and takes the
+  harness-run convention for its commands.
 - `runCommand` is **optional**, and omitting it means "type
   `discobox-harness-run`" (ADR 0086 §3); an omitted `relaunchCommand` means
   `discobox-harness-run --resume`. `conventionCommands` resolves both
@@ -129,20 +180,22 @@ true of it, and true *by rule* rather than by slug:
   known, and `shell` is the one harness that must get no command at all. A
   *blank* command is still rejected: declaring nothing and declaring an empty
   string are different.
-- Built-in configs **track** their image: `SeedBuiltIns` clobbers `Image` and
-  re-snapshots the label whenever the resolved image changes, which is how a dev
-  rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a
-  running server. `NewService` receives the resolved image map from server
-  configuration; an explicitly selected release manifest replaces the environment
-  overrides. Seeding never changes `Configured`. A seed whose slug belongs to
+- Built-in configs **track** their bundle and image: `SeedBuiltIns` clobbers
+  `Bundle` and `Image` and re-snapshots the label whenever either resolved
+  reference or digest changes, which is how a dev rebuild
+  (`DISCOBOX_HARNESS_<SLUG>_BUNDLE`/`_IMAGE` → `.env` → server restart)
+  reaches a running server. `NewService` receives the resolved
+  `harnessdefs.References` from server configuration; an explicitly selected
+  release manifest replaces the environment overrides. Seeding never changes `Configured`. A seed whose slug belongs to
   a user-created config fails visibly before inspection or mutation.
 - Seeding is **not** how a test gets a harness config. It reads metadata off an
   image label, so it needs a daemon holding images a checkout may never have
   built — and on Windows it cannot reach a Linux image at all. Tests that need a
   selectable harness write the config to the store directly, which is what
   ADR 0066 §7 named as the end state; CI builds no stand-in images.
-- With an explicit release manifest, failed image inspection fails seeding;
-  startup must not silently keep harness images from a different release.
+- With an explicit release manifest, failed inspection of an image or a
+  bundle fails seeding; startup must not silently keep harnesses from a
+  different release.
 - Otherwise, seeding is best-effort per harness: an uninspectable image is logged
   and skipped so it cannot block startup. **Skipping all of them is not**.
   `EnsureHarnessAvailable` reports a project with no harness config at all —

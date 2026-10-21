@@ -55,11 +55,13 @@ PY
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
   # Through the Taskfile rather than docker directly: both agent images are
   # built FROM a shared base image, and these targets are what know to build it
-  # first. The sandbox agent image is what the stub harness is built FROM when
-  # no `task dev` loop has named a dev build in .env, so a clean checkout needs
-  # it built here.
+  # first. The sandbox agent image is what the stub's runnable image is built
+  # FROM when no `task dev` loop has named a dev build in .env, so a clean
+  # checkout needs it built here; the platform bundle is what the server
+  # composes every harness bundle on.
   go tool task build:pool-agent-image
   go tool task build:sandbox-agent-image
+  go tool task build:platform-bundle
   go tool task build:harness-stub-image
 
   PORT="$DISCOBOX_BATS_PORT" \
@@ -136,7 +138,8 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   done
 }
 
-export TRANSFER_STUB_IMAGE="discobox-harness-transfer-stub:local"
+export TRANSFER_STUB_BUNDLE="discobox-harness-transfer-stub:local"
+export TRANSFER_STUB_IMAGE="discobox-harness-transfer-stub-image:local"
 
 cli() {
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
@@ -246,31 +249,26 @@ configure_stub() {
   return "$status"
 }
 
-# build_transfer_stub builds the stub harness under this file's own tag, with a
-# marker baked into the label so a second call produces different image content
-# under the SAME reference. A dedicated tag keeps this file from clobbering
-# discobox-harness-stub:local, which other suites share.
+# build_transfer_stub builds the stub harness under this file's own tags, with a
+# marker baked into both halves so a second call produces different content
+# under the SAME references: an env in the manifest label each half carries,
+# the bundle's and the runnable image's own copy of it, whose digest is the one
+# a sandbox pins. Both are derived from the shared stub, which setup_file
+# builds, rather than rebuilt from its Dockerfile. Dedicated tags keep this
+# file from clobbering discobox-harness-stub:local and
+# discobox-harness-stub-image:local, which other suites share.
 build_transfer_stub() {
-  local marker="$1"
-  local ctx="$DISCOBOX_BATS_TMP/transfer-stub-$marker"
-  mkdir -p "$ctx"
-  cp "$REPO_ROOT/test/harness-stub/Dockerfile" "$REPO_ROOT/test/harness-stub/configure.sh" "$ctx/"
-  python3 - "$REPO_ROOT/test/harness-stub/image.json" "$ctx/image.json" "$marker" <<'STUBIMAGE'
-import json
-import sys
-
-source, target, marker = sys.argv[1:]
-with open(source) as handle:
-    image = json.load(handle)
-env = image.setdefault("env", {})
-env["STUB_BUILD_MARKER"] = marker
-with open(target, "w") as handle:
-    json.dump(image, handle)
-STUBIMAGE
-  docker build -f "$ctx/Dockerfile" \
-    --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' "$REPO_ROOT/.env" | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)" \
-    --build-arg HARNESS_METADATA="$(jq -c . "$ctx/image.json")" \
-    -t "$TRANSFER_STUB_IMAGE" "$ctx" >>"${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}" 2>&1
+  local marker="$1" metadata pair log="${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}"
+  metadata="$(jq -c --arg marker "$marker" '.env.STUB_BUILD_MARKER = $marker' "$REPO_ROOT/test/harness-stub/image.json")"
+  for pair in "discobox-harness-stub:local $TRANSFER_STUB_BUNDLE" "discobox-harness-stub-image:local $TRANSFER_STUB_IMAGE"; do
+    docker build --build-arg BASE="${pair% *}" --build-arg HARNESS_METADATA="$metadata" -t "${pair#* }" - >>"$log" 2>&1 <<'DOCKERFILE' || return
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
+ARG BASE
+FROM ${BASE}
+ARG HARNESS_METADATA
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
+DOCKERFILE
+  done
 }
 
 # sandbox_container_image prints the image ID a sandbox's container was actually
@@ -340,7 +338,7 @@ sandbox_home() {
   [ -n "$pool_id" ]
 
   build_transfer_stub v1
-  run cli admin harness create --image "$TRANSFER_STUB_IMAGE" --slug transfer-stub --name "Transfer Stub"
+  run cli admin harness create --bundle "$TRANSFER_STUB_BUNDLE" --image "$TRANSFER_STUB_IMAGE" --slug transfer-stub --name "Transfer Stub"
   [ "$status" -eq 0 ]
   run configure_stub transfer-stub
   [ "$status" -eq 0 ]

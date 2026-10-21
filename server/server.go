@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/registry"
 	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -67,9 +68,10 @@ func PrintReleaseManifest(w io.Writer) error {
 	m := releasemanifest.Manifest{Format: 1, Version: version.String(), Images: releasemanifest.Images{
 		PoolAgent: dockerworker.DefaultPoolImage, SandboxAgent: sandbox.DefaultSandboxImageName,
 		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage, Harnesses: map[string]string{},
-	}}
+	}, Bundles: releasemanifest.Bundles{Platform: harness.PlatformBundleRef(), Harnesses: map[string]string{}}}
 	for _, definition := range registry.Definitions() {
 		m.Images.Harnesses[definition.ID] = definition.Image
+		m.Bundles.Harnesses[definition.ID] = definition.Bundle
 	}
 	if err := m.Validate(); err != nil {
 		return err

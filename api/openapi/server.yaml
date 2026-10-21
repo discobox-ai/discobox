@@ -82,11 +82,17 @@ components:
                 id:
                     description: Stable harness config ID
                     type: string
+                bundle:
+                    description: The harness bundle its manifest is read from, a FROM scratch OCI image of its features with its manifest in labels, composed on the server's platform bundle (ADR 26-10-16-423 §2). Absent on a harness registered before bundles, whose manifest is what its image's labels gave it, or one whose image is a manifest file.
+                    type: string
+                bundleDigest:
+                    description: Content digest observed when the harness bundle was registered.
+                    type: string
                 image:
-                    description: Immutable harness sandbox image selected when this config was registered.
+                    description: The runnable image a discobox on this harness runs, its bundle provisioned onto the platform's image; or a file:// manifest file, the whole manifest of a template with no image.
                     type: string
                 imageDigest:
-                    description: Content digest observed when the harness image metadata was registered.
+                    description: Content digest observed when the harness image was registered.
                     type: string
                 imageKind:
                     description: "The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are all oci."
@@ -375,8 +381,11 @@ components:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
+                bundle:
+                    description: The harness bundle to register, required unless image is a manifest file. It is a FROM scratch OCI image built FROM nothing or FROM another harness's bundle, never the platform's. The server composes its io.discobox.image.v1 manifest labels on its platform bundle's and snapshots the result into the HarnessConfig.
+                    type: string
                 image:
-                    description: Harness sandbox image to register. Must be built FROM discobox-sandbox-agent. The server resolves its io.discobox.image.v1 manifest labels, inherited layers included, and snapshots that metadata into the HarnessConfig.
+                    description: The runnable image a discobox on the harness runs, built FROM discobox-sandbox-agent with the bundle provisioned into it; its labels are not read. Or a file:// manifest file in the server's overlay directory, the whole manifest of a template with no image, which takes no bundle.
                     type: string
                 name:
                     description: Harness config name. Defaults to the name declared by the image label.
@@ -6775,6 +6784,9 @@ components:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
+                bundle:
+                    description: Registers the harness bundle the config's manifest is read from, re-snapshotting the manifest from it. How a harness registered before bundles gets one.
+                    type: string
                 name:
                     description: Harness config name
                     maxLength: 200

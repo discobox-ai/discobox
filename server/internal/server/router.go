@@ -16,6 +16,7 @@ import (
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/handlers"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -35,8 +36,9 @@ const (
 
 // AppOptions controls application wiring.
 type AppOptions struct {
-	HarnessImages map[string]string
-	UserID        string
+	// Harnesses is what the built-in harnesses resolve against.
+	Harnesses harnessdefs.References
+	UserID    string
 	// DiscobotPublicKey verifies discobot's assertions of who a request is for
 	// (ADR 26-10-07-005 §2). Nil refuses every assertion.
 	DiscobotPublicKey ed25519.PublicKey
@@ -208,7 +210,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
 		DevelopmentImages:              opts.DevelopmentImages,
-		HarnessImages:                  opts.HarnessImages,
+		Harnesses:                      opts.Harnesses,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,

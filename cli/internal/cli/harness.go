@@ -17,6 +17,7 @@ import (
 type harnessCreateOptions struct {
 	name           string
 	slug           string
+	bundle         string
 	image          string
 	files          []string
 	createOnlyFile []string
@@ -24,6 +25,7 @@ type harnessCreateOptions struct {
 
 type harnessUpdateOptions struct {
 	name           string
+	bundle         string
 	files          []string
 	createOnlyFile []string
 }
@@ -230,7 +232,8 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
-	cmd.Flags().StringVar(&opts.image, "image", "", "Harness Docker image to register; must be built FROM discobox-sandbox-agent, whose manifest layer it inherits")
+	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Harness bundle to register: a FROM scratch image of its features, built FROM nothing or another harness's bundle, whose labels are its manifest")
+	cmd.Flags().StringVar(&opts.image, "image", "", "The image its discoboxes run: built FROM discobox-sandbox-agent with the bundle provisioned into it")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
@@ -394,13 +397,14 @@ func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
 func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "refresh-image HARNESS",
-		Short: "Re-snapshot a harness from its image",
-		Long: "Re-inspect the harness's image and re-snapshot its run command, files, secrets,\n" +
-			"environment, volumes, and digest.\n\n" +
-			"Registration reads the image's label once, so a harness pointing at a rebuilt\n" +
-			"tag keeps describing an image that no longer exists under it — and its discoboxes\n" +
+		Short: "Re-snapshot a harness from its bundle and image",
+		Long: "Re-inspect the harness's bundle and image and re-snapshot its run command, files,\n" +
+			"secrets, environment, volumes, and digests.\n\n" +
+			"Registration reads the bundle's labels once, so a harness pointing at a rebuilt\n" +
+			"tag keeps describing a bundle that no longer exists under it — and its discoboxes\n" +
 			"never report an available upgrade. Built-in harnesses refresh themselves on\n" +
-			"server start; harnesses registered from your own image need this. Configured\n" +
+			"server start; harnesses registered from your own bundle need this. A harness\n" +
+			"registered before bundles needs one first: `update --bundle`. Configured\n" +
 			"harnesses stay configured.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeHarnessConfigs,
@@ -471,6 +475,7 @@ and need not be listed.
 		return a.writeHarness(cmd, harness)
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
+	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Register the harness bundle its manifest is read from, as a harness registered before bundles needs to refresh")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	addEgressFlags(cmd, &egressOpts, "the harness")
@@ -614,6 +619,7 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body := &apimodel.CreateHarnessConfigBody{}
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
+	body.SetBundle(optString(opts.bundle))
 	body.Image = strings.TrimSpace(opts.image)
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
@@ -629,6 +635,9 @@ func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions) (*apimodel
 	body := &apimodel.UpdateHarnessConfigBody{}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
+	}
+	if cmd.Flags().Changed("bundle") {
+		body.SetBundle(apiclientgen.NewOptString(opts.bundle))
 	}
 	if cmd.Flags().Changed("file") {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)

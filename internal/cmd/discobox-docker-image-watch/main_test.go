@@ -32,8 +32,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 10 {
-		t.Fatalf("image specs = %d, want base, worker, sandbox, and seven harnesses", len(specs))
+	if len(specs) != 18 {
+		t.Fatalf("image specs = %d, want base, worker, sandbox, platform, and seven harnesses' bundles and twins", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -56,7 +56,10 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{baseSpecName, "pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode", "harness-copilot", "harness-omp", "harness-pi", "harness-shell"}
+	wantNames := []string{baseSpecName, "pool-agent", "sandbox-agent", "platform"}
+	for _, name := range []string{"codex", "claude-code", "opencode", "copilot", "omp", "pi", "shell"} {
+		wantNames = append(wantNames, "harness-"+name, "harness-"+name+"-image")
+	}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
@@ -65,12 +68,20 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
+		"DISCOBOX_PLATFORM_BUNDLE",
+		"DISCOBOX_HARNESS_CODEX_BUNDLE",
 		"DISCOBOX_HARNESS_CODEX_IMAGE",
+		"DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
+		"DISCOBOX_HARNESS_OPENCODE_BUNDLE",
 		"DISCOBOX_HARNESS_OPENCODE_IMAGE",
+		"DISCOBOX_HARNESS_COPILOT_BUNDLE",
 		"DISCOBOX_HARNESS_COPILOT_IMAGE",
+		"DISCOBOX_HARNESS_OMP_BUNDLE",
 		"DISCOBOX_HARNESS_OMP_IMAGE",
+		"DISCOBOX_HARNESS_PI_BUNDLE",
 		"DISCOBOX_HARNESS_PI_IMAGE",
+		"DISCOBOX_HARNESS_SHELL_BUNDLE",
 		"DISCOBOX_HARNESS_SHELL_IMAGE",
 	} {
 		if !gotEnvKeys[key] {
@@ -83,30 +94,75 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 	specs, repoRoot := loadDockerImageSpecs(t)
 	sandboxDockerfile := filepath.Join(repoRoot, "sandbox-agent", "Dockerfile")
 	for _, name := range []string{"codex", "claude-code", "shell"} {
-		var found *imageSpec
-		for i := range specs {
-			if specs[i].name == "harness-"+name {
-				found = &specs[i]
-				break
+		dockerfile := filepath.Join("harness", harnessDir(name), "Dockerfile")
+		bundle, ok := specNamed(specs, "harness-"+name)
+		if !ok {
+			t.Fatalf("missing bundle watcher for %s", name)
+		}
+		args := strings.Join(bundle.buildArgs, " ")
+		if !strings.Contains(args, dockerfile) || !strings.Contains(args, "--target bundle") ||
+			!strings.Contains(args, "-t discobox-harness-"+name+":local") {
+			t.Fatalf("bundle watcher for %s does not build its Dockerfile's bundle stage: %#v", name, bundle)
+		}
+		// FROM scratch: nothing of the sandbox agent is an input of the bundle.
+		if contains(bundle.files, sandboxDockerfile) || strings.Contains(args, "SANDBOX_AGENT_IMAGE") || bundle.parent != "" {
+			t.Fatalf("%s bundle is built on the sandbox agent image: %#v", name, bundle)
+		}
+		if !bundle.bundle {
+			t.Fatalf("%s bundle is not marked as one, so copy-mode would copy it to pool daemons", name)
+		}
+
+		image, ok := specNamed(specs, "harness-"+name+"-image")
+		if !ok {
+			t.Fatalf("missing runnable image watcher for %s", name)
+		}
+		args = strings.Join(image.buildArgs, " ")
+		if !strings.Contains(args, dockerfile) || !strings.Contains(args, "--target image") ||
+			!strings.Contains(args, "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local") ||
+			!strings.Contains(args, "-t discobox-harness-"+name+"-image:local") {
+			t.Fatalf("image watcher for %s does not build its Dockerfile's image stage on the sandbox base: %#v", name, image)
+		}
+		if image.bundle {
+			t.Fatalf("%s runnable image is marked as a bundle, so copy-mode would not copy it to pool daemons", name)
+		}
+		if !contains(image.files, sandboxDockerfile) {
+			t.Fatalf("%s image watcher does not rebuild when the sandbox base Dockerfile changes", name)
+		}
+		for _, spec := range []imageSpec{bundle, image} {
+			for _, file := range spec.files {
+				if strings.HasSuffix(file, "image.json") && strings.Contains(file, string(filepath.Separator)+"harness"+string(filepath.Separator)) &&
+					!strings.Contains(file, filepath.Join("harness", harnessDir(name), "image.json")) {
+					t.Fatalf("%s watcher includes unrelated metadata %s", spec.name, file)
+				}
 			}
 		}
-		if found == nil {
-			t.Fatalf("missing watcher for %s", name)
+	}
+}
+
+// The platform bundle is the sandbox agent Dockerfile's FROM scratch stage, so
+// it is built from the same inputs as the runnable image less the shared base.
+func TestDockerImageSpecsBuildThePlatformBundleFromItsOwnStage(t *testing.T) {
+	specs, repoRoot := loadDockerImageSpecs(t)
+	platform, ok := specNamed(specs, platformSpecName)
+	if !ok {
+		t.Fatal("missing platform bundle watcher")
+	}
+	args := strings.Join(platform.buildArgs, " ")
+	if !strings.Contains(args, "-f sandbox-agent/Dockerfile --target platform") || !strings.Contains(args, "-t discobox-platform:local") ||
+		platform.envImageKey != "DISCOBOX_PLATFORM_BUNDLE" || !platform.bundle || platform.parent != "" {
+		t.Fatalf("platform bundle spec = %#v", platform)
+	}
+	for _, rel := range []string{"sandbox-agent/Dockerfile", "sandbox-agent/image.json", "harness/prompt-answer.sh"} {
+		if !contains(platform.files, filepath.Join(repoRoot, filepath.FromSlash(rel))) {
+			t.Errorf("platform bundle watcher does not rebuild when %s changes", rel)
 		}
-		args := strings.Join(found.buildArgs, " ")
-		if !strings.Contains(args, filepath.Join("harness", harnessDir(name), "Dockerfile")) ||
-			!strings.Contains(args, "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local") {
-			t.Fatalf("watcher for %s does not use its harness Dockerfile and sandbox base: %#v", name, found)
-		}
-		if !contains(found.files, sandboxDockerfile) {
-			t.Fatalf("%s watcher does not rebuild when the sandbox base Dockerfile changes", name)
-		}
-		for _, file := range found.files {
-			if strings.HasSuffix(file, "image.json") && strings.Contains(file, string(filepath.Separator)+"harness"+string(filepath.Separator)) &&
-				!strings.Contains(file, filepath.Join("harness", harnessDir(name), "image.json")) {
-				t.Fatalf("%s watcher includes unrelated metadata %s", name, file)
-			}
-		}
+	}
+	if contains(platform.files, filepath.Join(repoRoot, "base-image", "Dockerfile")) {
+		t.Error("platform bundle is FROM scratch but rebuilds when the shared base changes")
+	}
+	sandbox, _ := specNamed(specs, sandboxAgentSpecName)
+	if !strings.Contains(strings.Join(sandbox.buildArgs, " "), "--target sandbox-agent") || sandbox.target != "sandbox-agent" {
+		t.Fatalf("sandbox agent spec does not build the runnable stage by name: %#v", sandbox.buildArgs)
 	}
 }
 
@@ -147,8 +203,12 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 	specs := []imageSpec{
 		{name: baseSpecName, intermediate: true},
 		{name: "sandbox-agent", devPrefix: "z-sandbox:dev-", envImageKey: "SANDBOX", envDigestKey: "SANDBOX_DIGEST"},
+		{name: "platform", devPrefix: "platform:dev-", envImageKey: "PLATFORM", bundle: true},
 		{name: "pool-agent", devPrefix: "a-pool:dev-", envImageKey: "POOL", envDigestKey: "POOL_DIGEST"},
 	}
+	// A bundle is not in the manifest a pool daemon is given, but its
+	// reference is still published: the server reads it from this daemon.
+	bundles := map[string]devimage.Image{"platform": {Reference: "platform:dev-new", ID: "sha256:platform-new"}}
 	manifest, err := devimage.NewManifest([]devimage.Image{
 		{Reference: "z-sandbox:dev-new", ID: "sha256:sandbox-new"},
 		{Reference: "a-pool:dev-new", ID: "sha256:pool-new"},
@@ -157,13 +217,14 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 		t.Fatal(err)
 	}
 
-	values, err := developmentImageEnv(specs, manifest, "/tmp/manifest.json")
+	values, err := developmentImageEnv(specs, manifest, bundles, "/tmp/manifest.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{
 		"POOL": "a-pool:dev-new", "POOL_DIGEST": "sha256:pool-new",
 		"SANDBOX": "z-sandbox:dev-new", "SANDBOX_DIGEST": "sha256:sandbox-new",
+		"PLATFORM":       "platform:dev-new",
 		devimage.SyncEnv: "true", devimage.ManifestEnv: "/tmp/manifest.json",
 	}
 	if !reflect.DeepEqual(values, want) {
@@ -175,28 +236,22 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 // build argument buildImage rewrites, or it silently builds on the mutable
 // :local tag instead of the exact base it was meant to pin.
 func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
+	// Bundles are FROM scratch, so only the agents and the harnesses' twins
+	// build FROM another image.
 	wantParents := map[string]string{
-		baseSpecName:          "",
-		"pool-agent":          baseSpecName,
-		"sandbox-agent":       baseSpecName,
-		"harness-codex":       sandboxAgentSpecName,
-		"harness-claude-code": sandboxAgentSpecName,
-		"harness-opencode":    sandboxAgentSpecName,
-		"harness-copilot":     sandboxAgentSpecName,
-		"harness-omp":         sandboxAgentSpecName,
-		"harness-pi":          sandboxAgentSpecName,
-		"harness-shell":       sandboxAgentSpecName,
+		baseSpecName:     "",
+		"pool-agent":     baseSpecName,
+		"sandbox-agent":  baseSpecName,
+		platformSpecName: "",
 	}
 	wantArgs := map[string]string{
-		"pool-agent":          "BASE_IMAGE",
-		"sandbox-agent":       "BASE_IMAGE",
-		"harness-codex":       "SANDBOX_AGENT_IMAGE",
-		"harness-claude-code": "SANDBOX_AGENT_IMAGE",
-		"harness-opencode":    "SANDBOX_AGENT_IMAGE",
-		"harness-copilot":     "SANDBOX_AGENT_IMAGE",
-		"harness-omp":         "SANDBOX_AGENT_IMAGE",
-		"harness-pi":          "SANDBOX_AGENT_IMAGE",
-		"harness-shell":       "SANDBOX_AGENT_IMAGE",
+		"pool-agent":    "BASE_IMAGE",
+		"sandbox-agent": "BASE_IMAGE",
+	}
+	for _, harnessImage := range harnessImages {
+		wantParents["harness-"+harnessImage.name] = ""
+		wantParents["harness-"+harnessImage.name+"-image"] = sandboxAgentSpecName
+		wantArgs["harness-"+harnessImage.name+"-image"] = "SANDBOX_AGENT_IMAGE"
 	}
 	specs, _ := loadDockerImageSpecs(t)
 	for _, spec := range specs {
@@ -271,14 +326,15 @@ func TestDevImageTag(t *testing.T) {
 }
 
 // An image whose Dockerfile turns a metadata build argument into a manifest
-// label must be built with that argument, or it ships an empty label — and the
-// failure is quiet. For a harness image's own label that means a harness config
-// skipped at seeding; for the base image's layer it means every harness image
-// built on it inherits nothing and is rejected as not built from the base
-// (ADR 0086 §1), which is every harness at once.
+// label must be built with that argument. The Dockerfiles refuse an empty one,
+// so a miss is a failed build rather than a quietly empty label — but only
+// once the watcher runs it, and for the platform's layer it would be every
+// harness at once.
 //
-// The pairing runs both ways: an argument with no LABEL to land in is just as
-// broken as a LABEL with no argument, and reads as working.
+// Checked per build target, since one Dockerfile now builds two artifacts: a
+// target needs the argument when any stage it builds labels with it.
+// An argument passed to a Dockerfile that declares no such ARG is just as
+// broken, and reads as working.
 func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
 	labeled := map[string]string{}
@@ -288,37 +344,142 @@ func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 			t.Fatal(err)
 		}
 		dockerfile := string(data)
-		declaresOwn := strings.Contains(dockerfile, "LABEL "+harness.ImageLabel+"=")
-		declaresLayer := strings.Contains(dockerfile, "LABEL "+harness.ImageLayerLabelPrefix)
-		if !declaresOwn && !declaresLayer {
-			if spec.metadataArg != "" {
-				t.Errorf("%s is built with %s but its Dockerfile has no label to put it in", spec.name, spec.metadataArg)
+		built := builtStages(dockerfile, spec.target)
+		if len(built) == 0 {
+			t.Fatalf("%s builds target %q, which %s has no stage for", spec.name, spec.target, spec.dockerfile)
+		}
+		declares := strings.Contains(built, "LABEL "+harness.ImageLabel+"=") || strings.Contains(built, "LABEL "+harness.ImageLayerLabelPrefix)
+		if spec.metadataArg == "" {
+			if declares {
+				t.Errorf("%s builds a manifest label but its spec passes no metadata to fill it", spec.name)
 			}
 			continue
 		}
 		labeled[spec.name] = spec.metadataArg
+		// A runnable image labels the manifest in its own stage, not only in
+		// one it builds: its digest, which a sandbox pins, has to move with
+		// every edit to the manifest the server composes, and a label in a
+		// stage it merely copies from never reaches its config.
+		if !spec.bundle {
+			own := builtStages(onlyStage(dockerfile, spec.target), "")
+			if !strings.Contains(own, "LABEL "+harness.ImageLabel+"=") && !strings.Contains(own, "LABEL "+harness.ImageLayerLabelPrefix) {
+				t.Errorf("%s is runnable but its %q stage labels no manifest, so its digest does not move with the manifest", spec.name, spec.target)
+			}
+		}
+		if !strings.Contains(dockerfile, "ARG "+spec.metadataArg+"\n") {
+			t.Errorf("%s is built with %s but %s declares no such ARG", spec.name, spec.metadataArg, spec.dockerfile)
+		}
 		if spec.metadataFile == "" {
-			t.Errorf("%s declares a manifest label but its spec has no image.json to fill it from", spec.name)
+			t.Errorf("%s passes %s but its spec has no image.json to fill it from", spec.name, spec.metadataArg)
 			continue
 		}
 		if !contains(spec.buildArgs, spec.metadataArg+"=") {
 			t.Errorf("%s has no %s= placeholder for buildImage to fill in: %#v", spec.name, spec.metadataArg, spec.buildArgs)
 		}
 	}
-	// The base layer, plus one per harness image that declares anything. `shell`
-	// declares nothing at all: its whole manifest is the layer it inherits.
+	// The platform's layer, on the bundle and on the runnable image whose
+	// digest moves with it, and every harness's own, `shell` included, on its
+	// bundle and its twin.
 	want := map[string]string{
-		"sandbox-agent":       harness.LayerMetadataBuildArg,
-		"harness-claude-code": harness.MetadataBuildArg,
-		"harness-codex":       harness.MetadataBuildArg,
-		"harness-opencode":    harness.MetadataBuildArg,
-		"harness-copilot":     harness.MetadataBuildArg,
-		"harness-omp":         harness.MetadataBuildArg,
-		"harness-pi":          harness.MetadataBuildArg,
+		platformSpecName:     harness.LayerMetadataBuildArg,
+		sandboxAgentSpecName: harness.LayerMetadataBuildArg,
+	}
+	for _, harnessImage := range harnessImages {
+		want["harness-"+harnessImage.name] = harness.MetadataBuildArg
+		want["harness-"+harnessImage.name+"-image"] = harness.MetadataBuildArg
 	}
 	if !maps.Equal(labeled, want) {
 		t.Fatalf("labeled images = %v, want %v", labeled, want)
 	}
+}
+
+// onlyStage returns the named stage of dockerfile, its FROM line included, as
+// a Dockerfile of its own.
+func onlyStage(dockerfile, name string) string {
+	var out []string
+	in := false
+	for _, line := range strings.Split(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.EqualFold(fields[0], "FROM") {
+			in = len(fields) >= 4 && strings.EqualFold(fields[len(fields)-2], "AS") && fields[len(fields)-1] == name
+		}
+		if in {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// builtStages returns the text of every stage building target means building
+// (the last stage when target is empty): the stage itself, and every stage it
+// is built FROM or copies or mounts from, transitively.
+func builtStages(dockerfile, target string) string {
+	type stage struct {
+		name, from string
+		lines      []string
+	}
+	var stages []*stage
+	for _, line := range strings.Split(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.EqualFold(fields[0], "FROM") {
+			current := &stage{}
+			for i, field := range fields[1:] {
+				if strings.HasPrefix(field, "--") {
+					continue
+				}
+				if current.from == "" {
+					current.from = field
+				}
+				if strings.EqualFold(field, "AS") && i+2 < len(fields) {
+					current.name = fields[i+2]
+				}
+			}
+			stages = append(stages, current)
+			continue
+		}
+		if len(stages) > 0 {
+			stages[len(stages)-1].lines = append(stages[len(stages)-1].lines, line)
+		}
+	}
+	if len(stages) == 0 {
+		return ""
+	}
+	byName := map[string]*stage{}
+	for _, s := range stages {
+		if s.name != "" {
+			byName[s.name] = s
+		}
+	}
+	start := stages[len(stages)-1]
+	if target != "" {
+		start = byName[target]
+		if start == nil {
+			return ""
+		}
+	}
+	var out strings.Builder
+	seen := map[*stage]bool{}
+	var visit func(*stage)
+	visit = func(s *stage) {
+		if s == nil || seen[s] {
+			return
+		}
+		seen[s] = true
+		out.WriteString(strings.Join(s.lines, "\n"))
+		out.WriteString("\n")
+		visit(byName[s.from])
+		for _, line := range s.lines {
+			for _, field := range strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == ',' }) {
+				if from, ok := strings.CutPrefix(field, "--from="); ok {
+					visit(byName[from])
+				} else if from, ok := strings.CutPrefix(field, "from="); ok {
+					visit(byName[from])
+				}
+			}
+		}
+	}
+	visit(start)
+	return out.String()
 }
 
 func contains(values []string, want string) bool {

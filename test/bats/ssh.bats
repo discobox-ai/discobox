@@ -59,7 +59,9 @@ setup_file() {
   # A discobox cannot be created without a harness, and a harness is not
   # selectable until its configure flow has run, so this suite needs the shared
   # stub the other end-to-end files use. Nothing here tests harnesses; it is the
-  # price of having a real sandbox to reach over SSH.
+  # price of having a real sandbox to reach over SSH. The platform bundle is
+  # what the server composes the stub's bundle on.
+  go tool task build:platform-bundle
   (DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local go tool task build:harness-stub-image)
 
   PORT="$DISCOBOX_BATS_PORT" \
@@ -96,7 +98,8 @@ setup_file() {
   run cli admin ssh-key add "$DISCOBOX_BATS_SSH_KEY.pub"
   [ "$status" -eq 0 ]
 
-  run cli admin harness create --image discobox-harness-stub:local --slug ssh-stub --name "SSH Stub"
+  run cli admin harness create --bundle discobox-harness-stub:local --image discobox-harness-stub-image:local \
+    --slug ssh-stub --name "SSH Stub"
   [ "$status" -eq 0 ]
   run cli admin harness configure ssh-stub </dev/null
   [ "$status" -eq 0 ]

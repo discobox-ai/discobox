@@ -69,6 +69,7 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 			Build: &devimage.BuildSpec{
 				Dockerfile: filepath.ToSlash(spec.dockerfile),
 				Context:    spec.contextDir,
+				Target:     spec.target,
 				Args:       args,
 			},
 		})

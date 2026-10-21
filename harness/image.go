@@ -26,6 +26,10 @@ const ImageAPIVersion = "discobox.dev/image/v1"
 // (ReadManifestFile), and both resolve through ResolveImageLabels (ADR 0145 §3).
 type ImageMetadata struct {
 	APIVersion string `json:"apiVersion"`
+	// PlatformAPIVersion is the platform a bundle runs on (PlatformAPIVersion,
+	// the constant): the one the platform bundle's layer provides, and the one
+	// a harness bundle's own layer needs (ComposeBundleLabels).
+	PlatformAPIVersion string `json:"platformAPIVersion,omitempty"`
 	// Platform is the platform a manifest file's template runs. Only a manifest
 	// file declares it: an image's platform is what its registry publishes it
 	// for, which a label cannot know, so an image label naming one is refused

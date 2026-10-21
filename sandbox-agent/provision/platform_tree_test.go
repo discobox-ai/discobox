@@ -132,3 +132,64 @@ func writeTestFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// The platform bundle (the Dockerfile's FROM scratch `platform` stage) holds
+// the same trees the runnable stage copies into the platform tree, from the
+// same sources, under /features/ (ADR 26-10-16-423 §7). It copies them itself
+// rather than from the runnable stage, so building it never builds the 4GB
+// image — which leaves two lists of COPY lines, and two copies of the layer
+// label, that must not drift apart.
+func TestThePlatformBundleCarriesTheTreeTheImageProvisions(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("../..", "sandbox-agent", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies := map[string][]string{}
+	labels := map[string]string{}
+	stage := ""
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[0] {
+		case "FROM":
+			stage = ""
+			if n := len(fields); n >= 4 && strings.EqualFold(fields[n-2], "AS") {
+				stage = fields[n-1]
+			}
+		case "COPY":
+			copies[stage] = append(copies[stage], strings.Join(fields, " "))
+		case "LABEL":
+			if strings.HasPrefix(fields[1], "io.discobox.image.v1.10-platform=") {
+				labels[stage] = strings.Join(fields, " ")
+			}
+		}
+	}
+	// And the same layer label: the bundle's is what the server composes on,
+	// and the image's is what moves the digest a sandbox pins when it changes.
+	if labels["platform"] == "" || labels["platform"] != labels["sandbox-agent"] {
+		t.Errorf("the platform layer label differs between the bundle and the image:\nimage:  %q\nbundle: %q", labels["sandbox-agent"], labels["platform"])
+	}
+	featuresDir := "/" + provisionspec.FeaturesDir + "/"
+	var image []string
+	for _, line := range copies["sandbox-agent"] {
+		if dest := PlatformTree + featuresDir; strings.Contains(line, " "+dest) {
+			image = append(image, strings.Replace(line, " "+dest, " "+featuresDir, 1))
+		}
+	}
+	bundle := copies["platform"]
+	if len(bundle) == 0 {
+		t.Fatal("the Dockerfile has no platform stage that copies anything")
+	}
+	for _, line := range bundle {
+		if !strings.Contains(line, " "+featuresDir) {
+			t.Errorf("the platform bundle copies outside %s: %s", featuresDir, line)
+		}
+	}
+	slices.Sort(image)
+	slices.Sort(bundle)
+	if !slices.Equal(image, bundle) {
+		t.Fatalf("the platform bundle's COPY lines differ from the image's:\nimage:  %q\nbundle: %q", image, bundle)
+	}
+}

@@ -1,5 +1,6 @@
 {
   "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
   "env": {
     "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/discobox/session/bus",
     "DISPLAY": ":0",

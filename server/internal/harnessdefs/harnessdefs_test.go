@@ -5,54 +5,69 @@ import (
 )
 
 func TestSeedsCoverIncludedHarnesses(t *testing.T) {
-	seeds := Seeds(nil, false)
+	seeds := Seeds(References{}, false)
 	bySlug := map[string]Seed{}
 	for _, seed := range seeds {
 		bySlug[seed.Slug] = seed
 	}
 	for _, slug := range []string{"codex", "claude-code"} {
 		seed, ok := bySlug[slug]
-		if !ok || seed.Image == "" || seed.Name == "" {
-			t.Fatalf("seed %q = %#v, want a named seed with an image", slug, seed)
+		if !ok || seed.Image == "" || seed.Bundle == "" || seed.Name == "" {
+			t.Fatalf("seed %q = %#v, want a named seed with a bundle and an image", slug, seed)
 		}
 	}
 }
 
-func TestImageEnvVar(t *testing.T) {
-	cases := map[string]string{
-		"codex":       "DISCOBOX_HARNESS_CODEX_IMAGE",
-		"claude-code": "DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
+func TestEnvVars(t *testing.T) {
+	cases := map[string][2]string{
+		"codex":       {"DISCOBOX_HARNESS_CODEX_BUNDLE", "DISCOBOX_HARNESS_CODEX_IMAGE"},
+		"claude-code": {"DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE", "DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE"},
 	}
 	for id, want := range cases {
-		if got := ImageEnvVar(id); got != want {
-			t.Fatalf("ImageEnvVar(%q) = %q, want %q", id, got, want)
+		if got := BundleEnvVar(id); got != want[0] {
+			t.Fatalf("BundleEnvVar(%q) = %q, want %q", id, got, want[0])
+		}
+		if got := ImageEnvVar(id); got != want[1] {
+			t.Fatalf("ImageEnvVar(%q) = %q, want %q", id, got, want[1])
 		}
 	}
 }
 
 func TestSeedsApplyImageOverrides(t *testing.T) {
-	overrides := map[string]string{"codex": "discobox-harness-codex:dev-abc"}
+	refs := References{
+		Bundles: map[string]string{"codex": "discobox-harness-codex:dev-def"},
+		Images:  map[string]string{"codex": "discobox-harness-codex-image:dev-abc"},
+	}
 	bySlug := map[string]Seed{}
-	for _, seed := range Seeds(overrides, false) {
+	for _, seed := range Seeds(refs, false) {
 		bySlug[seed.Slug] = seed
 	}
-	if got := bySlug["codex"].Image; got != "discobox-harness-codex:dev-abc" {
+	if got := bySlug["codex"].Image; got != "discobox-harness-codex-image:dev-abc" {
 		t.Fatalf("codex image = %q, want override applied", got)
 	}
-	// Harnesses without an override keep their baked-in image.
-	if got := bySlug["claude-code"].Image; got == "discobox-harness-codex:dev-abc" || got == "" {
-		t.Fatalf("claude-code image = %q, want baked-in", got)
+	if got := bySlug["codex"].Bundle; got != "discobox-harness-codex:dev-def" {
+		t.Fatalf("codex bundle = %q, want override applied", got)
+	}
+	// Harnesses without an override keep their baked-in references.
+	if got := bySlug["claude-code"]; got.Image != "discobox-harness-claude-code-image:local" || got.Bundle != "discobox-harness-claude-code:local" {
+		t.Fatalf("claude-code = %+v, want baked-in", got)
 	}
 }
 
-func TestImageOverridesFromEnv(t *testing.T) {
-	env := map[string]string{"DISCOBOX_HARNESS_CODEX_IMAGE": "  discobox-harness-codex:dev-xyz  "}
-	overrides := ImageOverridesFromEnv(func(key string) string { return env[key] })
-	if overrides["codex"] != "discobox-harness-codex:dev-xyz" {
-		t.Fatalf("overrides[codex] = %q, want trimmed value", overrides["codex"])
+func TestOverridesFromEnv(t *testing.T) {
+	env := map[string]string{
+		"DISCOBOX_HARNESS_CODEX_IMAGE":  "  discobox-harness-codex-image:dev-xyz  ",
+		"DISCOBOX_HARNESS_CODEX_BUNDLE": " discobox-harness-codex:dev-xyz ",
 	}
-	if _, ok := overrides["claude-code"]; ok {
-		t.Fatalf("overrides = %v, want no claude-code entry", overrides)
+	bundles, images := OverridesFromEnv(func(key string) string { return env[key] })
+	if images["codex"] != "discobox-harness-codex-image:dev-xyz" || bundles["codex"] != "discobox-harness-codex:dev-xyz" {
+		t.Fatalf("overrides[codex] = %q, %q, want trimmed values", bundles["codex"], images["codex"])
+	}
+	if _, ok := images["claude-code"]; ok {
+		t.Fatalf("images = %v, want no claude-code entry", images)
+	}
+	if _, ok := bundles["claude-code"]; ok {
+		t.Fatalf("bundles = %v, want no claude-code entry", bundles)
 	}
 }
 
@@ -84,8 +99,11 @@ func TestValidateSlug(t *testing.T) {
 }
 
 func TestManifestSeedsAreExactlyItsHarnesses(t *testing.T) {
-	seeds := Seeds(map[string]string{"other-agent": "example.com/other:v1", "shell": "example.com/shell:v1"}, true)
-	if len(seeds) != 2 || seeds[0].Slug != "other-agent" || seeds[0].Image != "example.com/other:v1" || seeds[1].Slug != "shell" {
+	seeds := Seeds(References{
+		Images:  map[string]string{"other-agent": "example.com/other-image:v1", "shell": "example.com/shell-image:v1"},
+		Bundles: map[string]string{"other-agent": "example.com/other:v1", "shell": "example.com/shell:v1"},
+	}, true)
+	if len(seeds) != 2 || seeds[0].Slug != "other-agent" || seeds[0].Image != "example.com/other-image:v1" || seeds[0].Bundle != "example.com/other:v1" || seeds[1].Slug != "shell" {
 		t.Fatalf("seeds = %+v", seeds)
 	}
 }

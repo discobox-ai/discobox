@@ -9,6 +9,7 @@ import (
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -36,7 +37,7 @@ func newBindingService(t *testing.T) (*harnessconfigs.Service, *store.Store, str
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	return harnessconfigs.NewService(st, nil, false, ""), st, config.ID
+	return harnessconfigs.NewService(st, harnessdefs.References{}, false, ""), st, config.ID
 }
 
 func badRequest(t *testing.T, err error) {

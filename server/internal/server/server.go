@@ -228,7 +228,7 @@ func Run(ctx context.Context) error {
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 		DefaultSandboxImageDigest:      cfg.DefaultSandboxImageDigest,
 		DevelopmentImages:              cfg.DevelopmentImages,
-		HarnessImages:                  cfg.HarnessImages,
+		Harnesses:                      cfg.Harnesses,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
 		Judging:                        judges.Judging{Commands: cfg.JudgeCommands, Requests: cfg.JudgeCredentials},

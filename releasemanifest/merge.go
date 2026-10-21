@@ -25,8 +25,8 @@ func Merge(parts []Manifest) (Manifest, error) {
 		if err := part.Validate(); err != nil {
 			return Manifest{}, err
 		}
-		if part.Version != out.Version || part.Revision != out.Revision || !reflect.DeepEqual(part.Images, out.Images) {
-			return Manifest{}, fmt.Errorf("platform manifests disagree on release version, revision, or images")
+		if part.Version != out.Version || part.Revision != out.Revision || !reflect.DeepEqual(part.Images, out.Images) || !reflect.DeepEqual(part.Bundles, out.Bundles) {
+			return Manifest{}, fmt.Errorf("platform manifests disagree on release version, revision, images, or bundles")
 		}
 		out.Servers = append(out.Servers, part.Servers...)
 		out.Clients = append(out.Clients, part.Clients...)

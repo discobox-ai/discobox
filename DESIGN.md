@@ -381,18 +381,24 @@ cannot create a symlink, so `release:windows-zip` repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
 Container images form one chain, so that a pool host pulling all of them pulls
-the shared surface once (ADR 0068):
+the shared surface once (ADR 0068). The bundles are on no chain: each is
+`FROM scratch`, and a harness's runnable image is built from the sandbox
+agent's with its bundle copied in
+([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423 §2):
 
 ```mermaid
 flowchart TD
     base["base-image/<br/>discobox-base<br/>Debian, Docker, systemd unit mask"]
     pool["pool-agent/<br/>discobox-pool-agent"]
     sandbox["sandbox-agent/<br/>discobox-sandbox-agent"]
-    harness["harness/&lt;type&gt;/<br/>discobox-harness-*"]
+    image["harness/&lt;type&gt;/<br/>discobox-harness-*-image"]
+    platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
+    bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
 
     base -->|BASE_IMAGE| pool
     base -->|BASE_IMAGE| sandbox
-    sandbox -->|SANDBOX_AGENT_IMAGE| harness
+    sandbox -->|SANDBOX_AGENT_IMAGE| image
+    bundle -.->|COPY --from| image
 ```
 
 `discobox-base` is released like the rest even though nothing runs it: its
