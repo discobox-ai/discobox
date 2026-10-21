@@ -126,9 +126,9 @@ func IsDefaultAction(action string) bool {
 	return false
 }
 
-// isReserved reports whether word means one thing everywhere, so a policy can
+// IsReserved reports whether word means one thing everywhere, so a policy can
 // neither need nor give it a definition.
-func isReserved(word string) bool {
+func IsReserved(word string) bool {
 	return IsDefaultAction(word) || word == Anything || word == Anywhere
 }
 
@@ -156,9 +156,39 @@ func (p Policy) Validate() error {
 		}
 	}
 
+	errs = append(errs, p.definitionErrors(used)...)
+
+	for _, variable := range sortedKeys(p.Resolved) {
+		if !slices.Contains(p.Variables(), variable) {
+			fail("%q is resolved but no statement uses it", variable)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateDefinitions reports every way p's definitions do not fit its
+// statements, joined, or nil: a definition of a reserved word, of a word no
+// statement uses, or that is empty, too long or holds a control character,
+// and a word used with no definition. It is the part of Validate that a
+// reader of statements already bound to a discobox (Bound) can still ask:
+// bound, a statement names the discobox it was created by rather than $this,
+// which Validate refuses.
+func (p Policy) ValidateDefinitions() error {
+	used := map[string]bool{}
+	for _, s := range p.Statements {
+		_ = s.validate(used)
+	}
+	return errors.Join(p.definitionErrors(used)...)
+}
+
+// definitionErrors is what is wrong with p's definitions, given the words its
+// statements use.
+func (p Policy) definitionErrors(used map[string]bool) []error {
+	var errs []error
+	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	for _, word := range sortedKeys(p.Definitions) {
 		switch definition := p.Definitions[word]; {
-		case isReserved(word):
+		case IsReserved(word):
 			fail("%q means one thing everywhere and cannot be given a definition", word)
 		case !used[word]:
 			fail("%q is defined but no statement uses it", word)
@@ -173,7 +203,7 @@ func (p Policy) Validate() error {
 	for _, word := range sortedKeys(used) {
 		// A word already refused needs no definition; asking for one would
 		// teach the wrong fix.
-		if !isReserved(word) && checkWord(word) == nil && checkSentenceWord(word) == nil {
+		if !IsReserved(word) && checkWord(word) == nil && checkSentenceWord(word) == nil {
 			if _, ok := p.Definitions[word]; !ok {
 				if strings.Contains(word, " ") {
 					fail("%q is not a default word and has no definition; if its last word is a name, quote it: a name is quoted or a variable", word)
@@ -183,13 +213,7 @@ func (p Policy) Validate() error {
 			}
 		}
 	}
-
-	for _, variable := range sortedKeys(p.Resolved) {
-		if !slices.Contains(p.Variables(), variable) {
-			fail("%q is resolved but no statement uses it", variable)
-		}
-	}
-	return errors.Join(errs...)
+	return errs
 }
 
 // validate reports what is wrong with s, and adds each vocabulary word it uses
@@ -376,6 +400,19 @@ func checkCreatedBy(createdBy string) error {
 		return fmt.Errorf("%q is not %s", createdBy, VarThis)
 	}
 	return nil
+}
+
+// Words lists every word p's statements use as an action or a type, sorted,
+// each once: the words a definition may be given for, and the reserved ones,
+// which take none.
+func (p Policy) Words() []string {
+	used := map[string]bool{}
+	for _, s := range p.Statements {
+		// validate is asked only for the words: what it finds wrong is
+		// Validate's to report.
+		_ = s.validate(used)
+	}
+	return sortedKeys(used)
 }
 
 // Variables lists every variable p's statements use, sorted, each once.
