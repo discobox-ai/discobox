@@ -201,6 +201,14 @@ and that the process started after the build (no `ps` in the image: walk
   the pool container. A route change shows as a `sandboxSentinels` job in `d
   admin job ls`. `docker pause` of the pool makes deliveries hang rather than
   fail, and the dev loop restarts a pool left paused (~25s).
+- A box's proxy record (its `clients`, `routes`, `egress` and `gateways`
+  entries in that `secrets.json`): give it an egress level with `d admin box
+  update <id> --egress-deny-by-default --egress-allow HOST`. To lose the record
+  as the orphan reaper does, rewrite the file without the box's keys (`jq
+  del(...)` on this box, then `docker exec -i <pool> sh -c 'cat > F.tmp && mv
+  F.tmp F'`). The reaper spares a material record
+  (`…/pools/<pool>/sandboxes/<id>`) younger than 15 minutes; `touch -d` it
+  older, then `docker rm -f` the box's container, to see a reap ~5s later.
 - Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
 - No dev pool up (the sandbox-agent image will not build), or the
   harness/sandbox-agent `:local` images missing (an isolated server then fails
