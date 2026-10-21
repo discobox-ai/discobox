@@ -41,3 +41,14 @@
   and the order is still safe because a reconcile that reads the epoch once
   the sandbox is frozen finds it not running and is refused. Do not move it
   back before the send.
+
+## Marks a pool observation earns
+
+- **A delivery a pool's report earns is marked as drift (`MarkDirtyDriftTx`),
+  never intent, in the transaction that records the report.** A state report
+  of a sandbox coming up (`cameUp`) re-delivers its proxy record, and it
+  arrives at every start: an intent mark from it would cancel the backoff of a
+  delivery that keeps failing each time the sandbox starts, and a mark made
+  after the commit is lost for good, since the delivery reconcilers have no
+  scan to re-find it. This is the second time an observation was marked as
+  intent (power-down, above).

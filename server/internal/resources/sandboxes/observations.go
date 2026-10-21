@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -21,8 +23,32 @@ import (
 // sandboxes whose state actually moved are marked dirty. The case that matters
 // is a container that is gone: the reconciler is what rebuilds it, and nothing
 // else would tell it to.
+//
+// A sandbox that came up has its proxy record delivered again (cameUp), marked
+// in the transaction that records it: nothing else notices a delivery that is
+// owed, so a lost mark would wait for the next start.
 func (s *Service) ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error {
-	changed, err := s.store.ApplySandboxStateReports(ctx, batch)
+	var changed []store.SandboxObservation
+	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		var err error
+		if changed, err = txStore.ApplySandboxStateReports(ctx, batch); err != nil || s.engine == nil {
+			return err
+		}
+		for i := range changed {
+			sandbox := &changed[i].Sandbox
+			if !cameUp(sandbox) {
+				continue
+			}
+			id := SandboxDirtyID(sandbox.ProjectID, sandbox.ID)
+			if err := s.engine.MarkDirtyDriftTx(ctx, txDB, SentinelsResourceType, id); err != nil {
+				return err
+			}
+			if err := s.engine.MarkDirtyDriftTx(ctx, txDB, SandboxProxyPolicyResourceType, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil // pool is gone; its reports are about nothing we own
@@ -44,6 +70,21 @@ func (s *Service) ReportSandboxStates(ctx context.Context, batch store.SandboxSt
 		}
 	}
 	return nil
+}
+
+// cameUp reports whether an observation is a sandbox meant to exist coming up,
+// however it was started: a person's start, a wake, or the pool's own start on
+// use. Each one delivers its whole proxy record again — its sentinel set
+// (SentinelsResourceType) and its egress policy and gateways
+// (SandboxProxyPolicyResourceType). A pool keeps that record nowhere else, a
+// start never carries it, and a sandbox without it runs with no sentinels
+// swapped and, worse, unrestricted; so one that lost it is whole again at its
+// next start rather than at its next rebuild (#314). The marks are drift, the
+// sandbox's own observation, so a delivery that keeps failing keeps its
+// backoff however often the sandbox starts. They are one update each to one
+// sandbox, not a reconcile of it.
+func cameUp(sandbox *model.Sandbox) bool {
+	return sandbox.DesiredState == model.DesiredStatePresent && sandbox.RuntimeState == model.SandboxRuntimeStateRunning
 }
 
 // observationNeedsReconcile reports whether an observation is one the

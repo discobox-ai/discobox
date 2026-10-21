@@ -313,3 +313,41 @@ func TestCompleteSyncNeverBumpsAGeneration(t *testing.T) {
 		}
 	}
 }
+
+// A sandbox that comes up has its whole proxy record delivered again — its
+// sentinel set, and its egress policy and gateways — however it was started:
+// the pool holds that record only in its proxy's files, which a start never
+// sends, so a record the pool lost would otherwise stay lost until the
+// container was rebuilt, and the sandbox would run unrestricted (#314). One
+// that goes down has nothing delivered.
+func TestStateReportOfASandboxComingUpDeliversItsProxyRecord(t *testing.T) {
+	ctx, service, _ := stateReportFixture(t)
+	report := func(seq int64, state string) {
+		t.Helper()
+		if err := service.ReportSandboxStates(ctx, store.SandboxStateReportBatch{
+			PoolID: "pool-1", BootID: "boot-1", Sequence: seq, ReportedAt: time.Now().UTC(),
+			Reports: []store.SandboxStateReport{{SandboxID: "sandbox-1", State: state}},
+		}); err != nil {
+			t.Fatalf("report states: %v", err)
+		}
+	}
+	deliveries := []string{SentinelsResourceType, SandboxProxyPolicyResourceType}
+
+	report(1, model.SandboxRuntimeStateStopped)
+	for _, resourceType := range deliveries {
+		if dirty, _ := service.engine.ListDirty(ctx, resourceType); len(dirty) != 0 {
+			t.Fatalf("%s deliveries = %v, want none for a sandbox going down", resourceType, dirty)
+		}
+	}
+
+	report(2, model.SandboxRuntimeStateRunning)
+	for _, resourceType := range deliveries {
+		dirty, err := service.engine.ListDirty(ctx, resourceType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dirty) != 1 || dirty[0].ResourceID != SandboxDirtyID("project-1", "sandbox-1") {
+			t.Fatalf("%s deliveries = %v, want sandbox-1's, which came up", resourceType, dirty)
+		}
+	}
+}

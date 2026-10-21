@@ -15,7 +15,8 @@ import (
 // SentinelsResourceType is the reconcile resource that delivers a sandbox's
 // injected sentinel set, with each sentinel's routes, to its pool (ADR
 // 26-10-02-924). It is keyed like the sandbox (SandboxDirtyID) and marked in
-// the transaction that changes a secret's routes (MarkSecretHoldersDirtyTx).
+// the transaction that changes a secret's routes (MarkSecretHoldersDirtyTx),
+// and in the one that records the sandbox coming up (cameUp).
 //
 // It is a resource of its own rather than a mark on the sandbox because a
 // delivery that fails is retried, and nothing else: a sandbox reconcile that
@@ -59,7 +60,13 @@ func (r *SentinelReconciler) Reconcile(ctx context.Context, id string) (reconcil
 	if len(sb.ProviderState) == 0 {
 		return reconcile.Result{}, nil
 	}
-	return reconcile.Result{}, r.service.pushSandboxSentinels(ctx, sb)
+	err = r.service.pushSandboxSentinels(ctx, sb)
+	if errors.Is(err, ErrNotFound) {
+		// No container at its pool, so nothing there holds its sentinels: the
+		// create that builds one carries them.
+		return reconcile.Result{}, nil
+	}
+	return reconcile.Result{}, err
 }
 
 // markSentinelsIfStale marks a sandbox's sentinel delivery when the routes a
@@ -88,8 +95,8 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 }
 
 // ScanDirty finds nothing: there is no persisted delivery state to compare.
-// The mark commits with the route change that needs it and is kept until a
-// delivery succeeds, so no change goes unmarked.
+// The mark commits with the route change or the start that needs it and is
+// kept until a delivery succeeds, so no change goes unmarked.
 func (r *SentinelReconciler) ScanDirty(context.Context) ([]string, error) {
 	return nil, nil
 }
