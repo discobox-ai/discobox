@@ -1,6 +1,14 @@
 package auth
 
-import "testing"
+import (
+	"regexp"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/discobox-ai/discobox/api/openapi"
+)
 
 // The pool runtime allowlist decides which routes a pool agent can authenticate
 // to at all. A route missing from it answers 403 to the real agent while every
@@ -18,6 +26,8 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 		{"gateway header resolution", "/api/pools/pool-1/resolve-gateway-headers", true},
 		{"listing agent credentials", "/api/pools/pool-1/sandbox-credentials", true},
 		{"recording a credential request", "/api/pools/pool-1/sandbox-credential-requests", true},
+		{"reading a sandbox's policy facts", "/api/pools/pool-1/sandbox-policy-facts", true},
+		{"a subroute below a sandbox's policy facts", "/api/pools/pool-1/sandbox-policy-facts/sbx_abc", false},
 		{"polling one credential request", "/api/pools/pool-1/sandbox-credential-requests/sreq_abc", true},
 		{"recording a trust request", "/api/pools/pool-1/sandbox-trust-requests", true},
 		{"polling one trust request", "/api/pools/pool-1/sandbox-trust-requests/treq_abc", true},
@@ -59,5 +69,34 @@ func TestEveryPoolRuntimeActionIsReachable(t *testing.T) {
 		if !isPoolRuntimePath("/api/pools/pool-1/" + action) {
 			t.Fatalf("action %q is listed but its own path does not match", action)
 		}
+	}
+}
+
+// Every route the contract puts under /api/pools/{poolId}/ is a pool agent's,
+// and is on the allowlist. Without this, a route added to the contract and its
+// handler but not to poolRuntimeActions passes every service-level test and
+// answers 403 to the real agent. A route there that is not the pool agent's
+// would be named here as an exception; there is none.
+func TestEveryPoolRouteInTheContractIsAllowlisted(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openapi.ServerYAML, &doc); err != nil {
+		t.Fatalf("parse server.yaml: %v", err)
+	}
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	checked := 0
+	for path := range doc.Paths {
+		rest, ok := strings.CutPrefix(path, "/api/pools/{poolId}/")
+		if !ok {
+			continue
+		}
+		checked++
+		if concrete := "/api/pools/pool-1/" + param.ReplaceAllString(rest, "id-1"); !isPoolRuntimePath(concrete) {
+			t.Errorf("%s is a pool agent route in the contract but not in poolRuntimeActions", path)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("found no pool route in the contract")
 	}
 }
