@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/policyview"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/programstatus"
 	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
@@ -1486,6 +1488,14 @@ type CredentialRequest struct {
 	Type          string
 	Justification string
 	Uses          []string
+	// Policy is what the agent asked the credential to authorize, beside its
+	// uses (ADR 26-10-20-782), as the server sent it; nil on a request that
+	// asked with uses alone. An approval sends it back as read: what is
+	// approved is the policy, not its lines. PolicyLines is it rendered for
+	// the person approving it (policyview), its variables as they resolve
+	// for this discobox, made safe to draw by the data source.
+	Policy      *policy.Policy
+	PolicyLines []policyview.Line
 	// GrantTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
 	GrantTTL time.Duration
@@ -1746,9 +1756,12 @@ func (r CredentialRequest) FromAgent() bool { return len(r.Uses) > 0 }
 // Ruleable reports whether a request can be answered with a rule: an agent's
 // own ask for a credential, naming its uses. A rule's content is uses read
 // against uses, so a request the proxy opened, a refresh, and a trust stay a
-// person's to answer each time (ADR 26-10-12-330 §4).
+// person's to answer each time (ADR 26-10-12-330 §4). So does an ask that
+// carries a policy: a rule never answers one, and the server refuses to make
+// one from it (ADR 26-10-20-782, Deferred). The server's ruleProposable says
+// the same; the two change together.
 func (r CredentialRequest) Ruleable() bool {
-	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil
+	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil && r.Policy == nil
 }
 
 // Secret is a project secret as the window needs it: enough to choose between
@@ -1854,6 +1867,10 @@ type Grant struct {
 	// what an agent presents to `discobox-access run --use`, and reviewing a
 	// grant is where somebody reads it.
 	Uses []GrantUse
+	// Policy is what the grant authorizes, as approved, rendered with the
+	// value each of its variables resolved to (policyview) and made safe to
+	// draw; empty on a grant that carries none.
+	Policy []policyview.Line
 	// Delegate is a delegation grant: its discobox may hand the credential to
 	// other discoboxes and may not use it. A grant is one or the other, so
 	// false is a grant its discobox uses.
@@ -2030,6 +2047,9 @@ type Approval struct {
 	// approve". The server refuses a rule that would not cover the request it
 	// is made from, and then approves nothing.
 	Rule *ApprovalRule
+	// Policy is the policy approved: the request's own, as the card rendered
+	// it. A request that asks for one is refused an approval without it.
+	Policy *policy.Policy
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the

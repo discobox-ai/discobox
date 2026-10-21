@@ -310,6 +310,10 @@ type line struct {
 	// any bullet: how a use broken into its parts hangs them under its first
 	// line (useLines).
 	indent int
+	// hang is how many steps further the rows it wraps onto are set in,
+	// where a row set in only as far as the line would read as a line of
+	// its own (policyLines).
+	hang int
 }
 
 // section is one named block of a dialog body: a rule carrying its name, the
@@ -1150,7 +1154,7 @@ func (d *dialog) sectionLines(st *styles, room int) []string {
 			// the mark, so a list of uses reads as a list however long each
 			// one runs.
 			lead := strings.Repeat("  ", l.indent)
-			hang := lead
+			hang := lead + strings.Repeat("  ", l.hang)
 			if l.bullet {
 				lead, hang = lead+"· ", hang+"  "
 			}

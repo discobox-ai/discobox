@@ -388,7 +388,9 @@ it would throw away everything already entered.
 **Reading a grant is not the same key as ending one.** In the grants list
 `Enter` reads — scope, where it may go, when it lapses, and for a grant minted
 by approving an agent's request, every approved use with the ID an agent
-presents to `discobox-access run --use`. `x` withdraws, behind a confirm.
+presents to `discobox-access run --use`, and the approved policy, rendered as
+the request card renders one, its variables as they resolved at approval.
+`x` withdraws, behind a confirm.
 Revoking on `Enter` put ending a credential one keystroke from looking at one,
 on the key that means "open this" everywhere else in the window.
 
@@ -512,11 +514,17 @@ There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
 **The dialog decides nothing.** It shows what was asked — the credential, the
-env var, the host, the justification, and the uses the agent declared — and
-collects two answers, one per step: which secret answers it (a project secret,
-a credential typed in on the spot, or a denial), then how long the grant lives.
-Everything else follows the request on the server, which is what keeps this and
-`discobox secret request approve` the same act. Every secret is offered,
+env var, the host, the justification, the uses the agent declared, and the
+policy it asks for (ADR 26-10-20-782 §3; `policyLines`, drawn from the
+`policyview` rendering the data source made safe) — and collects two answers,
+one per step: which secret answers it (a project secret, a credential typed in
+on the spot, or a denial), then how long the grant lives. Everything else
+follows the request on the server, which is what keeps this and `discobox
+secret request approve` the same act. A policy is the one thing an approval
+sends back: the request's own, as the card read it, resolved values and all,
+which the server holds the grant to — what `approve --policy-as-asked` sends.
+A request with a policy is not offered auto approve (`Ruleable`): a rule
+answers uses alone. Every secret is offered,
 including one bound to another host: greying those out left the one secret that
 plainly answers the request unpickable, so the binding is asked about on the
 way through instead (`confirmGrantHost`), in the words the server would refuse

@@ -1021,6 +1021,11 @@ func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() 
 		})
 	}
 
+	sections := []section{covers, uses}
+	if len(grant.Policy) > 0 {
+		sections = append(sections, section{label: "approved policy", lines: policyLines(grant.Policy)})
+	}
+
 	makeRule := action{key: grantRuleItem, press: ruleNewKey, label: "Make a rule from this grant…",
 		detail:  "the project's judge writes its uses from these, as auto approve would have; you choose its discoboxes and read it whole before it is made",
 		enabled: true}
@@ -1037,7 +1042,7 @@ func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() 
 		return m.proposeGrantRule(server, grant, again)
 	})
 	d.titleRight = grant.ID
-	d.sections = []section{covers, uses}
+	d.sections = sections
 	d.wrapDetails = true
 	d.keys = []hint{pressing("esc goes back", "esc")}
 	if makeRule.enabled {

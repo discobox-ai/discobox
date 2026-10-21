@@ -204,6 +204,13 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 			}
 		}
 	}
+	if asked, ok := r.Policy.Get(); ok {
+		// A policy that does not convert is left off: the approval then
+		// sends none, and the server refuses it rather than grant one unread.
+		if read, err := policyFromAPI(asked); err == nil {
+			req.Policy, req.PolicyLines = &read, safePolicyLines(read)
+		}
+	}
 	for _, test := range r.RuleTests {
 		req.RuleTests = append(req.RuleTests, tui.RuleTest{
 			RuleID:  test.RuleId,
@@ -555,6 +562,14 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 			with.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 		}
 		body.SetRule(apiclientgen.NewOptApproveWithRule(with))
+	}
+	// The policy the card rendered, as the server sent it.
+	if approval.Policy != nil {
+		sent, err := apiPolicy(*approval.Policy)
+		if err != nil {
+			return err
+		}
+		body.SetPolicy(apiclientgen.NewOptAccessPolicy(sent))
 	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
@@ -921,6 +936,13 @@ func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.Gr
 		}
 		if expires, ok := g.ExpiresAt.Get(); ok {
 			grant.Expires = expires
+		}
+		if approved, ok := g.Policy.Get(); ok {
+			read, err := policyFromAPI(approved)
+			if err != nil {
+				return nil, err
+			}
+			grant.Policy = safePolicyLines(read)
 		}
 		if uses, ok := g.Uses.Get(); ok {
 			for _, use := range uses {

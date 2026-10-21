@@ -40,6 +40,14 @@
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.
 
+## Flags
+
+- **A flag's usage backquotes only the name of its value.** pflag reads the
+  first backquoted text in a usage as that name and prints it after the flag
+  (`--body ID`), so a command quoted that way makes a boolean flag look as if
+  it took one: `--policy-as-asked discobox secret request get`. Quote a
+  command in usage text with plain quotes.
+
 ## Handing the sandbox's paths to host tools
 
 - **A folder from the server's record is checked before a host tool gets it**

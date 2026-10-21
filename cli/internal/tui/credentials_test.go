@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/policyview"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The credential inbox is an interruption budget: an agent can ask at any
@@ -1141,5 +1144,120 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	}
 	if !strings.Contains(text, "Approve") || !strings.Contains(text, "Deny") {
 		t.Errorf("the answers left the card as it scrolled:\n%s", text)
+	}
+}
+
+// A request that asks for a policy shows it on its card, rendered for the
+// person approving it, and approving it sends that policy back as it was
+// read: what is granted is what the card showed (ADR 26-10-20-782 §3).
+func TestARequestsPolicyIsShownAndApprovedAsShown(t *testing.T) {
+	t.Parallel()
+	asked := &policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{"create"}, ResourceType: "pull request",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}, {
+			Effect: policy.Deny, Actions: []string{"delete"}, ResourceType: policy.Anything,
+			Scope: policy.Scope{Type: policy.Anywhere},
+		}},
+		Definitions: map[string]string{"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
+		Resolved:    map[string]string{policy.VarPrimaryRepo: "acme/web"},
+	}
+	req := waitingRequest()
+	req.Policy, req.PolicyLines = asked, policyview.Lines(*asked)
+	ds := newFakeSource(testSandboxes()...)
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	card := dialogText(m)
+	for _, want := range []string{
+		"policy it asks for",
+		"in repository $primary.repo — acme/web",
+		"allow create on pull request",
+		"everywhere, whatever else is allowed",
+		"deny delete on anything",
+		"pull request: a GitHub pull request",
+	} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("card lacks %q:\n%s", want, card)
+		}
+	}
+
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 1 || ds.approvals[0].Policy != asked {
+		t.Fatalf("approvals = %#v, want the request's policy sent as read", ds.approvals)
+	}
+}
+
+// A grant that carries a policy shows it, as approved, on its card.
+func TestAGrantsPolicyIsShownOnItsCard(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	approved := policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{"read"}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryUpstream},
+		}},
+		Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"},
+	}
+	m.reviewGrant("", "GitHub token", Grant{ID: "grant_1", Scope: "sandbox", ScopeKey: "sbx_one", Policy: policyview.Lines(approved)}, nil)
+	card := dialogText(m)
+	for _, want := range []string{
+		"approved policy",
+		"in repository $primary.upstream — does not resolve, so it matches nothing",
+		"allow read on issue",
+	} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("card lacks %q:\n%s", want, card)
+		}
+	}
+}
+
+// A request that asks for a policy is not offered "auto approve": a rule
+// answers uses alone, and the server makes none from such a request.
+func TestARequestWithAPolicyIsNotRuleable(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.SandboxID = "sbx_one"
+	if !req.Ruleable() {
+		t.Fatal("an agent's ask with uses alone is not ruleable")
+	}
+	req.Policy = &policy.Policy{}
+	if req.Ruleable() {
+		t.Fatal("an ask that carries a policy is offered a rule")
+	}
+}
+
+// On a narrow card a policy line wraps onto rows set in past every line of
+// the rendering, so the tail of a statement never reads as a statement of
+// its own, nor a heading's tail as a heading.
+func TestAWrappedPolicyLineHangsPastEveryLine(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	approved := policy.Policy{
+		Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{"create", "update"}, ResourceType: "pull request",
+			CreatedBy: policy.VarThis, Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}},
+		Definitions: map[string]string{"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
+		Resolved:    map[string]string{policy.VarPrimaryRepo: "discobox-ai/discobox", policy.VarThis: "sbx_one"},
+	}
+	m.reviewGrant("", "GitHub token", Grant{ID: "grant_1", Scope: "sandbox", ScopeKey: "sbx_one", Policy: policyview.Lines(approved)}, nil)
+	card := ansi.Strip(m.dialog.view(m.st, &m.zones, 50, 60))
+	var rows []string
+	for _, row := range strings.Split(card, "\n") {
+		rows = append(rows, strings.TrimRight(strings.Trim(strings.TrimSpace(row), "│"), " "))
+	}
+	text := strings.Join(rows, "\n")
+	for _, want := range []string{
+		"\n    allow create, update on pull request\n        created by $this\n",
+		"\n  in repository $primary.repo —\n        discobox-ai/discobox\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card lacks %q:\n%s", want, text)
+		}
 	}
 }
