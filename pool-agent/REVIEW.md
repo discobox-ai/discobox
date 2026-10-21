@@ -193,3 +193,18 @@ exist is the control plane's to say: the volume reaper collects only trees
 outside the set it answers (`WatchSandboxVolumes`, ADR 26-10-01-876), and an
 unanswered ask is never an empty set. A new path that reclaims per-sandbox
 durable state asks the same question.
+
+## A sandbox's proxy record
+
+- **Remove a sandbox's proxy record only under its power lock, after a look
+  taken under the lock finds no container** (`reapSandboxMaterial`). The
+  record — sentinels, routes, egress and gateways in the secrets file — is
+  removed whole, and its loss fails open: a sandbox with no egress entry is
+  unrestricted. A replacement has no container between the old one's removal
+  and the new one's create, after the create registered the new record, so
+  "no container" alone is not "orphan"; the material record's age does not
+  help, because a re-stage never moves it (#314).
+- **Every push that writes the record goes through
+  `updateSandboxProxyPolicy`**: under the lock, and nothing for a sandbox with
+  no container. An entry written after a delete has no material record naming
+  it, and the reaper finds sandboxes only through those.

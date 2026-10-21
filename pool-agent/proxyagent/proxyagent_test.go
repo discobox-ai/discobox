@@ -118,58 +118,30 @@ func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 	}
 }
 
-func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
+func TestOrphanedSandboxIDsNamesOnlyOrphans(t *testing.T) {
 	root := withTestRoot(t)
 
-	_, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "live-sandbox")
-	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(root, live) error = %v", err)
-	}
-	_, err = EnsureSandboxMaterial(root, "project-1", "pool-1", "orphan-sandbox")
-	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(root, orphan) error = %v", err)
-	}
 	for _, id := range []string{"live-sandbox", "orphan-sandbox"} {
-		if err := UpsertSandboxSentinels(root, "project-1", "pool-1", id, []string{"sk-" + id}, nil); err != nil {
-			t.Fatalf("UpsertSandboxSentinels(root, %s) error = %v", id, err)
+		if _, err := EnsureSandboxMaterial(root, "project-1", "pool-1", id); err != nil {
+			t.Fatalf("EnsureSandboxMaterial(root, %s) error = %v", id, err)
 		}
+		// Age it so the grace period does not spare the orphan.
+		past := time.Now().Add(-time.Hour)
+		_ = os.Chtimes(materialRecord(root, "project-1", "pool-1", id), past, past)
 	}
 
-	// Age both so the grace period does not protect the orphan.
-	past := time.Now().Add(-time.Hour)
-	for _, id := range []string{"live-sandbox", "orphan-sandbox"} {
-		_ = os.Chtimes(filepath.Join(PoolSandboxMaterialRoot(root, "project-1", "pool-1"), id), past, past)
-	}
-
-	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", []string{"live-sandbox"}, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
-	}
-
-	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "live-sandbox")); err != nil {
-		t.Fatalf("live sandbox material should be kept: %v", err)
-	}
-	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "orphan-sandbox")); !os.IsNotExist(err) {
-		t.Fatalf("orphan sandbox material should be removed, stat err = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "orphan-sandbox")); !os.IsNotExist(err) {
-		t.Fatalf("orphan client cert should be removed, stat err = %v", err)
-	}
-
-	doc, err := readSecretsDoc(root.ProxySecretsFile("project-1", "pool-1"))
+	orphans, err := OrphanedSandboxIDs(root, "project-1", "pool-1", []string{"live-sandbox"}, time.Minute)
 	if err != nil {
-		t.Fatalf("readSecretsDoc() error = %v", err)
+		t.Fatalf("OrphanedSandboxIDs() error = %v", err)
 	}
-	if _, ok := doc.Clients["orphan-sandbox"]; ok {
-		t.Fatal("orphan sentinel entry should be removed")
-	}
-	if _, ok := doc.Clients["live-sandbox"]; !ok {
-		t.Fatal("live sentinel entry should be kept")
+	if strings.Join(orphans, ",") != "orphan-sandbox" {
+		t.Fatalf("OrphanedSandboxIDs() = %v, want [orphan-sandbox]", orphans)
 	}
 }
 
-// On a host daemon shared by two pools, pool A's prune (with only A's live set)
-// must never touch pool B's material, even though B's sandbox is not in A's set.
-func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
+// On a host daemon shared by two pools, pool A's scan (with only A's live set)
+// must never name pool B's sandbox, even though it is not in A's set.
+func TestOrphanedSandboxIDsIsPoolScoped(t *testing.T) {
 	root := withTestRoot(t)
 
 	_, err := EnsureSandboxMaterial(root, "project-1", "pool-b", "sandbox-b")
@@ -177,23 +149,23 @@ func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
 		t.Fatalf("EnsureSandboxMaterial(root, pool-b) error = %v", err)
 	}
 	// Age it past any grace window so only scoping — not the grace period —
-	// protects it.
+	// spares it.
 	past := time.Now().Add(-time.Hour)
 	_ = os.Chtimes(materialRecord(root, "project-1", "pool-b", "sandbox-b"), past, past)
 
-	// Pool A prunes with an empty live set: it must not see pool B's material.
-	if err := PruneOrphanedMaterial(root, "project-1", "pool-a", nil, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(root, pool-a) error = %v", err)
+	orphans, err := OrphanedSandboxIDs(root, "project-1", "pool-a", nil, time.Minute)
+	if err != nil {
+		t.Fatalf("OrphanedSandboxIDs(root, pool-a) error = %v", err)
 	}
-	if _, err := os.Stat(materialRecord(root, "project-1", "pool-b", "sandbox-b")); err != nil {
-		t.Fatalf("pool A reaped pool B's material: %v", err)
+	if len(orphans) != 0 {
+		t.Fatalf("pool A named pool B's sandbox as its orphan: %v", orphans)
 	}
 }
 
-// Pool IDs are unique per project, so a prune driven by one project's
+// Pool IDs are unique per project, so a scan driven by one project's
 // authoritative pool set must not reach another project's material even when
 // both projects host a pool of the same name on a shared daemon.
-func TestPruneOrphanedMaterialIsProjectScoped(t *testing.T) {
+func TestOrphanedSandboxIDsIsProjectScoped(t *testing.T) {
 	root := withTestRoot(t)
 
 	_, err := EnsureSandboxMaterial(root, "project-2", "pool-1", "sandbox-b")
@@ -203,15 +175,16 @@ func TestPruneOrphanedMaterialIsProjectScoped(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	_ = os.Chtimes(materialRecord(root, "project-2", "pool-1", "sandbox-b"), past, past)
 
-	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(root, project-1) error = %v", err)
+	orphans, err := OrphanedSandboxIDs(root, "project-1", "pool-1", nil, time.Minute)
+	if err != nil {
+		t.Fatalf("OrphanedSandboxIDs(root, project-1) error = %v", err)
 	}
-	if _, err := os.Stat(materialRecord(root, "project-2", "pool-1", "sandbox-b")); err != nil {
-		t.Fatalf("project 1 reaped project 2's material: %v", err)
+	if len(orphans) != 0 {
+		t.Fatalf("project 1 named project 2's sandbox as its orphan: %v", orphans)
 	}
 }
 
-func TestPruneOrphanedMaterialProtectsFreshMaterial(t *testing.T) {
+func TestOrphanedSandboxIDsSparesFreshMaterial(t *testing.T) {
 	root := withTestRoot(t)
 
 	_, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "fresh-sandbox")
@@ -219,12 +192,12 @@ func TestPruneOrphanedMaterialProtectsFreshMaterial(t *testing.T) {
 		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
 
-	// A recently staged orphan (mid-CreateSandbox) must survive the grace window.
-	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Hour); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
+	orphans, err := OrphanedSandboxIDs(root, "project-1", "pool-1", nil, time.Hour)
+	if err != nil {
+		t.Fatalf("OrphanedSandboxIDs() error = %v", err)
 	}
-	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "fresh-sandbox")); err != nil {
-		t.Fatalf("fresh material should be protected by grace period: %v", err)
+	if len(orphans) != 0 {
+		t.Fatalf("material staged within the grace period was named an orphan: %v", orphans)
 	}
 }
 

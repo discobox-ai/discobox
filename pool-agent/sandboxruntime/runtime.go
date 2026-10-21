@@ -1605,9 +1605,14 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 		if sentinels, ok := req.Sentinels.Get(); ok {
 			// Re-register the sandbox's sentinel set with the proxy so newly bound
 			// secrets resolve without a restart. Its sentinels' routes travel
-			// with it, and are replaced with it.
+			// with it, and are replaced with it. Like the policy above, it is
+			// written only for a sandbox whose container exists: a push that
+			// raced a delete would otherwise leave entries no material record
+			// names, which the reaper never finds.
 			sentinelRoutes, _ := req.SentinelRoutes.Get()
-			if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
+			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
+				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes))
+			}); err != nil {
 				return nil, err
 			}
 		}
@@ -1650,8 +1655,8 @@ func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandb
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
 }
 
-// updateSandboxProxyPolicy records a pushed part of a sandbox's proxy policy —
-// its egress policy or its gateways — for a sandbox whose container exists,
+// updateSandboxProxyPolicy records a pushed part of a sandbox's proxy record —
+// its egress policy, its gateways or its sentinels — for a sandbox whose container exists,
 // under the lock create, archive, and delete hold. A sandbox with no container
 // is answered ErrNotFound and nothing is written: its create carries the
 // policy (ADR 26-10-01-032 §5, ADR 26-10-16-470 §5), and a push that raced a
@@ -1766,8 +1771,10 @@ func (r *DockerSandboxRuntime) removePublishedImages(sandboxID string) error {
 }
 
 const (
-	// proxyMaterialGracePeriod protects freshly staged material from being
-	// pruned while its sandbox container is still being created.
+	// proxyMaterialGracePeriod spares material first staged this recently
+	// from the reaper. It is a backstop: what protects a create in flight is
+	// the sandbox's lock, which the reaper takes (reapSandboxMaterial). The
+	// age is the record directory's, which only the first stage sets.
 	proxyMaterialGracePeriod = 15 * time.Minute
 	// proxyMaterialEventDebounce coalesces a burst of container-destroy events
 	// into a single reconcile pass.
@@ -1858,39 +1865,53 @@ func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *s
 	}
 }
 
-// reconcileProxyMaterial prunes proxy material for sandboxes whose containers
-// no longer exist. It is the recovery path for containers deleted out of band
-// or while the pool was down, which never run through DeleteSandbox.
-func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logger *slog.Logger) {
-	live, err := r.liveSandboxIDs(ctx)
-	if err == nil {
-		err = proxyagent.PruneOrphanedMaterial(r.root, r.projectID, r.poolID, live, proxyMaterialGracePeriod)
-	}
-	if err != nil {
-		logger.Warn("reconcile proxy material", "error", err)
-	}
-}
-
 // reconcileSandboxMaterial reclaims the proxy material of sandboxes that no
-// longer have a container here. It is the level-triggered backstop for material
-// whose destroy event was missed while the agent was down.
-func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, logger *slog.Logger, minAge time.Duration) {
+// longer have a container here. It is the recovery path for containers deleted
+// out of band or while the pool was down, which never run through
+// DeleteSandbox, run on each burst of destroy events and on a slow backstop.
+//
+// A sandbox's container is missing for a moment in every replacement, between
+// removing the old one and creating the new, after the create has already
+// registered the new one's sentinels and policy. The create holds the
+// sandbox's lock across that gap, so a candidate is reaped only under that
+// lock, and only once a look taken under it still finds no container. A lock
+// someone holds is skipped rather than waited for: whatever holds it is
+// operating on the sandbox, and a create can hold it for minutes, which would
+// stall the event stream this runs from. The next pass looks again.
+func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, logger *slog.Logger) {
 	live, err := r.liveSandboxIDs(ctx)
 	if err != nil {
 		logger.Warn("list sandbox containers", "error", err)
 		return
 	}
-	orphans, err := proxyagent.OrphanedSandboxIDs(r.root, r.projectID, r.poolID, live, minAge)
+	orphans, err := proxyagent.OrphanedSandboxIDs(r.root, r.projectID, r.poolID, live, proxyMaterialGracePeriod)
 	if err != nil {
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
 	for _, sandboxID := range orphans {
-		if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
-			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
+		r.reapSandboxMaterial(ctx, logger, sandboxID)
+	}
+}
+
+// reapSandboxMaterial removes one orphan candidate's proxy material and policy
+// when nothing holds its lock and it still has no container.
+func (r *DockerSandboxRuntime) reapSandboxMaterial(ctx context.Context, logger *slog.Logger, sandboxID string) {
+	lock := r.sandboxLock(sandboxID)
+	if !lock.TryLock() {
+		return
+	}
+	defer lock.Unlock()
+	if _, err := r.GetSandbox(ctx, sandboxID); !errors.Is(err, ErrNotFound) {
+		if err != nil {
+			logger.Warn("look up sandbox container before reaping its proxy material", "sandboxID", sandboxID, "error", err)
 		}
-		if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
-			logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
-		}
+		return
+	}
+	if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+		logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
+	}
+	if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+		logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
 	}
 }
 
@@ -2179,7 +2200,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 	// Reconcile once the subscription is established. Destroys from `since`
 	// onward are buffered by the daemon and delivered on the stream below, so the
 	// reconcile and the replayed events together cover every deletion.
-	r.reconcileSandboxMaterial(ctx, logger, proxyMaterialGracePeriod)
+	r.reconcileSandboxMaterial(ctx, logger)
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
@@ -2202,9 +2223,9 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 			}
 		case <-debounce.C:
 			pending = false
-			r.reconcileProxyMaterial(ctx, logger)
+			r.reconcileSandboxMaterial(ctx, logger)
 		case <-backstop.C:
-			r.reconcileSandboxMaterial(ctx, logger, proxyMaterialGracePeriod)
+			r.reconcileSandboxMaterial(ctx, logger)
 		}
 	}
 }
