@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/policyview"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/hostscope"
@@ -622,6 +623,11 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		}
 		sections = append(sections, what)
 	}
+	// The policy is what approving grants (ADR 26-10-20-782 §3): the uses
+	// say what the agent means to do, and this is what it will be allowed.
+	if len(req.PolicyLines) > 0 {
+		sections = append(sections, section{label: "policy it asks for", lines: policyLines(req.PolicyLines)})
+	}
 	// Last on the card, under what was asked: it is why a person is reading
 	// this at all, and nothing the answer turns on.
 	if tested := ruleTestsSection(req); len(tested.lines) > 0 {
@@ -643,6 +649,29 @@ func useLines(use string, t tone) []line {
 			next.bullet, next.indent = true, 0
 		case part.Hang:
 			next.indent = 2
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+// policyLines is a policy's rendering as a card draws it: each scope it
+// applies in a heading, its statements set in under it and their conditions
+// under those, and a variable that resolved to nothing in the alert tone,
+// since it matches nothing whatever it was meant to name. A line too long for
+// the card wraps onto rows set in past the deepest line, a condition's, so a
+// statement's tail never reads as another statement, nor a heading's as one.
+func policyLines(rendered []policyview.Line) []line {
+	out := make([]line, 0, len(rendered))
+	for _, l := range rendered {
+		next := line{text: l.Text, indent: l.Indent, hang: 3 - l.Indent}
+		switch l.Kind {
+		case policyview.Heading:
+			next.tone = toneAccent
+		case policyview.Definition:
+			next.tone = toneDim
+		case policyview.Unresolved:
+			next.tone = toneAlert
 		}
 		out = append(out, next)
 	}
@@ -928,6 +957,7 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 			RequestID:  req.ID,
 			SecretID:   stored.ID,
 			TTLSeconds: lifetime.Seconds(ttl),
+			Policy:     req.Policy,
 		})
 		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		if err != nil {
@@ -1149,6 +1179,7 @@ func (m *Model) finishApproval(a approval, again func() tea.Cmd) tea.Cmd {
 		TTLSeconds:          lifetime.Seconds(a.ttl),
 		SecretHost:          a.bindTo,
 		SecretMaxTTLSeconds: a.limit,
+		Policy:              a.req.Policy,
 	}
 	if a.auto {
 		rule := a.rule

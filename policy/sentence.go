@@ -79,15 +79,7 @@ func Format(s Statement) string {
 	}
 	if s.Scope.Type != "" {
 		b.WriteString(" in ")
-		b.WriteString(s.Scope.Type)
-		if s.Scope.Name != "" {
-			b.WriteString(" ")
-			b.WriteString(formatName(s.Scope.Name))
-		}
-		for _, parent := range slices.Backward(s.Scope.Within) {
-			b.WriteString(" of ")
-			writeResource(&b, parent)
-		}
+		b.WriteString(FormatScope(s.Scope))
 	}
 	if s.When != nil {
 		b.WriteString(" when ")
@@ -96,6 +88,22 @@ func Format(s Statement) string {
 	if s.Unless != nil {
 		b.WriteString(" unless ")
 		b.WriteString(strconv.QuoteToASCII(*s.Unless))
+	}
+	return b.String()
+}
+
+// FormatScope writes scope as a sentence writes it after "in": its type, its
+// name, and the scopes it is of, innermost first.
+func FormatScope(scope Scope) string {
+	var b strings.Builder
+	b.WriteString(scope.Type)
+	if scope.Name != "" {
+		b.WriteString(" ")
+		b.WriteString(formatName(scope.Name))
+	}
+	for _, parent := range slices.Backward(scope.Within) {
+		b.WriteString(" of ")
+		writeResource(&b, parent)
 	}
 	return b.String()
 }

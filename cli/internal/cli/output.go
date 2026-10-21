@@ -655,6 +655,11 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 			useRows(tw, label, use.Description, " ("+use.UseId.Or("")+")")
 		}
 	}
+	if approved, ok := grant.Policy.Get(); ok {
+		if err := policyRows(tw, "POLICY", approved); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
 	// A grant an approval rule minted names it; nobody read this ask.
 	if ruleID := grant.RuleId.Or(""); ruleID != "" {
@@ -695,7 +700,26 @@ func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGran
 			formatGrantExpiry(&grant),
 		)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// A policy is too much for a cell, and is what a grant authorizes: each
+	// one follows the table, under the grant it is on.
+	for _, grant := range grants {
+		approved, ok := grant.Policy.Get()
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "\nPOLICY OF %s\n", grant.ID)
+		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		if err := policyRows(tw, "", approved); err != nil {
+			return err
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func formatGrantExpiry(grant *apimodel.SecretGrant) string {
@@ -737,6 +761,14 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 				label = ""
 			}
 			useRows(tw, label, use.Description, "")
+		}
+	}
+	// The policy is what an approval grants (ADR 26-10-20-782 §3), so it is
+	// rendered whole, its variables as they resolve for the discobox that
+	// asked.
+	if asked, ok := request.Policy.Get(); ok {
+		if err := policyRows(tw, "POLICY", asked); err != nil {
+			return err
 		}
 	}
 	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {

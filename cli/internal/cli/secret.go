@@ -594,6 +594,7 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretID, scope, ttl string
 	var uses, hosts []string
+	var policyAsAsked bool
 	var auto autoApproval
 	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET_ID] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -648,6 +649,26 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			}
 			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
 		}
+		// A request that asks for a policy is approved by sending the policy
+		// approved (ADR 26-10-20-782 §3), so the person says they approve the
+		// request's own, as `discobox secret request get` renders it: a
+		// request never changes what it asks, so it is the policy that was
+		// read. Only then is it read first; otherwise approving is one call.
+		if policyAsAsked {
+			read, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
+			if err != nil {
+				return err
+			}
+			pending, err := expectResponse[apimodel.SecretRequest](read)
+			if err != nil {
+				return err
+			}
+			asked, ok := pending.Policy.Get()
+			if !ok {
+				return fmt.Errorf("request %s asks for no policy; approve it without --policy-as-asked", requestID)
+			}
+			body.SetPolicy(apiclientgen.NewOptAccessPolicy(asked))
+		}
 		// --auto makes an approval rule from the request and approves it
 		// under that rule, in one write (ADR 26-10-12-330).
 		if body.Rule, err = auto.rule(cmd); err != nil {
@@ -672,6 +693,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts the grant is limited to, comma-separated or repeated; defaults to the hosts the request named")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLApproveFlagUsage)
+	cmd.Flags().BoolVar(&policyAsAsked, "policy-as-asked", false, "Approve the policy the request asks for, as 'discobox secret request get' shows it; required for a request that asks for one")
 	auto.addFlags(cmd)
 	return cmd
 }
