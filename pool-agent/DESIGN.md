@@ -1588,6 +1588,12 @@ proxy would recognize it.
   (ADR 0092: no value leaves except to the command it was minted for). Each
   text field is cut to 2 KiB, and the page stops, newest first, before it
   outgrows `agentcreds.MaxResponseBytes`.
+- **The facts verb** (`credentials.go`, ADR 26-10-20-782 §4) relays the
+  control plane's record of the certificate's sandbox
+  (`GET /api/pools/{poolId}/sandbox-policy-facts`) as it is answered: the
+  control plane resolves the variables, and the pool adds and resolves
+  nothing, so the values an agent writes a policy against are the ones its
+  approval records.
 - The token in the resolve-context file carries `secret:resolve` and
   `credential:broker`. They stay separate scopes so splitting these roles across
   processes later is a change of who holds which token, not of what one means.

@@ -121,6 +121,15 @@ func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([
 	return out.Credentials, nil
 }
 
+// facts reads the sandbox's policy facts and variables. The control plane
+// resolves the variables itself, so its answer is the protocol's shape as is.
+func (c *controlPlaneCredentials) facts(ctx context.Context, sandboxID string) (agentcreds.FactsResponse, error) {
+	var out agentcreds.FactsResponse
+	query := url.Values{"sandboxId": []string{sandboxID}}
+	err := c.do(ctx, http.MethodGet, "sandbox-policy-facts", query, nil, &out)
+	return out, err
+}
+
 func (c *controlPlaneCredentials) createRequest(ctx context.Context, body createCredentialRequestDoc) (credentialRequestStatusDoc, error) {
 	var out credentialRequestStatusDoc
 	err := c.do(ctx, http.MethodPost, "sandbox-credential-requests", nil, body, &out)
@@ -247,6 +256,12 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 		})
 	}
 	return out, nil
+}
+
+// Facts relays the control plane's record of this sandbox, never anything the
+// sandbox reports: the values a policy it writes resolves to at approval.
+func (b *credentialBroker) Facts(ctx context.Context) (agentcreds.FactsResponse, error) {
+	return b.controlPlan.facts(ctx, b.sandboxID)
 }
 
 func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {

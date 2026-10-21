@@ -115,6 +115,58 @@ func TestAPolicyRoundTripsFromRequestToGrant(t *testing.T) {
 	}
 }
 
+// What a sandbox is shown as its facts is what a policy it writes resolves to
+// at approval: both are read from the control plane's record of it, and only
+// its own pool may read them.
+func TestASandboxIsShownTheValuesItsPolicyResolvesTo(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+
+	facts, err := svc.SandboxPolicyFacts(ctx, testPoolID, testSandboxID)
+	if err != nil {
+		t.Fatalf("facts: %v", err)
+	}
+	shown := map[string]string{}
+	for _, v := range facts.Variables() {
+		if v.Resolved {
+			shown[v.Name] = v.Value
+		}
+	}
+	if shown[policy.VarPrimaryRepo] != "acme/web" {
+		t.Fatalf("shown %v, want $primary.repo acme/web", shown)
+	}
+
+	asked := pullRequestPolicy()
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
+		Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, variable := range asked.Variables() {
+		if got, want := grant.Policy.Resolved[variable], shown[variable]; got != want {
+			t.Errorf("%s resolved to %q at approval; the sandbox was shown %q", variable, got, want)
+		}
+	}
+
+	if _, err := svc.SandboxPolicyFacts(ctx, "pool-other", testSandboxID); err == nil {
+		t.Fatal("another pool read this sandbox's facts")
+	}
+}
+
 // An ask with the same uses and another policy is another ask: folding it
 // into the open one would drop the policy the agent was told it asked for.
 func TestAnotherPolicyIsAnotherRequest(t *testing.T) {

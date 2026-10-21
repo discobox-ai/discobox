@@ -7537,6 +7537,29 @@ func (s *SandboxGrant) Validate() error {
 	return nil
 }
 
+func (s *SandboxPolicyFacts) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Variables == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "variables",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SandboxProviderCatalogItem) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

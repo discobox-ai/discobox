@@ -6,10 +6,13 @@ credential it was not provisioned with, and then **use** it. Three operations:
 verb, [trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
 certificate the sandbox's egress refuses to be trusted for it. A third,
 [audit](#audit--what-became-of-my-requests), reads back what the egress did
-with the sandbox's own requests.
+with the sandbox's own requests. A fourth,
+[facts](#facts--what-am-i-working-on), says what the implementation recorded
+about the caller, for writing a policy against.
 
 The protocol knows nothing about Discobox but the shape of a policy an ask
-may carry (below), which is the root `policy` package's. It is the contract between the
+may carry (below) and of the facts its variables resolve against, which are
+the root `policy` package's. It is the contract between the
 in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
 works against Discobox's sandbox-agent and against any other implementation.
 
@@ -385,6 +388,44 @@ egress record answers an empty list.
 In Discobox the pool's proxy unit answers it from its own audit trail, keyed
 by the sandbox ID the client certificate carries, for the trail's retention
 window.
+
+## `facts` — what am I working on?
+
+A policy an ask carries names its scope with variables — `$primary.repo`
+rather than a repository spelled out — which resolve when a person approves
+it, from the implementation's record of the caller
+([ADR 26-10-20-782](adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
+§4). The facts verb reads that record and what each variable resolves to, so
+an agent writes a policy against values it has seen.
+
+```
+GET /v1/facts
+```
+
+```json
+{
+  "facts": {
+    "discobox": { "id": "sbx_…", "createdBy": "sbx_…", "project": "default" },
+    "sources": [ { "slug": "primary", "primary": true,
+                   "remote": { "host": "github.com", "repo": "discobox-ai/discobox", "url": "https://github.com/discobox-ai/discobox" },
+                   "ref": { "type": "branch", "name": "main" }, "commit": "…" } ]
+  },
+  "variables": [
+    { "name": "$this", "value": "sbx_…", "resolved": true },
+    { "name": "$primary.repo", "value": "discobox-ai/discobox", "resolved": true },
+    { "name": "$primary.upstream", "resolved": false }
+  ]
+}
+```
+
+`variables` lists every variable a policy may use, resolved or not: `$this`,
+the `$primary` variables, then `$sources.<slug>.repo` for each source with a
+slug. One with `resolved: false` matches nothing. `createdBy` is absent when
+a person created the caller, and `remote` for a source with no network
+remote. Everything here is the implementation's record, never what the
+caller reports about itself — in Discobox, the control plane's, which
+resolves the variables itself and is what a policy resolves against at
+approval. A service that predates the verb answers 404.
 
 ## The client shape that fits it best
 

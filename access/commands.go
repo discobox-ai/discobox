@@ -15,6 +15,13 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 )
 
+// listOutput is what list --json prints: the protocol's list, and the facts
+// of the discobox they are granted to when the service serves them.
+type listOutput struct {
+	Credentials []agentcreds.Credential   `json:"credentials"`
+	Discobox    *agentcreds.FactsResponse `json:"discobox,omitempty"`
+}
+
 func runList(ctx context.Context, args []string) int {
 	var structured bool
 	flags := flag.NewFlagSet(Name+" list", flag.ContinueOnError)
@@ -24,14 +31,31 @@ func runList(ctx context.Context, args []string) int {
 	}
 	out := newEmitter(structured)
 
-	credentials, err := newClient().List(ctx)
+	client := newClient()
+	credentials, err := client.List(ctx)
 	if err != nil {
 		return out.report(err)
 	}
 	if credentials == nil {
 		credentials = []agentcreds.Credential{}
 	}
-	out.emit(agentcreds.ListResponse{Credentials: credentials}, func(w io.Writer) {
+	result := listOutput{Credentials: credentials}
+	// What this discobox is working on leads, so a use or a policy is written
+	// against it. It is a header, not the answer: when it cannot be read —
+	// a service that predates the verb, or any other failure — the
+	// credentials are still listed, and only text output says why it is
+	// missing, on stderr, leaving facts to report the failure in full.
+	switch facts, err := client.Facts(ctx); {
+	case err == nil:
+		result.Discobox = &facts
+	case !errors.Is(err, agentcreds.ErrNotFound) && !structured:
+		fmt.Fprintf(os.Stderr, "%s: could not read this discobox's facts: %s\n", Name, agentcreds.Message(err))
+	}
+	out.emit(result, func(w io.Writer) {
+		if result.Discobox != nil {
+			fmt.Fprintln(w, primarySentence(result.Discobox.Facts))
+			fmt.Fprintf(w, "Every variable a policy may use, and its value: %s facts\n\n", Name)
+		}
 		if len(credentials) == 0 {
 			fmt.Fprintln(w, "No credentials are granted to this sandbox.")
 			fmt.Fprintf(w, "Ask for one with: %s request --name NAME --env-var VAR --hosts HOST[,HOST...] --use \"what for\"\n", Name)

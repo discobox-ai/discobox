@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/policy"
 )
 
 // fakeService is a minimal implementation, standing in for the pool-side broker
@@ -24,6 +26,7 @@ type fakeService struct {
 	trustStatus agentcreds.TrustRequestStatus
 	gotAudit    agentcreds.AuditQuery
 	exchanges   []agentcreds.AuditExchange
+	facts       agentcreds.FactsResponse
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -67,6 +70,10 @@ func (f *fakeService) TrustRequestStatus(context.Context, string) (agentcreds.Tr
 func (f *fakeService) AuditHTTP(_ context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
 	f.gotAudit = query
 	return f.exchanges, nil
+}
+
+func (f *fakeService) Facts(context.Context) (agentcreds.FactsResponse, error) {
+	return f.facts, nil
 }
 
 func newTestClient(t *testing.T, svc agentcreds.Service) *agentcreds.Client {
@@ -208,5 +215,34 @@ func TestAuditHTTPRefusesAnUnreadableQuery(t *testing.T) {
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", query, resp.StatusCode)
 		}
+	}
+}
+
+func TestFactsRoundTripTheRecordAndEveryVariable(t *testing.T) {
+	facts := policy.Facts{
+		Discobox: policy.Discobox{ID: "sbx_1", Project: "default"},
+		Sources: []policy.Source{{
+			Slug: "primary", Primary: true,
+			Remote: &policy.Remote{Host: "github.com", Repo: "acme/web", URL: "https://github.com/acme/web"},
+			Ref:    &policy.Ref{Type: "branch", Name: "main"},
+		}},
+	}
+	svc := &fakeService{facts: agentcreds.FactsResponse{Facts: facts, Variables: facts.Variables()}}
+	got, err := newTestClient(t, svc).Facts(context.Background())
+	if err != nil {
+		t.Fatalf("Facts: %v", err)
+	}
+	if !reflect.DeepEqual(got, svc.facts) {
+		t.Fatalf("Facts =\n%+v\nwant\n%+v", got, svc.facts)
+	}
+}
+
+// A service that predates the verb answers its path 404, which the client
+// reads as not found rather than as empty facts.
+func TestFactsFromAServiceWithoutTheVerbIsNotFound(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	if _, err := agentcreds.NewClient(server.URL).Facts(context.Background()); !errors.Is(err, agentcreds.ErrNotFound) {
+		t.Fatalf("Facts err = %v, want ErrNotFound", err)
 	}
 }

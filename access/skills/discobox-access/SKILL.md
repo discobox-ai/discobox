@@ -66,6 +66,13 @@ approving picks the lifetime, often a longer one than you asked, and
 `[never expires]` means exactly that. Never assume a use has lapsed because
 the time you asked for has passed — `list` is the answer.
 
+`list` leads with this discobox's primary source as the control plane
+recorded it — `github.com/acme/web at branch main` — which is the repository
+to name in a use. `discobox-access facts` shows every source and the value of
+each variable a policy may use (`$primary.repo  acme/web`); a variable that
+resolves to nothing matches nothing. Those values, not your git remotes, are
+what an approval binds to.
+
 If a command *already works*, the credential is already in your environment —
 nothing here is needed. Ask only when something actually failed for want of one.
 

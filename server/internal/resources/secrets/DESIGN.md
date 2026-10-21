@@ -187,6 +187,13 @@ and judged by its uses, and a grant without a policy is untouched.
 - **Another policy is another ask**: `asksTheSame` compares it with the uses.
 - A policy rides only beside uses: a grant without them hands its sentinel's
   value to any request, which no policy narrows.
+- **The writer sees the record it resolves against**
+  (`SandboxPolicyFacts`, `GET /api/pools/{poolId}/sandbox-policy-facts`): a
+  pool reads its sandbox's `Sandbox.PolicyFacts` with every variable resolved
+  here, for the protocol's facts verb. The variables are resolved on the
+  control plane, not the pool, so what an agent is shown is what approval
+  records whatever version its pool runs; the judge's facts
+  (`JudgeDiscobox`) are derived from the same record.
 
 ## Well-known credentials
 

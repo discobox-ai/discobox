@@ -6067,6 +6067,115 @@ components:
             required:
                 - type
             type: object
+        SandboxPolicyFacts:
+            additionalProperties: false
+            description: A sandbox's policy facts and every variable a policy may use, resolved against them.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxPolicyFacts.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                facts:
+                    $ref: '#/components/schemas/PolicyFacts'
+                variables:
+                    description: Every variable a policy may use, resolved or not, in a fixed order -- $this, the $primary variables, then $sources.<slug>.repo for each source with a slug.
+                    items:
+                        $ref: '#/components/schemas/PolicyVariable'
+                    type: array
+            required:
+                - facts
+                - variables
+            type: object
+        PolicyFacts:
+            additionalProperties: false
+            description: What the control plane recorded about a discobox when it was created, typed (ADR 26-10-20-782 section 4).
+            properties:
+                discobox:
+                    $ref: '#/components/schemas/PolicyFactsDiscobox'
+                sources:
+                    description: The sources it was created with, the primary first.
+                    items:
+                        $ref: '#/components/schemas/PolicyFactsSource'
+                    type: array
+            required:
+                - discobox
+            type: object
+        PolicyFactsDiscobox:
+            additionalProperties: false
+            properties:
+                id:
+                    type: string
+                createdBy:
+                    description: The discobox that created it; absent when a person did.
+                    type: string
+                project:
+                    type: string
+            required:
+                - id
+            type: object
+        PolicyFactsSource:
+            additionalProperties: false
+            description: A source as it was recorded at create, never the branch or commits it has moved to since.
+            properties:
+                slug:
+                    type: string
+                primary:
+                    type: boolean
+                remote:
+                    $ref: '#/components/schemas/PolicyFactsRemote'
+                ref:
+                    $ref: '#/components/schemas/PolicyFactsRef'
+                commit:
+                    type: string
+            required:
+                - slug
+            type: object
+        PolicyFactsRemote:
+            additionalProperties: false
+            description: A source's network remote, normalized; absent for a source with none.
+            properties:
+                host:
+                    type: string
+                repo:
+                    description: The repository's path on the host -- owner/name on GitHub.
+                    type: string
+                url:
+                    type: string
+            required:
+                - host
+                - repo
+                - url
+            type: object
+        PolicyFactsRef:
+            additionalProperties: false
+            description: The ref a source was created from, as its creator named it.
+            properties:
+                type:
+                    description: branch or tag, or absent when its creator did not say which.
+                    type: string
+                name:
+                    type: string
+            required:
+                - name
+            type: object
+        PolicyVariable:
+            additionalProperties: false
+            description: A variable a policy may use and what it resolves to.
+            properties:
+                name:
+                    type: string
+                value:
+                    description: What it resolves to; absent when it does not.
+                    type: string
+                resolved:
+                    description: False for a variable that resolves to nothing, and so matches nothing.
+                    type: boolean
+            required:
+                - name
+                - resolved
+            type: object
         SecretGrant:
             additionalProperties: false
             properties:
@@ -8588,6 +8697,47 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Poll an agent credential request
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-policy-facts:
+        get:
+            description: What the control plane recorded about a sandbox when it was created, typed, and what each variable a policy may use resolves to for it (ADR 26-10-20-782 section 4) -- the record a policy written for this sandbox resolves against at approval, never what the sandbox reports about itself.
+            operationId: get-sandbox-policy-facts
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Sandbox whose facts to read
+                  in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox whose facts to read
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxPolicyFacts'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Read a sandbox's policy facts and variables
             tags:
                 - Pools
     /api/pools/{poolId}/judge:

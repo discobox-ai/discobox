@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/agentcreds"
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/judge"
@@ -187,6 +188,10 @@ func (fakeSecretService) ListSecretRejections(context.Context, string) ([]model.
 
 func (fakeSecretService) ListSandboxCredentials(context.Context, string, string) ([]store.AgentCredential, error) {
 	return nil, nil
+}
+
+func (fakeSecretService) SandboxPolicyFacts(context.Context, string, string) (policy.Facts, error) {
+	return policy.Facts{}, nil
 }
 
 func (fakeSecretService) CreateSandboxCredentialRequest(context.Context, string, svcapi.CreateSandboxCredentialRequestBody) (*model.SecretRequest, error) {
@@ -575,5 +580,71 @@ func TestSandboxCredentialRequestStatusCarriesTheGrantedLifetime(t *testing.T) {
 	}
 	if forever.ExpiresAt.IsSet() {
 		t.Fatalf("expiresAt = %v on a grant that never expires, want it absent", forever.ExpiresAt)
+	}
+}
+
+// factsSecretService answers a facts read with one sandbox's record, and
+// records which pool and sandbox it was asked for.
+type factsSecretService struct {
+	fakeSecretService
+	facts policy.Facts
+	asked *[2]string
+}
+
+func (f factsSecretService) SandboxPolicyFacts(_ context.Context, poolID, sandboxID string) (policy.Facts, error) {
+	*f.asked = [2]string{poolID, sandboxID}
+	return f.facts, nil
+}
+
+// A sandbox's facts reach its pool with every variable resolved here, in the
+// shape the agent credentials protocol reads them in, so the pool relays the
+// control plane's values rather than resolving its own.
+func TestSandboxPolicyFactsCarryTheRecordAndItsVariables(t *testing.T) {
+	facts := policy.Facts{
+		Discobox: policy.Discobox{ID: "sb-1", CreatedBy: "sb-lead", Project: "default"},
+		Sources: []policy.Source{{
+			Slug: "primary", Primary: true,
+			Remote: &policy.Remote{Host: "github.com", Repo: "acme/web", URL: "https://github.com/acme/web"},
+			Ref:    &policy.Ref{Type: "branch", Name: "main"}, Commit: "0123abcd",
+		}},
+	}
+	var asked [2]string
+	h := New(svcapi.Services{Secrets: factsSecretService{facts: facts, asked: &asked}})
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypePool, PoolID: "pool-1", Scopes: []string{poolauth.ScopeCredentialBroker},
+	})
+	res, err := h.GetSandboxPolicyFacts(ctx, serverapi.GetSandboxPolicyFactsParams{PoolId: "pool-1", SandboxId: "sb-1"})
+	if err != nil {
+		t.Fatalf("GetSandboxPolicyFacts() error = %v", err)
+	}
+	if asked != [2]string{"pool-1", "sb-1"} {
+		t.Fatalf("asked for %v, want the calling pool's sb-1", asked)
+	}
+	body, ok := res.(*serverapi.SandboxPolicyFacts)
+	if !ok {
+		t.Fatalf("response = %T, want the facts", res)
+	}
+	data, err := body.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got agentcreds.FactsResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := agentcreds.FactsResponse{Facts: facts, Variables: facts.Variables()}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("facts =\n%+v\nwant\n%+v", got, want)
+	}
+
+	resolveOnly := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypePool, PoolID: "pool-1", Scopes: []string{poolauth.ScopeSecretResolve},
+	})
+	res, err = h.GetSandboxPolicyFacts(resolveOnly, serverapi.GetSandboxPolicyFactsParams{PoolId: "pool-1", SandboxId: "sb-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := res.(*serverapi.SandboxPolicyFacts); ok {
+		t.Fatal("a pool without the broker scope read a sandbox's facts")
 	}
 }

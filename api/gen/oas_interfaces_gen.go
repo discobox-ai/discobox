@@ -237,6 +237,10 @@ type GetSandboxExecScreenRes interface {
 	getSandboxExecScreenRes()
 }
 
+type GetSandboxPolicyFactsRes interface {
+	getSandboxPolicyFactsRes()
+}
+
 type GetSandboxProviderInstanceRes interface {
 	getSandboxProviderInstanceRes()
 }
