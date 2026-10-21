@@ -731,10 +731,19 @@ type DelegationAsk struct {
 	// verdict is recorded against.
 	DelegationGrantID string
 	// Delegated are the delegation grant's uses: what it may hand on for.
-	Delegated []string
 	// Uses are the uses it would grant: the request's, or the ones it
 	// narrowed them to.
-	Uses []string
+	//
+	// For a policy handed on, the question is about conditions alone (ADR
+	// 26-10-20-782 §11): Delegated is one delegated allow and Uses one allow
+	// handed on, each as its sentence with variables written as the values
+	// they resolved to, which code found the same in every part but their
+	// when and unless. The question a use's reading answers — is this within
+	// that — is the one asked. The words' definitions are not sent: code
+	// held every word both use to one definition, so the conditions are all
+	// that is compared.
+	Delegated []string
+	Uses      []string
 	// Credential and Hosts are what is handed on and where it may go.
 	Credential string
 	Hosts      []string

@@ -431,7 +431,7 @@ func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
 	t.Run("a free-form ask the rule's secret is not bound for", func(t *testing.T) {
 		svc, st, judging, _ := ruledService(t)
 		githubRule(t, svc, nil)
-		req := workerRequest(t, svc, nil)
+		req := workerRequest(t, svc, withoutPolicy)
 		if err := testRules(t, svc, req); err != nil {
 			t.Fatal(err)
 		}
@@ -898,7 +898,7 @@ func TestARuleNamingASecretAnswersAFreeFormAskItsBindingCovers(t *testing.T) {
 	if !slices.Equal(rule.Hosts, []string{"github.com"}) {
 		t.Fatalf("rule hosts = %v, want the secret's binding", rule.Hosts)
 	}
-	req := workerRequest(t, svc, nil)
+	req := workerRequest(t, svc, withoutPolicy)
 	if err := testRules(t, svc, req); err != nil {
 		t.Fatal(err)
 	}
@@ -1270,4 +1270,10 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 	if got := tests()[unread.ID]; got.Covered || got.Pending || got.Stage != model.RuleTestStageContent || !strings.Contains(got.Reason, "0.41") {
 		t.Fatalf("test = %+v, want the content's verdict and its score", got)
 	}
+}
+
+// withoutPolicy is a worker's ask with uses alone: the kind of ask a rule
+// answers.
+func withoutPolicy(b *services.CreateSandboxCredentialRequestBody) {
+	b.Policy = serverapi.OptAccessPolicy{}
 }

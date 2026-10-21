@@ -10,7 +10,7 @@ it.
 
 | File | What it holds |
 | --- | --- |
-| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
+| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated — or, for a policy, one statement it would grant against a delegated statement that covers it but for its conditions, as their sentences resolved, ADR 26-10-20-782 §11), or an approval rule's reading (`rule`: its uses against the uses a request asked for) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found. |
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the uses a person starts an approval rule from — the same work on any target of its kind. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |

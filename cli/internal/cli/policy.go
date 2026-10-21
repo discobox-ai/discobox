@@ -40,12 +40,18 @@ func apiPolicy(p policy.Policy) (apimodel.AccessPolicy, error) {
 	return out, nil
 }
 
-// safePolicyLines is p rendered for the window (policyview), every line made
-// safe to draw: a definition is text a discobox wrote.
+// safePolicyLines is p rendered for the window (policyview), made safe to
+// draw: a definition is text a discobox wrote. The window draws each line's
+// tokens and their notes, not its text, so every one of them is escaped, the
+// text with them.
 func safePolicyLines(p policy.Policy) []policyview.Line {
 	lines := policyview.Lines(p)
 	for i := range lines {
 		lines[i].Text = terminalSafe(lines[i].Text)
+		for j := range lines[i].Tokens {
+			lines[i].Tokens[j].Text = terminalSafe(lines[i].Tokens[j].Text)
+			lines[i].Tokens[j].Note = terminalSafe(lines[i].Tokens[j].Note)
+		}
 	}
 	return lines
 }

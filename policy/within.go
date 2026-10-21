@@ -96,7 +96,9 @@ func bound(s Statement, values map[string]string) (Statement, bool) {
 		if !found {
 			ok = false
 		}
-		return value
+		// A value is a literal: written as a name, it matches itself and
+		// nothing else, whatever it holds.
+		return escapeGlob(value)
 	}
 	resource := func(r Resource) Resource {
 		if r.Name != nil {
@@ -214,4 +216,20 @@ func sameStatement(a, b Statement) bool {
 	return Format(a) == Format(b)
 }
 
-func isGlob(name string) bool { return strings.ContainsAny(name, "*?[") }
+// isGlob reports whether name is a pattern rather than a literal: anything
+// path.Match reads as syntax, the escape among it. A name with an escape is
+// compared as the pattern it is, so release-\main is not taken for the
+// literal a pattern excluding release-main happens to match.
+func isGlob(name string) bool { return strings.ContainsAny(name, `*?[\`) }
+
+// escapeGlob is value as a name that matches value alone.
+func escapeGlob(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if strings.ContainsRune(`*?[\`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}

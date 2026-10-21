@@ -48,7 +48,7 @@ func workerPolicy(t *testing.T, sentences ...string) policy.Policy {
 // definitionsFor defines each word the statements use that needs one, and no
 // other: a policy may not define a word it does not use.
 func definitionsFor(statements []policy.Statement) map[string]string {
-	glossary := map[string]string{"pull request": "a GitHub pull request", "repository": "a GitHub repository", "issue": "a GitHub issue"}
+	glossary := map[string]string{"pull request": "A GitHub pull request.", "repository": handedOnPolicy().Definitions["repository"], "issue": handedOnPolicy().Definitions["issue"]}
 	out := map[string]string{}
 	for _, s := range statements {
 		for _, word := range []string{s.ResourceType, s.Scope.Type} {
@@ -109,41 +109,34 @@ func TestALeadHandsOnAPolicyWithinItsOwn(t *testing.T) {
 	}
 }
 
-// A delegation with no policy hands on no policy; it still hands on uses.
-func TestADelegationWithoutAPolicyHandsOnNone(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	svc.SetJudge(&delegationJudge{allow: true})
-	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegate(t, st, secret, "github.com", time.Hour)
-
-	asked := workerPolicy(t, `allow read on issue in repository "acme/web"`)
-	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, asked) })
-	_, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
-	wantStatus(t, err, http.StatusForbidden, "carries no policy to hand on")
-
-	if _, err := approveAsLead(svc, workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
-		b.Uses = []apimodel.SecretUse{{Description: "read issue 44"}}
-	}), services.ApproveSecretRequestBody{}); err != nil {
-		t.Fatalf("uses under a delegation without a policy: %v", err)
-	}
-}
-
-// Under a delegation with a policy, a worker asking with uses alone is judged
-// against the delegation's uses, as before policies.
-func TestUsesAloneAreStillJudgedAsUsesUnderAPolicyDelegation(t *testing.T) {
+// A delegation with no policy hands on no policy. A hand-off of uses alone is
+// judged by its uses, under any delegation, until agents can write a policy
+// (#297): it is not bound by a delegation's allows and denies.
+func TestAHandOffWithoutAPolicyIsJudgedByItsUses(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	judge := &delegationJudge{allow: true}
 	svc.SetJudge(judge)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegatePolicy(t, st, secret, "github.com", `allow read on issue in repository "acme/web"`)
-
-	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{}); err != nil {
-		t.Fatalf("uses alone under a policy delegation: %v", err)
+	bare := delegate(t, st, secret, "github.com", time.Hour)
+	bare.Policy = nil
+	if err := st.UpdateSecretGrant(context.Background(), bare); err != nil {
+		t.Fatal(err)
 	}
-	asks := judge.asks()
-	if len(asks) != 1 || !slices.Equal(asks[0].Uses, []string{"read issue 43"}) {
+	asked := workerPolicy(t, `allow read on issue in repository "acme/web"`)
+	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, asked) })
+	_, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
+	wantStatus(t, err, http.StatusForbidden, "carries no policy to hand on")
+
+	delegatePolicy(t, st, secret, "github.com", `allow read on issue in repository "acme/web"`)
+	usesAlone := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
+		b.Policy = serverapi.OptAccessPolicy{}
+		b.Uses = []apimodel.SecretUse{{Description: "read issue 44"}}
+	})
+	if _, err := approveAsLead(svc, usesAlone, services.ApproveSecretRequestBody{}); err != nil {
+		t.Fatalf("uses alone: %v", err)
+	}
+	if asks := judge.asks(); len(asks) != 1 || !slices.Equal(asks[0].Uses, []string{"read issue 44"}) {
 		t.Fatalf("judge asked %+v, want the uses once", asks)
 	}
 }

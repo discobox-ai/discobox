@@ -36,6 +36,12 @@
   and a JSON key or value decodes `\u001b` to a raw escape. Quote what they
   name (`sandboxcreate.quoteKeys`, `%q`) and escape the line it lands in.
 
+- **Escape the form of a line that is drawn.** A line kept in two forms —
+  its text, and the tokens or spans it is drawn from — is escaped in the form
+  the screen draws: the policy rendering's tokens and notes, not only its
+  text, and a raw JSON view through `writeTerminalSafeJSON`, not an encoder
+  that passes C1 controls and bidirectional overrides. Twice one form was
+  escaped while the other reached the screen.
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.

@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -193,11 +192,11 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Created:       r.CreatedAt,
 	}
 	req.Hosts = r.Hosts
-	if data, err := r.MarshalJSON(); err == nil {
-		var indented bytes.Buffer
-		if json.Indent(&indented, data, "", "  ") == nil {
-			req.Raw = indented.String()
-		}
+	// Nearly all of it is text a discobox wrote, which a JSON encoder passes
+	// through but for C0 controls, so it is written terminal-safe.
+	var raw bytes.Buffer
+	if writeTerminalSafeJSON(&raw, r) == nil {
+		req.Raw = strings.TrimRight(raw.String(), "\n")
 	}
 	if r.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
 		req.Refresh = &tui.RefreshAsk{
