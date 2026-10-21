@@ -11,8 +11,8 @@
     is decided against its grant's whole policy, not one use's sentence. §5's
     reasonable association survives only inside the fallback judge (§8).
   - [26-10-02-054](26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md)
-    §§1–3 for commands: `judgeCommands` goes. Its delegation judging stays
-    (Deferred).
+    §§1–3 for commands: `judgeCommands` goes. Its delegation judging stays,
+    beside a policy's (§11).
   - [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
     §3's request job: one "within" noul becomes a question per statement and
     per condition, combined in code (§8).
@@ -293,6 +293,41 @@ records the declared command, which travels with each request as a labelled
 claim. Nothing is decided on it. Every request carrying the credential is
 decided by §§7–8.
 
+### 11. A delegation hands on a policy within its own
+
+A discobox holding a delegation grant that carries a policy may hand on a
+policy within it: approving a request of a discobox it created, or giving
+one to a discobox it creates. Within is a structural comparison made in
+code, on each side's statements as resolved for its own discobox (§4):
+
+- **Every allow handed on is covered by a delegated allow**: its actions are
+  among that allow's (`manage` covers every action); its type is the same,
+  or the delegated one is `anything`; its name, its `created by`, its parents
+  and its scope are the delegated one's or a literal its glob matches; and a
+  delegated allow with parents or a `created by` is matched only by one with
+  the same.
+- **Every delegated deny is carried**: the same deny, resolved alike, is in
+  the policy handed on. It may add denies of its own.
+- **A word means what the delegation says it means**: a word both use has the
+  same definition in both.
+- **Variables compare as resolved.** `$primary.repo` handed on to a discobox
+  of another repository is another repository, and is not covered; a
+  variable that does not resolve on either side matches nothing.
+- **Conditions are the judge's.** An allow that keeps the delegated allow's
+  conditions, or that adds conditions to one that has none, is covered by
+  code. Otherwise the judge is asked whether the conditions handed on are
+  within the delegated ones, as it is asked about uses today; no answer, no
+  hand-off.
+- **Uses are still judged as uses** (ADR 26-09-30-782 §3). A policy rides
+  beside them, so a delegation with a policy hands on both: a request with a
+  policy needs a delegation whose policy covers it and whose uses the judge
+  finds hold its uses; a request with uses alone is judged against the uses as
+  before. A delegation without a policy hands on no policy.
+
+Nothing a discobox hands on is shown to a person, so the check is the
+approval; there is no shown value to hold it to. (Amended in issue #298,
+before anything delegated a policy.)
+
 ## Measurements
 
 The GitHub prototype (`build/targetdb`, not in the tree): GitHub's REST
@@ -380,11 +415,10 @@ Use writing and judging are measured by `go tool task eval:uses` and
 
 ## Deferred
 
-- **Delegations and approval rules over policies.** Handing a credential on
-  and testing a rule are still judged by comparing uses (ADR 26-10-12-330,
-  ADR 26-10-14-223). A policy makes most of that a structural comparison —
-  fewer actions, narrower resources, at least the same denies — with a model
-  only for conditions. Revisit once policies are what grants carry.
+- **Approval rules over policies.** Testing a rule is still judged by
+  comparing uses (ADR 26-10-12-330). A policy makes most of that a structural
+  comparison, as §11 makes it for a delegation. Revisit once policies are
+  what grants carry. (Delegations moved to §11 in issue #298.)
 - **Judging requests by default.** `judgeCredentials` stays off by default.
   Revisit when the fast path's share of recorded traffic is measured across
   the built-in hosts and the fallback's latency per request is known.
