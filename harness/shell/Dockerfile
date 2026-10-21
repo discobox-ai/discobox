@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
 
 # Nearly empty. Every other harness bundle carries its CLI's feature and

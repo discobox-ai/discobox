@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 # The libkrun guest kernel, released on its own line as `discobox-vm-kernel`.
 #
 # It is the one artifact a backend may not take from the shared guest image

@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 # The Discobox pool VM guest image.
 #
 # One guest for every VM backend. `vz` boots it on Virtualization.framework

@@ -262,7 +262,6 @@ build_transfer_stub() {
   metadata="$(jq -c --arg marker "$marker" '.env.STUB_BUILD_MARKER = $marker' "$REPO_ROOT/test/harness-stub/image.json")"
   for pair in "discobox-harness-stub:local $TRANSFER_STUB_BUNDLE" "discobox-harness-stub-image:local $TRANSFER_STUB_IMAGE"; do
     docker build --build-arg BASE="${pair% *}" --build-arg HARNESS_METADATA="$metadata" -t "${pair#* }" - >>"$log" 2>&1 <<'DOCKERFILE' || return
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
 ARG BASE
 FROM ${BASE}
 ARG HARNESS_METADATA

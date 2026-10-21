@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
 
 # The bundle: only the label. Nothing reads files from a stub's bundle — its

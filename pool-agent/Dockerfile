@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 # Declared before the first FROM so it is a global build argument the runtime
 # stage's FROM can expand; declared alongside that FROM it would belong to the
 # builder stage and resolve to nothing.

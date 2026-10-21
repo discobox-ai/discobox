@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
 
 # The bundle: the harness's own feature (provision.yaml) under

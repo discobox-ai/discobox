@@ -163,7 +163,6 @@ build_keep_stub_bundle() {
   local metadata
   metadata="$(jq -c '.env.STUB_CONFIGURE_KEEP = "1"' "$REPO_ROOT/test/harness-stub/image.json")"
   docker build --build-arg HARNESS_METADATA="$metadata" -t discobox-harness-stub-keep:local - <<'DOCKERFILE'
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
 FROM discobox-harness-stub:local
 ARG HARNESS_METADATA
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"

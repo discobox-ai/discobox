@@ -1,5 +1,3 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1.7
-
 # The base every Discobox systemd container image is built FROM: the pool agent
 # (pool-agent/Dockerfile), the sandbox agent (sandbox-agent/Dockerfile), and
 # through the latter every harness image.
