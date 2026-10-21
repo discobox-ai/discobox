@@ -177,11 +177,20 @@ and judged by its uses, and a grant without a policy is untouched.
   request, the created one for a grant given on a create — so `$this` is
   always the holder. A grant wider than one sandbox has no record to resolve against and
   may carry only a policy that uses no variable.
+- **Resolved again on every read of a request** (`requestPolicyResolver`, on
+  get, list — the inbox — and the approve answer), from the same record, so
+  the form a person approves shows its variables' values (§3). The request
+  keeps its policy unresolved; a discobox that is gone resolves nothing, and
+  every variable shows as matching nothing.
 - **Only a person approves a policy, and names it.** An approval of a request
   that carries one sends the policy it approves — the one asked for, or an
   edit — or is refused, so nothing is recorded as approved that was not sent.
-  A rule never answers such a request (`ruleTestable`): rules are read against
-  uses. A discobox approves no policy and gives none on a create: handing a
+  Its `resolved` is the values the person was shown: `commitApproval` holds
+  the grant's to them inside the transaction, and a value that resolves
+  otherwise, or a variable shown as matching nothing that resolves now, is a
+  409 that grants nothing (`errPolicyResolvedOtherwise`).
+  A rule never answers such a request, nor is proposed or made from one
+  (`ruleTestable`, `ruleProposable`): rules are read against uses. A discobox approves no policy and gives none on a create: handing a
   credential on is judged by uses, and over policies is not decided yet (ADR
   26-10-20-782, Deferred). Delegated grants therefore carry none.
 - **Another policy is another ask**: `asksTheSame` compares it with the uses.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -381,11 +382,47 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 		return nil, err
 	}
 	describeRuleTests := s.ruleTestDescriber(ctx, projectID)
+	resolvePolicy := s.requestPolicyResolver(ctx, projectID)
 	for i := range requests {
 		withholdAnswerFromSandbox(ctx, &requests[i])
 		describeRuleTests(&requests[i])
+		if err := resolvePolicy(&requests[i]); err != nil {
+			return nil, err
+		}
 	}
 	return requests, nil
+}
+
+// requestPolicyResolver returns what fills in, on a request read, the value
+// each variable of the policy it asks for resolves to for the discobox that
+// asked (ADR 26-10-20-782 §4): the values the person approving it is shown,
+// and the ones an approval resolves onto the grant from the same record. A
+// request stores its policy unresolved; nothing read here is written back.
+//
+// Each discobox's record is read once per call, since a listing can hold many
+// requests from one. A discobox that is gone resolves nothing, so every
+// variable shows as matching nothing, which is what it would grant.
+func (s *Service) requestPolicyResolver(ctx context.Context, projectID string) func(*model.SecretRequest) error {
+	facts := map[string]policy.Facts{}
+	return func(req *model.SecretRequest) error {
+		if req.Policy == nil || req.SandboxID == "" {
+			return nil
+		}
+		f, ok := facts[req.SandboxID]
+		if !ok {
+			sandbox, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
+			switch {
+			case err == nil:
+				f = sandbox.PolicyFacts()
+			case !errors.Is(err, store.ErrNotFound):
+				return err
+			}
+			facts[req.SandboxID] = f
+		}
+		resolved := req.Policy.Resolve(f)
+		req.Policy = &resolved
+		return nil
+	}
 }
 
 func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
@@ -449,6 +486,9 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	}
 	withholdAnswerFromSandbox(ctx, req)
 	s.ruleTestDescriber(ctx, projectID)(req)
+	if err := s.requestPolicyResolver(ctx, projectID)(req); err != nil {
+		return nil, err
+	}
 	return req, nil
 }
 
@@ -574,6 +614,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	// sentinel the agent never sees.
 	var approvedUses []model.SecretUse
 	var approvedPolicy *policy.Policy
+	var shownResolved map[string]string
 	// The grant is for what the agent asked: to use the credential, or to
 	// delegate it. A reactive request asked for nothing but use.
 	purpose, err := grantPurpose(req.Purpose)
@@ -611,13 +652,19 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if approvedPolicy, err = services.PolicyFromAPI(input.Policy); err != nil {
 			return nil, err
 		}
+		// What the approver was shown each variable resolves to, which the
+		// grant is held to below (§§3–4). PolicyFromAPI drops it: on the
+		// policy it is the server's to set, and here it is only compared.
+		if sent, ok := input.Policy.Get(); ok {
+			shownResolved = sent.Resolved.Or(nil)
+		}
 		switch {
 		case (approvedPolicy != nil || req.Policy != nil) && approverIsSandbox:
 			return nil, apperrors.NewStatusError(http.StatusForbidden,
 				"a discobox cannot approve a request that carries a policy; a person approves it")
 		case approvedPolicy == nil && req.Policy != nil:
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"this request asks for a policy; approve it by sending the policy you approve")
+				"this request asks for a policy; approve it by sending the policy you approve (read it with `discobox secret request get`, then `discobox secret request approve --policy-as-asked`)")
 		}
 	}
 
@@ -680,6 +727,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		hosts:    hosts,
 		uses:     approvedUses,
 		policy:   approvedPolicy,
+		shown:    shownResolved,
 		purpose:  purpose,
 		rule:     rule,
 	}
@@ -732,6 +780,9 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		// credential answers with the secret marked for it.
 		s.ruleChanged(ctx, projectID)
 	}
+	if err := s.requestPolicyResolver(ctx, projectID)(req); err != nil {
+		return nil, err
+	}
 	return req, nil
 }
 
@@ -751,8 +802,10 @@ type approvalWrite struct {
 	hosts           []string
 	uses            []model.SecretUse
 	// policy is the policy approved, before its variables are resolved for
-	// the sandbox the grant is for.
+	// the sandbox the grant is for. shown is what the approver was shown
+	// they resolve to; the grant's must be the same, or nothing is written.
 	policy  *policy.Policy
+	shown   map[string]string
 	purpose string
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
@@ -831,6 +884,22 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.policy, a.purpose, ruleID)
 		if err != nil {
 			return err
+		}
+		// A person approves the policy as the form showed it (ADR 26-10-20-782
+		// §3), variables' values included: a value that resolves otherwise
+		// now, or resolves where the form said it matched nothing, is not
+		// what they approved. Only the variables the approved policy uses
+		// count: one an edit dropped was shown, and grants nothing.
+		if a.policy != nil {
+			shown := map[string]string{}
+			for _, variable := range a.policy.Variables() {
+				if value, ok := a.shown[variable]; ok {
+					shown[variable] = value
+				}
+			}
+			if !maps.Equal(grant.Policy.Resolved, shown) {
+				return errPolicyResolvedOtherwise
+			}
 		}
 		// A grant a rule minted with nobody at the keyboard is the doing of
 		// the person who made the rule: a rule is that person's approval given
