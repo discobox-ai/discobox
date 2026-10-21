@@ -18,7 +18,7 @@ import (
 // listOutput is what list --json prints: the protocol's list, and the facts
 // of the discobox they are granted to when the service serves them.
 type listOutput struct {
-	Credentials []agentcreds.Credential   `json:"credentials"`
+	Credentials []credentialOutput        `json:"credentials"`
 	Discobox    *agentcreds.FactsResponse `json:"discobox,omitempty"`
 }
 
@@ -39,7 +39,10 @@ func runList(ctx context.Context, args []string) int {
 	if credentials == nil {
 		credentials = []agentcreds.Credential{}
 	}
-	result := listOutput{Credentials: credentials}
+	result := listOutput{Credentials: make([]credentialOutput, 0, len(credentials))}
+	for _, credential := range credentials {
+		result.Credentials = append(result.Credentials, credentialOutput{Credential: credential, Policy: newPolicyOutput(credential.Policy)})
+	}
 	// What this discobox is working on leads, so a use or a policy is written
 	// against it. It is a header, not the answer: when it cannot be read —
 	// a service that predates the verb, or any other failure — the
@@ -67,6 +70,7 @@ func runList(ctx context.Context, args []string) int {
 			for _, use := range credential.Uses {
 				fmt.Fprintf(w, "  %s  %s %s\n", use.UseID, use.Description, useExpiry(use))
 			}
+			writePolicy(w, credential.Policy, true)
 		}
 	})
 	return exitOK
@@ -95,6 +99,9 @@ func useExpiry(use agentcreds.Use) string {
 //
 // Purpose is agentcreds.PurposeUse or agentcreds.PurposeDelegate; the flags
 // spell the second --delegate, and empty asks to use the credential.
+//
+// Statements and Definitions are a policy as an agent writes it, in
+// sentences; the request sends its structure (requestedPolicy).
 type requestInput struct {
 	ID              string                    `json:"id,omitempty"`
 	Name            string                    `json:"name"`
@@ -102,6 +109,8 @@ type requestInput struct {
 	Hosts           []string                  `json:"hosts,omitempty"`
 	Justification   string                    `json:"justification,omitempty"`
 	Uses            []agentcreds.RequestedUse `json:"uses"`
+	Statements      []string                  `json:"statements,omitempty"`
+	Definitions     map[string]string         `json:"definitions,omitempty"`
 	GrantTTLSeconds int64                     `json:"grantTTLSeconds,omitempty"`
 	Purpose         string                    `json:"purpose,omitempty"`
 	Wait            bool                      `json:"wait,omitempty"`
@@ -112,6 +121,8 @@ func runRequest(ctx context.Context, args []string) int {
 	var (
 		input      requestInput
 		uses       stringList
+		statements stringList
+		defines    = definitionList{}
 		hosts      hostList
 		structured bool
 		timeout    time.Duration
@@ -133,6 +144,8 @@ func runRequest(ctx context.Context, args []string) int {
 	flags.Var(&hosts, "hosts", "destination hosts it will be sent to, comma-separated or repeated")
 	flags.StringVar(&input.Justification, "why", "", "why you need it")
 	flags.Var(&uses, "use", "what you intend to use it for (repeatable)")
+	flags.Var(&statements, "statement", "a statement of the policy you ask for, as a sentence (repeatable)")
+	flags.Var(defines, "define", "WORD=DEFINITION for a word a statement uses that is not a default (repeatable)")
 	flags.DurationVar(&grantTTL, "grant-ttl", 0, "how long you ask to keep it (e.g. 30m, 4h); the approver may choose otherwise")
 	flags.BoolVar(&delegate, "delegate", false, "ask to delegate it to other sandboxes, not to use it yourself")
 	flags.BoolVar(&input.Wait, "wait", false, "block until the request is granted or denied")
@@ -174,6 +187,10 @@ func runRequest(ctx context.Context, args []string) int {
 			input.Uses = append(input.Uses, agentcreds.RequestedUse{Description: use})
 		}
 		input.Hosts = hosts
+		input.Statements = statements
+		if len(defines) > 0 {
+			input.Definitions = defines
+		}
 		// Refused here rather than rounded: a lifetime truncated to zero
 		// seconds would go out as no ask at all.
 		if grantTTL < 0 || grantTTL%time.Second != 0 {
@@ -195,6 +212,10 @@ func runRequest(ctx context.Context, args []string) int {
 	if input.GrantTTLSeconds < 0 || input.GrantTTLSeconds > agentcreds.MaxGrantTTLSeconds {
 		return usageError(out, "a lifetime to ask for runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds))
 	}
+	requested, err := requestedPolicy(input.Statements, input.Definitions)
+	if err != nil {
+		return usageError(out, "%v", err)
+	}
 
 	client := newClient()
 	status, err := client.Request(ctx, agentcreds.RequestBody{
@@ -206,6 +227,7 @@ func runRequest(ctx context.Context, args []string) int {
 		Uses:            input.Uses,
 		GrantTTLSeconds: input.GrantTTLSeconds,
 		Purpose:         input.Purpose,
+		Policy:          requested,
 	})
 	if err != nil {
 		return out.report(err)
@@ -233,7 +255,7 @@ func runRequest(ctx context.Context, args []string) int {
 }
 
 func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
-	out.emit(status, func(w io.Writer) {
+	out.emit(requestStatusOutput{RequestStatus: status, Policy: newPolicyOutput(status.Policy)}, func(w io.Writer) {
 		fmt.Fprintf(w, "%s %s\n", status.RequestID, status.Status)
 		for _, use := range status.Uses {
 			// Only list says a use never expires. A pool agent older than the
@@ -248,6 +270,7 @@ func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
 		if status.Purpose == agentcreds.PurposeDelegate && len(status.Uses) > 0 {
 			fmt.Fprintln(w, "  (delegation: these say what you may delegate the credential for; run takes none of them)")
 		}
+		writePolicy(w, status.Policy, status.Status == agentcreds.StatusGranted)
 	})
 	if status.Status == agentcreds.StatusPending {
 		out.pending("request", status.RequestID, false)

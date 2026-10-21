@@ -187,6 +187,27 @@ approved policy, with `resolved` holding what each variable — `$this`,
 `$primary.repo` and the rest — resolved to for the calling sandbox. `uses` are
 still what `get` takes; where Discobox judges what a use is spent on, a grant
 that carries a policy is judged against the policy, whichever use was named.
+The wire carries the policy's structure only. A client lets its caller write
+statements as sentences and shows them back as sentences — the `policy`
+package's `ParseStatements` and `FormatStatements`, whose grammar is
+`policy/DESIGN.md`'s — and should validate before it sends, so a malformed
+policy is refused where it was written; `discobox-access request --statement`
+does both.
+
+```json
+{
+  "id": "com.github.api",
+  "justification": "The task asks me to fix issue #43 as a pull request.",
+  "uses": [{ "description": "Fix issue #43 in acme/web as a pull request" }],
+  "policy": {
+    "statements": [
+      { "effect": "allow", "actions": ["push"], "resourceType": "branch", "name": "fix-43",
+        "scope": { "type": "repository", "name": "$primary.repo" }, "when": null, "unless": null }
+    ],
+    "definitions": { "push": "update a branch's commits", "branch": "a git branch", "repository": "a GitHub repository" }
+  }
+}
+```
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls. A project may hold approval
