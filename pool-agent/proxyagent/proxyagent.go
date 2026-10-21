@@ -434,36 +434,16 @@ func RemoveSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	return errors.Join(errs...)
 }
 
-// PruneOrphanedMaterial removes staged proxy material and client certificates
-// for sandboxes that are no longer live. liveSandboxIDs is the set of sandbox
-// IDs whose containers still exist; anything staged on disk but not in that set
-// is an orphan (for example, a container deleted out of band or while the pool
-// was down).
-//
-// minAge protects material that was just staged for an in-flight CreateSandbox:
-// an orphan is only removed when its youngest on-disk file predates minAge. Pass
-// 0 to prune regardless of age.
-func PruneOrphanedMaterial(root layout.Root, projectID, poolID string, liveSandboxIDs []string, minAge time.Duration) error {
-	orphans, scanErr := OrphanedSandboxIDs(root, projectID, poolID, liveSandboxIDs, minAge)
-	var errs []error
-	if scanErr != nil {
-		errs = append(errs, scanErr)
-	}
-	for _, id := range orphans {
-		if err := RemoveSandboxMaterial(root, projectID, poolID, id); err != nil {
-			errs = append(errs, err)
-		}
-		if err := RemoveSandboxPolicy(root, projectID, poolID, id); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
 // OrphanedSandboxIDs returns sandbox IDs with persisted pool-local material
 // but no live container. The material is the level-triggered record used to
 // recover removals whose Docker destroy event was missed while the pool was
 // down.
+//
+// minAge spares a record directory made more recently than that; pass 0 to
+// return every candidate. The directory is made once, by the first
+// EnsureSandboxMaterial, and a re-stage leaves its age alone, so it never
+// protects a sandbox whose container is being replaced: the caller reaps a
+// candidate only under the sandbox's lock, which a create holds.
 func OrphanedSandboxIDs(root layout.Root, projectID, poolID string, liveSandboxIDs []string, minAge time.Duration) ([]string, error) {
 	live := make(map[string]struct{}, len(liveSandboxIDs))
 	for _, id := range liveSandboxIDs {
@@ -503,9 +483,7 @@ func OrphanedSandboxIDs(root layout.Root, projectID, poolID string, liveSandboxI
 		if validateIDSegment("sandbox", id) != nil {
 			continue
 		}
-		// Protect material that is still being staged for an in-flight
-		// CreateSandbox. Only staged directories carry a grace window; a
-		// sentinel-only leftover (its material already gone) is always eligible.
+		// Spare a record made within minAge (see above).
 		if minAge > 0 {
 			if modTime, hasDir := materialModTime(root, projectID, poolID, id); hasDir && modTime.After(cutoff) {
 				continue
@@ -517,8 +495,8 @@ func OrphanedSandboxIDs(root layout.Root, projectID, poolID string, liveSandboxI
 	return orphans, errors.Join(errs...)
 }
 
-// materialModTime returns the modification time of a sandbox's staged material
-// directory, used to protect material still being staged for an in-flight create.
+// materialModTime returns the modification time of a sandbox's material record
+// directory, which OrphanedSandboxIDs's minAge is judged by.
 func materialModTime(root layout.Root, projectID, poolID, id string) (time.Time, bool) {
 	info, err := os.Stat(filepath.Join(PoolSandboxMaterialRoot(root, projectID, poolID), id))
 	if err != nil {
@@ -534,8 +512,7 @@ func materialModTime(root layout.Root, projectID, poolID, id string) (time.Time,
 //
 // The per-sandbox directory under PoolSandboxMaterialRoot is still made: it is
 // this pool's record of which sandboxes it has issued material for, which the
-// orphan reaper reads (OrphanedSandboxIDs), and its age is what protects a
-// create in flight from being reaped.
+// orphan reaper reads (OrphanedSandboxIDs).
 func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string) (*SandboxMaterial, error) {
 	if err := validateMaterialScope(projectID, poolID, sandboxID); err != nil {
 		return nil, err

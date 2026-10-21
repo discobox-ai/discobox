@@ -720,9 +720,20 @@ container is removed only once the new image is on the host, so a re-pin whose
 image cannot be obtained leaves the sandbox the container it had.
 
 Separately, persisted per-sandbox proxy material supplies a periodic
-level-triggered sweep that reclaims the material of sandboxes that no longer
-have a container here. That is only about reclaiming disk; sandbox loss travels
-on the state channel.
+level-triggered sweep that reclaims the proxy record of sandboxes that no longer
+have a container here: the material, and with it the sandbox's entries in the
+proxy's secrets file — sentinels, routes, egress and gateways. Sandbox loss
+travels on the state channel, not here. A replacement leaves its sandbox with no
+container between removing the old one and creating the new, after the create
+has registered its record, and the material record is as old as the sandbox: so
+a candidate is reaped only under the sandbox's power lock, which every create
+holds, and only when a look taken under it still finds no container
+(`reapSandboxMaterial`). A held lock is skipped until the next pass, never
+waited on. Every push that writes the record (`UpdateSandbox`) takes the same
+lock and writes nothing for a sandbox with no container, so no entry outlives
+the material that lets the sweep find it. A record lost anyway is delivered
+again by the control plane each time the sandbox comes up
+([sandboxes](../server/internal/resources/sandboxes/DESIGN.md#proxy-policy)).
 
 Sandbox durable trees (`pools/{pool_id}/sandboxes/{sandbox_id}`) are reaped
 against the control plane's answer, never against containers
