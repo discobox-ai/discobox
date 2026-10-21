@@ -348,27 +348,40 @@ tasks:
         ls -l "$dest"
         echo "staged {{.STAGE_WHAT}} artifacts in $dest; recreate a pool to boot them"
 
-  build:base-image:
-    desc: Build the shared Debian/Docker/systemd base both agent images build FROM
+  build:sandbox-base-image:
+    desc: Build the Docker driver's Debian sandbox base image both agent images build FROM
     vars:
-      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
     cmds:
-      - docker build -f base-image/Dockerfile -t {{.BASE_IMAGE}} base-image
+      - docker build -f server/providers/dockerworker/sandbox-image/Dockerfile {{if .DISTRO_IMAGE}}--build-arg DISTRO_IMAGE={{.DISTRO_IMAGE}} {{end}}-t {{.BASE_IMAGE}} server/providers/dockerworker/sandbox-image
+
+  build:ubuntu-platform:
+    desc: Build the platform on an Ubuntu 24.04 sandbox base (discobox-sandbox-agent:ubuntu), so the features' Ubuntu paths provision
+    # The images are Debian, so this is the one build that applies a
+    # feature's `ubuntu:` packages and its `when: {distro: [ubuntu]}` steps,
+    # which exe.dev's and boxd's Ubuntu machines take. Its own tags, so the
+    # watcher-owned :local ones do not move.
+    cmds:
+      - >-
+        go tool task build:sandbox-agent-image
+        DISTRO_IMAGE=public.ecr.aws/docker/library/ubuntu:24.04
+        BASE_IMAGE=discobox-sandbox-base:ubuntu
+        SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:ubuntu
 
   build:pool-agent-image:
     desc: Build the systemd Docker pool image
-    deps: [build:base-image]
+    deps: [build:sandbox-base-image]
     vars:
-      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
       POOL_AGENT_IMAGE: '{{.POOL_AGENT_IMAGE | default "discobox-pool-agent:local"}}'
     cmds:
       - docker build -f pool-agent/Dockerfile --build-arg BASE_IMAGE={{.BASE_IMAGE}} -t {{.POOL_AGENT_IMAGE}} .
 
   build:sandbox-agent-image:
-    desc: Build the Debian sandbox agent image
-    deps: [build:base-image]
+    desc: Build the sandbox agent image, FROM the Debian sandbox base image
+    deps: [build:sandbox-base-image]
     vars:
-      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
       SANDBOX_AGENT_IMAGE: '{{.SANDBOX_AGENT_IMAGE | default "discobox-sandbox-agent:local"}}'
     cmds:
       # The runnable stage by name: the Dockerfile's default target is the
@@ -890,7 +903,7 @@ tasks:
         # not to the Dockerfile, and the harness images are the ones built from
         # somewhere other than the repository root.
         for entry in \
-          base-image/Dockerfile:base-image \
+          server/providers/dockerworker/sandbox-image/Dockerfile:server/providers/dockerworker/sandbox-image \
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
           vm-image/Dockerfile:. \
@@ -1219,6 +1232,7 @@ tasks:
       # can pull — into a binary that otherwise looks fine.
       SERVER_LDFLAGS: >-
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
+        -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultSandboxBaseImage={{.REGISTRY}}/discobox-sandbox-base:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/harness.ImageRegistry={{.REGISTRY}}
         -X github.com/discobox-ai/discobox/harness.ImageTag={{.PIN_TAG}}{{end}}
@@ -1888,15 +1902,18 @@ tasks:
     cmds:
       # Strictly first, and not alongside them: both agent images are built FROM
       # this one, and the build cannot pull a tag that is not in the registry
-      # yet. It is pushed even though nothing ever runs it, because its children
-      # must resolve the same reference at build time for their layers to be the
-      # same blobs at pull time.
+      # yet. Its children resolve the same reference at build time, so their
+      # layers are the same blobs at pull time; the server names it as
+      # dockerworker.DefaultSandboxBaseImage (ADR 26-10-16-423 §10).
       - task: release:image
-        vars: { IMAGE: base, DOCKERFILE: base-image/Dockerfile, CONTEXT: base-image }
+        vars:
+          IMAGE: sandbox-base
+          DOCKERFILE: server/providers/dockerworker/sandbox-image/Dockerfile
+          CONTEXT: server/providers/dockerworker/sandbox-image
       - task: release:image
         vars:
           IMAGE: pool-agent
-          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
+          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-sandbox-base:{{.TAG}}
       - task: release:image
         vars:
           IMAGE: sandbox-agent
@@ -1906,7 +1923,7 @@ tasks:
           # platform's layer too, so its digest moves with every edit to it.
           TARGET: sandbox-agent
           BUILD_ARGS: >-
-            --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
+            --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-sandbox-base:{{.TAG}}
             --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
       # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
       # multi-architecture index like the images, since it carries the agent

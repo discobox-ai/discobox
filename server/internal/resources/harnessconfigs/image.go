@@ -234,14 +234,14 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 // it is a bundle at all, then what admit asks of the kind it is meant to be.
 //
 // A bundle is FROM scratch, so it carries no label it did not set, and every
-// runnable image carries the ReclaimLabel discobox-base sets: the sandbox
+// runnable image carries the ReclaimLabel discobox-sandbox-base sets: the sandbox
 // agent image, every harness twin, anything built FROM them. That is the one
 // label to tell them apart by, since the runnable images carry the manifest
 // labels too, to move their digests with it — which would admit the sandbox
 // agent image as the platform bundle, and have its layers saved and read.
 func admitBundle(labels map[string]string, admit func(labels map[string]string) error) error {
 	if _, runnable := labels[harness.ReclaimLabel]; runnable {
-		return fmt.Errorf("it carries %s, so it is a runnable image built FROM discobox-base, and a bundle is built FROM scratch", harness.ReclaimLabel)
+		return fmt.Errorf("it carries %s, so it is a runnable image built FROM discobox-sandbox-base, and a bundle is built FROM scratch", harness.ReclaimLabel)
 	}
 	return admit(labels)
 }

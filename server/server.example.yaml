@@ -212,6 +212,14 @@
 # Environment: DISCOBOX_DOCKER_POOL_IMAGE
 #dockerPoolImage:
 
+# The Docker driver's Debian sandbox base image, which the sandbox images
+# are built FROM and a pool preloads beside them, for a provider whose
+# own sandboxBaseImage setting names none. Defaults to the released image
+# for this build.
+# Example: dockerSandboxBaseImage: ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0
+# Environment: DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE
+#dockerSandboxBaseImage:
+
 # OCI image layout that VM guest images are fetched through, and that a
 # pool on this machine loads images from before pulling them. The CLI
 # names the one it stages a release's images into. Defaults to

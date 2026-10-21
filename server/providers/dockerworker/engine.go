@@ -69,6 +69,12 @@ type Config struct {
 	ControlPlaneURL string
 	// Image is the pool-agent container image.
 	Image string
+	// SandboxBaseImage is the sandbox base image the sandbox images are built
+	// FROM (ADR 26-10-16-423 §10). The pool host loads it with the images its
+	// sandboxes name when this machine has it staged. It does not shape the
+	// pool-agent container, so it is left out of configRevision: changing it
+	// must not recreate every pool.
+	SandboxBaseImage string `json:"-"`
 	// Network is an optional additional Docker network for pool-agent containers.
 	Network string
 	// AgentPort is the container port the pool agent listens on.
@@ -540,7 +546,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		}
 	}
 
-	if err := e.preloadImages(ctx, lease, pool.ID, images); err != nil {
+	if err := e.preloadImages(ctx, lease, pool.ID, append([]string{e.cfg.SandboxBaseImage}, images...)); err != nil {
 		return nil, false, err
 	}
 

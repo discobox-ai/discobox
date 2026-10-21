@@ -66,7 +66,7 @@ func RunVMLauncherIfInvoked() {
 // artifacts even on a machine configured for a different release.
 func PrintReleaseManifest(w io.Writer) error {
 	m := releasemanifest.Manifest{Format: 1, Version: version.String(), Images: releasemanifest.Images{
-		PoolAgent: dockerworker.DefaultPoolImage, SandboxAgent: sandbox.DefaultSandboxImageName,
+		PoolAgent: dockerworker.DefaultPoolImage, SandboxBase: dockerworker.DefaultSandboxBaseImage, SandboxAgent: sandbox.DefaultSandboxImageName,
 		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage, Harnesses: map[string]string{},
 	}, Bundles: releasemanifest.Bundles{Platform: harness.PlatformBundleRef(), Harnesses: map[string]string{}}}
 	for _, definition := range registry.Definitions() {

@@ -47,6 +47,8 @@ type Config struct {
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
 	// WorkerImage is the pool-agent container image launched inside each VM.
 	WorkerImage string `json:"workerImage,omitempty"`
+	// SandboxBaseImage is the sandbox base image the pool preloads.
+	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
 	// StorageDir is the root under which each pool gets a private VHD-backed
 	// /var/lib/docker at <StorageDir>/<poolID>. It defaults to a per-user
 	// location rather than to wslc's own default, which is RAM-backed tmpfs:
@@ -123,10 +125,11 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// wslc persists only /var/lib/docker, so pool state is placed inside it.
 		// The container still sees layout.ContainerRoot; only the daemon-side
 		// location moves, which is exactly what HostStateRoot expresses.
-		HostStateRoot:  GuestStateRoot,
-		Image:          dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
-		ImageRetention: serverDefaults.ImageRetention,
-		ImageCache:     serverDefaults.ImageCache,
+		HostStateRoot:    GuestStateRoot,
+		Image:            dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
+		SandboxBaseImage: dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
+		ImageRetention:   serverDefaults.ImageRetention,
+		ImageCache:       serverDefaults.ImageCache,
 		// The agent still listens on the guest's loopback; the control plane
 		// reaches it by opening a stream on the same relay session.
 		AgentPort: effectiveInt(cfg.AgentPort, defaultAgentPort),
@@ -203,6 +206,7 @@ func Definition() sandbox.ProviderDefinition {
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().MemoryMiB), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},

@@ -42,6 +42,7 @@ type Config struct {
 	Size             string                 `json:"size,omitempty"`
 	Image            string                 `json:"image,omitempty"`
 	WorkerImage      string                 `json:"workerImage,omitempty"`
+	SandboxBaseImage string                 `json:"sandboxBaseImage,omitempty"`
 	SSHKeys          poolruntime.StringList `json:"sshKeys,omitempty"`
 	SSHUser          string                 `json:"sshUser,omitempty"`
 	SSHPrivateKey    string                 `json:"sshPrivateKey,omitempty"`
@@ -124,6 +125,7 @@ func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) docker
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
 		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
+		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
@@ -176,6 +178,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},
 			{Key: "image", Label: "Droplet Image", Type: "string", Placeholder: defaultImage},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the Droplet's Docker daemon.", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
 			{Key: "vpcUuid", Label: "VPC UUID", Type: "string", Advanced: true},
 			{Key: "tags", Label: "Tags", Type: "string", Advanced: true},
 			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},

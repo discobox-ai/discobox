@@ -107,13 +107,15 @@ type Config struct {
 	// PasstPath and LibkrunPath name the two host dependencies this backend
 	// has. Both are resolved by the loader or PATH when unset, which is what
 	// installing the runtime environment is for.
-	PasstPath    string `json:"passtPath,omitempty"`
-	LibkrunPath  string `json:"libkrunPath,omitempty"`
-	WorkerImage  string `json:"workerImage,omitempty"`
-	VCPUs        int    `json:"vcpus,omitempty"`
-	MemoryMiB    int    `json:"memoryMiB,omitempty"`
-	DataDiskGiB  int64  `json:"dataDiskGiB,omitempty"`
-	CacheDiskGiB int64  `json:"cacheDiskGiB,omitempty"`
+	PasstPath   string `json:"passtPath,omitempty"`
+	LibkrunPath string `json:"libkrunPath,omitempty"`
+	WorkerImage string `json:"workerImage,omitempty"`
+	// SandboxBaseImage is the sandbox base image the pool preloads.
+	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
+	VCPUs            int    `json:"vcpus,omitempty"`
+	MemoryMiB        int    `json:"memoryMiB,omitempty"`
+	DataDiskGiB      int64  `json:"dataDiskGiB,omitempty"`
+	CacheDiskGiB     int64  `json:"cacheDiskGiB,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -214,6 +216,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
+		SandboxBaseImage:     dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:       serverDefaults.ImageRetention,
 		ImageCache:           serverDefaults.ImageCache,
 		Labels:               map[string]string{labelProviderType: ProviderType},
@@ -337,6 +340,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "kernelImageDir", Label: "Kernel Artifact Directory", Type: "string", Description: "Boot this kernel instead of the published image, and fail if it is missing.", Advanced: true},
 			{Key: "kernelImageLocalDir", Label: "Local Kernel Build", Type: "string", Placeholder: effectiveKernelLocalDir(""), Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
 			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU, up to libkrun's limit of 255. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},

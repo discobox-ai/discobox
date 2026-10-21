@@ -56,13 +56,13 @@ type ImageMetadata struct {
 	// tool it ships (like the Docker CLI) checks group membership rather
 	// than relying solely on the sudo access every sandbox user already has.
 	//
-	// A group here grants access only when its GID inside the image matches
-	// the one on the host object it guards — a sandbox container is
-	// privileged, so it sees the host's /var/run/docker.sock and /dev/kvm with
-	// the host's numeric owners. Both sides are the same Debian release
-	// installing the same packages, so the allocations agree; a group whose
-	// GID diverges is membership in a group that owns nothing, which fails as
-	// a permission error rather than as anything louder.
+	// A group here grants access to a host object only when its GID inside
+	// the image matches the one on that object — a sandbox container is
+	// privileged, so it sees the host's /dev/kvm with the host's numeric
+	// owners. Package installs allocate system GIDs in their own order, so the
+	// sandbox base image pins kvm's (sandbox-agent/REVIEW.md). A group whose
+	// GID diverges is membership in a group that owns nothing,
+	// which fails as a permission error rather than as anything louder.
 	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 	Features         Features `json:"features,omitzero"`
 	Harness          *Image   `json:"harness,omitempty"`

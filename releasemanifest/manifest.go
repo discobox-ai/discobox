@@ -33,7 +33,11 @@ type Manifest struct {
 // Images names each image by its runtime role. The staging list is derived
 // from these roles, never maintained separately from the harness references.
 type Images struct {
-	PoolAgent    string            `json:"poolAgent"`
+	PoolAgent string `json:"poolAgent"`
+	// SandboxBase is the Docker driver's sandbox base image, which the sandbox
+	// images are built FROM (ADR 26-10-16-423 §10). A release cut before it
+	// names none.
+	SandboxBase  string            `json:"sandboxBase,omitempty"`
 	SandboxAgent string            `json:"sandboxAgent"`
 	VM           string            `json:"vm"`
 	Kernel       string            `json:"kernel"`
@@ -85,6 +89,11 @@ func (m Manifest) Validate() error {
 	for role, ref := range map[string]string{"poolAgent": m.Images.PoolAgent, "sandboxAgent": m.Images.SandboxAgent, "vm": m.Images.VM, "kernel": m.Images.Kernel} {
 		if err := validateImage(ref); err != nil {
 			return fmt.Errorf("release manifest %s: %w", role, err)
+		}
+	}
+	if m.Images.SandboxBase != "" {
+		if err := validateImage(m.Images.SandboxBase); err != nil {
+			return fmt.Errorf("release manifest sandboxBase: %w", err)
 		}
 	}
 	if len(m.Images.Harnesses) == 0 {
@@ -172,7 +181,11 @@ func (i Images) References(hostOS, hostArch string) []string {
 			refs = append(refs, i.Kernel)
 		}
 	}
-	refs = append(refs, i.PoolAgent, i.SandboxAgent)
+	refs = append(refs, i.PoolAgent)
+	if i.SandboxBase != "" {
+		refs = append(refs, i.SandboxBase)
+	}
+	refs = append(refs, i.SandboxAgent)
 	refs = append(refs, bySlug(i.Harnesses)...)
 	seen := map[string]bool{}
 	out := make([]string, 0, len(refs))

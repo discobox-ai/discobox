@@ -331,7 +331,7 @@ func TestInspectBundleJudgesTheLabelsBeforeAnyLayer(t *testing.T) {
 }
 
 // A runnable image is told from a bundle by the reclaim label it inherits from
-// discobox-base, which no FROM scratch bundle carries: the sandbox agent image
+// discobox-sandbox-base, which no FROM scratch bundle carries: the sandbox agent image
 // carries the platform's layer label too, and would be admitted as the
 // platform bundle by that alone.
 func TestInspectBundleRefusesARunnableImageAsEitherBundle(t *testing.T) {

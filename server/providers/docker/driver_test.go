@@ -140,6 +140,7 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		"minWorkers":        "worker pool sizing does not change worker container config",
 		"maxWorkers":        "worker pool sizing does not change worker container config",
 		"minHealthyWorkers": "worker pool sizing does not change worker container config",
+		"sandboxBaseImage":  "the image sandboxes start from is preloaded, not part of the worker container",
 	}
 	mutators := map[string]func(*Config){
 		"controlPlaneUrl":  func(cfg *Config) { cfg.ControlPlaneURL = "http://other-control.example" },

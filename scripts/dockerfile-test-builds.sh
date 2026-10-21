@@ -78,8 +78,8 @@ build_dockerfile() {
     .claude/worktrees/*)
       return 0
       ;;
-    base-image/Dockerfile)
-      run_task "$dockerfile" build:base-image
+    server/providers/dockerworker/sandbox-image/Dockerfile)
+      run_task "$dockerfile" build:sandbox-base-image
       ;;
     pool-agent/Dockerfile)
       run_task "$dockerfile" build:pool-agent-image

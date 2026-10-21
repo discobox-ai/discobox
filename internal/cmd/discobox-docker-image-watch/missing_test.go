@@ -10,13 +10,13 @@ import (
 // reconcile failed against it.
 func TestMissingImageSpecsRebuildsWhatLeftTheDaemon(t *testing.T) {
 	specs := []imageSpec{
-		{name: baseSpecName, baseImage: "discobox-base:local"},
+		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
 		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},
 	}
 	present := map[string]struct{}{
-		"discobox-base:local":                {},
+		"discobox-sandbox-base:local":        {},
 		"discobox-pool-agent:local":          {},
 		"discobox-sandbox-agent:local":       {},
 		"discobox-harness-codex-image:local": {},
@@ -38,14 +38,14 @@ func TestMissingImageSpecsRebuildsWhatLeftTheDaemon(t *testing.T) {
 // is how the manifest ends up describing something unbuildable.
 func TestMissingSandboxAgentRebuildsEveryImageLayeredOnIt(t *testing.T) {
 	specs := []imageSpec{
-		{name: baseSpecName, baseImage: "discobox-base:local"},
+		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
 		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},
 		{name: "harness-claude-code-image", baseImage: "discobox-harness-claude-code-image:local", parent: sandboxAgentSpecName},
 	}
 	present := map[string]struct{}{
-		"discobox-base:local":                      {},
+		"discobox-sandbox-base:local":              {},
 		"discobox-pool-agent:local":                {},
 		"discobox-harness-codex-image:local":       {},
 		"discobox-harness-claude-code-image:local": {},
@@ -68,7 +68,7 @@ func TestMissingSandboxAgentRebuildsEveryImageLayeredOnIt(t *testing.T) {
 // which a single non-repeated sweep would miss.
 func TestMissingSharedBaseRebuildsEveryImageBuiltOnIt(t *testing.T) {
 	specs := []imageSpec{
-		{name: baseSpecName, baseImage: "discobox-base:local"},
+		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
 		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},

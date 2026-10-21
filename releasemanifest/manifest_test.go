@@ -32,12 +32,37 @@ func TestReleaseInventoryComesFromRoles(t *testing.T) {
 	}
 }
 
+// v0.8.0 was cut before the Docker driver owned a sandbox base image, so its
+// manifest names none and stages nothing for one; a manifest that names one
+// stages it beside the pool agent.
+func TestSandboxBaseIsStagedWhenTheReleaseNamesOne(t *testing.T) {
+	m, err := Read("examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(m.Images.References("linux", "amd64"), "") {
+		t.Fatal("a release with no sandbox base stages an empty reference")
+	}
+	m.Images.SandboxBase = "ghcr.io/discobox-ai/discobox-sandbox-base:v0.9.0"
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(data); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(m.Images.References("darwin", "arm64"), m.Images.SandboxBase) {
+		t.Fatal("the sandbox base is not staged")
+	}
+}
+
 func TestRejectIncompleteAndAmbiguousManifests(t *testing.T) {
 	for _, mutate := range []func(*Manifest){
 		func(m *Manifest) { m.Format = 2 },
 		func(m *Manifest) { m.Images.PoolAgent = "" },
 		func(m *Manifest) { m.Images.Harnesses["shell"] = "shell:local" },
 		func(m *Manifest) { m.Images.SandboxAgent = "sandbox:latest" },
+		func(m *Manifest) { m.Images.SandboxBase = "sandbox-base:local" },
 		func(m *Manifest) { m.Images.Harnesses = nil },
 	} {
 		m, err := Read("examples/v0.8.0.json")
