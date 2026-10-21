@@ -684,10 +684,11 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
   needs `--hosts api.github.com`: the well-known credential's default hosts
   include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
 - A grant that carries a policy: `discobox-access request` cannot send one,
-  so post the request from the box (`curl -X POST -H "Authorization: Bearer
-  $DISCOBOX_CREDENTIALS_TOKEN" --data @req.json
-  "$DISCOBOX_CREDENTIALS_URL/v1/credentials/requests"`, the body
-  `discobox-access request --json` takes plus a `policy` in its JSON shape),
+  so write the body `discobox-access request --json` takes, plus a `policy`
+  in its JSON shape, to `/tmp/req.json` in the box (`d shell <box> -- sh -c
+  'cat > /tmp/req.json' < req.json`) and post it from there (`curl -X POST
+  -H "Authorization: Bearer $DISCOBOX_CREDENTIALS_TOKEN" --data
+  @/tmp/req.json "$DISCOBOX_CREDENTIALS_URL/v1/credentials/requests"`),
   and approve it with `secret request approve <id> --secret-id N
   --policy-as-asked`. Create the box with `-C
   https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
