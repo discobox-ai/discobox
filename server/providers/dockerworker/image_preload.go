@@ -29,6 +29,9 @@ func (e *Engine) preloadImages(ctx context.Context, lease *DockerClientLease, po
 		return nil
 	}
 	for _, image := range images {
+		if image == "" {
+			continue
+		}
 		if _, err := lease.Client.ImageInspect(ctx, image); err == nil {
 			continue
 		} else if !cerrdefs.IsNotFound(err) {

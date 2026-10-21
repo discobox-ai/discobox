@@ -41,16 +41,17 @@ func DefaultAgentPort() int { return defaultAgentPort }
 type Config struct {
 	poolruntime.PoolPolicy
 
-	ControlPlaneURL string                   `json:"controlPlaneUrl,omitempty"`
-	Host            string                   `json:"host,omitempty"`
-	Image           string                   `json:"image,omitempty"`
-	Network         string                   `json:"network,omitempty"`
-	AgentPort       int                      `json:"agentPort,omitempty"`
-	Privileged      *bool                    `json:"privileged,omitempty"`
-	CgroupNSMode    string                   `json:"cgroupNsMode,omitempty"`
-	Command         poolruntime.StringList   `json:"command,omitempty"`
-	DockerSocket    string                   `json:"bindDockerSocket,omitempty"`
-	HostMounts      []dockerworker.HostMount `json:"hostMounts,omitempty"`
+	ControlPlaneURL  string                   `json:"controlPlaneUrl,omitempty"`
+	Host             string                   `json:"host,omitempty"`
+	Image            string                   `json:"image,omitempty"`
+	SandboxBaseImage string                   `json:"sandboxBaseImage,omitempty"`
+	Network          string                   `json:"network,omitempty"`
+	AgentPort        int                      `json:"agentPort,omitempty"`
+	Privileged       *bool                    `json:"privileged,omitempty"`
+	CgroupNSMode     string                   `json:"cgroupNsMode,omitempty"`
+	Command          poolruntime.StringList   `json:"command,omitempty"`
+	DockerSocket     string                   `json:"bindDockerSocket,omitempty"`
+	HostMounts       []dockerworker.HostMount `json:"hostMounts,omitempty"`
 }
 
 // HostMount aliases the engine host mount type for provider configuration.
@@ -123,6 +124,7 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serve
 	engineCfg := dockerworker.Config{
 		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
 		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults),
+		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
 		Network:             cfg.Network,
@@ -242,6 +244,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},

@@ -77,7 +77,7 @@ true of it, and true *by rule* rather than by slug:
   are read only once the labels admit the bundle (`InspectBundle`'s
   `admit`): a harness bundle once its manifest composes, the platform once it
   carries its layer — and, first, either one only if it carries no
-  `ReclaimLabel`, which every runnable image inherits from `discobox-base`
+  `ReclaimLabel`, which every runnable image inherits from `discobox-sandbox-base`
   and no `FROM scratch` bundle has. So a runnable image of several GB named
   as either bundle is refused for its labels and never saved.
 - **The runnable image's digest moves with the manifest.** It is what a

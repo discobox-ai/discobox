@@ -73,8 +73,9 @@ server onto them. Never `docker build` an image by hand to get ahead of the
 watcher — the server would not use it.
 
 When the change lives in an image, check whether its inputs changed — its own
-and every image it is built `FROM`. There are two chains, both from
-base-image: base-image → sandbox-agent → harness, and base-image → pool-agent;
+and every image it is built `FROM`. There are two chains, both from the
+sandbox base image (`server/providers/dockerworker/sandbox-image`):
+sandbox-base → sandbox-agent → harness, and sandbox-base → pool-agent;
 each agent image also bakes in binaries from its own module and the root
 packages. `git diff --stat <from> <to> --` over the chain the image is on. If
 none changed, the image is identical and there is nothing to wait for. If any

@@ -11,6 +11,6 @@
   manifest label.** The runnable images carry the manifest labels too (the
   note above), so a check that a bundle carries `10-platform` or
   `io.discobox.image.v1` admits the sandbox agent image or a twin as one. Only
-  a runnable image inherits `ReclaimLabel` from `discobox-base`; a bundle is
+  a runnable image inherits `ReclaimLabel` from `discobox-sandbox-base`; a bundle is
   `FROM scratch` and carries none. The shared label has misled a check
   twice.

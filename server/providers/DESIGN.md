@@ -217,10 +217,31 @@ VM resolvers bypass local guest builds in this mode. The manifest's image roles
 also supply startup cache staging; see
 [release manifests](../../releasemanifest/DESIGN.md).
 
+## Sandbox Base Image
+
+The Docker driver owns its sandbox base image
+(`dockerworker/sandbox-image/Dockerfile`, ADR 26-10-16-423 §10): Debian 13,
+systemd, Docker socket-activated, a uid-1000 `discobox` login user and the
+tools exe.dev's and boxd's images share. Those two are Ubuntu; the base is
+Debian because Debian's mirrors are the faster to build from, and the
+platform's features provision onto either. The pool-agent and sandbox-agent
+images are built `FROM` it, so a sandbox container runs it with the platform's
+features provisioned on top, and a pool host pulls its layers once.
+
+It is released and staged under its own role, and resolves as the pool image
+does — the release manifest's `Images.SandboxBase`, then a provider's
+`sandboxBaseImage` setting, the server's `dockerSandboxBaseImage`, and
+`dockerworker.DefaultSandboxBaseImage`, which a release overwrites at link
+time (`EffectiveSandboxBaseImage`). Every provider that runs the pool agent in
+Docker offers the setting. What the resolved image decides is what the pool
+preloads beside the images its sandboxes name; a sandbox's own image is still
+the sandbox-agent or harness image built `FROM` the base. It is not part of the
+pool-agent container, so it is outside `configRevision`.
+
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of
-content-addressed pool, sandbox-base, and harness images. When its explicit
+content-addressed sandbox base, pool, sandbox-agent, and harness images. When its explicit
 environment flag is enabled, server composition gives one shared
 `dockerworker.DevelopmentImageSynchronizer` to every engine.
 
@@ -234,6 +255,15 @@ compressed multi-image archive from the developer's Docker daemon into the
 driver-provided Docker client. Calls for the same daemon ID and manifest
 coalesce. Destination inspection is the durable truth; no synchronized-host
 state is persisted.
+
+An image ID belongs to its daemon's image store — the config's digest in the
+classic store, the index's or manifest's in containerd's — so the same image has
+two IDs when the developer's daemon and the destination's keep different
+stores (a Linux host on Docker 29's containerd store, a remote host or a VM
+guest from before `vm-image` moved to containerd's on the classic one). The manifest's ID is the developer's daemon's. A destination image
+under the manifest's reference with another ID is compared with the source's:
+by ID when the stores match, and by its config and its layers' diff IDs, which
+neither store changes, when they do not. The same check verifies a load.
 
 This is engine behavior, not a driver capability. Local Docker therefore
 usually performs no transfer, while libkrun, DigitalOcean, and exec drivers
@@ -315,8 +345,8 @@ provider pointed at a remote host and an exec pool whose endpoint is an
 A load must arrive under the registry digest a sandbox is pinned to (ADR 0016
 §6), and the two image stores get there differently. The containerd store
 imports the archive's `index.json` as the registry's own index, so the digest
-holds as the image lands. The classic store — Docker 26.1.5 in the guest image
-— records no digest for a load, so the engine follows it with a pull of
+holds as the image lands. The classic store — a remote host's, or a VM guest's
+from before `vm-image` moved to containerd's — records no digest for a load, so the engine follows it with a pull of
 `repository@<index digest>`, which downloads no layer because the config is
 already present and records the digest. The engine then checks the daemon
 reports that digest; any failure removes what the load left and falls through
@@ -381,8 +411,8 @@ container environment rendered by `dockerworker.BootEnv`.
 pool: a privileged container in the host's PID, IPC, network, UTS, and cgroup
 namespaces, running the pool image, with the host filesystem bind-mounted at
 `/host` and the host's Docker socket in place. (The pool image carries the
-Docker *client* for this: Debian's `docker.io` ships only the daemon, and a
-console with the daemon's socket and no client can inspect it only by hand.) It exists to debug the backends
+Docker *client* for this, from the sandbox base image's Docker: a console
+with the daemon's socket and no client can inspect it only by hand.) It exists to debug the backends
 themselves — a WSL or macOS VM that will not bring Docker up, an agent that
 never registers — which is why it is engine-owned and reached through
 `Driver.AcquireDockerClient` rather than through the pool agent: the agent is

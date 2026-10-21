@@ -380,15 +380,16 @@ winget resolves a portable package's command from the file name whenever it
 cannot create a symlink, so `release:windows-zip` repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
-Container images form one chain, so that a pool host pulling all of them pulls
-the shared surface once (ADR 0068). The bundles are on no chain: each is
-`FROM scratch`, and a harness's runnable image is built from the sandbox
-agent's with its bundle copied in
-([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423 §2):
+Container images form one chain from the Docker driver's sandbox base image,
+so that a pool host pulling all of them pulls the shared surface once
+(ADR 26-10-16-423 §10). The bundles are on no chain: each is `FROM scratch`,
+and a harness's runnable image is built from the sandbox agent's with its
+bundle copied in ([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423
+§2):
 
 ```mermaid
 flowchart TD
-    base["base-image/<br/>discobox-base<br/>Debian, Docker, systemd unit mask"]
+    base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian 13, Docker, systemd unit mask"]
     pool["pool-agent/<br/>discobox-pool-agent"]
     sandbox["sandbox-agent/<br/>discobox-sandbox-agent"]
     image["harness/&lt;type&gt;/<br/>discobox-harness-*-image"]
@@ -401,10 +402,12 @@ flowchart TD
     bundle -.->|COPY --from| image
 ```
 
-`discobox-base` is released like the rest even though nothing runs it: its
-children must resolve one already-built reference for their layers to be the
-same blobs. `release:images` builds them in that order, and the development
-image watcher orders its own builds from the same parent links. After any
+`discobox-sandbox-base` is the box a Docker sandbox is before the platform is
+provisioned onto it, and its children must resolve one already-built
+reference for their layers to be the same blobs (see
+[providers](server/providers/DESIGN.md#sandbox-base-image)).
+`release:images` builds them in that order, and the development image watcher
+orders its own builds from the same parent links. After any
 partial rebuild, the watcher derives both the complete development manifest and
 every image setting in `.env` from one inspection of the full local image set;
 the two publications must never name different pool or sandbox images. Failed

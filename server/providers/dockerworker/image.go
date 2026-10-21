@@ -22,6 +22,15 @@ import (
 // (ADR 0096 §5, configuration file).
 var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 
+// DefaultSandboxBaseImage is the Docker driver's sandbox base image: Debian,
+// systemd, Docker and a login user, built from sandbox-image/Dockerfile, which
+// the sandbox images are built FROM and a pool preloads (ADR 26-10-16-423
+// §10). It is
+// resolved as DefaultPoolImage is — a release overwrites it at link time, a
+// provider's `sandboxBaseImage` setting and the server's
+// `dockerSandboxBaseImage` override it — and is a var for the same reason.
+var DefaultSandboxBaseImage = "ghcr.io/discobox-ai/discobox-sandbox-base:latest"
+
 // ServerDefaults are the provider settings that belong to the server rather
 // than to any one provider instance (ADR 0096 §5, configuration file). They arrive as a value
 // because they are configuration, and configuration is the server's to hold —
@@ -33,6 +42,9 @@ type ServerDefaults struct {
 	// PoolImage overrides the pool-agent image, for a provider whose own
 	// configuration names none.
 	PoolImage string
+	// SandboxBaseImage overrides the sandbox base image, for a provider whose
+	// own configuration names none.
+	SandboxBaseImage string
 	// ImageRetention is how long an unused Discobox image is kept. Zero means
 	// unconfigured, which is not the same as zero: see Config.ImageRetention.
 	ImageRetention time.Duration
@@ -60,6 +72,23 @@ func EffectivePoolImage(image string, defaults ServerDefaults) string {
 		return override
 	}
 	return DefaultPoolImage
+}
+
+// EffectiveSandboxBaseImage resolves the sandbox base image as
+// EffectivePoolImage resolves the pool-agent image: the release manifest when
+// one is selected, then the provider's configuration, the server-wide
+// override, and the compiled-in default.
+func EffectiveSandboxBaseImage(image string, defaults ServerDefaults) string {
+	if defaults.Release != nil {
+		return defaults.Release.Images.SandboxBase
+	}
+	if image = strings.TrimSpace(image); image != "" {
+		return image
+	}
+	if override := strings.TrimSpace(defaults.SandboxBaseImage); override != "" {
+		return override
+	}
+	return DefaultSandboxBaseImage
 }
 
 // PoolImageSource reports where the effective pool image came from.

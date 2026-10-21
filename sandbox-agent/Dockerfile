@@ -1,7 +1,7 @@
 # Declared before the first FROM so it is a global build argument the runtime
 # stage's FROM can expand; declared alongside that FROM it would belong to the
 # builder stage and resolve to nothing.
-ARG BASE_IMAGE=discobox-base:local
+ARG BASE_IMAGE=discobox-sandbox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
@@ -157,9 +157,10 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C cli build -trimpath -ldflags="-s -w" -o /out/discobox ./cmd/discobox
 
-# Debian, Docker, and the trimmed systemd unit set come from the shared base
-# image, which the pool image is also built FROM so a pool host that pulls both
-# pulls those layers once. See base-image/Dockerfile.
+# Debian, Docker, and the trimmed systemd unit set come from the Docker
+# driver's sandbox base image (ADR 26-10-16-423 §10), which the pool image is
+# also built FROM so a pool host that pulls both pulls those layers once. See
+# server/providers/dockerworker/sandbox-image/Dockerfile.
 #
 # Everything else is the platform's features (ADR 26-10-16-423 §§3–4):
 # sandbox-agent/features/<name>, copied into the platform tree a box

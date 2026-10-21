@@ -40,14 +40,6 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	gotEnvKeys := map[string]bool{}
 	for _, spec := range specs {
 		gotNames = append(gotNames, spec.name)
-		// The shared base is the one image nothing runs, so it is also the one
-		// image with no reference for the server to resolve.
-		if spec.intermediate {
-			if spec.envImageKey != "" {
-				t.Fatalf("%s is an intermediate but publishes %s", spec.name, spec.envImageKey)
-			}
-			continue
-		}
 		if spec.envImageKey == "" {
 			t.Fatalf("%s does not update an image reference in .env", spec.name)
 		}
@@ -157,8 +149,8 @@ func TestDockerImageSpecsBuildThePlatformBundleFromItsOwnStage(t *testing.T) {
 			t.Errorf("platform bundle watcher does not rebuild when %s changes", rel)
 		}
 	}
-	if contains(platform.files, filepath.Join(repoRoot, "base-image", "Dockerfile")) {
-		t.Error("platform bundle is FROM scratch but rebuilds when the shared base changes")
+	if contains(platform.files, filepath.Join(repoRoot, "server", "providers", "dockerworker", "sandbox-image", "Dockerfile")) {
+		t.Error("platform bundle is FROM scratch but rebuilds when the sandbox base image changes")
 	}
 	sandbox, _ := specNamed(specs, sandboxAgentSpecName)
 	if !strings.Contains(strings.Join(sandbox.buildArgs, " "), "--target sandbox-agent") || sandbox.target != "sandbox-agent" {
@@ -201,7 +193,7 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 
 func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *testing.T) {
 	specs := []imageSpec{
-		{name: baseSpecName, intermediate: true},
+		{name: baseSpecName, devPrefix: "m-base:dev-", envImageKey: "BASE"},
 		{name: "sandbox-agent", devPrefix: "z-sandbox:dev-", envImageKey: "SANDBOX", envDigestKey: "SANDBOX_DIGEST"},
 		{name: "platform", devPrefix: "platform:dev-", envImageKey: "PLATFORM", bundle: true},
 		{name: "pool-agent", devPrefix: "a-pool:dev-", envImageKey: "POOL", envDigestKey: "POOL_DIGEST"},
@@ -212,6 +204,7 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 	manifest, err := devimage.NewManifest([]devimage.Image{
 		{Reference: "z-sandbox:dev-new", ID: "sha256:sandbox-new"},
 		{Reference: "a-pool:dev-new", ID: "sha256:pool-new"},
+		{Reference: "m-base:dev-new", ID: "sha256:base-new"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +218,7 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 		"POOL": "a-pool:dev-new", "POOL_DIGEST": "sha256:pool-new",
 		"SANDBOX": "z-sandbox:dev-new", "SANDBOX_DIGEST": "sha256:sandbox-new",
 		"PLATFORM":       "platform:dev-new",
+		"BASE":           "m-base:dev-new",
 		devimage.SyncEnv: "true", devimage.ManifestEnv: "/tmp/manifest.json",
 	}
 	if !reflect.DeepEqual(values, want) {
@@ -508,20 +502,20 @@ func TestRenderBuildArgsPinsTheResolvedParentReference(t *testing.T) {
 		parent:    baseSpecName,
 		parentArg: "BASE_IMAGE",
 		buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile",
-			"--build-arg", "BASE_IMAGE=discobox-base:local",
+			"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
 			"-t", "discobox-sandbox-agent:local", "."},
 	}
-	got, err := renderBuildArgs(spec, "discobox-base:dev-0123456789ab")
+	got, err := renderBuildArgs(spec, "discobox-sandbox-base:dev-0123456789ab")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(got, "BASE_IMAGE=discobox-base:dev-0123456789ab") {
+	if !contains(got, "BASE_IMAGE=discobox-sandbox-base:dev-0123456789ab") {
 		t.Fatalf("parent reference not pinned: %#v", got)
 	}
-	if contains(got, "BASE_IMAGE=discobox-base:local") {
+	if contains(got, "BASE_IMAGE=discobox-sandbox-base:local") {
 		t.Fatalf("mutable base tag survived: %#v", got)
 	}
-	if contains(spec.buildArgs, "BASE_IMAGE=discobox-base:dev-0123456789ab") {
+	if contains(spec.buildArgs, "BASE_IMAGE=discobox-sandbox-base:dev-0123456789ab") {
 		t.Fatal("renderBuildArgs mutated the spec's own argv")
 	}
 }
@@ -548,7 +542,7 @@ func TestRenderBuildArgsLeavesTheDefaultWhenThereIsNoParentToPin(t *testing.T) {
 // The dev tag a child's FROM pins has to exist locally, not merely be derivable:
 // docker reads a tag it cannot find as a Docker Hub repository and goes off to
 // pull it, so a base rebuilt by anything other than this watcher — task
-// build:base-image, the Dockerfile hook — fails the child's build with a
+// build:sandbox-base-image, the Dockerfile hook — fails the child's build with a
 // registry error rather than a missing-image one.
 func TestResolveParentImageTagsTheBaseItResolves(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -556,16 +550,16 @@ func TestResolveParentImageTagsTheBaseItResolves(t *testing.T) {
 	}
 	calls := filepath.Join(t.TempDir(), "calls")
 	repoRoot := fakeDockerPath(t, "sha256:c2afa1b19563247d43a4b02802287dc907cd62e04039f0652488f45a7d07b9c9", calls)
-	specs := []imageSpec{{name: "base", baseImage: "discobox-base:local", devPrefix: "discobox-base:dev-"}}
+	specs := []imageSpec{{name: baseSpecName, baseImage: "discobox-sandbox-base:local", devPrefix: "discobox-sandbox-base:dev-"}}
 
-	got, err := resolveParentImage(t.Context(), repoRoot, specs, "base")
+	got, err := resolveParentImage(t.Context(), repoRoot, specs, baseSpecName)
 	if err != nil {
 		t.Fatalf("resolve parent image: %v", err)
 	}
-	if want := "discobox-base:dev-c2afa1b19563"; got != want {
+	if want := "discobox-sandbox-base:dev-c2afa1b19563"; got != want {
 		t.Fatalf("resolved = %q, want %q", got, want)
 	}
-	if want := "tag discobox-base:local discobox-base:dev-c2afa1b19563"; !strings.Contains(readFile(t, calls), want) {
+	if want := "tag discobox-sandbox-base:local discobox-sandbox-base:dev-c2afa1b19563"; !strings.Contains(readFile(t, calls), want) {
 		t.Fatalf("docker calls = %q, want the resolved tag applied", readFile(t, calls))
 	}
 }

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted. It supersedes:
   [0068](0068-container-images-share-one-base-image.md), whose Debian 13 and
-  Docker CE base becomes the Docker driver's Ubuntu sandbox image (§10);
+  Docker CE base becomes the Docker driver's sandbox base image (§10);
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)
   §1's required base layer;
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) §6's OCI
@@ -159,7 +159,8 @@ discobox.ai/provision/v1`) and the files it names:
 
 - The agent provides the step kinds `file`, `systemd` (enable, mask,
   drop-in), `group`, `env` (profile and manifest env), `download` (a URL and a
-  sha256 per architecture), and `packages` (one list per distribution family),
+  sha256 per architecture), and `packages` (a list per distribution, the box's
+  own os-release `ID`'s before an `ID_LIKE`'s),
   so it can do them correctly and record what it did. Anything else is `run`.
 - **A script is always a file**, named by `run` or `check`, never a string in
   the YAML: shellcheck, editors and `launchertest` keep working on it, and the
@@ -404,21 +405,27 @@ sandbox container starts from. It is resolved as the pool-agent image is:
 
 - **It is like the providers' images, and holds no special status.** Modelled
   on `exeuntu`, it holds what exe.dev and boxd have in common, not what either
-  alone has: Ubuntu 24.04; systemd; a uid-1000 login user named `discobox`
-  with passwordless sudo, in `docker`, lingering; Ubuntu's `docker.io`, buildx
-  and compose-v2, socket-activated; git, gh, build-essential, python3, pipx,
+  alone has: systemd; a uid-1000 login user named `discobox`
+  with passwordless sudo, in `docker`, lingering; Docker, buildx
+  and Compose v2, socket-activated; git, gh, build-essential, python3, pipx,
   uv, Go, curl, jq and ripgrep; exeuntu's masks (udev, getty, ssh,
   modules-load, remount-fs, sysusers, random-seed, apt-daily,
   unattended-upgrades); an empty `machine-id` and no host keys. Node, a
   browser, Nix, brew and coding agents stay out, so the platform cannot come
   to depend on them unnoticed.
+- **It is Debian 13, where those images are Ubuntu 24.04.** *(Amended before
+  anything shipped against it: this section first said Ubuntu 24.04 and
+  Ubuntu's `docker.io`.)* Debian's mirrors are the faster to build from, and
+  the features provision onto either distribution, so the platform still
+  meets Ubuntu on every exe.dev and boxd machine. A feature that differs
+  between them says so per distribution (a `packages` list per os-release ID,
+  a step's `when`). Docker is Docker's own build, as 0068's was.
 - **Every driver that runs the pool agent in Docker uses it** — local Docker,
   DigitalOcean, execvm, and the pool VMs of libkrun, vz and wslc, whose
   sandboxes are containers in the VM's daemon. `vm-image`, the pool VM's own
   guest, is not this image and is unchanged.
 - **The pool-agent image builds `FROM` it**, keeping 0068's shared layers: the
-  pool host pulls both. The pool agent therefore moves to Ubuntu 24.04 and
-  Ubuntu's `docker.io` with it.
+  pool host pulls both.
 - **The settings that named images go.** `defaultSandboxImage` and
   `harnessImages` in `server.yaml`, and the release manifest's
   `Images.SandboxAgent` and `Images.Harnesses`, become the platform and
@@ -600,8 +607,12 @@ by, is the client's in every case.
 - **A sandbox image owned by the platform.** The image is the provider layer;
   exe.dev and boxd bring their own, and the Docker driver is the provider that
   brings ours.
-- **Debian 13 for the sandbox base image.** Neither target provider runs it; a
-  self-hosted box would provision differently from theirs.
+- **Ubuntu 24.04 for the sandbox base image**, as §10 first said, so a
+  self-hosted box would provision exactly as exe.dev's and boxd's do.
+  *(Amended: this entry first rejected Debian 13 on that ground.)* Debian's
+  mirrors build the images faster, and the features already say per
+  distribution where Debian and Ubuntu differ, so the difference is one each
+  feature states rather than one the base image hides.
 - **Load development bundles into each Docker daemon**, as images are today.
   A bundle is never run, so a daemon's image store is the wrong place for it,
   and machine providers have no daemon to load into.

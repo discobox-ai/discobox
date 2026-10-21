@@ -15,6 +15,23 @@
 
 ## Provisioning
 
+- **`kvm`'s GID is pinned in the sandbox base image; keep it there.** A
+  sandbox is privileged and sees the host's `/dev/kvm` with the host's numeric
+  owner, so `image.json`'s `kvm` in `additionalGroups` grants access only where
+  the image's GID matches the host's. Package installs allocate system GIDs
+  in their own order (on Ubuntu 24.04 the same image's `kvm` came out 995), so
+  the base image creates it at 992 before any package runs: the GID earlier
+  Debian 13 images gave it, and the one the Pop!_OS host these images were
+  measured on uses. A change to the base image's distribution or packages, or
+  a new group that guards a host device, has to check the GID the same way,
+  not assume it.
+
+- **A feature that differs on Ubuntu is checked on Ubuntu.** The images are
+  Debian 13, so nothing in their build provisions a feature's `ubuntu:` list
+  or a step selected by `when: {distro: [ubuntu]}` — the paths exe.dev's and
+  boxd's Ubuntu 24.04 machines take. `task build:ubuntu-platform` builds the
+  platform on an Ubuntu 24.04 base; see those steps apply there.
+
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has
   and the source does not name, which is what keeps a provider's settings; it

@@ -144,6 +144,16 @@
         "null"
       ]
     },
+    "dockerSandboxBaseImage": {
+      "description": "The Docker driver's Debian sandbox base image, which the sandbox images are built FROM and a pool preloads beside them, for a provider whose own sandboxBaseImage setting names none. Defaults to the released image for this build. Environment: DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE (takes precedence over this file).",
+      "examples": [
+        "ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "encryptionKey": {
       "description": "Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
       "type": [

@@ -4,9 +4,6 @@
 
 - Root module `github.com/discobox-ai/discobox`: stable contracts/API module.
   `go.work` joins it and the nested modules below.
-- `base-image`: the shared Debian/Docker/systemd image the pool-agent and
-  sandbox-agent images are built FROM (and, through the sandbox-agent image,
-  every harness image).
 - `vm-image`: the pool VM guest image every VM-backed provider boots, plus the
   libkrunfw-patched kernel libkrun alone needs. Both are released on their own
   lines and pulled from a registry at run time.
@@ -28,6 +25,9 @@
 - `server/internal/database`: database setup and resolution.
 - `server/internal/auth`: API authentication and authorization; `auth/sandbox` issues sandbox access tokens, `auth/poolagent` signs control-plane requests to pool agents.
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
+  `server/providers/dockerworker/sandbox-image` is the Docker driver's Debian
+  sandbox base image the pool-agent and sandbox-agent images are built FROM
+  (and, through the sandbox-agent image, every harness image).
 - `pool-agent`: nested Go module for the pool agent implementation.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.

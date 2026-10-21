@@ -562,6 +562,31 @@ shell's command line matches the pattern. Wait on the watcher's outputs
   `pkill -f` naming it matches your own tool shell. The clone's error is in
   the box's `journalctl -u discobox-sandbox-agent` (`materialize source`).
 
+# Verifying on a libkrun pool in a dev box
+
+The box has `/dev/kvm`; the runtime the provider dlopens is the flake's:
+
+```bash
+nix build .#libkrun-runtime -o ~/.cache/libkrun-runtime   # builds libkrun, minutes
+R=~/.cache/libkrun-runtime
+d admin provider create --type libkrun --name krun --libkrun-path $R/lib/libkrun.so \
+  --passt-path $R/bin/passt --vcpus 4 --memory-mi-b 8192 --data-disk-gi-b 60 --cache-disk-gi-b 30
+d admin pool create krunpool --provider <prov_id>
+```
+
+- The VM boots the published guest, then the dev loop copies every watcher
+  image into its Docker (`synchronizing development Docker images` in the
+  server log): minutes, and the pool reads `pending` until it is done.
+- The published guest may predate `vm-image`'s move to the containerd image
+  store. On the classic store a copied image loses the index digest its
+  sandbox is pinned to, and the box fails with `the sandbox is pinned to image
+  … but … now resolves to …`. Boot a guest built from the checkout instead:
+  `go tool task build:vm-guest` stages it where the provider prefers it, then
+  delete and recreate the pool. (`d admin pool build-guest` builds on the
+  pool's own Docker, which cannot reach a registry from inside a discobox.)
+- `d admin pool delete` of a failed libkrun pool can leave it listed, and the
+  provider then refuses deletion (`provider instance has pools`).
+
 # Verifying the sandbox agent with nothing to wire (a VM guest's start)
 
 No disco-vm driver runs here; the sandbox image booted with no config volume
@@ -628,6 +653,20 @@ d shell <box> -- cat /run/discobox/provision.json
   apt resolving an alternative another feature used to satisfy.
 - `admin harness configure <id>` in a tmux pane reaches a login harness's CLI
   in a box of its image without credentials; answer `n` to leave it.
+
+# Verifying a feature's Ubuntu path
+
+The images are Debian, so a feature's `ubuntu:` packages and its
+`when: {distro: [ubuntu]}` steps only run on an Ubuntu base:
+
+```bash
+go tool task build:ubuntu-platform > $S/ubuntu.log 2>&1
+grep -E 'provision feature=<f> ' $S/ubuntu.log      # result=applied per step
+docker run --rm --entrypoint sh discobox-sandbox-agent:ubuntu -c '<what the steps left>'
+```
+
+Remove `discobox-sandbox-agent:ubuntu` and `discobox-sandbox-base:ubuntu`
+afterwards.
 
 # Verifying a container's boot (`discobox-wire.service`)
 

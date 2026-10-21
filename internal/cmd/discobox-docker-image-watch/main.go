@@ -24,9 +24,9 @@ import (
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
-// baseSpecName is the shared Debian/Docker/systemd image both agent images
-// build FROM via the BASE_IMAGE build arg.
-const baseSpecName = "base"
+// baseSpecName is the Docker driver's sandbox base image, which both agent
+// images build FROM via the BASE_IMAGE build arg.
+const baseSpecName = "sandbox-base"
 
 // sandboxAgentSpecName is the spec whose built image every harness's runnable
 // twin layers on top of via the SANDBOX_AGENT_IMAGE build arg.
@@ -70,11 +70,6 @@ type imageSpec struct {
 	// base -> pool-agent/sandbox-agent -> harness twin.
 	parent    string
 	parentArg string
-	// intermediate marks an image nothing ever runs: it exists only as the base
-	// its children build FROM, and its layers ship inside them. Copy-mode has no
-	// reason to copy it to a destination daemon, but build-mode still has to
-	// build it there before anything that depends on it.
-	intermediate bool
 	// bundle marks a FROM scratch bundle (ADR 26-10-16-423 §2): never run, so
 	// copy-mode leaves it out of the manifest it copies to pool daemons, but
 	// still published in .env, because the server reads its labels from this
@@ -332,11 +327,12 @@ func findRepoRoot() (string, error) {
 }
 
 func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error) {
-	// The shared base both agent images build FROM. Its inputs are folded into
-	// theirs below, so a base edit rebuilds them and changes their content tags
-	// rather than leaving them on a base that no longer exists.
+	// The sandbox base image both agent images build FROM. Its inputs are
+	// folded into theirs below, so a base edit rebuilds them and changes their
+	// content tags rather than leaving them on a base that no longer exists.
+	baseDir := filepath.Join("server", "providers", "dockerworker", "sandbox-image")
 	baseSeen := map[string]struct{}{}
-	if err := addTree(filepath.Join(repoRoot, "base-image"), baseSeen); err != nil {
+	if err := addTree(filepath.Join(repoRoot, baseDir), baseSeen); err != nil {
 		return nil, err
 	}
 	workerRoot := filepath.Join(repoRoot, "pool-agent")
@@ -416,15 +412,15 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	}
 	specs := []imageSpec{
 		{
-			name:         baseSpecName,
-			baseImage:    "discobox-base:local",
-			devPrefix:    "discobox-base:dev-",
-			buildDir:     repoRoot,
-			buildArgs:    []string{"build", "-f", "base-image/Dockerfile", "-t", "discobox-base:local", "base-image"},
-			contextDir:   filepath.Join(repoRoot, "base-image"),
-			dockerfile:   "Dockerfile",
-			intermediate: true,
-			files:        sortedFiles(baseSeen),
+			name:        baseSpecName,
+			baseImage:   "discobox-sandbox-base:local",
+			devPrefix:   "discobox-sandbox-base:dev-",
+			envImageKey: "DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE",
+			buildDir:    repoRoot,
+			buildArgs:   []string{"build", "-f", filepath.Join(baseDir, "Dockerfile"), "-t", "discobox-sandbox-base:local", baseDir},
+			contextDir:  filepath.Join(repoRoot, baseDir),
+			dockerfile:  "Dockerfile",
+			files:       sortedFiles(baseSeen),
 		},
 		{
 			name:         "pool-agent",
@@ -434,7 +430,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			envDigestKey: "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 			buildDir:     repoRoot,
 			buildArgs: []string{"build", "-f", "pool-agent/Dockerfile",
-				"--build-arg", "BASE_IMAGE=discobox-base:local",
+				"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
 				"-t", "discobox-pool-agent:local", "."},
 			contextDir: repoRoot,
 			dockerfile: "pool-agent/Dockerfile",
@@ -452,7 +448,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			// The runnable stage by name: the Dockerfile's default target is
 			// the platform bundle, which has a spec of its own below.
 			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile", "--target", "sandbox-agent",
-				"--build-arg", "BASE_IMAGE=discobox-base:local",
+				"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
 				"--build-arg", harness.LayerMetadataBuildArg + "=",
 				"-t", "discobox-sandbox-agent:local", "."},
 			contextDir: repoRoot,
@@ -789,9 +785,6 @@ func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, bundles 
 	}
 	used := make(map[int]bool, len(manifest.Images))
 	for _, spec := range specs {
-		if spec.intermediate {
-			continue
-		}
 		if spec.bundle {
 			entry, ok := bundles[spec.name]
 			if !ok {
@@ -835,12 +828,6 @@ func developmentImages(ctx context.Context, repoRoot string, specs []imageSpec) 
 	images := make([]devimage.Image, 0, len(specs))
 	bundles := map[string]devimage.Image{}
 	for _, spec := range specs {
-		// Nothing runs an intermediate and its layers already ship inside its
-		// children, so copying it to a destination daemon would move hundreds of
-		// megabytes nobody reads.
-		if spec.intermediate {
-			continue
-		}
 		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
 		if err != nil {
 			return devimage.Manifest{}, nil, fmt.Errorf("inspect development image %s: %w", spec.baseImage, err)
@@ -907,7 +894,7 @@ func parentsFirst(specs []imageSpec) []imageSpec {
 //
 // The tag is applied, not just derived. Only buildImage creates a dev tag, and
 // only for a build this watcher ran; anything else that rebuilds the base in
-// place — task build:base-image, build:images, the Dockerfile hook — moves
+// place — task build:sandbox-base-image, build:images, the Dockerfile hook — moves
 // :local to an image ID no dev tag names. A derived-but-absent tag is not a
 // local miss docker reports: it is a repository on Docker Hub, and the child's
 // FROM goes off to pull it. Tagging is exact rather than approximate, since the

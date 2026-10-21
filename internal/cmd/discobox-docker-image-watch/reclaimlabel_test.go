@@ -15,18 +15,19 @@ import (
 // else, since not reclaiming an image looks exactly like an image still in use.
 //
 // Only the one root is checked: every other Discobox image is built FROM the
-// shared base, directly or through the sandbox agent, and inherits the label
+// sandbox base image, directly or through the sandbox agent, and inherits the label
 // through the image config — the same mechanism that carries it across a pull.
 func TestImageRootDeclaresTheReclaimLabel(t *testing.T) {
 	_, repoRoot := loadDockerImageSpecs(t)
 	want := "LABEL " + harness.ReclaimLabel + "=" + harness.ReclaimLabelValue
 
-	data, err := os.ReadFile(filepath.Join(repoRoot, "base-image", "Dockerfile"))
+	dockerfile := filepath.Join("server", "providers", "dockerworker", "sandbox-image", "Dockerfile")
+	data, err := os.ReadFile(filepath.Join(repoRoot, dockerfile))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), want) {
-		t.Fatalf("base-image/Dockerfile does not declare %q", want)
+		t.Fatalf("%s does not declare %q", dockerfile, want)
 	}
 }
 

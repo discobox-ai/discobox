@@ -39,6 +39,38 @@ func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {
 	}
 }
 
+// The sandbox base image resolves as the pool image does (ADR 26-10-16-423
+// §10): a release manifest supersedes everything, then the provider's setting,
+// the server's override, and the image this build shipped with.
+func TestEffectiveSandboxBaseImagePrefersTheReleaseThenTheProviderThenTheServer(t *testing.T) {
+	const serverWide = "base:server"
+	if got := dockerworker.EffectiveSandboxBaseImage("base:provider", dockerworker.ServerDefaults{SandboxBaseImage: serverWide}); got != "base:provider" {
+		t.Fatalf("sandbox base image = %q, want the provider image", got)
+	}
+	if got := dockerworker.EffectiveSandboxBaseImage(" ", dockerworker.ServerDefaults{SandboxBaseImage: serverWide}); got != serverWide {
+		t.Fatalf("sandbox base image = %q, want the server override", got)
+	}
+	if got := dockerworker.EffectiveSandboxBaseImage("", dockerworker.ServerDefaults{}); got != dockerworker.DefaultSandboxBaseImage {
+		t.Fatalf("sandbox base image = %q, want the static default", got)
+	}
+	release := &releasemanifest.Manifest{Images: releasemanifest.Images{SandboxBase: "example.com/base:v9"}}
+	if got := dockerworker.EffectiveSandboxBaseImage("base:provider", dockerworker.ServerDefaults{SandboxBaseImage: serverWide, Release: release}); got != "example.com/base:v9" {
+		t.Fatalf("sandbox base image = %q, want the release's", got)
+	}
+}
+
+// The provider's sandboxBaseImage setting reaches the engine, which preloads it.
+func TestSandboxBaseImageTravelsFromProviderInstanceConfig(t *testing.T) {
+	cfg, err := Decode([]byte(`{"image":"pool:test","sandboxBaseImage":"base:test"}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	engineCfg := engineConfigFor(t, cfg, []string{"http://127.0.0.1:8080"}, "unix:///var/run/docker.sock")
+	if engineCfg.SandboxBaseImage != "base:test" {
+		t.Fatalf("SandboxBaseImage = %q, want base:test", engineCfg.SandboxBaseImage)
+	}
+}
+
 // The whole path a provider-instance setting travels: stored JSON on the
 // provider instance, decoded into the provider's own Config through the
 // embedded pool policy, and mapped onto the engine that renders the pool

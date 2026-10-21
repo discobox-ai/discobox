@@ -1,7 +1,7 @@
 # Declared before the first FROM so it is a global build argument the runtime
 # stage's FROM can expand; declared alongside that FROM it would belong to the
 # builder stage and resolve to nothing.
-ARG BASE_IMAGE=discobox-base:local
+ARG BASE_IMAGE=discobox-sandbox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
@@ -45,9 +45,10 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-agent ./cmd/discobox-pool-agent \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-runc ./cmd/discobox-pool-runc
 
-# Debian, Docker, and the trimmed systemd unit set come from the shared base
-# image so this image and the sandbox image are the same blobs on a pool host
-# that pulls both. See base-image/Dockerfile.
+# Debian, Docker, and the trimmed systemd unit set come from the Docker
+# driver's sandbox base image, so this image and the sandboxes are the same
+# blobs on a pool host that pulls both. See
+# server/providers/dockerworker/sandbox-image/Dockerfile.
 FROM ${BASE_IMAGE}
 
 ENV DISCOBOX_AGENT_PORT=3002
@@ -81,8 +82,8 @@ COPY pool-agent/image/registry.yml /etc/discobox/registry.yml
 # step, so a user's Dockerfile needs no awareness of the proxy (ADR 0020/0044).
 COPY --from=build /out/discobox-pool-runc /opt/discobox/bin/runc
 
-# The pool agent runs dockerd outright, where the sandbox socket-activates it;
-# that is why the base image enables neither.
+# The pool agent runs dockerd outright, where the base image socket-activates
+# it for a sandbox.
 RUN mkdir -p /var/lib/docker /var/lib/discobox /var/lib/discobox/proxy /etc/discobox /opt/discobox/bin \
     && systemctl enable docker.service discobox-proxy.service \
         discobox-buildkitd.service discobox-registry.service \
