@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -763,6 +764,42 @@ func TestRemovePoolDeletesTheVMWhenItsDaemonIsUnreachable(t *testing.T) {
 	}
 	if pool.RuntimeState != nil {
 		t.Error("pool runtime state survived removal")
+	}
+}
+
+// stoppedVMDriver has a VM that is stopped with its disks — a libkrun guest
+// after its server restarted — so there is no daemon to reach at all.
+type stoppedVMDriver struct {
+	nopDriver
+	deleteCalls int
+}
+
+func (d *stoppedVMDriver) InspectVM(context.Context, string) (*VMInfo, error) {
+	return &VMInfo{ID: "vm-1", Status: sandbox.StatusStopped, HostedHere: true}, nil
+}
+
+func (d *stoppedVMDriver) AcquireDockerClient(_ context.Context, poolID string) (*DockerClientLease, error) {
+	return nil, fmt.Errorf("VM %s: %w", poolID, sandbox.ErrNotFound)
+}
+
+func (d *stoppedVMDriver) DeleteVM(context.Context, string) error {
+	d.deleteCalls++
+	return nil
+}
+
+// A pool whose VM is stopped deletes too: its containers are in the guest
+// DeleteVM destroys, and no retry starts the VM to reach them first.
+func TestRemovePoolDeletesAStoppedVM(t *testing.T) {
+	driver := &stoppedVMDriver{}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1"}); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	if driver.deleteCalls != 1 {
+		t.Errorf("DeleteVM calls = %d, want 1", driver.deleteCalls)
 	}
 }
 
