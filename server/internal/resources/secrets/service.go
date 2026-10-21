@@ -740,6 +740,13 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if approverIsSandbox {
 		write.approverID, write.delegated, write.delegation = principal.SandboxID, true, delegation
 	}
+	// The answer shows the request's policy resolved, read now: a read that
+	// fails after the write would report as failed an approval that was
+	// made. A copy, so the request is written with its policy as asked.
+	answered := *req
+	if err := s.requestPolicyResolver(ctx, projectID)(&answered); err != nil {
+		return nil, err
+	}
 	if err := s.commitApproval(ctx, write); err != nil {
 		if errors.Is(err, errRequestAnswered) {
 			return nil, apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
@@ -785,9 +792,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		// credential answers with the secret marked for it.
 		s.ruleChanged(ctx, projectID)
 	}
-	if err := s.requestPolicyResolver(ctx, projectID)(req); err != nil {
-		return nil, err
-	}
+	req.Policy = answered.Policy
 	return req, nil
 }
 
