@@ -7,7 +7,7 @@
 # was given, without seeding anything into a home directory that a person may
 # then have to keep in step.
 #
-# Debian's `x-www-browser` alternative is set alongside it in the Dockerfile:
+# The `x-www-browser` alternative is set alongside it (default-browser.sh):
 # that is the other half, for the scripts and CLI tools that resolve a browser
 # through alternatives rather than through XDG.
 [Default Applications]

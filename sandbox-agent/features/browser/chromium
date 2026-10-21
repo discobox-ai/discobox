@@ -1,0 +1,19 @@
+#!/bin/sh
+# Chromium's launcher, as Debian's is: every file in /etc/chromium.d is
+# sourced with the browser's own arguments in "$@", and what they add to
+# $CHROMIUM_FLAGS is passed before those arguments.
+CHROMIUM_FLAGS="${CHROMIUM_FLAGS:-}"
+for file in /etc/chromium.d/*; do
+    # shellcheck source=/dev/null # whatever is installed there
+    [ -f "$file" ] && . "$file"
+done
+# The profile stays where Debian's Chromium kept it, on the home data volume:
+# Chrome for Testing's own default is ~/.config/google-chrome-for-testing, and
+# a sandbox that had Debian's browser would otherwise open a new, empty
+# profile. A caller that names its own (a test runner) keeps it.
+case " $CHROMIUM_FLAGS $* " in
+    *" --user-data-dir"*) ;;
+    *) CHROMIUM_FLAGS="--user-data-dir=${XDG_CONFIG_HOME:-$HOME/.config}/chromium $CHROMIUM_FLAGS" ;;
+esac
+# shellcheck disable=SC2086 # the flags are words
+exec /usr/local/lib/discobox/chromium/chrome $CHROMIUM_FLAGS "$@"
