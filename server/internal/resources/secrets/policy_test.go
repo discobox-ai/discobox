@@ -84,8 +84,11 @@ func TestAPolicyRoundTripsFromRequestToGrant(t *testing.T) {
 	// and approves nothing it was not shown.
 	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	wantStatus(t, err, http.StatusBadRequest, "approve it by sending the policy you approve")
+	want := map[string]string{policy.VarPrimaryRepo: "acme/web", policy.VarThis: testSandboxID}
+	shown := asked
+	shown.Resolved = want
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, asked),
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, shown),
 	})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
@@ -94,7 +97,6 @@ func TestAPolicyRoundTripsFromRequestToGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{policy.VarPrimaryRepo: "acme/web", policy.VarThis: testSandboxID}
 	if grant.Policy == nil || !reflect.DeepEqual(grant.Policy.Resolved, want) || !reflect.DeepEqual(grant.Policy.Statements, asked.Statements) {
 		t.Fatalf("grant policy = %+v, want the statements asked with %v resolved", grant.Policy, want)
 	}
@@ -255,6 +257,10 @@ func TestTheApproverMayEditThePolicy(t *testing.T) {
 	}
 	narrowed := pullRequestPolicy()
 	narrowed.Statements[0].Actions = []string{policy.ActionCreate}
+	narrowed.Resolved = map[string]string{policy.VarPrimaryRepo: "acme/web", policy.VarThis: testSandboxID}
+	// The edit names the repository rather than $primary.repo, which was
+	// shown and no longer counts.
+	narrowed.Statements[0].Scope.Name = "acme/web"
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, narrowed),
 	})
@@ -368,4 +374,120 @@ func TestOnlyAPersonApprovesAPolicy(t *testing.T) {
 		}})
 		wantStatus(t, err, http.StatusForbidden, "cannot give the discobox it creates a grant with a policy")
 	})
+}
+
+// A request read for the person approving it carries what each variable of
+// its policy resolves to for the discobox that asked — the values the form
+// shows, from the same record the grant is resolved from — while the request
+// keeps its policy as asked.
+func TestAReadRequestShowsWhatItsVariablesResolveTo(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	asked := pullRequestPolicy()
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
+		Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{policy.VarPrimaryRepo: "acme/web", policy.VarThis: testSandboxID}
+
+	got, err := svc.GetSecretRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Policy == nil || !reflect.DeepEqual(got.Policy.Resolved, want) || !reflect.DeepEqual(got.Policy.Statements, asked.Statements) {
+		t.Fatalf("read request policy = %+v, want the statements asked with %v resolved", got.Policy, want)
+	}
+	listed, err := svc.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].Policy == nil || !reflect.DeepEqual(listed[0].Policy.Resolved, want) {
+		t.Fatalf("listed requests = %+v, want one with %v resolved", listed, want)
+	}
+	stored, err := st.GetSecretRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Policy == nil || stored.Policy.Resolved != nil {
+		t.Fatalf("stored request policy = %+v, want it unresolved, as asked", stored.Policy)
+	}
+}
+
+// A request that asks for a policy is a person's to approve each time: no
+// rule is proposed or made from it, since a rule answers uses alone and would
+// approve later asks without the policy that was read.
+func TestNoRuleIsMadeFromARequestWithAPolicy(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	asked := pullRequestPolicy()
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
+		Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.ProposeApprovalRules(ctx, "project-1", req.ID)
+	wantStatus(t, err, http.StatusBadRequest, "an approval rule answers uses alone")
+	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, asked),
+		Rule: serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{Uses: []string{"open a pull request"}}),
+	})
+	wantStatus(t, err, http.StatusBadRequest, "an approval rule answers uses alone")
+	if rules, err := st.ListApprovalRules(ctx, "project-1"); err != nil || len(rules) != 0 {
+		t.Fatalf("rules = %v, %v; want none made", rules, err)
+	}
+}
+
+// A person approves the values a policy's variables were shown to resolve
+// to: an approval shown other values, or shown a variable as matching
+// nothing that resolves now, grants nothing.
+func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	asked := pullRequestPolicy()
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
+		Policy: apiPolicy(t, asked),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, shown := range map[string]map[string]string{
+		"another value":  {policy.VarPrimaryRepo: "victim/repo", policy.VarThis: testSandboxID},
+		"matching none":  {policy.VarThis: testSandboxID},
+		"nothing at all": nil,
+	} {
+		sent := asked
+		sent.Resolved = shown
+		_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+			SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, sent),
+		})
+		if err == nil {
+			t.Fatalf("%s: an approval shown %v was granted", name, shown)
+		}
+		wantStatus(t, err, http.StatusConflict, "read the request again")
+	}
+	if pending, err := st.GetSecretRequest(ctx, "project-1", req.ID); err != nil || pending.Status != model.SecretRequestStatusPending || pending.GrantID != "" {
+		t.Fatalf("request = %+v, %v; want it still pending with no grant", pending, err)
+	}
+
+	// What a read of the request shows is what approving it grants.
+	read, err := svc.GetSecretRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, *read.Policy),
+	}); err != nil {
+		t.Fatalf("approving what the read showed: %v", err)
+	}
 }

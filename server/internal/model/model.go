@@ -1687,7 +1687,7 @@ type SecretRequest struct {
 	// statements (ADR 26-10-20-782 §1), beside its uses. Nil on every request
 	// that asked with uses alone, which is every request written before
 	// policies.
-	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The policy the agent asked for, beside its uses; approving the request resolves its variables onto the grant"`
+	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The policy the agent asked for, beside its uses; read, its resolved holds what each variable resolves to now for the requesting discobox, and approving the request resolves them onto the grant"`
 	// GrantTTL is how long the agent asked the grant to live, in seconds. It is
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever — an

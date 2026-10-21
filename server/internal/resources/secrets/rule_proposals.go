@@ -172,6 +172,13 @@ func ruleProposable(req *model.SecretRequest) error {
 		// uses read against uses.
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"an approval rule answers a request that names its uses; this one is a person's to answer each time")
+	case req.Policy != nil:
+		// A rule is read against uses alone and never answers an ask with a
+		// policy (ruleTestable): one made from it would approve later asks
+		// by their uses, without the policy the person read (ADR
+		// 26-10-20-782, Deferred: approval rules over policies).
+		return apperrors.NewStatusError(http.StatusBadRequest,
+			"this request asks for a policy, and an approval rule answers uses alone; approve it as a person, without a rule")
 	}
 	return nil
 }

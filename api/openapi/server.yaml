@@ -5576,7 +5576,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy to approve in place of the one the request asked for. Omitted, the request's own is approved. Its variables are resolved for the requesting discobox.
+                    description: The policy approved -- the one the request asked for, as read, or one in its place. A request that asks for a policy is refused an approval without one, so nothing is approved that was not sent. Its resolved is the values the approver was shown, absent for none; each variable the approved policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A value shown for a variable the approved policy does not use is ignored.
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -5991,7 +5991,7 @@ components:
                 resolved:
                     additionalProperties:
                         type: string
-                    description: The value each variable the statements use resolved to at approval, for the discobox the grant is for. A variable used but absent did not resolve and matches nothing. Set by the server when a grant is minted; ignored on input.
+                    description: The value each variable the statements use resolved to at approval, for the discobox the grant is for -- on a request, what each resolves to now for the discobox that asked. A variable used but absent did not resolve and matches nothing. Set by the server; on input only an approval reads it, as the values the approver was shown.
                     type: object
             required:
                 - statements
@@ -6475,7 +6475,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the agent asked for, beside its uses (ADR 26-10-20-782). Approving the request resolves its variables for the requesting discobox onto the grant.
+                    description: The policy the agent asked for, beside its uses (ADR 26-10-20-782). Read, its resolved holds what each variable resolves to now for the requesting discobox -- what the person approving it is shown, and what approving it resolves onto the grant.
                 purpose:
                     description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request mints a grant for that purpose.
                     enum:

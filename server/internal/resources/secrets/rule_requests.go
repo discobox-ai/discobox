@@ -113,6 +113,11 @@ func (r *RuleRequests) Reconcile(ctx context.Context, requestID string) (reconci
 // errRequestAnswered is an approval that found its request no longer pending.
 var errRequestAnswered = errors.New("the request was answered concurrently")
 
+// errPolicyResolvedOtherwise is an approval whose policy's variables resolve,
+// for the discobox that asked, to values other than the ones it was shown.
+var errPolicyResolvedOtherwise = apperrors.NewStatusError(http.StatusConflict,
+	"the policy's variables do not resolve to the values this approval was shown; read the request again and approve what it shows now")
+
 // errRuleChanged is an approval whose rule no longer says what the judge read.
 var errRuleChanged = apperrors.NewStatusError(http.StatusConflict,
 	"the approval rule was disabled, lapsed, deleted or edited since the judge read it")

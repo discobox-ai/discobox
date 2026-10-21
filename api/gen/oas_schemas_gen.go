@@ -24,8 +24,9 @@ type AccessPolicy struct {
 	// one.
 	Definitions OptAccessPolicyDefinitions `json:"definitions"`
 	// The value each variable the statements use resolved to at approval, for the discobox the grant is
-	// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
-	// grant is minted; ignored on input.
+	// for -- on a request, what each resolves to now for the discobox that asked. A variable used but
+	// absent did not resolve and matches nothing. Set by the server; on input only an approval reads it,
+	// as the values the approver was shown.
 	Resolved OptAccessPolicyResolved `json:"resolved"`
 }
 
@@ -74,8 +75,9 @@ func (s *AccessPolicyDefinitions) init() AccessPolicyDefinitions {
 }
 
 // The value each variable the statements use resolved to at approval, for the discobox the grant is
-// for. A variable used but absent did not resolve and matches nothing. Set by the server when a
-// grant is minted; ignored on input.
+// for -- on a request, what each resolves to now for the discobox that asked. A variable used but
+// absent did not resolve and matches nothing. Set by the server; on input only an approval reads it,
+// as the values the approver was shown.
 type AccessPolicyResolved map[string]string
 
 func (s *AccessPolicyResolved) init() AccessPolicyResolved {
@@ -758,8 +760,12 @@ type ApproveSecretRequestBody struct {
 	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy to approve in place of the one the request asked for. Omitted, the request's own is
-	// approved. Its variables are resolved for the requesting discobox.
+	// The policy approved -- the one the request asked for, as read, or one in its place. A request that
+	// asks for a policy is refused an approval without one, so nothing is approved that was not sent.
+	// Its resolved is the values the approver was shown, absent for none; each variable the approved
+	// policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it,
+	// or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A
+	// value shown for a variable the approved policy does not use is ignored.
 	Policy OptAccessPolicy `json:"policy"`
 }
 
@@ -31300,8 +31306,9 @@ type SecretRequest struct {
 	// Uses the agent asked for. Their presence is what marks a request as protocol-originated rather
 	// than one the proxy minted on hitting an unresolvable sentinel.
 	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy the agent asked for, beside its uses (ADR 26-10-20-782). Approving the request resolves
-	// its variables for the requesting discobox onto the grant.
+	// The policy the agent asked for, beside its uses (ADR 26-10-20-782). Read, its resolved holds what
+	// each variable resolves to now for the requesting discobox -- what the person approving it is shown,
+	//  and what approving it resolves onto the grant.
 	Policy OptAccessPolicy `json:"policy"`
 	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
 	// Approving the request mints a grant for that purpose.
