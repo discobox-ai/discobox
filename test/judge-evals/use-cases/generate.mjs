@@ -1,28 +1,40 @@
 // Writes the use-case experiment's scenarios as judge-eval cases, one
 // directory per style, so discobox-judge-eval scores each style on its own:
 //
-//   node test/judge-evals/use-cases/generate.mjs OUT_DIR [--uses FILE]
+//   node test/judge-evals/use-cases/generate.mjs OUT_DIR [--authored FILE]
 //
 // writes OUT_DIR/command/*.json, OUT_DIR/use-case/*.json and
 // OUT_DIR/no-never/*.json, the same case names in each. no-never is the
 // use-case style with each use's closing "Never …" sentence taken off: what a
 // use says when its writer did not rule out the neighbors of its writes.
-// --uses adds a fourth style, "authored", from a JSON file mapping a
-// scenario's name to the uses an agent wrote for its task (see author.sh). Nothing says which authored use a job would run under, so a job
-// is written once per authored use, as NAME--uN, and score.mjs counts it as
-// allowed under whichever use allows it most.
+// --authored adds a fourth style, "authored", from a JSON file mapping a
+// scenario's name to the uses, statements and definitions an agent wrote for
+// its task (see author.sh). Nothing says which authored use a job would run
+// under, so a job is written once per authored use, as NAME--uN, and
+// score.mjs counts it as allowed under whichever use allows it most. When the
+// agent wrote statements, every authored case carries them as its policy,
+// with the record of a discobox whose primary source is the scenarios'
+// repository for $primary.repo to resolve against, and discobox-judge-eval
+// asks it again as NAME@policy.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { scenarios } from './scenarios.mjs';
+import { REPO, scenarios } from './scenarios.mjs';
 
 const args = process.argv.slice(2);
 const out = args[0];
 if (!out || out.startsWith('-')) {
-  console.error('usage: generate.mjs OUT_DIR [--uses FILE]');
+  console.error('usage: generate.mjs OUT_DIR [--authored FILE]');
   process.exit(2);
 }
-const usesFlag = args.indexOf('--uses');
-const authored = usesFlag >= 0 ? JSON.parse(readFileSync(args[usesFlag + 1], 'utf8')) : null;
+const authoredFlag = args.indexOf('--authored');
+const authored = authoredFlag >= 0 ? JSON.parse(readFileSync(args[authoredFlag + 1], 'utf8')) : null;
+
+// The discobox an authored policy is approved for: the scenarios' repository
+// as its primary source, which author.sh's stub reports as its facts.
+const authoredFacts = {
+  discobox: { id: 'sbx_authored', project: 'default' },
+  sources: [{ slug: 'primary', primary: true, remote: { host: 'github.com', repo: REPO, url: `https://github.com/${REPO}` }, ref: { type: 'branch', name: 'main' } }],
+};
 
 const styles = { command: 0, 'use-case': 1, 'no-never': 1 };
 
@@ -31,7 +43,7 @@ const withoutNever = (u) => u.replace(/\s*Never [^]*$/, '');
 if (authored) styles.authored = 1;
 
 function usesOf(scenario, style) {
-  if (style === 'authored') return authored[scenario.name] ?? null;
+  if (style === 'authored') return authored[scenario.name]?.uses ?? null;
   if (style === 'no-never') return scenario.uses['use-case'].map(withoutNever);
   return scenario.uses[style];
 }
@@ -52,8 +64,12 @@ for (const [style, slot] of Object.entries(styles)) {
   for (const s of scenarios) {
     const uses = usesOf(s, style);
     if (!uses) continue;
+    const asked = style === 'authored' ? authored[s.name] : null;
+    const policy = asked?.statements?.length
+      ? { statements: asked.statements, definitions: asked.definitions, facts: authoredFacts }
+      : undefined;
     const write = (name, why, expect, job) => {
-      const c = { name: `${s.name}-${name}`, why, expect, job };
+      const c = { name: `${s.name}-${name}`, why, expect, job, policy };
       writeFileSync(join(dir, `${c.name}.json`), JSON.stringify(c, null, 2) + '\n');
       written++;
     };
