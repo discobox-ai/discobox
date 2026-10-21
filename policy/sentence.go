@@ -61,51 +61,119 @@ func ParseStatements(sentences []string) ([]Statement, error) {
 	return statements, nil
 }
 
+// TokenKind is what a token of a sentence is, for a reader that sets each
+// kind apart, as a syntax highlighter does.
+type TokenKind int
+
+const (
+	// TokenEffect is allow or deny.
+	TokenEffect TokenKind = iota
+	// TokenKeyword is on, within, in, of, created by, when, unless.
+	TokenKeyword
+	// TokenAction is one action word.
+	TokenAction
+	// TokenType is a resource's, a parent's or a scope's type.
+	TokenType
+	// TokenName is a quoted name.
+	TokenName
+	// TokenVariable is a variable written bare.
+	TokenVariable
+	// TokenCondition is a quoted condition.
+	TokenCondition
+	// TokenPunct is the comma between actions.
+	TokenPunct
+)
+
+// Token is one token of a sentence. Glued is a token written with no space
+// before it.
+type Token struct {
+	Kind  TokenKind
+	Text  string
+	Glued bool
+}
+
+// Join writes tokens as the text they are, a space between each but a glued
+// one.
+func Join(tokens []Token) string {
+	var b strings.Builder
+	for i, t := range tokens {
+		if i > 0 && !t.Glued {
+			b.WriteString(" ")
+		}
+		b.WriteString(t.Text)
+	}
+	return b.String()
+}
+
 // Format writes s as its canonical sentence. Parse reads it back to s for
 // every statement Validate accepts. Quoted text is written in ASCII, every
 // other rune escaped: outside ASCII a letter, a mark or a blank can pass for a
 // closing quote, and no rule short of ASCII was found that shows only runes
 // that cannot.
-func Format(s Statement) string {
-	var b strings.Builder
-	b.WriteString(string(s.Effect))
-	b.WriteString(" ")
-	b.WriteString(strings.Join(s.Actions, ", "))
-	b.WriteString(" on ")
-	writeResource(&b, Resource{Type: s.ResourceType, Name: s.Name, CreatedBy: s.CreatedBy})
+func Format(s Statement) string { return Join(Tokens(s)) }
+
+// Tokens is s's canonical sentence as its tokens: Join(Tokens(s)) is
+// Format(s).
+func Tokens(s Statement) []Token {
+	out := []Token{{Kind: TokenEffect, Text: string(s.Effect)}}
+	for i, action := range s.Actions {
+		if i > 0 {
+			out = append(out, Token{Kind: TokenPunct, Text: ",", Glued: true})
+		}
+		out = append(out, Token{Kind: TokenAction, Text: action})
+	}
+	out = append(out, Token{Kind: TokenKeyword, Text: "on"})
+	out = appendResource(out, Resource{Type: s.ResourceType, Name: s.Name, CreatedBy: s.CreatedBy})
 	for _, parent := range slices.Backward(s.Within) {
-		b.WriteString(" within ")
-		writeResource(&b, parent)
+		out = append(out, Token{Kind: TokenKeyword, Text: "within"})
+		out = appendResource(out, parent)
 	}
 	if s.Scope.Type != "" {
-		b.WriteString(" in ")
-		b.WriteString(FormatScope(s.Scope))
+		out = append(out, Token{Kind: TokenKeyword, Text: "in"})
+		out = append(out, ScopeTokens(s.Scope)...)
 	}
 	if s.When != nil {
-		b.WriteString(" when ")
-		b.WriteString(strconv.QuoteToASCII(*s.When))
+		out = append(out, Token{Kind: TokenKeyword, Text: "when"}, Token{Kind: TokenCondition, Text: strconv.QuoteToASCII(*s.When)})
 	}
 	if s.Unless != nil {
-		b.WriteString(" unless ")
-		b.WriteString(strconv.QuoteToASCII(*s.Unless))
+		out = append(out, Token{Kind: TokenKeyword, Text: "unless"}, Token{Kind: TokenCondition, Text: strconv.QuoteToASCII(*s.Unless)})
 	}
-	return b.String()
+	return out
+}
+
+// ScopeTokens is scope as a sentence writes it after "in", as its tokens.
+func ScopeTokens(scope Scope) []Token {
+	out := []Token{{Kind: TokenType, Text: scope.Type}}
+	if scope.Name != "" {
+		out = append(out, nameToken(scope.Name))
+	}
+	for _, parent := range slices.Backward(scope.Within) {
+		out = append(out, Token{Kind: TokenKeyword, Text: "of"})
+		out = appendResource(out, parent)
+	}
+	return out
 }
 
 // FormatScope writes scope as a sentence writes it after "in": its type, its
 // name, and the scopes it is of, innermost first.
-func FormatScope(scope Scope) string {
-	var b strings.Builder
-	b.WriteString(scope.Type)
-	if scope.Name != "" {
-		b.WriteString(" ")
-		b.WriteString(formatName(scope.Name))
+func FormatScope(scope Scope) string { return Join(ScopeTokens(scope)) }
+
+func appendResource(out []Token, r Resource) []Token {
+	out = append(out, Token{Kind: TokenType, Text: r.Type})
+	if r.Name != nil {
+		out = append(out, nameToken(*r.Name))
 	}
-	for _, parent := range slices.Backward(scope.Within) {
-		b.WriteString(" of ")
-		writeResource(&b, parent)
+	if r.CreatedBy != "" {
+		out = append(out, Token{Kind: TokenKeyword, Text: "created by"}, nameToken(r.CreatedBy))
 	}
-	return b.String()
+	return out
+}
+
+func nameToken(name string) Token {
+	if IsVariable(name) {
+		return Token{Kind: TokenVariable, Text: name}
+	}
+	return Token{Kind: TokenName, Text: strconv.QuoteToASCII(name)}
 }
 
 // FormatStatements writes each statement as its canonical sentence.
@@ -115,27 +183,6 @@ func FormatStatements(statements []Statement) []string {
 		sentences[i] = Format(s)
 	}
 	return sentences
-}
-
-func writeResource(b *strings.Builder, r Resource) {
-	b.WriteString(r.Type)
-	if r.Name != nil {
-		b.WriteString(" ")
-		b.WriteString(formatName(*r.Name))
-	}
-	if r.CreatedBy != "" {
-		b.WriteString(" created by ")
-		b.WriteString(formatName(r.CreatedBy))
-	}
-}
-
-// formatName writes a variable a policy may use bare and anything else
-// quoted, so only a real variable reads as one.
-func formatName(name string) string {
-	if IsVariable(name) {
-		return name
-	}
-	return strconv.QuoteToASCII(name)
 }
 
 // checkSentenceWord reports whether w, an action or a type, can be written

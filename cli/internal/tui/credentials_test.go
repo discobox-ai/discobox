@@ -1174,11 +1174,10 @@ func TestARequestsPolicyIsShownAndApprovedAsShown(t *testing.T) {
 	card := dialogText(m)
 	for _, want := range []string{
 		"policy it asks for",
-		"in repository $primary.repo — acme/web",
-		"allow create on pull request",
-		"everywhere, whatever else is allowed",
+		"in repository (a GitHub repository) $primary.repo (acme/web)",
+		"allow create on pull request (a GitHub pull request)",
+		"global",
 		"deny delete on anything",
-		"pull request: a GitHub pull request",
 	} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card lacks %q:\n%s", want, card)
@@ -1204,11 +1203,12 @@ func TestAGrantsPolicyIsShownOnItsCard(t *testing.T) {
 		Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"},
 	}
 	m.reviewGrant("", "GitHub token", Grant{ID: "grant_1", Scope: "sandbox", ScopeKey: "sbx_one", Policy: policyview.Lines(approved)}, nil)
-	card := dialogText(m)
+	// Read as words, whichever row a long line wraps onto.
+	card := strings.Join(strings.Fields(strings.ReplaceAll(dialogText(m), "│", " ")), " ")
 	for _, want := range []string{
 		"approved policy",
-		"in repository $primary.upstream — does not resolve, so it matches nothing",
-		"allow read on issue",
+		"$primary.upstream (does not resolve, so it matches nothing)",
+		"allow read on issue (a GitHub issue)",
 	} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card lacks %q:\n%s", want, card)
@@ -1253,11 +1253,39 @@ func TestAWrappedPolicyLineHangsPastEveryLine(t *testing.T) {
 	}
 	text := strings.Join(rows, "\n")
 	for _, want := range []string{
-		"\n    allow create, update on pull request\n        created by $this\n",
-		"\n  in repository $primary.repo —\n        discobox-ai/discobox\n",
+		"\n  in repository (a GitHub repository)\n        $primary.repo (discobox-ai/discobox)\n",
+		"\n    allow create, update on pull request\n        (a GitHub pull request) created by\n        $this (sbx_one)\n",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("card lacks %q:\n%s", want, text)
 		}
+	}
+}
+
+// r on a request card shows the request as the server sent it, as JSON, and
+// Esc goes back to the card.
+func TestARequestCardShowsTheRawRequest(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.Raw = "{\n  \"id\": \"sreq_1\",\n  \"name\": \"github\"\n}"
+	ds := newFakeSource(testSandboxes()...)
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !strings.Contains(dialogText(m), "Raw request…") {
+		t.Fatalf("card offers no raw request:\n%s", dialogText(m))
+	}
+	drain(t, m, m.dialog.action("raw"), 0)
+	raw := dialogText(m)
+	for _, want := range []string{"Raw request", `"id": "sreq_1"`, `"name": "github"`} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("raw view lacks %q:\n%s", want, raw)
+		}
+	}
+	drain(t, m, m.dialog.onCancel(), 0)
+	if !onRequestCard(m) {
+		t.Fatalf("esc left %s, want the request card", describe(m.dialog))
 	}
 }

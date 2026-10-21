@@ -1,19 +1,19 @@
 // Package policyview is a credential policy as the person approving it reads
 // it (ADR 26-10-20-782 §3): its statements grouped by the scope they apply
-// in, the denies that apply anywhere once, as the policy's own, each
-// condition under its statement, every word that is not a default with its
-// definition, and every variable with the value it resolved to.
+// in, the denies that apply anywhere once under "global", each condition
+// under its statement, each variable followed by the value it resolved to,
+// and each word that is not a default followed by its definition the first
+// time it is used.
 //
 // It is display only. The rendering may change as Discobox improves without
 // changing what is approved: what is sent back is the policy, never these
-// lines. Each statement is policy.Format's sentence less the scope its group
-// names and its conditions, so a line reads as the sentence an agent wrote.
+// lines. A line is policy.Tokens' sentence — less the scope its group names
+// and its conditions, for a statement — so it reads as the sentence an agent
+// wrote, and a surface can highlight it by the tokens' kinds.
 package policyview
 
 import (
-	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/discobox-ai/discobox/policy"
 )
@@ -23,41 +23,47 @@ import (
 type Kind int
 
 const (
-	// Heading opens a group: the scope its statements apply in, the
-	// policy-wide denies, the words, or the variables.
+	// Heading opens a group: the scope its statements apply in, or Global.
 	Heading Kind = iota
 	// Statement is one statement, less its group's scope and its conditions.
 	Statement
 	// Condition is a when or unless, under its statement.
 	Condition
-	// Definition is a word and what it means.
-	Definition
-	// Variable is a variable and the value it resolved to.
-	Variable
-	// Unresolved is a variable, or a heading naming one, that resolved to
-	// nothing and so matches nothing.
+	// Unresolved is a heading whose scope names a variable that resolved to
+	// nothing, so it matches nothing.
 	Unresolved
 )
 
 // Line is one line of the rendering.
 type Line struct {
-	Text string
+	// Text is the line as plain text, each note in parentheses after its
+	// token.
+	Text   string
+	Tokens []Token
 	// Indent is the depth under its heading: 0 for a heading, 1 for what is
 	// under it, 2 for a statement's condition.
 	Indent int
 	Kind   Kind
 }
 
-// Everywhere heads the denies that apply in every scope.
-const Everywhere = "everywhere, whatever else is allowed"
+// Token is a token of a sentence, with what is shown after it: a variable's
+// value, or that it does not resolve, or a word's definition where the word
+// is first used. Note is empty for every other token.
+type Token struct {
+	policy.Token
+	Note string
+}
+
+// Global heads the denies that apply in every scope.
+const Global = "global"
 
 // unresolved is what a variable that did not resolve is shown as.
 const unresolved = "does not resolve, so it matches nothing"
 
 // Lines renders p. Groups are in the order their first statement is, the
-// policy-wide denies after them; statements keep their order within a
-// group. p.Resolved is taken as what each variable resolved to: one used and
-// absent from it did not resolve.
+// global denies after them; statements keep their order within a group.
+// p.Resolved is taken as what each variable resolved to: one used and absent
+// from it did not resolve.
 func Lines(p policy.Policy) []Line {
 	type group struct {
 		scope      policy.Scope
@@ -65,10 +71,10 @@ func Lines(p policy.Policy) []Line {
 	}
 	var groups []*group
 	byScope := map[string]*group{}
-	var everywhere []policy.Statement
+	var global []policy.Statement
 	for _, s := range p.Statements {
 		if s.Scope.Type == policy.Anywhere {
-			everywhere = append(everywhere, s)
+			global = append(global, s)
 			continue
 		}
 		key := policy.FormatScope(s.Scope)
@@ -81,93 +87,82 @@ func Lines(p policy.Policy) []Line {
 		g.statements = append(g.statements, s)
 	}
 
+	r := renderer{policy: p, defined: map[string]bool{}}
 	var out []Line
 	for _, g := range groups {
-		out = append(out, scopeHeading(g.scope, p.Resolved))
-		out = appendStatements(out, g.statements)
-	}
-	if len(everywhere) > 0 {
-		out = append(out, Line{Text: Everywhere, Kind: Heading})
-		out = appendStatements(out, everywhere)
-	}
-	if len(p.Definitions) > 0 {
-		out = append(out, Line{Text: "words", Kind: Heading})
-		for _, word := range sortedKeys(p.Definitions) {
-			out = append(out, Line{Text: word + ": " + p.Definitions[word], Indent: 1, Kind: Definition})
-		}
-	}
-	if variables := p.Variables(); len(variables) > 0 {
-		out = append(out, Line{Text: "variables", Kind: Heading})
-		for _, variable := range variables {
-			if value, ok := p.Resolved[variable]; ok {
-				out = append(out, Line{Text: variable + ": " + value, Indent: 1, Kind: Variable})
-			} else {
-				out = append(out, Line{Text: variable + ": " + unresolved, Indent: 1, Kind: Unresolved})
+		heading := r.line(append([]policy.Token{{Kind: policy.TokenKeyword, Text: "in"}}, policy.ScopeTokens(g.scope)...), 0, Heading)
+		for _, t := range heading.Tokens {
+			if t.Kind == policy.TokenVariable && t.Note == unresolved {
+				heading.Kind = Unresolved
 			}
 		}
+		out = append(out, heading)
+		out = r.statements(out, g.statements)
+	}
+	if len(global) > 0 {
+		out = append(out, r.line([]policy.Token{{Kind: policy.TokenKeyword, Text: Global}}, 0, Heading))
+		out = r.statements(out, global)
 	}
 	return out
 }
 
-// scopeHeading is the heading of the statements in scope: the scope as a
-// sentence writes it, then what each variable in it — its name, and its
-// parents' — resolved to. One that did not resolve makes the heading
-// Unresolved: the scope matches nothing, whatever it was meant to name.
-func scopeHeading(scope policy.Scope, resolved map[string]string) Line {
-	var variables []string
-	add := func(name string) {
-		if policy.IsVariable(name) && !slices.Contains(variables, name) {
-			variables = append(variables, name)
-		}
-	}
-	add(scope.Name)
-	for _, parent := range slices.Backward(scope.Within) {
-		if parent.Name != nil {
-			add(*parent.Name)
-		}
-		add(parent.CreatedBy)
-	}
-	heading := Line{Text: "in " + policy.FormatScope(scope), Kind: Heading}
-	var values []string
-	for _, variable := range variables {
-		value, ok := resolved[variable]
-		if !ok {
-			value, heading.Kind = unresolved, Unresolved
-		}
-		if len(variables) > 1 {
-			value = variable + ": " + value
-		}
-		values = append(values, value)
-	}
-	if len(values) > 0 {
-		heading.Text += " — " + strings.Join(values, "; ")
-	}
-	return heading
+// renderer notes tokens as the rendering reaches them, so a word is defined
+// where it is first used.
+type renderer struct {
+	policy  policy.Policy
+	defined map[string]bool
 }
 
-// appendStatements renders each statement under its group's heading, its
+// statements renders each statement under its group's heading, its
 // conditions under it. Conditions are quoted as Format quotes them, in ASCII,
 // so a condition cannot seem to end early and start another.
-func appendStatements(out []Line, statements []policy.Statement) []Line {
+func (r *renderer) statements(out []Line, statements []policy.Statement) []Line {
 	for _, s := range statements {
 		bare := s
 		bare.Scope, bare.When, bare.Unless = policy.Scope{}, nil, nil
-		out = append(out, Line{Text: policy.Format(bare), Indent: 1, Kind: Statement})
+		out = append(out, r.line(policy.Tokens(bare), 1, Statement))
 		if s.When != nil {
-			out = append(out, Line{Text: "when " + strconv.QuoteToASCII(*s.When), Indent: 2, Kind: Condition})
+			out = append(out, r.line([]policy.Token{{Kind: policy.TokenKeyword, Text: "when"}, {Kind: policy.TokenCondition, Text: strconv.QuoteToASCII(*s.When)}}, 2, Condition))
 		}
 		if s.Unless != nil {
-			out = append(out, Line{Text: "unless " + strconv.QuoteToASCII(*s.Unless), Indent: 2, Kind: Condition})
+			out = append(out, r.line([]policy.Token{{Kind: policy.TokenKeyword, Text: "unless"}, {Kind: policy.TokenCondition, Text: strconv.QuoteToASCII(*s.Unless)}}, 2, Condition))
 		}
 	}
 	return out
 }
 
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// line is tokens noted, and as plain text.
+func (r *renderer) line(tokens []policy.Token, indent int, kind Kind) Line {
+	l := Line{Indent: indent, Kind: kind}
+	var plain []policy.Token
+	for _, t := range tokens {
+		noted := Token{Token: t, Note: r.note(t)}
+		l.Tokens = append(l.Tokens, noted)
+		plain = append(plain, t)
+		if noted.Note != "" {
+			plain = append(plain, policy.Token{Kind: policy.TokenPunct, Text: "(" + noted.Note + ")"})
+		}
 	}
-	slices.Sort(keys)
-	return keys
+	l.Text = policy.Join(plain)
+	return l
+}
+
+// note is what is shown after t: a variable's value, or that it does not
+// resolve, every time; a word's definition, the first time it is used.
+func (r *renderer) note(t policy.Token) string {
+	switch t.Kind {
+	case policy.TokenVariable:
+		if value, ok := r.policy.Resolved[t.Text]; ok {
+			return value
+		}
+		return unresolved
+	case policy.TokenAction, policy.TokenType:
+		definition, ok := r.policy.Definitions[t.Text]
+		if !ok || r.defined[t.Text] {
+			return ""
+		}
+		r.defined[t.Text] = true
+		return definition
+	}
+	return ""
 }

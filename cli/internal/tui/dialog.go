@@ -314,6 +314,16 @@ type line struct {
 	// where a row set in only as far as the line would read as a line of
 	// its own (policyLines).
 	hang int
+	// spans, when set, are drawn in place of text, each in its own tone.
+	spans []span
+}
+
+// span is a run of a line in a style of its own, written with a space
+// before it unless glued.
+type span struct {
+	text  string
+	style func(*styles) lipgloss.Style
+	glued bool
 }
 
 // section is one named block of a dialog body: a rule carrying its name, the
@@ -1157,6 +1167,22 @@ func (d *dialog) sectionLines(st *styles, room int) []string {
 			hang := lead + strings.Repeat("  ", l.hang)
 			if l.bullet {
 				lead, hang = lead+"· ", hang+"  "
+			}
+			if len(l.spans) > 0 {
+				var styled strings.Builder
+				for i, sp := range l.spans {
+					if i > 0 && !sp.glued {
+						styled.WriteString(" ")
+					}
+					styled.WriteString(sp.style(st).Render(sp.text))
+				}
+				for i, row := range strings.Split(ansi.Wrap(styled.String(), max(room-max(len(hang), 2), 8), ""), "\n") {
+					if i > 0 {
+						lead = hang
+					}
+					out = append(out, truncate(lead+row, room))
+				}
+				continue
 			}
 			for i, text := range wrap(l.text, max(room-max(len(hang), 2), 8)) {
 				if i > 0 {

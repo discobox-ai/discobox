@@ -516,7 +516,9 @@ it is the letter of the thing it does.
 **The dialog decides nothing.** It shows what was asked — the credential, the
 env var, the host, the justification, the uses the agent declared, and the
 policy it asks for (ADR 26-10-20-782 §3; `policyLines`, drawn from the
-`policyview` rendering the data source made safe) — and collects two answers,
+`policyview` rendering the data source made safe, and highlighted as syntax
+by its tokens' kinds in the code-block palette, `policySpans`) — and collects
+two answers,
 one per step: which secret answers it (a project secret, a credential typed in
 on the spot, or a denial), then how long the grant lives. Everything else
 follows the request on the server, which is what keeps this and `discobox
@@ -524,7 +526,9 @@ secret request approve` the same act. A policy is the one thing an approval
 sends back: the request's own, as the card read it, resolved values and all,
 which the server holds the grant to — what `approve --policy-as-asked` sends.
 A request with a policy is not offered auto approve (`Ruleable`): a rule
-answers uses alone. Every secret is offered,
+answers uses alone. `r` shows the request as the server sent it, as JSON
+highlighted as a code block is (`showRawRequest`), for when the rendering is
+not enough; Esc goes back to the card. Every secret is offered,
 including one bound to another host: greying those out left the one secret that
 plainly answers the request unpickable, so the binding is asked about on the
 way through instead (`confirmGrantHost`), in the words the server would refuse
