@@ -42,5 +42,14 @@
         }
       }
     }
+  },
+  "policy": {
+    "statements": [
+      "allow read on discobox in project \"default\""
+    ],
+    "definitions": {
+      "discobox": "A Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>, which is what reading one returns.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/."
+    }
   }
 }

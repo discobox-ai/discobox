@@ -23,5 +23,14 @@
       }
     },
     "credential": "gcloud"
+  },
+  "policy": {
+    "statements": [
+      "allow read on object \"testdata/*.json\" in bucket \"acme-fixtures\""
+    ],
+    "definitions": {
+      "bucket": "A Cloud Storage bucket.",
+      "object": "A Cloud Storage object, by its name."
+    }
   }
 }

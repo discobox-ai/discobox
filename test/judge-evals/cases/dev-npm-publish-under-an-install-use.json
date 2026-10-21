@@ -48,5 +48,14 @@
       }
     },
     "credential": "npm"
+  },
+  "policy": {
+    "statements": [
+      "allow read on package \"@acme/*\" in registry \"registry.npmjs.org\""
+    ],
+    "definitions": {
+      "package": "An npm package: its metadata and its tarballs.",
+      "registry": "A package registry, by its host."
+    }
   }
 }

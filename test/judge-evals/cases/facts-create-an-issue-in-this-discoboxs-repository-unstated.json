@@ -44,5 +44,14 @@
         "content": "{\"title\":\"Flaky TestPoolDrain on arm64\",\"body\":\"Fails about one run in ten; log attached in CI run 812.\"}"
       }
     }
+  },
+  "policy": {
+    "statements": [
+      "allow create on issue in repository $primary.repo"
+    ],
+    "definitions": {
+      "issue": "A GitHub issue.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

@@ -30,5 +30,61 @@
       "The primary source sbx_7h3c1w9n5q2v8m4t was created with is the Git repository github.com/acme/web, checked out from the branch main.",
       "sbx_7h3c1w9n5q2v8m4t was created by the discobox sbx_9n5v2k8w3m6t1q7x."
     ]
+  },
+  "policy": {
+    "statements": [
+      "allow read on screen within discobox created by $this in project \"default\"",
+      "allow restart on harness within discobox created by $this in project \"default\""
+    ],
+    "definitions": {
+      "discobox": "A Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>, which is what reading one returns.",
+      "harness": "The agent program a discobox runs in its primary terminal.",
+      "project": "A Discobox project, by its name; the API names it in its paths, /projects/<name>/.",
+      "restart": "Stop and start again.",
+      "screen": "What a discobox's terminal shows: GET .../sandboxes/<id>/execs/<exec>/screen."
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_4kq8w2m7v9t3x6pn",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "primary",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "acme/web",
+            "url": "https://github.com/acme/web"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    },
+    "target": {
+      "discobox": {
+        "id": "sbx_7h3c1w9n5q2v8m4t",
+        "project": "default",
+        "createdBy": "sbx_9n5v2k8w3m6t1q7x"
+      },
+      "sources": [
+        {
+          "slug": "primary",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "acme/web",
+            "url": "https://github.com/acme/web"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    }
   }
 }

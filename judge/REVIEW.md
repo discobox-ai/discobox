@@ -1,0 +1,4 @@
+# judge review notes
+
+- Anything a job carries beside its evidence is bounded so the whole job stays within `MaxInput` next to a body shown at its worst (`MaxBodyBytes`, about 48 KiB escaped). `policy.Validate`'s own bounds allow some 256 KiB, so a policy is held to `MaxPolicyBytes` in `Validate` and where it enters (`PolicyFits`). One that is not would be approved and then judge nothing: larger than `MaxInput` it fails every job under the grant, first round included, and a little smaller it passes the first round and fails the one that shows the body the judge asked for.
+- A field added to a recorded eval case is checked by `TestTheRecordedCasesLoad` in `internal/cmd/discobox-judge-eval`, which `go tool task test` runs. A check that only a model-calling run performs is a check nobody runs.

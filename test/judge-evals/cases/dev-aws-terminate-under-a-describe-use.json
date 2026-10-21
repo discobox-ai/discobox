@@ -44,5 +44,14 @@
       }
     },
     "credential": "aws"
+  },
+  "policy": {
+    "statements": [
+      "allow read on EC2 instance in region \"us-east-1\""
+    ],
+    "definitions": {
+      "EC2 instance": "An Amazon EC2 instance, as DescribeInstances describes it.",
+      "region": "An AWS region."
+    }
   }
 }

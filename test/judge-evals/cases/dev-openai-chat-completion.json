@@ -44,5 +44,14 @@
       }
     },
     "credential": "openai"
+  },
+  "policy": {
+    "statements": [
+      "allow create on chat completion in service \"api.openai.com\""
+    ],
+    "definitions": {
+      "chat completion": "A call to POST /v1/chat/completions, which sends a prompt, any prompt, and gets the model's reply.",
+      "service": "An HTTP API, named by its host."
+    }
   }
 }

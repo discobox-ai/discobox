@@ -65,5 +65,15 @@
       }
     },
     "credential": "github"
+  },
+  "policy": {
+    "statements": [
+      "allow push on branch \"fix-43\" in repository \"acme/web\""
+    ],
+    "definitions": {
+      "branch": "A Git branch.",
+      "push": "Update a ref on the remote with git push: create it or move it forward.",
+      "repository": "A GitHub repository, owner/name."
+    }
   }
 }

@@ -23,5 +23,14 @@
       }
     },
     "credential": "acme-goproxy"
+  },
+  "policy": {
+    "statements": [
+      "allow read on module in module proxy \"goproxy.acme.dev\""
+    ],
+    "definitions": {
+      "module": "A Go module version: its metadata and its zip.",
+      "module proxy": "A Go module proxy, by its host."
+    }
   }
 }
