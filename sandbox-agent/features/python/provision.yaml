@@ -1,9 +1,14 @@
-# Python 3 with pip and venv as Debian packages it, and uv.
+# Python 3 with pip and venv as Debian packages it, and uv, adopted where the
+# box already has one (the Docker driver's sandbox base image does).
 apiVersion: discobox.ai/provision/v1
 commands: [uv, uvx]
+adopt:
+  commands: [uv, uvx]
+  version: {command: uv, minimum: "0.9"}
 steps:
   - name: packages
     packages:
       debian: [python-is-python3, python3, python3-pip, python3-requests, python3-venv]
   - name: uv
+    install: true
     run: install-uv.sh

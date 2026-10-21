@@ -6,10 +6,11 @@
 # 4x browser. GDK_DPI_SCALE corrects the same double-count for GTK's text, but
 # Chromium does not read it, so there is nothing to divide it back out.
 #
-# Naming the scale stops the inference. Debian's /usr/bin/chromium is a shell
-# wrapper that sources every file in /etc/chromium.d and appends $CHROMIUM_FLAGS,
-# which is the supported way in and the reason scale.env carries the scale as a
-# plain number as well as as toolkit variables.
+# Naming the scale stops the inference. Debian's /usr/bin/chromium, and the
+# browser feature's /usr/local/bin/chromium on Ubuntu, is a shell wrapper that
+# sources every file in /etc/chromium.d and passes $CHROMIUM_FLAGS, which is the way in and
+# the reason scale.env carries the scale as a plain number as well as as
+# toolkit variables.
 #
 # Only for a browser with a window on the desktop. The scale is :0's, and the
 # file exists in every sandbox from its first boot: a headless Chromium -- a

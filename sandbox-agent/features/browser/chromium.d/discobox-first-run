@@ -1,0 +1,6 @@
+# No first run: Chrome for Testing's opens on Google's Additional Terms of
+# Service, a dialog over the whole window, and either build's on a sign-in
+# page, before the page a link asked for. Nor the "make me your default?"
+# infobar, which is noise on a desktop
+# where that question is answered (mimeapps.list, default-browser.sh).
+CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-first-run --no-default-browser-check"

@@ -68,3 +68,15 @@ steps:
   # The system trust store, built whole so boot only adds the box's CA to it.
   - name: ca-store
     run: prebuild-ca-store.sh
+
+  # A git that takes the bearer credential each source's origin is cloned
+  # with (2.46 or later); Ubuntu 24.04's is older. See the script. Last, and
+  # in the background: a box whose distribution has no such git is still a
+  # box, whose source clone fails and retries on its own, rather than one
+  # that never becomes ready; and the clone retries until this is done.
+  - name: git
+    async: true
+    apt: true
+    check: git-check.sh
+    run: install-git.sh
+    inputs: [git-core-ppa.asc]

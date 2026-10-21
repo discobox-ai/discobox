@@ -379,18 +379,27 @@ volume, so every sandbox that already exists would never get them. The files are
 written `0755` because xfdesktop draws a launcher as a launcher only when it is
 executable.
 
-Chromium is the browser, and Debian resolves a browser three separate ways —
+Chromium is the browser, and a browser is resolved three separate ways —
 all three are set, because the desktop uses a different one than a script does:
 
 | | file | used by |
 | --- | --- | --- |
 | Xfce preferred applications | `/etc/xdg/xfce4/helpers.rc` | `exo-open`, so the panel, Thunar and xfdesktop |
 | XDG defaults | `/etc/xdg/mimeapps.list` | `xdg-open` and every GIO client |
-| Debian alternatives | `x-www-browser` | `sensible-browser` and scripts |
+| Alternatives | `x-www-browser` | `sensible-browser` and scripts |
 
-Two things Chromium needs beyond that, both in `/etc/chromium.d`, which Debian's
-launcher sources:
+Chromium is Debian's on Debian. Ubuntu packages it only as a snap, so on
+Ubuntu (and what derives from it) the browser feature installs the Chrome for
+Testing build Playwright publishes, pinned, with a launcher,
+`/usr/local/bin/chromium`, that sources `/etc/chromium.d` as Debian's
+`/usr/bin/chromium` does. Three things Chromium needs beyond the defaults are
+there:
 
+- **`--no-first-run --no-default-browser-check`.** A first run opens on a
+  sign-in page, and Chrome for Testing's on Google's Additional Terms of
+  Service, a dialog over the whole window, before the page a link asked for.
+  What Chrome for Testing cannot be told is its own "only for automated
+  testing" infobar, which every window shows.
 - **`--force-device-scale-factor`.** Chromium derives a scale from `Xft/DPI`
   *and* from `GDK_SCALE` and multiplies them, so a 2× desktop would launch a
   4× browser. `GDK_DPI_SCALE` corrects the same double-count for GTK's text, but
@@ -399,9 +408,10 @@ launcher sources:
   `:0`: the file exists in every sandbox, and a headless one would otherwise
   come back with twice the pixels it asked for. Anywhere else the launcher also
   drops the desktop's `GDK_SCALE`, which Chromium would otherwise multiply in.
-- **`--no-sandbox`, but only when probed.** `chromium-sandbox` is a Recommends,
-  which `--no-install-recommends` leaves out, and without it Chromium refuses
-  to start at all, so the browser feature's packages name it. The flag is added only where
+- **`--no-sandbox`, but only when probed.** Without its setuid helper
+  Chromium refuses to start at all, so the browser feature installs it:
+  Debian's `chromium-sandbox` (a Recommends `--no-install-recommends` leaves
+  out), or Chrome for Testing's own, made setuid beside it. The flag is added only where
   `unshare --user --pid` fails — a container's seccomp profile commonly refuses the namespace clone
   even to the setuid helper. Nothing is given up where the probe succeeds.
 
