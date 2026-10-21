@@ -361,9 +361,12 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool) error {
 	lease, err := e.driver.AcquireDockerClient(ctx, pool.ID)
 	if err != nil {
-		// Tolerate unreachable Docker only when the VM itself is gone; the
-		// local driver's Docker must always be reachable.
-		if _, inspectErr := e.driver.InspectVM(ctx, pool.ID); !errors.Is(inspectErr, sandbox.ErrNotFound) {
+		// Tolerate unreachable Docker only when the VM is not running — gone,
+		// or stopped with its disks, whose containers DeleteVM destroys with
+		// it. The local driver's VM is always running, so its Docker must
+		// always be reachable.
+		vm, inspectErr := e.driver.InspectVM(ctx, pool.ID)
+		if inspectErr == nil && vm.Status == sandbox.StatusRunning || inspectErr != nil && !errors.Is(inspectErr, sandbox.ErrNotFound) {
 			return err
 		}
 	} else {
