@@ -304,11 +304,13 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   then `admin harness create --image discobox-harness-stub:local` and
   `admin harness configure stub`; `new -d -H stub`. Configuring it stores a
   `stub-token` secret: delete it with the harness.
-- Until `discobox-access` writes policies, file one from inside the box:
-  `d cp req.json <box>:/tmp/` and `d shell <box> -- sh -c 'curl -sS -X POST
-  -H "Content-Type: application/json" --data @/tmp/req.json
-  $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests'` (the agentcreds
-  `RequestBody`, with `policy` as `policy.Policy`'s JSON). A box from a local
+- File one from inside the box with `discobox-access request --statement …`
+  (the box's `discobox-access` is the sandbox-agent image's, so
+  `discobox-sandbox-agent:local` carries a change to it). A sentence that
+  does not parse, or a policy that does not validate, never leaves the box;
+  to send the server one anyway, post the agentcreds `RequestBody` with
+  `curl --data @/tmp/req.json $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests`
+  after `d cp req.json <box>:/tmp/`. A box from a local
   checkout records its `origin`, so `$primary.repo` resolves; `$primary.upstream`
   never does yet, for the "matches nothing" form.
 - A shell function `d` does not reach `timeout`; zsh does not split `$D`
@@ -683,17 +685,14 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 - Approving `com.github.api` with a secret bound only to `api.github.com`
   needs `--hosts api.github.com`: the well-known credential's default hosts
   include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
-- A grant that carries a policy: `discobox-access request` cannot send one,
-  so write the body `discobox-access request --json` takes, plus a `policy`
-  in its JSON shape, to `/tmp/req.json` in the box (`d shell <box> -- sh -c
-  'cat > /tmp/req.json' < req.json`) and post it from there (`curl -X POST
-  -H "Authorization: Bearer $DISCOBOX_CREDENTIALS_TOKEN" --data
-  @/tmp/req.json "$DISCOBOX_CREDENTIALS_URL/v1/credentials/requests"`),
-  and approve it with `secret request approve <id> --secret-id N
-  --policy-as-asked`. Create the box with `-C
+- A grant that carries a policy: ask for it from the box with
+  `discobox-access request --statement … --define WORD=DEFINITION` (or
+  `statements`/`definitions` in `--json`), from a box on an image built with
+  your `discobox-access`, and approve it with `secret request approve <id>
+  --secret-id N --policy-as-asked`. Create the box with `-C
   https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
   The grant's `.policy.resolved` (`GET /projects/<p>/secret-grants`) shows
-  what bound.
+  what bound; `discobox-access wait request <id>` shows it as sentences.
 - To see what a real judge does with a captured job, wrap it as a
   `test/judge-evals` case (`{name, why, expect, job}`) in a scratch directory,
   and run `go run ./internal/cmd/discobox-judge-eval -wrapper
