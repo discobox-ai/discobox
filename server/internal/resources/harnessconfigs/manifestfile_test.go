@@ -208,10 +208,10 @@ func TestParseManifestFileReadsALinuxDiscoVMTemplate(t *testing.T) {
 	}
 }
 
-// An image's platforms are what its registry publishes, so a label claiming
-// one is refused rather than read beside that answer — and an image is a Linux
-// container, so a label naming an account or a shell is refused too.
-func TestParseImageMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
+// A bundle's steps select the platform they run on and its kind is the
+// provider's, so a label claiming either is refused — and a bundle is a Linux
+// box's, so a label naming an account or a shell is refused too.
+func TestComposeBundleMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 	for name, tc := range map[string]struct {
 		own  string
 		says string
@@ -222,17 +222,17 @@ func TestParseImageMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 		"a shell":    {`{"shell": "/bin/zsh"}`, "names no shell"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := parseImageMetadata("sha256:test", withBaseLayer(tc.own))
+			_, err := parseBundle("sha256:test", bundleLabels(tc.own))
 			if err == nil || !strings.Contains(err.Error(), tc.says) {
 				t.Errorf("err = %v, want one saying %q", err, tc.says)
 			}
 		})
 	}
-	inspected, err := parseImageMetadata("sha256:test", withBaseLayer(`{"features": {"desktop": true}}`))
+	inspected, err := parseBundle("sha256:test", bundleLabels(`{"features": {"desktop": true}}`))
 	if err != nil {
-		t.Errorf("a Linux image declaring the desktop: %v", err)
+		t.Errorf("a Linux bundle declaring the desktop: %v", err)
 	}
 	if inspected.ImageKind != platform.OCI {
-		t.Errorf("an image's kind = %v, want oci", inspected.ImageKind)
+		t.Errorf("a bundle's kind = %v, want oci, its runnable image's", inspected.ImageKind)
 	}
 }

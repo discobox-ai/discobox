@@ -195,11 +195,17 @@ type ConfigPort struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
-// Definition is a built-in shortcut for registering an included harness image.
+// Definition is a built-in shortcut for registering an included harness.
+//
+// Bundle is the harness bundle its manifest is read from (ADR 26-10-16-423
+// §2). Image is the runnable image built from the platform's image with that
+// bundle provisioned into it, which a pool runs until the agent applies
+// bundles itself.
 type Definition struct {
 	ID          string
 	Name        string
 	Description string
+	Bundle      string
 	Image       string
 }
 

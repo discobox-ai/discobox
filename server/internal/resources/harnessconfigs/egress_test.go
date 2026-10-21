@@ -64,7 +64,7 @@ func TestRefreshingAnImageWithNewHostsConvergesItsSandboxes(t *testing.T) {
 	st := newTestStore(t)
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "custom", Name: "Custom",
-		Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
+		Bundle: "registry.example/custom:v1", Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
 	}
 	config.Egress.Allow = []string{"github.com"}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -75,7 +75,7 @@ func TestRefreshingAnImageWithNewHostsConvergesItsSandboxes(t *testing.T) {
 		return imageMetadata{Digest: digest, ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{EgressHosts: hosts}}}
 	}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{"registry.example/custom:v1": declaring("sha256:two", "API.example")}}
-	svc := &Service{store: st, inspector: inspector, sandboxes: runtime}
+	svc := &Service{store: st, inspector: inspector, harnesses: testReferences, sandboxes: runtime}
 
 	refreshed, err := svc.RefreshHarnessConfigImage(ctx, "project-1", config.ID)
 	if err != nil {

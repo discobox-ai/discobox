@@ -371,41 +371,72 @@ tasks:
       BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
       SANDBOX_AGENT_IMAGE: '{{.SANDBOX_AGENT_IMAGE | default "discobox-sandbox-agent:local"}}'
     cmds:
-      # IMAGE_LAYER_METADATA is the manifest layer every image built FROM this
-      # one inherits (ADR 0086 §2). Compacted independently of any harness's
-      # own image.json: nothing merges manifests at build time.
+      # The runnable stage by name: the Dockerfile's default target is the
+      # platform bundle (build:platform-bundle). IMAGE_LAYER_METADATA is the
+      # platform's layer, labeled on this image too so its digest moves with
+      # every edit to it.
       - >-
-        docker build -f sandbox-agent/Dockerfile
+        docker build -f sandbox-agent/Dockerfile --target sandbox-agent
         --build-arg BASE_IMAGE={{.BASE_IMAGE}}
         --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
         -t {{.SANDBOX_AGENT_IMAGE}} .
 
+  build:platform-bundle:
+    desc: Build the platform bundle, every platform feature under /features/ FROM scratch
+    vars:
+      PLATFORM_BUNDLE: '{{.PLATFORM_BUNDLE | default "discobox-platform:local"}}'
+    cmds:
+      # IMAGE_LAYER_METADATA is the platform's manifest layer, which the server
+      # composes under every harness bundle's own (ADR 26-10-16-423 §2).
+      # Compacted independently of any harness's image.json: nothing merges
+      # manifests at build time.
+      - >-
+        docker build -f sandbox-agent/Dockerfile --target platform
+        --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
+        -t {{.PLATFORM_BUNDLE}} .
+
   build:images:
-    desc: Build the shared base, pool, sandbox base, and all included harness images
+    desc: Build the shared base, pool, sandbox base, platform bundle, and all included harness bundles and images
     cmds:
       - task: build:pool-agent-image
+      - task: build:platform-bundle
       - task: build:harness-images
 
   build:harness-stub-image:
-    desc: Build the test-only stub harness image (see test/harness-stub/README.md)
+    desc: Build the test-only stub harness's bundle and its runnable image (see test/harness-stub/README.md)
     cmds:
-      - >-
-        docker build -f test/harness-stub/Dockerfile
-        --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
-        --build-arg HARNESS_METADATA="$(jq -c . test/harness-stub/image.json)"
-        -t discobox-harness-stub:local test/harness-stub
+      # The bundle is what `harness create --bundle` reads the manifest from;
+      # the image is its runnable twin, built on the dev sandbox agent image
+      # .env names when a `task dev` loop has stamped one.
+      - |
+        set -eu
+        metadata="$(jq -c . test/harness-stub/image.json)"
+        sandbox_agent_image="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
+        docker build -f test/harness-stub/Dockerfile --target bundle \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t discobox-harness-stub:local test/harness-stub
+        docker build -f test/harness-stub/Dockerfile --target image \
+          --build-arg "SANDBOX_AGENT_IMAGE=$sandbox_agent_image" \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t discobox-harness-stub-image:local test/harness-stub
 
   build:terminal-latency-image:
-    desc: Build the deterministic test-only terminal latency harness image
+    desc: Build the deterministic test-only terminal latency harness's bundle and its runnable image
     cmds:
-      - >-
-        docker build -f test/performance/terminal-latency/image/Dockerfile
-        --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
-        --build-arg HARNESS_METADATA="$(jq -c . test/performance/terminal-latency/image/image.json)"
-        -t discobox-terminal-latency:local test/performance/terminal-latency/image
+      - |
+        set -eu
+        metadata="$(jq -c . test/performance/terminal-latency/image/image.json)"
+        sandbox_agent_image="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
+        docker build -f test/performance/terminal-latency/image/Dockerfile --target bundle \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t discobox-terminal-latency:local test/performance/terminal-latency/image
+        docker build -f test/performance/terminal-latency/image/Dockerfile --target image \
+          --build-arg "SANDBOX_AGENT_IMAGE=$sandbox_agent_image" \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t discobox-terminal-latency-image:local test/performance/terminal-latency/image
 
   build:harness-images:
-    desc: Build the sandbox base and one local image for each included harness
+    desc: Build the sandbox base and each included harness's bundle and runnable image
     cmds:
       - task: build:sandbox-agent-image
       - task: build:harness-image
@@ -424,32 +455,40 @@ tasks:
         vars: { HARNESS: shell }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode|copilot|omp|pi, SANDBOX_AGENT_IMAGE defaults to the local base)
+    desc: Build one harness's bundle and its runnable image (HARNESS=codex|claude-code|opencode|copilot|omp|pi|shell, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:
       SANDBOX_AGENT_IMAGE: '{{default "discobox-sandbox-agent:local" .SANDBOX_AGENT_IMAGE}}'
-      HARNESS_IMAGE: '{{default (printf "discobox-harness-%s:local" .HARNESS) .HARNESS_IMAGE}}'
+      # The bundle (the Dockerfile's default target) is what a harness is
+      # published as and a third party builds FROM; the image is its runnable
+      # twin, which a pool runs until the agent applies bundles itself.
+      HARNESS_BUNDLE: '{{default (printf "discobox-harness-%s:local" .HARNESS) .HARNESS_BUNDLE}}'
+      HARNESS_IMAGE: '{{default (printf "discobox-harness-%s-image:local" .HARNESS) .HARNESS_IMAGE}}'
       HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
       IMAGE_CONFIG: harness/{{.HARNESS_DIR}}/image.json
     preconditions:
       - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
         msg: "unknown harness: {{.HARNESS}}"
+      - sh: test -f harness/{{.HARNESS_DIR}}/image.json
+        msg: "harness {{.HARNESS}} has no image.json: every harness bundle names the platform API version it runs on"
     cmds:
-      # A harness that declares nothing has no image.json and takes no metadata
-      # argument: its whole manifest is the base layer it inherits (ADR 0086
-      # §2), which is what `shell` is.
+      # Built as an argv list rather than an interpolated string: a manifest
+      # carries descriptions and env values with spaces in them, and an
+      # unquoted command substitution would split one into several arguments.
+      # The twin takes HARNESS_METADATA too: it labels it, so its digest
+      # moves with every manifest edit, and it builds the bundle stage it
+      # copies the features from.
       - |
         set -eu
-        # Built as an argv list rather than an interpolated string: a manifest
-        # carries descriptions and env values with spaces in them, and an
-        # unquoted command substitution would split one into several arguments.
-        set -- docker build -f harness/{{.HARNESS_DIR}}/Dockerfile \
-          --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}"
-        if [ -f {{.IMAGE_CONFIG}} ]; then
-          set -- "$@" --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})"
-        fi
-        exec "$@" -t {{.HARNESS_IMAGE}} harness/{{.HARNESS_DIR}}
+        metadata="$(jq -c . {{.IMAGE_CONFIG}})"
+        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile --target bundle \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t {{.HARNESS_BUNDLE}} harness/{{.HARNESS_DIR}}
+        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile --target image \
+          --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}" \
+          --build-arg "HARNESS_METADATA=$metadata" \
+          -t {{.HARNESS_IMAGE}} harness/{{.HARNESS_DIR}}
 
   compile:
     desc: Alias for build
@@ -1845,7 +1884,7 @@ tasks:
       - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
-    desc: Build and push the multi-arch agent and harness images for RELEASE_TAG
+    desc: Build and push the multi-arch agent images, platform bundle, and harness bundles and images for RELEASE_TAG
     cmds:
       # Strictly first, and not alongside them: both agent images are built FROM
       # this one, and the build cannot pull a tag that is not in the registry
@@ -1861,21 +1900,31 @@ tasks:
       - task: release:image
         vars:
           IMAGE: sandbox-agent
-          # The same build arguments build:sandbox-agent-image passes, with the
-          # base image pointing at this release rather than the local tag.
-          # IMAGE_LAYER_METADATA is not optional: without it the base layer
-          # label is set to the empty string, and every harness image built
-          # FROM this one inherits an empty layer that registration rejects as
-          # "not built FROM discobox-sandbox-agent" (ADR 0086 §1-2).
+          # The runnable stage by name, with the base image pointing at this
+          # release rather than the local tag: the Dockerfile's default
+          # target is the platform bundle, released next. It labels the
+          # platform's layer too, so its digest moves with every edit to it.
+          TARGET: sandbox-agent
           BUILD_ARGS: >-
             --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
             --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
-      # Strictly after sandbox-agent, and not alongside it: every harness image
-      # is built FROM the sandbox agent image this release just pushed, and the
-      # build cannot pull a tag that is not in the registry yet.
+      # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
+      # multi-architecture index like the images, since it carries the agent
+      # binaries. IMAGE_LAYER_METADATA is not optional: without it the build
+      # refuses, rather than publishing a platform layer every harness bundle
+      # is rejected against (ADR 26-10-16-423 §2).
+      - task: release:image
+        vars:
+          IMAGE: platform
+          DOCKERFILE: sandbox-agent/Dockerfile
+          TARGET: platform
+          BUILD_ARGS: --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
+      # Strictly after sandbox-agent, and not alongside it: every harness's
+      # runnable image is built FROM the sandbox agent image this release just
+      # pushed, and the build cannot pull a tag that is not in the registry yet.
       #
-      # Harness images ship with the release for the same reason the two agent
-      # images do. The built-in harness configs a server seeds name these, and
+      # Harness bundles and images ship with the release for the same reason
+      # the two agent images do. The built-in harness configs a server seeds name these, and
       # their development default is a local tag that resolves to nothing on a
       # user's machine — a released binary that did not publish them seeds
       # harnesses it cannot run.
@@ -1895,43 +1944,64 @@ tasks:
         vars: { HARNESS: shell }
 
   release:harness-image:
-    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|copilot|omp|pi|shell)
+    desc: Build and push one harness's bundle and its multi-arch runnable image (HARNESS=claude-code|codex|opencode|copilot|omp|pi|shell)
     requires:
       vars: [HARNESS]
     vars:
       HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
-      # A harness that declares nothing has no image.json and takes no metadata
-      # argument: its whole manifest is the base layer it inherits (ADR 0086
-      # §2), which is what `shell` is. Same rule as build:harness-image.
-      HARNESS_MANIFEST:
-        sh: test -f harness/{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}/image.json && echo yes || true
     preconditions:
       - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
         msg: "unknown harness: {{.HARNESS}}"
+      - sh: test -f harness/{{.HARNESS_DIR}}/image.json
+        msg: "harness {{.HARNESS}} has no image.json: every harness bundle names the platform API version it runs on"
     cmds:
+      # The bundle, discobox-harness-<name>: what a third party builds FROM.
+      # Platform-neutral, one manifest and no per-architecture index (ADR
+      # 26-10-16-423 §2): its layers are COPYs of files that are the same on
+      # every architecture, and its steps select by platform when they run.
+      # The command substitution is left for the shell release:image runs, so
+      # a manifest carrying spaces stays one argument.
       - task: release:image
         vars:
           IMAGE: harness-{{.HARNESS}}
           DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
           CONTEXT: harness/{{.HARNESS_DIR}}
-          # The same two build arguments build:harness-image passes, with the
-          # base image pointing at this release rather than the local tag. The
-          # command substitution is left for the shell release:image runs, so a
-          # manifest carrying spaces stays one argument.
+          TARGET: bundle
+          SINGLE_MANIFEST: "yes"
+          BUILD_ARGS: --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
+      # Its runnable twin, discobox-harness-<name>-image, which a pool runs
+      # until the agent applies bundles itself: the same build arguments
+      # build:harness-image passes, with the base image pointing at this
+      # release rather than the local tag.
+      - task: release:image
+        vars:
+          IMAGE: harness-{{.HARNESS}}-image
+          DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
+          CONTEXT: harness/{{.HARNESS_DIR}}
+          TARGET: image
           BUILD_ARGS: >-
             --build-arg SANDBOX_AGENT_IMAGE={{.REGISTRY}}/discobox-sandbox-agent:{{.TAG}}
-            {{if .HARNESS_MANIFEST}}--build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"{{end}}
+            --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
 
   release:image:
-    desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/BUILD_ARGS override the defaults)
+    desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/TARGET/BUILD_ARGS override the defaults, SINGLE_MANIFEST=yes pushes one platform-neutral manifest)
     requires:
       vars: [IMAGE]
     vars:
-      PLATFORMS: linux/amd64,linux/arm64
+      # SINGLE_MANIFEST is for a harness bundle, which is one artifact rather
+      # than an index (ADR 26-10-16-423 §2). Built for one platform, since its
+      # content is the same on every one, and without the provenance and SBOM
+      # attestations, which buildx would otherwise attach by wrapping even a
+      # single platform's manifest in an index.
+      PLATFORMS: '{{if .SINGLE_MANIFEST}}linux/amd64{{else}}linux/amd64,linux/arm64{{end}}'
+      ATTEST_ARGS: '{{if .SINGLE_MANIFEST}}--provenance=false --sbom=false{{end}}'
       # The two agent images sit at <name>/Dockerfile and build from the
       # repository root. A harness image overrides all three.
       DOCKERFILE: '{{.DOCKERFILE | default (printf "%s/Dockerfile" .IMAGE)}}'
       CONTEXT: '{{.CONTEXT | default "."}}'
+      # A stage, for a Dockerfile with more than one artifact: sandbox-agent's
+      # image and the platform bundle, a harness's bundle and its image.
+      TARGET_ARG: '{{if .TARGET}}--target {{.TARGET}}{{end}}'
       BUILD_ARGS: '{{.BUILD_ARGS | default ""}}'
     cmds:
       - |
@@ -1964,7 +2034,7 @@ tasks:
         # depot builds each architecture on a native machine, so there is no
         # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
         if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PLATFORMS}} -f {{.DOCKERFILE}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
+          depot build --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
@@ -1974,8 +2044,8 @@ tasks:
           # nothing useful when they are missing.
           docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
           go tool task buildx:builder
-          docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} \
-            -f {{.DOCKERFILE}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
+          docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} \
+            -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
         fi
 
   vm:build:

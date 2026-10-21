@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -14,6 +15,10 @@ type unavailableInspector struct{ err error }
 
 func (i unavailableInspector) Inspect(context.Context, string) (imageMetadata, error) {
 	return imageMetadata{}, i.err
+}
+
+func (i unavailableInspector) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
+	return bundleInspection{}, i.err
 }
 
 // Seeding skips an image it cannot inspect, so one broken harness cannot stop a
@@ -28,7 +33,7 @@ func TestEnsureHarnessAvailableReportsEveryUnusableImage(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	svc := &Service{store: st, inspector: unavailableInspector{
-		err: errors.New(`image label "10-sandbox-base" is empty`),
+		err: errors.New(`image label "10-platform" is empty`),
 	}}
 
 	// Seeding still succeeds: it is best-effort per harness.
@@ -56,7 +61,7 @@ func TestEnsureHarnessAvailableReportsEveryUnusableImage(t *testing.T) {
 			t.Fatalf("error = %q, want it to name the %s harness", err, seed.Slug)
 		}
 	}
-	if !strings.Contains(err.Error(), "10-sandbox-base") {
+	if !strings.Contains(err.Error(), "10-platform") {
 		t.Fatalf("error = %q, want the reason each image was unusable", err)
 	}
 }
@@ -83,7 +88,9 @@ func TestEnsureHarnessAvailableAcceptsAConfigItDidNotSeed(t *testing.T) {
 
 func TestReleaseManifestDoesNotSilentlyKeepOldHarnessImages(t *testing.T) {
 	failure := errors.New("release image unavailable")
-	svc := &Service{store: newTestStore(t), inspector: unavailableInspector{err: failure}, requireBuiltInImages: true, harnessImages: map[string]string{"shell": "example.com/shell:v8"}}
+	svc := &Service{store: newTestStore(t), inspector: unavailableInspector{err: failure}, requireBuiltInImages: true, harnesses: harnessdefs.References{
+		Images: map[string]string{"shell": "example.com/shell-image:v8"}, Bundles: map[string]string{"shell": "example.com/shell:v8"},
+	}}
 	if err := svc.SeedBuiltIns(context.Background(), "project-1"); !errors.Is(err, failure) {
 		t.Fatalf("seeding = %v; want release image failure", err)
 	}
@@ -106,7 +113,9 @@ func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &Service{store: st, inspector: unavailableInspector{err: errors.New("must not inspect")},
-		requireBuiltInImages: true, harnessImages: map[string]string{custom.Slug: "example.com/release:v8"}}
+		requireBuiltInImages: true, harnesses: harnessdefs.References{
+			Images: map[string]string{custom.Slug: "example.com/release-image:v8"}, Bundles: map[string]string{custom.Slug: "example.com/release:v8"},
+		}}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err == nil || !strings.Contains(err.Error(), "other-agent conflicts with a user-created") {
 		t.Fatalf("seed = %v; want a visible slug collision", err)
 	}

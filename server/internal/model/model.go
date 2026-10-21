@@ -358,13 +358,22 @@ type ProjectUserKey = SandboxAccessIssuerKey
 // configure flow completes successfully; Deconfigure reverses that by removing
 // the assets the flow created.
 type HarnessConfig struct {
-	ID               string                `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
-	ProjectID        string                `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Slug             string                `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	BuiltIn          bool                  `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted."`
-	Configured       bool                  `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
-	Name             string                `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
-	Image            string                `gorm:"column:image;not null;type:text;default:''" json:"image" doc:"Harness-specific sandbox image"`
+	ID         string `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
+	ProjectID  string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug       string `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	BuiltIn    bool   `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted."`
+	Configured bool   `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
+	Name       string `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
+	// Bundle is the harness bundle the manifest is read from (ADR
+	// 26-10-16-423 §2), and Image the runnable image built from the platform's
+	// with that bundle provisioned into it, which a sandbox pins and a pool
+	// runs until the agent applies bundles itself. A config registered before
+	// bundles has none, and keeps the manifest its image's labels gave it until
+	// a bundle is registered for it; a manifest file's config has none either,
+	// its Image being the file.
+	Bundle           string                `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"The harness bundle its manifest is read from. Absent on a harness registered before bundles, or one whose image is a manifest file."`
+	BundleDigest     string                `gorm:"column:bundle_digest;not null;type:text;default:''" json:"bundleDigest,omitempty" doc:"Content digest observed when the harness bundle was registered"`
+	Image            string                `gorm:"column:image;not null;type:text;default:''" json:"image" doc:"The runnable image a discobox on this harness runs: its bundle provisioned onto the platform's image, or a manifest file"`
 	ImageDigest      string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Content digest observed when the harness image was registered"`
 	RunCommand       []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered image label."`
 	RelaunchCommand  []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered image label."`

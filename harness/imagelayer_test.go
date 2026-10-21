@@ -157,3 +157,96 @@ func TestResolveImageLabelsIgnoresUnrelatedLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// platformLabels is a platform bundle's label set: its one layer, providing
+// the platform API version.
+func platformLabels(layer string) map[string]string {
+	return map[string]string{ImageLayerLabelPrefix + PlatformLayer: layer}
+}
+
+const platformLayerJSON = `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0","PATH":"/usr/bin"},"volumes":[{"path":"%HOME%","volume":"data"}]}`
+
+// The platform's layer is composed under the harness bundle's, which a harness
+// no longer inherits: the harness's own layer is last, and later wins.
+func TestComposeBundleLabelsPutsThePlatformUnderTheHarness(t *testing.T) {
+	metadata, err := ComposeBundleLabels(platformLabels(platformLayerJSON), map[string]string{
+		ImageLayerLabelPrefix + "60-acme": `{"env":{"ACME":"1"}}`,
+		ImageLabel:                        `{"platformAPIVersion":"discobox.ai/platform/v1","env":{"PATH":"/opt/bin"},"harness":{"id":"acme","name":"Acme"}}`,
+	})
+	if err != nil {
+		t.Fatalf("ComposeBundleLabels() error = %v", err)
+	}
+	if metadata.Env["DISPLAY"] != ":0" || metadata.Env["ACME"] != "1" || metadata.Env["PATH"] != "/opt/bin" {
+		t.Fatalf("env = %v, want the platform's under the harness's layers", metadata.Env)
+	}
+	if len(metadata.Volumes) != 1 || metadata.Harness == nil || metadata.Harness.ID != "acme" {
+		t.Fatalf("metadata = %+v, want the platform's volume and the harness's identity", metadata)
+	}
+}
+
+func TestComposeBundleLabelsRefuses(t *testing.T) {
+	harnessOwn := `{"platformAPIVersion":"discobox.ai/platform/v1"}`
+	for name, tc := range map[string]struct {
+		platform, harness map[string]string
+		says              string
+	}{
+		"a harness built FROM the platform": {
+			platformLabels(platformLayerJSON),
+			map[string]string{ImageLayerLabelPrefix + PlatformLayer: platformLayerJSON, ImageLabel: harnessOwn},
+			"built FROM the platform",
+		},
+		"a harness built FROM the sandbox agent image": {
+			platformLabels(platformLayerJSON),
+			map[string]string{ImageLayerLabelPrefix + SandboxBaseLayer: `{}`, ImageLabel: harnessOwn},
+			"built FROM the platform",
+		},
+		"a platform with no layer": {
+			map[string]string{ImageLabel: `{}`},
+			map[string]string{ImageLabel: harnessOwn},
+			"carries no " + ImageLayerLabelPrefix + PlatformLayer,
+		},
+		"a platform providing no version": {
+			platformLabels(`{"env":{"DISPLAY":":0"}}`),
+			map[string]string{ImageLabel: harnessOwn},
+			"declares no platformAPIVersion",
+		},
+		"a harness naming no version": {
+			platformLabels(platformLayerJSON),
+			map[string]string{ImageLabel: `{"harness":{"id":"acme"}}`},
+			"names no platformAPIVersion",
+		},
+		"a harness declaring nothing": {
+			platformLabels(platformLayerJSON),
+			map[string]string{},
+			"names no platformAPIVersion",
+		},
+		"a harness needing another platform": {
+			platformLabels(platformLayerJSON),
+			map[string]string{ImageLabel: `{"platformAPIVersion":"discobox.ai/platform/v2"}`},
+			`needs platform "discobox.ai/platform/v2"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ComposeBundleLabels(tc.platform, tc.harness)
+			if err == nil || !strings.Contains(err.Error(), tc.says) {
+				t.Fatalf("err = %v, want one saying %q", err, tc.says)
+			}
+		})
+	}
+}
+
+// A third party's bundle built FROM a harness bundle carries the harness's
+// contributed layers and its own label, and names the platform once: the
+// version a lower layer names is the one the harness's own may restate.
+func TestComposeBundleLabelsReadsTheVersionFromAnyHarnessLayer(t *testing.T) {
+	metadata, err := ComposeBundleLabels(platformLabels(platformLayerJSON), map[string]string{
+		ImageLayerLabelPrefix + "60-claude-code": `{"platformAPIVersion":"discobox.ai/platform/v1","env":{"BASE":"1"}}`,
+		ImageLabel:                               `{"env":{"ACME":"1"}}`,
+	})
+	if err != nil {
+		t.Fatalf("ComposeBundleLabels() error = %v", err)
+	}
+	if metadata.Env["BASE"] != "1" || metadata.Env["ACME"] != "1" {
+		t.Fatalf("env = %v, want both harness layers", metadata.Env)
+	}
+}

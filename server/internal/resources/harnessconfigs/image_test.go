@@ -15,17 +15,39 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
-// withBaseLayer adds the layer every harness image inherits from the sandbox
-// agent base. Registration requires it as proof of lineage (ADR 0086 §1), so a
-// label map without one is not a case any real image presents.
-func withBaseLayer(own string) map[string]string {
-	labels := map[string]string{
-		harness.ImageLayerLabelPrefix + harness.SandboxBaseLayer: `{"apiVersion":"discobox.dev/image/v1","env":{"DISPLAY":":0"}}`,
+// bundleLabels is a harness bundle's label set with own as its label, naming
+// the platform API version when own does not: a bundle names the platform it
+// runs on (ADR 26-10-16-423 §2), so a label without it is not a case any real
+// bundle presents.
+func bundleLabels(own string) map[string]string {
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(own), &fields); err != nil {
+		panic(err)
 	}
-	if own != "" {
-		labels[harness.ImageLabel] = own
+	if _, ok := fields["platformAPIVersion"]; !ok {
+		fields["platformAPIVersion"] = harness.PlatformAPIVersion
 	}
-	return labels
+	label, err := json.Marshal(fields)
+	if err != nil {
+		panic(err)
+	}
+	return map[string]string{harness.ImageLabel: string(label)}
+}
+
+// testPlatformLayer is a platform layer providing the platform API version
+// and the display every box has.
+const testPlatformLayer = `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0"}}`
+
+// parseBundle composes a harness bundle's labels on a platform bundle whose
+// layer is platformLayer, as registration does.
+func parseBundle(digest string, labels map[string]string) (imageMetadata, error) {
+	return parseBundleOn(testPlatformLayer, digest, labels)
+}
+
+func parseBundleOn(platformLayer, digest string, labels map[string]string) (imageMetadata, error) {
+	platformBundle := bundleInspection{Digest: "sha256:platform", Labels: map[string]string{harness.ImageLayerLabelPrefix + harness.PlatformLayer: platformLayer}}
+	metadata, err := composeBundleMetadata(platformBundle, bundleInspection{Digest: digest, Labels: labels})
+	return imageMetadata{BundleDigest: digest, ImageMetadata: metadata}, err
 }
 
 func TestParseImageMetadata(t *testing.T) {
@@ -40,11 +62,11 @@ func TestParseImageMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label)))
+	metadata, err := parseBundle("sha256:abc", bundleLabels(string(label)))
 	if err != nil {
 		t.Fatalf("parse image metadata: %v", err)
 	}
-	if metadata.Digest != "sha256:abc" || metadata.Harness.ID != "codex" || len(metadata.Harness.Secrets) != 1 {
+	if metadata.BundleDigest != "sha256:abc" || metadata.Harness.ID != "codex" || len(metadata.Harness.Secrets) != 1 {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	if len(metadata.Volumes) != 1 || metadata.Env["HOME"] != "/home/sandbox" {
@@ -60,7 +82,7 @@ func TestParseImageMetadataRejectsInvalidSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+	if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
 		t.Fatal("invalid secret name was accepted")
 	}
 }
@@ -79,7 +101,7 @@ func TestParseImageMetadataRejectsABadRoute(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+		if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
 			t.Fatalf("%s: the route was accepted", name)
 		}
 	}
@@ -102,7 +124,7 @@ func TestParseImageMetadataRejectsAnUnhonorableVolumeScope(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+		if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
 	}
@@ -122,7 +144,7 @@ func TestParseImageMetadataKeepsADeclaredVolumeScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label)))
+	metadata, err := parseBundle("sha256:abc", bundleLabels(string(label)))
 	if err != nil {
 		t.Fatalf("parse image metadata: %v", err)
 	}
@@ -144,7 +166,7 @@ func TestParseImageMetadataAcceptsNoRunCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := parseImageMetadata("sha256:shell", withBaseLayer(string(label)))
+	metadata, err := parseBundle("sha256:shell", bundleLabels(string(label)))
 	if err != nil {
 		t.Fatalf("parse shell image metadata: %v", err)
 	}
@@ -158,7 +180,7 @@ func TestParseImageMetadataAcceptsNoRunCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:shell", withBaseLayer(string(blank))); err == nil {
+	if _, err := parseBundle("sha256:shell", bundleLabels(string(blank))); err == nil {
 		t.Fatal("a blank runCommand was accepted")
 	}
 }
@@ -171,7 +193,7 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+	if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
 		t.Fatal("unknown volume kind was accepted")
 	}
 }
@@ -193,7 +215,7 @@ func TestParseImageMetadataRejectsBadConfigPorts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+		if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
 			t.Fatalf("%s config port was accepted", name)
 		}
 	}
@@ -210,7 +232,7 @@ func TestParseImageMetadataAcceptsAnEphemeralConfigPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err != nil {
+	if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err != nil {
 		t.Fatalf("ephemeral config port was refused: %v", err)
 	}
 }
@@ -250,18 +272,12 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Plus the image that declares nothing at all and is its inherited layer,
-	// which is `shell` and is also what any BYO image starts as.
-	cases := map[string]string{"(no manifest)": ""}
+	cases := map[string]string{}
 	for _, match := range matches {
 		cases[match] = compactFile(t, match)
 	}
 	for name, own := range cases {
-		labels := map[string]string{harness.ImageLayerLabelPrefix + harness.SandboxBaseLayer: baseLayer}
-		if own != "" {
-			labels[harness.ImageLabel] = own
-		}
-		metadata, err := parseImageMetadata("sha256:test", labels)
+		metadata, err := parseBundleOn(baseLayer, "sha256:test", map[string]string{harness.ImageLabel: own})
 		if err != nil {
 			t.Errorf("%s would be rejected as a label: %v", name, err)
 			continue
@@ -431,7 +447,7 @@ func TestParseImageMetadataRejectsABadRejectionScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil || !strings.Contains(err.Error(), "rejectionScope") {
+			if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil || !strings.Contains(err.Error(), "rejectionScope") {
 				t.Fatalf("err = %v, want the rejection scope refused", err)
 			}
 		})
@@ -442,7 +458,7 @@ func TestParseImageMetadataRejectsABadRejectionScope(t *testing.T) {
 // onto the config with its host in the spelling the proxy reports.
 func TestSnapshotImageMetadataCarriesRejectionScope(t *testing.T) {
 	label := `{"harness":{"id":"claude-code","name":"Claude Code","secrets":[{"name":"API_KEY","rejectionScope":[{"host":"API.Example.com","paths":["/v1/messages"]}]},{"name":"OTHER"}]}}`
-	metadata, err := parseImageMetadata("sha256:abc", withBaseLayer(label))
+	metadata, err := parseBundle("sha256:abc", bundleLabels(label))
 	if err != nil {
 		t.Fatalf("parse image metadata: %v", err)
 	}
@@ -477,7 +493,7 @@ func TestSeedBuiltInsRewritesABuiltInWhoseSecretDeclarationsMoved(t *testing.T) 
 		}}},
 	}}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: declared}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"claude-code": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"claude-code": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

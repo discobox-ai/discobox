@@ -1,8 +1,13 @@
 # Release manifests
 
 A manifest names runtime images by role: pool agent, sandbox agent, VM guest,
-libkrun kernel, and harness slug. `Images.References` derives the host cache's
-staging list from those roles. Never add a separately maintained preload list.
+libkrun kernel, and harness slug. Beside them, `Bundles` names the platform
+bundle and each harness's bundle by slug (ADR 26-10-16-423 §2): the server
+composes every harness's manifest from them, while a pool runs the harness
+image built from each. `References` derives the host cache's staging list
+from the image roles. Bundles are not staged: the cache feeds pool daemons,
+for the pool's platform, and a pool runs no bundle, while a harness bundle is
+one manifest for every platform that staging for another would refuse. Never add a separately maintained preload list.
 The VM/kernel retain their independent release pins; container image tags name
 the Discobox release. Windows supplies its own guest through WSL Containers.
 
@@ -23,7 +28,11 @@ or incomplete files fail visibly. Server configuration loads it once at startup,
 overrides individual image settings, and disables development image sync. VM
 providers also bypass local guest builds when this manifest is selected.
 Provider image overrides are superseded; custom user-created harness configs
-remain user-owned, and existing sandboxes retain their pinned images.
+remain user-owned, and existing sandboxes retain their pinned images. A release
+from before bundles names none and still parses — the CLI reads older
+servers' manifests — but a server refuses to load one: it has no bundle to
+read any harness's manifest from, so `dev:released-images` needs a release
+from bundles on.
 
 The CLI can stage directly from the manifest without executing a development
 server to discover images. Direct server startup stages the same image set
@@ -41,7 +50,8 @@ the full inventory is an external release artifact.
 
 `release:manifest` merges all platform results into `release.json` before
 publication. It rejects mismatched versions, source revisions, image sets,
-duplicate platforms, and missing CLI/server pairs. The existing binary download
+duplicate platforms, and missing CLI/server pairs; the image and bundle sets
+must agree. The existing binary download
 manifest remains the compact embedded server bootstrap descriptor.
 
 ## Development

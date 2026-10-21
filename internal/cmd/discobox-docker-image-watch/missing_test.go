@@ -13,13 +13,13 @@ func TestMissingImageSpecsRebuildsWhatLeftTheDaemon(t *testing.T) {
 		{name: baseSpecName, baseImage: "discobox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
-		{name: "harness-codex", baseImage: "discobox-harness-codex:local", parent: sandboxAgentSpecName},
+		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},
 	}
 	present := map[string]struct{}{
-		"discobox-base:local":          {},
-		"discobox-pool-agent:local":    {},
-		"discobox-sandbox-agent:local": {},
-		"discobox-harness-codex:local": {},
+		"discobox-base:local":                {},
+		"discobox-pool-agent:local":          {},
+		"discobox-sandbox-agent:local":       {},
+		"discobox-harness-codex-image:local": {},
 	}
 
 	if got := specNames(missingFrom(specs, present)); len(got) != 0 {
@@ -41,18 +41,18 @@ func TestMissingSandboxAgentRebuildsEveryImageLayeredOnIt(t *testing.T) {
 		{name: baseSpecName, baseImage: "discobox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
-		{name: "harness-codex", baseImage: "discobox-harness-codex:local", parent: sandboxAgentSpecName},
-		{name: "harness-claude-code", baseImage: "discobox-harness-claude-code:local", parent: sandboxAgentSpecName},
+		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},
+		{name: "harness-claude-code-image", baseImage: "discobox-harness-claude-code-image:local", parent: sandboxAgentSpecName},
 	}
 	present := map[string]struct{}{
-		"discobox-base:local":                {},
-		"discobox-pool-agent:local":          {},
-		"discobox-harness-codex:local":       {},
-		"discobox-harness-claude-code:local": {},
+		"discobox-base:local":                      {},
+		"discobox-pool-agent:local":                {},
+		"discobox-harness-codex-image:local":       {},
+		"discobox-harness-claude-code-image:local": {},
 	}
 
 	got := specNames(missingFrom(specs, present))
-	want := map[string]bool{sandboxAgentSpecName: true, "harness-codex": true, "harness-claude-code": true}
+	want := map[string]bool{sandboxAgentSpecName: true, "harness-codex-image": true, "harness-claude-code-image": true}
 	if len(got) != len(want) {
 		t.Fatalf("missing = %v, want the sandbox agent and both harnesses", got)
 	}
@@ -71,12 +71,12 @@ func TestMissingSharedBaseRebuildsEveryImageBuiltOnIt(t *testing.T) {
 		{name: baseSpecName, baseImage: "discobox-base:local"},
 		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
 		{name: sandboxAgentSpecName, baseImage: "discobox-sandbox-agent:local", parent: baseSpecName},
-		{name: "harness-codex", baseImage: "discobox-harness-codex:local", parent: sandboxAgentSpecName},
+		{name: "harness-codex-image", baseImage: "discobox-harness-codex-image:local", parent: sandboxAgentSpecName},
 	}
 	present := map[string]struct{}{
-		"discobox-pool-agent:local":    {},
-		"discobox-sandbox-agent:local": {},
-		"discobox-harness-codex:local": {},
+		"discobox-pool-agent:local":          {},
+		"discobox-sandbox-agent:local":       {},
+		"discobox-harness-codex-image:local": {},
 	}
 
 	got := specNames(missingFrom(specs, present))

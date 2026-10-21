@@ -1,5 +1,6 @@
 {
   "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
   "harness": {
     "id": "codex",
     "name": "Codex",

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 // TestStampBuildModeImagesProducesBuildableManifest runs build-mode against the
@@ -70,11 +73,56 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 		t.Fatal("expected at least one harness image to depend on the sandbox base image")
 	}
 
+	// The server builds each entry's stage and reconstructs its labels from
+	// its arguments, so both must say which artifact it is.
+	wantTargets := map[string]string{
+		"discobox-sandbox-agent:dev-":             "sandbox-agent",
+		"discobox-platform:dev-":                  "platform",
+		"discobox-harness-claude-code:dev-":       "bundle",
+		"discobox-harness-claude-code-image:dev-": "image",
+		"discobox-harness-shell:dev-":             "bundle",
+		"discobox-harness-shell-image:dev-":       "image",
+	}
+	wantArgs := map[string][]string{
+		"discobox-sandbox-agent:dev-":             {"BASE_IMAGE", harness.LayerMetadataBuildArg},
+		"discobox-platform:dev-":                  {harness.LayerMetadataBuildArg},
+		"discobox-harness-claude-code:dev-":       {harness.MetadataBuildArg},
+		"discobox-harness-claude-code-image:dev-": {harness.MetadataBuildArg, "SANDBOX_AGENT_IMAGE"},
+		"discobox-harness-shell:dev-":             {harness.MetadataBuildArg},
+		"discobox-harness-shell-image:dev-":       {harness.MetadataBuildArg, "SANDBOX_AGENT_IMAGE"},
+	}
+	for prefix, target := range wantTargets {
+		found := false
+		for _, image := range manifest.Images {
+			if !strings.HasPrefix(image.Reference, prefix) {
+				continue
+			}
+			found = true
+			if image.Build.Target != target {
+				t.Errorf("%s build target = %q, want %q", image.Reference, image.Build.Target, target)
+			}
+			got := slices.Sorted(maps.Keys(image.Build.Args))
+			want := slices.Sorted(slices.Values(wantArgs[prefix]))
+			if !slices.Equal(got, want) {
+				t.Errorf("%s build args = %v, want %v", image.Reference, got, want)
+			}
+			for _, key := range []string{harness.MetadataBuildArg, harness.LayerMetadataBuildArg} {
+				if value, ok := image.Build.Args[key]; ok && !strings.Contains(value, harness.PlatformAPIVersion) {
+					t.Errorf("%s %s = %q, want the compacted image.json naming %s", image.Reference, key, value, harness.PlatformAPIVersion)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("stamped manifest has no %s image", prefix)
+		}
+	}
+
 	env, err := os.ReadFile(filepath.Join(out, envFile))
 	if err != nil {
 		t.Fatalf("read stamped env file: %v", err)
 	}
-	for _, key := range []string{devimage.SyncEnv, devimage.ManifestEnv, "DISCOBOX_DOCKER_POOL_IMAGE"} {
+	for _, key := range []string{devimage.SyncEnv, devimage.ManifestEnv, "DISCOBOX_DOCKER_POOL_IMAGE",
+		"DISCOBOX_PLATFORM_BUNDLE", "DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE", "DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE"} {
 		if !strings.Contains(string(env), key+"=") {
 			t.Fatalf("stamped env file is missing %s", key)
 		}

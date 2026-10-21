@@ -1,18 +1,42 @@
 # syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
-FROM ${SANDBOX_AGENT_IMAGE}
 
-# Nearly empty. Every other harness image installs its CLI and declares what it
-# needs; this one's harness *is* the shell the base image already ships, and
-# its env, volumes and groups are the base image's own layer, which this image
-# inherits by being built FROM it (ADR 0086 §2).
+# Nearly empty. Every other harness bundle carries its CLI's feature and
+# declares what it needs; this one's harness *is* the shell the platform
+# already ships, and its env, volumes and groups are the platform's own layer,
+# which the server composes under every harness bundle's (ADR 26-10-16-423 §2).
 #
-# So there is no image.json and no label of its own: nothing is left to say. It
+# So the bundle holds no feature, only the label: its image.json names nothing
+# but the platform API version it runs on, which every harness bundle must. It
 # is registered under the reserved `shell` slug, which is also what withholds
 # the harness-run convention from it — a command typed into this terminal would
 # be a second shell inside the first (ADR 0086 §3).
 #
-# Nor does it install discobox-prompt, which every image that runs a model
+# Nor does it install discobox-prompt, which every bundle that runs a model
 # provides for the project's judge. A shell runs no model, so a project whose
 # default harness is this one has no judge discobox (ADR 26-10-02-054 §2).
+FROM scratch AS bundle
+ARG HARNESS_METADATA
+# Required, and refused by the build itself rather than trusted: an omitted
+# argument labels this bundle with the empty string, which parses as a build
+# that forgot rather than as a bundle declaring nothing, and only a running
+# server would ever say so. A FROM scratch stage has no shell to check it in,
+# so the expansion does.
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
+
+# The runnable twin a pool runs until the agent applies bundles itself. The
+# bundle has no feature to copy in or provision, so the twin is the sandbox
+# agent image and its label.
+FROM ${SANDBOX_AGENT_IMAGE} AS image
+ARG HARNESS_METADATA
+# The bundle's label again, which nothing reads off this image: it is here so
+# this image's digest, which a sandbox pins and whose move is what re-pins and
+# upgrades it, moves with every edit to the manifest the server composes from
+# the bundle. This stage does not build the bundle's, so it refuses an empty
+# argument itself.
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
+
+# The bundle is the default target: it is what a harness is published as, and
+# what a third party builds FROM.
+FROM bundle

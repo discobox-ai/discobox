@@ -18,6 +18,7 @@ import (
 	imagetypes "github.com/moby/moby/api/types/image"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -144,8 +145,8 @@ func TestCreateHarnessConfigRecordsWhatTheImagePublishes(t *testing.T) {
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
 		image: {Digest: "sha256:one", Platforms: published, ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{ID: "example", Name: "Example"}}},
 	}}
-	svc := &Service{store: st, inspector: inspector}
-	config, err := svc.CreateHarnessConfig(ctx, "project-1", services.CreateHarnessConfigBody{Image: image})
+	svc := &Service{store: st, inspector: inspector, harnesses: testReferences}
+	config, err := svc.CreateHarnessConfig(ctx, "project-1", services.CreateHarnessConfigBody{Image: image, Bundle: apigen.NewOptString(image)})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestSeedBuiltInsRewritesABuiltInWhosePlatformsMoved(t *testing.T) {
 	}
 	published := platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}, platform.Platform{OS: "linux", Arch: "arm64"})
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: {Digest: "sha256:same", Platforms: published}}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

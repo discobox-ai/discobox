@@ -7,14 +7,23 @@ launchers, and configure scripts.
 
 ## Image Contract
 
-- One sandbox image contains at most one harness. Its identity, seed files,
+- **A harness is a bundle** ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §2): a `FROM scratch` image of its features, `/features/<name>/`, applied
+  and never run, whose labels carry its manifest. The platform is a bundle
+  too, and a harness bundle never inherits it: the server composes the
+  platform bundle's `10-platform` layer (`PlatformLayer`) under the harness
+  bundle's own (`ComposeBundleLabels`). Until the agent applies bundles
+  itself, each harness also has a runnable image built from the platform's
+  with its bundle provisioned into it, which a pool runs and whose labels
+  nothing reads.
+- One bundle contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
   volumes, supplementary groups (`additionalGroups`), features, the
   destinations it needs to reach (`harness.egressHosts`, joining the harness's
   egress level and never restricting anything themselves, ADR 26-10-01-032 §3),
-  and any command overrides are published in OCI image labels (`harness.ImageMetadata`) for
+  and any command overrides are published in the bundle's OCI labels (`harness.ImageMetadata`) for
   server-side registration. There is no baked-in
-  file inside the image carrying this data — `image.json` is the build-time
+  file inside the bundle carrying this data — `image.json` is the build-time
   authoring source a label is compacted from (see `Taskfile.yml`), not a
   runtime artifact.
 - **A template with no image ships the same manifest as a file** (ADR 0145 §3).
@@ -39,7 +48,7 @@ launchers, and configure scripts.
   neither, because both come from the account the sandbox resolves from its
   own passwd database (ADR 0025). `features` says what the filesystem ships
   beyond running commands — `desktop`, `docker` (nested Docker and its runc
-  wrapper) — and the Linux base layer declares both. A feature merges like a
+  wrapper) — and the platform layer declares both. A feature merges like a
   group: any layer adds one, none removes one. `ImageMetadata.ValidateFor`
   judges the merged manifest by its platform's OS: a non-Linux one with
   volumes, `additionalGroups`, a desktop or nested Docker is refused, each a
@@ -60,19 +69,20 @@ launchers, and configure scripts.
   product decision taken with egress, not a consequence of it — a restricted
   discobox would otherwise spend refused requests on them, and Discobox does
   not want them sent from an unrestricted one either.
-- **A manifest is a stack of layers** (ADR 0086 §2). An image's effective
-  manifest is `harness.ResolveImageLabels`: every
-  `io.discobox.image.v1.<NN>-<name>` label in ascending order of that suffix,
-  then the image's own `io.discobox.image.v1` label last. Docker inherits a
-  parent's labels and a `LABEL` replaces only the key it names, so a layer set
-  by `sandbox-agent/Dockerfile` is present on every image built from it at any
-  depth. Layers merge by identity — `env` per key, `volumes`/`files` by path,
+- **A manifest is a stack of layers** (ADR 0086 §2). A bundle's effective
+  manifest is `harness.ComposeBundleLabels`: the platform's `10-platform`
+  layer, then every `io.discobox.image.v1.<NN>-<name>` label the bundle
+  carries in ascending order of that suffix, then its own
+  `io.discobox.image.v1` label last (`ResolveImageLabels` resolves the
+  bundle's part). Docker inherits a parent's labels and a `LABEL` replaces
+  only the key it names, so a third party's bundle built `FROM` a harness's
+  carries the layers that one contributed. Layers merge by identity — `env` per key, `volumes`/`files` by path,
   `secrets` by name, groups and egress hosts by union; a harness's scalar fields, commands, and
   `config` go to the last layer that sets them — and none of them may unset.
   A layer is a fragment: only the merged result is validated, at registration.
   `00`–`49` is reserved for layers Discobox ships (`LayerNumberReserved`).
-  The same inheritance carries `ReclaimLabel`, which marks every image built
-  from the base as one Discobox may reclaim (ADR 0040).
+  The same inheritance carries `ReclaimLabel` onto every runnable image built
+  from the sandbox agent's, as one Discobox may reclaim (ADR 0040).
 - A declared volume says which primary volume backs it (`data` or `cache`),
   and `path` may use `%HOME%` and `uid`/`gid` `%UID%`/`%GID%`; `ResolveVolumes`
   expands them against the sandbox user and judges the path by the sandbox's
@@ -113,11 +123,15 @@ launchers, and configure scripts.
   image can hand a tree to a *group*, which is what it must do whenever the uid
   that will use the tree is not known until the sandbox boots
   ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md) §2).
-- **Extending `discobox-sandbox-agent` is required**, and the base layer proves
-  it. Registration rejects an image carrying no `10-sandbox-base` layer, because
-  the runtime contract — PID 1, systemd units, the runc wrapper — lives in the
-  base image's filesystem, and an image that did not come from it cannot run a
-  sandbox whatever it declares (ADR 0086 §1).
+- **A harness extends a harness, never the platform** (§2). A bundle
+  carrying a `10-platform` or `10-sandbox-base` layer of its own was built
+  `FROM` the platform or the sandbox agent image, which would pin the agent
+  it was built with, and is refused. It names instead the
+  `platformAPIVersion` it needs (`PlatformAPIVersion`), which must be the one
+  the platform's layer provides. A bundle carrying a whiteout is refused: its
+  layers add feature directories side by side and delete nothing. A
+  manifest file still proves its lineage with the overlay's
+  `10-sandbox-base` layer (ADR 0086 §1).
 - **The harness command is a convention.** The image installs its agent as
   `/usr/local/bin/discobox-harness-run` (`harness.RunCommand`) and the runtime
   types `discobox-harness-run [--resume] '<prompt>'`. `runCommand` and
@@ -155,25 +169,40 @@ launchers, and configure scripts.
   tag's current contents, not a permanent record (ADR 0016).
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
-- Each harness folder owns its `Dockerfile`, `image.json` (when it needs one),
-  configure script, and other image-specific assets. The folder is the
-  harness's feature ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+- Each harness folder owns its `Dockerfile`, `image.json`, configure script,
+  and other image-specific assets. The folder is the harness's feature
+  ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
   each file where the harness reads it, requiring the platform features it
-  runs on (`node`, and `bun` for omp). The Dockerfile copies the files the
-  feature names into the harness tree, `/opt/discobox/bundles/harness`, and
-  runs `discobox-sandbox-agent provision` over the platform's tree and it.
-  `harness/shell` needs none: it installs nothing, declares nothing, and *is*
-  its inherited base layer.
+  runs on (`node`, and `bun` for omp).
+- **A harness Dockerfile builds two artifacts** (§2). Its default target,
+  `bundle`, is `FROM scratch`: the feature's files under
+  `/features/<feature>/` and the manifest in labels, published as
+  `discobox-harness-<name>`, the name a third party builds `FROM`. Its `image`
+  target is the runnable twin a pool runs until the agent applies bundles
+  itself, `discobox-harness-<name>-image`: `FROM` the sandbox agent image, the
+  bundle's `/features/` copied into the harness tree,
+  `/opt/discobox/bundles/harness`, and `discobox-sandbox-agent provision` run
+  over the platform's tree and it. The twin also carries the bundle's
+  `io.discobox.image.v1` label, which nothing reads: it is there so the digest
+  a sandbox pins moves with every manifest edit
+  ([`harnessconfigs`](../server/internal/resources/harnessconfigs/DESIGN.md)).
+  `harness/shell`'s bundle carries no feature, only its label, and its twin is
+  the sandbox agent image and that label. A published harness bundle is one
+  `linux/amd64` manifest with no attestations — its content is the same on
+  every architecture, and its steps select theirs when they run — where the
+  platform bundle and the twins are multi-architecture indexes.
 - **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
   argument passed labels the image with the empty string, which is a build
-  mistake that produces a working image nothing can register — so
-  `sandbox-agent/Dockerfile` and every harness Dockerfile that declares a
-  manifest fail the build when their argument is missing, rather than leaving it
-  for a server to report at seed time. Any build path publishing these images
-  (`build:*-image`, `release:images`, the development watcher) passes it.
-- **The base layer** is `sandbox-agent/image.json`, beside the Dockerfile that
-  labels it. It carries what is true of that image's filesystem rather than of
+  mistake that produces a working image nothing can register — so the platform
+  stage of `sandbox-agent/Dockerfile` and every harness bundle stage refuse the
+  build through `${ARG:?}` when their argument is missing, rather than leaving
+  it for a server to report at seed time. A harness's twin labels the same
+  argument; the twins that build no bundle stage (`shell`, the test stub and
+  the latency harness) refuse an empty one themselves. Any build path publishing these
+  (`build:*`, `release:images`, the development watcher) passes it.
+- **The platform layer** (`10-platform`) is `sandbox-agent/image.json`, beside the Dockerfile that
+  labels it. It carries what is true of every box the platform provisions rather than of
   any harness:
   - `DISPLAY=:0`, because the base ships the socket-activated desktop (Xorg
     dummy on `:0`, Xfce, x11vnc, websockify — see
@@ -404,10 +433,10 @@ launchers, and configure scripts.
     from, a Node script that runs on the base image's Node. Its slug, folder,
     image and hook provider are all `pi`.
   - `shell` — the login shell, and the end of the resolution chain. Its
-    Dockerfile installs nothing (the base image already ships the shell) and it
-    has no `image.json` at all: no identity to declare beyond its reserved slug,
-    no secrets, no configure flow, and its env and volumes are the base layer it
-    inherits. The reserved slug is also what withholds the harness-run
+    Dockerfile installs nothing (the platform already ships the shell) and its
+    `image.json` names only the platform API version it runs on: no identity
+    to declare beyond its reserved slug, no secrets, no configure flow, and its
+    env and volumes are the platform's layer. The reserved slug is also what withholds the harness-run
     convention from it — a command typed into this terminal would be a second
     shell inside the first. It is otherwise an ordinary harness in every
     mechanism that touches it (ADR 0043, ADR 0086 §3).

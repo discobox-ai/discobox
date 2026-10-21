@@ -1,5 +1,6 @@
 {
   "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
   "env": {
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_TMPDIR": "/var/lib/claude-code",

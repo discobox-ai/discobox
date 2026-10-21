@@ -979,6 +979,54 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	}
 }
 
+// A harness is registered as a bundle, whose labels are its manifest, beside
+// the image its discoboxes run; one registered before bundles is given a
+// bundle by update.
+func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
+	const harnessID = "harness-full-id"
+	var gotCreate, gotUpdate map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs" {
+			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs":
+			gotCreate = body
+		case r.Method == http.MethodPatch && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID:
+			gotUpdate = body
+		default:
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	for _, args := range [][]string{
+		{"create", "--name", "Custom", "--bundle", "example.com/custom:v1", "--image", "example.com/custom-image:v1"},
+		{"update", harnessID, "--bundle", "example.com/custom:v2"},
+	} {
+		cmd := NewRootCommand()
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses"}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute harnesses %s: %v", args[0], err)
+		}
+	}
+	if gotCreate["bundle"] != "example.com/custom:v1" || gotCreate["image"] != "example.com/custom-image:v1" {
+		t.Fatalf("create body = %v, want the bundle beside the image", gotCreate)
+	}
+	if gotUpdate["bundle"] != "example.com/custom:v2" {
+		t.Fatalf("update body = %v, want the bundle", gotUpdate)
+	}
+}
+
 func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}

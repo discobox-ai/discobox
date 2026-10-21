@@ -1,16 +1,20 @@
 package harnessconfigs
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
@@ -22,12 +26,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	imagetypes "github.com/moby/moby/api/types/image"
 	dockerclient "github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type imageMetadata struct {
-	Digest string
+	// Digest is the runnable image's, or a manifest file's: what a sandbox
+	// pins. BundleDigest is the bundle's the manifest was read from, empty for
+	// a manifest file, which is no bundle.
+	Digest       string
+	BundleDigest string
 	// Platforms is what the image is published for (ADR 0145 §1): every
 	// platform in a registry image's index, or the one platform a locally built
 	// image was built for. Empty when nothing says, which rules nothing out.
@@ -38,23 +48,76 @@ type imageMetadata struct {
 	harness.ImageMetadata
 }
 
-// imageInspector reads a harness image's manifest, the digest to pin it to, and
-// the platforms it is published for.
+// bundleInspection is what a bundle is read for (ADR 26-10-16-423 §2): the
+// digest to pin it to, and the labels its manifest is carried in.
+type bundleInspection struct {
+	Digest string
+	Labels map[string]string
+}
+
+// imageInspector reads what a harness config is snapshotted from.
+//
+// Inspect reads a harness's runnable image — the digest a sandbox pins and the
+// platforms it is published for, never its labels, which describe the image
+// it was built from rather than the harness — or a manifest file, whose
+// layers are the whole manifest of a template with no image. InspectBundle
+// reads a bundle, refusing one carrying a whiteout: a bundle's layers add
+// feature directories side by side, and remove nothing (ADR 26-10-16-423 §2).
+// admit judges its labels before any layer is read, so a reference that is
+// not the bundle it is meant to be — a runnable image of several GB named as
+// a harness's bundle — is refused for what its labels say, not after its
+// layers are saved and read.
 type imageInspector interface {
 	Inspect(ctx context.Context, imageRef string) (imageMetadata, error)
+	InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error)
 }
 
 type defaultImageInspector struct {
 	// overlayDir is the one directory a file:// manifest reference may name
 	// a file in (inspectManifestFile).
 	overlayDir string
+	// verified is the bundles whose layers were read and found to carry no
+	// whiteout, by digest, so each is read once rather than on every seed.
+	// Nil reads every time.
+	verified *verifiedBundles
+}
+
+// verifiedBundles is the digests whose layers were found to carry no
+// whiteout. The verdict is the content's, which its digest names, so it never
+// goes stale: a bundle's layers are read in full — the platform bundle's are
+// the agent's binaries — once per digest while the server runs, not on every
+// seeding pass, which each project's ensure runs.
+type verifiedBundles struct {
+	mu      sync.Mutex
+	digests map[string]bool
+}
+
+func (v *verifiedBundles) has(digest string) bool {
+	if v == nil {
+		return false
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.digests[digest]
+}
+
+func (v *verifiedBundles) add(digest string) {
+	if v == nil {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.digests == nil {
+		v.digests = map[string]bool{}
+	}
+	v.digests[digest] = true
 }
 
 func (d defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
 	// A template with no image — a non-Linux one, assembled from a vendor's
 	// base and Discobox's overlay — is named by its overlay's manifest file
 	// (ADR 0145 §3), and is never a reference a daemon or a registry knows.
-	if strings.HasPrefix(strings.TrimSpace(imageRef), manifestFileScheme) {
+	if isManifestFile(imageRef) {
 		return inspectManifestFile(imageRef, d.overlayDir)
 	}
 	// Prefer a locally present image. Once the daemon has inspected it, its
@@ -92,10 +155,6 @@ func (d defaultImageInspector) Inspect(ctx context.Context, imageRef string) (im
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("resolve harness image %q: %w", imageRef, err)
 	}
-	config, err := image.ConfigFile()
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("read harness image config %q: %w", imageRef, err)
-	}
 	// The digest a daemon will report for this reference, which is the digest
 	// the registry serves the tag under — an index digest for a multi-platform
 	// image.
@@ -111,17 +170,139 @@ func (d defaultImageInspector) Inspect(ctx context.Context, imageRef string) (im
 	// Both store types put this value in RepoDigests, which is what the pool
 	// compares against, so one recorded digest works on either. An index digest
 	// is also what lets one pin serve a pool of each platform the index lists.
-	metadata, err := parseImageMetadata(descriptor.Digest.String(), config.Config.Labels)
-	if err != nil {
-		return imageMetadata{}, err
-	}
+	metadata := runnableImage(descriptor.Digest.String())
 	if platforms == nil {
 		// A single-platform image says what it is in its config.
+		config, err := image.ConfigFile()
+		if err != nil {
+			return imageMetadata{}, fmt.Errorf("read harness image config %q: %w", imageRef, err)
+		}
 		platforms = platform.NewSet(platform.Platform{OS: config.OS, Arch: config.Architecture})
 	}
 	metadata.Platforms = platforms
 	return metadata, nil
 }
+
+// runnableImage is what a harness's runnable image is inspected for: the digest
+// a sandbox pins, and its kind, OCI by its being an image. Its manifest is its
+// bundle's (resolveHarness).
+func runnableImage(digest string) imageMetadata {
+	return imageMetadata{Digest: digest, ImageMetadata: harness.ImageMetadata{ImageKind: platform.OCI}}
+}
+
+func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
+	if isManifestFile(bundleRef) {
+		return bundleInspection{}, fmt.Errorf("bundle %q names a manifest file: a bundle is an OCI image", bundleRef)
+	}
+	// A locally present bundle is authoritative once found, as an image is
+	// (Inspect).
+	if local, found, err := inspectLocalBundle(ctx, bundleRef, admit, d.verified); found {
+		return local, err
+	}
+	ref, err := name.ParseReference(bundleRef)
+	if err != nil {
+		return bundleInspection{}, fmt.Errorf("parse bundle %q: %w", bundleRef, err)
+	}
+	descriptor, err := remote.Get(ref,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(registryauth.Keychain()),
+		remote.WithPlatform(v1.Platform{OS: platform.Pool().OS, Architecture: platform.Pool().Arch}))
+	if err != nil {
+		return bundleInspection{}, fmt.Errorf("inspect bundle %q: %w", bundleRef, registryauth.Explain(ref, err))
+	}
+	// The platform bundle is an index; a harness bundle is one manifest.
+	image, _, err := publishedImage(descriptor)
+	if err != nil {
+		return bundleInspection{}, fmt.Errorf("resolve bundle %q: %w", bundleRef, err)
+	}
+	config, err := image.ConfigFile()
+	if err != nil {
+		return bundleInspection{}, fmt.Errorf("read bundle config %q: %w", bundleRef, err)
+	}
+	if err := admitBundle(config.Config.Labels, admit); err != nil {
+		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundleRef, err)
+	}
+	digest := descriptor.Digest.String()
+	if err := verifyBundle(bundleRef, digest, image, d.verified); err != nil {
+		return bundleInspection{}, err
+	}
+	return bundleInspection{Digest: digest, Labels: config.Config.Labels}, nil
+}
+
+// admitBundle judges a bundle's labels, before any layer is read: first that
+// it is a bundle at all, then what admit asks of the kind it is meant to be.
+//
+// A bundle is FROM scratch, so it carries no label it did not set, and every
+// runnable image carries the ReclaimLabel discobox-base sets: the sandbox
+// agent image, every harness twin, anything built FROM them. That is the one
+// label to tell them apart by, since the runnable images carry the manifest
+// labels too, to move their digests with it — which would admit the sandbox
+// agent image as the platform bundle, and have its layers saved and read.
+func admitBundle(labels map[string]string, admit func(labels map[string]string) error) error {
+	if _, runnable := labels[harness.ReclaimLabel]; runnable {
+		return fmt.Errorf("it carries %s, so it is a runnable image built FROM discobox-base, and a bundle is built FROM scratch", harness.ReclaimLabel)
+	}
+	return admit(labels)
+}
+
+// verifyBundle refuses a bundle when a layer carries a whiteout, reading its
+// layers only when its digest has not been read before.
+func verifyBundle(bundleRef, digest string, image v1.Image, verified *verifiedBundles) error {
+	if verified.has(digest) {
+		return nil
+	}
+	if err := refuseWhiteouts(image); err != nil {
+		return fmt.Errorf("bundle %q: %w", bundleRef, err)
+	}
+	verified.add(digest)
+	return nil
+}
+
+// refuseWhiteouts refuses an image any of whose layers carries a whiteout, the
+// entry by which a layer deletes what one beneath it holds. A bundle's tree is
+// its layers side by side, never merged as an overlay (ADR 26-10-16-423 §13),
+// so a deletion would mean nothing there but what the layer beneath says.
+func refuseWhiteouts(image v1.Image) error {
+	layers, err := image.Layers()
+	if err != nil {
+		return fmt.Errorf("read layers: %w", err)
+	}
+	for _, layer := range layers {
+		digest, err := layer.Digest()
+		if err != nil {
+			return fmt.Errorf("read layer digest: %w", err)
+		}
+		if err := refuseLayerWhiteouts(layer); err != nil {
+			return fmt.Errorf("layer %s: %w", digest, err)
+		}
+	}
+	return nil
+}
+
+func refuseLayerWhiteouts(layer v1.Layer) error {
+	contents, err := layer.Uncompressed()
+	if err != nil {
+		return err
+	}
+	defer contents.Close()
+	entries := tar.NewReader(contents)
+	for {
+		header, err := entries.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(path.Base(header.Name), whiteoutPrefix) {
+			return fmt.Errorf("carries the whiteout %q: a bundle's layers add feature directories and delete nothing", header.Name)
+		}
+	}
+}
+
+// whiteoutPrefix starts the name of every whiteout entry in an OCI layer, the
+// opaque marker included.
+const whiteoutPrefix = ".wh."
 
 // publishedImage resolves the image whose labels a harness is read from, and,
 // for a multi-platform image, every platform its index publishes. The labels
@@ -230,8 +411,7 @@ func registryPlatforms(ctx context.Context, repoDigest string) platform.Set {
 }
 
 // inspectLocalImage inspects imageRef via the local Docker daemon. found is true
-// only when the daemon returned an image (regardless of whether its label parses),
-// so the caller can surface label errors for present images and fall back to the
+// only when the daemon returned an image, so the caller falls back to the
 // registry only when the image is genuinely unavailable locally.
 func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, bool, error) {
 	client, err := dockerclient.New(dockerclient.FromEnv)
@@ -249,19 +429,82 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	if err != nil {
 		return imageMetadata{}, false, err
 	}
-	labels := map[string]string(nil)
-	if inspected.Config != nil {
-		labels = inspected.Config.Labels
-	}
-	metadata, err := parseImageMetadata(localImageDigest(inspected), labels)
-	if err != nil {
-		return metadata, true, err
-	}
+	metadata := runnableImage(localImageDigest(inspected))
 	metadata.Platforms = localPlatforms(inspected.InspectResponse)
 	if metadata.Platforms == nil {
 		metadata.Platforms = localPlatformsWithoutManifests(ctx, inspected.InspectResponse)
 	}
 	return metadata, true, nil
+}
+
+// inspectLocalBundle inspects bundleRef via the local Docker daemon, which
+// holds it when it was built or staged here. found is true once the daemon
+// returned the bundle, so an error reading what it holds is reported rather
+// than masked by a registry fetch of the same (often :local) reference.
+//
+// Its layers are read from what the daemon saves, and only for a digest not
+// read before (verified).
+func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error, verified *verifiedBundles) (bundleInspection, bool, error) {
+	client, err := dockerclient.New(dockerclient.FromEnv)
+	if err != nil {
+		return bundleInspection{}, false, err
+	}
+	defer client.Close()
+	inspected, err := client.ImageInspect(ctx, bundleRef)
+	if err != nil {
+		return bundleInspection{}, false, err
+	}
+	read := bundleInspection{Digest: localImageDigest(inspected)}
+	if inspected.Config != nil {
+		read.Labels = inspected.Config.Labels
+	}
+	if err := admitBundle(read.Labels, admit); err != nil {
+		return bundleInspection{}, true, fmt.Errorf("bundle %q: %w", bundleRef, err)
+	}
+	if verified.has(read.Digest) {
+		return read, true, nil
+	}
+	image, cleanup, err := saveLocalImage(ctx, client, bundleRef, ocispec.Platform{OS: inspected.Os, Architecture: inspected.Architecture})
+	if err != nil {
+		return bundleInspection{}, true, fmt.Errorf("save bundle %q: %w", bundleRef, err)
+	}
+	defer cleanup()
+	return read, true, verifyBundle(bundleRef, read.Digest, image, verified)
+}
+
+// saveLocalImage saves ref from the daemon to a file, read as a docker save
+// tarball, which reads it more than once. It asks for the daemon's own
+// platform: a pulled platform bundle is an index this daemon may hold one
+// platform of, which a containerd image store refuses to save whole. A daemon
+// older than API 1.48 cannot be asked for a platform, and is asked for the
+// image as it holds it.
+func saveLocalImage(ctx context.Context, client *dockerclient.Client, ref string, own ocispec.Platform) (v1.Image, func(), error) {
+	saved, err := client.ImageSave(ctx, []string{ref}, dockerclient.ImageSaveWithPlatforms(own))
+	if err != nil {
+		saved, err = client.ImageSave(ctx, []string{ref})
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	defer saved.Close()
+	file, err := os.CreateTemp("", "discobox-bundle-*.tar")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}
+	if _, err := io.Copy(file, saved); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	image, err := tarball.ImageFromPath(file.Name(), nil)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("read the saved image: %w", err)
+	}
+	return image, cleanup, nil
 }
 
 // localPlatforms is what a local image is published for, from the manifest
@@ -306,6 +549,11 @@ func localPlatformsWithoutManifests(ctx context.Context, inspected imagetypes.In
 // rather than an image: file:// and an absolute path on this server's host,
 // inside its overlay directory.
 const manifestFileScheme = "file://"
+
+// isManifestFile reports whether ref names a manifest file.
+func isManifestFile(ref string) bool {
+	return strings.HasPrefix(strings.TrimSpace(ref), manifestFileScheme)
+}
 
 // inspectManifestFile reads a manifest file named by a file:// reference: the
 // same layers an image carries in its labels, resolved the same way. Its
@@ -396,9 +644,6 @@ func readManifestFile(root *os.Root, rel string) ([]byte, error) {
 // manifestFileSource is what a manifest file's errors say they are about.
 const manifestFileSource = "manifest file"
 
-// imageLabelSource is what an image's label errors say they are about.
-const imageLabelSource = harness.ImageLabel + " label"
-
 // parseManifestFile resolves a manifest file's layers and validates the result
 // for the platform it declares, which a manifest file must: nothing else says
 // what its template runs. It must declare its image kind too, and that kind is
@@ -432,40 +677,33 @@ func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 	return imageMetadata{Digest: digest, Platforms: platform.NewSet(metadata.Platform), ImageMetadata: metadata}, nil
 }
 
-// parseImageMetadata resolves an image's label set into the one manifest it
-// effectively declares: every inherited layer, then the image's own (ADR 0086
-// §2). Only the merged result is validated — a layer on its own is a fragment,
-// and the base layer legitimately carries no harness at all.
+// composeBundleMetadata resolves a harness bundle's labels, composed on the
+// platform bundle's (harness.ComposeBundleLabels), into the one manifest the
+// harness effectively declares. Only the merged result is validated.
 //
-// An image is a Linux container's, its platforms are what its registry
-// publishes, and its kind is OCI by its being an image, so a label naming a
-// platform or a kind is refused rather than read beside those answers.
-func parseImageMetadata(digest string, labels map[string]string) (imageMetadata, error) {
-	metadata, hasBase, err := harness.ResolveImageLabels(labels)
+// A bundle is a Linux sandbox's, and names neither a platform nor an image
+// kind: its steps select on the platform they run on, and the kind is the
+// provider's (ADR 26-10-16-423 §2). The kind is OCI here, the one the
+// runnable image a pool runs it as is.
+func composeBundleMetadata(platformBundle, harnessBundle bundleInspection) (harness.ImageMetadata, error) {
+	metadata, err := harness.ComposeBundleLabels(platformBundle.Labels, harnessBundle.Labels)
 	if err != nil {
-		return imageMetadata{}, err
-	}
-	// The base layer is the only evidence of lineage available without pulling
-	// filesystem layers, and lineage is a hard requirement: the runtime
-	// contract (PID 1, systemd units, the runc wrapper) lives in the base
-	// image's filesystem, so an image that did not come from it cannot run a
-	// sandbox whatever it declares (ADR 0086 §1). Saying that beats reporting a
-	// missing label, which is the same fact phrased as a paperwork error.
-	if !hasBase {
-		return imageMetadata{}, fmt.Errorf("image is not built FROM discobox-sandbox-agent: it carries no %s%s label", harness.ImageLayerLabelPrefix, harness.SandboxBaseLayer)
+		return harness.ImageMetadata{}, err
 	}
 	if !metadata.Platform.IsZero() {
-		return imageMetadata{}, fmt.Errorf("%s label declares platform %s: an image's platforms are the ones its registry publishes it for", harness.ImageLabel, metadata.Platform)
+		return harness.ImageMetadata{}, fmt.Errorf("%s declares platform %s: a bundle's steps select the platform they run on", bundleLabelSource, metadata.Platform)
 	}
 	if !metadata.ImageKind.IsZero() {
-		return imageMetadata{}, fmt.Errorf("%s label declares image kind %s: an image is an OCI image, and only a manifest file names another kind", harness.ImageLabel, metadata.ImageKind)
+		return harness.ImageMetadata{}, fmt.Errorf("%s declares image kind %s: a bundle names no image kind, which is the provider's", bundleLabelSource, metadata.ImageKind)
 	}
-	if err := validateImageMetadata(metadata, "linux", imageLabelSource); err != nil {
-		return imageMetadata{}, err
+	if err := validateImageMetadata(metadata, "linux", bundleLabelSource); err != nil {
+		return harness.ImageMetadata{}, err
 	}
 	metadata.ImageKind = platform.OCI
-	return imageMetadata{Digest: digest, ImageMetadata: metadata}, nil
+	return metadata, nil
 }
+
+const bundleLabelSource = "bundle's " + harness.ImageLabel + " label"
 
 // validateImageMetadata judges a resolved manifest for a sandbox whose
 // platform's OS is goos. source is what an error says it is about: an image's
@@ -559,85 +797,79 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 	return nil
 }
 
-// devImageInspector resolves harness metadata from the development image
-// manifest before falling back to a daemon or registry lookup.
+// devImageInspector answers for the development image manifest's build-mode
+// entries before falling back to a daemon or registry lookup.
 //
-// In build-mode the host has no Docker daemon and the dev image has never been
-// pushed, so neither fallback can see it: the image exists only as a build
-// description until some pool's daemon builds it. The manifest already carries
-// the metadata verbatim, as the build arguments that become the labels, so
-// seeding reads it from there and does not depend on the image existing yet.
-//
-// It reconstructs the label set the built image would carry, inherited layers
-// included, by walking the same edge the manifest already uses to order builds:
-// a harness entry's SANDBOX_AGENT_IMAGE argument names the base entry's
-// reference, whose own layer argument is the layer that image would label
-// (ADR 0086 §2). Without that walk a developer on Windows or macOS would
-// resolve a manifest missing every inherited volume and env var, and every
-// harness image would be rejected as not built from the base.
+// In build-mode the host has no Docker daemon and the dev images have never
+// been pushed, so neither fallback can see them: each exists only as a build
+// description until some pool's daemon builds it. The manifest carries a
+// bundle's manifest verbatim, as the build argument its label is set from, so
+// seeding reads it from there: a harness bundle's own label from its
+// HARNESS_METADATA, and the platform bundle's PlatformLayer from its
+// IMAGE_LAYER_METADATA. A bundle inherits no layer from anything (ADR
+// 26-10-16-423 §2), so nothing is walked.
 type devImageInspector struct {
-	labelsByReference map[string]map[string]string
-	fallback          imageInspector
+	bundles  map[string]map[string]string
+	images   map[string]bool
+	fallback imageInspector
 }
 
-// newDevImageInspector wraps fallback with the build-mode manifest entries in
-// images. It returns fallback unchanged when no entry carries image metadata,
-// so copy-mode and production keep the original behavior exactly.
-func newDevImageInspector(images []devimage.Image, fallback imageInspector) imageInspector {
-	// The layer each entry contributes to whatever is built FROM it, keyed by
-	// the reference a child names it under.
-	layerByReference := map[string]string{}
-	for _, image := range images {
-		if image.Build == nil {
-			continue
-		}
-		if raw := strings.TrimSpace(image.Build.Args[harness.LayerMetadataBuildArg]); raw != "" {
-			layerByReference[strings.TrimSpace(image.Reference)] = raw
-		}
-	}
+// The build targets of the bundle stages, which say which label an entry's
+// metadata argument becomes. Keep in sync with sandbox-agent/Dockerfile and
+// the harness Dockerfiles.
+const (
+	platformBundleTarget = "platform"
+	harnessBundleTarget  = "bundle"
+)
 
-	labels := map[string]map[string]string{}
+// newDevImageInspector wraps fallback with the build-mode manifest entries in
+// images. It returns fallback unchanged when no entry is a build, so copy-mode
+// and production keep the original behavior exactly.
+func newDevImageInspector(images []devimage.Image, fallback imageInspector) imageInspector {
+	inspector := devImageInspector{bundles: map[string]map[string]string{}, images: map[string]bool{}, fallback: fallback}
 	for _, image := range images {
 		if image.Build == nil {
 			continue
 		}
 		reference := strings.TrimSpace(image.Reference)
-		own := strings.TrimSpace(image.Build.Args[harness.MetadataBuildArg])
-		parent := strings.TrimSpace(image.Build.Args[sandboxAgentImageBuildArg])
-		inherited, hasParent := layerByReference[parent]
-		if own == "" && !hasParent {
-			continue
+		switch strings.TrimSpace(image.Build.Target) {
+		case platformBundleTarget:
+			inspector.bundles[reference] = map[string]string{
+				harness.ImageLayerLabelPrefix + harness.PlatformLayer: strings.TrimSpace(image.Build.Args[harness.LayerMetadataBuildArg]),
+			}
+		case harnessBundleTarget:
+			inspector.bundles[reference] = map[string]string{
+				harness.ImageLabel: strings.TrimSpace(image.Build.Args[harness.MetadataBuildArg]),
+			}
+		default:
+			inspector.images[reference] = true
 		}
-		entry := map[string]string{}
-		if hasParent {
-			entry[harness.ImageLayerLabelPrefix+harness.SandboxBaseLayer] = inherited
-		}
-		// An image that declares nothing sets no label of its own, exactly as
-		// its Dockerfile does not.
-		if own != "" {
-			entry[harness.ImageLabel] = own
-		}
-		labels[reference] = entry
 	}
-	if len(labels) == 0 {
+	if len(inspector.bundles) == 0 && len(inspector.images) == 0 {
 		return fallback
 	}
-	return devImageInspector{labelsByReference: labels, fallback: fallback}
+	return inspector
 }
 
-// sandboxAgentImageBuildArg is the build argument a harness Dockerfile takes
-// its base image reference in, and so the manifest edge from a harness image to
-// the base whose layer it inherits. Keep in sync with the harness Dockerfiles.
-const sandboxAgentImageBuildArg = "SANDBOX_AGENT_IMAGE"
-
+// Inspect answers a build-mode reference with itself as its digest: it is
+// content-addressed over that image's inputs, so it is its own freshness key,
+// and there is no digest until it is built. Nor is there a platform: the pool
+// that runs it builds it for its own, so the set is left empty and rules no
+// pool out. InspectBundle answers a bundle's the same way.
 func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
-	labels, ok := d.labelsByReference[strings.TrimSpace(imageRef)]
-	if !ok {
+	if !d.images[strings.TrimSpace(imageRef)] {
 		return d.fallback.Inspect(ctx, imageRef)
 	}
-	// A build-mode reference is content-addressed over that image's inputs, so
-	// it is its own freshness key; there is no digest until it is built. Nor
-	// is there a platform: the pool that runs it builds it for its own, so the
-	// set is left empty and rules no pool out.
-	return parseImageMetadata(imageRef, labels)
+	return runnableImage(imageRef), nil
+}
+
+func (d devImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
+	labels, ok := d.bundles[strings.TrimSpace(bundleRef)]
+	if !ok {
+		return d.fallback.InspectBundle(ctx, bundleRef, admit)
+	}
+	if err := admitBundle(labels, admit); err != nil {
+		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundleRef, err)
+	}
+	return bundleInspection{Digest: bundleRef, Labels: labels}, nil
 }

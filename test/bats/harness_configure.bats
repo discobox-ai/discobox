@@ -9,7 +9,10 @@
 # PREV_-prefixed sentinel the command can see.
 #
 # The pool binds the host Docker socket so locally built images
-# (discobox-harness-stub:local) are visible without a registry.
+# (discobox-harness-stub-image:local, the stub's runnable twin) are visible
+# without a registry, and the server reads the stub's bundle
+# (discobox-harness-stub:local) and the platform bundle it is composed on from
+# the same daemon.
 
 setup_file() {
   REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -52,13 +55,15 @@ PY
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
   # Through the Taskfile rather than docker directly: both agent images are
   # built FROM a shared base image, and these targets are what know to build it
-  # first. The sandbox agent image is what the stub harness is built FROM when
-  # no `task dev` loop has named a dev build in .env, so a clean checkout needs
-  # it built here.
+  # first. The sandbox agent image is what the stub's runnable image is built
+  # FROM when no `task dev` loop has named a dev build in .env, so a clean
+  # checkout needs it built here; the platform bundle is what the server
+  # composes every harness bundle on.
   go tool task build:pool-agent-image
   go tool task build:sandbox-agent-image
+  go tool task build:platform-bundle
   go tool task build:harness-stub-image
-  build_keep_stub_image
+  build_keep_stub_bundle
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -134,12 +139,12 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   done
 }
 
-# build_keep_stub_image derives a second stub image whose configure command keeps
-# the previous secret instead of storing a new one. It has to be a separate image
-# because STUB_CONFIGURE_KEEP can only be set at build time: a HarnessConfig
-# carries no env, and `harness update` cannot swap an image.
+# build_keep_stub_bundle derives a second stub bundle whose configure command
+# keeps the previous secret instead of storing a new one. It has to be a
+# separate bundle because STUB_CONFIGURE_KEEP can only be set at build time: a
+# HarnessConfig carries no env of its own.
 #
-# The toggle is declared in the env of the image's io.discobox.image.v1 label,
+# The toggle is declared in the env of the bundle's io.discobox.image.v1 label,
 # which is how a sandbox process gets its environment: the label's env is merged
 # into the sandbox's manifest, and the sandbox-agent applies it when it starts
 # the command. A Dockerfile ENV is not that path — it belongs to the container,
@@ -147,17 +152,21 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 # services it starts.
 #
 # Only the label changes: it is rebuilt from the stub's image.json plus the
-# toggle and replaces the one inherited from the stub. The two images register
-# side by side because `harness create` takes an explicit --slug and --name,
-# both unique per project.
-build_keep_stub_image() {
+# toggle and replaces the one inherited from the stub's bundle, which is what
+# this one is built FROM, as a third party extends a harness. Nothing about the
+# runnable image changes, so it registers over the stub's own
+# (discobox-harness-stub-image:local), whose copy of the label nothing reads:
+# it is there only so the image's digest moves with the manifest. The two
+# harnesses register side by side because `harness create` takes an explicit
+# --slug and --name, both unique per project.
+build_keep_stub_bundle() {
   local metadata
   metadata="$(jq -c '.env.STUB_CONFIGURE_KEEP = "1"' "$REPO_ROOT/test/harness-stub/image.json")"
   docker build --build-arg HARNESS_METADATA="$metadata" -t discobox-harness-stub-keep:local - <<'DOCKERFILE'
 # syntax=mirror.gcr.io/docker/dockerfile:1.7
 FROM discobox-harness-stub:local
 ARG HARNESS_METADATA
-LABEL io.discobox.image.v1=${HARNESS_METADATA}
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
 DOCKERFILE
 }
 
@@ -278,7 +287,7 @@ configure_stub() {
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
-  run cli admin harness create --image discobox-harness-stub:local
+  run cli admin harness create --bundle discobox-harness-stub:local --image discobox-harness-stub-image:local
   [ "$status" -eq 0 ]
   harness_json="$output"
   harness_id="$(printf '%s' "$harness_json" | json_get id)"
@@ -338,7 +347,8 @@ configure_stub() {
   local pool_id harness_id before_id after_id before_grant after_grant
   pool_id="$(ensure_pool)"
 
-  run cli admin harness create --image discobox-harness-stub-keep:local --slug stub-keep --name "Stub (keep)"
+  run cli admin harness create --bundle discobox-harness-stub-keep:local --image discobox-harness-stub-image:local \
+    --slug stub-keep --name "Stub (keep)"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
@@ -356,7 +366,7 @@ configure_stub() {
   run configure_stub stub-keep
   [ "$status" -eq 0 ]
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is set"* ]]
-  # The image's toggle reached the configure command; without it the stub
+  # The bundle's toggle reached the configure command; without it the stub
   # returns a fresh value, which also keeps the secret's id since b78e945e, so
   # the id checks below cannot tell the two paths apart.
   [[ "$output" == *"stub configure: STUB_CONFIGURE_KEEP=1"* ]]

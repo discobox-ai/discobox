@@ -1814,6 +1814,52 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	}
 }
 
+// A harness config stored before bundles keeps everything it had, and gains a
+// bundle and bundle digest that are empty until one is registered for it.
+func TestMigrateKeepsAHarnessConfigFromBeforeBundles(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	config := model.HarnessConfig{
+		ID: "hc-1", ProjectID: project.ID, Slug: "acme", Name: "Acme", Configured: true,
+		Image: "example.com/acme:v1", ImageDigest: "sha256:acme", RunCommand: []string{"acme"},
+		Env: map[string]string{"ACME": "1"},
+	}
+	if err := db.Write.Create(&config).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema that row was written under: no bundle.
+	for _, column := range []string{"bundle", "bundle_digest"} {
+		if err := db.Write.Exec("ALTER TABLE harness_configs DROP COLUMN " + column).Error; err != nil {
+			t.Fatalf("drop harness_configs.%s: %v", column, err)
+		}
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var got model.HarnessConfig
+	if err := db.Write.First(&got, "id = ?", config.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Image != config.Image || got.ImageDigest != config.ImageDigest || !got.Configured ||
+		len(got.RunCommand) != 1 || got.Env["ACME"] != "1" {
+		t.Errorf("config = %+v, want everything it had kept", got)
+	}
+	if got.Bundle != "" || got.BundleDigest != "" {
+		t.Errorf("bundle = %q@%q, want none until one is registered", got.Bundle, got.BundleDigest)
+	}
+}
+
 func TestMigrateDeletesGrantsWhoseScopeIsGone(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{

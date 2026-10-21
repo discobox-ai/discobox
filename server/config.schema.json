@@ -294,6 +294,16 @@
         "null"
       ]
     },
+    "platformBundle": {
+      "description": "The platform bundle every harness's manifest is composed on. Defaults to the one this build ships. Environment: DISCOBOX_PLATFORM_BUNDLE (takes precedence over this file).",
+      "examples": [
+        "ghcr.io/discobox-ai/discobox-platform:v0.8.0"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "port": {
       "default": 18080,
       "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",

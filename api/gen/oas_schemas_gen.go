@@ -1535,9 +1535,14 @@ type CreateHarnessConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Optional non-secret configured file values to associate with the registered harness.
 	Files OptNilHarnessConfigFileArray `json:"files"`
-	// Harness sandbox image to register. Must be built FROM discobox-sandbox-agent. The server resolves
-	// its io.discobox.image.v1 manifest labels, inherited layers included, and snapshots that metadata
-	// into the HarnessConfig.
+	// The harness bundle to register, required unless image is a manifest file. It is a FROM scratch OCI
+	// image built FROM nothing or FROM another harness's bundle, never the platform's. The server
+	// composes its io.discobox.image.v1 manifest labels on its platform bundle's and snapshots the
+	// result into the HarnessConfig.
+	Bundle OptString `json:"bundle"`
+	// The runnable image a discobox on the harness runs, built FROM discobox-sandbox-agent with the
+	// bundle provisioned into it; its labels are not read. Or a file:// manifest file in the server's
+	// overlay directory, the whole manifest of a template with no image, which takes no bundle.
 	Image string `json:"image"`
 	// Harness config name. Defaults to the name declared by the image label.
 	Name OptString `json:"name"`
@@ -1554,6 +1559,11 @@ func (s *CreateHarnessConfigBody) GetSchema() OptURI {
 // GetFiles returns the value of Files.
 func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
+}
+
+// GetBundle returns the value of Bundle.
+func (s *CreateHarnessConfigBody) GetBundle() OptString {
+	return s.Bundle
 }
 
 // GetImage returns the value of Image.
@@ -1579,6 +1589,11 @@ func (s *CreateHarnessConfigBody) SetSchema(val OptURI) {
 // SetFiles sets the value of Files.
 func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *CreateHarnessConfigBody) SetBundle(val OptString) {
+	s.Bundle = val
 }
 
 // SetImage sets the value of Image.
@@ -5836,9 +5851,17 @@ type HarnessConfig struct {
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable harness config ID.
 	ID string `json:"id"`
-	// Immutable harness sandbox image selected when this config was registered.
+	// The harness bundle its manifest is read from, a FROM scratch OCI image of its features with its
+	// manifest in labels, composed on the server's platform bundle (ADR 26-10-16-423 §2). Absent on a
+	// harness registered before bundles, whose manifest is what its image's labels gave it, or one whose
+	// image is a manifest file.
+	Bundle OptString `json:"bundle"`
+	// Content digest observed when the harness bundle was registered.
+	BundleDigest OptString `json:"bundleDigest"`
+	// The runnable image a discobox on this harness runs, its bundle provisioned onto the platform's
+	// image; or a file:// manifest file, the whole manifest of a template with no image.
 	Image OptString `json:"image"`
-	// Content digest observed when the harness image metadata was registered.
+	// Content digest observed when the harness image was registered.
 	ImageDigest OptString `json:"imageDigest"`
 	// The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for
 	// that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a
@@ -5954,6 +5977,16 @@ func (s *HarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
 // GetID returns the value of ID.
 func (s *HarnessConfig) GetID() string {
 	return s.ID
+}
+
+// GetBundle returns the value of Bundle.
+func (s *HarnessConfig) GetBundle() OptString {
+	return s.Bundle
+}
+
+// GetBundleDigest returns the value of BundleDigest.
+func (s *HarnessConfig) GetBundleDigest() OptString {
+	return s.BundleDigest
 }
 
 // GetImage returns the value of Image.
@@ -6099,6 +6132,16 @@ func (s *HarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 // SetID sets the value of ID.
 func (s *HarnessConfig) SetID(val string) {
 	s.ID = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *HarnessConfig) SetBundle(val OptString) {
+	s.Bundle = val
+}
+
+// SetBundleDigest sets the value of BundleDigest.
+func (s *HarnessConfig) SetBundleDigest(val OptString) {
+	s.BundleDigest = val
 }
 
 // SetImage sets the value of Image.
@@ -32182,6 +32225,9 @@ type UpdateHarnessConfigBody struct {
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Files to write into the harness's home directory when the harness is installed.
 	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Registers the harness bundle the config's manifest is read from, re-snapshotting the manifest from
+	// it. How a harness registered before bundles gets one.
+	Bundle OptString `json:"bundle"`
 	// Harness config name.
 	Name OptString `json:"name"`
 }
@@ -32204,6 +32250,11 @@ func (s *UpdateHarnessConfigBody) GetConfiguredFiles() OptNilHarnessConfigFileAr
 // GetFiles returns the value of Files.
 func (s *UpdateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
+}
+
+// GetBundle returns the value of Bundle.
+func (s *UpdateHarnessConfigBody) GetBundle() OptString {
+	return s.Bundle
 }
 
 // GetName returns the value of Name.
@@ -32229,6 +32280,11 @@ func (s *UpdateHarnessConfigBody) SetConfiguredFiles(val OptNilHarnessConfigFile
 // SetFiles sets the value of Files.
 func (s *UpdateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *UpdateHarnessConfigBody) SetBundle(val OptString) {
+	s.Bundle = val
 }
 
 // SetName sets the value of Name.

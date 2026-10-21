@@ -1,5 +1,6 @@
 {
   "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
   "env": {
     "PI_CONFIG_FILES": "/etc/omp/discobox.yml",
     "ONNXRUNTIME_NODE_INSTALL_CUDA": "skip"

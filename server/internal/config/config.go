@@ -16,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/configfile"
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
@@ -79,7 +80,9 @@ func LoadEnvFile() {
 type Config struct {
 	ReleaseManifest string                    `yaml:"releaseManifest" env:"DISCOBOX_RELEASE_MANIFEST" doc:"Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization." example:"/opt/discobox/release.json"`
 	Release         *releasemanifest.Manifest `yaml:"-"`
-	HarnessImages   map[string]string         `yaml:"-"`
+	// Harnesses is what the built-in harnesses resolve against: the platform
+	// bundle, and each built-in's bundle and image overrides.
+	Harnesses harnessdefs.References `yaml:"-"`
 
 	// ConfigFile is the configuration file Load looked for, and ConfigFileRead
 	// whether it found one there. Derived: the path comes from the environment
@@ -123,6 +126,10 @@ type Config struct {
 
 	// Sandbox settings.
 	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
+	// PlatformBundle is the platform bundle every harness's manifest is
+	// composed on (ADR 26-10-16-423 §2): the one this build pins, unless
+	// configured or a release manifest names its own.
+	PlatformBundle string `yaml:"platformBundle" env:"DISCOBOX_PLATFORM_BUNDLE" doc:"The platform bundle every harness's manifest is composed on. Defaults to the one this build ships." example:"ghcr.io/discobox-ai/discobox-platform:v0.8.0"`
 	// DefaultSandboxImageDigest is the identity behind DefaultSandboxImage.
 	// Sandboxes with no harness config run the default image, and the tag alone
 	// cannot say which build that is — dev workflows rebuild tags in place — so
@@ -387,7 +394,10 @@ func Load() (*Config, error) {
 	// than one that opened a socket nobody asked for.
 	cfg.Listen = requireLocalListenEndpoint(cfg.Listen)
 
-	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
+	if !configured("platformBundle") {
+		cfg.PlatformBundle = harness.PlatformBundleRef()
+	}
+	bundles, images := harnessdefs.OverridesFromEnv(os.Getenv)
 	if cfg.ReleaseManifest != "" {
 		manifest, err := releasemanifest.Read(cfg.ReleaseManifest)
 		if err != nil {
@@ -398,14 +408,19 @@ func Load() (*Config, error) {
 				return nil, fmt.Errorf("release manifest harness: %w", err)
 			}
 		}
+		if !manifest.HasBundles() {
+			return nil, fmt.Errorf("release manifest %s names no bundles: it is from a release before harness bundles, which this server cannot run", cfg.ReleaseManifest)
+		}
 		cfg.Release = &manifest
 		cfg.DockerPoolImage = manifest.Images.PoolAgent
 		cfg.DefaultSandboxImage = manifest.Images.SandboxAgent
 		cfg.DefaultSandboxImageDigest = ""
-		cfg.HarnessImages = manifest.Images.Harnesses
+		cfg.PlatformBundle = manifest.Bundles.Platform
+		bundles, images = manifest.Bundles.Harnesses, manifest.Images.Harnesses
 		cfg.DevImageSync = false
 		cfg.DevImageManifest = ""
 	}
+	cfg.Harnesses = harnessdefs.References{PlatformBundle: strings.TrimSpace(cfg.PlatformBundle), Bundles: bundles, Images: images}
 	if cfg.DevImageSync {
 		if cfg.DevImageManifest == "" {
 			return nil, fmt.Errorf("devImageManifest is required when devImageSync is set")

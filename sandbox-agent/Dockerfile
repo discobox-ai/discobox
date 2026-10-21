@@ -305,22 +305,14 @@ COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /opt/discobo
 COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /opt/discobox/bundles/platform/features/review/discobox-review
 COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /opt/discobox/bundles/platform/features/discobox-cli/discobox
 
-# The manifest layer every image built FROM this one inherits: the env,
-# volumes, groups, and seed files that are true of this image's filesystem
-# rather than of any harness (ADR 0086 §2). A child sets its own
-# io.discobox.image.v1 and this key comes along untouched, which is also how
-# the control plane knows the child was built from this base at all.
+# The platform bundle's layer label (the platform stage below), which nothing
+# reads off this image: it is here so this image's digest, which a sandbox
+# pins and whose move is what re-pins and upgrades it, moves with every edit
+# to the layer the server composes each harness's manifest on. Required for
+# the same reason it is there: an omitted argument fails the build rather than
+# building an image whose identity misses the layer.
 ARG IMAGE_LAYER_METADATA
-# Required, and checked here rather than trusted: `LABEL key=${ARG}` with no
-# argument passed sets the key to "" and builds a perfectly good image whose
-# every child is rejected at registration for not being built FROM this one.
-# That is a build mistake, and it is only discoverable from a running server
-# unless the build refuses it — which is how v0.4.0's harness images shipped.
-RUN [ -n "${IMAGE_LAYER_METADATA}" ] || { \
-        echo "IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"" >&2; \
-        exit 1; \
-    }
-LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
+LABEL io.discobox.image.v1.10-platform="${IMAGE_LAYER_METADATA:?IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"}"
 # The agent above has the export mode, which the pool agent checks for before
 # it runs one (harness.TreeExportLabel, ADR 0129 §3).
 LABEL io.discobox.tree-export.v1=tar
@@ -337,3 +329,55 @@ EXPOSE 6080 6900
 # systemd is PID 1, as it is on every sandbox (ADR 26-10-10-767). A debug shell
 # overrides the entrypoint: `docker run --entrypoint bash`.
 ENTRYPOINT ["/sbin/init"]
+
+# The platform bundle (ADR 26-10-16-423 §7): every platform feature under
+# /features/<name>/, the same trees the stage above copies into
+# /opt/discobox/bundles/platform/features/ and provisions, and the manifest in
+# labels. FROM scratch because the agent applies it rather than anything
+# running it, and copied from the build context and the builder stages rather
+# than from the stage above, so building it never builds the 4GB image. COPY
+# into scratch lays no whiteout, which a bundle must not carry (§2).
+#
+# The last stage, so it is the default target: the runnable image is built
+# with --target sandbox-agent.
+FROM scratch AS platform
+
+COPY sandbox-agent/features/build /features/build
+COPY sandbox-agent/features/cli /features/cli
+COPY sandbox-agent/features/python /features/python
+COPY sandbox-agent/features/shells-editors /features/shells-editors
+COPY sandbox-agent/features/direnv /features/direnv
+COPY sandbox-agent/features/browser /features/browser
+COPY sandbox-agent/features/desktop /features/desktop
+COPY assets/brand /features/desktop/brand
+COPY sandbox-agent/features/nix /features/nix
+COPY sandbox-agent/features/rust /features/rust
+COPY sandbox-agent/features/node /features/node
+COPY sandbox-agent/features/bun /features/bun
+COPY sandbox-agent/features/mise /features/mise
+COPY sandbox-agent/features/brew /features/brew
+COPY sandbox-agent/features/go /features/go
+COPY sandbox-agent/features/docker /features/docker
+COPY sandbox-agent/features/review /features/review
+COPY sandbox-agent/features/discobox-cli /features/discobox-cli
+COPY sandbox-agent/features/core /features/core
+COPY harness/prompt-answer.sh /features/core/prompt-answer.sh
+COPY access/skills/discobox-access /features/core/skills/discobox-access
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
+COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review
+COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /features/discobox-cli/discobox
+
+# The platform's manifest layer: the env, volumes, groups, and seed files true
+# of every box the platform provisions, rather than of any harness. A harness
+# bundle does not inherit it — a harness extends a harness, never the platform
+# — so the server composes it under the harness bundle's own layers
+# (harness.ComposeBundleLabels, ADR 26-10-16-423 §2).
+ARG IMAGE_LAYER_METADATA
+# Required, and refused by the build itself rather than trusted: `LABEL
+# key=${ARG}` with no argument passed sets the key to "" and builds a
+# perfectly good bundle every harness is then rejected against. That is a
+# build mistake, and it is only discoverable from a running server unless the
+# build refuses it — which is how v0.4.0's harness images shipped. A FROM
+# scratch stage has no shell to check it in, so the expansion does.
+LABEL io.discobox.image.v1.10-platform="${IMAGE_LAYER_METADATA:?IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"}"

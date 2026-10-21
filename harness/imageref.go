@@ -35,3 +35,10 @@ func ImageRef(name string) string {
 	}
 	return name + ":" + tag
 }
+
+// PlatformBundleRef returns the reference for the platform bundle this build
+// pins (ADR 26-10-16-423 §7): published with the harness images, to the same
+// registry under the same tag, so it is located as they are.
+func PlatformBundleRef() string {
+	return ImageRef("discobox-platform")
+}

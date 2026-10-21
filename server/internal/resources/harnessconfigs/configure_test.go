@@ -15,12 +15,18 @@ import (
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"gorm.io/gorm"
 )
 
+// stubInspector answers what byImage holds: an image's digest, platforms and
+// kind, and, for a bundle named by the same reference, the manifest the entry
+// holds as that bundle's own label, digested as the entry is. A test registers
+// a harness with one reference for both. The platform bundle is
+// stubPlatformLayer unless byImage names it.
 type stubInspector struct {
 	byImage map[string]imageMetadata
 	calls   []string
@@ -28,7 +34,56 @@ type stubInspector struct {
 
 func (s *stubInspector) Inspect(_ context.Context, image string) (imageMetadata, error) {
 	s.calls = append(s.calls, image)
-	return s.byImage[image], nil
+	inspected := s.byImage[image]
+	return imageMetadata{Digest: inspected.Digest, Platforms: inspected.Platforms, ImageMetadata: harness.ImageMetadata{ImageKind: platform.OCI}}, nil
+}
+
+func (s *stubInspector) InspectBundle(_ context.Context, bundle string, admit func(map[string]string) error) (bundleInspection, error) {
+	inspected, ok := s.byImage[bundle]
+	read := stubBundle(inspected.Digest, inspected.ImageMetadata)
+	if !ok && bundle == testPlatformBundle {
+		read = stubPlatformBundle()
+	}
+	if err := admit(read.Labels); err != nil {
+		return bundleInspection{}, err
+	}
+	return read, nil
+}
+
+// admitAny admits every bundle, for a test of what an inspector reads rather
+// than of what is admitted.
+func admitAny(map[string]string) error { return nil }
+
+// stubBundle is a harness bundle declaring metadata as its own label, on the
+// platform's API version.
+func stubBundle(digest string, metadata harness.ImageMetadata) bundleInspection {
+	metadata.ImageKind, metadata.PlatformAPIVersion = platform.ImageKind{}, harness.PlatformAPIVersion
+	label, err := json.Marshal(metadata)
+	if err != nil {
+		panic(err)
+	}
+	return bundleInspection{Digest: digest, Labels: map[string]string{harness.ImageLabel: string(label)}}
+}
+
+// testPlatformBundle is the platform bundle a test service composes on, which
+// stubInspector answers with stubPlatformBundle.
+const testPlatformBundle = "discobox-platform:test"
+
+// testReferences names the platform bundle and no built-in override.
+var testReferences = harnessdefs.References{PlatformBundle: testPlatformBundle}
+
+// sameReferences names each built-in's bundle by the reference its image is
+// named by, which stubInspector answers both for, on testPlatformBundle.
+func sameReferences(refs map[string]string) harnessdefs.References {
+	return harnessdefs.References{PlatformBundle: testPlatformBundle, Bundles: refs, Images: refs}
+}
+
+// stubPlatformBundle is a platform bundle whose layer provides the platform
+// API version and nothing else.
+func stubPlatformBundle() bundleInspection {
+	return bundleInspection{Digest: "sha256:platform", Labels: map[string]string{
+		harness.ImageLayerLabelPrefix + harness.PlatformLayer: `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"` + harness.PlatformAPIVersion + `"}`,
+	}}
 }
 
 func newTestStore(t *testing.T, opts ...store.Option) *store.Store {
@@ -323,7 +378,7 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 			Config: &harness.ImageMode{Command: []string{"configure"}, Reminder: "Log in, then exit."},
 		}}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": newImage}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": newImage})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -368,7 +423,7 @@ func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--rebuilt"}},
 	}}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: rebuilt}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -385,7 +440,8 @@ func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 	}
 }
 
-// Seeding still writes nothing when neither the reference nor the digest moved.
+// Seeding still writes nothing when neither the references nor the digests
+// moved.
 func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
@@ -393,6 +449,7 @@ func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	const image = "discobox-harness-codex:dev-current"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
+		Bundle: image, BundleDigest: "sha256:same",
 		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
@@ -407,7 +464,7 @@ func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 		Harness:   &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--clobbered"}},
 	}}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{image: unchanged}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -594,7 +651,7 @@ func TestSeedBuiltInsSeedsShellLikeAnyOtherHarness(t *testing.T) {
 			Harness:          &harness.Image{ID: "shell", Name: "Shell"},
 		}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"shell": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"shell": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -633,7 +690,7 @@ func TestSeedBuiltInsLeavesHarnessesWithSecretsUnconfigured(t *testing.T) {
 			},
 		}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

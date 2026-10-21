@@ -33,10 +33,12 @@ Each transport and direct path runs against three fresh sandboxes by default:
 update loop, and rendering path, but it is not part of the default run because
 it is not on the `discobox new` or direct attach path.
 
-The image under `image/` is test-only. Its primary process, `probe.py`, enters
-raw mode and turns `DBXPING:00000001` into `DBXPONG:00000001`, so every input
-has an unambiguous matching output; it also generates the spinner or screen
-load.
+The harness under `image/` is test-only, built as every harness is: a bundle
+(`discobox-terminal-latency:local`) whose label is its manifest, and the
+runnable twin a pool runs (`discobox-terminal-latency-image:local`). Its
+primary process, `probe.py`, enters raw mode and turns `DBXPING:00000001` into
+`DBXPONG:00000001`, so every input has an unambiguous matching output; it also
+generates the spinner or screen load.
 
 ## Run
 
@@ -53,8 +55,8 @@ In another terminal (the runner needs `docker`, `go`, `jq`, `timeout`, and
 go tool task perf:terminal
 ```
 
-The runner builds the current CLI and fixture image, registers and configures a
-uniquely named harness, gives each path/profile pair a fresh disposable
+The runner builds the current CLI and the fixture harness, registers and
+configures it under a unique name, gives each path/profile pair a fresh disposable
 sandbox, and deletes only those resources. Separate sandboxes prevent replay
 or detach state from one probe contaminating the next. Reports land under
 `.tmp/terminal-latency/<run-id>/`, beside `configure.json` and a

@@ -1,9 +1,9 @@
-// Package harnessdefs owns the seed data for the included harness images.
+// Package harnessdefs owns the seed data for the included harnesses.
 //
 // There is no user-facing "definition" concept: a harness config is the single
 // harness thing. This package only supplies what the server needs to seed the
 // built-in harness configs, and the env-override mapping dev builds use to
-// point those configs at freshly tagged images.
+// point those configs at freshly tagged bundles and images.
 package harnessdefs
 
 import (
@@ -24,34 +24,48 @@ type Seed struct {
 	// Slug is the stable selector (e.g. codex) and the built-in's identity.
 	Slug string
 	Name string
-	// Image is the harness image, already resolved against any env override.
-	Image string
+	// Bundle is the harness bundle its manifest is read from, and Image the
+	// runnable image a pool runs, each already resolved against any override.
+	Bundle string
+	Image  string
+}
+
+// References is what the built-in harnesses resolve against: the platform
+// bundle every harness's manifest is composed on (ADR 26-10-16-423 §2), and
+// per built-in slug, the bundle and runnable image replacing its own. Dev
+// builds set them from the environment (ReferencesFromEnv), a release from its
+// manifest.
+type References struct {
+	PlatformBundle string
+	Bundles        map[string]string
+	Images         map[string]string
 }
 
 // ShellSlug is the slug of the `shell` built-in. It is an ordinary registry
-// harness — `harness/shell`, built on the sandbox agent image like every other
-// (ADR 0043) — and not a fallback: a sandbox names its harness or the project
-// does (ADR 0048). The one path that still ends at it is the upgrade of a
-// legacy sandbox with no harness config, which adopts this one (ADR 0032 §4;
-// see sandboxes.Service.fallbackHarnessConfig). The name is reserved so that
+// harness — `harness/shell`, a bundle like every other (ADR 0043) — and not a
+// fallback: a sandbox names its harness or the project does (ADR 0048). The
+// one path that still ends at it is the upgrade of a legacy sandbox with no
+// harness config, which adopts this one (ADR 0032 §4; see
+// sandboxes.Service.fallbackHarnessConfig). The name is reserved so that
 // nothing else can claim that role.
 const ShellSlug = harness.ShellSlug
 
-// Seeds returns the built-in harness configs to seed, with each image replaced
-// by imageOverrides[slug] when present. Dev builds inject freshly tagged images
-// this way (see ImageEnvVar); an empty map yields the baked-in images.
-// With exact set, only the manifest entries are seeded, including harnesses
-// absent from this binary's registry. Their metadata comes from their image.
-
-func Seeds(imageOverrides map[string]string, exact bool) []Seed {
+// Seeds returns the built-in harness configs to seed, with each bundle and
+// image replaced by refs' entry for its slug when present. Dev builds inject
+// freshly tagged ones this way (see BundleEnvVar and ImageEnvVar); empty
+// references yield the baked-in ones. With exact set, only the slugs refs
+// names images for are seeded, including harnesses absent from this binary's
+// registry: a release's manifest names every harness it ships, and their
+// metadata comes from their bundles.
+func Seeds(refs References, exact bool) []Seed {
 	definitions := registry.Definitions()
 	if exact {
 		names := map[string]string{}
 		for _, definition := range definitions {
 			names[definition.ID] = definition.Name
 		}
-		slugs := make([]string, 0, len(imageOverrides))
-		for slug := range imageOverrides {
+		slugs := make([]string, 0, len(refs.Images))
+		for slug := range refs.Images {
 			slugs = append(slugs, slug)
 		}
 		sort.Strings(slugs)
@@ -61,38 +75,53 @@ func Seeds(imageOverrides map[string]string, exact bool) []Seed {
 			if name == "" {
 				name = slug
 			}
-			out = append(out, Seed{Slug: slug, Name: name, Image: imageOverrides[slug]})
+			out = append(out, Seed{Slug: slug, Name: name, Bundle: refs.Bundles[slug], Image: refs.Images[slug]})
 		}
 		return out
 	}
 	out := make([]Seed, 0, len(definitions))
 	for _, definition := range definitions {
-		image := definition.Image
-		if override := strings.TrimSpace(imageOverrides[definition.ID]); override != "" {
+		bundle, image := definition.Bundle, definition.Image
+		if override := strings.TrimSpace(refs.Bundles[definition.ID]); override != "" {
+			bundle = override
+		}
+		if override := strings.TrimSpace(refs.Images[definition.ID]); override != "" {
 			image = override
 		}
-		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Image: image})
+		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Bundle: bundle, Image: image})
 	}
 	return out
 }
 
 // ImageEnvVar returns the environment variable that overrides a built-in
-// harness's image. The dev image watcher writes the same key; keep the two
-// mappings in sync.
+// harness's runnable image, and BundleEnvVar the one that overrides its
+// bundle. The dev image watcher writes the same keys; keep the mappings in
+// sync.
 func ImageEnvVar(slug string) string {
-	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(slug, "-", "_")) + "_IMAGE"
+	return "DISCOBOX_HARNESS_" + envSlug(slug) + "_IMAGE"
 }
 
-// ImageOverridesFromEnv reads per-harness image overrides from the environment
-// via getenv, keyed by built-in slug.
-func ImageOverridesFromEnv(getenv func(string) string) map[string]string {
-	overrides := map[string]string{}
+func BundleEnvVar(slug string) string {
+	return "DISCOBOX_HARNESS_" + envSlug(slug) + "_BUNDLE"
+}
+
+func envSlug(slug string) string {
+	return strings.ToUpper(strings.ReplaceAll(slug, "-", "_"))
+}
+
+// OverridesFromEnv reads per-harness bundle and image overrides from the
+// environment via getenv, keyed by built-in slug.
+func OverridesFromEnv(getenv func(string) string) (bundles, images map[string]string) {
+	bundles, images = map[string]string{}, map[string]string{}
 	for _, definition := range registry.Definitions() {
+		if value := strings.TrimSpace(getenv(BundleEnvVar(definition.ID))); value != "" {
+			bundles[definition.ID] = value
+		}
 		if value := strings.TrimSpace(getenv(ImageEnvVar(definition.ID))); value != "" {
-			overrides[definition.ID] = value
+			images[definition.ID] = value
 		}
 	}
-	return overrides
+	return bundles, images
 }
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

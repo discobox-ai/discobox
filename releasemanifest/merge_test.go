@@ -39,6 +39,7 @@ func TestMergeRejectsMixedOrIncompleteBuilds(t *testing.T) {
 	for name, mutate := range map[string]func(*Manifest){
 		"source":         func(m *Manifest) { m.Revision = "different" },
 		"images":         func(m *Manifest) { m.Images.PoolAgent = "example.com/pool:v9" },
+		"bundles":        func(m *Manifest) { withBundles(m); m.Bundles.Platform = "example.com/platform:v9" },
 		"missing CLI":    func(m *Manifest) { m.Clients = nil },
 		"wrong platform": func(m *Manifest) { m.Clients[0].Arch = "arm64" },
 		"wrong version":  func(m *Manifest) { m.Clients[0].Version = "v9" },

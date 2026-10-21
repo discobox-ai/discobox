@@ -18,11 +18,24 @@ const (
 	// the way a *.d directory orders its fragments.
 	ImageLayerLabelPrefix = ImageLabel + "."
 
-	// SandboxBaseLayer is the layer the sandbox agent base image contributes:
-	// the env, volumes, groups, and seed files that are true of every image
-	// built FROM it. Its presence is also what proves an image *was* built from
-	// that base, which registration requires (ADR 0086 §1).
+	// SandboxBaseLayer is the layer the sandbox agent's overlay contributes to
+	// a manifest file: the base a template with no image is built on (ADR 0145
+	// §3). Its presence is what proves a manifest file's template was built on
+	// that overlay, which registration requires (ADR 0086 §1).
 	SandboxBaseLayer = "10-sandbox-base"
+
+	// PlatformLayer is the layer the platform bundle carries: the env,
+	// volumes, groups, and seed files that are true of every box the platform
+	// provisions. A harness bundle does not inherit it — a harness extends a
+	// harness, never the platform — so the server composes it under the
+	// harness bundle's own layers (ComposeBundleLabels, ADR 26-10-16-423 §2).
+	PlatformLayer = "10-platform"
+
+	// PlatformAPIVersion is the version of the platform a harness bundle runs
+	// on. The platform layer declares the one it provides, and a harness names
+	// the one it needs in its manifest's platformAPIVersion, rather than being
+	// built FROM the platform it was tested with (ADR 26-10-16-423 §2).
+	PlatformAPIVersion = "discobox.ai/platform/v1"
 
 	// MetadataBuildArg and LayerMetadataBuildArg are the build arguments a
 	// Dockerfile turns into its own ImageLabel and its contributed layer label
@@ -90,6 +103,48 @@ func ResolveImageLabels(labels map[string]string) (metadata ImageMetadata, hasBa
 		ordered = append(ordered, own.Metadata)
 	}
 	return MergeImageMetadata(ordered...), hasBase, nil
+}
+
+// ComposeBundleLabels returns the effective manifest a harness bundle
+// declares on the platform bundle the release pins: the platform's
+// PlatformLayer, then every layer the harness bundle's labels carry, resolved
+// as ResolveImageLabels resolves them (ADR 26-10-16-423 §2).
+//
+// The harness bundle must carry no platform layer of its own, nor the sandbox
+// agent image's base layer: either means it was built FROM the platform, which
+// pins the agent it was built with. It must name the platform API version it
+// needs, and the platform must provide that one. Like ResolveImageLabels, only
+// the merged result is a contract, and only the caller validates it.
+func ComposeBundleLabels(platformLabels, harnessLabels map[string]string) (ImageMetadata, error) {
+	for key := range harnessLabels {
+		if name, ok := layerName(key); ok && (name == PlatformLayer || name == SandboxBaseLayer) {
+			return ImageMetadata{}, fmt.Errorf("harness bundle carries the %s%s layer: it is built FROM the platform, and a harness extends a harness, never the platform", ImageLayerLabelPrefix, name)
+		}
+	}
+	raw, ok := platformLabels[ImageLayerLabelPrefix+PlatformLayer]
+	if !ok {
+		return ImageMetadata{}, fmt.Errorf("platform bundle carries no %s%s layer", ImageLayerLabelPrefix, PlatformLayer)
+	}
+	platformLayer, err := parseImageLayer(PlatformLayer, raw)
+	if err != nil {
+		return ImageMetadata{}, fmt.Errorf("platform bundle: %w", err)
+	}
+	provided := strings.TrimSpace(platformLayer.Metadata.PlatformAPIVersion)
+	if provided == "" {
+		return ImageMetadata{}, fmt.Errorf("platform bundle's %s layer declares no platformAPIVersion", PlatformLayer)
+	}
+	own, _, err := ResolveImageLabels(harnessLabels)
+	if err != nil {
+		return ImageMetadata{}, err
+	}
+	needed := strings.TrimSpace(own.PlatformAPIVersion)
+	if needed == "" {
+		return ImageMetadata{}, fmt.Errorf("harness bundle names no platformAPIVersion: a harness says which platform it runs on, want %q", provided)
+	}
+	if needed != provided {
+		return ImageMetadata{}, fmt.Errorf("harness bundle needs platform %q, and this server's platform is %q", needed, provided)
+	}
+	return MergeImageMetadata(platformLayer.Metadata, own), nil
 }
 
 // ReadManifestFile reads a manifest file into the label set
@@ -183,6 +238,9 @@ func MergeImageMetadata(layers ...ImageMetadata) ImageMetadata {
 	for _, layer := range layers {
 		if version := strings.TrimSpace(layer.APIVersion); version != "" {
 			out.APIVersion = version
+		}
+		if version := strings.TrimSpace(layer.PlatformAPIVersion); version != "" {
+			out.PlatformAPIVersion = version
 		}
 		if !layer.Platform.IsZero() {
 			out.Platform = layer.Platform
