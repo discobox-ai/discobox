@@ -62,10 +62,11 @@ func (f Feature) Runs(t testing.TB, text string) bool {
 	return false
 }
 
-// InstallsPackage reports whether a packages step installs the Debian package.
+// InstallsPackage reports whether a packages step installs the package on
+// some distribution.
 func (f Feature) InstallsPackage(name string) bool {
 	for _, step := range f.Spec.Steps {
-		if step.Packages != nil && slices.Contains(step.Packages.Debian, name) {
+		if step.Packages != nil && slices.Contains(slices.Concat(step.Packages.Debian, step.Packages.Ubuntu), name) {
 			return true
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -109,5 +110,31 @@ func TestParseRefuses(t *testing.T) {
 	feature := "apiVersion: discobox.ai/provision/v1\nasync: true\ncommands: [node, npm]\nadopt:\n  commands: [node]\n  version: {command: node, minimum: \"22.1\"}\n  writable: [/usr/local/lib/node_modules]\nsteps:\n  - name: a\n    install: true\n    apt: true\n    run: a.sh\n"
 	if _, err := Parse([]byte(feature)); err != nil {
 		t.Errorf("a feature with adopt, commands and async: %v", err)
+	}
+}
+
+// A box installs its own distribution's list, else its nearest relative's:
+// os-release lists ID_LIKE nearest first, so Pop!_OS (like "ubuntu debian")
+// takes Ubuntu's, and a Debian derivative with no list of its own Debian's.
+func TestPackagesForPrefersTheBoxsOwnDistribution(t *testing.T) {
+	both := PackagesStep{Debian: []string{"chromium"}, Ubuntu: []string{"libnss3"}}
+	for _, c := range []struct {
+		step   PackagesStep
+		id     string
+		like   []string
+		want   []string
+		wantOK bool
+	}{
+		{both, "debian", nil, []string{"chromium"}, true},
+		{both, "ubuntu", []string{"debian"}, []string{"libnss3"}, true},
+		{both, "pop", []string{"ubuntu", "debian"}, []string{"libnss3"}, true},
+		{both, "kali", []string{"debian"}, []string{"chromium"}, true},
+		{PackagesStep{Debian: []string{"jq"}}, "ubuntu", []string{"debian"}, []string{"jq"}, true},
+		{PackagesStep{Ubuntu: []string{"jq"}}, "debian", nil, nil, false},
+	} {
+		got, ok := c.step.For(c.id, c.like)
+		if ok != c.wantOK || !slices.Equal(got, c.want) {
+			t.Errorf("%s like %v: For = %v, %v; want %v, %v", c.id, c.like, got, ok, c.want, c.wantOK)
+		}
 	}
 }

@@ -749,3 +749,21 @@ func TestMergedJSONFileRefusesAFileItCannotRead(t *testing.T) {
 		t.Errorf("daemon.json = %q, want it left as %q", got, existing)
 	}
 }
+
+// A packages step installs the list of the box's own distribution: Ubuntu's
+// on an Ubuntu box, not Debian's it is also like.
+func TestPackagesInstallTheBoxsOwnDistributionsList(t *testing.T) {
+	b := newBox(t)
+	b.feature("f", map[string]string{provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: packages
+    packages:
+      debian: [chromium]
+      ubuntu: [libnss3]
+`})
+	b.mustApply()
+	want := "apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold libnss3"
+	if !slices.Contains(b.tools, want) {
+		t.Errorf("tools run:\n%s\nwant %s", strings.Join(b.tools, "\n"), want)
+	}
+}
