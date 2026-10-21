@@ -181,7 +181,11 @@ without a policy is judged by them as before.
   grant is for (`Sandbox.PolicyFacts`) — the asking discobox for an approved
   request, the created one for a grant given on a create — so `$this` is
   always the holder. A grant wider than one sandbox has no record to resolve against and
-  may carry only a policy that uses no variable.
+  may carry only a policy that uses no variable. The policy as bound to that
+  sandbox is held to `judge.PolicyFits` again before the grant is minted: a
+  value can be longer than its variable, and escaped longer still, so a policy
+  that fit where it entered may not once bound, and a grant every job under
+  it would refuse is a 400 instead.
 - **Resolved again on every read of a request** (`requestPolicyResolver`, on
   get, list — the inbox — and the approve answer), from the same record, so
   the form a person approves shows its variables' values (§3). The request

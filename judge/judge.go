@@ -491,12 +491,12 @@ func (j Job) validatePolicy() error {
 	return checkPolicySize(j.Purposes, j.Definitions)
 }
 
-// PolicyFits reports whether p, as it is written, is small enough for a judge
-// job to carry beside the largest evidence one may show: a policy that is not
-// could be approved and then judge nothing. Where a policy enters, it is
-// refused before anyone is asked to approve it. Binding a variable to its
-// value can lengthen a statement, and a job built from a bound policy is held
-// to the same bound by Validate.
+// PolicyFits reports whether p is small enough for a judge job to carry beside
+// the largest evidence one may show: a policy that is not could be approved and
+// then judge nothing. Where a policy enters, it is refused before anyone is
+// asked to approve it; where a grant is minted, the policy as bound to its
+// discobox is asked again, since a value can be longer than its variable. A
+// job built from a bound policy is held to the same bound by Validate.
 func PolicyFits(p policy.Policy) error {
 	return checkPolicySize(policy.FormatStatements(p.Statements), p.Definitions)
 }
