@@ -508,20 +508,36 @@ func (i *Image) Open(d Descriptor) (io.ReadCloser, error) {
 
 // verifyingReader turns the end of a blob into an error when its bytes were
 // not the ones its descriptor names.
+//
+// The check is made on the read that completes the blob's size, and that
+// read's bytes are withheld when it fails: a caller never holds all of a blob
+// that is not its digest's. Checked only at EOF, which a file reports on the
+// read after the last byte, every byte would be handed over first — and a
+// consumer streaming them on, such as an HTTP response of the blob's length,
+// would have sent a complete body that is not the blob before the error came.
 type verifyingReader struct {
-	file *os.File
-	hash hash.Hash
-	read int64
-	want Descriptor
+	file    *os.File
+	hash    hash.Hash
+	read    int64
+	want    Descriptor
+	checked bool
+	// failed is the mismatch, answered to every read after it too, so a
+	// caller that reads on never sees the blob end cleanly.
+	failed error
 }
 
 func (r *verifyingReader) Read(p []byte) (int, error) {
+	if r.failed != nil {
+		return 0, r.failed
+	}
 	n, err := r.file.Read(p)
 	r.hash.Write(p[:n])
 	r.read += int64(n)
-	if errors.Is(err, io.EOF) {
+	if !r.checked && (r.read >= r.want.Size || errors.Is(err, io.EOF)) {
+		r.checked = true
 		if got := "sha256:" + hex.EncodeToString(r.hash.Sum(nil)); r.read != r.want.Size || got != r.want.Digest {
-			return n, fmt.Errorf("blob %s on disk has digest %s", r.want.Digest, got)
+			r.failed = fmt.Errorf("blob %s on disk has digest %s", r.want.Digest, got)
+			return 0, r.failed
 		}
 	}
 	return n, err

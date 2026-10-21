@@ -2,8 +2,6 @@ package imagecache
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -438,49 +435,19 @@ func (s *stager) fetch(ctx context.Context, ref Reference, blob Descriptor, curr
 	return err
 }
 
-// fetchOnce downloads one blob into a temporary beside its destination, hashing
-// it as it is written, and renames it into place only when the digest and the
-// size both match. A blob's name is therefore a claim about its content.
+// fetchOnce downloads one blob through writeBlob, which renames it into place
+// only when the digest and the size both match. A blob's name is therefore a
+// claim about its content.
 func (s *stager) fetchOnce(ctx context.Context, ref Reference, blob Descriptor, current *atomic.Int64) error {
 	if s.layout.hasBlob(blob) {
 		// Another staging finished it meanwhile.
 		return nil
 	}
-	path, err := s.layout.blobPath(blob.Digest)
-	if err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), tempPrefix+strings.TrimPrefix(blob.Digest, "sha256:")[:16]+"-*")
-	if err != nil {
-		return err
-	}
-	temp := file.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(temp)
-		}
-	}()
-	hash := sha256.New()
-	counter := &countingWriter{total: current}
-	fetchErr := s.registry.blob(ctx, ref, blob, io.MultiWriter(file, hash, counter))
-	// Sync before the rename that publishes it: on ext4 or xfs the rename can
-	// reach the journal ahead of the data, and a blob is trusted by its name.
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(fetchErr, syncErr, closeErr); err != nil {
+	if err := s.layout.writeBlob(blob.Digest, blob.Size, func(w io.Writer) error {
+		return s.registry.blob(ctx, ref, blob, io.MultiWriter(w, &countingWriter{total: current}))
+	}); err != nil {
 		return fmt.Errorf("download %s: %w", blob.Digest, err)
 	}
-	if counter.written != blob.Size {
-		return fmt.Errorf("download %s: received %d bytes, not the %d its manifest declares", blob.Digest, counter.written, blob.Size)
-	}
-	if got := "sha256:" + hex.EncodeToString(hash.Sum(nil)); got != blob.Digest {
-		return fmt.Errorf("download %s: received bytes with digest %s", blob.Digest, got)
-	}
-	if err := os.Rename(temp, path); err != nil {
-		return fmt.Errorf("download %s: %w", blob.Digest, err)
-	}
-	committed = true
 	return nil
 }
 
@@ -491,7 +458,9 @@ type countingWriter struct {
 
 func (w *countingWriter) Write(p []byte) (int, error) {
 	w.written += int64(len(p))
-	w.total.Add(int64(len(p)))
+	if w.total != nil {
+		w.total.Add(int64(len(p)))
+	}
 	return len(p), nil
 }
 
