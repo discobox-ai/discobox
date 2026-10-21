@@ -479,9 +479,14 @@ fetch needs:
 
 | Call | Answers |
 |---|---|
-| `GET /api/assets/{name}/manifests/sha256:<digest>` | A pinned index or manifest — small JSON naming config and layer digests |
-| `GET /api/assets/{name}` | The manifest the server currently resolves for the name, for registration and re-pinning |
-| `GET /api/assets/blobs/sha256:<digest>` | One blob, immutable and cacheable forever |
+| `GET /api/pools/{poolId}/assets/{name}/manifests/sha256:<digest>` | A pinned index or manifest — small JSON naming config and layer digests |
+| `GET /api/pools/{poolId}/assets/{name}` | The manifest the server currently resolves for the name, for registration and re-pinning |
+| `GET /api/pools/{poolId}/assets/blobs/sha256:<digest>` | One blob, immutable and cacheable forever |
+
+*Amended 2026-10-21, before anything shipped against it:* the calls sit under
+`/api/pools/{poolId}/`, as every pool route does, so the pool's signed
+identity is bound to the route's (`server/internal/auth`); the table first
+wrote them as `/api/assets/…`, a path no pool route can be.
 
 - **The server keeps one blob store** and fills it from any source: the
   release's bundles, pulled from the registry once; the CLI-staged image cache
