@@ -428,8 +428,8 @@ func (s *Service) judgeConditions(ctx context.Context, projectID, approverID str
 	if s.judge == nil {
 		return "no judge can say whether its conditions are within the delegation's", nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, services.DelegationBound)
-	defer cancel()
+	// The caller bounds this with the uses' judging, under one
+	// services.DelegationBound.
 	for _, u := range unsettled {
 		within := false
 		var why []string

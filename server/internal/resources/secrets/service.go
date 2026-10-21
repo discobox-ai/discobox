@@ -710,11 +710,14 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 		// A policy is handed on only under a delegation whose own policy it
 		// is within (ADR 26-10-20-782 §11); its uses are then judged as any
-		// are, among those.
-		if delegations, err = s.delegationsCovering(ctx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
+		// are, among those. Both under one bound: the gate holds the call
+		// open for one.
+		judgeCtx, cancel := context.WithTimeout(ctx, services.DelegationBound)
+		defer cancel()
+		if delegations, err = s.delegationsCovering(judgeCtx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
 			return nil, err
 		}
-		if delegation, err = s.judgeDelegations(ctx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, requester); err != nil {
+		if delegation, err = s.judgeDelegations(judgeCtx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, requester); err != nil {
 			return nil, err
 		}
 	}

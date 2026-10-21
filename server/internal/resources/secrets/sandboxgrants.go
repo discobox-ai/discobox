@@ -68,6 +68,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 	// lifetime was named, by index: which delegation it is made under, and so
 	// how long a lifetime nobody named lasts, waits for the judge.
 	var fitting [][]*model.SecretGrant
+	var givenPolicies []*policy.Policy
 	var namedTTL []bool
 	var ttls []int64
 	boundTo := map[string]string{}
@@ -132,17 +133,9 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 			return SandboxGrants{}, err
 		}
 		// A discobox gives a policy only within one it was delegated (ADR
-		// 26-10-20-782 §11): of the delegations its lifetime fits, those
-		// whose policy it is within, whose uses the judge then reads.
-		if givenPolicy != nil && byDiscobox {
-			credential := secret.Name
-			if id := strings.TrimSpace(in.WellKnownId.Or("")); id != "" {
-				credential = id
-			}
-			last := len(fitting) - 1
-			if fitting[last], err = s.delegationsCovering(ctx, projectID, principal.SandboxID, fitting[last], givenPolicy, sandbox, "", credential, hosts); err != nil {
-				return SandboxGrants{}, err
-			}
+		// 26-10-20-782 §11), which is asked with its uses below.
+		if byDiscobox {
+			givenPolicies = append(givenPolicies, givenPolicy)
 		}
 		if givenPolicy != nil {
 			resolved := givenPolicy.Resolve(sandbox.PolicyFacts())
@@ -195,7 +188,16 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		judging, judgingCtx := errgroup.WithContext(ctx)
 		for i, grant := range out.Grants {
 			judging.Go(func() error {
-				delegation, err := s.judgeDelegations(judgingCtx, projectID, principal.SandboxID, fitting[i], credentials[i], grant.Hosts, grant.Uses, "", sandbox)
+				// Its policy, then its uses, under the one bound a grant has:
+				// of the delegations its lifetime fits, those whose policy
+				// covers the one given, whose uses the judge then reads.
+				ctx, cancel := context.WithTimeout(judgingCtx, services.DelegationBound)
+				defer cancel()
+				covering, err := s.delegationsCovering(ctx, projectID, principal.SandboxID, fitting[i], givenPolicies[i], sandbox, "", credentials[i], grant.Hosts)
+				if err != nil {
+					return err
+				}
+				delegation, err := s.judgeDelegations(ctx, projectID, principal.SandboxID, covering, credentials[i], grant.Hosts, grant.Uses, "", sandbox)
 				out.Delegations[i] = delegation
 				return err
 			})
