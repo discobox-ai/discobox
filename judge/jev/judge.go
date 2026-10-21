@@ -360,7 +360,7 @@ const (
 )
 
 // statementReading is how either question reads a policy's statements.
-const statementReading = "Each statement names its actions `on` a resource type, with the resource's name in quotes when it has one and `created by` a discobox when it says so, `within` the resources it sits in, and `in` a scope, which may be `of` another, such as a namespace of a cluster; `anywhere` is every scope, `anything` every resource type and `manage` every action on it. A statement applies only `when` its condition holds and not `unless` its other one does. `definitions`, when present, says what each other word means, and it means only that."
+const statementReading = "Each statement names its actions `on` a resource type, with the resource's name in quotes when it has one and `created by` a discobox when it says so, `within` the resources it sits in, and `in` a scope, which may be `of` another, such as a namespace of a cluster; `anywhere` is every scope, `anything` every resource type and `manage` every action on it. A name in quotes is a string literal, in which `\\\\` is one backslash; in the name it spells, `*`, `?` and `[…]` are patterns and a backslash makes the character after it literal. So `\"acme/\\\\*\"` spells the name `acme/\\*`, which is the one repository called `acme/*`, not every repository in acme. A statement applies only `when` its condition holds and not `unless` its other one does. `definitions`, when present, says what each other word means, and it means only that."
 
 // policyQuestions are a command or request job's questions under a policy:
 // allowed against its allows, and denied against its denies when it has
