@@ -168,7 +168,8 @@ flowchart TD
   the agent credentials protocol. It is its own module and its own binary — not
   an `argv[0]` alias of the sandbox agent — because it is meant to be liftable
   into another repository, and it depends on nothing but the stdlib-only
-  `agentcreds` package. See [`access/DESIGN.md`](access/DESIGN.md).
+  protocol packages, `agentcreds` and the `policy` types it carries. See
+  [`access/DESIGN.md`](access/DESIGN.md).
 - Termpane module: `termpane`, a Bubble Tea component that draws a live
   terminal from any stream; the CLI uses it. It depends on nothing else in
   this repository. See

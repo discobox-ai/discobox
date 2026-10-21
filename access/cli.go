@@ -1,8 +1,9 @@
 // Package access implements the in-sandbox credential CLI: a thin client of
 // the agent credentials protocol.
 //
-// Its only dependency is the protocol package, so it can be lifted into another
-// repository without bringing a runtime with it.
+// Its only dependencies are the protocol's packages, agentcreds and the policy
+// types it carries, both standard library only, so it can be lifted into
+// another repository without bringing a runtime with it.
 //
 // # Interface shape
 //
