@@ -198,7 +198,8 @@ type DownloadStep struct {
 	// Arch maps a GOARCH to what to fetch on it. A box whose architecture is
 	// not here fails the step: select the step with `when` instead.
 	Arch map[string]Download `yaml:"arch"`
-	// Unpack, when set, says what is fetched is a gzipped tar: Path is then
+	// Unpack, when set, says what is fetched is a gzipped tar or a zip, told
+	// apart by its first bytes: Path is then
 	// the directory it is unpacked into, replaced whole once the sha256
 	// matches, and Mode is unused.
 	Unpack *Unpack `yaml:"unpack,omitempty"`
@@ -222,10 +223,28 @@ type Download struct {
 	SHA256 string `yaml:"sha256"`
 }
 
-// PackagesStep installs packages, one list per distribution family. Only
-// Debian (apt) is supported.
+// PackagesStep installs packages with apt, one list per distribution: a box
+// installs the list of its own os-release ID, else that of the first of its
+// ID_LIKE that has one. Debian's list is so every Debian derivative's, unless
+// the derivative names its own. Only the Debian family is supported.
 type PackagesStep struct {
 	Debian []string `yaml:"debian,omitempty"`
+	// Ubuntu replaces Debian's list on Ubuntu and what derives from it. Left
+	// out of a step's digest when unset, so a Debian-only step's is the same
+	// as before Ubuntu had a list.
+	Ubuntu []string `yaml:"ubuntu,omitempty" json:",omitempty"`
+}
+
+// For is the list a box whose os-release says id and idLike installs, and
+// false when no list names it.
+func (p PackagesStep) For(id string, idLike []string) ([]string, bool) {
+	lists := map[string][]string{"debian": p.Debian, "ubuntu": p.Ubuntu}
+	for _, distro := range append([]string{id}, idLike...) {
+		if list := lists[distro]; len(list) > 0 {
+			return list, true
+		}
+	}
+	return nil, false
 }
 
 // Wiring reports whether the step is the cheap wiring every feature that is
@@ -659,10 +678,10 @@ func (d *DownloadStep) validate() error {
 }
 
 func (p *PackagesStep) validate() error {
-	if len(p.Debian) == 0 {
+	if len(p.Debian) == 0 && len(p.Ubuntu) == 0 {
 		return errors.New("packages: names no package")
 	}
-	for _, pkg := range p.Debian {
+	for _, pkg := range slices.Concat(p.Debian, p.Ubuntu) {
 		if !packagePattern.MatchString(pkg) {
 			return fmt.Errorf("packages: %q is not a Debian package name", pkg)
 		}

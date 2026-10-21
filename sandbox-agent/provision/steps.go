@@ -360,12 +360,17 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	return fsdurable.SyncDir(dir)
 }
 
-// applyPackages installs a Debian family box's packages, refreshing the
+// applyPackages installs a Debian family box's packages, the list its
+// distribution names (PackagesStep.For), refreshing the
 // package lists once per run. It holds the apt lock, which features
 // provisioning at once share. A configuration file already at a package's
 // path is kept, never asked about: it is the box's, or a feature's that was
 // provisioned before the package arrived, and there is nobody to answer.
 func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisionspec.PackagesStep) error {
+	packages, ok := step.For(r.Platform.ID, r.Platform.IDLike)
+	if !ok {
+		return fmt.Errorf("packages: no list for %s", r.Platform.ID)
+	}
 	r.apt.Lock()
 	defer r.apt.Unlock()
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
@@ -376,7 +381,7 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 		r.aptUpdated = true
 	}
 	args := []string{"install", "-y", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}
-	return r.command(ctx, out, "/", env, "apt-get", append(args, step.Debian...)...)
+	return r.command(ctx, out, "/", env, "apt-get", append(args, packages...)...)
 }
 
 func fileMode(mode string) os.FileMode {

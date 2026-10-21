@@ -2,6 +2,7 @@ package provision
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/provisionspec"
 )
 
-// unpackInPlace unpacks the gzipped tar at archive into a directory beside
+// unpackInPlace unpacks the archive at archive into a directory beside
 // target and puts it in target's place, so what was there stays until the
 // whole archive has unpacked, and a failed unpack leaves it.
 func unpackInPlace(archive, target string, unpack provisionspec.Unpack) error {
@@ -27,7 +28,7 @@ func unpackInPlace(archive, target string, unpack provisionspec.Unpack) error {
 	if err := os.Chmod(staged, 0o755); err != nil {
 		return err
 	}
-	if err := unpackTarGz(archive, staged, unpack); err != nil {
+	if err := unpackArchive(archive, staged, unpack); err != nil {
 		return err
 	}
 	old := staged + ".old"
@@ -40,24 +41,126 @@ func unpackInPlace(archive, target string, unpack provisionspec.Unpack) error {
 	return os.RemoveAll(old)
 }
 
-// unpackTarGz unpacks a gzipped tar into dir, dropping unpack.Strip leading
-// components of each name and keeping only what unpack.Only names. Regular
-// files, directories and links whose target stays within dir are unpacked;
-// an entry that would land outside dir, directly or through a link unpacked
-// before it, or of any other type, fails the unpack rather than being
-// skipped, since what was fetched is not what its step expects.
-func unpackTarGz(archive, dir string, unpack provisionspec.Unpack) error {
+// archiveEntry is one entry of an archive being unpacked, whichever format
+// it came in.
+type archiveEntry struct {
+	name string
+	kind byte // tar's type flag, which a zip entry is mapped onto
+	mode fs.FileMode
+	link string
+	size int64
+	// open reads a regular file's content.
+	open func() (io.ReadCloser, error)
+}
+
+// unpackArchive unpacks a gzipped tar or a zip, told apart by their first
+// bytes, into dir, dropping unpack.Strip leading components of each name and
+// keeping only what unpack.Only names. Regular files, directories and links
+// whose target stays within dir are unpacked; an entry that would land
+// outside dir, directly or through a link unpacked before it, or of any
+// other type, fails the unpack rather than being skipped, since what was
+// fetched is not what its step expects.
+func unpackArchive(archive, dir string, unpack provisionspec.Unpack) error {
 	file, err := os.Open(archive)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	magic := make([]byte, 4)
+	if _, err := io.ReadFull(file, magic); err != nil {
+		return fmt.Errorf("unpack: %w", err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if string(magic) == "PK\x03\x04" {
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		zr, err := zip.NewReader(file, info.Size())
+		if err != nil {
+			return fmt.Errorf("unpack: %w", err)
+		}
+		return unpackEntries(dir, unpack, zipEntries(zr))
+	}
 	gz, err := gzip.NewReader(file)
 	if err != nil {
 		return fmt.Errorf("unpack: %w", err)
 	}
 	defer gz.Close()
-	reader := tar.NewReader(gz)
+	return unpackEntries(dir, unpack, tarEntries(tar.NewReader(gz)))
+}
+
+// tarEntries is next for a tar: each entry in turn, then io.EOF.
+func tarEntries(reader *tar.Reader) func() (archiveEntry, error) {
+	return func() (archiveEntry, error) {
+		header, err := reader.Next()
+		if err != nil {
+			return archiveEntry{}, err
+		}
+		return archiveEntry{
+			name: header.Name,
+			kind: header.Typeflag,
+			mode: header.FileInfo().Mode().Perm(),
+			link: header.Linkname,
+			size: header.Size,
+			open: func() (io.ReadCloser, error) { return io.NopCloser(reader), nil },
+		}, nil
+	}
+}
+
+// zipEntries is next for a zip. A link's target is its content, as zip
+// stores it. An entry must carry Unix modes: one written without them (a
+// FAT or NTFS creator) reads as 0666, and an executable would unpack as one
+// nothing can run while its step records itself applied.
+func zipEntries(zr *zip.Reader) func() (archiveEntry, error) {
+	i := 0
+	return func() (archiveEntry, error) {
+		if i == len(zr.File) {
+			return archiveEntry{}, io.EOF
+		}
+		f := zr.File[i]
+		i++
+		if creator := f.CreatorVersion >> 8; creator != zipCreatorUnix && creator != zipCreatorMacOSX {
+			return archiveEntry{}, fmt.Errorf("%q carries no Unix file modes", f.Name)
+		}
+		mode := f.Mode()
+		entry := archiveEntry{name: f.Name, mode: mode.Perm(), size: int64(f.UncompressedSize64), open: f.Open}
+		switch {
+		case mode.IsDir():
+			entry.kind = tar.TypeDir
+		case mode&fs.ModeSymlink != 0:
+			entry.kind = tar.TypeSymlink
+			rc, err := f.Open()
+			if err != nil {
+				return archiveEntry{}, err
+			}
+			defer rc.Close()
+			// A target longer than a path can be is not one.
+			target, err := io.ReadAll(io.LimitReader(rc, 4096))
+			if err != nil {
+				return archiveEntry{}, err
+			}
+			entry.link = string(target)
+		case mode.IsRegular():
+			entry.kind = tar.TypeReg
+		default:
+			entry.kind = '?'
+		}
+		return entry, nil
+	}
+}
+
+// The zip creator systems whose external attributes hold Unix modes, as
+// archive/zip reads them.
+const (
+	zipCreatorUnix   = 3
+	zipCreatorMacOSX = 19
+)
+
+// unpackEntries unpacks what next yields into dir, by unpackArchive's rules.
+func unpackEntries(dir string, unpack provisionspec.Unpack, next func() (archiveEntry, error)) error {
 	found := map[string]bool{}
 	// Links are made last, once every directory is in place: one is then
 	// checked against the tree it will resolve in, whatever order the
@@ -65,7 +168,7 @@ func unpackTarGz(archive, dir string, unpack provisionspec.Unpack) error {
 	type link struct{ name, entry, target string }
 	var links []link
 	for {
-		header, err := reader.Next()
+		entry, err := next()
 		if errors.Is(err, io.EOF) {
 			// A name the step keeps that the archive does not have is a
 			// layout it did not expect, not an empty tool.
@@ -95,7 +198,7 @@ func unpackTarGz(archive, dir string, unpack provisionspec.Unpack) error {
 		if err != nil {
 			return fmt.Errorf("unpack: %w", err)
 		}
-		name, ok := stripComponents(header.Name, unpack.Strip)
+		name, ok := stripComponents(entry.name, unpack.Strip)
 		if !ok {
 			continue
 		}
@@ -105,50 +208,59 @@ func unpackTarGz(archive, dir string, unpack provisionspec.Unpack) error {
 		}
 		found[only] = true
 		if !filepath.IsLocal(name) {
-			return fmt.Errorf("unpack: %q lands outside the directory", header.Name)
+			return fmt.Errorf("unpack: %q lands outside the directory", entry.name)
 		}
 		if err := noLinkOnTheWay(dir, name); err != nil {
-			return fmt.Errorf("unpack: %q: %w", header.Name, err)
+			return fmt.Errorf("unpack: %q: %w", entry.name, err)
 		}
 		dest := filepath.Join(dir, filepath.FromSlash(name))
 		// Nor onto one: a directory entry would be changed through it.
 		if info, err := os.Lstat(dest); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("unpack: %q lands on a link it unpacked", header.Name)
+			return fmt.Errorf("unpack: %q lands on a link it unpacked", entry.name)
 		}
-		if header.Typeflag == tar.TypeSymlink {
-			links = append(links, link{name: name, entry: header.Name, target: header.Linkname})
+		if entry.kind == tar.TypeSymlink {
+			links = append(links, link{name: name, entry: entry.name, target: entry.link})
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return err
 		}
-		mode := header.FileInfo().Mode().Perm()
-		switch header.Typeflag {
+		switch entry.kind {
 		case tar.TypeDir:
 			if err := os.MkdirAll(dest, 0o755); err != nil {
 				return err
 			}
-			if err := os.Chmod(dest, mode|0o700); err != nil {
+			if err := os.Chmod(dest, entry.mode|0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-			if err != nil {
-				return err
-			}
-			// The entry's own size, and no more: the archive's sha256 was
-			// checked, but its sizes are what bound what it unpacks to.
-			_, err = io.CopyN(out, reader, header.Size)
-			if closeErr := out.Close(); err == nil {
-				err = closeErr
-			}
-			if err != nil {
+			if err := unpackFile(dest, entry); err != nil {
 				return err
 			}
 		default:
-			return fmt.Errorf("unpack: %q is of a type that is not unpacked (%c)", header.Name, header.Typeflag)
+			return fmt.Errorf("unpack: %q is of a type that is not unpacked (%c)", entry.name, entry.kind)
 		}
 	}
+}
+
+// unpackFile writes a regular file's entry at dest.
+func unpackFile(dest string, entry archiveEntry) error {
+	in, err := entry.open()
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, entry.mode)
+	if err != nil {
+		return err
+	}
+	// The entry's own size, and no more: the archive's sha256 was checked,
+	// but its sizes are what bound what it unpacks to.
+	_, err = io.CopyN(out, in, entry.size)
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // selected reports whether name is one only names or under one, and which;

@@ -2,8 +2,10 @@ package provision
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +48,99 @@ func tarGz(t *testing.T, entries ...[2]string) string {
 		t.Fatal(err)
 	}
 	return buf.String()
+}
+
+// zipArchive is a zip of entries, described as tarGz describes them.
+func zipArchive(t *testing.T, entries ...[2]string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range entries {
+		name, body := entry[0], entry[1]
+		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+		switch {
+		case strings.HasSuffix(name, "/"):
+			header.SetMode(fs.ModeDir | 0o755)
+		case strings.HasPrefix(body, "->"):
+			header.SetMode(fs.ModeSymlink | 0o777)
+			body = strings.TrimPrefix(body, "->")
+		default:
+			header.SetMode(0o755)
+		}
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(name, "/") {
+			if _, err := w.Write([]byte(body)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+// A zip, which is how Chrome for Testing ships, is unpacked as a tar is:
+// stripped, its modes and links kept.
+func TestDownloadUnpacksAZip(t *testing.T) {
+	b := newBox(t)
+	archive := zipArchive(t, [2]string{"chrome-linux64/", ""}, [2]string{"chrome-linux64/chrome", "binary"}, [2]string{"chrome-linux64/alias", "->chrome"})
+	b.served["https://example.com/chrome.zip"] = archive
+	b.feature("f", map[string]string{provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: tool
+    download:
+      path: /opt/chrome
+      unpack: {strip: 1}
+      arch:
+        amd64: {url: "https://example.com/chrome.zip", sha256: "` + sha(archive) + `"}
+`})
+	b.mustApply()
+	if got := b.read("opt/chrome/alias"); got != "binary" {
+		t.Fatalf("the link reads %q", got)
+	}
+	info, err := os.Stat(filepath.Join(b.root, "opt/chrome/chrome"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("chrome lost its execute bit: %s", info.Mode())
+	}
+}
+
+// A zip whose entries carry no Unix modes is refused rather than unpacked
+// with every file 0666, which would leave an executable that cannot run.
+func TestDownloadRefusesAZipWithoutUnixModes(t *testing.T) {
+	b := newBox(t)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: "tool/bin", CreatorVersion: 0 << 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("binary")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archive := buf.String()
+	b.served["https://example.com/tool.zip"] = archive
+	b.feature("f", map[string]string{provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: tool
+    download:
+      path: /opt/tool
+      unpack: {strip: 1}
+      arch:
+        amd64: {url: "https://example.com/tool.zip", sha256: "` + sha(archive) + `"}
+`})
+	if _, err := b.apply(); err == nil || !strings.Contains(err.Error(), "no Unix file modes") {
+		t.Fatalf("error = %v", err)
+	}
 }
 
 // An archive is unpacked whole into the step's directory, its leading
@@ -106,11 +201,12 @@ func TestDownloadRefusesAnArchiveThatEscapes(t *testing.T) {
 		// The link it passes through comes later in the archive.
 		"a link through a later link": {"x/z", "->late/.."},
 	} {
-		t.Run(name, func(t *testing.T) {
-			b := newBox(t)
-			archive := tarGz(t, [2]string{"x/ok", "fine"}, [2]string{"x/sub/l", "->.."}, entry, [2]string{"x/late", "->sub/l"})
-			b.served["https://example.com/a.tar.gz"] = archive
-			b.feature("f", map[string]string{provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+		for format, build := range map[string]func(*testing.T, ...[2]string) string{"tar": tarGz, "zip": zipArchive} {
+			t.Run(name+"/"+format, func(t *testing.T) {
+				b := newBox(t)
+				archive := build(t, [2]string{"x/ok", "fine"}, [2]string{"x/sub/l", "->.."}, entry, [2]string{"x/late", "->sub/l"})
+				b.served["https://example.com/a.tar.gz"] = archive
+				b.feature("f", map[string]string{provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
 steps:
   - name: tool
     download:
@@ -119,14 +215,15 @@ steps:
       arch:
         amd64: {url: "https://example.com/a.tar.gz", sha256: "` + sha(archive) + `"}
 `})
-			writeTestFile(t, filepath.Join(b.root, "opt/tool/kept"), "kept")
-			if _, err := b.apply(); err == nil || !strings.Contains(err.Error(), "outside the directory") {
-				t.Fatalf("error = %v", err)
-			}
-			if got := b.read("opt/tool/kept"); got != "kept" {
-				t.Errorf("what was there = %q", got)
-			}
-		})
+				writeTestFile(t, filepath.Join(b.root, "opt/tool/kept"), "kept")
+				if _, err := b.apply(); err == nil || !strings.Contains(err.Error(), "outside the directory") {
+					t.Fatalf("error = %v", err)
+				}
+				if got := b.read("opt/tool/kept"); got != "kept" {
+					t.Errorf("what was there = %q", got)
+				}
+			})
+		}
 	}
 }
 
