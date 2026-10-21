@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
 ---
 
 # Verifying the console
@@ -443,6 +443,30 @@ lead; and run `discobox-access run --use <id> -- discobox …` there.
   `harness-shell:local` is not built yet. Full-precision expiries are in the
   isolated server's `data/discobox.db` (`secret_grants.expires_at`); the API
   prints whole seconds.
+
+# Verifying a pool route as the dev pool (the asset API, any `/api/pools/{poolId}/…`)
+
+A pool route answers only the pool's own signed assertion, so `curl` it with
+one minted from the dev pool's key. The key is in the pool container; copy it
+into your scratch dir and sign with `poolauth.CreateToken` from a file outside
+the repo, run with the pool-agent module (`cd pool-agent && go run $S/mint/main.go
+$S/agent.key <projectId> <poolId>`). An assertion lives a minute: mint one per
+call.
+
+```bash
+P=$(docker ps --format '{{.Names}}' | sed -n 's/^discobox-vm-//p' | head -1)
+docker exec discobox-vm-$P find /var/lib/discobox/identity -name agent.key   # .../<projectId>/<poolId>/agent.key
+```
+
+- The asset store is `.tmp/discobox/cache/assets/blobs/sha256/`. A blob removed
+  or damaged there (`dd conv=notrunc`) is what exercises refetch and the
+  digest check on the way out; a damaged one must never come back whole —
+  `curl` reports a cut-off or empty reply, never a 200 of the full length.
+- Linux dev bundles are the host daemon's `:dev-*` tags, pinned by image ID
+  (`d admin harness list -o json | jq '..|.bundleDigest?'`); a dev harness bundle
+  is an index of its platform and an attestation, so read its child manifest
+  for layers.
+- An OCI layout tar from the daemon: `docker save <ref> | tar -t | grep blobs/`.
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
