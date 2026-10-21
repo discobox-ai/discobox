@@ -43,6 +43,18 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 	return s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, store.SandboxGrantScopes(sandbox))
 }
 
+// SandboxPolicyFacts is the record of the sandbox a policy written for it
+// resolves against (ADR 26-10-20-782 §4): the same Sandbox.PolicyFacts that
+// approval resolves its variables from and the judge is told, so the agent
+// writing a policy, the policy and the judge all read one value.
+func (s *Service) SandboxPolicyFacts(ctx context.Context, poolID, sandboxID string) (policy.Facts, error) {
+	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
+	if err != nil {
+		return policy.Facts{}, err
+	}
+	return sandbox.PolicyFacts(), nil
+}
+
 // CreateSandboxCredentialRequest records an agent's ask as a pending
 // SecretRequest and returns immediately. Approval is a human act with human
 // latency, so this never waits for one; the caller polls

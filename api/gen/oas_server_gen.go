@@ -413,6 +413,14 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
+	// GetSandboxPolicyFacts implements get-sandbox-policy-facts operation.
+	//
+	// What the control plane recorded about a sandbox when it was created, typed, and what each variable
+	// a policy may use resolves to for it (ADR 26-10-20-782 section 4) -- the record a policy written
+	// for this sandbox resolves against at approval, never what the sandbox reports about itself.
+	//
+	// GET /api/pools/{poolId}/sandbox-policy-facts
+	GetSandboxPolicyFacts(ctx context.Context, params GetSandboxPolicyFactsParams) (GetSandboxPolicyFactsRes, error)
 	// GetSandboxProviderInstance implements get-sandbox-provider-instance operation.
 	//
 	// Get a sandbox provider instance.

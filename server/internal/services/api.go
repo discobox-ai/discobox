@@ -11,6 +11,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -470,6 +471,9 @@ type SecretService interface {
 	// agent on behalf of one of its own sandboxes, so each takes the calling
 	// pool's ID and verifies the sandbox belongs to it.
 	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]store.AgentCredential, error)
+	// SandboxPolicyFacts is the sandbox's record as a policy's variables
+	// resolve from it (ADR 26-10-20-782 §4).
+	SandboxPolicyFacts(ctx context.Context, poolID, sandboxID string) (policy.Facts, error)
 	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
 	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error)
 	// ListCredentialVerdicts reads that record back for a project's members.

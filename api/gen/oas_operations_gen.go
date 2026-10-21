@@ -66,6 +66,7 @@ const (
 	GetSandboxExecOperation                   OperationName = "GetSandboxExec"
 	GetSandboxExecResourcesOperation          OperationName = "GetSandboxExecResources"
 	GetSandboxExecScreenOperation             OperationName = "GetSandboxExecScreen"
+	GetSandboxPolicyFactsOperation            OperationName = "GetSandboxPolicyFacts"
 	GetSandboxProviderInstanceOperation       OperationName = "GetSandboxProviderInstance"
 	GetSandboxRuntimeConfigOperation          OperationName = "GetSandboxRuntimeConfig"
 	GetSandboxServiceOperation                OperationName = "GetSandboxService"

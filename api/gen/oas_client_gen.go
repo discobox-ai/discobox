@@ -432,6 +432,14 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
+	// GetSandboxPolicyFacts invokes get-sandbox-policy-facts operation.
+	//
+	// What the control plane recorded about a sandbox when it was created, typed, and what each variable
+	// a policy may use resolves to for it (ADR 26-10-20-782 section 4) -- the record a policy written
+	// for this sandbox resolves against at approval, never what the sandbox reports about itself.
+	//
+	// GET /api/pools/{poolId}/sandbox-policy-facts
+	GetSandboxPolicyFacts(ctx context.Context, params GetSandboxPolicyFactsParams) (GetSandboxPolicyFactsRes, error)
 	// GetSandboxProviderInstance invokes get-sandbox-provider-instance operation.
 	//
 	// Get a sandbox provider instance.
@@ -7850,6 +7858,119 @@ func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandbox
 
 	stage = "DecodeResponse"
 	result, err := decodeGetSandboxExecScreenResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetSandboxPolicyFacts invokes get-sandbox-policy-facts operation.
+//
+// What the control plane recorded about a sandbox when it was created, typed, and what each variable
+// a policy may use resolves to for it (ADR 26-10-20-782 section 4) -- the record a policy written
+// for this sandbox resolves against at approval, never what the sandbox reports about itself.
+//
+// GET /api/pools/{poolId}/sandbox-policy-facts
+func (c *Client) GetSandboxPolicyFacts(ctx context.Context, params GetSandboxPolicyFactsParams) (GetSandboxPolicyFactsRes, error) {
+	res, err := c.sendGetSandboxPolicyFacts(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxPolicyFacts(ctx context.Context, params GetSandboxPolicyFactsParams) (res GetSandboxPolicyFactsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-policy-facts"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-policy-facts"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxPolicyFactsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-policy-facts"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxPolicyFactsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

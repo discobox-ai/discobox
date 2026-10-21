@@ -39,6 +39,10 @@ type fakeService struct {
 	trustPolls      []agentcreds.TrustRequestStatus
 	gotAudit        agentcreds.AuditQuery
 	exchanges       []agentcreds.AuditExchange
+	// facts is what Facts answers; predatesFacts answers it as a service
+	// from before the verb does.
+	facts         agentcreds.FactsResponse
+	predatesFacts bool
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -95,6 +99,13 @@ func (f *fakeService) TrustRequestStatus(_ context.Context, id string) (agentcre
 func (f *fakeService) AuditHTTP(_ context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
 	f.gotAudit = query
 	return f.exchanges, nil
+}
+
+func (f *fakeService) Facts(context.Context) (agentcreds.FactsResponse, error) {
+	if f.predatesFacts {
+		return agentcreds.FactsResponse{}, fmt.Errorf("%w: 404 page not found", agentcreds.ErrNotFound)
+	}
+	return f.facts, nil
 }
 
 // serve points the CLI at a real handler over HTTP, so these exercise the wire

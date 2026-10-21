@@ -4121,6 +4121,7 @@ func (*ErrorModelStatusCode) getProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
+func (*ErrorModelStatusCode) getSandboxPolicyFactsRes()            {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
 func (*ErrorModelStatusCode) getSandboxTrustRequestRes()           {}
@@ -13837,6 +13838,98 @@ func (o OptOrigin) Or(d Origin) Origin {
 	return d
 }
 
+// NewOptPolicyFactsRef returns new OptPolicyFactsRef with value set to v.
+func NewOptPolicyFactsRef(v PolicyFactsRef) OptPolicyFactsRef {
+	return OptPolicyFactsRef{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPolicyFactsRef is optional PolicyFactsRef.
+type OptPolicyFactsRef struct {
+	Value PolicyFactsRef
+	Set   bool
+}
+
+// IsSet returns true if OptPolicyFactsRef was set.
+func (o OptPolicyFactsRef) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPolicyFactsRef) Reset() {
+	var v PolicyFactsRef
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPolicyFactsRef) SetTo(v PolicyFactsRef) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPolicyFactsRef) Get() (v PolicyFactsRef, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPolicyFactsRef) Or(d PolicyFactsRef) PolicyFactsRef {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPolicyFactsRemote returns new OptPolicyFactsRemote with value set to v.
+func NewOptPolicyFactsRemote(v PolicyFactsRemote) OptPolicyFactsRemote {
+	return OptPolicyFactsRemote{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPolicyFactsRemote is optional PolicyFactsRemote.
+type OptPolicyFactsRemote struct {
+	Value PolicyFactsRemote
+	Set   bool
+}
+
+// IsSet returns true if OptPolicyFactsRemote was set.
+func (o OptPolicyFactsRemote) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPolicyFactsRemote) Reset() {
+	var v PolicyFactsRemote
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPolicyFactsRemote) SetTo(v PolicyFactsRemote) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPolicyFactsRemote) Get() (v PolicyFactsRemote, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPolicyFactsRemote) Or(d PolicyFactsRemote) PolicyFactsRemote {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPool returns new OptPool with value set to v.
 func NewOptPool(v Pool) OptPool {
 	return OptPool{
@@ -17166,6 +17259,240 @@ func (s *Peer) SetUpdatedAt(val time.Time) {
 }
 
 func (*Peer) createPeerRes() {}
+
+// What the control plane recorded about a discobox when it was created, typed (ADR 26-10-20-782
+// section 4).
+// Ref: #/components/schemas/PolicyFacts
+type PolicyFacts struct {
+	Discobox PolicyFactsDiscobox `json:"discobox"`
+	// The sources it was created with, the primary first.
+	Sources []PolicyFactsSource `json:"sources"`
+}
+
+// GetDiscobox returns the value of Discobox.
+func (s *PolicyFacts) GetDiscobox() PolicyFactsDiscobox {
+	return s.Discobox
+}
+
+// GetSources returns the value of Sources.
+func (s *PolicyFacts) GetSources() []PolicyFactsSource {
+	return s.Sources
+}
+
+// SetDiscobox sets the value of Discobox.
+func (s *PolicyFacts) SetDiscobox(val PolicyFactsDiscobox) {
+	s.Discobox = val
+}
+
+// SetSources sets the value of Sources.
+func (s *PolicyFacts) SetSources(val []PolicyFactsSource) {
+	s.Sources = val
+}
+
+// Ref: #/components/schemas/PolicyFactsDiscobox
+type PolicyFactsDiscobox struct {
+	ID string `json:"id"`
+	// The discobox that created it; absent when a person did.
+	CreatedBy OptString `json:"createdBy"`
+	Project   OptString `json:"project"`
+}
+
+// GetID returns the value of ID.
+func (s *PolicyFactsDiscobox) GetID() string {
+	return s.ID
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *PolicyFactsDiscobox) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetProject returns the value of Project.
+func (s *PolicyFactsDiscobox) GetProject() OptString {
+	return s.Project
+}
+
+// SetID sets the value of ID.
+func (s *PolicyFactsDiscobox) SetID(val string) {
+	s.ID = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *PolicyFactsDiscobox) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetProject sets the value of Project.
+func (s *PolicyFactsDiscobox) SetProject(val OptString) {
+	s.Project = val
+}
+
+// The ref a source was created from, as its creator named it.
+// Ref: #/components/schemas/PolicyFactsRef
+type PolicyFactsRef struct {
+	// Branch or tag, or absent when its creator did not say which.
+	Type OptString `json:"type"`
+	Name string    `json:"name"`
+}
+
+// GetType returns the value of Type.
+func (s *PolicyFactsRef) GetType() OptString {
+	return s.Type
+}
+
+// GetName returns the value of Name.
+func (s *PolicyFactsRef) GetName() string {
+	return s.Name
+}
+
+// SetType sets the value of Type.
+func (s *PolicyFactsRef) SetType(val OptString) {
+	s.Type = val
+}
+
+// SetName sets the value of Name.
+func (s *PolicyFactsRef) SetName(val string) {
+	s.Name = val
+}
+
+// A source's network remote, normalized; absent for a source with none.
+// Ref: #/components/schemas/PolicyFactsRemote
+type PolicyFactsRemote struct {
+	Host string `json:"host"`
+	// The repository's path on the host -- owner/name on GitHub.
+	Repo string `json:"repo"`
+	URL  string `json:"url"`
+}
+
+// GetHost returns the value of Host.
+func (s *PolicyFactsRemote) GetHost() string {
+	return s.Host
+}
+
+// GetRepo returns the value of Repo.
+func (s *PolicyFactsRemote) GetRepo() string {
+	return s.Repo
+}
+
+// GetURL returns the value of URL.
+func (s *PolicyFactsRemote) GetURL() string {
+	return s.URL
+}
+
+// SetHost sets the value of Host.
+func (s *PolicyFactsRemote) SetHost(val string) {
+	s.Host = val
+}
+
+// SetRepo sets the value of Repo.
+func (s *PolicyFactsRemote) SetRepo(val string) {
+	s.Repo = val
+}
+
+// SetURL sets the value of URL.
+func (s *PolicyFactsRemote) SetURL(val string) {
+	s.URL = val
+}
+
+// A source as it was recorded at create, never the branch or commits it has moved to since.
+// Ref: #/components/schemas/PolicyFactsSource
+type PolicyFactsSource struct {
+	Slug    string               `json:"slug"`
+	Primary OptBool              `json:"primary"`
+	Remote  OptPolicyFactsRemote `json:"remote"`
+	Ref     OptPolicyFactsRef    `json:"ref"`
+	Commit  OptString            `json:"commit"`
+}
+
+// GetSlug returns the value of Slug.
+func (s *PolicyFactsSource) GetSlug() string {
+	return s.Slug
+}
+
+// GetPrimary returns the value of Primary.
+func (s *PolicyFactsSource) GetPrimary() OptBool {
+	return s.Primary
+}
+
+// GetRemote returns the value of Remote.
+func (s *PolicyFactsSource) GetRemote() OptPolicyFactsRemote {
+	return s.Remote
+}
+
+// GetRef returns the value of Ref.
+func (s *PolicyFactsSource) GetRef() OptPolicyFactsRef {
+	return s.Ref
+}
+
+// GetCommit returns the value of Commit.
+func (s *PolicyFactsSource) GetCommit() OptString {
+	return s.Commit
+}
+
+// SetSlug sets the value of Slug.
+func (s *PolicyFactsSource) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetPrimary sets the value of Primary.
+func (s *PolicyFactsSource) SetPrimary(val OptBool) {
+	s.Primary = val
+}
+
+// SetRemote sets the value of Remote.
+func (s *PolicyFactsSource) SetRemote(val OptPolicyFactsRemote) {
+	s.Remote = val
+}
+
+// SetRef sets the value of Ref.
+func (s *PolicyFactsSource) SetRef(val OptPolicyFactsRef) {
+	s.Ref = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *PolicyFactsSource) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// A variable a policy may use and what it resolves to.
+// Ref: #/components/schemas/PolicyVariable
+type PolicyVariable struct {
+	Name string `json:"name"`
+	// What it resolves to; absent when it does not.
+	Value OptString `json:"value"`
+	// False for a variable that resolves to nothing, and so matches nothing.
+	Resolved bool `json:"resolved"`
+}
+
+// GetName returns the value of Name.
+func (s *PolicyVariable) GetName() string {
+	return s.Name
+}
+
+// GetValue returns the value of Value.
+func (s *PolicyVariable) GetValue() OptString {
+	return s.Value
+}
+
+// GetResolved returns the value of Resolved.
+func (s *PolicyVariable) GetResolved() bool {
+	return s.Resolved
+}
+
+// SetName sets the value of Name.
+func (s *PolicyVariable) SetName(val string) {
+	s.Name = val
+}
+
+// SetValue sets the value of Value.
+func (s *PolicyVariable) SetValue(val OptString) {
+	s.Value = val
+}
+
+// SetResolved sets the value of Resolved.
+func (s *PolicyVariable) SetResolved(val bool) {
+	s.Resolved = val
+}
 
 // Ref: #/components/schemas/Pool
 type Pool struct {
@@ -26712,6 +27039,49 @@ func (s *SandboxMetaTags) init() SandboxMetaTags {
 	}
 	return m
 }
+
+// A sandbox's policy facts and every variable a policy may use, resolved against them.
+// Ref: #/components/schemas/SandboxPolicyFacts
+type SandboxPolicyFacts struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI      `json:"$schema"`
+	Facts  PolicyFacts `json:"facts"`
+	// Every variable a policy may use, resolved or not, in a fixed order -- $this, the $primary
+	// variables, then $sources.<slug>.repo for each source with a slug.
+	Variables []PolicyVariable `json:"variables"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SandboxPolicyFacts) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetFacts returns the value of Facts.
+func (s *SandboxPolicyFacts) GetFacts() PolicyFacts {
+	return s.Facts
+}
+
+// GetVariables returns the value of Variables.
+func (s *SandboxPolicyFacts) GetVariables() []PolicyVariable {
+	return s.Variables
+}
+
+// SetSchema sets the value of Schema.
+func (s *SandboxPolicyFacts) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetFacts sets the value of Facts.
+func (s *SandboxPolicyFacts) SetFacts(val PolicyFacts) {
+	s.Facts = val
+}
+
+// SetVariables sets the value of Variables.
+func (s *SandboxPolicyFacts) SetVariables(val []PolicyVariable) {
+	s.Variables = val
+}
+
+func (*SandboxPolicyFacts) getSandboxPolicyFactsRes() {}
 
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {

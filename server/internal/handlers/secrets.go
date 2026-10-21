@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -254,6 +256,28 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 			item.SetSecretRoutes(serverapi.NewOptNilSecretRouteArray(apiSecretRoutes(credential.SecretRoutes)))
 		}
 		resp.Credentials = append(resp.Credentials, item)
+	}
+	return &resp, nil
+}
+
+// GetSandboxPolicyFacts answers with the sandbox's facts and every variable
+// resolved against them here, on the control plane, so an agent is shown the
+// values approval will record whatever version its pool runs.
+func (h *Handler) GetSandboxPolicyFacts(ctx context.Context, params serverapi.GetSandboxPolicyFactsParams) (serverapi.GetSandboxPolicyFactsRes, error) {
+	principal, err := credentialBrokerPrincipal(ctx)
+	if err != nil {
+		return apiError(err), nil
+	}
+	facts, err := h.services.Secrets.SandboxPolicyFacts(ctx, principal.PoolID, params.SandboxId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	resp, err := services.Convert[apimodel.SandboxPolicyFacts](struct {
+		Facts     policy.Facts      `json:"facts"`
+		Variables []policy.Variable `json:"variables"`
+	}{facts, facts.Variables()})
+	if err != nil {
+		return apiError(fmt.Errorf("encode policy facts: %w", err)), nil
 	}
 	return &resp, nil
 }

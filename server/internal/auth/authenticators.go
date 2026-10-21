@@ -294,6 +294,10 @@ var poolRuntimeActions = map[string]bool{
 	// The agent credentials broker (ADR 0031).
 	"sandbox-credentials":         false,
 	"sandbox-credential-requests": true, // .../{requestId} polls one request
+	// A sandbox's policy facts, read for the protocol's facts verb (ADR
+	// 26-10-20-782 §4). The sandbox is a query parameter, so it takes no
+	// trailing ID.
+	"sandbox-policy-facts": false,
 	// Host trust (ADR 0149): an agent's ask, polled by its ID, and the pool's
 	// read of every live trust its proxy enforces.
 	"sandbox-trust-requests": true, // .../{requestId} polls one request

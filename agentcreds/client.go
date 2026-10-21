@@ -121,6 +121,15 @@ func (c *Client) AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchan
 	return out.Exchanges, nil
 }
 
+// Facts reads what the service recorded about this caller and what each
+// policy variable resolves to for it. A service that predates the verb
+// answers ErrNotFound.
+func (c *Client) Facts(ctx context.Context) (FactsResponse, error) {
+	var out FactsResponse
+	err := c.do(ctx, callTimeout, http.MethodGet, PathFacts, nil, &out)
+	return out, err
+}
+
 // WaitForTrustRequest polls a trust request until it settles or ctx is done,
 // for the reason WaitForRequest polls.
 func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, interval time.Duration) (TrustRequestStatus, error) {

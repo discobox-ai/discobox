@@ -101,6 +101,8 @@ func Run(args []string) int {
 		return runTrusts(ctx, rest)
 	case "audit":
 		return runAudit(ctx, rest)
+	case "facts":
+		return runFacts(ctx, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return exitOK
@@ -129,7 +131,16 @@ func usage(w io.Writer) {
 	fmt.Fprintf(w, `%[1]s — ask for and use credentials you were not provisioned with.
 
   %[1]s list [--json]
-      Show the credentials you may use and what each was approved for.
+      Show the credentials you may use and what each was approved for, after
+      the primary source this discobox works on.
+
+  %[1]s facts [--json]
+      Show what this discobox was created with — its ID, who created it, its
+      sources with host, repository and ref — and what each variable a policy
+      may use resolves to here: "$primary.repo  discobox-ai/discobox". These
+      are the service's record, never this discobox's git config, and
+      the values a policy's variables resolve to when a person approves it.
+      A variable that resolves to nothing matches nothing.
 
   %[1]s run --use USE_ID -- COMMAND [ARGS ...]
       Run COMMAND with the credential in its environment, and exit with

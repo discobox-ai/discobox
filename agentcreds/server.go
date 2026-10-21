@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/discobox-ai/discobox/policy"
 )
 
 // Service is the server half of the protocol. An implementation owns the four
@@ -37,6 +39,11 @@ type Service interface {
 	// (ADR 26-10-02-678). The query's limit is already settled. An
 	// implementation that keeps no egress record returns none.
 	AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchange, error)
+	// Facts returns what the implementation recorded about the caller and
+	// what each policy variable resolves to for it (ADR 26-10-20-782 §4). An
+	// implementation that records nothing returns empty facts and the
+	// variables resolved against them.
+	Facts(ctx context.Context) (FactsResponse, error)
 }
 
 // ErrNotFound makes a handler answer 404. It is the "this id means nothing to
@@ -171,6 +178,17 @@ func NewHandler(svc Service) http.Handler {
 			exchanges = []AuditExchange{}
 		}
 		writeJSON(w, http.StatusOK, AuditHTTPResponse{Exchanges: exchanges})
+	})
+	mux.HandleFunc("GET "+PathFacts, func(w http.ResponseWriter, r *http.Request) {
+		facts, err := svc.Facts(r.Context())
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if facts.Variables == nil {
+			facts.Variables = []policy.Variable{}
+		}
+		writeJSON(w, http.StatusOK, facts)
 	})
 	return mux
 }

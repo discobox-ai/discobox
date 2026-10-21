@@ -31,6 +31,8 @@ type fakeControlPlane struct {
 	status   int
 	problem  string
 	requests []createCredentialRequestDoc
+	// factsFor is the sandbox each facts read named.
+	factsFor []string
 }
 
 func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPlaneCredentials, *fakeControlPlane) {
@@ -42,6 +44,14 @@ func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPla
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandbox-credentials"):
 			_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: fake.credentials})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandbox-policy-facts"):
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			fake.factsFor = append(fake.factsFor, r.URL.Query().Get("sandboxId"))
+			_, _ = w.Write([]byte(`{"$schema":"https://example.com/schemas/SandboxPolicyFacts.json",` +
+				`"facts":{"discobox":{"id":"sb-1"},"sources":[{"slug":"primary","primary":true,` +
+				`"remote":{"host":"github.com","repo":"acme/web","url":"https://github.com/acme/web"}}]},` +
+				`"variables":[{"name":"$this","value":"sb-1","resolved":true},{"name":"$primary.upstream","resolved":false}]}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandbox-credential-requests"):
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
@@ -339,5 +349,33 @@ func TestRequestRelaysThePolicyBothWays(t *testing.T) {
 	status := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Policy: &approved}.protocol()
 	if !reflect.DeepEqual(status.Policy, &approved) {
 		t.Fatalf("status policy = %+v, want the approved one", status.Policy)
+	}
+}
+
+// Facts are the control plane's answer for the sandbox the certificate named,
+// variables and all: the pool resolves nothing itself, so what the sandbox is
+// shown is what approval on the control plane records.
+func TestFactsRelayTheControlPlanesRecordOfThisSandbox(t *testing.T) {
+	plane, fake := newFakeControlPlane(t, nil)
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane, activations: newActivations()}
+	got, err := b.Facts(context.Background())
+	if err != nil {
+		t.Fatalf("facts: %v", err)
+	}
+	want := agentcreds.FactsResponse{
+		Facts: policy.Facts{
+			Discobox: policy.Discobox{ID: "sb-1"},
+			Sources: []policy.Source{{
+				Slug: "primary", Primary: true,
+				Remote: &policy.Remote{Host: "github.com", Repo: "acme/web", URL: "https://github.com/acme/web"},
+			}},
+		},
+		Variables: []policy.Variable{{Name: policy.VarThis, Value: "sb-1", Resolved: true}, {Name: policy.VarPrimaryUpstream}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("facts =\n%+v\nwant\n%+v", got, want)
+	}
+	if !reflect.DeepEqual(fake.factsFor, []string{"sb-1"}) {
+		t.Fatalf("asked for %v, want sb-1", fake.factsFor)
 	}
 }

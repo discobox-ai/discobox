@@ -14,13 +14,16 @@ Protocol: [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-proto
 
 It is meant to leave. The protocol is portable by design, so the client of it
 should be liftable into another repository without dragging a runtime along.
-That constrains one thing above all: **its only Go dependency is
-`agentcreds`**, which is stdlib-only. Anything that would add a second package
-dependency — reading sandbox config, knowing a mount path, importing
-sandbox-agent — belongs on the server side of the protocol, not here. The CLI
-learns where it runs only from the environment variables `agentcreds` names:
-`DISCOBOX_CREDENTIALS_URL` (default `http://127.0.0.1:17010`) and
-`DISCOBOX_CREDENTIALS_TOKEN`.
+That constrains one thing above all: **its only Go dependencies are the
+protocol: `agentcreds` and the root `policy` package**, both stdlib-only.
+`policy`'s types are part of what `agentcreds` speaks (a grant's policy, the
+facts its variables resolve against), so the CLI names them where they are
+defined rather than through aliases in `agentcreds`; lifting the module takes
+both. Anything that would add a dependency beyond those two — reading sandbox
+config, knowing a mount path, importing sandbox-agent — belongs on the server
+side of the protocol, not here. The CLI learns where it runs only from the
+environment variables `agentcreds` names: `DISCOBOX_CREDENTIALS_URL` (default
+`http://127.0.0.1:17010`) and `DISCOBOX_CREDENTIALS_TOKEN`.
 
 `run` bends it once more, for its child only: when `DISCOBOX_SERVER` is unset
 it gives the child `DISCOBOX_SERVER=$DISCOBOX_API_URL`, the discobox API the
@@ -54,6 +57,7 @@ shape, so they deliberately do not get the same interface.
 | `trust` | a host argument and flags, or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. It carries free text for the reason `request` does. Nothing is run under it, so there is nothing to judge here; the proxy judges every request to the trusted host against its uses. |
 | `trusts` | nothing | — |
 | `audit` | filter flags (`--host`, `--blocked`/`--allowed`, `--since`, `--limit`) | The protocol's audit verb ([ADR 26-10-02-678](../docs/adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md)): the sandbox's own outbound requests as the egress recorded them, with the reason for each refusal. It is for the failure a program swallowed; the reason says whether to `request`, `trust`, or narrow the command. Filters are short and exact, so they are flags, not a JSON body. |
+| `facts` | nothing | The protocol's facts verb (ADR 26-10-20-782 §4): what the service recorded about this discobox — its ID, creator, sources with host, repository and ref — and every variable a policy may use with its value or none. It is what an agent reads before writing a policy, so `$primary.repo` names a repository it has seen. `list` leads with the primary source from the same read and puts the whole answer under `discobox` in `--json`; a facts read that fails — a service that predates the verb, or any other failure — leaves `list` listing the credentials without it (text output says why on stderr), and `facts` reports the failure, a not-found with the service's own message and the note that a service without the verb answers the same. Nothing here reads git: these are the service's record, which `facts.go`'s claims are not. |
 | `wait` | `request` or `trust`, then an existing request ID; optional `--json` and `--timeout` flags first | Resume polling without creating another request. The explicit kind keeps service-owned ID formats out of the CLI. |
 
 There is no command that takes a use id and prints the bare value
