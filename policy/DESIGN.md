@@ -13,7 +13,7 @@ nothing here decides whether a request is one of a statement's actions.
 | `policy.go` | `Policy`, `Statement`, `Resource`, `Scope`, and `Validate`: the shape a person approves, and every way one is refused. `Variables` lists the variables the statements use. |
 | `evaluate.go` | `Match`, `Parts`, `Atom`, and `Evaluate`: decided parts of each statement, and whether the atom is a supporting read, per atom of a request, combined in the two phases of §2. |
 | `sentence.go` | `Parse` and `Format`, and `ParseStatements` and `FormatStatements` for a policy's list: a statement's sentence form, and its structure, converted without loss. |
-| `facts.go` | `Facts`, the shape of the control plane's record of a discobox (§4; built by the server's `Sandbox.PolicyFacts`), the variables a policy may use, `Resolve` at approval and `Bind` at a decision. |
+| `facts.go` | `Facts`, the shape of the control plane's record of a discobox (§4; built by the server's `Sandbox.PolicyFacts`), the variables a policy may use, `Variables` listing each with its value for an agent to read, `Resolve` at approval and `Bind` at a decision. |
 
 It imports only the standard library, so `agentcreds` can carry a policy and
 stay portable.

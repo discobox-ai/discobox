@@ -78,10 +78,14 @@ const (
 // SourceRepoVar is the variable for the repository of the source slug.
 func SourceRepoVar(slug string) string { return sourcesPrefix + slug + sourceRepoSuffix }
 
+// fixedVariables are the variables every discobox has, resolved or not, in
+// the order Variables lists them. $sources.<slug>.repo is the one that is not
+// fixed: there is one for each source with a slug.
+var fixedVariables = []string{VarThis, VarPrimaryRepo, VarPrimaryHost, VarPrimaryBranch, VarPrimaryUpstream, VarPrimaryDefaultBranch}
+
 // IsVariable reports whether name is a variable a policy may use.
 func IsVariable(name string) bool {
-	switch name {
-	case VarThis, VarPrimaryRepo, VarPrimaryHost, VarPrimaryBranch, VarPrimaryUpstream, VarPrimaryDefaultBranch:
+	if slices.Contains(fixedVariables, name) {
 		return true
 	}
 	slug, ok := sourceSlug(name)
@@ -141,6 +145,37 @@ func (f Facts) Value(variable string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Variable is one variable a policy may use and what it resolves to for a
+// discobox: what an agent writing a policy is shown, so that a variable it
+// writes means something it has seen.
+type Variable struct {
+	Name string `json:"name"`
+	// Value is what it resolves to, and empty when Resolved is false.
+	Value string `json:"value,omitempty"`
+	// Resolved is false for a variable that resolves to nothing, and so
+	// matches nothing.
+	Resolved bool `json:"resolved"`
+}
+
+// Variables is every variable a policy may use for the discobox f describes,
+// resolved or not, in a fixed order: $this, the $primary variables, then
+// $sources.<slug>.repo for each source that has a slug, in source order. They
+// are the values Resolve would record at approval.
+func (f Facts) Variables() []Variable {
+	names := slices.Clone(fixedVariables)
+	for _, source := range f.Sources {
+		if name := SourceRepoVar(source.Slug); IsVariable(name) && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	out := make([]Variable, 0, len(names))
+	for _, name := range names {
+		value, ok := f.Value(name)
+		out = append(out, Variable{Name: name, Value: value, Resolved: ok})
+	}
+	return out
 }
 
 func (f Facts) primary() *Source {

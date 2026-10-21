@@ -67,6 +67,36 @@ func TestAVariableWithNoValueResolvesToNothing(t *testing.T) {
 	}
 }
 
+// Every variable is listed, resolved or not, each with the value Resolve
+// records for it, so what an agent is shown is what approval resolves.
+func TestVariablesListEveryVariableAndWhatItResolvesTo(t *testing.T) {
+	f := discobox("sbx_1", "acme/web")
+	f.Sources = append(f.Sources, Source{Slug: "scratch"}, Source{})
+	want := []Variable{
+		{Name: VarThis, Value: "sbx_1", Resolved: true},
+		{Name: VarPrimaryRepo, Value: "acme/web", Resolved: true},
+		{Name: VarPrimaryHost, Value: "github.com", Resolved: true},
+		{Name: VarPrimaryBranch, Value: "main", Resolved: true},
+		{Name: VarPrimaryUpstream},
+		{Name: VarPrimaryDefaultBranch},
+		{Name: SourceRepoVar("primary"), Value: "acme/web", Resolved: true},
+		{Name: SourceRepoVar("docs"), Value: "acme/docs", Resolved: true},
+		{Name: SourceRepoVar("scratch")},
+	}
+	got := f.Variables()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Variables() =\n%+v\nwant\n%+v", got, want)
+	}
+	all := Policy{Statements: []Statement{{Effect: Allow, Actions: []string{"read"}, ResourceType: "anything", Scope: Scope{Type: "repository", Name: VarPrimaryRepo}}}}
+	for _, v := range got {
+		all.Statements[0].Scope.Name = v.Name
+		resolved, ok := all.Resolve(f).Resolved[v.Name]
+		if ok != v.Resolved || resolved != v.Value {
+			t.Errorf("Resolve(%s) = %q, %v; Variables says %q, %v", v.Name, resolved, ok, v.Value, v.Resolved)
+		}
+	}
+}
+
 func TestResolveRecordsOnlyWhatResolves(t *testing.T) {
 	p := pullRequests()
 	p.Statements[0].Name = ptr(VarPrimaryUpstream)
