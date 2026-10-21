@@ -640,6 +640,16 @@ declares), and its own `Sandbox.Egress` — by the rule in
   pool first, cannot be the policy left in force. It is marked with that write
   and not before it, because that write saves the provider state the push
   finds the pool by.
+- **Every start is followed by a push of the whole record.** A pool keeps a
+  sandbox's sentinels, egress and gateways only in its proxy's files, a start
+  never carries them, and a sandbox missing them runs with no secret swapped
+  and unrestricted. So the transaction that records a state report of a
+  sandbox coming up (`cameUp`), however it was started — a person's start, a
+  wake, the pool's own start on use — marks both deliveries,
+  `sandboxSentinels` and `sandboxProxyPolicy`: a record the pool lost is whole
+  again at the next start, not the next rebuild (#314). The marks are drift
+  (`MarkDirtyDriftTx`), so a delivery that keeps failing keeps its backoff
+  however often the sandbox starts.
 - **A level is written by itself.** `store.SetSandboxEgress`,
   `SetProjectEgress`, `SetPoolEgress` and `SetHarnessConfigEgress` write a
   level and nothing else, and the whole-row saves of those rows omit it: a
@@ -834,13 +844,13 @@ authenticate with the old credential. See
 Secret assignments commit in the same transaction as the sandbox row and its
 dirty mark (`createSandboxIntent`): the mark wakes the reconciler on commit, so
 a reconciler that could observe the sandbox without its assignments would
-launch it with no secrets. The miss would be permanent — assignments are
-deliberately excluded from the spec fingerprint (see
-`SandboxManifest.Fingerprint`), so late-arriving rows never read as drift, and
-nothing re-pushes the primary harness's sentinels to a running sandbox. For the
-same reason the reconciler fails the reconcile when it cannot read the
-assignments or the harness config, rather than degrading to a secretless
-launch.
+launch it with no secrets. The container's environment would keep the miss
+for good — assignments are deliberately excluded from the spec fingerprint
+(see `SandboxManifest.Fingerprint`), so late-arriving rows never read as drift
+and nothing rebuilds it — and the proxy would hold no sentinels for it until it
+next came up. For the same reason the reconciler fails the reconcile when it
+cannot read the assignments or the harness config, rather than degrading to a
+secretless launch.
 
 `ensure` also rebinds the sandbox's assignments to its harness config's current
 bindings (`rebindSandboxSecretRows`) before building the create options. That
@@ -854,7 +864,10 @@ level-triggered by a reconciler of its own, `SentinelReconciler`
 (`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox
 the secret is injected into in its transaction (`MarkSecretHoldersDirtyTx`),
 and the reconciler sends the sandbox's sentinel set with their current routes
-as a provider `Update`. A delivery the pool does not take is returned and
+as a provider `Update`. A state report of the sandbox coming up marks it too
+([Proxy policy](#proxy-policy)). A pool with no container for the sandbox
+answers not found, which settles the delivery: the create carries the set.
+A delivery the pool does not take is returned and
 retried with backoff, and shows in the jobs API. It is not a mark on the
 sandbox, because a sandbox reconcile failing on a settled generation records
 the sandbox as failed. A sandbox no pool holds yet is skipped. Every send of a

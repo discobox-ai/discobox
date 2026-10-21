@@ -104,6 +104,19 @@ func TestSentinelDeliverySkipsWhatHasNoPoolToSendTo(t *testing.T) {
 	}
 }
 
+// A pool that holds no container for the sandbox answers not found, and
+// nothing there holds its sentinels: the create that builds one carries them,
+// so the delivery settles rather than retrying until the rebuild.
+func TestSentinelDeliverySettlesWhenThePoolHasNoContainer(t *testing.T) {
+	svc, rec, _ := sentinelFixture(t)
+	rec.updateErrs = []error{ErrNotFound}
+
+	result, err := svc.NewSentinelReconciler().Reconcile(context.Background(), SandboxDirtyID("project-1", "sb-1"))
+	if err != nil || !result.RequeueAt.IsZero() {
+		t.Fatalf("result = %+v, err = %v, want settled", result, err)
+	}
+}
+
 // A send that carried routes a change has since replaced marks the delivery
 // again, so a create that read the routes before the change and landed after
 // its delivery cannot leave the pool holding the old ones. One that carried

@@ -51,10 +51,12 @@ MarkDirtyAt(ctx, "sandbox", id, at)        // reconcile no earlier than `at`
 MarkDirtyTx(ctx, tx, "sandbox", id)        // MarkDirty in the caller's transaction
 MarkDirtyAtTx(ctx, tx, "sandbox", id, at)  // MarkDirtyAt in the caller's transaction
 MarkDirtyDrift(ctx, "pool", id)            // drift mark: never cuts a failure backoff
+MarkDirtyDriftTx(ctx, tx, "pool", id)      // MarkDirtyDrift in the caller's transaction
 ```
 
-- The `Tx` forms take the caller's transaction so intent writes and the dirty
-  mark commit atomically (transactional outbox).
+- The `Tx` forms take the caller's transaction so a write and the dirty mark
+  it earns commit atomically (transactional outbox): an intent write, or an
+  observation whose mark nothing else would re-find if it were lost.
 - Every mark bumps the row's `seq`. `seq` is how the engine detects "marked
   again while a reconcile was already running" (see Completion).
 - A mark wakes this node's claim loop at once; otherwise the loop polls every

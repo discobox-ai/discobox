@@ -275,7 +275,13 @@ func (e *Engine) MarkDirtyTx(ctx context.Context, tx *gorm.DB, resourceType, id 
 // -- still preempts the backoff, which is the one case worth interrupting it
 // for.
 func (e *Engine) MarkDirtyDrift(ctx context.Context, resourceType, id string) error {
-	return e.markDirtyAtTx(ctx, e.db, resourceType, id, time.Now(), false)
+	return e.MarkDirtyDriftTx(ctx, e.db, resourceType, id)
+}
+
+// MarkDirtyDriftTx is MarkDirtyDrift inside the caller's transaction, so an
+// observation and the mark it earns commit atomically.
+func (e *Engine) MarkDirtyDriftTx(ctx context.Context, tx *gorm.DB, resourceType, id string) error {
+	return e.markDirtyAtTx(ctx, tx, resourceType, id, time.Now(), false)
 }
 
 // MarkDirtyAtTx is MarkDirtyAt inside the caller's transaction.
