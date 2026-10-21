@@ -646,6 +646,35 @@ type Services struct {
 	// Judges answers a pool asking for a verdict from the project's judge
 	// (ADR 26-09-22-838 §2). It has no other route: nothing a person calls reaches it.
 	Judges JudgeService
+	// Assets answers a pool's reads of the bundles in its scope (ADR
+	// 26-10-16-423 §13). Like Judges, only a pool reaches it.
+	Assets AssetService
+}
+
+// AssetService serves bundles to a pool by blob (ADR 26-10-16-423 §13): only
+// the manifests its scope pins — the release's platform bundle and the
+// bundles its project's harness configs name — and only the blobs those
+// manifests reference.
+type AssetService interface {
+	// ResolveAssetName answers the manifest a bundle name in the pool's scope
+	// names now, for registration and re-pinning.
+	ResolveAssetName(ctx context.Context, poolID, name string) (AssetContent, error)
+	// AssetManifest answers a manifest by digest, under the name of the pin
+	// it is, or is listed by.
+	AssetManifest(ctx context.Context, poolID, name, digest string) (AssetContent, error)
+	// AssetBlob answers a blob a manifest in the pool's scope references.
+	AssetBlob(ctx context.Context, poolID, digest string) (AssetContent, error)
+}
+
+// AssetContent is a manifest or a blob, checked against its digest as it is
+// read: the read that would end it fails instead when its bytes are not that
+// digest's. The caller closes Body.
+type AssetContent struct {
+	// MediaType is a manifest's own; a blob's is empty.
+	MediaType string
+	Digest    string
+	Size      int64
+	Body      io.ReadCloser
 }
 
 // JudgeService puts a question to the judge of a project: a pool's ask about

@@ -19,6 +19,22 @@ func withBoundSecrets(db *gorm.DB) *gorm.DB {
 		"(SELECT COUNT(*) FROM harness_config_secret_bindings b WHERE b.harness_config_id = harness_configs.id) AS bound_secrets")
 }
 
+// ListHarnessConfigBundles is the bundle every harness config of every
+// project is pinned to, as each config's ID, Bundle and BundleDigest alone:
+// what the asset store keeps blobs for (ADR 26-10-16-423 §13).
+func (s *Store) ListHarnessConfigBundles(ctx context.Context) ([]model.HarnessConfig, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var configs []model.HarnessConfig
+	err = read.
+		Select("id", "bundle", "bundle_digest").
+		Where("bundle <> '' AND bundle_digest <> ''").
+		Find(&configs).Error
+	return configs, err
+}
+
 func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

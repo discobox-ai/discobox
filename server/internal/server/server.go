@@ -242,6 +242,7 @@ func Run(ctx context.Context) error {
 		},
 		WSLCCommand: cfg.WSLCCommand,
 		OverlayDir:  cfg.OverlayDir,
+		AssetDir:    cfg.AssetDir,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

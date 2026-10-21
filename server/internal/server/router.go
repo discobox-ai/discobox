@@ -109,6 +109,9 @@ type AppOptions struct {
 	// OverlayDir is the one directory a harness's file:// manifest reference
 	// may name a file in. Empty refuses every such reference.
 	OverlayDir string
+	// AssetDir is the blob store bundles are served to pools from (ADR
+	// 26-10-16-423 §13).
+	AssetDir string
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own. Zero is left zero rather
@@ -221,6 +224,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 		OverlayDir:                     opts.OverlayDir,
+		AssetDir:                       opts.AssetDir,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	if opts.SecretSealer != nil {
@@ -251,6 +255,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Gateways:       appServices,
 		Peers:          appServices,
 		Judges:         appServices.Judges(),
+		Assets:         appServices.Assets(),
 	}
 	authenticators := []auth.Authenticator{
 		// First, so a forwarded sandbox call can never reach the default user.

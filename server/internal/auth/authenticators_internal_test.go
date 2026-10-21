@@ -35,6 +35,10 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 		{"a subroute below the pool's host trusts", "/api/pools/pool-1/sandbox-host-trusts/trust_abc", false},
 		{"reading the sandboxes the pool holds", "/api/pools/pool-1/sandboxes", true},
 		{"a subroute below the pool's sandboxes", "/api/pools/pool-1/sandboxes/sbx_abc", false},
+		{"resolving an asset name", "/api/pools/pool-1/assets/discobox-platform", true},
+		{"reading an asset manifest", "/api/pools/pool-1/assets/discobox-platform/manifests/sha256:abc", true},
+		{"reading an asset blob", "/api/pools/pool-1/assets/blobs/sha256:abc", true},
+		{"a subroute below an asset manifest", "/api/pools/pool-1/assets/discobox-platform/manifests/sha256:abc/extra", false},
 
 		{"an unlisted action", "/api/pools/pool-1/secrets", false},
 		{"a misspelled action", "/api/pools/pool-1/sandbox-credential", false},

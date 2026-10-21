@@ -19,6 +19,8 @@ flowchart LR
     service --> providers[resources/providers.Service]
     service --> jobs[resources/jobs.Service]
     service --> others["resources/{secrets,sshkeys,peers}.Service"]
+    service --> judges[resources/judges.Service]
+    service --> assets[resources/assets.Service]
     service --> engine[internal/reconcile.Engine]
     service --> store[internal/store]
 ```
@@ -28,7 +30,11 @@ flowchart LR
 `*sandboxes.Service`, `SandboxProviderInstanceService`, `PoolService`,
 `JobService`, `SecretService`, `SSHKeyService`, `PeerService`).
 `internal/server.NewApp` assigns the one `*Service` to every field of
-`services.Services`, so API calls reach the resource package directly.
+`services.Services` but two, so API calls reach the resource package directly.
+Those two have no route a person calls — only a pool reaches them — and are
+not embedded: `Judges` is `Service.Judges()`, the project's judge (ADR
+26-09-22-838), and `Assets` is `Service.Assets()`, the asset API (ADR
+26-10-16-423 §13).
 
 Options carries the resolved harness image map from configuration to harness
 seeding, including any release manifest selection.
@@ -66,6 +72,8 @@ internal/resources/projects.Service
 internal/resources/secrets.Service
 internal/resources/sshkeys.Service
 internal/resources/peers.Service
+internal/resources/judges.Service               (also the judge reconciler)
+internal/resources/assets.Service
 ```
 
 The root `internal/service.Service` should stay a thin aggregator. It may call
@@ -88,7 +96,8 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
 2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`, then
    starts the engine. This runs before any worker or HTTP listener can use old
    readiness; pool identity and lifecycle survive.
-3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`.
+3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
+   the asset store's hourly removal by reference (`assets.Service.StartPruning`).
 4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
    every enabled provider instance. An instance that does not resolve is
    logged and its pools marked for retry; only a store error stops the engine

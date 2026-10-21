@@ -15,6 +15,16 @@
         "null"
       ]
     },
+    "assetDir": {
+      "description": "Blob store the server serves bundles to pools from, by digest. Every blob in it is fetched again when it is missing. Defaults to \u003ccacheDir\u003e/assets. Environment: DISCOBOX_ASSET_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/cache/discobox/assets"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "authRequired": {
       "description": "Never serve the default user, who holds every scope, on any listener. Every request must then authenticate: a discobot assertion, an enrolled iroh peer, or a pool agent's or sandbox's own credential. The local CLI over local IPC or HTTP is refused, and so SSH is reachable only over iroh. Health, the API spec, and docs still answer. An enrolled iroh peer authenticates as the operator's own client, so the CLI still reaches the server over iroh. Requires discobotPublicKey or an iroh endpoint in listen. Environment: DISCOBOX_AUTH_REQUIRED (takes precedence over this file).",
       "type": "boolean"

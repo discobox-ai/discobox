@@ -197,6 +197,14 @@ type GetJobRes interface {
 	getJobRes()
 }
 
+type GetPoolAssetBlobRes interface {
+	getPoolAssetBlobRes()
+}
+
+type GetPoolAssetManifestRes interface {
+	getPoolAssetManifestRes()
+}
+
 type GetPoolRes interface {
 	getPoolRes()
 }
@@ -519,6 +527,10 @@ type ReportSandboxSecretRejectionRes interface {
 
 type ResolveGatewayHeadersRes interface {
 	resolveGatewayHeadersRes()
+}
+
+type ResolvePoolAssetRes interface {
+	resolvePoolAssetRes()
 }
 
 type ResolveSandboxSecretRes interface {

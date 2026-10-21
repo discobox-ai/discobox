@@ -8,6 +8,7 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 
 | Package | Owns | Reconcile type |
 | --- | --- | --- |
+| [assets](assets/DESIGN.md) | The asset API: bundles served to a pool by blob, from one blob store, scoped to what the pool's project pins (ADR 26-10-16-423 §13) | none |
 | [harnessconfigs](harnessconfigs/DESIGN.md) | Project-scoped harness configs and the configure flow | `harnessConfig` |
 | [jobs](jobs/DESIGN.md) | Jobs API, a projection of the reconcile engine's dirty set | none |
 | `judges` | The project's judge: the discobox that answers judging asks (ADR 26-09-22-838) | `judge` |

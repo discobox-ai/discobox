@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/server/internal/localimage"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -332,21 +333,6 @@ func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, erro
 	return image, platforms, err
 }
 
-// localImageDigest is the digest to pin a locally-inspected image to.
-//
-// A pulled image carries the registry digest in RepoDigests, and that is what
-// every daemon can be asked about later, whichever image store it uses. A
-// locally built one has none — nothing pushed it — so its image ID is all there
-// is, and it is also all the pool will have to compare against.
-func localImageDigest(inspected dockerclient.ImageInspectResult) string {
-	for _, repoDigest := range inspected.RepoDigests {
-		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && digest != "" {
-			return digest
-		}
-	}
-	return inspected.ID
-}
-
 // indexPlatforms is every platform an index publishes, attestation entries
 // aside, and the digest of the first manifest it lists for each.
 func indexPlatforms(index v1.ImageIndex) (platform.Set, map[platform.Platform]v1.Hash, error) {
@@ -429,7 +415,7 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	if err != nil {
 		return imageMetadata{}, false, err
 	}
-	metadata := runnableImage(localImageDigest(inspected))
+	metadata := runnableImage(localimage.Digest(inspected))
 	metadata.Platforms = localPlatforms(inspected.InspectResponse)
 	if metadata.Platforms == nil {
 		metadata.Platforms = localPlatformsWithoutManifests(ctx, inspected.InspectResponse)
@@ -454,7 +440,7 @@ func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels
 	if err != nil {
 		return bundleInspection{}, false, err
 	}
-	read := bundleInspection{Digest: localImageDigest(inspected)}
+	read := bundleInspection{Digest: localimage.Digest(inspected)}
 	if inspected.Config != nil {
 		read.Labels = inspected.Config.Labels
 	}

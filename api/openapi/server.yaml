@@ -8335,6 +8335,196 @@ paths:
             summary: Register a bootstrapped pool agent
             tags:
                 - Pools
+    /api/pools/{poolId}/assets/{name}:
+        get:
+            description: |-
+                The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle, the digest a harness config of the pool's project records, which a moved tag changes only once the config is re-pinned. Read for registration and re-pinning; the digest it is served under is the Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be resolved is a 502.
+            operationId: resolve-pool-asset
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bundle name, the last component of its reference's repository (discobox-platform, discobox-harness-claude-code).
+                  in: path
+                  name: name
+                  required: true
+                  schema:
+                    pattern: ^[a-z0-9]+(?:[._-][a-z0-9]+)*$
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/vnd.oci.image.index.v1+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.oci.image.manifest.v1+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.docker.distribution.manifest.list.v2+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.docker.distribution.manifest.v2+json:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The manifest, byte for byte, as its media type.
+                    headers:
+                        Content-Length:
+                            description: The body's length in bytes. A body cut short of it was refused on the way out for not matching its digest.
+                            schema:
+                                format: int64
+                                type: integer
+                        Docker-Content-Digest:
+                            description: The manifest's digest.
+                            schema:
+                                type: string
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Resolve a bundle name in the pool's scope to its current manifest
+            tags:
+                - Pools
+    /api/pools/{poolId}/assets/{name}/manifests/{digest}:
+        get:
+            description: |-
+                A pinned index or manifest, by digest (ADR 26-10-16-423 §13). Answered only for a manifest pinned by the release or by a harness config of the pool's project, or one such an index lists, under the name its pin carries; anything else is a 404. Immutable.
+            operationId: get-pool-asset-manifest
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bundle name, the last component of its reference's repository.
+                  in: path
+                  name: name
+                  required: true
+                  schema:
+                    pattern: ^[a-z0-9]+(?:[._-][a-z0-9]+)*$
+                    type: string
+                - description: Manifest digest.
+                  in: path
+                  name: digest
+                  required: true
+                  schema:
+                    pattern: ^sha256:[a-f0-9]{64}$
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/vnd.oci.image.index.v1+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.oci.image.manifest.v1+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.docker.distribution.manifest.list.v2+json:
+                            schema:
+                                format: binary
+                                type: string
+                        application/vnd.docker.distribution.manifest.v2+json:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The manifest, byte for byte, as its media type.
+                    headers:
+                        Content-Length:
+                            description: The body's length in bytes. A body cut short of it was refused on the way out for not matching its digest.
+                            schema:
+                                format: int64
+                                type: integer
+                        Docker-Content-Digest:
+                            description: The manifest's digest.
+                            schema:
+                                type: string
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a manifest in the pool's scope by digest
+            tags:
+                - Pools
+    /api/pools/{poolId}/assets/blobs/{digest}:
+        get:
+            description: |-
+                One blob — a config or a layer — by digest (ADR 26-10-16-423 §13). Answered only for a blob a manifest in the pool's scope references; anything else is a 404. The bytes are checked against the digest as they are sent, and a blob that does not match is cut off rather than completed. Immutable and cacheable forever.
+            operationId: get-pool-asset-blob
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Blob digest.
+                  in: path
+                  name: digest
+                  required: true
+                  schema:
+                    pattern: ^sha256:[a-f0-9]{64}$
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/octet-stream:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The blob.
+                    headers:
+                        Content-Length:
+                            description: The body's length in bytes. A body cut short of it was refused on the way out for not matching its digest.
+                            schema:
+                                format: int64
+                                type: integer
+                        Docker-Content-Digest:
+                            description: The blob's digest.
+                            schema:
+                                type: string
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a blob in the pool's scope by digest
+            tags:
+                - Pools
     /api/pools/{poolId}/status:
         post:
             operationId: update-pool-status

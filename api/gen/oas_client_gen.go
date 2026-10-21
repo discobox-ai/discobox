@@ -367,6 +367,23 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/pools/{poolId}
 	GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error)
+	// GetPoolAssetBlob invokes get-pool-asset-blob operation.
+	//
+	// One blob — a config or a layer — by digest (ADR 26-10-16-423 §13). Answered only for a blob a
+	// manifest in the pool's scope references; anything else is a 404. The bytes are checked against the
+	// digest as they are sent, and a blob that does not match is cut off rather than completed.
+	// Immutable and cacheable forever.
+	//
+	// GET /api/pools/{poolId}/assets/blobs/{digest}
+	GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error)
+	// GetPoolAssetManifest invokes get-pool-asset-manifest operation.
+	//
+	// A pinned index or manifest, by digest (ADR 26-10-16-423 §13). Answered only for a manifest pinned
+	// by the release or by a harness config of the pool's project, or one such an index lists, under the
+	// name its pin carries; anything else is a 404. Immutable.
+	//
+	// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+	GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error)
 	// GetProject invokes get-project operation.
 	//
 	// Get a project.
@@ -929,6 +946,17 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/resolve-gateway-headers
 	ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
+	// ResolvePoolAsset invokes resolve-pool-asset operation.
+	//
+	// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the
+	// platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle,
+	// the digest a harness config of the pool's project records, which a moved tag changes only once the
+	// config is re-pinned. Read for registration and re-pinning; the digest it is served under is the
+	// Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of
+	// different digests share is a 409, and a platform that cannot be resolved is a 502.
+	//
+	// GET /api/pools/{poolId}/assets/{name}
+	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -6678,6 +6706,252 @@ func (c *Client) sendGetPool(ctx context.Context, params GetPoolParams) (res Get
 
 	stage = "DecodeResponse"
 	result, err := decodeGetPoolResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetPoolAssetBlob invokes get-pool-asset-blob operation.
+//
+// One blob — a config or a layer — by digest (ADR 26-10-16-423 §13). Answered only for a blob a
+// manifest in the pool's scope references; anything else is a 404. The bytes are checked against the
+// digest as they are sent, and a blob that does not match is cut off rather than completed.
+// Immutable and cacheable forever.
+//
+// GET /api/pools/{poolId}/assets/blobs/{digest}
+func (c *Client) GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error) {
+	res, err := c.sendGetPoolAssetBlob(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (res GetPoolAssetBlobRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-pool-asset-blob"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/blobs/{digest}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetPoolAssetBlobOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/assets/blobs/"
+	{
+		// Encode "digest" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "digest",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Digest))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetPoolAssetBlobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetPoolAssetManifest invokes get-pool-asset-manifest operation.
+//
+// A pinned index or manifest, by digest (ADR 26-10-16-423 §13). Answered only for a manifest pinned
+// by the release or by a harness config of the pool's project, or one such an index lists, under the
+// name its pin carries; anything else is a 404. Immutable.
+//
+// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+func (c *Client) GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error) {
+	res, err := c.sendGetPoolAssetManifest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (res GetPoolAssetManifestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-pool-asset-manifest"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/{name}/manifests/{digest}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetPoolAssetManifestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [6]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/assets/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/manifests/"
+	{
+		// Encode "digest" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "digest",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Digest))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetPoolAssetManifestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -16340,6 +16614,122 @@ func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *Resolve
 
 	stage = "DecodeResponse"
 	result, err := decodeResolveGatewayHeadersResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ResolvePoolAsset invokes resolve-pool-asset operation.
+//
+// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the
+// platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle,
+// the digest a harness config of the pool's project records, which a moved tag changes only once the
+// config is re-pinned. Read for registration and re-pinning; the digest it is served under is the
+// Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of
+// different digests share is a 409, and a platform that cannot be resolved is a 502.
+//
+// GET /api/pools/{poolId}/assets/{name}
+func (c *Client) ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error) {
+	res, err := c.sendResolvePoolAsset(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (res ResolvePoolAssetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("resolve-pool-asset"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/{name}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResolvePoolAssetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/assets/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResolvePoolAssetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
