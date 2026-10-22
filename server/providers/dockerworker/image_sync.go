@@ -50,7 +50,7 @@ func newDevelopmentImageSynchronizer(images []devimage.Image, source dockerClien
 	if source == nil {
 		return nil, errors.New("development image source is required")
 	}
-	manifest, err := devimage.NewManifest(images)
+	manifest, err := devimage.NewManifest(images, nil)
 	if err != nil {
 		return nil, err
 	}

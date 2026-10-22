@@ -1,5 +1,6 @@
-// Package devimage defines the development Docker image manifest shared by the
-// image watcher and the server.
+// Package devimage defines the development image manifest shared by the image
+// watcher and the server: the Docker images it syncs to pool daemons, and the
+// bundles it exports as OCI image layouts, which never enter a daemon.
 package devimage
 
 import (
@@ -55,18 +56,36 @@ type BuildSpec struct {
 	Platform string `json:"platform,omitempty"`
 }
 
-// Manifest is the complete watcher-built image set to converge onto a Docker
-// daemon before that daemon hosts a development pool.
+// Bundle is one watcher-built bundle (ADR 26-10-16-423 §13): a FROM scratch
+// stage exported as an OCI image layout tar, which the server serves pools from
+// and reads the bundle's labels out of. No Docker daemon ever holds it.
+//
+// Reference is what the server is configured with — a dev tag derived from
+// Digest, so a rebuild moves it — and Digest the manifest the layout's index
+// lists, which is what the bundle is pinned by. Layout is the tar's absolute
+// path, named by Digest, so a rebuild writes another and never this one; one
+// whose index lists another manifest answers for Digest no more (Check).
+type Bundle struct {
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
+	Layout    string `json:"layout"`
+}
+
+// Manifest is the complete watcher-built set: the images to converge onto a
+// Docker daemon before that daemon hosts a development pool, and the bundles
+// the server serves from their layouts.
 type Manifest struct {
-	Version int     `json:"version"`
-	Images  []Image `json:"images"`
+	Version int      `json:"version"`
+	Images  []Image  `json:"images"`
+	Bundles []Bundle `json:"bundles,omitempty"`
 }
 
 // NewManifest validates and canonicalizes a development image set.
-func NewManifest(images []Image) (Manifest, error) {
+func NewManifest(images []Image, bundles []Bundle) (Manifest, error) {
 	manifest := Manifest{
 		Version: ManifestVersion,
 		Images:  append([]Image(nil), images...),
+		Bundles: append([]Bundle(nil), bundles...),
 	}
 	for i := range manifest.Images {
 		manifest.Images[i].Reference = strings.TrimSpace(manifest.Images[i].Reference)
@@ -75,6 +94,17 @@ func NewManifest(images []Image) (Manifest, error) {
 	sort.Slice(manifest.Images, func(i, j int) bool {
 		return manifest.Images[i].Reference < manifest.Images[j].Reference
 	})
+	for i := range manifest.Bundles {
+		manifest.Bundles[i].Reference = strings.TrimSpace(manifest.Bundles[i].Reference)
+		manifest.Bundles[i].Digest = strings.TrimSpace(manifest.Bundles[i].Digest)
+		manifest.Bundles[i].Layout = strings.TrimSpace(manifest.Bundles[i].Layout)
+	}
+	sort.Slice(manifest.Bundles, func(i, j int) bool {
+		return manifest.Bundles[i].Reference < manifest.Bundles[j].Reference
+	})
+	if len(manifest.Bundles) == 0 {
+		manifest.Bundles = nil
+	}
 	if err := manifest.Validate(); err != nil {
 		return Manifest{}, err
 	}
@@ -114,6 +144,21 @@ func (m Manifest) Validate() error {
 		}
 		seen[image.Reference] = struct{}{}
 	}
+	for i, bundle := range m.Bundles {
+		if strings.TrimSpace(bundle.Reference) == "" {
+			return fmt.Errorf("development image manifest bundle %d has no reference", i)
+		}
+		if !validDigest(bundle.Digest) {
+			return fmt.Errorf("development image manifest bundle %q has invalid digest %q", bundle.Reference, bundle.Digest)
+		}
+		if !filepath.IsAbs(bundle.Layout) {
+			return fmt.Errorf("development image manifest bundle %q layout %q is not an absolute path", bundle.Reference, bundle.Layout)
+		}
+		if _, ok := seen[bundle.Reference]; ok {
+			return fmt.Errorf("development image manifest repeats reference %q", bundle.Reference)
+		}
+		seen[bundle.Reference] = struct{}{}
+	}
 	return nil
 }
 
@@ -130,13 +175,13 @@ func Read(path string) (Manifest, error) {
 	if err := manifest.Validate(); err != nil {
 		return Manifest{}, fmt.Errorf("validate development image manifest %s: %w", path, err)
 	}
-	return NewManifest(manifest.Images)
+	return NewManifest(manifest.Images, manifest.Bundles)
 }
 
 // WriteAtomic installs a validated manifest without exposing a partial file to
 // a hot-reload-restarted server.
 func WriteAtomic(path string, manifest Manifest) error {
-	canonical, err := NewManifest(manifest.Images)
+	canonical, err := NewManifest(manifest.Images, manifest.Bundles)
 	if err != nil {
 		return err
 	}

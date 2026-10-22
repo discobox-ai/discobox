@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -543,15 +545,111 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	}
 }
 
-// The daemon is never asked for a bundle a project supplied: what it holds is
-// this host's, not the project's.
-func TestTheDaemonHoldsNothingOfAProjects(t *testing.T) {
-	d := newDaemonSource()
-	if err := d.fetch(context.Background(), pin{ref: acmeRef, digest: "sha256:" + strings.Repeat("a", 64)}, "sha256:"+strings.Repeat("b", 64), false, nil); !errors.Is(err, errNotHere) {
+// writeLayout writes the image's content as the OCI image layout tar the
+// image watcher exports, its index listing the image's manifest.
+func (r *registry) writeLayout(t *testing.T, img image) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "bundle.tar")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	out := tar.NewWriter(file)
+	add := func(name string, data []byte) {
+		if err := out.WriteHeader(&tar.Header{Name: name, Mode: 0o444, Size: int64(len(data)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := out.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.mu.Lock()
+	for _, digest := range []string{img.manifest, img.config, img.layer} {
+		add("blobs/sha256/"+strings.TrimPrefix(digest, "sha256:"), r.content[digest])
+	}
+	r.mu.Unlock()
+	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": []any{
+		map[string]any{"mediaType": imagecache.MediaTypeOCIManifest, "digest": img.manifest},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add("index.json", index)
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A development server's platform is a bundle the watcher exported, in no
+// daemon and no registry: it is served from that layout, and a blob that left
+// the store since is put back from it.
+func TestADevelopmentBundleIsServedFromItsLayout(t *testing.T) {
+	f := newFixture(t)
+	const devRef = "discobox-platform:dev-0123456789ab"
+	builder := newRegistry()
+	built := builder.image(t, "development platform")
+	bundle := devimage.Bundle{Reference: devRef, Digest: built.manifest, Layout: builder.writeLayout(t, built)}
+	layouts := newLayoutSource([]devimage.Bundle{bundle})
+	f.service = newService(f.service.store, Options{Dir: f.dir, PlatformBundle: devRef},
+		[]source{layouts, f.registry}, []source{layouts, f.registry})
+	ctx := asPool("pool-1")
+
+	content, err := f.service.ResolveAssetName(ctx, "pool-1", "discobox-platform")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content.Digest != built.manifest {
+		t.Fatalf("the platform resolved to %s, want the layout's %s", content.Digest, built.manifest)
+	}
+	read(t, content)
+	for _, digest := range []string{built.config, built.layer} {
+		read(t, mustBlob(t, f, digest))
+	}
+	if err := f.service.blobs.RemoveBlob(built.layer); err != nil {
+		t.Fatal(err)
+	}
+	read(t, mustBlob(t, f, built.layer))
+	if got := f.registry.fetches.Load(); got != 0 {
+		t.Fatalf("the registry was asked %d times for what the layout holds", got)
+	}
+}
+
+// The watcher's layouts are what this host built: a project naming a
+// development bundle's reference is never answered from them, and a layout
+// rebuilt since its digest was recorded answers that digest no more.
+func TestALayoutServesOnlyTheReleasesPinOfWhatItHolds(t *testing.T) {
+	builder := newRegistry()
+	built := builder.image(t, "development harness")
+	const devRef = "discobox-harness-acme:dev-0123456789ab"
+	bundle := devimage.Bundle{Reference: devRef, Digest: built.manifest, Layout: builder.writeLayout(t, built)}
+	layouts := newLayoutSource([]devimage.Bundle{bundle})
+	blobs := imagecache.Open(t.TempDir())
+
+	if err := layouts.fetch(context.Background(), pin{ref: devRef, digest: built.manifest}, built.layer, false, blobs); !errors.Is(err, errNotHere) {
 		t.Fatalf("fetch for a project's pin = %v, want errNotHere", err)
 	}
-	if _, err := d.resolve(context.Background(), acmeRef, false, nil); !errors.Is(err, errNotHere) {
+	if _, err := layouts.resolve(context.Background(), devRef, false, blobs); !errors.Is(err, errNotHere) {
 		t.Fatalf("resolve of a project's reference = %v, want errNotHere", err)
+	}
+	if blobs.HasBlob(built.layer) {
+		t.Fatal("a project's read put the layout into the store")
+	}
+	if err := layouts.fetch(context.Background(), pin{ref: devRef, digest: built.manifest, release: true}, built.layer, false, blobs); err != nil {
+		t.Fatalf("fetch for the release's pin: %v", err)
+	}
+
+	rebuilt := builder.image(t, "development harness, edited")
+	if err := os.Rename(builder.writeLayout(t, rebuilt), bundle.Layout); err != nil {
+		t.Fatal(err)
+	}
+	if err := blobs.RemoveBlob(built.layer); err != nil {
+		t.Fatal(err)
+	}
+	err := layouts.fetch(context.Background(), pin{ref: devRef, digest: built.manifest, release: true}, built.layer, false, blobs)
+	if err == nil || errors.Is(err, errNotHere) || blobs.HasBlob(built.layer) {
+		t.Fatalf("fetch from a rebuilt layout = %v, want it refused", err)
 	}
 }
 

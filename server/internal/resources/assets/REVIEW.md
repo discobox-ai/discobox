@@ -1,8 +1,8 @@
 # Assets Review Notes
 
 - **Gate every source that can reach content a project could not pull
-  anonymously on the pin being the release's.** The server's Docker daemon and
-  its registry keychain hold what this host built or pulled for anyone; a
+  anonymously on the pin being the release's.** The watcher's layouts and the
+  server's registry keychain hold what this host built or pulled for anyone; a
   project naming such an image in a harness config would otherwise have its
   pool download it through the asset API.
 - **Scope is the digests something pinned, never a tag's current answer.** A
@@ -17,7 +17,7 @@
   blob: check the store, not the memo.** Prune and damaged-blob removal both
   delete blobs; a source that remembers "imported" past that refuses the pin
   for good, and on
-  a development server, where a `:local` bundle is only on the daemon, every
+  a development server, where a bundle is only in the watcher's layout, every
   read of it is a 502 until restart.
 - **A body is checked against its digest before the bytes that complete it
   go out, not at EOF.** A file reports EOF on the read after its last byte, so

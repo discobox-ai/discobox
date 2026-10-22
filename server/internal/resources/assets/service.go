@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -34,6 +35,9 @@ type Options struct {
 	// platform's and the built-in harnesses'. Only these are pulled with the
 	// server's registry credentials.
 	ReleaseBundles []string
+	// Development are the bundles the image watcher exported as OCI image
+	// layouts, which a development server's release references name.
+	Development []devimage.Bundle
 }
 
 // Service answers a pool's asset reads.
@@ -59,14 +63,14 @@ type Service struct {
 // read's own cancellation so that the others are still answered.
 const fetchTimeout = 10 * time.Minute
 
-// New returns a Service storing blobs in opts.Dir, filled from the local
-// Docker daemon and registries.
+// New returns a Service storing blobs in opts.Dir, filled from the watcher's
+// layouts and registries.
 func New(store *store.Store, opts Options) *Service {
-	daemon := newDaemonSource()
+	layouts := newLayoutSource(opts.Development)
 	registry := registrySource{}
-	// The daemon first, as harness registration reads a bundle: what it holds
-	// is what was built here.
-	return newService(store, opts, []source{daemon, registry}, []source{daemon, registry})
+	// The layouts first, as harness registration reads a bundle: what they
+	// hold is what was built here.
+	return newService(store, opts, []source{layouts, registry}, []source{layouts, registry})
 }
 
 func newService(store *store.Store, opts Options, sources, resolvers []source) *Service {

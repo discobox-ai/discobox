@@ -92,9 +92,14 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 			t.Fatalf("missing bundle watcher for %s", name)
 		}
 		args := strings.Join(bundle.buildArgs, " ")
-		if !strings.Contains(args, dockerfile) || !strings.Contains(args, "--target bundle") ||
-			!strings.Contains(args, "-t discobox-harness-"+name+":local") {
+		if !strings.Contains(args, dockerfile) || !strings.Contains(args, "--target bundle") {
 			t.Fatalf("bundle watcher for %s does not build its Dockerfile's bundle stage: %#v", name, bundle)
+		}
+		// Exported as a layout, never into an image store.
+		layoutDir := filepath.Join(repoRoot, "build", "assets", "discobox-harness-"+name)
+		if bundle.layoutDir != layoutDir || !strings.HasPrefix(args, "buildx build ") ||
+			!strings.Contains(args, "--output type=oci,dest="+partialLayout(layoutDir)) || contains(bundle.buildArgs, "-t") {
+			t.Fatalf("bundle watcher for %s does not export its bundle into %s: %#v", name, layoutDir, bundle)
 		}
 		// FROM scratch: nothing of the sandbox agent is an input of the bundle.
 		if contains(bundle.files, sandboxDockerfile) || strings.Contains(args, "SANDBOX_AGENT_IMAGE") || bundle.parent != "" {
@@ -140,7 +145,8 @@ func TestDockerImageSpecsBuildThePlatformBundleFromItsOwnStage(t *testing.T) {
 		t.Fatal("missing platform bundle watcher")
 	}
 	args := strings.Join(platform.buildArgs, " ")
-	if !strings.Contains(args, "-f sandbox-agent/Dockerfile --target platform") || !strings.Contains(args, "-t discobox-platform:local") ||
+	if !strings.Contains(args, "-f sandbox-agent/Dockerfile --target platform") ||
+		!strings.Contains(args, "--output type=oci,dest="+partialLayout(filepath.Join(repoRoot, "build", "assets", "discobox-platform"))) ||
 		platform.envImageKey != "DISCOBOX_PLATFORM_BUNDLE" || !platform.bundle || platform.parent != "" {
 		t.Fatalf("platform bundle spec = %#v", platform)
 	}
@@ -198,19 +204,19 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 		{name: "platform", devPrefix: "platform:dev-", envImageKey: "PLATFORM", bundle: true},
 		{name: "pool-agent", devPrefix: "a-pool:dev-", envImageKey: "POOL", envDigestKey: "POOL_DIGEST"},
 	}
-	// A bundle is not in the manifest a pool daemon is given, but its
-	// reference is still published: the server reads it from this daemon.
-	bundles := map[string]devimage.Image{"platform": {Reference: "platform:dev-new", ID: "sha256:platform-new"}}
+	// A bundle is not among the images a pool daemon is given, but its
+	// reference is still published: the server serves it from its layout.
+	platformDigest := "sha256:" + strings.Repeat("ab", 32)
 	manifest, err := devimage.NewManifest([]devimage.Image{
 		{Reference: "z-sandbox:dev-new", ID: "sha256:sandbox-new"},
 		{Reference: "a-pool:dev-new", ID: "sha256:pool-new"},
 		{Reference: "m-base:dev-new", ID: "sha256:base-new"},
-	})
+	}, []devimage.Bundle{{Reference: "platform:dev-new", Digest: platformDigest, Layout: filepath.Join(t.TempDir(), "platform.tar")}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	values, err := developmentImageEnv(specs, manifest, bundles, "/tmp/manifest.json")
+	values, err := developmentImageEnv(specs, manifest, "/tmp/manifest.json")
 	if err != nil {
 		t.Fatal(err)
 	}

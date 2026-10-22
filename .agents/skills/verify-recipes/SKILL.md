@@ -472,11 +472,23 @@ docker exec discobox-vm-$P find /var/lib/discobox/identity -name agent.key   # .
   or damaged there (`dd conv=notrunc`) is what exercises refetch and the
   digest check on the way out; a damaged one must never come back whole —
   `curl` reports a cut-off or empty reply, never a 200 of the full length.
-- Linux dev bundles are the host daemon's `:dev-*` tags, pinned by image ID
-  (`d admin harness list -o json | jq '..|.bundleDigest?'`); a dev harness bundle
-  is an index of its platform and an attestation, so read its child manifest
-  for layers.
-- An OCI layout tar from the daemon: `docker save <ref> | tar -t | grep blobs/`.
+- Linux dev bundles are in no Docker daemon: the watcher exports each to
+  `build/assets/<name>/<hex>.tar`, an OCI image layout named by the manifest
+  digest its index lists, and `.tmp/discobox-dev-images.json`'s `bundles`
+  records its `:dev-*` reference, digest and layout (`jq -r '.bundles[] |
+  "\(.reference) \(.layout)"'`). That digest is what the harness config pins
+  (`d admin harness list -o json | jq '..|.bundleDigest?'`); a layout's blobs
+  are `tar -tf <layout> | grep blobs/`. The daemon holds only `-image` twins
+  among the harness repositories: `docker image ls --format '{{.Repository}}'
+  | grep -E '^discobox-(platform|harness-[a-z-]+)$' | grep -v -- '-image$'`
+  prints nothing but bundles a watcher from before layouts left behind, which
+  nothing reclaims (`docker image rm` them).
+- A bundle edit (a harness's `launch.sh`) shows in the watcher's log as
+  `built harness-<name> as …/build/assets/discobox-harness-<name>/<hex>.tar`,
+  then in the server's as `updated built-in harness config image` with the new
+  `bundleDigest`; `ls build/assets/<name>` keeps the published layout and the
+  one before it. The harness's runnable twin still reaches a box through the
+  daemon sync until the agent applies bundles itself.
 
 # Verifying `assets.discobox.internal` (the pool's bundle cache)
 

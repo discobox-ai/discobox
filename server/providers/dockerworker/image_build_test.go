@@ -85,10 +85,10 @@ func TestOrderBuildsIgnoresSelfReference(t *testing.T) {
 // Build-mode images carry no ID, so the manifest must accept them; copy-mode
 // images must still require one.
 func TestManifestAcceptsBuildModeImagesWithoutID(t *testing.T) {
-	if _, err := devimage.NewManifest([]devimage.Image{testImage("pool:dev-1", nil)}); err != nil {
+	if _, err := devimage.NewManifest([]devimage.Image{testImage("pool:dev-1", nil)}, nil); err != nil {
 		t.Fatalf("build-mode manifest should be valid: %v", err)
 	}
-	if _, err := devimage.NewManifest([]devimage.Image{{Reference: "pool:dev-1"}}); err == nil {
+	if _, err := devimage.NewManifest([]devimage.Image{{Reference: "pool:dev-1"}}, nil); err == nil {
 		t.Fatal("copy-mode image without an ID should be rejected")
 	}
 }

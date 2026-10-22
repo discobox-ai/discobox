@@ -21,7 +21,7 @@ allow-list's `assets` action takes up to three trailing segments
 
 - **A name** is the last component of a reference's repository:
   `ghcr.io/discobox-ai/discobox-platform:v1` and a development build's
-  `discobox-platform:local` are both `discobox-platform`.
+  `discobox-platform:dev-<digest>` are both `discobox-platform`.
 - **A manifest goes out byte for byte**, as its own media type, with
   `Docker-Content-Digest` and `Content-Length`. `api/gen/ogen.yml` aliases the
   four manifest media types to raw bytes, so the generated encoder never
@@ -80,20 +80,27 @@ flowchart LR
     pool[Pool agent] -->|manifest or blob by digest| svc[assets.Service]
     svc -->|in scope?| db[(harness configs, platform pins)]
     svc -->|present?| store[(asset store)]
-    svc -.->|missing, release's own| daemon[Local Docker daemon]
+    svc -.->|missing, release's own| layouts[Watcher's OCI layouts]
     svc -.->|missing| registry[Registry]
-    daemon --> store
+    layouts --> store
     registry --> store
 ```
 
 - **Filled lazily**, the first time a read wants a digest, from the first
-  source holding it: the local Docker daemon, then the registry.
-- **The daemon serves the release's references alone** — on a development
-  server, what the image watcher built. It holds whatever this host built or
-  pulled, with any credentials, for any project, so a reference a project
-  supplied is never looked up there. Its content is what it saves: every blob
-  of the save goes in at once, once per pinned digest, found by the digest
-  harness registration pinned (`localimage.Digest`).
+  source holding it: on a development server the image watcher's layouts,
+  then the registry.
+- **The layouts serve the release's references alone.** The watcher exports
+  each bundle as an OCI image layout tar (`devimage.Bundle`), never into a
+  Docker daemon, and the server's release references are those bundles'
+  dev tags. What this host built is not a project's to read, so a reference
+  a project supplied is never looked up there, even one naming a dev tag. A
+  pin's content is its whole layout, put in at once, and only while the
+  layout's index still lists the pin's digest (`devimage.Bundle.Check`). A
+  layout is named by its digest, so a rebuild writes another and the one a
+  published manifest names is never rewritten; the watcher removes it only
+  once a manifest naming its successor's successor is published. Nothing is
+  remembered between reads, so a blob pruned or found damaged is put back
+  from the layout.
 - **Credentials**: the server's keychain pulls only the references the release
   names — the platform bundle and the built-in harnesses' bundles. A
   project-supplied reference is pulled anonymously: a project configures no

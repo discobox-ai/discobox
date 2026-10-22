@@ -79,7 +79,7 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 		log.Printf("stamped %s as %s (built on demand by the server)", spec.name, tags[spec.name])
 	}
 
-	manifest, err := devimage.NewManifest(images)
+	manifest, err := devimage.NewManifest(images, nil)
 	if err != nil {
 		return err
 	}

@@ -24,8 +24,10 @@ import (
 )
 
 type Service struct {
-	store                *store.Store
-	inspector            imageInspector
+	store     *store.Store
+	inspector imageInspector
+	// verified is shared by every inspector of bundles, whichever reads them.
+	verified             *verifiedBundles
 	harnesses            harnessdefs.References
 	requireBuiltInImages bool
 	sandboxes            SandboxRuntime
@@ -35,9 +37,11 @@ type Service struct {
 // NewService builds the service. overlayDir is the one directory a file://
 // manifest reference may name a file in; empty refuses every such reference.
 func NewService(store *store.Store, harnesses harnessdefs.References, requireBuiltInImages bool, overlayDir string) *Service {
+	verified := &verifiedBundles{}
 	return &Service{
 		store:                store,
-		inspector:            defaultImageInspector{overlayDir: overlayDir, verified: &verifiedBundles{}},
+		inspector:            defaultImageInspector{overlayDir: overlayDir, verified: verified},
+		verified:             verified,
 		harnesses:            harnesses,
 		requireBuiltInImages: requireBuiltInImages,
 	}
@@ -45,10 +49,11 @@ func NewService(store *store.Store, harnesses harnessdefs.References, requireBui
 
 // SetDevelopmentImages lets seeding resolve harness metadata from the
 // development image manifest. In build-mode the images do not exist anywhere
-// until a pool builds them, so without this every built-in harness is skipped
-// at startup and the project has no harness to run.
-func (s *Service) SetDevelopmentImages(images []devimage.Image) {
-	s.inspector = newDevImageInspector(images, s.inspector)
+// until a pool builds them, and in copy-mode the bundles are in no daemon,
+// only in the layouts the watcher exported, so without this every built-in
+// harness is skipped at startup and the project has no harness to run.
+func (s *Service) SetDevelopmentImages(images []devimage.Image, bundles []devimage.Bundle) {
+	s.inspector = newDevImageInspector(images, bundles, s.inspector, s.verified)
 }
 
 func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {

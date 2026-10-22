@@ -21,7 +21,6 @@ import (
 	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/secretroute"
-	"github.com/discobox-ai/discobox/server/internal/localimage"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -224,7 +223,7 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundleRef, err)
 	}
 	digest := descriptor.Digest.String()
-	if err := verifyBundle(bundleRef, digest, image, d.verified); err != nil {
+	if err := verifyBundle(bundleRef, digest, image.Layers, d.verified); err != nil {
 		return bundleInspection{}, err
 	}
 	return bundleInspection{Digest: digest, Labels: config.Config.Labels}, nil
@@ -248,23 +247,23 @@ func admitBundle(labels map[string]string, admit func(labels map[string]string) 
 
 // verifyBundle refuses a bundle when a layer carries a whiteout, reading its
 // layers only when its digest has not been read before.
-func verifyBundle(bundleRef, digest string, image v1.Image, verified *verifiedBundles) error {
+func verifyBundle(bundleRef, digest string, layers func() ([]v1.Layer, error), verified *verifiedBundles) error {
 	if verified.has(digest) {
 		return nil
 	}
-	if err := refuseWhiteouts(image); err != nil {
+	if err := refuseWhiteouts(layers); err != nil {
 		return fmt.Errorf("bundle %q: %w", bundleRef, err)
 	}
 	verified.add(digest)
 	return nil
 }
 
-// refuseWhiteouts refuses an image any of whose layers carries a whiteout, the
+// refuseWhiteouts refuses a bundle any of whose layers carries a whiteout, the
 // entry by which a layer deletes what one beneath it holds. A bundle's tree is
 // its layers side by side, never merged as an overlay (ADR 26-10-16-423 §13),
 // so a deletion would mean nothing there but what the layer beneath says.
-func refuseWhiteouts(image v1.Image) error {
-	layers, err := image.Layers()
+func refuseWhiteouts(read func() ([]v1.Layer, error)) error {
+	layers, err := read()
 	if err != nil {
 		return fmt.Errorf("read layers: %w", err)
 	}
@@ -331,6 +330,23 @@ func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, erro
 	}
 	image, err := index.Image(digests[platforms[0]])
 	return image, platforms, err
+}
+
+// localImageDigest is the digest to pin a locally-inspected image to.
+//
+// A pulled image carries the registry digest in RepoDigests, and that is what
+// every daemon can be asked about later, whichever image store it uses. A
+// locally built one has none — nothing pushed it — so its image ID is all there
+// is, and it is also all the pool will have to compare against. A containerd
+// image store makes that ID the image's manifest digest; the classic store
+// makes it its config's.
+func localImageDigest(inspected dockerclient.ImageInspectResult) string {
+	for _, repoDigest := range inspected.RepoDigests {
+		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && digest != "" {
+			return digest
+		}
+	}
+	return inspected.ID
 }
 
 // indexPlatforms is every platform an index publishes, attestation entries
@@ -415,7 +431,7 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	if err != nil {
 		return imageMetadata{}, false, err
 	}
-	metadata := runnableImage(localimage.Digest(inspected))
+	metadata := runnableImage(localImageDigest(inspected))
 	metadata.Platforms = localPlatforms(inspected.InspectResponse)
 	if metadata.Platforms == nil {
 		metadata.Platforms = localPlatformsWithoutManifests(ctx, inspected.InspectResponse)
@@ -440,7 +456,7 @@ func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels
 	if err != nil {
 		return bundleInspection{}, false, err
 	}
-	read := bundleInspection{Digest: localimage.Digest(inspected)}
+	read := bundleInspection{Digest: localImageDigest(inspected)}
 	if inspected.Config != nil {
 		read.Labels = inspected.Config.Labels
 	}
@@ -455,7 +471,7 @@ func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels
 		return bundleInspection{}, true, fmt.Errorf("save bundle %q: %w", bundleRef, err)
 	}
 	defer cleanup()
-	return read, true, verifyBundle(bundleRef, read.Digest, image, verified)
+	return read, true, verifyBundle(bundleRef, read.Digest, image.Layers, verified)
 }
 
 // saveLocalImage saves ref from the daemon to a file, read as a docker save
@@ -783,8 +799,8 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 	return nil
 }
 
-// devImageInspector answers for the development image manifest's build-mode
-// entries before falling back to a daemon or registry lookup.
+// devImageInspector answers for the development image manifest's entries
+// before falling back to a daemon or registry lookup.
 //
 // In build-mode the host has no Docker daemon and the dev images have never
 // been pushed, so neither fallback can see them: each exists only as a build
@@ -794,10 +810,16 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 // HARNESS_METADATA, and the platform bundle's PlatformLayer from its
 // IMAGE_LAYER_METADATA. A bundle inherits no layer from anything (ADR
 // 26-10-16-423 §2), so nothing is walked.
+//
+// In copy-mode the watcher exports each bundle as an OCI image layout, which
+// no daemon or registry holds either: layouts answers a bundle from there
+// (inspectLayoutBundle).
 type devImageInspector struct {
 	bundles  map[string]map[string]string
+	layouts  map[string]devimage.Bundle
 	images   map[string]bool
 	fallback imageInspector
+	verified *verifiedBundles
 }
 
 // The build targets of the bundle stages, which say which label an entry's
@@ -809,10 +831,16 @@ const (
 )
 
 // newDevImageInspector wraps fallback with the build-mode manifest entries in
-// images. It returns fallback unchanged when no entry is a build, so copy-mode
-// and production keep the original behavior exactly.
-func newDevImageInspector(images []devimage.Image, fallback imageInspector) imageInspector {
-	inspector := devImageInspector{bundles: map[string]map[string]string{}, images: map[string]bool{}, fallback: fallback}
+// images and the exported bundles. It returns fallback unchanged when there
+// are neither, so production keeps the original behavior exactly.
+func newDevImageInspector(images []devimage.Image, bundles []devimage.Bundle, fallback imageInspector, verified *verifiedBundles) imageInspector {
+	inspector := devImageInspector{
+		bundles: map[string]map[string]string{}, layouts: map[string]devimage.Bundle{}, images: map[string]bool{},
+		fallback: fallback, verified: verified,
+	}
+	for _, bundle := range bundles {
+		inspector.layouts[bundle.Reference] = bundle
+	}
 	for _, image := range images {
 		if image.Build == nil {
 			continue
@@ -831,7 +859,7 @@ func newDevImageInspector(images []devimage.Image, fallback imageInspector) imag
 			inspector.images[reference] = true
 		}
 	}
-	if len(inspector.bundles) == 0 && len(inspector.images) == 0 {
+	if len(inspector.bundles) == 0 && len(inspector.layouts) == 0 && len(inspector.images) == 0 {
 		return fallback
 	}
 	return inspector
@@ -850,6 +878,9 @@ func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageM
 }
 
 func (d devImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
+	if bundle, ok := d.layouts[strings.TrimSpace(bundleRef)]; ok {
+		return inspectLayoutBundle(bundle, admit, d.verified)
+	}
 	labels, ok := d.bundles[strings.TrimSpace(bundleRef)]
 	if !ok {
 		return d.fallback.InspectBundle(ctx, bundleRef, admit)

@@ -84,8 +84,10 @@ type AppOptions struct {
 	DefaultSandboxImageDigest string
 
 	// DevelopmentImages is the watcher-built image set synchronized to every
-	// Docker daemon used by a pool provider.
-	DevelopmentImages []devimage.Image
+	// Docker daemon used by a pool provider, and DevelopmentBundles the bundles
+	// it exported as OCI image layouts, which no daemon holds.
+	DevelopmentImages  []devimage.Image
+	DevelopmentBundles []devimage.Bundle
 
 	// ControlPlaneStreams receives control-plane connections opened by pool
 	// guests whose transport cannot be dialed inward. The caller owns it because
@@ -213,6 +215,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
 		DevelopmentImages:              opts.DevelopmentImages,
+		DevelopmentBundles:             opts.DevelopmentBundles,
 		Harnesses:                      opts.Harnesses,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
