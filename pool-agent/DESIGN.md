@@ -528,7 +528,11 @@ each one needs is decided here and an unknown path is refused rather than
 tunnelled. The cost is that a route reaching the sandbox is three registrations,
 not one — control plane, here, and the sandbox-agent's own generated router —
 and a route added at the ends but not the middle 404s with nothing to say why.
-Adding one means adding it in all three.
+Adding one means adding it in all three. The files API
+([ADR 26-10-22-499](../docs/adr/26-10-22-499-a-discobox-has-a-files-api-that-acts-as-its-user.md))
+is told here by its whole route, before any test of part of a path, as the
+sandbox agent tells it, and needs `files:read` for a stat, a listing or a read
+and `files:write` for anything else.
 
 Power operations (`start`, `stop`, `restart`, `suspend`) answer with acceptance only, and
 serialise per sandbox on one mutex (the ones that can start a container also

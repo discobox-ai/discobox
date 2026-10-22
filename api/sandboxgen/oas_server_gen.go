@@ -40,6 +40,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
 	ConfirmSandboxAutostop(ctx context.Context, req *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (*SandboxAutostopConfirmation, error)
+	// CopySandboxFile implements copy-sandbox-file operation.
+	//
+	// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
+	//  404 for a source that does not exist, 409 for a destination that does unless replace is set.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+	CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (*SandboxFileStat, error)
 	// CreateSandboxExec implements create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
@@ -168,6 +175,13 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (*SandboxExecsResponse, error)
+	// ListSandboxFiles implements list-sandbox-files operation.
+	//
+	// Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
+	// is not a directory.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+	ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (*SandboxFileList, error)
 	// ListSandboxServiceLogs implements list-sandbox-service-logs operation.
 	//
 	// Returns the transcript of the service's current or last run. A service that has never run has an
@@ -190,6 +204,20 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
 	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (*SandboxToolsResponse, error)
+	// MakeSandboxDirectory implements make-sandbox-directory operation.
+	//
+	// Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+	MakeSandboxDirectory(ctx context.Context, req *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (*SandboxFileStat, error)
+	// MoveSandboxFile implements move-sandbox-file operation.
+	//
+	// Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a
+	// destination that does unless replace is set, which replaces whatever is there, a directory
+	// included.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (*SandboxFileStat, error)
 	// ProposeSandboxRule implements propose-sandbox-rule operation.
 	//
 	// Has this discobox's harness write the policy a person starts an approval rule from (ADR
@@ -211,6 +239,20 @@ type Handler interface {
 	//
 	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
 	PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (*SandboxRuntimeConfig, error)
+	// ReadSandboxFile implements read-sandbox-file operation.
+	//
+	// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
+	// directory.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileOK, error)
+	// RemoveSandboxFile implements remove-sandbox-file operation.
+	//
+	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
+	// that is not empty unless recursive is set.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+	RemoveSandboxFile(ctx context.Context, req *SandboxFileRemoveRequest, params RemoveSandboxFileParams) error
 	// RestartSandboxService implements restart-sandbox-service operation.
 	//
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is
@@ -248,6 +290,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
 	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (*SandboxService, error)
+	// StatSandboxFile implements stat-sandbox-file operation.
+	//
+	// Reports one path as the discobox's default user sees it. Every files operation acts as that user,
+	// with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+	StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (*SandboxFileStat, error)
 	// StopSandboxService implements stop-sandbox-service operation.
 	//
 	// Ends the service's run and keeps its record, so its output is still readable and starting it again
@@ -279,6 +328,15 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
 	WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (*SandboxExecWaitResult, error)
+	// WriteSandboxFile implements write-sandbox-file operation.
+	//
+	// Writes the request body to a file, replacing what is there. The content lands whole or not at all,
+	// and a link is written through to what it points to. A replaced file keeps its permissions. 412
+	// when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
+	// is a directory, 404 when ifMissing refuses.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	WriteSandboxFile(ctx context.Context, req WriteSandboxFileReq, params WriteSandboxFileParams) (*SandboxFileStat, error)
 	// NewError creates *ErrorResponseStatusCode from error returned by handler.
 	//
 	// Used for common default response.

@@ -68,6 +68,18 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 
+	// The files API (ADR 26-10-22-499). The control plane marks a stat, a
+	// listing or a read with the read use, which starts a stopped sandbox and
+	// repairs nothing, and every write with the action use.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/stat", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/list", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/content", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPut, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/content", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/mkdir", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/remove", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/move", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/copy", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+
 	// The meta file (ADR 0136). Writing it starts a stopped sandbox like any
 	// other use: the sandbox is where its name, description and tags live, so a
 	// change cannot be taken while it is down.
@@ -168,6 +180,14 @@ func authorizeProxyScope(r *http.Request, scope string) error {
 }
 
 func sandboxAgentRequiredScope(r *http.Request) string {
+	// The files API is told by its whole route, before any test of a part of
+	// the path: an exec or a service named "files" is not one.
+	if op, ok := filesRoute(r.URL.EscapedPath()); ok {
+		if r.Method == http.MethodGet && (op == "stat" || op == "list" || op == "content") {
+			return ScopeFilesRead
+		}
+		return ScopeFilesWrite
+	}
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
 			return ScopeExecRead
@@ -237,6 +257,15 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 		return ""
 	}
 	return ""
+}
+
+// filesRoute reports the operation of a files API route, by its whole route.
+func filesRoute(path string) (string, bool) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) != 9 || segments[0] != "api" || segments[1] != "project" || segments[3] != "pool" || segments[5] != "sandboxes" || segments[7] != "files" {
+		return "", false
+	}
+	return segments[8], true
 }
 
 func parsePort(value string) (int, bool) {

@@ -600,11 +600,12 @@ func requiresSandboxAgentToken(scopes []string) bool {
 	for _, scope := range scopes {
 		switch scope {
 		case poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite,
+			poolagentauth.ScopeFilesRead, poolagentauth.ScopeFilesWrite,
 			poolagentauth.ScopeTCPConnect, poolagentauth.ScopeUDPConnect, poolagentauth.ScopeJudgeRun,
 			// The worktree's Git route is served by the sandbox agent, which
 			// checks these itself (ADR 0126 §4).
 			poolagentauth.ScopeSandboxRead, poolagentauth.ScopeSandboxWrite,
-			"terminal:*", "exec:*", "tcp:*", "udp:*", "sandbox:*", "*":
+			"terminal:*", "exec:*", "files:*", "tcp:*", "udp:*", "sandbox:*", "*":
 			return true
 		}
 	}

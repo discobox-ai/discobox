@@ -28,6 +28,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
@@ -315,6 +316,11 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		User:             execManager.DefaultUser(),
 		CredentialHelper: gitCredentialHelper(cfg.RuntimeDir),
 	})
+	fileService, err := files.New()
+	if err != nil {
+		slog.Default().Warn("sandbox agent files API disabled", "error", err)
+		fileService = nil
+	}
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -333,6 +339,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		runtimeConfig:     cfg.RuntimeConfig,
 		sourceConverger:   sourceConverger,
 		provision:         cfg.Provision,
+		files:             fileService,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {

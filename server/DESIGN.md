@@ -244,7 +244,12 @@ rather than accepting the broader sandbox read/write scopes. The exec proxy
 requests `exec:read` for reads (execs, services, harness hooks, a terminal's
 screen, and a terminal wait, a POST only for its body) and `exec:write` for
 create, delete, start, stop, restart, and terminal input; attach requests both,
-because attach streams carry input, resize, and signal frames. The TCP tunnel proxy
+because attach streams carry input, resize, and signal frames. The files API
+(stat, list, read, write, mkdir, remove, move, copy under `.../files/`, ADR
+26-10-22-499) is forwarded on the same path with scopes of its own:
+`files:read` for a stat, a listing and a read, which are `read` uses, and
+`files:write` for the rest, which are actions. Its routes are told by the
+route chi matched, so an exec named `files` is still an exec. The TCP tunnel proxy
 requests only `tcp:connect`, the scope ADR 0024 §3 defines for it, and the UDP
 tunnel proxy only `udp:connect` (ADR 0109).
 

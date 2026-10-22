@@ -4275,6 +4275,7 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()          {}
 func (*ErrorResponseStatusCode) attachSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) confirmSandboxAutostopRes()         {}
+func (*ErrorResponseStatusCode) copySandboxFileRes()                {}
 func (*ErrorResponseStatusCode) createSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) getSandboxAgentInventoryRes()       {}
@@ -4293,20 +4294,27 @@ func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
 func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
 func (*ErrorResponseStatusCode) listSandboxExecResourceHistoryRes() {}
 func (*ErrorResponseStatusCode) listSandboxExecsRes()               {}
+func (*ErrorResponseStatusCode) listSandboxFilesRes()               {}
 func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()         {}
 func (*ErrorResponseStatusCode) listSandboxServicesRes()            {}
 func (*ErrorResponseStatusCode) listSandboxToolsRes()               {}
+func (*ErrorResponseStatusCode) makeSandboxDirectoryRes()           {}
+func (*ErrorResponseStatusCode) moveSandboxFileRes()                {}
 func (*ErrorResponseStatusCode) proposeSandboxRuleRes()             {}
 func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()        {}
+func (*ErrorResponseStatusCode) readSandboxFileRes()                {}
+func (*ErrorResponseStatusCode) removeSandboxFileRes()              {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
 func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()          {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()           {}
 func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
 func (*ErrorResponseStatusCode) startSandboxServiceRes()            {}
+func (*ErrorResponseStatusCode) statSandboxFileRes()                {}
 func (*ErrorResponseStatusCode) stopSandboxServiceRes()             {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
 func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()         {}
 func (*ErrorResponseStatusCode) waitSandboxExecRes()                {}
+func (*ErrorResponseStatusCode) writeSandboxFileRes()               {}
 
 // How an exchange secret's stored fields are traded for a short-lived token (ADR 26-10-08-452). A
 // POST to url, its body and headers templated from the stored fields as {name}, and the token read
@@ -17621,6 +17629,98 @@ func (o OptUser) Or(d User) User {
 	return d
 }
 
+// NewOptWriteSandboxFileIfExists returns new OptWriteSandboxFileIfExists with value set to v.
+func NewOptWriteSandboxFileIfExists(v WriteSandboxFileIfExists) OptWriteSandboxFileIfExists {
+	return OptWriteSandboxFileIfExists{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWriteSandboxFileIfExists is optional WriteSandboxFileIfExists.
+type OptWriteSandboxFileIfExists struct {
+	Value WriteSandboxFileIfExists
+	Set   bool
+}
+
+// IsSet returns true if OptWriteSandboxFileIfExists was set.
+func (o OptWriteSandboxFileIfExists) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWriteSandboxFileIfExists) Reset() {
+	var v WriteSandboxFileIfExists
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWriteSandboxFileIfExists) SetTo(v WriteSandboxFileIfExists) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWriteSandboxFileIfExists) Get() (v WriteSandboxFileIfExists, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWriteSandboxFileIfExists) Or(d WriteSandboxFileIfExists) WriteSandboxFileIfExists {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptWriteSandboxFileIfMissing returns new OptWriteSandboxFileIfMissing with value set to v.
+func NewOptWriteSandboxFileIfMissing(v WriteSandboxFileIfMissing) OptWriteSandboxFileIfMissing {
+	return OptWriteSandboxFileIfMissing{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWriteSandboxFileIfMissing is optional WriteSandboxFileIfMissing.
+type OptWriteSandboxFileIfMissing struct {
+	Value WriteSandboxFileIfMissing
+	Set   bool
+}
+
+// IsSet returns true if OptWriteSandboxFileIfMissing was set.
+func (o OptWriteSandboxFileIfMissing) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWriteSandboxFileIfMissing) Reset() {
+	var v WriteSandboxFileIfMissing
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWriteSandboxFileIfMissing) SetTo(v WriteSandboxFileIfMissing) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWriteSandboxFileIfMissing) Get() (v WriteSandboxFileIfMissing, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWriteSandboxFileIfMissing) Or(d WriteSandboxFileIfMissing) WriteSandboxFileIfMissing {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // The client host a sandbox was created from. Client-declared provenance recorded verbatim; never
 // used to materialize source.
 // Ref: #/components/schemas/Origin
@@ -20987,6 +21087,22 @@ func (s *PutProjectGatewayBody) SetRequestHeaders(val OptPutGatewayHeaderModifie
 	s.RequestHeaders = val
 }
 
+type ReadSandboxFileOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ReadSandboxFileOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*ReadSandboxFileOK) readSandboxFileRes() {}
+
 // Ref: #/components/schemas/RefreshSecretBody
 type RefreshSecretBody struct {
 	// A URL to the JSON Schema for this object.
@@ -21245,6 +21361,11 @@ func (s *RegisterPoolResponseBody) SetSchema(val OptURI) {
 }
 
 func (*RegisterPoolResponseBody) registerPoolRes() {}
+
+// RemoveSandboxFileNoContent is response for RemoveSandboxFile operation.
+type RemoveSandboxFileNoContent struct{}
+
+func (*RemoveSandboxFileNoContent) removeSandboxFileRes() {}
 
 // One resource report: what this pool is using, and what each sandbox on it is
 // using, in one delivery. Every rate was computed by the pool agent
@@ -27512,6 +27633,309 @@ func (s *SandboxFeature) GetEnabled() bool {
 // SetEnabled sets the value of Enabled.
 func (s *SandboxFeature) SetEnabled(val bool) {
 	s.Enabled = val
+}
+
+// Ref: #/components/schemas/SandboxFileList
+type SandboxFileList struct {
+	// The directory listed, absolute and cleaned.
+	Path string `json:"path"`
+	// What the directory holds, by name.
+	Entries []SandboxFileStat `json:"entries"`
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileList) GetPath() string {
+	return s.Path
+}
+
+// GetEntries returns the value of Entries.
+func (s *SandboxFileList) GetEntries() []SandboxFileStat {
+	return s.Entries
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileList) SetPath(val string) {
+	s.Path = val
+}
+
+// SetEntries sets the value of Entries.
+func (s *SandboxFileList) SetEntries(val []SandboxFileStat) {
+	s.Entries = val
+}
+
+func (*SandboxFileList) listSandboxFilesRes() {}
+
+// Ref: #/components/schemas/SandboxFileMkdirRequest
+type SandboxFileMkdirRequest struct {
+	// The directory to create. Absolute, or relative to the default user's home; a leading `~` is that
+	// home.
+	Path string `json:"path"`
+	// Create missing parents too, and succeed when the directory already exists.
+	Parents OptBool `json:"parents"`
+	// Permission bits for a directory this creates, before the umask. Defaults to 0777 (511).
+	Mode OptInt64 `json:"mode"`
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileMkdirRequest) GetPath() string {
+	return s.Path
+}
+
+// GetParents returns the value of Parents.
+func (s *SandboxFileMkdirRequest) GetParents() OptBool {
+	return s.Parents
+}
+
+// GetMode returns the value of Mode.
+func (s *SandboxFileMkdirRequest) GetMode() OptInt64 {
+	return s.Mode
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileMkdirRequest) SetPath(val string) {
+	s.Path = val
+}
+
+// SetParents sets the value of Parents.
+func (s *SandboxFileMkdirRequest) SetParents(val OptBool) {
+	s.Parents = val
+}
+
+// SetMode sets the value of Mode.
+func (s *SandboxFileMkdirRequest) SetMode(val OptInt64) {
+	s.Mode = val
+}
+
+// Ref: #/components/schemas/SandboxFileRemoveRequest
+type SandboxFileRemoveRequest struct {
+	// The path to remove. Absolute, or relative to the default user's home; a leading `~` is that home.
+	Path string `json:"path"`
+	// Remove a directory with everything it holds. Without it a directory must be empty.
+	Recursive OptBool `json:"recursive"`
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileRemoveRequest) GetPath() string {
+	return s.Path
+}
+
+// GetRecursive returns the value of Recursive.
+func (s *SandboxFileRemoveRequest) GetRecursive() OptBool {
+	return s.Recursive
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileRemoveRequest) SetPath(val string) {
+	s.Path = val
+}
+
+// SetRecursive sets the value of Recursive.
+func (s *SandboxFileRemoveRequest) SetRecursive(val OptBool) {
+	s.Recursive = val
+}
+
+// One path in a discobox, as its default user sees it.
+// Ref: #/components/schemas/SandboxFileStat
+type SandboxFileStat struct {
+	// The absolute path, cleaned.
+	Path string `json:"path"`
+	// The last element of the path.
+	Name string          `json:"name"`
+	Type SandboxFileType `json:"type"`
+	// Size in bytes.
+	Size int64 `json:"size"`
+	// The permission bits with setuid, setgid and sticky, as chmod takes them (0755 is 493).
+	Mode       int64     `json:"mode"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+	// An opaque tag that changes whenever the content does. A write may name it to replace only what was
+	// read. A link's is the version of what it points to, which a read or a write of it reaches.
+	Version string `json:"version"`
+	// What a symbolic link points to, as written in it. Set only for a symlink.
+	LinkTarget OptString `json:"linkTarget"`
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileStat) GetPath() string {
+	return s.Path
+}
+
+// GetName returns the value of Name.
+func (s *SandboxFileStat) GetName() string {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *SandboxFileStat) GetType() SandboxFileType {
+	return s.Type
+}
+
+// GetSize returns the value of Size.
+func (s *SandboxFileStat) GetSize() int64 {
+	return s.Size
+}
+
+// GetMode returns the value of Mode.
+func (s *SandboxFileStat) GetMode() int64 {
+	return s.Mode
+}
+
+// GetModifiedAt returns the value of ModifiedAt.
+func (s *SandboxFileStat) GetModifiedAt() time.Time {
+	return s.ModifiedAt
+}
+
+// GetVersion returns the value of Version.
+func (s *SandboxFileStat) GetVersion() string {
+	return s.Version
+}
+
+// GetLinkTarget returns the value of LinkTarget.
+func (s *SandboxFileStat) GetLinkTarget() OptString {
+	return s.LinkTarget
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileStat) SetPath(val string) {
+	s.Path = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxFileStat) SetName(val string) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *SandboxFileStat) SetType(val SandboxFileType) {
+	s.Type = val
+}
+
+// SetSize sets the value of Size.
+func (s *SandboxFileStat) SetSize(val int64) {
+	s.Size = val
+}
+
+// SetMode sets the value of Mode.
+func (s *SandboxFileStat) SetMode(val int64) {
+	s.Mode = val
+}
+
+// SetModifiedAt sets the value of ModifiedAt.
+func (s *SandboxFileStat) SetModifiedAt(val time.Time) {
+	s.ModifiedAt = val
+}
+
+// SetVersion sets the value of Version.
+func (s *SandboxFileStat) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetLinkTarget sets the value of LinkTarget.
+func (s *SandboxFileStat) SetLinkTarget(val OptString) {
+	s.LinkTarget = val
+}
+
+func (*SandboxFileStat) copySandboxFileRes()      {}
+func (*SandboxFileStat) makeSandboxDirectoryRes() {}
+func (*SandboxFileStat) moveSandboxFileRes()      {}
+func (*SandboxFileStat) statSandboxFileRes()      {}
+func (*SandboxFileStat) writeSandboxFileRes()     {}
+
+// A move or a copy from one path in the discobox to another.
+// Ref: #/components/schemas/SandboxFileTransferRequest
+type SandboxFileTransferRequest struct {
+	// The source path. Absolute, or relative to the default user's home; a leading `~` is that home.
+	From string `json:"from"`
+	// The destination path, the same way.
+	To string `json:"to"`
+	// Replace what is already at the destination. Without it a destination that exists is a 409.
+	Replace OptBool `json:"replace"`
+}
+
+// GetFrom returns the value of From.
+func (s *SandboxFileTransferRequest) GetFrom() string {
+	return s.From
+}
+
+// GetTo returns the value of To.
+func (s *SandboxFileTransferRequest) GetTo() string {
+	return s.To
+}
+
+// GetReplace returns the value of Replace.
+func (s *SandboxFileTransferRequest) GetReplace() OptBool {
+	return s.Replace
+}
+
+// SetFrom sets the value of From.
+func (s *SandboxFileTransferRequest) SetFrom(val string) {
+	s.From = val
+}
+
+// SetTo sets the value of To.
+func (s *SandboxFileTransferRequest) SetTo(val string) {
+	s.To = val
+}
+
+// SetReplace sets the value of Replace.
+func (s *SandboxFileTransferRequest) SetReplace(val OptBool) {
+	s.Replace = val
+}
+
+// What a path is. A symbolic link is reported as itself, never as what it points to.
+// Ref: #/components/schemas/SandboxFileType
+type SandboxFileType string
+
+const (
+	SandboxFileTypeFile      SandboxFileType = "file"
+	SandboxFileTypeDirectory SandboxFileType = "directory"
+	SandboxFileTypeSymlink   SandboxFileType = "symlink"
+	SandboxFileTypeOther     SandboxFileType = "other"
+)
+
+// AllValues returns all SandboxFileType values.
+func (SandboxFileType) AllValues() []SandboxFileType {
+	return []SandboxFileType{
+		SandboxFileTypeFile,
+		SandboxFileTypeDirectory,
+		SandboxFileTypeSymlink,
+		SandboxFileTypeOther,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxFileType) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxFileTypeFile:
+		return []byte(s), nil
+	case SandboxFileTypeDirectory:
+		return []byte(s), nil
+	case SandboxFileTypeSymlink:
+		return []byte(s), nil
+	case SandboxFileTypeOther:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxFileType) UnmarshalText(data []byte) error {
+	switch SandboxFileType(data) {
+	case SandboxFileTypeFile:
+		*s = SandboxFileTypeFile
+		return nil
+	case SandboxFileTypeDirectory:
+		*s = SandboxFileTypeDirectory
+		return nil
+	case SandboxFileTypeSymlink:
+		*s = SandboxFileTypeSymlink
+		return nil
+	case SandboxFileTypeOther:
+		*s = SandboxFileTypeOther
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Git authorship identity for work done inside the sandbox. Both fields are
@@ -34316,4 +34740,100 @@ func (s *User) SetSubject(val string) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *User) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+type WriteSandboxFileIfExists string
+
+const (
+	WriteSandboxFileIfExistsReplace WriteSandboxFileIfExists = "replace"
+	WriteSandboxFileIfExistsFail    WriteSandboxFileIfExists = "fail"
+)
+
+// AllValues returns all WriteSandboxFileIfExists values.
+func (WriteSandboxFileIfExists) AllValues() []WriteSandboxFileIfExists {
+	return []WriteSandboxFileIfExists{
+		WriteSandboxFileIfExistsReplace,
+		WriteSandboxFileIfExistsFail,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WriteSandboxFileIfExists) MarshalText() ([]byte, error) {
+	switch s {
+	case WriteSandboxFileIfExistsReplace:
+		return []byte(s), nil
+	case WriteSandboxFileIfExistsFail:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WriteSandboxFileIfExists) UnmarshalText(data []byte) error {
+	switch WriteSandboxFileIfExists(data) {
+	case WriteSandboxFileIfExistsReplace:
+		*s = WriteSandboxFileIfExistsReplace
+		return nil
+	case WriteSandboxFileIfExistsFail:
+		*s = WriteSandboxFileIfExistsFail
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type WriteSandboxFileIfMissing string
+
+const (
+	WriteSandboxFileIfMissingCreate WriteSandboxFileIfMissing = "create"
+	WriteSandboxFileIfMissingFail   WriteSandboxFileIfMissing = "fail"
+)
+
+// AllValues returns all WriteSandboxFileIfMissing values.
+func (WriteSandboxFileIfMissing) AllValues() []WriteSandboxFileIfMissing {
+	return []WriteSandboxFileIfMissing{
+		WriteSandboxFileIfMissingCreate,
+		WriteSandboxFileIfMissingFail,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WriteSandboxFileIfMissing) MarshalText() ([]byte, error) {
+	switch s {
+	case WriteSandboxFileIfMissingCreate:
+		return []byte(s), nil
+	case WriteSandboxFileIfMissingFail:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WriteSandboxFileIfMissing) UnmarshalText(data []byte) error {
+	switch WriteSandboxFileIfMissing(data) {
+	case WriteSandboxFileIfMissingCreate:
+		*s = WriteSandboxFileIfMissingCreate
+		return nil
+	case WriteSandboxFileIfMissingFail:
+		*s = WriteSandboxFileIfMissingFail
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type WriteSandboxFileReq struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s WriteSandboxFileReq) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
 }

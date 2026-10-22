@@ -1383,6 +1383,114 @@ components:
             required:
                 - execs
             type: object
+        SandboxFileList:
+            additionalProperties: false
+            properties:
+                entries:
+                    description: What the directory holds, by name.
+                    items:
+                        $ref: '#/components/schemas/SandboxFileStat'
+                    type: array
+                path:
+                    description: The directory listed, absolute and cleaned.
+                    type: string
+            required:
+                - path
+                - entries
+            type: object
+        SandboxFileMkdirRequest:
+            additionalProperties: false
+            properties:
+                mode:
+                    description: Permission bits for a directory this creates, before the umask. Defaults to 0777 (511).
+                    format: int64
+                    maximum: 4095
+                    minimum: 0
+                    type: integer
+                parents:
+                    description: Create missing parents too, and succeed when the directory already exists.
+                    type: boolean
+                path:
+                    description: The directory to create. Absolute, or relative to the default user's home; a leading `~` is that home.
+                    type: string
+            required:
+                - path
+            type: object
+        SandboxFileRemoveRequest:
+            additionalProperties: false
+            properties:
+                path:
+                    description: The path to remove. Absolute, or relative to the default user's home; a leading `~` is that home.
+                    type: string
+                recursive:
+                    description: Remove a directory with everything it holds. Without it a directory must be empty.
+                    type: boolean
+            required:
+                - path
+            type: object
+        SandboxFileStat:
+            additionalProperties: false
+            description: One path in a discobox, as its default user sees it.
+            properties:
+                linkTarget:
+                    description: What a symbolic link points to, as written in it. Set only for a symlink.
+                    type: string
+                mode:
+                    description: The permission bits with setuid, setgid and sticky, as chmod takes them (0755 is 493).
+                    format: int64
+                    type: integer
+                modifiedAt:
+                    format: date-time
+                    type: string
+                name:
+                    description: The last element of the path.
+                    type: string
+                path:
+                    description: The absolute path, cleaned.
+                    type: string
+                size:
+                    description: Size in bytes.
+                    format: int64
+                    type: integer
+                type:
+                    $ref: '#/components/schemas/SandboxFileType'
+                version:
+                    description: An opaque tag that changes whenever the content does. A write may name it to replace only what was read. A link's is the version of what it points to, which a read or a write of it reaches.
+                    type: string
+            required:
+                - path
+                - name
+                - type
+                - size
+                - mode
+                - modifiedAt
+                - version
+            type: object
+        SandboxFileTransferRequest:
+            additionalProperties: false
+            description: A move or a copy from one path in the discobox to another.
+            properties:
+                from:
+                    description: The source path. Absolute, or relative to the default user's home; a leading `~` is that home.
+                    type: string
+                replace:
+                    description: Replace what is already at the destination. Without it a destination that exists is a 409.
+                    type: boolean
+                to:
+                    description: The destination path, the same way.
+                    type: string
+            required:
+                - from
+                - to
+            type: object
+        SandboxFileType:
+            description: What a path is. A symbolic link is reported as itself, never as what it points to.
+            enum:
+                - file
+                - directory
+                - symlink
+                - other
+            type: string
         SandboxMeta:
             additionalProperties: false
             description: A sandbox's name, description and tags, as the file inside it that holds them says. Each is optional, and an absent one is unset.
@@ -2551,6 +2659,369 @@ paths:
             summary: Wait for something to happen in a terminal.
             tags:
                 - Sandbox Execs
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/content:
+        get:
+            description: Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a directory.
+            operationId: read-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The file. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+                - description: The first byte to read.
+                  in: query
+                  name: offset
+                  schema:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                - description: How many bytes to read at most. Omitted reads to the end.
+                  in: query
+                  name: length
+                  schema:
+                    format: int64
+                    minimum: 0
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/octet-stream:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The content.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read a file in a discobox.
+            tags:
+                - Sandbox Files
+        put:
+            description: Writes the request body to a file, replacing what is there. The content lands whole or not at all, and a link is written through to what it points to. A replaced file keeps its permissions. 412 when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path is a directory, 404 when ifMissing refuses.
+            operationId: write-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The file. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+                - description: What to do when the file exists. replace, the default, replaces it; fail refuses with 412.
+                  in: query
+                  name: ifExists
+                  schema:
+                    enum:
+                        - replace
+                        - fail
+                    type: string
+                - description: What to do when the file does not exist. create, the default, creates it; fail refuses with 404.
+                  in: query
+                  name: ifMissing
+                  schema:
+                    enum:
+                        - create
+                        - fail
+                    type: string
+                - description: Write only when the file is still at this version, from its stat. Anything else, including no file, is 412.
+                  in: query
+                  name: ifVersion
+                  schema:
+                    type: string
+                - description: Permission bits for a file this creates, set exactly. Omitted, a new file is 0666 (438) less the umask.
+                  in: query
+                  name: mode
+                  schema:
+                    format: int64
+                    maximum: 4095
+                    minimum: 0
+                    type: integer
+                - description: Create the file's missing parent directories.
+                  in: query
+                  name: parents
+                  schema:
+                    type: boolean
+            requestBody:
+                content:
+                    application/octet-stream:
+                        schema:
+                            format: binary
+                            type: string
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The file as written.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Write a file in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy:
+        post:
+            description: Copies a file, a link, or a directory with everything it holds to another path within the discobox. 404 for a source that does not exist, 409 for a destination that does unless replace is set.
+            operationId: copy-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxFileTransferRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The destination.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Copy a path in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/list:
+        get:
+            description: Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that is not a directory.
+            operationId: list-sandbox-files
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The directory. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileList'
+                    description: The directory's entries.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List a directory in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir:
+        post:
+            description: Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
+            operationId: make-sandbox-directory
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxFileMkdirRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The directory.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Create a directory in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/move:
+        post:
+            description: Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a destination that does unless replace is set, which replaces whatever is there, a directory included.
+            operationId: move-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxFileTransferRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The destination.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Move a path in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove:
+        post:
+            description: Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory that is not empty unless recursive is set.
+            operationId: remove-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxFileRemoveRequest'
+                required: true
+            responses:
+                "204":
+                    description: Removed.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Remove a path in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat:
+        get:
+            description: Reports one path as the discobox's default user sees it. Every files operation acts as that user, with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
+            operationId: stat-sandbox-file
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The path. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The path's stat.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Stat a path in a discobox.
+            tags:
+                - Sandbox Files
     /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks:
         get:
             operationId: list-harness-hooks

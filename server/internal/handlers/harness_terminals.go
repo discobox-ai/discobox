@@ -191,3 +191,38 @@ func sandboxAgentRuntimeNotImplemented() *serverapi.ErrorResponseStatusCode {
 		},
 	}
 }
+
+// The files API (ADR 26-10-22-499) is the sandbox agent's, forwarded by the
+// reverse proxy like the exec routes, so none of it is served here.
+
+func (h *Handler) StatSandboxFile(context.Context, serverapi.StatSandboxFileParams) (serverapi.StatSandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) ListSandboxFiles(context.Context, serverapi.ListSandboxFilesParams) (serverapi.ListSandboxFilesRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) ReadSandboxFile(context.Context, serverapi.ReadSandboxFileParams) (serverapi.ReadSandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) WriteSandboxFile(context.Context, serverapi.WriteSandboxFileReq, serverapi.WriteSandboxFileParams) (serverapi.WriteSandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) MakeSandboxDirectory(context.Context, *serverapi.SandboxFileMkdirRequest, serverapi.MakeSandboxDirectoryParams) (serverapi.MakeSandboxDirectoryRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) RemoveSandboxFile(context.Context, *serverapi.SandboxFileRemoveRequest, serverapi.RemoveSandboxFileParams) (serverapi.RemoveSandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) MoveSandboxFile(context.Context, *serverapi.SandboxFileTransferRequest, serverapi.MoveSandboxFileParams) (serverapi.MoveSandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) CopySandboxFile(context.Context, *serverapi.SandboxFileTransferRequest, serverapi.CopySandboxFileParams) (serverapi.CopySandboxFileRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
