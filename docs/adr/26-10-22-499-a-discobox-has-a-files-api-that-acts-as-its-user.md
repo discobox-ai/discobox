@@ -1,8 +1,8 @@
 # 26-10-22-499 — A discobox has a files API that acts as its user
 
 - **Status**: Accepted (supersedes in part [26-10-16-535](26-10-16-535-a-pasted-image-is-carried-into-the-discobox-as-a-file.md) §2's
-  exec of `sh -c 'cat > …'`; decides what ADR 26-10-17-354 §6 put out of
-  scope)
+  exec of `sh -c 'cat > …'` and its directory under `${TMPDIR:-/tmp}`;
+  decides what ADR 26-10-17-354 §6 put out of scope)
 - **Date**: 2026-10-22
 
 ## Context
@@ -92,8 +92,11 @@ not running.
 - The CLI's AHP host serves `resource*` for every discobox it lists, through a
   `Workspace` over this API.
 - A pasted image (ADR 26-10-16-535 §2, whose bytes then leave the exec input
-  log), a tool's files and a host-side tool script are written through it, and harness configure seeds and reads its configuration through
-  it, instead of execs of `sh`, `cat` and `printf`.
+  log), a tool's files and a host-side tool script are written through it,
+  and harness configure seeds and reads its configuration through it, instead
+  of execs of `sh`, `cat` and `printf`. The image and the script go under
+  `/tmp`, not `${TMPDIR:-/tmp}`: a write names its path, and `TMPDIR` is the
+  user's shell's, which the API does not read.
 - `discobox cp` stays `scp` over sftp: recursion, permissions and resumption
   are `scp`'s, and the CLI design rejected re-implementing them over another
   transport (`cli/DESIGN.md`, `cp`).
