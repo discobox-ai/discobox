@@ -42,6 +42,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
@@ -557,6 +558,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	// The bundles it is pinned to, which are all assets.discobox.internal
+	// answers it (ADR 26-10-16-423 §13). Recorded on every create, not only
+	// one that builds, so a sandbox from before the record gets one from the
+	// first create that reaches it.
+	if err := assetcache.WriteRecord(r.sandboxRoot(sandboxID), bundlePins(req)); err != nil {
+		return nil, fmt.Errorf("record sandbox %s's bundles: %w", sandboxID, err)
+	}
 	// Before anything reads a source path: a sandbox from before the slug was
 	// sent holds its sources under their old names, and every check below --
 	// what is materialized, what is mounted, what the git route serves --
@@ -3825,6 +3833,17 @@ func cloneSandbox(sb *Sandbox) *Sandbox {
 	clone.Env = copyMap(sb.Env)
 	clone.Ports = append([]AssignedPort(nil), sb.Ports...)
 	return &clone
+}
+
+// bundlePins is the bundles a create pins the sandbox to, in the order the
+// request names them: the platform's, then its harness's.
+func bundlePins(req *workerapimodel.PoolSandboxCreateRequest) []assetcache.Pin {
+	bundles, _ := req.Bundles.Get()
+	pins := make([]assetcache.Pin, 0, len(bundles))
+	for _, bundle := range bundles {
+		pins = append(pins, assetcache.Pin{Name: bundle.Name, Digest: bundle.Digest})
+	}
+	return pins
 }
 
 // validateCreateRequest refuses a create the control plane did not fully

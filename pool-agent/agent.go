@@ -5,8 +5,11 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +21,7 @@ import (
 	"github.com/discobox-ai/x/id"
 
 	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
@@ -125,7 +129,21 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// Image reclamation is the Docker pool's alone: the images are its daemon's,
 	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
 	go runtime.WatchImages(ctx, logger)
-	return Serve(ctx, logger, root, bootstrap, registration, runtime, client)
+	// The bundles its sandboxes are pinned to, fetched from the control plane
+	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
+	assets := assetcache.New(assetcache.Config{
+		Dir:       filepath.Join(root.PoolBuild(bootstrap.ProjectID, bootstrap.PoolID), "assets"),
+		Sandboxes: root.PoolSandboxes(bootstrap.ProjectID, bootstrap.PoolID),
+		Fetch: func(ctx context.Context, path string) (io.ReadCloser, error) {
+			return client.FetchAsset(ctx, AssetRequest{
+				ProjectID:  bootstrap.ProjectID,
+				PoolID:     bootstrap.PoolID,
+				PrivateKey: registration.PrivateKey,
+				Path:       path,
+			})
+		},
+	})
+	return Serve(ctx, logger, root, bootstrap, registration, runtime, client, assets)
 }
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
@@ -288,8 +306,9 @@ func ExecSystemdChildIfRequested() error {
 // needs, is the caller's.
 //
 // A nil reporter runs no loop that reports to the control plane: no state
-// channel, tree reaper, status poll or resource report.
-func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, reporter SandboxStateClient) error {
+// channel, tree reaper, status poll or resource report. A nil assets serves
+// no assets.discobox.internal.
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache) error {
 	if reporter != nil {
 		if registration == nil {
 			return errors.New("pool registration is required for sandbox state reporting")
@@ -421,6 +440,20 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		}
 		defer func() { _ = originListener.Close() }()
 	}
+	// The sandboxes' fetches of their bundles arrive through the pool proxy
+	// too, on a socket of their own that no box can name (ADR 26-10-16-423
+	// §13, proxyagent.AssetsHost).
+	var assetListener net.Listener
+	var assetHandler http.Handler
+	if assets != nil {
+		socket := root.ProxyAssetsSocket(bootstrap.ProjectID, bootstrap.PoolID)
+		if assetListener, err = listenAssets(socket); err != nil {
+			return fmt.Errorf("listen for sandbox assets on %s: %w", socket, err)
+		}
+		defer func() { _ = assetListener.Close() }()
+		assetHandler = assets.Handler()
+		assets.StartSweeping(ctx, logger)
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -433,6 +466,8 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		SandboxTokenKey:       sandboxTokenKey,
 		Listener:              listener,
 		OriginListener:        originListener,
+		AssetListener:         assetListener,
+		Assets:                assetHandler,
 	})
 }
 
@@ -542,4 +577,25 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("buildkit mediator serving", "addr", buildkitagent.MediatorListen)
 	return mediator.Serve(ctx, listener, tlsConfig)
+}
+
+// listenAssets binds the asset cache's socket, replacing one an earlier agent
+// left, readable and writable by root alone: the proxy unit is root, and
+// nothing else in the pool has a reason to reach it.
+func listenAssets(socket string) (net.Listener, error) {
+	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	listener, err := wire.Listen(wire.UnixURL(socket))
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(socket, 0o600); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	return listener, nil
 }

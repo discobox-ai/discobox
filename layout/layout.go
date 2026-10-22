@@ -262,13 +262,15 @@ func (r Root) PoolCache(projectID, poolID string) string {
 	return r.join(r.ProjectCachePools(projectID), poolID, "cache")
 }
 
-// PoolBuild holds the pool's own build machinery: BuildKit's state and the pool
-// registry's blobs. A sibling of PoolCache rather than a child, because no
-// sandbox may reach it -- PoolCache is mounted into every sandbox, and mode
-// bits are not a boundary against a sandbox user holding sudo (ADR 0050).
+// PoolBuild holds the pool's own machinery: BuildKit's state, the pool
+// registry's blobs, and the blob cache of the bundles its sandboxes are pinned
+// to (ADR 26-10-16-423 §13). A sibling of PoolCache rather than a child,
+// because no sandbox may reach it -- PoolCache is mounted into every sandbox,
+// and mode bits are not a boundary against a sandbox user holding sudo (ADR
+// 0050).
 //
-// Disposable like its sibling: everything here rebuilds from the sandboxes'
-// sources.
+// Disposable like its sibling: everything here rebuilds, from the sandboxes'
+// sources or, for the bundles, from the server.
 func (r Root) PoolBuild(projectID, poolID string) string {
 	return r.join(r.ProjectCachePools(projectID), poolID, "build")
 }
@@ -305,6 +307,15 @@ func (r Root) ProxyProjectPools(projectID string) string {
 // ProxyPool is one pool's proxy subtree.
 func (r Root) ProxyPool(projectID, poolID string) string {
 	return r.join(r.ProxyProjectPools(projectID), poolID)
+}
+
+// ProxyAssetsSocket is the Unix socket the pool agent serves its sandboxes'
+// bundles on, which the proxy forwards assets.discobox.internal to (ADR
+// 26-10-16-423 §13). A socket rather than a loopback port, because the proxy
+// sends a sandbox's ordinary egress from the same network namespace: a port
+// there is one a box can name through its proxy, and a socket path is not.
+func (r Root) ProxyAssetsSocket(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "assets.sock")
 }
 
 // ProxyPoolSandboxes is where one pool stages each sandbox's proxy material.

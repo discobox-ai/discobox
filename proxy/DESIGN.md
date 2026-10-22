@@ -482,17 +482,26 @@ Key properties:
   so `discobox admin audit http --use-id` finds a discobox's API calls by the
   use it made them under. Every other host is sent the
   placeholder when a credential does not resolve; this one fails closed.
-- **The origins host never reaches the internet either** (`Config.Origins`,
-  `origins.go`;
-  [ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md)).
-  A CONNECT to it is intercepted whatever the allowlist says, like the gate
+- **The pool's own hosts never reach the internet either** (`Config.PoolHosts`,
+  `poolhosts.go`): its Git origins
+  ([ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md))
+  and its bundle assets
+  ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §13).
+  A CONNECT to one is intercepted whatever the allowlist says, like the gate
   host's, and a request for it is forwarded — its path and query, and nothing
-  else of where it was sent — to `Origins.Upstream`, with `OriginClientHeader`
-  set to the client the certificate names, replacing whatever the sandbox sent
-  under that name. Its own `Authorization` goes with it: that is the token the
-  upstream decides on. No swap, no cache, no gateway; the response is
-  audited on the ordinary response path, and an unreachable upstream is a 502.
-  The pool points it at its agent's loopback origin listener.
+  else of where it was sent — to that host's `Upstream`, with
+  `PoolClientHeader` set to the client the certificate names, replacing
+  whatever the sandbox sent under that name. Its own `Authorization` goes with
+  it: that is the token an origin listener decides on. A `ReadOnly` host
+  (assets) refuses anything but GET and HEAD with a 405 before the upstream
+  sees it. No swap, no cache, no gateway; the response is audited on the
+  ordinary response path, and an unreachable upstream is a 502. An `Upstream`
+  is a [`wire`](../wire) URL: the pool points origins at a loopback listener
+  of its agent's, which also takes the pool's sandbox token, and assets at a
+  Unix socket. This proxy sends a sandbox's ordinary egress from the same
+  network namespace, so a loopback port is one a sandbox can reach with a
+  `PoolClientHeader` of its own; a listener that decides on that header alone
+  belongs on a socket.
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.

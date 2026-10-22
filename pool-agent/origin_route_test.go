@@ -340,7 +340,7 @@ func TestTheOriginListenerServesTheSandboxTheProxyNames(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		if client != "" {
-			req.Header.Set(proxy.OriginClientHeader, client)
+			req.Header.Set(proxy.PoolClientHeader, client)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

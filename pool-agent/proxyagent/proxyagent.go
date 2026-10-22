@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (
@@ -289,10 +290,15 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	// The discobox API's host, which this proxy never sends to the internet:
 	// the resolver's gate answers it from the control plane (ADR 0140 §2).
 	cfg.Secrets.GateHost = GateHost()
-	// The sandboxes' Git origins, which this proxy never sends to the
-	// internet either: it forwards them to the agent's loopback origin
-	// listener as the sandbox the client certificate names (ADR 26-10-08-561).
-	cfg.Origins = proxy.OriginsConfig{Host: OriginsHost, Upstream: "http://" + OriginsListenAddress}
+	// The sandboxes' Git origins and their bundle assets, which this proxy
+	// never sends to the internet either: it forwards each to the agent's
+	// listener for it as the sandbox the client certificate names (ADR
+	// 26-10-08-561, ADR 26-10-16-423 §13). Assets are read-only, and on a
+	// socket no box can name (AssetsHost).
+	cfg.PoolHosts = []proxy.PoolHostConfig{
+		{Host: OriginsHost, Upstream: "http://" + OriginsListenAddress},
+		{Host: AssetsHost, Upstream: wire.UnixURL(root.ProxyAssetsSocket(projectID, poolID)), ReadOnly: true},
+	}
 
 	// Agent-credential activations live in this process, alongside the sentinel
 	// registry and the resolver they act on (ADR 0031 §3). The resolver
