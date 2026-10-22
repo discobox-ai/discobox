@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
@@ -38,8 +39,8 @@ const HarnessConfigResourceType = "harnessConfig"
 // only needs to catch a client that walked away.
 const configureTTL = time.Hour
 
-// execSettleTimeout bounds how long a finished one-shot exec may take to record
-// its exit status.
+// execSettleTimeout bounds how long a finished configure command may take to
+// record its exit status.
 const execSettleTimeout = 15 * time.Second
 
 // errConfigureRunning marks a commit that arrived before the configure command
@@ -837,11 +838,13 @@ func (s *Service) Reconcile(ctx context.Context, configID string) (reconcile.Res
 	return reconcile.Result{}, s.store.UpdateHarnessConfig(ctx, config)
 }
 
-// sandboxAgentClient builds a runner for the sandbox's agent API using the
+// sandboxAgentClient builds a client of the sandbox's agent API using the
 // caller's credentials.
-func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID string) (*oneShotRunner, func(), error) {
+func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID string) (*agentClient, func(), error) {
+	// It lists execs, to read the configure command's status, and reads and
+	// writes the files the command is seeded with and leaves behind.
 	lease, sandboxModel, err := s.sandboxes.AcquireSandboxHTTPClient(ctx, projectID, sandboxID,
-		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite}, services.SandboxAction("harness configure"))
+		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeFilesRead, poolagentauth.ScopeFilesWrite}, services.SandboxAction("harness configure"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -853,9 +856,9 @@ func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID s
 		lease.Release()
 		return nil, nil, errors.New("sandbox has no pool to reach its agent through")
 	}
-	return &oneShotRunner{
+	return &agentClient{
 		httpClient: &http.Client{
-			Transport: &leaseAuthTransport{base: lease.Client.Transport, lease: lease},
+			Transport: sandboxagentclient.HTTPClient(lease).Transport,
 			Timeout:   lease.Client.Timeout,
 		},
 		baseURL:   lease.BaseURL,
@@ -863,37 +866,6 @@ func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID s
 		poolID:    strings.TrimSpace(sandboxModel.PoolID),
 		sandboxID: sandboxID,
 	}, lease.Release, nil
-}
-
-// leaseAuthTransport carries both tokens a pool-agent-proxied sandbox-agent
-// request needs: the pool agent's own on Authorization, and the sandbox-agent's
-// on X-Discobox-Sandbox-Agent-Authorization for the pool agent to forward inward.
-type leaseAuthTransport struct {
-	base  http.RoundTripper
-	lease *services.HTTPClientLease
-}
-
-func (t *leaseAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	authToken, err := t.lease.AuthorizationToken(req.Context())
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(authToken) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(authToken))
-	}
-	forwardToken, err := t.lease.ForwardAuthorizationToken(req.Context())
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(forwardToken) != "" {
-		req.Header.Set("X-Discobox-Sandbox-Agent-Authorization", "Bearer "+strings.TrimSpace(forwardToken))
-	}
-	base := t.base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return base.RoundTrip(req)
 }
 
 // primaryTerminal describes the configure sandbox's primary terminal as the agent
@@ -909,7 +881,7 @@ type primaryTerminal struct {
 // closes, which is just before the agent records the exit, so a bare read would
 // see "running" for a moment. A caller that genuinely detached mid-flow still
 // reads "running" after the wait, and is told so.
-func (r *oneShotRunner) settledPrimaryTerminal(ctx context.Context) (primaryTerminal, bool, error) {
+func (r *agentClient) settledPrimaryTerminal(ctx context.Context) (primaryTerminal, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, execSettleTimeout)
 	defer cancel()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -935,8 +907,8 @@ func (r *oneShotRunner) settledPrimaryTerminal(ctx context.Context) (primaryTerm
 // without resolving the virtual "primary" id — resolving it would relaunch a
 // stopped primary, which here would restart the configure command instead of
 // observing that it finished.
-func (r *oneShotRunner) currentPrimaryTerminal(ctx context.Context) (primaryTerminal, bool, error) {
-	resp, err := r.send(ctx, http.MethodGet, r.url("/execs"), "", nil)
+func (r *agentClient) currentPrimaryTerminal(ctx context.Context) (primaryTerminal, bool, error) {
+	resp, err := r.send(ctx, http.MethodGet, "/execs", nil, "", nil)
 	if err != nil {
 		return primaryTerminal{}, false, err
 	}
@@ -965,41 +937,38 @@ func (r *oneShotRunner) currentPrimaryTerminal(ctx context.Context) (primaryTerm
 	return newest, found, nil
 }
 
-// seedFile writes payload to path inside the sandbox. There is no files API yet,
-// so it feeds a `cat` through the exec one-shot form.
-func seedFile(ctx context.Context, run *oneShotRunner, path string, payload []byte) error {
-	command := []string{"sh", "-c", fmt.Sprintf("mkdir -p %s && cat > %s", shellQuote(pathDir(path)), shellQuote(path))}
-	if _, err := run.do(ctx, command, payload); err != nil {
+// seedFile writes payload to path inside the sandbox, through its files API
+// (ADR 26-10-22-499), creating the directories it is in.
+func seedFile(ctx context.Context, run *agentClient, path string, payload []byte) error {
+	query := neturl.Values{"path": {path}, "parents": {"true"}}
+	if _, err := run.send(ctx, http.MethodPut, "/files/content", query, "application/octet-stream", payload); err != nil {
 		return fmt.Errorf("seed %s: %w", path, err)
 	}
 	return nil
 }
 
 // readConfigureOutput reads the file the configure command wrote.
-func readConfigureOutput(ctx context.Context, run *oneShotRunner) (*configureOutput, error) {
-	stdout, err := run.do(ctx, []string{"cat", harness.ConfigureOutputPath}, nil)
+func readConfigureOutput(ctx context.Context, run *agentClient) (*configureOutput, error) {
+	query := neturl.Values{"path": {harness.ConfigureOutputPath}}
+	content, err := run.send(ctx, http.MethodGet, "/files/content", query, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("configure flow did not write %s: %w", harness.ConfigureOutputPath, err)
 	}
 	var out configureOutput
-	if err := json.Unmarshal(stdout, &out); err != nil {
+	if err := json.Unmarshal(content, &out); err != nil {
 		return nil, fmt.Errorf("%s is invalid: %w", harness.ConfigureOutputPath, err)
 	}
 	return &out, nil
 }
 
-// oneShotRunner runs short-lived commands in a sandbox through the exec one-shot
-// form: POST the attach with the command's stdin as the body and read its output
-// back as the response.
+// agentClient calls the sandbox agent's exec and files routes.
 //
-// It addresses the pool agent, not the sandbox directly. A sandbox-agent lease
-// points at the pool agent that hosts the sandbox, and the pool agent passes exec
-// routes through to the sandbox agent under its own scheme — so requests carry
-// two tokens: the pool agent's on Authorization, and the sandbox-agent's on
-// X-Discobox-Sandbox-Agent-Authorization for the pool agent to forward inward.
-// The generated sandbox client cannot express that route shape, so these three
-// calls are made directly.
-type oneShotRunner struct {
+// It addresses the pool agent, not the sandbox directly: a sandbox-agent lease
+// points at the pool agent that hosts the sandbox, which passes these routes
+// through to the sandbox agent under its own scheme, and sandboxagentclient
+// builds that route and carries both tokens it needs. The generated sandbox
+// client cannot express that route shape, so these calls are made directly.
+type agentClient struct {
 	httpClient *http.Client
 	baseURL    string
 	projectID  string
@@ -1007,97 +976,15 @@ type oneShotRunner struct {
 	sandboxID  string
 }
 
-func (r *oneShotRunner) url(suffix string) string {
-	return fmt.Sprintf("%s/api/project/%s/pool/%s/sandboxes/%s%s",
-		strings.TrimRight(r.baseURL, "/"),
-		neturl.PathEscape(r.projectID), neturl.PathEscape(r.poolID), neturl.PathEscape(r.sandboxID), suffix)
-}
-
-// do runs command with stdin as its input and returns its output. A non-zero exit
-// is an error: the response body carries the output, and the exec record is
-// authoritative for the status.
-func (r *oneShotRunner) do(ctx context.Context, command []string, stdin []byte) ([]byte, error) {
-	execID, err := r.createExec(ctx, command)
+// send calls the sandbox agent route suffix, with query, through the pool
+// agent (sandboxagentclient.TargetURL).
+func (r *agentClient) send(ctx context.Context, method, suffix string, query neturl.Values, contentType string, body []byte) ([]byte, error) {
+	target, err := sandboxagentclient.TargetURL(r.baseURL, r.projectID, r.poolID, r.sandboxID, suffix)
 	if err != nil {
 		return nil, err
 	}
-	out, err := r.attachOneShot(ctx, execID, stdin)
-	if err != nil {
-		return nil, err
-	}
-	code, err := r.execExitCode(ctx, execID)
-	if err != nil {
-		return out, err
-	}
-	if code != 0 {
-		return out, fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(string(out)))
-	}
-	return out, nil
-}
-
-func (r *oneShotRunner) createExec(ctx context.Context, command []string) (string, error) {
-	body, err := json.Marshal(map[string]any{"command": command})
-	if err != nil {
-		return "", err
-	}
-	resp, err := r.send(ctx, http.MethodPost, r.url("/execs"), "application/json", body)
-	if err != nil {
-		return "", err
-	}
-	var created struct {
-		Exec struct {
-			ID string `json:"id"`
-		} `json:"exec"`
-	}
-	if err := json.Unmarshal(resp, &created); err != nil {
-		return "", fmt.Errorf("create exec: %w", err)
-	}
-	if created.Exec.ID == "" {
-		return "", errors.New("create exec: response carried no exec id")
-	}
-	return created.Exec.ID, nil
-}
-
-// attachOneShot POSTs the exec's attach endpoint, which runs it to completion with
-// the request body as stdin and returns its output.
-func (r *oneShotRunner) attachOneShot(ctx context.Context, execID string, stdin []byte) ([]byte, error) {
-	return r.send(ctx, http.MethodPost, r.url("/execs/"+neturl.PathEscape(execID)+"/attach"),
-		"application/octet-stream", stdin)
-}
-
-// execExitCode reads an exec's recorded exit status, waiting briefly for it to
-// settle. The one-shot attach returns as soon as the process's output stream
-// closes, but the agent records the exit status separately, so the record can
-// still read "running" for a moment afterward.
-func (r *oneShotRunner) execExitCode(ctx context.Context, execID string) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, execSettleTimeout)
-	defer cancel()
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		resp, err := r.send(ctx, http.MethodGet, r.url("/execs/"+neturl.PathEscape(execID)), "", nil)
-		if err != nil {
-			return 0, err
-		}
-		var exec struct {
-			Status   string `json:"status"`
-			ExitCode *int64 `json:"exitCode"`
-		}
-		if err := json.Unmarshal(resp, &exec); err != nil {
-			return 0, fmt.Errorf("read exec status: %w", err)
-		}
-		if exec.ExitCode != nil {
-			return *exec.ExitCode, nil
-		}
-		select {
-		case <-ctx.Done():
-			return 0, fmt.Errorf("exec did not report an exit code (status %s)", exec.Status)
-		case <-ticker.C:
-		}
-	}
-}
-
-func (r *oneShotRunner) send(ctx context.Context, method, url, contentType string, body []byte) ([]byte, error) {
+	target.RawQuery = query.Encode()
+	url := target.String()
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -1129,17 +1016,6 @@ func derefExitCode(code *int64) int64 {
 		return -1
 	}
 	return *code
-}
-
-func pathDir(path string) string {
-	if idx := strings.LastIndex(path, "/"); idx > 0 {
-		return path[:idx]
-	}
-	return "/"
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func configureSandboxName() (string, error) {
