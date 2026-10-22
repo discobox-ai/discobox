@@ -720,36 +720,34 @@ type RuleAsk struct {
 // the judge bounds each by it alone.
 const DelegationBound = 100 * time.Second
 
-// DelegationAsk is a discobox about to hand a credential on by approving
-// another discobox's request: whether the uses it would grant fall within the
-// uses of the delegation grant it approves under (ADR 26-09-30-782 §3). It is
-// the server's own question, composed from the grant and the request it read,
-// so everything in it is what the server holds rather than what a discobox
-// said.
+// DelegationAsk is a discobox about to hand a credential on, by approving
+// another discobox's request or giving it on a create: whether the conditions
+// of one allow it would hand on fall within those of a delegated allow that
+// covers it otherwise (ADR 26-10-20-782 §11). Code compares everything else of
+// the policy handed on with the delegation's, and asks this only of what it
+// leaves unsettled; the uses handed on are not judged. It is the server's own
+// question, composed from the grant and the request it read, so everything in
+// it is what the server holds rather than what a discobox said.
 type DelegationAsk struct {
 	// ApproverID is the discobox handing the credential on, and For the
 	// discobox it hands it to: its row, since on a create it is not stored
 	// yet, and the judge is told what it was created with (ADR 26-10-14-691).
 	// RequestID is the request it is approving, and empty when it gives the
-	// uses on a create.
+	// grant on a create.
 	ApproverID string
 	For        *model.Sandbox
 	RequestID  string
 	// DelegationGrantID is the delegation grant it approves under, which the
 	// verdict is recorded against.
 	DelegationGrantID string
-	// Delegated are the delegation grant's uses: what it may hand on for.
-	// Uses are the uses it would grant: the request's, or the ones it
-	// narrowed them to.
-	//
-	// For a policy handed on, the question is about conditions alone (ADR
-	// 26-10-20-782 §11): Delegated is one delegated allow and Uses one allow
-	// handed on, each as its sentence with variables written as the values
-	// they resolved to, which code found the same in every part but their
-	// when and unless. The question a use's reading answers — is this within
-	// that — is the one asked. The words' definitions are not sent: code
-	// held every word both use to one definition, so the conditions are all
-	// that is compared.
+	// Delegated is one delegated allow and Uses one allow handed on, each as
+	// its sentence with variables written as the values they resolved to,
+	// which code found the same in every part but their when and unless. The
+	// question is whether the one is within the other. The words'
+	// definitions are not sent: code held every word both use to one
+	// definition, so the conditions are all that is compared. They are lists
+	// because the judge's delegation job reads them as it read uses, before
+	// every hand-off carried a policy.
 	Delegated []string
 	Uses      []string
 	// Credential and Hosts are what is handed on and where it may go.

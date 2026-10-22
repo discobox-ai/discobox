@@ -217,8 +217,8 @@ func ruleProposable(req *model.SecretRequest) error {
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"an approval rule answers a request that asks for a policy; this one is a person's to answer each time")
 	case req.Purpose == model.SecretGrantPurposeDelegate:
-		// As checkRule refuses: a rule holds a request's policy, never its
-		// uses, and a delegation's uses still bound what is handed on.
+		// As checkRule refuses: no rule delegates yet (ADR 26-10-22-689,
+		// Deferred).
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"this request asks to delegate, and no rule approves a delegation yet; approve it as a person, without a rule")
 	case req.Policy == nil:

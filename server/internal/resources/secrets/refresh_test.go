@@ -199,7 +199,7 @@ func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 	}
 	req := pendingRefresh(t, st, sec.ID)
 
-	if _, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusBadRequest {
+	if _, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusBadRequest {
 		t.Fatalf("approve err = %v, want 400", err)
 	}
 	asSandbox := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: "sb-1"})

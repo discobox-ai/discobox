@@ -354,7 +354,6 @@ func TestARuleThatDoesNotCoverLeavesTheRequestForAPerson(t *testing.T) {
 				p.Definitions["issue"] = "Any GitHub issue, or anything else"
 				b.Policy = apiPolicy(t, p)
 			}},
-		{name: "uses alone", wantContents: 0, ask: withoutPolicy},
 		// Within every rule, since it matches nothing, and so nothing to approve.
 		{name: "allows that resolve to nothing", wantContents: 0,
 			ask: func(b *services.CreateSandboxCredentialRequestBody) {
@@ -539,7 +538,7 @@ func TestWhatARuleIsNeverTestedAgainst(t *testing.T) {
 	t.Run("an ask with uses alone", func(t *testing.T) {
 		svc, st, judging, _ := ruledService(t)
 		rule := githubRule(t, svc, nil)
-		req := githubAsk(t, svc, withoutPolicy)
+		req := usesAloneAsk(t, st)
 		if err := testRules(t, svc, req); err != nil {
 			t.Fatal(err)
 		}
@@ -791,7 +790,7 @@ func TestAutoApproveMakesTheRuleAndApprovesUnderIt(t *testing.T) {
 	dirty := &marks{}
 	svc.SetDirtier(dirty)
 	req := githubAsk(t, svc, nil)
-	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		GrantTTLSeconds: serverapi.NewOptInt64(1800),
 		Policy:          askedPolicy(t),
 		Rule:            serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{Policy: serverapi.NewOptAccessPolicy(rulePolicy(t, issueRule, prRule))}),
@@ -872,7 +871,7 @@ func TestAutoApproveRefusesARuleThatWouldNotCoverItsOwnRequest(t *testing.T) {
 				tc.judge(judging)
 			}
 			req := githubAsk(t, svc, nil)
-			_, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+			_, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 				Policy: askedPolicy(t),
 				Rule:   serverapi.NewOptApproveWithRule(tc.body),
 			})
@@ -897,7 +896,7 @@ func TestAutoApproveForEveryDiscoboxIsSaid(t *testing.T) {
 	// The repository written out: a discobox with none resolves no variable.
 	asked := apiPolicy(t, workerPolicy(t, bound(issueAsk), bound(prAsk)))
 	req := githubAsk(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = asked })
-	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		Policy: asked,
 		Rule:   serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{EveryDiscobox: serverapi.NewOptBool(true)}),
 	})
@@ -940,7 +939,7 @@ func TestADiscoboxNeverTouchesARule(t *testing.T) {
 	if _, err := svc.ProposeApprovalRules(lead, "project-1", req.ID); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("propose = %v, want 403", err)
 	}
-	if _, err := svc.ApproveSecretRequest(lead, "project-1", req.ID, services.ApproveSecretRequestBody{
+	if _, err := approveAsAsked(lead, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		Policy: askedPolicy(t),
 		Rule:   serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{}),
 	}); !isStatus(err, http.StatusForbidden) {
@@ -968,7 +967,7 @@ func TestWhatARuleMayBe(t *testing.T) {
 		"an unknown well-known ID":    {WellKnownId: serverapi.NewOptString("com.example.nope"), Policy: issues},
 		"no policy":                   {WellKnownId: github},
 		"denies alone":                {WellKnownId: github, Policy: rulePolicy(t, "deny delete on anything in anywhere")},
-		"a word with no definition":   {WellKnownId: github, Policy: rulePolicy(t, `allow push on branch "main" in repository $primary.repo`)},
+		"a word with no definition":   {WellKnownId: github, Policy: rulePolicy(t, `allow force-push on tag "main" in repository $primary.repo`)},
 		"an allow that says no scope": {WellKnownId: github, Policy: rulePolicy(t, `allow read on issue "*"`)},
 		"a host the ID is not for":    {WellKnownId: github, Policy: issues, Hosts: []string{"evil.example"}},
 		"a negative cap":              {WellKnownId: github, Policy: issues, MaxGrantTTLSeconds: serverapi.NewOptInt64(-1)},
@@ -1041,10 +1040,10 @@ func TestARuleNamingASecretAnswersAFreeFormAskItsBindingCovers(t *testing.T) {
 	}
 }
 
-// A rule does not hand on a delegation yet: a delegation's uses still bound
-// a hand-off of uses alone, and a rule holds only a request's policy, so one
-// it minted would carry uses nobody read (ADR 26-10-22-689 §4). Neither a
-// rule made directly nor one made by auto approving a delegation is made.
+// A rule does not hand on a delegation yet (ADR 26-10-22-689 §4, and its
+// Deferred, still to be decided now that every hand-off is bound by its
+// delegation's policy). Neither a rule made directly nor one made by auto
+// approving a delegation is made.
 func TestARuleDoesNotHandOnADelegation(t *testing.T) {
 	svc, st, _, _ := ruledService(t)
 	_, err := svc.CreateApprovalRule(testPrincipalContext(), "project-1", services.CreateApprovalRuleBody{
@@ -1057,7 +1056,7 @@ func TestARuleDoesNotHandOnADelegation(t *testing.T) {
 	req := githubAsk(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
 		b.Purpose = serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate)
 	})
-	_, err = svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	_, err = approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		Policy: askedPolicy(t),
 		Rule:   serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{}),
 	})
@@ -1164,7 +1163,7 @@ func TestAGrantProposesTheRuleItsRequestWouldHave(t *testing.T) {
 	svc, st, judging, _ := ruledService(t)
 	judging.proposal = judge.Proposal{StatementsAnyTarget: []string{issueRule}}
 	req := githubAsk(t, svc, nil)
-	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		Policy: shownAs(t, workerPolicy(t, issueAsk)),
 	})
 	if err != nil || approved.GrantID == "" {
@@ -1197,12 +1196,15 @@ func TestAGrantProposesTheRuleItsRequestWouldHave(t *testing.T) {
 	}
 
 	// A grant of uses alone has no policy to propose from.
-	alone := githubAsk(t, svc, withoutPolicy)
-	usesOnly, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", alone.ID, services.ApproveSecretRequestBody{})
-	if err != nil {
-		t.Fatalf("approve uses alone: %v", err)
+	usesOnly := &model.SecretGrant{
+		ProjectID: "project-1", SecretID: approvedGrantSecret(t, st, approved.GrantID), Scope: model.SecretGrantScopeSandbox, ScopeKey: testSandboxID,
+		Hosts: []string{"github.com"}, GrantedBy: "user-1", EnvName: "GH_TOKEN", Purpose: model.SecretGrantPurposeUse,
+		Uses: []model.SecretUse{{UseID: "use-alone", Description: issueUse}},
 	}
-	if _, err := svc.ProposeApprovalRuleFromGrant(testPrincipalContext(), "project-1", usesOnly.GrantID); !isStatus(err, http.StatusBadRequest) {
+	if err := st.CreateSecretGrant(context.Background(), usesOnly); err != nil {
+		t.Fatalf("seed a grant of uses alone, as a server from before wrote one: %v", err)
+	}
+	if _, err := svc.ProposeApprovalRuleFromGrant(testPrincipalContext(), "project-1", usesOnly.ID); !isStatus(err, http.StatusBadRequest) {
 		t.Fatalf("propose from a grant of uses alone = %v, want 400", err)
 	}
 
@@ -1276,7 +1278,7 @@ func TestRequestsAreMarkedForTestingWhenFiledAndWhenARuleChanges(t *testing.T) {
 func TestAGrantMadeWithANewRuleIsFittedToItsCap(t *testing.T) {
 	svc, st, _, _ := ruledService(t)
 	req := githubAsk(t, svc, nil)
-	approved, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		Policy: askedPolicy(t),
 		Rule:   serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{MaxGrantTTLSeconds: serverapi.NewOptInt64(600)}),
 	})
@@ -1296,7 +1298,7 @@ func TestAutoApproveWithAnotherSecretThanTheMarkedOneIsRefused(t *testing.T) {
 	svc, st, _, _ := ruledService(t)
 	other := createBoundSecret(testPrincipalContext(), t, svc, "github-admin", "github.com", 3600)
 	req := githubAsk(t, svc, nil)
-	_, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{
+	_, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(other.ID),
 		Policy:   askedPolicy(t),
 		Rule:     serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{}),
@@ -1479,7 +1481,29 @@ func TestTheCardSaysWhyEachRuleDidNotCover(t *testing.T) {
 	}
 }
 
-// withoutPolicy is an ask with uses alone, which no rule answers.
-func withoutPolicy(b *services.CreateSandboxCredentialRequestBody) {
-	b.Policy = serverapi.OptAccessPolicy{}
+// usesAloneAsk is a pending ask for GitHub with uses alone, as a server from
+// before every request carried a policy filed one (#312): nothing files one
+// now, no rule answers one, and nobody approves one.
+func usesAloneAsk(t *testing.T, st *store.Store) *model.SecretRequest {
+	t.Helper()
+	req := &model.SecretRequest{
+		ProjectID: "project-1", RequestedBy: "agent:" + testSandboxID, SandboxID: testSandboxID,
+		Type: model.SecretTypeToken, Hosts: []string{"github.com"}, Name: "github", EnvName: "GH_TOKEN",
+		WellKnownID: wellknown.GitHubAPI, Uses: []model.SecretUse{{Description: issueUse}},
+		Purpose: model.SecretGrantPurposeUse, Status: model.SecretRequestStatusPending,
+	}
+	if err := st.CreateSecretRequest(context.Background(), req); err != nil {
+		t.Fatalf("seed an ask with uses alone: %v", err)
+	}
+	return req
+}
+
+// approvedGrantSecret is the secret a grant is of.
+func approvedGrantSecret(t *testing.T, st *store.Store, grantID string) string {
+	t.Helper()
+	grant, err := st.GetSecretGrant(context.Background(), "project-1", grantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return grant.SecretID
 }

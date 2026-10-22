@@ -56,6 +56,11 @@ by what it is looking for and is idempotent:
    (`retireApprovalRuleUses`, ADR 26-10-22-689 §5: a rule now carries a
    policy, and no code reads a sentence as one; its grants stand, as when a
    person deletes a rule; a rule with a policy is never touched),
+   deleting every agent grant — one with uses, or a delegation — and every
+   pending agent request that carries no policy, one logged line each, on
+   every start (`retireAgentGrantsWithoutPolicy`, #312: a grant an agent takes
+   now carries one; standing grants with no uses, which harnesses resolve
+   their secrets through, are never touched),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and

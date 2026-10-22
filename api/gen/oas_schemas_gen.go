@@ -762,13 +762,13 @@ type ApproveSecretRequestBody struct {
 	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy approved -- the one the request asked for, as read, or one in its place. A request that
-	// asks for a policy is refused an approval without one, so nothing is approved that was not sent. A
-	// discobox approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section
-	// 11). A person's resolved is the values they were shown, absent for none; each variable the
-	// approved policy uses, resolved for the requesting discobox, must resolve to exactly the value
-	// shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants
-	// nothing. A value shown for a variable the approved policy does not use is ignored.
+	// The policy approved -- the one the request asked for, as read, or one in its place. An agent's
+	// request is refused an approval without one, so nothing is approved that was not sent. A discobox
+	// approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section 11). A
+	// person's resolved is the values they were shown, absent for none; each variable the approved
+	// policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it,
+	// or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A
+	// value shown for a variable the approved policy does not use is ignored.
 	Policy OptAccessPolicy `json:"policy"`
 }
 
@@ -2048,7 +2048,8 @@ type CreateSandboxCredentialRequestBody struct {
 	SandboxId string `json:"sandboxId"`
 	// Uses the agent asks for.
 	Uses []SecretUse `json:"uses"`
-	// A policy the agent asks for, beside its uses (ADR 26-10-20-782).
+	// The policy the agent asks for, beside its uses (ADR 26-10-20-782). Required; a request without one
+	// is refused as invalid, with how to write one.
 	Policy OptAccessPolicy `json:"policy"`
 }
 
@@ -2833,8 +2834,9 @@ type CreateSecretGrantBody struct {
 	//  Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
-	// A policy for the grant (ADR 26-10-20-782). Its variables resolve only for a grant scoped to one
-	// sandbox; a project or harness config grant may carry a policy that uses none.
+	// The policy the grant carries (ADR 26-10-20-782). Required with uses, and refused without them. Its
+	// variables resolve only for a grant scoped to one sandbox; a project or harness config grant may
+	// carry a policy that uses none.
 	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do, one or the other and never both. use (the default)
 	// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
@@ -7966,10 +7968,10 @@ type JudgeJob struct {
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
-	// What a job is judged against in place of purpose, one entry each — for a delegation job the uses
-	// the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a
-	// command or request job under a grant that carries a policy, its statements as sentences, bound to
-	// the discobox asking.
+	// What a job is judged against in place of purpose, one entry each — for a delegation job the one
+	// delegated allow that covers the allow handed on but for its conditions, as its sentence; for a
+	// rule job the one allow of the rule, as its sentence; for a command or request job under a grant
+	// that carries a policy, its statements as sentences, bound to the discobox asking.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
@@ -7977,8 +7979,8 @@ type JudgeJob struct {
 	// body.
 	Round int64         `json:"round"`
 	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow
-	// it asked for, as its sentence, judged against purposes.
+	// For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one
+	// allow it asked for, as its sentence, judged against purposes.
 	Uses []string `json:"uses"`
 }
 
@@ -27994,8 +27996,9 @@ type SandboxGrant struct {
 	Hosts []string `json:"hosts"`
 	// What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
 	Uses []SecretUse `json:"uses"`
-	// A policy for the grant (ADR 26-10-20-782). Its variables resolve for the sandbox being created,
-	// not the discobox creating it.
+	// The policy the grant carries (ADR 26-10-20-782), which every grant with uses must; it is what is
+	// enforced, and its uses name the job. Its variables resolve for the sandbox being created, not the
+	// discobox creating it.
 	Policy OptAccessPolicy `json:"policy"`
 	// How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
@@ -31554,8 +31557,8 @@ type SecretGrant struct {
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
 	// The approved policy, with the value each of its variables resolved to for the sandbox the grant is
-	// for (ADR 26-10-20-782). A command or request under the grant is judged against it rather than
-	// against a use's sentence.
+	// for (ADR 26-10-20-782). Every grant with uses carries one. A command or request under the grant is
+	// judged against it rather than against a use's sentence.
 	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.
@@ -31563,6 +31566,10 @@ type SecretGrant struct {
 	// The approval rule the grant was minted under, when a rule approved the request rather than a
 	// person or a discobox (ADR 26-10-12-330). The grant is independent of the rule once made.
 	RuleId OptString `json:"ruleId"`
+	// The delegation grant a discobox handed this grant on under, when a discobox approved the request
+	// or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation
+	// that allowed it; the grant is independent of it once made.
+	DelegationId OptString `json:"delegationId"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Expiry time; empty never expires.
@@ -31616,6 +31623,11 @@ func (s *SecretGrant) GetPurpose() SecretGrantPurpose {
 // GetRuleId returns the value of RuleId.
 func (s *SecretGrant) GetRuleId() OptString {
 	return s.RuleId
+}
+
+// GetDelegationId returns the value of DelegationId.
+func (s *SecretGrant) GetDelegationId() OptString {
+	return s.DelegationId
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -31701,6 +31713,11 @@ func (s *SecretGrant) SetPurpose(val SecretGrantPurpose) {
 // SetRuleId sets the value of RuleId.
 func (s *SecretGrant) SetRuleId(val OptString) {
 	s.RuleId = val
+}
+
+// SetDelegationId sets the value of DelegationId.
+func (s *SecretGrant) SetDelegationId(val OptString) {
+	s.DelegationId = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.

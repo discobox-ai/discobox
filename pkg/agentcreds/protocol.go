@@ -206,10 +206,19 @@ type RequestBody struct {
 	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
 	Purpose         string         `json:"purpose,omitempty"`
 	// Policy is what the agent asks the credential to authorize, as
-	// statements, beside its uses (ADR 26-10-20-782 §1). An implementation
-	// refuses one that does not validate.
+	// statements, beside its uses (ADR 26-10-20-782 §1). Every ask carries
+	// one: it is what the grant enforces, and the uses name the job. An
+	// implementation refuses an ask without one, or with one that does not
+	// validate, as invalid; without one, with NoPolicyAsked.
 	Policy *policy.Policy `json:"policy,omitempty"`
 }
+
+// NoPolicyAsked is the refusal of an ask that carries no policy, in the
+// protocol's own words: what a policy is and what it is made of. An
+// implementation and a client each add how their caller writes one.
+const NoPolicyAsked = "a credential request asks for a policy beside its uses: statements of exactly what the job may do and must never do, " +
+	"each allow or deny of actions on a resource in a scope, which are what its grant enforces; the uses only name the job. " +
+	"Every word a statement uses but read, create, update, delete, manage, anything and anywhere carries a definition"
 
 // RequestStatus is what request and its poll both answer with. Uses is
 // populated once granted, and is authoritative over the requested uses: the

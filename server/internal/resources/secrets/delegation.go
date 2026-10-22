@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -41,6 +42,23 @@ func (s *Service) guardPurpose(ctx context.Context, projectID, scope, scopeKey s
 	}
 	if _, err := s.store.GetSandbox(ctx, projectID, scopeKey); err != nil {
 		return apperrors.NotFound(err, "sandbox not found")
+	}
+	return nil
+}
+
+// guardPolicy holds a grant's uses and policy together (#312, ADR 26-10-20-782
+// §1): a grant an agent takes through discobox-access — one with uses, a
+// delegation among them — carries the policy that is enforced, and its uses
+// only name the job; a grant without uses hands its sentinel's value to any
+// request, which no policy narrows. It runs wherever a grant is built:
+// mintGrantAs, and PrepareSandboxGrants for a create's.
+func guardPolicy(uses []model.SecretUse, granted *policy.Policy) error {
+	switch {
+	case len(uses) > 0 && granted == nil:
+		return apperrors.NewStatusError(http.StatusBadRequest,
+			"a grant with uses carries a policy: statements of exactly what it may do, which are what is enforced (`--statement` and `--define` on the CLI)")
+	case len(uses) == 0 && granted != nil:
+		return apperrors.NewStatusError(http.StatusBadRequest, "a policy is granted only beside uses")
 	}
 	return nil
 }

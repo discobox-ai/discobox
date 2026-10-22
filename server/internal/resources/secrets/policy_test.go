@@ -1,6 +1,7 @@
 package secrets_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -48,6 +49,26 @@ func apiPolicy(t *testing.T, p policy.Policy) serverapi.OptAccessPolicy {
 	return out
 }
 
+// policyAsked is the policy a discobox asks for in these tests, and a grant
+// with uses carries: it names no variable, so it holds at every scope.
+func policyAsked(t *testing.T) serverapi.OptAccessPolicy {
+	t.Helper()
+	return apiPolicy(t, handedOnPolicy())
+}
+
+// approveAsAsked approves a request as a person does with
+// `approve --policy-as-asked`: when the input names no policy, it sends the
+// one the request asks for, as reading the request shows it, resolved.
+func approveAsAsked(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
+	t.Helper()
+	if !input.Policy.IsSet() {
+		if read, err := svc.GetSecretRequest(ctx, projectID, requestID); err == nil && read.Policy != nil {
+			input.Policy = apiPolicy(t, *read.Policy)
+		}
+	}
+	return svc.ApproveSecretRequest(ctx, projectID, requestID, input)
+}
+
 func wantStatus(t *testing.T, err error, status int, says string) {
 	t.Helper()
 	var statusErr interface{ StatusCode() int }
@@ -88,7 +109,7 @@ func TestAPolicyRoundTripsFromRequestToGrant(t *testing.T) {
 	want := map[string]string{policy.VarPrimaryRepo: "acme/web", policy.VarThis: testSandboxID}
 	shown := asked
 	shown.Resolved = want
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, shown),
 	})
 	if err != nil {
@@ -171,7 +192,7 @@ func TestASandboxIsShownTheValuesItsPolicyResolvesTo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, *read.Policy),
 	})
 	if err != nil {
@@ -200,7 +221,8 @@ func TestAnotherPolicyIsAnotherRequest(t *testing.T) {
 	ask := func(p *policy.Policy) string {
 		body := services.CreateSandboxCredentialRequestBody{
 			SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
-			Uses: []apimodel.SecretUse{{Description: "open a pull request"}},
+			Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
+			Policy: policyAsked(t),
 		}
 		if p != nil {
 			body.Policy = apiPolicy(t, *p)
@@ -284,7 +306,7 @@ func TestTheApproverMayEditThePolicy(t *testing.T) {
 	// The edit names the repository rather than $primary.repo, which was
 	// shown and no longer counts.
 	narrowed.Statements[0].Scope.Name = "acme/web"
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, narrowed),
 	})
 	if err != nil {
@@ -398,20 +420,17 @@ func TestAReadRequestShowsWhatItsVariablesResolveTo(t *testing.T) {
 	}
 }
 
-// A request that asks for uses alone is a person's to approve each time: no
-// rule is proposed or made from it, since a rule's policy is what a
-// request's is held to, and uses alone have none.
+// A request that asks for uses alone, as a server from before #312 filed one,
+// is approved by nobody: a grant an agent takes carries a policy. No rule is
+// proposed or made from it either, since a rule's policy is what a request's
+// is held to, and uses alone have none. It is answered by being denied.
 func TestNoRuleIsMadeFromARequestWithUsesAlone(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
-	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
-		Uses: []apimodel.SecretUse{{Description: "open a pull request"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	req := usesAloneAsk(t, st)
+	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	wantStatus(t, err, http.StatusBadRequest, "asks for uses alone, and a grant an agent takes carries a policy")
 	_, err = svc.ProposeApprovalRules(ctx, "project-1", req.ID)
 	wantStatus(t, err, http.StatusBadRequest, "asks for uses alone")
 	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
@@ -447,7 +466,7 @@ func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
 	} {
 		sent := asked
 		sent.Resolved = shown
-		_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		_, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 			SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, sent),
 		})
 		if err == nil {
@@ -464,7 +483,7 @@ func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	if _, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, *read.Policy),
 	}); err != nil {
 		t.Fatalf("approving what the read showed: %v", err)
@@ -474,11 +493,11 @@ func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
 // A rule holds a request's policy to its own, so only a request that carries
 // a policy is put to one, and one with uses alone never is (ADR 26-10-22-689).
 func TestARuleTestsOnlyARequestWithAPolicy(t *testing.T) {
-	svc, _ := newAgentCredentialService(t)
+	svc, st := newAgentCredentialService(t)
 	if req := workerRequest(t, svc, nil); !resourcesecrets.RuleTestable(req) {
 		t.Fatal("a request carrying a policy is never put to a rule")
 	}
-	if req := workerRequest(t, svc, withoutPolicy); resourcesecrets.RuleTestable(req) {
+	if req := usesAloneAsk(t, st); resourcesecrets.RuleTestable(req) {
 		t.Fatal("a request with uses alone may be approved by a rule")
 	}
 }
@@ -538,8 +557,48 @@ func TestAGrantWhosePolicyBoundIsTooLargeToJudgeIsRefused(t *testing.T) {
 	}
 	shown := asked
 	shown.Resolved = map[string]string{policy.VarPrimaryRepo: repo}
-	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	_, err = approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, shown),
 	})
 	wantStatus(t, err, http.StatusBadRequest, "more than the 8192 a judge may be shown")
+}
+
+// Every grant an agent takes carries a policy (#312), so nothing asks for or
+// mints one with uses alone: an agent's request without a policy is refused
+// with how to write one, and so are a person's grant with uses and a create's
+// grant that carry none.
+func TestUsesAloneAreNeverAskedForOrGranted(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+
+	_, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
+		Uses: []apimodel.SecretUse{{Description: "open a pull request"}},
+	})
+	wantStatus(t, err, http.StatusBadRequest, "asks for a policy beside its uses")
+	for _, teaches := range []string{"carries a definition", "discobox-access request --help", "discobox-access facts"} {
+		if !strings.Contains(err.Error(), teaches) {
+			t.Errorf("refusal %q does not say %q", err, teaches)
+		}
+	}
+	if pending, err := st.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending); err != nil || len(pending) != 0 {
+		t.Fatalf("pending = %+v, %v, want nothing filed", pending, err)
+	}
+
+	_, err = svc.CreateSecretGrant(ctx, "project-1", services.CreateSecretGrantBody{
+		SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox, ScopeKey: serverapi.NewOptString(testSandboxID),
+		Hosts: []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GITHUB_TOKEN"),
+		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "open a pull request"}}),
+	})
+	wantStatus(t, err, http.StatusBadRequest, "a grant with uses carries a policy")
+
+	_, err = svc.PrepareSandboxGrants(ctx, "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
+		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
+		Uses: []apimodel.SecretUse{{Description: "open a pull request"}},
+	}})
+	wantStatus(t, err, http.StatusBadRequest, "a grant with uses carries a policy")
+	if grants, err := st.ListSecretGrants(ctx, "project-1", "", ""); err != nil || len(grants) != 0 {
+		t.Fatalf("grants = %+v, %v, want none minted", grants, err)
+	}
 }

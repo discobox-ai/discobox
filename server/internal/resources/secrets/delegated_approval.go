@@ -22,8 +22,8 @@ import (
 // bound — which credential, where it may go, for how long, and for what — held
 // against the live delegation grants the approver holds. At least one must
 // hold all of them, and the approval is made under that one: of the
-// delegations that hold the facts, the longest-lived the judge finds the uses
-// within. It is checked again by its ID in the approval's transaction, and is
+// delegations that hold the facts, the longest-lived whose policy the one
+// handed on is within (delegationCovering). It is checked again by its ID in the approval's transaction, and is
 // the grant every later question about the approval — what the verdict
 // records, how long the grant lasts — is asked of.
 
@@ -35,11 +35,12 @@ func refuseDelegatedApproval(req *model.SecretRequest) error {
 			"a discobox never approves a request to delegate: handing on the power to hand on is a person's to approve")
 	}
 	// A request the proxy opened on meeting a sentinel it could not resolve
-	// names no uses, and a grant with none authorizes everything sent to its
-	// host — nothing a delegation's uses could be said to contain.
+	// names no uses and asks for no policy, and a grant with none authorizes
+	// everything sent to its host — nothing a delegation's policy could be
+	// said to contain.
 	if !req.FromProtocol() {
 		return apperrors.NewStatusError(http.StatusForbidden,
-			"a discobox approves only a request that names its uses; this one is a person's to answer")
+			"a discobox approves only an agent's request, which asks for a policy; this one is a person's to answer")
 	}
 	return nil
 }
@@ -52,9 +53,9 @@ func refuseDelegatedApproval(req *model.SecretRequest) error {
 // delegated; when that is more than one secret, it names which.
 //
 // Of that secret's delegations, those a grant's lifetime fits are returned
-// (delegationsFitting); which of them the approval is made under is the
-// judge's to settle, by which of their uses hold the request's
-// (judgeDelegations). ttl is the lifetime named, and is read only when named.
+// (delegationsFitting); which of them the approval is made under is settled
+// by which of their policies hold the one approved (delegationCovering). ttl
+// is the lifetime named, and is read only when named.
 func (s *Service) delegationsFor(ctx context.Context, projectID, approverID string, req *model.SecretRequest, chosenID string, hosts []string, ttl int64, named bool) ([]*model.SecretGrant, *model.Secret, error) {
 	delegations, err := s.store.ListLiveDelegationGrants(ctx, projectID, approverID)
 	if err != nil {
@@ -124,11 +125,11 @@ func (s *Service) delegationsFor(ctx context.Context, projectID, approverID stri
 // delegationsFitting are the delegations, of those that hold a grant's secret
 // and hosts, its lifetime fits: one the grantor named must end no later than
 // the delegation, and one it did not is fitted to what the delegation has left,
-// which must be something. They are the ones the judge is asked about, longest-
+// which must be something. They are the ones a policy is held to, longest-
 // lived first — the order a grant prefers them in, since one made under a
-// delegation that lasts longer may last longer. Of delegations whose uses say
-// the same, only the longest-lived is kept: the judge would be asked the same
-// question of each, and only that one could be chosen.
+// delegation that lasts longer may last longer. Of delegations whose policies
+// say the same, only the longest-lived is kept: each would be held to the
+// same comparison, and only that one could be chosen.
 func delegationsFitting(delegations []*model.SecretGrant, ttl int64, named bool) ([]*model.SecretGrant, error) {
 	now := time.Now().UTC()
 	var fitting []*model.SecretGrant
@@ -152,7 +153,7 @@ func delegationsFitting(delegations []*model.SecretGrant, ttl int64, named bool)
 	var out []*model.SecretGrant
 	for _, delegation := range fitting {
 		if !slices.ContainsFunc(out, func(kept *model.SecretGrant) bool {
-			return slices.Equal(useDescriptions(kept.Uses), useDescriptions(delegation.Uses))
+			return samePolicy(kept.Policy, delegation.Policy)
 		}) {
 			out = append(out, delegation)
 		}
@@ -206,7 +207,7 @@ func delegatedTTL(ctx context.Context, txStore *store.Store, projectID, approver
 
 // heldDelegation reads the delegation a grant was chosen under again, and
 // reports whether it still bounds it: still the grantor's delegation, live, of
-// the same secret, covering the hosts, with the uses the judge read.
+// the same secret, covering the hosts, with the policy the hand-off was held to.
 func heldDelegation(ctx context.Context, txStore *store.Store, projectID, approverID string, chosen *model.SecretGrant, secretID string, hosts []string, now time.Time) (*model.SecretGrant, bool) {
 	delegation, err := txStore.GetSecretGrant(ctx, projectID, chosen.ID)
 	if err != nil {
@@ -215,7 +216,7 @@ func heldDelegation(ctx context.Context, txStore *store.Store, projectID, approv
 	if delegation.Purpose != model.SecretGrantPurposeDelegate || delegation.Scope != model.SecretGrantScopeSandbox ||
 		delegation.ScopeKey != approverID || delegation.SecretID != secretID || !hostscope.CoversEvery(delegation.Hosts, hosts) ||
 		(delegation.ExpiresAt != nil && !delegation.ExpiresAt.After(now)) ||
-		!slices.Equal(useDescriptions(delegation.Uses), useDescriptions(chosen.Uses)) {
+		!samePolicy(delegation.Policy, chosen.Policy) {
 		return nil, false
 	}
 	return delegation, true
@@ -237,85 +238,6 @@ func fitTTL(delegation *model.SecretGrant, ttl int64, now time.Time) (int64, err
 		return remaining, nil
 	}
 	return ttl, nil
-}
-
-// judgeDelegations asks the project's judge whether the uses a discobox is
-// about to hand on fall within the uses of each delegation it may hand them on
-// under, and returns the one the grant is made under: the first of delegations
-// — longest-lived first, as delegationsFitting orders them — the judge says
-// yes to (ADR 26-09-30-782 §3). One is enough; the uses are never read against
-// several delegations' together, since the grant is bounded by, held to, and
-// traced to one.
-//
-// The delegations are asked about one after another, and the first yes ends
-// it: each answer is recorded against the delegation it was asked of, so the
-// one allow verdict an approval leaves is the delegation it was made under,
-// and a judge shared with every request in the project is asked no more than
-// the choice needs. The asks share one deadline (services.DelegationBound), as
-// the rounds of one request do, so together they fit inside the pool gate's
-// two minutes; one asked when it has run out is one the judge could not answer.
-//
-// No judge, a judge that cannot answer, and a judge that asks for something it
-// cannot be shown all refuse: the request then waits for a person. A judge
-// that could not answer about some delegation, when none was found to hold the
-// uses, is the refusal given, since that one might have.
-//
-// requestID is the request being approved, empty for a grant given on a
-// create; forSandbox is the discobox the uses go to either way, as it was
-// created — not yet stored, on a create.
-func (s *Service) judgeDelegations(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, credential string, hosts []string, uses []model.SecretUse, requestID string, forSandbox *model.Sandbox) (*model.SecretGrant, error) {
-	if s.judge == nil {
-		return nil, apperrors.NewStatusError(http.StatusForbidden,
-			"no judge can say whether these uses are within what this discobox was delegated, so it hands nothing on; leave it for a person")
-	}
-	ctx, cancel := context.WithTimeout(ctx, services.DelegationBound)
-	defer cancel()
-	var reasons []string
-	var unanswered error
-	for _, delegation := range delegations {
-		answer, err := s.judge.JudgeDelegation(ctx, projectID, services.DelegationAsk{
-			ApproverID:        approverID,
-			RequestID:         requestID,
-			For:               forSandbox,
-			DelegationGrantID: delegation.ID,
-			Delegated:         useDescriptions(delegation.Uses),
-			Uses:              useDescriptions(uses),
-			Credential:        credential,
-			Hosts:             hosts,
-		})
-		switch {
-		case err != nil:
-			if unanswered == nil {
-				unanswered = err
-			}
-		case answer.Decided() && answer.Allow:
-			return delegation, nil
-		default:
-			reason := strings.TrimSpace(answer.Reason)
-			if reason == "" {
-				reason = "it gave no reason"
-			}
-			if len(delegations) > 1 {
-				reason = "under " + delegation.ID + ", " + reason
-			}
-			reasons = append(reasons, reason)
-		}
-	}
-	if unanswered != nil {
-		return nil, unanswered
-	}
-	return nil, apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf(
-		"the judge did not find these uses within what this discobox was delegated: %s; narrow them, or leave it for a person", strings.Join(reasons, "; ")))
-}
-
-// useDescriptions is what a list of uses says, in order: the sentences a
-// person approved, which is all a judge reads of them.
-func useDescriptions(uses []model.SecretUse) []string {
-	out := make([]string, 0, len(uses))
-	for _, use := range uses {
-		out = append(out, use.Description)
-	}
-	return out
 }
 
 // lifetimeOrder compares two delegations by how long a grant made under them
@@ -351,31 +273,35 @@ func lapsingDelegation() error {
 		"the delegation grant this would be made under is lapsing, with nothing left to hand on; leave it for a person")
 }
 
-// delegationsCovering are those of delegations a policy may be handed on
-// under (ADR 26-10-20-782 §11): ones that carry a policy the given one is
-// within, as code compares them, the given policy as it resolves for forSandbox
-// and each delegation's as it is bound now for the discobox holding it. Where
-// code leaves an allow's conditions unsettled, the judge is asked whether
-// they are within the delegated ones, as it is about uses; no judge, or no
-// answer, hands nothing on. A hand-off with no policy keeps every delegation,
-// and its uses alone are judged, as before policies: agents cannot write a
-// policy until discobox-access can (#297), so until then a hand-off of uses
-// alone is not bound by a delegation's allows and denies.
+// delegationCovering is the delegation a policy is handed on under (ADR
+// 26-10-20-782 §11): the first of delegations — longest-lived first, as
+// delegationsFitting orders them — whose own policy the given one is within,
+// as code compares them, the given policy as it resolves for forSandbox and
+// each delegation's as it is bound now for the discobox holding it. Where code
+// leaves an allow's conditions unsettled, the judge is asked whether they are
+// within the delegated ones; no judge, or no answer, hands nothing on. The
+// policy is what is enforced, so it alone bounds a hand-off: the uses ride
+// along as the job's name, and are not judged (#312).
 //
-// Which of those the hand-off is made under is still the uses' judging to
-// settle (judgeDelegations), so a delegation that covers the policy but not
-// the uses hands nothing on either.
-func (s *Service) delegationsCovering(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, given *policy.Policy, forSandbox *model.Sandbox, requestID, credential string, hosts []string) ([]*model.SecretGrant, error) {
-	if given == nil {
-		return delegations, nil
-	}
+// The delegations are tried one after another, and the first that covers
+// ends it: each condition answer is recorded against the delegation it was
+// asked of, so the verdicts an approval leaves name the delegation it was made
+// under, and a judge shared with every request in the project is asked no more
+// than the choice needs. The caller bounds the asks together
+// (services.DelegationBound), so they fit inside the pool gate's two minutes.
+// A judge that could not answer about some delegation, when none covered, is
+// the refusal given, since that one might have.
+//
+// requestID is the request being approved, empty for a grant given on a
+// create; forSandbox is the discobox the policy goes to either way, as it was
+// created — not yet stored, on a create.
+func (s *Service) delegationCovering(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, given *policy.Policy, forSandbox *model.Sandbox, requestID, credential string, hosts []string) (*model.SecretGrant, error) {
 	holder, err := s.store.GetSandbox(ctx, projectID, approverID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "the discobox handing the policy on was not found")
 	}
 	holderFacts := holder.PolicyFacts()
 	givenValues := given.Resolve(forSandbox.PolicyFacts()).Resolved
-	var kept []*model.SecretGrant
 	var reasons []string
 	var unanswered error
 	for _, delegation := range delegations {
@@ -403,11 +329,8 @@ func (s *Service) delegationsCovering(ctx context.Context, projectID, approverID
 		case reason != "":
 			reasons = append(reasons, "under "+delegation.ID+", "+reason)
 		default:
-			kept = append(kept, delegation)
+			return delegation, nil
 		}
-	}
-	if len(kept) > 0 {
-		return kept, nil
 	}
 	if unanswered != nil {
 		return nil, unanswered
@@ -428,7 +351,7 @@ func (s *Service) judgeConditions(ctx context.Context, projectID, approverID str
 	if s.judge == nil {
 		return "no judge can say whether its conditions are within the delegation's", nil
 	}
-	// The caller bounds this with the uses' judging, under one
+	// The caller bounds every delegation's asks under one
 	// services.DelegationBound.
 	for _, u := range unsettled {
 		within := false

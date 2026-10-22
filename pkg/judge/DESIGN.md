@@ -10,7 +10,7 @@ it.
 
 | File | What it holds |
 | --- | --- |
-| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: the uses it would grant, judged against the uses it was delegated — or, for a policy, one statement it would grant against a delegated statement that covers it but for its conditions, as their sentences resolved, ADR 26-10-20-782 §11), or an approval rule's reading (`rule`: one allow a request asked for against one of the rule's that covers it but for its conditions, as their sentences bound for the discobox that asked) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found; `UnderPolicy`, which builds a command or request job from a grant's policy bound to the discobox asking, `ErrPolicyAllowsNothing`, and `MaxPolicyBytes` and `PolicyFits`, the most of a policy a job can carry. |
+| `judge.go` | `Job` — a command (its argv, the `Stdin` it will read and where the discobox `Reported` it runs), an observed request, a delegation (a discobox about to hand a credential on: one statement it would grant against a delegated statement that covers it but for its conditions, as their sentences resolved, ADR 26-10-20-782 §11; the job still reads them as lists of uses, its shape from before every hand-off carried a policy), or an approval rule's reading (`rule`: one allow a request asked for against one of the rule's that covers it but for its conditions, as their sentences bound for the discobox that asked) — its bounds, the JSON prompt it becomes, and `Digest`, by which a question already answered is found; `UnderPolicy`, which builds a command or request job from a grant's policy bound to the discobox asking, `ErrPolicyAllowsNothing`, and `MaxPolicyBytes` and `PolicyFits`, the most of a policy a job can carry. |
 | `rule.go` | `RuleProblem`, `HoldToRule` and `WrittenPolicy`: what an approval rule's policy may be, a request's policy held to a rule's (`policy.Within`, and the rule jobs for the conditions it leaves open), and the policy a proposal's sentences say, with the source's definitions (ADR 26-10-22-689). The control plane and the judge evals both call them. |
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the statements a person starts an approval rule's policy from — the same work on any target of its kind, as sentences. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
@@ -95,16 +95,17 @@ under different allows, as a push of a branch and its tag — and no part under
 any deny, which wins. `System` says so to the judge discobox in one answer;
 Jev is asked the two as questions of their own (below).
 
-**A use that drops a limit is wider** (ADR 26-10-14-223). A delegation
-job's purposes
-set limits — "never main", a closing "Never …" sentence — and once granted a
-use is all its commands are held to. So `System` tells the judge that a use
-keeps every limit of the purpose it falls under, in the same or stricter words,
-or it is not within, however narrow it is otherwise; Jev asks it as a
-question of its own (below). Without that, a use asked with its limits left
-out read as within (measured in `test/judge-evals/use-cases`, the
-`*-without-its-lines` controls), and a rule would mint it with nobody
-looking.
+**A purpose's limits are kept** (ADR 26-10-14-223). A delegation job's
+purposes may set limits — a "Never …" sentence, a condition — so `System`
+tells the judge that what is asked keeps every limit of the purpose it falls
+under, in the same or stricter words, or it is not within, however narrow it
+is otherwise; Jev asks it as a question of its own (below). Without that, an
+ask with its limits left out read as within (measured in
+`test/judge-evals/use-cases`, the `*-without-its-lines` controls). The server
+asks a delegation job only of one allow handed on against one delegated
+allow that covers it but for its conditions (ADR 26-10-20-782 §11); the uses
+handed on are not judged, and the policy, not a use, is what a grant's
+commands are held to.
 
 **A rule's conditions are read as a job with its own words** (`rule`,
 ADR 26-10-12-330; ADR 26-10-22-689).

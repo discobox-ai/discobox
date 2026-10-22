@@ -3,7 +3,6 @@ package secrets_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -80,18 +79,10 @@ func asLead() context.Context {
 // lifetime (none when zero), as a person approving its ask to delegate does.
 func delegate(t *testing.T, st *store.Store, secret *model.Secret, host string, lifetime time.Duration) *model.SecretGrant {
 	t.Helper()
-	return delegateFor(t, st, secret, host, lifetime, "read issues, for the discoboxes I create")
-}
-
-// delegateFor is delegate, for the uses given.
-func delegateFor(t *testing.T, st *store.Store, secret *model.Secret, host string, lifetime time.Duration, uses ...string) *model.SecretGrant {
-	t.Helper()
 	grant := &model.SecretGrant{
 		ProjectID: "project-1", SecretID: secret.ID, Scope: model.SecretGrantScopeSandbox, ScopeKey: leadID,
 		Hosts: []string{host}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
-	}
-	for i, use := range uses {
-		grant.Uses = append(grant.Uses, model.SecretUse{UseID: fmt.Sprintf("use-delegated-%d", i), Description: use})
+		Uses: []model.SecretUse{{UseID: "use-delegated", Description: "read issues, for the discoboxes I create"}},
 	}
 	// A discobox hands a credential on only as a policy within its
 	// delegation's (ADR 26-10-20-782 §11), so every delegation here carries
@@ -409,58 +400,39 @@ func TestASecretNotDelegatedAnswersAsIfItDidNotExist(t *testing.T) {
 	}
 }
 
-// Whether the uses handed on fall within the delegation's is the judge's to
-// say, asked with the delegation it approves under and the uses it would grant
-// — narrowed, when the approver narrowed them. A refusal, or no judge at all,
-// refuses the approval (ADR 26-09-30-782 §3).
-func TestADiscoboxHandsOnOnlyUsesTheJudgeFindsWithinItsDelegation(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegation := delegate(t, st, secret, "github.com", time.Hour)
-
-	judging := &delegationJudge{allow: true}
-	svc.SetJudge(judging)
-	narrowed := []apimodel.SecretUse{{Description: "gh api GET repos/org/repo/issues/43"}}
-	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{
-		Uses: serverapi.NewOptNilSecretUseArray(narrowed),
-	}); err != nil {
-		t.Fatalf("approve what the judge allows: %v", err)
-	}
-	if len(judging.asks()) != 1 {
-		t.Fatalf("judge asked %d times, want once", len(judging.asks()))
-	}
-	asked := judging.asks()[0]
-	if asked.ApproverID != leadID || asked.RequestID == "" || asked.DelegationGrantID != delegation.ID ||
-		len(asked.Delegated) != 1 || asked.Delegated[0] != delegation.Uses[0].Description ||
-		len(asked.Uses) != 1 || asked.Uses[0] != narrowed[0].Description || !slices.Equal(asked.Hosts, []string{"api.github.com"}) {
-		t.Fatalf("asked = %+v, want the delegation it approves under and the narrowed use", asked)
-	}
-
-	svc.SetJudge(&delegationJudge{allow: false})
-	_, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{})
-	requireStatus(t, err, http.StatusForbidden)
-
-	svc.SetJudge(nil)
-	_, err = approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{})
-	requireStatus(t, err, http.StatusForbidden)
-}
-
-// A delegation whose uses changed after the judge read them is not the one
-// the approval was judged under, and the transaction refuses it.
+// A delegation whose policy changed after the hand-off was held to it is not
+// the one the approval was made under, and the transaction refuses it. The
+// conditions differ, so the judge is asked, and the policy changes between
+// its answer and the transaction.
 func TestADelegationChangedAfterJudgingIsNotApprovedUnder(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegation := delegate(t, st, secret, "github.com", time.Hour)
+	delegation := delegatePolicy(t, st, secret, "github.com", conditionalDelegated)
 	svc.SetJudge(judgeThen(func() {
-		delegation.Uses = []model.SecretUse{{UseID: "use-wider", Description: "anything on github"}}
+		wider := workerPolicy(t, `allow manage on anything in repository "acme/web"`).Resolve(policy.Facts{Discobox: policy.Discobox{ID: leadID}})
+		delegation.Policy = &wider
 		if err := st.UpdateSecretGrant(context.Background(), delegation); err != nil {
 			t.Errorf("widen delegation: %v", err)
 		}
 	}))
-	_, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{})
+	_, err := approveAsLead(svc, conditionalAsk(t, svc), services.ApproveSecretRequestBody{})
 	requireStatus(t, err, http.StatusForbidden)
+}
+
+// conditionalDelegated is an allow with a condition, and conditionalAsked
+// the same allow with another: code leaves the two conditions to the judge.
+const (
+	conditionalDelegated = `allow update on pull request in repository "acme/web" when "its base is main"`
+	conditionalAsked     = `allow update on pull request in repository "acme/web" when "its base is main and it is ready"`
+)
+
+// conditionalAsk is a worker asking for conditionalAsked.
+func conditionalAsk(t *testing.T, svc *resourcesecrets.Service) *model.SecretRequest {
+	t.Helper()
+	return workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
+		b.Policy = apiPolicy(t, workerPolicy(t, conditionalAsked))
+	})
 }
 
 // judgeThen allows, after doing something between the judge's answer and the
@@ -584,18 +556,20 @@ func TestADelegationWithNothingLeftHandsNothingOn(t *testing.T) {
 	requireStatus(t, err, http.StatusForbidden)
 }
 
-// Every grant a create gives is put to the judge, at once rather than one
-// after another, and one refusal refuses them all.
+// Every grant a create gives whose conditions code leaves unsettled is put to
+// the judge, at once rather than one after another, and one refusal refuses
+// them all.
 func TestEachGrantACreateGivesIsJudged(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
-	delegate(t, st, secret, "github.com", time.Hour)
+	delegatePolicy(t, st, secret, "github.com", conditionalDelegated)
+	given := apiPolicy(t, workerPolicy(t, conditionalAsked))
 	grants := []apimodel.SandboxGrant{
 		{SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 43"}}, Policy: apiPolicy(t, handedOnPolicy())},
+			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "update pull request 43"}}, Policy: given},
 		{SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "read issue 44"}}, Policy: apiPolicy(t, handedOnPolicy())},
+			Hosts: []string{"api.github.com"}, Uses: []apimodel.SecretUse{{Description: "update pull request 44"}}, Policy: given},
 	}
 	judging := &countingJudge{allow: true}
 	svc.SetJudge(judging)
@@ -630,83 +604,56 @@ func (j *countingJudge) JudgeDelegation(context.Context, string, services.Delega
 	return judge.Answer{Allow: j.allow, Reason: "decided"}, nil
 }
 
-// The issue's lead (#88): three delegations of one secret, each for other
-// uses, the one lapsing last for the narrowest. Each approval is made under a
-// delegation the judge finds its uses within — the longest-lived that holds
-// them, not the longest-lived it holds — and its lifetime is fitted to that one.
-func TestADiscoboxApprovesUnderADelegationThatHoldsTheUses(t *testing.T) {
+// The issue's lead (#88): three delegations of one secret, each with another
+// policy, the one lapsing last for the narrowest. Each approval is made under
+// a delegation whose policy holds the one handed on — the longest-lived that
+// holds it, not the longest-lived it holds — and its lifetime is fitted to
+// that one. Code decides each, so no judge is asked.
+func TestADiscoboxApprovesUnderADelegationThatHoldsThePolicy(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 2*86400)
-	push := delegateFor(t, st, secret, "github.com", time.Hour, "push a worker's discobox/issue-<n> branch")
-	rerun := delegateFor(t, st, secret, "github.com", 2*time.Hour, "push a worker's discobox/issue-<n> branch", "gh run rerun --failed")
-	copilot := delegateFor(t, st, secret, "github.com", 3*time.Hour, "request a Copilot review and read it")
-	judging := &delegationJudge{within: func(ask services.DelegationAsk) bool {
-		for _, use := range ask.Uses {
-			if !slices.Contains(ask.Delegated, use) {
-				return false
-			}
-		}
-		return true
-	}}
+	const (
+		push    = `allow push on branch "discobox/*" in repository "acme/web"`
+		rerun   = `allow rerun on workflow run in repository "acme/web"`
+		copilot = `allow create on review in repository "acme/web"`
+	)
+	pushing := delegatePolicyFor(t, st, secret, "github.com", time.Hour, push)
+	rerunning := delegatePolicyFor(t, st, secret, "github.com", 2*time.Hour, push, rerun)
+	reviewing := delegatePolicyFor(t, st, secret, "github.com", 3*time.Hour, copilot)
+	judging := &delegationJudge{allow: true}
 	svc.SetJudge(judging)
-	asking := func(use string) *model.SecretRequest {
+	asking := func(sentence string) *model.SecretRequest {
 		return workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
-			b.Uses = []apimodel.SecretUse{{Description: use}}
+			b.Policy = apiPolicy(t, workerPolicy(t, sentence))
 			b.GrantTTLSeconds = serverapi.NewOptInt64(24 * 3600)
 		})
 	}
-	// Each is asked about longest-lived first, and the first yes ends it, so
-	// the one allow verdict an approval leaves is the delegation it was made
-	// under.
-	madeUnder := func(use string, delegation *model.SecretGrant, asked ...*model.SecretGrant) {
+	madeUnder := func(sentence string, delegation *model.SecretGrant) {
 		t.Helper()
-		before := len(judging.asks())
-		approved, err := approveAsLead(svc, asking(use), services.ApproveSecretRequestBody{})
-		var askedOf []string
-		for _, ask := range judging.asks()[before:] {
-			askedOf = append(askedOf, ask.DelegationGrantID)
-		}
-		var want []string
-		for _, of := range asked {
-			want = append(want, of.ID)
-		}
-		if !slices.Equal(askedOf, want) {
-			t.Fatalf("approving %q asked about %v, want %v", use, askedOf, want)
-		}
+		approved, err := approveAsLead(svc, asking(sentence), services.ApproveSecretRequestBody{})
 		if err != nil {
-			t.Fatalf("approve %q: %v", use, err)
+			t.Fatalf("approve %q: %v", sentence, err)
 		}
 		grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
 		if err != nil {
 			t.Fatalf("get grant: %v", err)
 		}
 		if grant.ExpiresAt == nil || grant.ExpiresAt.After(*delegation.ExpiresAt) || delegation.ExpiresAt.Sub(*grant.ExpiresAt) > time.Minute {
-			t.Fatalf("grant of %q expires %v, want fitted to the delegation it is made under, lapsing %v", use, grant.ExpiresAt, delegation.ExpiresAt)
+			t.Fatalf("grant of %q expires %v, want fitted to the delegation it is made under, lapsing %v", sentence, grant.ExpiresAt, delegation.ExpiresAt)
 		}
 	}
-	madeUnder("gh run rerun --failed", rerun, copilot, rerun)
-	madeUnder("push a worker's discobox/issue-<n> branch", rerun, copilot, rerun)
-	madeUnder("request a Copilot review and read it", copilot, copilot)
-
-	// Each delegation asked about is asked of on its own: the uses are never
-	// read against several together.
-	for _, ask := range judging.asks() {
-		var of *model.SecretGrant
-		for _, delegation := range []*model.SecretGrant{push, rerun, copilot} {
-			if delegation.ID == ask.DelegationGrantID {
-				of = delegation
-			}
-		}
-		if of == nil || !slices.Equal(ask.Delegated, useDescriptions(of.Uses)) {
-			t.Fatalf("asked %+v, want one delegation's own uses", ask)
-		}
+	madeUnder(rerun, rerunning)
+	madeUnder(`allow push on branch "discobox/issue-43" in repository "acme/web"`, rerunning)
+	madeUnder(copilot, reviewing)
+	if asks := judging.asks(); len(asks) != 0 {
+		t.Fatalf("judge asked %+v, want nothing: code decides a policy with no conditions", asks)
 	}
 
-	// Uses none holds are refused, with why under each.
-	_, err := approveAsLead(svc, asking("push to main"), services.ApproveSecretRequestBody{})
+	// A policy none holds is refused, with why under each.
+	_, err := approveAsLead(svc, asking(`allow push on branch "main" in repository "acme/web"`), services.ApproveSecretRequestBody{})
 	requireStatus(t, err, http.StatusForbidden)
-	for _, delegation := range []*model.SecretGrant{push, rerun, copilot} {
+	for _, delegation := range []*model.SecretGrant{pushing, rerunning, reviewing} {
 		if !strings.Contains(err.Error(), delegation.ID) {
 			t.Fatalf("refusal %q does not say why under %s", err, delegation.ID)
 		}
@@ -714,41 +661,38 @@ func TestADiscoboxApprovesUnderADelegationThatHoldsTheUses(t *testing.T) {
 }
 
 // A lifetime the approver names is held to the delegations it fits: one it
-// outlasts is not asked about, and the grant is made under one it fits that
-// holds the uses — even when the one it outlasts would have held them too.
-func TestANamedLifetimeIsJudgedOnlyUnderDelegationsItFits(t *testing.T) {
+// outlasts is not held to, and the grant is made under one it fits whose
+// policy holds the one handed on — even when the one it outlasts would have
+// held it too.
+func TestANamedLifetimeIsHeldOnlyToDelegationsItFits(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 2*86400)
-	short := delegateFor(t, st, secret, "github.com", time.Hour, "read issue 43")
-	long := delegateFor(t, st, secret, "github.com", 3*time.Hour, "request a Copilot review and read it")
-	judging := &delegationJudge{within: func(ask services.DelegationAsk) bool { return ask.DelegationGrantID == short.ID }}
-	svc.SetJudge(judging)
+	short := delegatePolicyFor(t, st, secret, "github.com", time.Hour, `allow read on issue in repository "acme/web"`)
+	long := delegatePolicyFor(t, st, secret, "github.com", 3*time.Hour, `allow create on review in repository "acme/web"`)
 
 	_, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{GrantTTLSeconds: serverapi.NewOptInt64(2 * 3600)})
 	requireStatus(t, err, http.StatusForbidden)
-	for _, ask := range judging.asks() {
-		if ask.DelegationGrantID != long.ID {
-			t.Fatalf("asked about %s, which two hours outlasts", ask.DelegationGrantID)
-		}
+	if strings.Contains(err.Error(), short.ID) || !strings.Contains(err.Error(), long.ID) {
+		t.Fatalf("refusal %q, want it held to %s alone, which two hours does not outlast", err, long.ID)
 	}
 
 	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{GrantTTLSeconds: serverapi.NewOptInt64(1800)}); err != nil {
-		t.Fatalf("approve half an hour under the delegation that holds the uses: %v", err)
+		t.Fatalf("approve half an hour under the delegation that holds the policy: %v", err)
 	}
 }
 
-// Delegations whose uses say the same are one question: the judge is asked
-// once, of the longest-lived, which is the one the grant is made under.
-func TestDelegationsWithTheSameUsesAreJudgedOnce(t *testing.T) {
+// Delegations whose policies say the same are one question: the judge is
+// asked once, of the longest-lived, which is the one the grant is made under.
+func TestDelegationsWithTheSamePolicyAreJudgedOnce(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 2*86400)
-	delegate(t, st, secret, "github.com", time.Hour)
-	longest := delegate(t, st, secret, "github.com", 2*time.Hour)
+	delegatePolicyFor(t, st, secret, "github.com", time.Hour, conditionalDelegated)
+	longest := delegatePolicyFor(t, st, secret, "github.com", 2*time.Hour, conditionalDelegated)
 	judging := &delegationJudge{allow: true}
 	svc.SetJudge(judging)
-	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{}); err != nil {
+	if _, err := approveAsLead(svc, conditionalAsk(t, svc), services.ApproveSecretRequestBody{}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if asks := judging.asks(); len(asks) != 1 || asks[0].DelegationGrantID != longest.ID {
@@ -763,15 +707,15 @@ func TestADelegationTheJudgeCannotAnswerAboutLeavesTheOthers(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 2*86400)
-	unreachable := delegateFor(t, st, secret, "github.com", 2*time.Hour, "request a Copilot review and read it")
-	delegate(t, st, secret, "github.com", time.Hour)
+	unreachable := delegatePolicyFor(t, st, secret, "github.com", 2*time.Hour, conditionalDelegated)
+	delegatePolicyFor(t, st, secret, "github.com", time.Hour, `allow update on pull request in repository "acme/web" when "its base is main or develop"`)
 	unavailable := errors.New("the judge did not answer")
 	svc.SetJudge(&errorUnderJudge{delegationID: unreachable.ID, err: unavailable, allow: true})
-	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{}); err != nil {
+	if _, err := approveAsLead(svc, conditionalAsk(t, svc), services.ApproveSecretRequestBody{}); err != nil {
 		t.Fatalf("approve under the delegation the judge answered about: %v", err)
 	}
 	svc.SetJudge(&errorUnderJudge{delegationID: unreachable.ID, err: unavailable})
-	if _, err := approveAsLead(svc, workerRequest(t, svc, nil), services.ApproveSecretRequestBody{}); !errors.Is(err, unavailable) {
+	if _, err := approveAsLead(svc, conditionalAsk(t, svc), services.ApproveSecretRequestBody{}); !errors.Is(err, unavailable) {
 		t.Fatalf("approve = %v, want the judge's failure to answer", err)
 	}
 }
@@ -800,16 +744,15 @@ func (j *errorUnderJudge) JudgeDelegation(_ context.Context, _ string, ask servi
 	return judge.Answer{Allow: j.allow, Reason: "decided"}, nil
 }
 
-// A grant a discobox gives on a create is made under a delegation that holds
-// its uses, as an approval is, and a lifetime it did not name is fitted to
-// that one rather than to the longest-lived it holds.
-func TestACreatesGrantIsMadeUnderADelegationThatHoldsItsUses(t *testing.T) {
+// A grant a discobox gives on a create is made under a delegation whose
+// policy holds its policy, as an approval is, and a lifetime it did not name
+// is fitted to that one rather than to the longest-lived it holds.
+func TestACreatesGrantIsMadeUnderADelegationThatHoldsItsPolicy(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 2*86400)
-	holds := delegateFor(t, st, secret, "github.com", time.Hour, "read issue 43")
-	delegateFor(t, st, secret, "github.com", 3*time.Hour, "request a Copilot review and read it")
-	svc.SetJudge(&delegationJudge{within: func(ask services.DelegationAsk) bool { return ask.DelegationGrantID == holds.ID }})
+	holds := delegatePolicyFor(t, st, secret, "github.com", time.Hour, `allow read on issue in repository "acme/web"`)
+	delegatePolicyFor(t, st, secret, "github.com", 3*time.Hour, `allow create on review in repository "acme/web"`)
 
 	grants, err := svc.PrepareSandboxGrants(asLead(), "project-1", &model.Sandbox{ID: "sbx-new", ProjectID: "project-1"}, []apimodel.SandboxGrant{{
 		SecretId: serverapi.NewOptString(secret.ID), EnvVar: serverapi.NewOptString("GH_TOKEN"),
@@ -819,9 +762,12 @@ func TestACreatesGrantIsMadeUnderADelegationThatHoldsItsUses(t *testing.T) {
 		t.Fatalf("prepare grants: %v", err)
 	}
 	if len(grants.Delegations) != 1 || grants.Delegations[0].ID != holds.ID {
-		t.Fatalf("grants made under %+v, want the delegation that holds the uses", grants.Delegations)
+		t.Fatalf("grants made under %+v, want the delegation that holds the policy", grants.Delegations)
 	}
 	grant := grants.Grants[0]
+	if grant.DelegationID != holds.ID {
+		t.Fatalf("grant delegation = %q, want the one it was made under, %s", grant.DelegationID, holds.ID)
+	}
 	if grant.ExpiresAt == nil || grant.ExpiresAt.After(*holds.ExpiresAt) {
 		t.Fatalf("grant expires %v, want no later than its delegation, %v", grant.ExpiresAt, holds.ExpiresAt)
 	}

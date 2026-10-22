@@ -48,9 +48,10 @@ type SandboxGrants struct {
 // A discobox giving them is held to what it may hand on, as when it approves a
 // request (ADR 26-09-30-782 §1): each grant is made under a live delegation
 // grant it holds of that secret, covering the hosts and fitting the lifetime,
-// whose uses the project's judge finds its uses within — the longest-lived
-// that does, asked once every grant has passed what can refuse it without the
-// judge. A lifetime it did not name is then fitted to that delegation.
+// whose policy its policy is within (ADR 26-10-20-782 §11) — the
+// longest-lived that covers it, asked once every grant has passed what can
+// refuse it without the judge. A lifetime it did not name is then fitted to
+// that delegation.
 func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sandbox *model.Sandbox, requested []apimodel.SandboxGrant) (SandboxGrants, error) {
 	sandboxID := sandbox.ID
 	var out SandboxGrants
@@ -67,7 +68,8 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 	var credentials []string
 	// What each grant a discobox gives may be made under, and whether its
 	// lifetime was named, by index: which delegation it is made under, and so
-	// how long a lifetime nobody named lasts, waits for the judge.
+	// how long a lifetime nobody named lasts, waits for its policy to be held
+	// to theirs.
 	var fitting [][]*model.SecretGrant
 	var givenPolicies []*policy.Policy
 	var namedTTL []bool
@@ -133,8 +135,11 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		if err != nil {
 			return SandboxGrants{}, err
 		}
+		if err := guardPolicy(uses, givenPolicy); err != nil {
+			return SandboxGrants{}, err
+		}
 		// A discobox gives a policy only within one it was delegated (ADR
-		// 26-10-20-782 §11), which is asked with its uses below.
+		// 26-10-20-782 §11), which is held to below.
 		if byDiscobox {
 			givenPolicies = append(givenPolicies, givenPolicy)
 		}
@@ -195,18 +200,16 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		judging, judgingCtx := errgroup.WithContext(ctx)
 		for i, grant := range out.Grants {
 			judging.Go(func() error {
-				// Its policy, then its uses, under the one bound a grant has:
-				// of the delegations its lifetime fits, those whose policy
-				// covers the one given, whose uses the judge then reads.
+				// Under the one bound a grant has: of the delegations its
+				// lifetime fits, the first whose policy covers the one given.
 				ctx, cancel := context.WithTimeout(judgingCtx, services.DelegationBound)
 				defer cancel()
-				covering, err := s.delegationsCovering(ctx, projectID, principal.SandboxID, fitting[i], givenPolicies[i], sandbox, "", credentials[i], grant.Hosts)
+				delegation, err := s.delegationCovering(ctx, projectID, principal.SandboxID, fitting[i], givenPolicies[i], sandbox, "", credentials[i], grant.Hosts)
 				if err != nil {
 					return err
 				}
-				delegation, err := s.judgeDelegations(ctx, projectID, principal.SandboxID, covering, credentials[i], grant.Hosts, grant.Uses, "", sandbox)
-				out.Delegations[i] = delegation
-				return err
+				out.Delegations[i], grant.DelegationID = delegation, delegation.ID
+				return nil
 			})
 		}
 		if err := judging.Wait(); err != nil {
@@ -281,7 +284,7 @@ func (s *Service) delegatedGrant(ctx context.Context, projectID, grantorID strin
 
 // HoldDelegations holds each grant a discobox gives on a create to the
 // delegation it was made under, read again in the create's transaction: still
-// the grantor's, live, covering the hosts, with the uses the judge read, and
+// the grantor's, live, covering the hosts, with the policy it was held to, and
 // lasting at least as long as the grant. A delegation revoked or changed since
 // the grants were prepared refuses the create, which then creates nothing.
 func HoldDelegations(ctx context.Context, txStore *store.Store, grants SandboxGrants) error {

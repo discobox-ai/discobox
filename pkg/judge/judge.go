@@ -134,8 +134,9 @@ type Job struct {
 	// command or request job under a grant that carries no policy.
 	Purpose string `json:"purpose,omitempty"`
 	// Purposes are what a job is judged against when it is more than one
-	// sentence, one each. For a delegation job they are uses: what the
-	// discobox was delegated. For a rule job it is the one allow of the rule,
+	// sentence, one each. For a delegation job it is the one delegated allow
+	// that covers the allow handed on but for its conditions, as its sentence
+	// resolved (ADR 26-10-20-782 §11). For a rule job it is the one allow of the rule,
 	// as its sentence bound for the discobox asking. For a command or request job
 	// under a grant that carries a policy (ADR 26-10-20-782 §1) they are the
 	// policy's statements as sentences, bound to the discobox asking
@@ -175,9 +176,9 @@ type Job struct {
 	Reported *Reported `json:"reported,omitempty"`
 	// Request is the request observed by the proxy, for a request job.
 	Request *Request `json:"request,omitempty"`
-	// Uses are the uses a discobox is about to hand on, for a delegation job:
-	// what it would grant, judged against Purposes, which are what it was
-	// delegated. For a rule job it is the one allow a discobox asked for, as
+	// Uses is, for a delegation job, the one allow a discobox is about to hand
+	// on, as its sentence resolved, whose conditions are judged against the
+	// delegated allow in Purposes. For a rule job it is the one allow a discobox asked for, as
 	// its sentence bound for that discobox, whose conditions are judged
 	// against the rule's allow in Purposes.
 	Uses []string `json:"uses,omitempty"`

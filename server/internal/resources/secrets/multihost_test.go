@@ -26,8 +26,9 @@ func TestOneRequestAndGrantNameSeveralHosts(t *testing.T) {
 
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
 		SandboxId: testSandboxID, Name: "github", EnvVar: "GH_TOKEN",
-		Hosts: []string{"API.GitHub.com", "api.githubcopilot.com", "api.github.com"},
-		Uses:  []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+		Hosts:  []string{"API.GitHub.com", "api.githubcopilot.com", "api.github.com"},
+		Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+		Policy: policyAsked(t),
 	})
 	if err != nil {
 		t.Fatalf("create credential request: %v", err)
@@ -36,7 +37,7 @@ func TestOneRequestAndGrantNameSeveralHosts(t *testing.T) {
 		t.Fatalf("request hosts = %q, want %q: normalized and deduplicated, in the order given", req.Hosts, copilotHosts)
 	}
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -83,7 +84,8 @@ func TestARetryNamingTheSameHostsInAnotherOrderIsTheSameRequest(t *testing.T) {
 		t.Helper()
 		req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
 			SandboxId: testSandboxID, Name: "github", EnvVar: "GH_TOKEN", Hosts: hosts,
-			Uses: []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+			Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+			Policy: policyAsked(t),
 		})
 		if err != nil {
 			t.Fatalf("create credential request: %v", err)
@@ -150,7 +152,8 @@ func TestAWellKnownAskNamesItsFirstHostUnlessItNamesMore(t *testing.T) {
 	ask := func(hosts ...string) (*model.SecretRequest, error) {
 		return svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
 			SandboxId: testSandboxID, ID: serverapi.NewOptString(wellknown.GitHubAPI), Hosts: hosts,
-			Uses: []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+			Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
+			Policy: policyAsked(t),
 		})
 	}
 	plain, err := ask()

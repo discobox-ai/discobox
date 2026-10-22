@@ -1827,8 +1827,8 @@ type SecretGrant struct {
 	// its statements, their definitions, and the value each variable resolved
 	// to for the sandbox the grant is for. A command or request under a grant
 	// that carries one is judged against it, bound to the discobox asking,
-	// rather than against a use's sentence. Nil on a grant approved with uses
-	// alone, which is judged by its uses until it lapses.
+	// rather than against a use's sentence. Every grant with uses carries one
+	// (#312); nil on a standing grant, which has no uses for it to narrow.
 	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The approved policy, with the value each of its variables resolved to for the sandbox the grant is for"`
 	// EnvName is the variable an agent receives the credential in, on a grant
 	// that carries uses. It lives here rather than only on the binding because
@@ -1848,9 +1848,17 @@ type SecretGrant struct {
 	// disabling or deleting the rule revokes nothing, and this is how its
 	// grants are found to be revoked deliberately. Empty on every other
 	// grant, which is what every row written before rules already is.
-	RuleID    string    `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"Approval rule the grant was minted under, when a rule approved the request"`
-	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	RuleID string `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"Approval rule the grant was minted under, when a rule approved the request"`
+	// DelegationID is the delegation grant a discobox handed this grant on
+	// under, by approving a request of a discobox it created or giving it on
+	// a create (ADR 26-10-20-782 §11). It is how a handed-on grant is traced
+	// to the delegation that allowed it when code settled the hand-off and no
+	// judge was asked, so no verdict names it. Like RuleID it records, and
+	// revokes nothing: the grant stands if the delegation goes. Empty on every
+	// other grant, and on one handed on before it was recorded.
+	DelegationID string    `gorm:"column:delegation_id;not null;type:text;default:'';index" json:"delegationId,omitempty" doc:"Delegation grant a discobox handed this grant on under, when one did"`
+	CreatedAt    time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt    time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }

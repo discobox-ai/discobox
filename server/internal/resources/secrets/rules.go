@@ -330,13 +330,12 @@ func (s *Service) checkRule(ctx context.Context, rule *model.ApprovalRule, newEx
 		return nil, err
 	}
 	rule.Purpose = purpose
-	// A delegation's uses are what a hand-off of uses alone is still judged
-	// against (delegationsCovering), and a rule holds a request's policy, never
-	// its uses: one minted by a rule would carry uses nobody read. So no rule
-	// delegates until every hand-off is bound by the delegation's policy
-	// (ADR 26-10-22-689 §4, #312).
+	// No rule delegates yet (ADR 26-10-22-689 §4). The reason it gave — a
+	// delegation's uses bounding a hand-off of uses alone — went with #312,
+	// which binds every hand-off by the delegation's policy; whether a rule
+	// may then delegate is that ADR's Deferred, still to be decided.
 	if purpose == model.SecretGrantPurposeDelegate {
-		return bad("a rule does not approve a delegation yet: a delegation's uses still bound what is handed on under it, and a rule holds only a request's policy. Approve a delegation as a person")
+		return bad("a rule does not approve a delegation yet; approve a delegation as a person")
 	}
 
 	if problem := rulePolicyProblem(rule.Policy); problem != "" {

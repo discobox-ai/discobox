@@ -53685,6 +53685,12 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DelegationId.Set {
+			e.FieldStart("delegationId")
+			s.DelegationId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("createdAt")
 		json.EncodeDateTime(e, s.CreatedAt)
 	}
@@ -53740,24 +53746,25 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretGrant = [17]string{
+var jsonFieldsNameOfSecretGrant = [18]string{
 	0:  "$schema",
 	1:  "envName",
 	2:  "uses",
 	3:  "policy",
 	4:  "purpose",
 	5:  "ruleId",
-	6:  "createdAt",
-	7:  "expiresAt",
-	8:  "grantedAt",
-	9:  "grantedBy",
-	10: "hosts",
-	11: "id",
-	12: "projectId",
-	13: "scope",
-	14: "scopeKey",
-	15: "secretId",
-	16: "updatedAt",
+	6:  "delegationId",
+	7:  "createdAt",
+	8:  "expiresAt",
+	9:  "grantedAt",
+	10: "grantedBy",
+	11: "hosts",
+	12: "id",
+	13: "projectId",
+	14: "scope",
+	15: "scopeKey",
+	16: "secretId",
+	17: "updatedAt",
 }
 
 // Decode decodes SecretGrant from json.
@@ -53829,8 +53836,18 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"ruleId\"")
 			}
+		case "delegationId":
+			if err := func() error {
+				s.DelegationId.Reset()
+				if err := s.DelegationId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"delegationId\"")
+			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -53852,7 +53869,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"expiresAt\"")
 			}
 		case "grantedAt":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.GrantedAt = v
@@ -53893,7 +53910,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"hosts\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -53905,7 +53922,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -53917,7 +53934,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "scope":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				if err := s.Scope.Decode(d); err != nil {
 					return err
@@ -53927,7 +53944,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "scopeKey":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ScopeKey = string(v)
@@ -53939,7 +53956,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scopeKey\"")
 			}
 		case "secretId":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.SecretId = string(v)
@@ -53951,7 +53968,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secretId\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -53972,9 +53989,9 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b01010000,
-		0b11111001,
-		0b00000001,
+		0b10010000,
+		0b11110010,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

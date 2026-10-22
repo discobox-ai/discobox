@@ -11,10 +11,11 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// JudgeDelegation asks the project's judge whether the uses a discobox is
-// about to hand on fall within the uses of the delegation grant it approves
-// under (ADR 26-09-30-782 §3). It is the server's own question rather than a
-// pool's: the secrets service asks it while approving, from the grant and the
+// JudgeDelegation asks the project's judge whether the conditions of an allow
+// a discobox is about to hand on fall within those of a delegated allow that
+// covers it otherwise (ADR 26-10-20-782 §11): the one part of a hand-off code
+// leaves to a judge. It is the server's own question rather than a pool's:
+// the secrets service asks it while handing on, from the grant and the
 // request it read.
 //
 // Every way of not answering is a refusal, the same as for a request: a server

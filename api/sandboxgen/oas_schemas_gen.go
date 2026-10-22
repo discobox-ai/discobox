@@ -609,10 +609,10 @@ type JudgeJob struct {
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
-	// What a job is judged against in place of purpose, one entry each — for a delegation job the uses
-	// the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a
-	// command or request job under a grant that carries a policy, its statements as sentences, bound to
-	// the discobox asking.
+	// What a job is judged against in place of purpose, one entry each — for a delegation job the one
+	// delegated allow that covers the allow handed on but for its conditions, as its sentence; for a
+	// rule job the one allow of the rule, as its sentence; for a command or request job under a grant
+	// that carries a policy, its statements as sentences, bound to the discobox asking.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
@@ -620,8 +620,8 @@ type JudgeJob struct {
 	// body.
 	Round int64         `json:"round"`
 	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow
-	// it asked for, as its sentence, judged against purposes.
+	// For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one
+	// allow it asked for, as its sentence, judged against purposes.
 	Uses []string `json:"uses"`
 }
 
