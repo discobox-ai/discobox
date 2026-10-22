@@ -1,6 +1,6 @@
 # 26-10-22-499 — A discobox has a files API that acts as its user
 
-- **Status**: Proposed (supersedes in part [26-10-16-535](26-10-16-535-a-pasted-image-is-carried-into-the-discobox-as-a-file.md) §2's
+- **Status**: Accepted (supersedes in part [26-10-16-535](26-10-16-535-a-pasted-image-is-carried-into-the-discobox-as-a-file.md) §2's
   exec of `sh -c 'cat > …'`; decides what ADR 26-10-17-354 §6 put out of
   scope)
 - **Date**: 2026-10-22
