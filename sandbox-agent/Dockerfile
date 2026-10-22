@@ -14,6 +14,7 @@ COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
 COPY pkg/agentlayer ./pkg/agentlayer
 COPY access ./access
+COPY pkg/ahphost ./pkg/ahphost
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/declared ./pkg/declared
@@ -121,6 +122,7 @@ WORKDIR /src
 
 COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
+COPY pkg/ahphost ./pkg/ahphost
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/configfile ./pkg/configfile

@@ -113,29 +113,9 @@
   `ws://` on another address hands the token to anyone on the network
   (`listenLoopback`).
 
-## A client that goes
-
-- **What a client's disconnect cleans up is that client's own.** The AHP host
-  forgets drafts and exited shells when the client that made them goes
-  (`Host.dropConn`, checking `owner`). Sweeping everything nobody watches at
-  that moment removed another, still-connected client's draft, and its first
-  message then went nowhere. Anything new that a disconnect forgets carries its
-  owner and is checked against it.
-
 ## Reading an exec's attach
 
-- **A call whose work outlives it runs under a context that outlives it.** An
-  attach (`OpenExec`, `NewShell`, `NewTerminal`) lives exactly as long as the
-  context it was opened with, and the console data source's `List` leaves a
-  slow server's request running past the call to be drawn by the next poll. A
-  request's context, or a timeout cancelled when the call returns, ends that
-  work with it — `discobox admin ahp`'s screens died at once that way, and its
-  listing dropped every slow server. Open under a long-lived context and bound
-  only the open (`ahphost.Host.openContext`). A test fake that ignores its
-  context cannot catch this; make it end with the context.
-
-- **An exec's exit is the attach's error, not an interface.** `framedTerminal`
-  ends with `io.EOF` for a clean exit and a `client.ExitError` for any other
-  code; it is not a `tui.ExitReporter`. Code that waits for an exec to end
-  matches those errors, and treats any other error as a lost attach to retry —
-  a test whose fake stream never exits does not cover it.
+- **The console data source's `List` leaves a slow server's request running
+  past the call**, to be drawn by the next poll: list under a context that
+  outlives the call, or every slow server drops out. `ahpBoxes` and the AHP
+  host's notes ([pkg/ahphost/REVIEW.md](../pkg/ahphost/REVIEW.md)) cover the attaches.

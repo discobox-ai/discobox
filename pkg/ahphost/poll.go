@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
-
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // listTimeout bounds a request that is done when it returns: the harnesses,
@@ -36,6 +34,7 @@ func (h *Host) Run(ctx context.Context) error {
 			}
 		}
 		h.poll(ctx)
+		h.refreshWatchedChangesets()
 		select {
 		case <-ctx.Done():
 			return nil
@@ -57,16 +56,16 @@ func (h *Host) kick() {
 func (h *Host) loadHarnesses(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
-	harnesses, err := h.cfg.Boxes.Harnesses(ctx, "")
+	harnesses, err := h.cfg.Boxes.Harnesses(ctx)
 	if err != nil {
 		h.cfg.Logf("ahp: list harnesses: %v", err)
 		return false
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.harnesses = map[string]tui.Harness{}
+	h.harnesses = map[string]Harness{}
 	for _, harness := range harnesses {
-		if harness.Slug != "" && harness.State != tui.HarnessDisabled {
+		if harness.Slug != "" {
 			h.harnesses[harness.Slug] = harness
 		}
 	}
@@ -76,7 +75,7 @@ func (h *Host) loadHarnesses(ctx context.Context) bool {
 
 // poll lists every server under Run's own context. A listing of several
 // servers answers with what has come back by its patience and leaves each
-// slower request running to be drawn by the next poll (cli/tui.go,
+// slower request running to be drawn by the next poll (the CLI's
 // pollEveryServer), so a context that ended with this poll would cancel every
 // request that outlives it, and a server slower than the patience would never
 // be listed. The data source bounds each request itself.
@@ -104,9 +103,9 @@ func (h *Host) poll(ctx context.Context) {
 // applyListingLocked brings the sessions in step with a listing. A discobox
 // missing from it is gone only when its server answered: one that did not is
 // still there as far as anyone knows.
-func (h *Host) applyListingLocked(listing tui.Listing) {
+func (h *Host) applyListingLocked(listing Listing) {
 	seen := map[string]bool{}
-	for _, box := range listing.Sandboxes {
+	for _, box := range listing.Boxes {
 		seen[box.ID] = true
 		uri, ok := h.boxSessions[box.ID]
 		if !ok {
@@ -129,7 +128,7 @@ func (h *Host) applyListingLocked(listing tui.Listing) {
 		}
 		h.refreshSessionStateLocked(s)
 	}
-	quiet := append(slices.Clone(listing.Unreachable), listing.Waiting...)
+	quiet := listing.Quiet
 	for _, s := range h.sessions {
 		if !s.hasBox || seen[s.box.ID] || slices.Contains(quiet, s.box.Server) {
 			continue

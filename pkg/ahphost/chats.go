@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
-
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // chat is one of a discobox's harness terminals (ADR 26-10-17-354 §3). Its
@@ -270,12 +268,9 @@ func (h *Host) deliverMessage(ctx context.Context, c *chat, message ahptypes.Mes
 // create makes a created session's discobox, its first message as the prompt.
 func (h *Host) create(ctx context.Context, s *session, prompt string) error {
 	h.mu.Lock()
-	req := tui.RunRequest{Harness: s.harness, Source: s.source, IncludeDirty: "false", Detach: true}
+	req := CreateRequest{Harness: s.harness, Source: s.source, Prompt: strings.TrimSpace(prompt)}
 	h.mu.Unlock()
-	if text := strings.TrimSpace(prompt); text != "" {
-		req.Prompt = []string{text}
-	}
-	box, err := h.cfg.Boxes.Run(ctx, req, func(line string) { h.cfg.Logf("ahp: %s: %s", s.key, line) }, nil)
+	box, err := h.cfg.Boxes.Create(ctx, req, func(line string) { h.cfg.Logf("ahp: %s: %s", s.key, line) })
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s.creating = false
@@ -311,11 +306,11 @@ func (h *Host) awaitRunning(ctx context.Context, s *session) error {
 			return fmt.Errorf("the discobox is gone")
 		}
 		switch state {
-		case tui.StateRunning:
+		case BoxRunning:
 			return nil
-		case tui.StateArchived:
+		case BoxArchived:
 			return fmt.Errorf("the discobox is archived")
-		case tui.StateStopped, tui.StateError:
+		case BoxStopped, BoxError:
 			// Asked once, and its answer is the delivery's: a discobox that
 			// cannot start — one with no runtime, a failed create — will not
 			// start on the next poll either.
@@ -350,7 +345,7 @@ func (h *Host) start(ctx context.Context, s *session) error {
 	h.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	err := h.cfg.Boxes.Do(ctx, tui.VerbStart, id)
+	err := h.cfg.Boxes.Do(ctx, VerbStart, id)
 	if err != nil {
 		h.mu.Lock()
 		s.starting = false

@@ -48,6 +48,14 @@ func (h *Host) applyLocked(channel string, action ahptypes.StateAction) map[*con
 		trimTerminal(&t.state)
 		return t.subs
 	}
+	if cs := h.changesets[channel]; cs != nil {
+		ahp.ApplyActionToChangeset(&cs.state, action)
+		return cs.subs
+	}
+	if w := h.watches[channel]; w != nil {
+		ahp.ApplyActionToResourceWatch(&w.state, action)
+		return w.subs
+	}
 	return nil
 }
 

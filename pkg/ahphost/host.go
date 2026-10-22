@@ -1,13 +1,14 @@
-// Package ahphost serves the discoboxes this client can reach to an Agent Host
-// Protocol client — VS Code's Agent Sessions — as ADR 26-10-17-354 decides: a
-// discobox is a session, each of its harness terminals a chat whose screen is a
-// live terminal, and each shell the client opens an AHP terminal.
+// Package ahphost serves discoboxes to an Agent Host Protocol client — VS
+// Code's Agent Sessions — as ADR 26-10-17-354 decides: a discobox is a
+// session, each of its harness terminals a chat whose screen is a live
+// terminal, and each shell the client opens an AHP terminal. The CLI serves
+// every discobox it can reach through it, and a discobox serves itself
+// (ADR 26-10-22-853).
 //
 // The host holds every channel's state and changes it only through the
 // protocol's own reducers (the SDK's ahp.ApplyActionTo*), the way a client
 // does, so a snapshot is always exactly what a client folding the same actions
-// would hold. What it knows of Discobox comes through Boxes, which the
-// console's data source implements.
+// would hold. What it knows of Discobox comes through Boxes.
 package ahphost
 
 import (
@@ -19,34 +20,34 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
-
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// Boxes is what the host needs of Discobox. The console's data source
-// (internal/cli's apiDataSource) implements it, across every server this
-// client knows.
+// Boxes is what the host needs of Discobox. The CLI implements it over the
+// console's data source, across every server it knows.
 type Boxes interface {
 	// List is every discobox on every server, with what its agent last
 	// reported over OSC 7501.
-	List(ctx context.Context) (tui.Listing, error)
-	// Harnesses is what the primary server offers to run, when server is "".
-	Harnesses(ctx context.Context, server string) ([]tui.Harness, error)
-	// Run creates a discobox, as `discobox new` does.
-	Run(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error)
+	List(ctx context.Context) (Listing, error)
+	// Harnesses is what a discobox can be created on.
+	Harnesses(ctx context.Context) ([]Harness, error)
+	// Create creates a discobox, as `discobox new` does, saying what it is
+	// doing through report.
+	Create(ctx context.Context, req CreateRequest, report func(string)) (Box, error)
 	// Do archives, unarchives or starts a discobox.
-	Do(ctx context.Context, verb tui.Verb, sandboxID string) error
+	Do(ctx context.Context, verb Verb, sandboxID string) error
 	// Rename gives a discobox a name.
 	Rename(ctx context.Context, sandboxID, name string) error
 	// Execs lists a running discobox's terminals, shells and services.
-	Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error)
-	// OpenExec attaches to an exec, replaying its screen. It never relaunches
-	// an exec that has stopped when execID is the exec's own ID.
-	OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error)
+	Execs(ctx context.Context, sandboxID string) ([]Exec, error)
+	// OpenExec attaches to an exec by its own ID, replaying its screen. It
+	// never starts a stopped discobox; a harness terminal that has exited is
+	// revived by the attach, as the sandbox agent's attach does for every
+	// client (ADR 0038).
+	OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (Stream, error)
 	// NewShell and NewTerminal create, attach and start a shell, or another
 	// session of the discobox's harness.
-	NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error)
-	NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error)
+	NewShell(ctx context.Context, sandboxID string, cols, rows int) (Exec, Stream, error)
+	NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (Exec, Stream, error)
 	// EndExec ends an exec, killing what runs in it.
 	EndExec(ctx context.Context, sandboxID, execID string) error
 	// SendInput types text into an exec and presses Enter, as a paste when
@@ -69,6 +70,11 @@ type Config struct {
 	Version string
 	// Poll is how often the discoboxes are listed again.
 	Poll time.Duration
+	// Workspace is the discobox's own filesystem and git, given only to a
+	// host running in the one discobox it serves (ADR 26-10-22-853): its
+	// session's folder is then a local path, and it serves that discobox's
+	// files and changesets. Nil for the CLI's host.
+	Workspace Workspace
 	// Logf reports what the host cannot tell a client.
 	Logf func(format string, args ...any)
 }
@@ -99,7 +105,12 @@ type Host struct {
 	chats       map[string]*chat     // by chat URI
 	terminals   map[string]*terminal // by terminal URI
 	// harnesses is what the primary offers, by slug, as the last poll found.
-	harnesses map[string]tui.Harness
+	harnesses map[string]Harness
+	// changesets and watches are a local host's (Config.Local): its
+	// sessions' changesets, by URI, and its clients' resource watches.
+	changesets map[string]*changeset
+	watches    map[string]*watch
+	watchSeq   int64
 
 	// ctx is the host's lifetime, ended when Run returns. Work that outlives
 	// the request that started it runs under it: an attach, which lives as
@@ -132,7 +143,9 @@ func New(cfg Config) *Host {
 		boxSessions: map[string]string{},
 		chats:       map[string]*chat{},
 		terminals:   map[string]*terminal{},
-		harnesses:   map[string]tui.Harness{},
+		harnesses:   map[string]Harness{},
+		changesets:  map[string]*changeset{},
+		watches:     map[string]*watch{},
 	}
 }
 
@@ -212,6 +225,12 @@ func (h *Host) subscribers(channel string) map[*conn]struct{} {
 	if t := h.terminals[channel]; t != nil {
 		return t.subs
 	}
+	if cs := h.changesets[channel]; cs != nil {
+		return cs.subs
+	}
+	if w := h.watches[channel]; w != nil {
+		return w.subs
+	}
 	return nil
 }
 
@@ -227,6 +246,13 @@ func (h *Host) dropConn(c *conn) {
 	}
 	for _, ch := range h.chats {
 		delete(ch.subs, c)
+	}
+	for _, cs := range h.changesets {
+		delete(cs.subs, c)
+	}
+	for _, w := range h.watches {
+		delete(w.subs, c)
+		h.releaseWatchLocked(w)
 	}
 	changed := false
 	for uri, t := range h.terminals {

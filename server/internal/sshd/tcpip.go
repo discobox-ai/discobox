@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -70,7 +71,7 @@ func (s *Server) handleDirectTCPIPChannel(ctx context.Context, newChannel ssh.Ne
 // dialTCPTunnel opens the attach websocket for a direct-tcpip channel against
 // the sandbox-agent's /tcp/attach endpoint, reached through the same
 // pool-agent target exec attaches use.
-func dialTCPTunnel(ctx context.Context, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, host string, port uint32) (*frameConn, error) {
+func dialTCPTunnel(ctx context.Context, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, host string, port uint32) (execstream.Conn, error) {
 	client := sandboxagentclient.HTTPClient(lease)
 	attachURL, err := sandboxagentclient.TargetURL(lease.BaseURL, sandboxModel.ProjectID, sandboxModel.PoolID, sandboxModel.ID, "/tcp/attach")
 	if err != nil {
@@ -93,7 +94,7 @@ func dialTCPTunnel(ctx context.Context, lease *transport.HTTPClientLease, sandbo
 // the other half open (ADR 0024 §4). Only the attach connection ending closes
 // the channel, and it has to: once it is gone nothing can be delivered either
 // way, and closing is also what unblocks the reader below.
-func pumpDirectTCPIP(channel ssh.Channel, conn *frameConn, lease *transport.HTTPClientLease, logger *slog.Logger) {
+func pumpDirectTCPIP(channel ssh.Channel, conn execstream.Conn, lease *transport.HTTPClientLease, logger *slog.Logger) {
 	defer lease.Release()
 	defer conn.Close()
 	defer channel.Close()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/pkg/execstream/host"
 )
@@ -59,7 +60,7 @@ func TestOpenExecAttachConnReconnectsForTTY(t *testing.T) {
 			handlerWG.Add(1)
 			defer handlerWG.Done()
 			defer conn.Close()
-			_ = stream.Attach(context.Background(), &directAttachFrames{conn: conn}, host.AttachOptions{})
+			_ = stream.Attach(context.Background(), execstream.StreamConn(conn), host.AttachOptions{})
 		default:
 			http.NotFound(w, r)
 		}

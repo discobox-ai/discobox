@@ -919,7 +919,7 @@ d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, n
   tmux: the second run prints the seeded previous config). Delete the stub
   harness after purging its archived `configure-*` boxes, which hold it.
 
-# Verifying the AHP host (`discobox admin ahp`, `cli/internal/ahphost`)
+# Verifying the AHP host (`discobox admin ahp`, `pkg/ahphost`)
 
 Drive it as VS Code would, with Microsoft's Go client, from a module of its own
 outside the repo (`go.mod` requiring
@@ -951,3 +951,36 @@ TOK=$(cat $S/state/discobox/cli/ahp-token)   # tkn query parameter
 - The reserved port: `python3 -m http.server 7591` in the box, then
   `discobox proxy <id>` prints `listening on 7592 -> discobox 7591 (7591 is
   reserved)`.
+
+## The in-box host (`discobox-sandbox-agent ahp`)
+
+The host in a discobox needs that box's agent to serve the local exec socket,
+so run a sandbox agent built from the tree in an existing dev box rather than
+waiting on an image:
+
+```bash
+CGO_ENABLED=0 go build -o $S/sbx-agent ./sandbox-agent/cmd/discobox-sandbox-agent
+C=discobox-sandbox-pool_<pool>-<box id>      # docker ps
+docker cp $S/sbx-agent $C:/opt/test-agent     # not /var/lib/discobox: the unit does not see it
+docker exec $C sh -c 'mkdir -p /run/systemd/system/discobox-sandbox-agent.service.d &&
+  printf "[Service]\nExecStart=\nExecStart=/opt/test-agent --config /etc/discobox/sandbox.json\n" \
+  > /run/systemd/system/discobox-sandbox-agent.service.d/test.conf &&
+  systemctl daemon-reload && systemctl restart discobox-sandbox-agent'
+```
+
+Execs survive the restart. Then, as the sandbox user, `curl --unix-socket
+/run/discobox/ahp/execs.sock http://x/box` answers, and as another account
+(`docker exec -u nobody`) it is a 403. Start the host with a pipe for stdin —
+`sleep infinity | /opt/test-agent ahp -v` — or it serves until killed; with
+`/dev/null` or a terminal it does not watch stdin. Drive its printed URL with
+the same Go client from inside the box (`docker cp` a static build): files
+(`resourceList`/`Read`/`Write`/`Resolve`/`Delete`), `createResourceWatch`,
+the session's two `ahp-changeset:` channels (subscribe raw; restore any file
+you edit with `git checkout`), and a `discobox-git:` before-side read.
+
+In VS Code, set `chat.sshRemoteAgentHostCommand` to `/opt/test-agent ahp` and
+run "Agents: Connect to Remote Agent Host via SSH" with the box's SSH name
+(`ssh <name>` works from here). Its session lists under `source [<name>]`;
+Open in Editor (the VS Code icon in the title bar) opens a Remote-SSH window.
+Kill a stray host by pid (`pgrep -f 'test-agent ahp'` inside the box).
+

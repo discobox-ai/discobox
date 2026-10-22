@@ -3,18 +3,13 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"sync"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
-	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/pkg/execstream/resume"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
@@ -360,9 +355,9 @@ func (d *apiDataSource) openFramedTerminal(ctx context.Context, sandboxID, execI
 	if err != nil {
 		return nil, err
 	}
-	term := &framedTerminal{frames: frames, events: events}
+	term := &framedTerminal{Terminal: client.NewTerminal(frames), events: events}
 	if err := term.Resize(cols, rows); err != nil {
-		_ = frames.Close()
+		_ = term.Close()
 		return nil, err
 	}
 	return term, nil
@@ -389,104 +384,12 @@ func paneTerminalEnv() []string {
 	return []string{"COLORTERM", "NO_COLOR"}
 }
 
-// framedTerminal presents the framed attach connection as the byte stream a
-// pane draws: Read yields terminal output payloads, Write sends input frames,
-// and Resize sends a resize frame.
+// framedTerminal is the shared frames-to-bytes terminal (client.Terminal),
+// plus the connection events a pane draws and that never appear in the output.
 type framedTerminal struct {
-	frames  execstream.Conn
-	events  <-chan tui.TerminalEvent
-	readBuf []byte // leftover output bytes from a partially consumed frame
-
-	writeMu sync.Mutex
-	ready   sync.Once
+	*client.Terminal
+	events <-chan tui.TerminalEvent
 }
-
-func (t *framedTerminal) Read(p []byte) (int, error) {
-	// The ready frame pairs with the replay this attach asked for: the remote
-	// must not stream the scrollback until something is reading it. It is sent
-	// on the first read rather than at open, because that is the moment there
-	// demonstrably is one.
-	var readyErr error
-	t.ready.Do(func() { readyErr = t.frames.WriteFrame(frame.Ready, nil) })
-	if readyErr != nil {
-		return 0, readyErr
-	}
-	if len(t.readBuf) > 0 {
-		n := copy(p, t.readBuf)
-		t.readBuf = t.readBuf[n:]
-		return n, nil
-	}
-	for {
-		f, err := t.frames.ReadFrame()
-		if err != nil {
-			return 0, err
-		}
-		switch f.Type {
-		// A pane is one visual stream, so stderr is shown inline with stdout the
-		// way a terminal shows it. (Terminals are TTY execs and never send it;
-		// this keeps a pane over a pipe exec from dropping the stream.)
-		case frame.Stdout, frame.Stderr:
-			if len(f.Payload) == 0 {
-				continue
-			}
-			n := copy(p, f.Payload)
-			if n < len(f.Payload) {
-				t.readBuf = append([]byte(nil), f.Payload[n:]...)
-			}
-			return n, nil
-		case frame.Exit:
-			if err := client.ExitErrorFromPayload("terminal", f.Payload); err != nil {
-				return 0, err
-			}
-			return 0, io.EOF
-		case frame.Error:
-			return 0, fmt.Errorf("terminal: %s", string(f.Payload))
-		default:
-			// Ignore frames the pane does not consume (e.g. ready).
-		}
-	}
-}
-
-func (t *framedTerminal) Write(p []byte) (int, error) {
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
-	if err := t.frames.WriteFrame(frame.Input, p); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
-func (t *framedTerminal) Resize(cols, rows int) error {
-	if cols <= 0 || rows <= 0 {
-		return nil
-	}
-	payload, err := json.Marshal(struct {
-		Cols int `json:"cols"`
-		Rows int `json:"rows"`
-	}{Cols: cols, Rows: rows})
-	if err != nil {
-		return err
-	}
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
-	return t.frames.WriteFrame(frame.Resize, payload)
-}
-
-// Repaint asks the sandbox to send this attacher the screen again, at the size
-// the resize before it just re-asserted.
-//
-// The two frames are one thought and go out in order on one connection: the
-// resize is what the exec's terminal is laid out to, and the repaint is what
-// makes the answer arrive without waiting for the program to type something.
-// An exec with no screen to repaint from — a pipe exec, a service's log —
-// ignores the frame.
-func (t *framedTerminal) Repaint() error {
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
-	return t.frames.WriteFrame(frame.Repaint, nil)
-}
-
-func (t *framedTerminal) Close() error { return t.frames.Close() }
 
 func (t *framedTerminal) Events() <-chan tui.TerminalEvent { return t.events }
 

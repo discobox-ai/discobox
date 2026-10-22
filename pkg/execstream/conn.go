@@ -10,6 +10,8 @@ package execstream
 
 import (
 	"context"
+	"io"
+	"sync"
 
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
@@ -56,3 +58,25 @@ type Delivery interface {
 	// because the process they addressed was replaced count as acknowledged.
 	Positions() (accepted, acknowledged uint64)
 }
+
+// StreamConn is a Conn over a byte stream — a websocket's net.Conn, a Unix
+// socket — whose writes are serialized, so concurrent writers (input, resize,
+// signals) do not interleave frames.
+func StreamConn(stream io.ReadWriteCloser) Conn {
+	return &streamConn{stream: stream}
+}
+
+type streamConn struct {
+	stream io.ReadWriteCloser
+	mu     sync.Mutex
+}
+
+func (s *streamConn) ReadFrame() (frame.Frame, error) { return frame.Read(s.stream) }
+
+func (s *streamConn) WriteFrame(typ byte, payload []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return frame.Write(s.stream, typ, payload)
+}
+
+func (s *streamConn) Close() error { return s.stream.Close() }

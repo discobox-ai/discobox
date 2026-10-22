@@ -35,7 +35,7 @@ type GitSourceStatus struct {
 	// DiffBase is the commit the diff counts below are measured against: the
 	// commit the source was spawned at per the manifest, forwarded to the
 	// merge base with the manifest's upstream tracking ref once the sandbox
-	// has fetched (see resolveDiffBase). Empty when the manifest recorded no
+	// has fetched (see ResolveDiffBase). Empty when the manifest recorded no
 	// base commit or the repository does not have it, in which case the
 	// counts mean nothing and are omitted with it.
 	DiffBase    string `json:"diffBase,omitempty"`
