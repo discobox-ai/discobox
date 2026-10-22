@@ -167,6 +167,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 	if err != nil {
 		return Result{}, nil, err
 	}
+	//nolint:gosec // G204: argv is this binary's own path and its files-helper argument, set by New.
 	cmd := exec.CommandContext(ctx, h.argv[0], h.argv[1:]...)
 	cmd.SysProcAttr = attr
 	// The agent's own directory may be one the user cannot enter; the paths
@@ -208,9 +209,9 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 	}
 	if readErr != nil {
 		_ = cmd.Process.Kill()
-		waitErr := cmd.Wait()
+		_ = cmd.Wait()
 		<-sent
-		return Result{}, nil, fmt.Errorf("the files helper did not answer: %v (%v) %s", readErr, waitErr, strings.TrimSpace(stderr.String()))
+		return Result{}, nil, fmt.Errorf("the files helper did not answer: %w %s", readErr, strings.TrimSpace(stderr.String()))
 	}
 	if answer.Error != nil || req.Op != OpRead {
 		_, _ = io.Copy(io.Discard, out)
@@ -223,7 +224,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 			return Result{}, nil, sendErr
 		}
 		if waitErr != nil {
-			return Result{}, nil, fmt.Errorf("the files helper failed: %v %s", waitErr, strings.TrimSpace(stderr.String()))
+			return Result{}, nil, fmt.Errorf("the files helper failed: %w %s", waitErr, strings.TrimSpace(stderr.String()))
 		}
 		return answer.Result, nil, nil
 	}
@@ -264,7 +265,7 @@ func (c *helperContent) Close() error {
 func (c *helperContent) wait() error {
 	c.once.Do(func() {
 		if err := c.cmd.Wait(); err != nil {
-			c.err = fmt.Errorf("the files helper failed partway: %v %s", err, strings.TrimSpace(c.stderr.String()))
+			c.err = fmt.Errorf("the files helper failed partway: %w %s", err, strings.TrimSpace(c.stderr.String()))
 		}
 	})
 	return c.err

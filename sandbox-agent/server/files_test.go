@@ -51,7 +51,7 @@ func TestFilesAPIRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "notes", "a.md")
 	q := func(values ...string) string {
 		v := url.Values{}
-		for i := 0; i < len(values); i += 2 {
+		for i := 0; i+1 < len(values); i += 2 {
 			v.Set(values[i], values[i+1])
 		}
 		return "?" + v.Encode()
@@ -85,19 +85,30 @@ func TestFilesAPIRoundTrip(t *testing.T) {
 	if resp := filesRequest(t, router, token, http.MethodGet, "/files/stat"+q("path", path+".nope"), nil, ""); resp.Code != http.StatusNotFound {
 		t.Fatalf("stat of nothing = %d %s, want 404", resp.Code, resp.Body)
 	}
-	for _, step := range []struct{ op, body string }{
-		{"copy", `{"from":"` + path + `","to":"` + path + `.bak"}`},
-		{"move", `{"from":"` + path + `.bak","to":"` + filepath.Join(dir, "b.md") + `"}`},
-		{"mkdir", `{"path":"` + filepath.Join(dir, "x", "y") + `","parents":true}`},
+	// Bodies are marshaled: a Windows path's backslashes are JSON escapes.
+	body := func(fields map[string]any) io.Reader {
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.NewReader(string(encoded))
+	}
+	for _, step := range []struct {
+		op   string
+		body map[string]any
+	}{
+		{"copy", map[string]any{"from": path, "to": path + ".bak"}},
+		{"move", map[string]any{"from": path + ".bak", "to": filepath.Join(dir, "b.md")}},
+		{"mkdir", map[string]any{"path": filepath.Join(dir, "x", "y"), "parents": true}},
 	} {
-		if resp := filesRequest(t, router, token, http.MethodPost, "/files/"+step.op, strings.NewReader(step.body), "application/json"); resp.Code != http.StatusOK {
+		if resp := filesRequest(t, router, token, http.MethodPost, "/files/"+step.op, body(step.body), "application/json"); resp.Code != http.StatusOK {
 			t.Fatalf("%s = %d %s", step.op, resp.Code, resp.Body)
 		}
 	}
-	if resp := filesRequest(t, router, token, http.MethodPost, "/files/remove", strings.NewReader(`{"path":"`+filepath.Join(dir, "x")+`"}`), "application/json"); resp.Code != http.StatusConflict {
+	if resp := filesRequest(t, router, token, http.MethodPost, "/files/remove", body(map[string]any{"path": filepath.Join(dir, "x")}), "application/json"); resp.Code != http.StatusConflict {
 		t.Fatalf("remove of a full directory = %d %s, want 409", resp.Code, resp.Body)
 	}
-	if resp := filesRequest(t, router, token, http.MethodPost, "/files/remove", strings.NewReader(`{"path":"`+filepath.Join(dir, "x")+`","recursive":true}`), "application/json"); resp.Code != http.StatusNoContent {
+	if resp := filesRequest(t, router, token, http.MethodPost, "/files/remove", body(map[string]any{"path": filepath.Join(dir, "x"), "recursive": true}), "application/json"); resp.Code != http.StatusNoContent {
 		t.Fatalf("remove = %d %s", resp.Code, resp.Body)
 	}
 	if got, err := os.ReadFile(filepath.Join(dir, "b.md")); err != nil || string(got) != "# hello\n" {
