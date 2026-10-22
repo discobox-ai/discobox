@@ -461,6 +461,15 @@ sandbox container starts from. It is resolved as the pool-agent image is:
   harness bundle references (`Bundles.Platform`, `Bundles.Harnesses`).
   `server.yaml` is a user's file (ADR 0096): the old keys are read as the new
   ones for one release, with a warning, then refused.
+
+  *Amended 2026-10-22, before anything shipped against it:* the old keys keep
+  their meaning for that release rather than being read as the new ones. An
+  existing `defaultSandboxImage` names a runnable sandbox-agent image, never a
+  platform bundle, so read as `platformBundle` it would fail every harness's
+  composition; while the runnable images still ship, it still names the image
+  a sandbox with no harness runs. The warning says it is retired and what
+  replaces it. `harnessImages` was never a `server.yaml` key: a harness's
+  runnable image is overridden by `DISCOBOX_HARNESS_<SLUG>_IMAGE` alone.
 - No harness is an image any more. A Docker sandbox is this image, or a
   snapshot committed from it, with the agent layer placed in it (§7).
 

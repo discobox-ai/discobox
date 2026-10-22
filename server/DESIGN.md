@@ -419,6 +419,14 @@ Decoding is strict: a key nothing defines fails startup naming the key and the
 file. That is the capability the environment cannot offer, and the reason the
 file exists at all.
 
+A retired key is read for one release and refused from the next (ADR
+26-10-16-423 §10, as amended). It keeps its field, its environment variable
+and its meaning, so a file that sets it runs as it did; `Load` adds one entry
+per retired key the file sets to `Config.Warnings`, which startup logs beside
+the file it read. The variable warns of nothing: it is how development points
+a server at its builds. `defaultSandboxImage` and `defaultSandboxImageDigest`
+are retired, for `platformBundle`.
+
 Presence is read from the YAML node rather than from the resulting values,
 because a field set to its zero value and a field left out mean different
 things — `archiveRetention: 0s` is a window that purges on sight, and no key at

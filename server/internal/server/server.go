@@ -478,4 +478,7 @@ func reportConfigFile(cfg *config.Config) {
 		}
 		log.Printf("configuration: no file at %s; every setting is listed in %s", cfg.ConfigFile, example)
 	}
+	for _, warning := range cfg.Warnings {
+		log.Printf("configuration: %s: %s", cfg.ConfigFile, warning)
+	}
 }
