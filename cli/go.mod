@@ -20,6 +20,7 @@ require (
 	github.com/discobox-ai/review v0.0.0-20261015034015-734c627938e9
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/go-faster/jx v1.2.0
+	github.com/microsoft/agent-host-protocol/clients/go v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0

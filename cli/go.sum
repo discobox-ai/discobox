@@ -124,6 +124,8 @@ github.com/mattn/go-runewidth v0.0.31 h1:1oCV4ReTlosDBc6rYRw5cL8S/4y8iv5oRl4SJ5I
 github.com/mattn/go-runewidth v0.0.31/go.mod h1:3qAiGCV4Koz/yuveO58qUefmUTRm8r0IGEXZ9jeHp/8=
 github.com/microcosm-cc/bluemonday v1.0.27 h1:MpEUotklkwCSLeH+Qdx1VJgNqLlpY2KXwXFM08ygZfk=
 github.com/microcosm-cc/bluemonday v1.0.27/go.mod h1:jFi9vgW+H7c3V0lb6nR74Ib/DIB5OBs92Dimizgw2cA=
+github.com/microsoft/agent-host-protocol/clients/go v1.0.0 h1:89ySVOJe3thJd6SowV3qaPP3n5cJFGaJ9CTkbbAfDG0=
+github.com/microsoft/agent-host-protocol/clients/go v1.0.0/go.mod h1:5eYn2TLN5zKxj6zSyIpA1pHUKzQrX/rQB4M9vl0lSLE=
 github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
 github.com/ogen-go/ogen v1.20.3 h1:1tvJuJE0BnQ7Nukd6ykiTOP0ucfL0yrAjHUg3S1DCQk=

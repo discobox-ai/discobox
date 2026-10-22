@@ -31,6 +31,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
 | `internal/github` | Reading a GitHub issue or pull request as its page shows it — the issue, its sub-issues, its whole timeline, and for a pull request (an issue to this API, so the same read) its branches, reviewers, review threads and checks (`pull.go`), and its files changed as discobox-review's window reads them (`review.go`: GitHub's three-dot compare between the two commits the tab read, its commits, and any file at either, each read once) — commenting on one, closing or reopening it, and merging a pull request (by one of the ways its repository allows, naming the head commit that was read), over the REST API as the person at this machine (`GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`; anonymous with none). A re-read of an issue nothing has happened to is one request — its `updated_at`, trusted for ten minutes with a token, since a reaction does not move it — and with no token an issue is read at most every five minutes (`AnonymousRefresh`): GitHub allows 60 anonymous requests an hour. An open pull request's checks are the exception: a check finishing moves no `updated_at`, so with a token they are read again on every re-read that is otherwise answered from the last one, and so is whether it can merge (`mergeable_state`), which moves with the base branch. With no token neither is: the re-read stays one request, and GitHub answers "unknown" to a reader it does not know, so a full read does not wait for that answer either. The checks are also not the pull request — a token that may not read them leaves the page without them, a failed read of them leaves the ones known, and a list that is not whole says so (`ChecksPartial`). A read the person asked for (`full`) is always a full one. The console's issue tab is its one user; the data source (`tui_issue.go`) turns its answers into the console's own types, making every string safe to draw on the way, since anyone who can comment on an issue writes them: names, paths, branches and diffs with `terminalSafe`, and what is written to be read (titles, bodies, commit messages) with `pageSafe`, which drops a page's invisible break hints and keeps the joiners an emoji sequence is made with. The files changed' source is made safe the same way (`safeSource`): discobox-review's window draws the C0 and C1 controls as pictures of them, but lets a bidirectional override through, so `safeSource` also reads each file's header for its paths — unquoting git's quoted ones before escaping them — and maps them back for the reads the window asks for by them. That header reading is a stopgap, deleted once the pinned discobox-review escapes format characters itself. Its files are read only with a token — one request a file, which with sixty an hour one large pull request would spend — so with none the diff is shown without the unchanged lines around its hunks. |
 | `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `new.skills` that `discobox skills` and the console's skills screen make (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
+| `internal/ahphost` | `discobox admin ahp`'s Agent Host Protocol host (ADR 26-10-17-354): discoboxes as sessions, harness terminals as chats whose screen is the live attach, shells as AHP terminals. Driven by the console's data source through its own `Boxes` interface. See [Agent Host Protocol](#agent-host-protocol-discobox-admin-ahp-adr-26-10-17-354). |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -682,6 +683,57 @@ is an error rather than a lost convenience.
   references that land on two servers are refused like two addresses are.
   What stays the primary's is completion, since a registered server that is
   down would hang a shell's tab.
+
+## Agent Host Protocol (`discobox admin ahp`, ADR 26-10-17-354)
+
+`discobox admin ahp` serves every discobox this client can reach to VS Code's
+Agents window over the [Agent Host Protocol](https://github.com/microsoft/agent-host-protocol):
+JSON-RPC over a loopback WebSocket, admitted by a connection token kept in
+`<state>/ahp-token` and presented as VS Code's `tkn` query parameter.
+
+```mermaid
+flowchart LR
+    vscode["VS Code Agents window"] -->|"AHP over WebSocket"| host["internal/ahphost.Host"]
+    host -->|"Boxes"| ds["apiDataSource (the console's)"]
+    ds --> servers["every registered server"]
+```
+
+- **The console's data source is the backend.** `ahphost.Boxes` is the slice of
+  it the host needs, plus `SendInput`; `apiDataSource` implements it directly,
+  so routing across servers, attach, shells, create and archive are the
+  console's code. The host speaks only the public API.
+- **State changes only through the protocol's reducers.** Every channel's state
+  is the SDK's (`ahptypes`), changed by `ahp.ApplyActionTo*` on the action
+  that is also broadcast, so a snapshot is what a client folding the same
+  actions holds. Only protocol version 1.0.0 is spoken.
+- **A discobox is a session**, `ahp-session:/<id>`, or the URI a client chose
+  when it created one. Its status bits come from the primary terminal's OSC 7501
+  report; read state is the host's memory, since Discobox has none. Its working
+  directory is `file://<id><source>`: VS Code opens a terminal for the active
+  session there, and the authority is how `createTerminal` knows which
+  discobox's shell to open.
+- **A harness terminal is a chat.** Its running turn holds one terminal tool
+  call whose result is the screen, an `ahp-terminal:` channel over the exec's
+  attach. VS Code makes a terminal live only for a turn it watches running, and
+  queues a message sent meanwhile, so a queued message ends the turn and starts
+  the next one under that message, typed into the terminal through the exec
+  input route (a paste when the program asked for one).
+- **A session a client created has no discobox until its first message**, which
+  is the prompt it is created with. Until then it is a draft: VS Code creates a
+  session for every new-session view it opens, so a draft is neither listed nor
+  announced (`session.listed`), and one nobody has open is forgotten when the
+  client that created it goes — never when another does.
+- **Observing never wakes.** A screen is attached by the exec's own ID while
+  someone watches it and the discobox runs, and let go when nobody does.
+  Sending a message or typing into a stopped discobox starts it.
+- **A shell is a terminal a client created**; the root's terminal catalogue
+  lists those, not the discoboxes' other execs.
+- **One port and one token, run to run**, so VS Code's entry is pasted once:
+  `127.0.0.1:7591`, which every forward Discobox makes of a discobox's ports
+  passes over (`reservedLocalPorts`, `portforward.Options.Reserved`) so a box
+  cannot take it and collect the token. VS Code's own automatic forwarding over
+  Remote-SSH is outside that, which the command's help says. `--listen` takes
+  loopback addresses only.
 
 ## The Server Is a Separate Program
 
@@ -1619,8 +1671,10 @@ instead (below).
   buffer of several maximum datagrams (`socketSendBuffer`): macOS refuses to
   send a datagram larger than the buffer and defaults UDP to 9216 bytes, so a
   larger reply would otherwise never reach the local client.
-- A port is bound at its own number when that is free and at the nearest one
-  above it when it is not, so a sandbox's 8080 is `localhost:8081` when
+- A port is bound at its own number when that is free — unless that number is
+  reserved (`Options.Reserved`: `discobox admin ahp`'s port, ADR 26-10-17-354
+  §1), which no forward takes and an exact forward reports unavailable — and at
+  the nearest one above it when it is not, so a sandbox's 8080 is `localhost:8081` when
   something local already has 8080. A privileged port gets one try at its own
   number and then the search at its unprivileged twin — 80 becomes 8080, 443
   becomes 8443 — because scanning 80..144 as an ordinary user only ever ends at
@@ -3216,7 +3270,8 @@ sequences the calls and hands the user the terminal in between:
    and forwarded into the configure sandbox (`forwardConfigurePorts`,
    `harness_configure_ports.go`) — exactly, or reported as unavailable in the
    image's own words, because a sign-in callback is sent to that number and no
-   other. An ephemeral entry has no number to bind ahead of time: the forward
+   other. A reserved port (`discobox admin ahp`'s) is always unavailable. An
+   ephemeral entry has no number to bind ahead of time: the forward
    polls the sandbox's port listing every second for the length of the flow
    and binds each TCP port it finds at that same number, never another.
 1. `POST .../configure` — the server creates the ephemeral `harnessMode: config`

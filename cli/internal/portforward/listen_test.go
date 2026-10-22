@@ -39,7 +39,7 @@ func TestListenNearestSkipsPortsThatAreTaken(t *testing.T) {
 	}
 	defer second.Close()
 
-	listener, err := listenNearest(t.Context(), "127.0.0.1", want, DefaultSearch)
+	listener, err := listenNearest(t.Context(), "127.0.0.1", want, DefaultSearch, nil)
 	if err != nil {
 		t.Fatalf("listenNearest: %v", err)
 	}
@@ -59,12 +59,37 @@ func TestListenNearestFallsBackToAnyPort(t *testing.T) {
 	defer taken.Close()
 	want := taken.Addr().(*net.TCPAddr).Port
 
-	listener, err := listenNearest(t.Context(), "127.0.0.1", want, 0)
+	listener, err := listenNearest(t.Context(), "127.0.0.1", want, 0, nil)
 	if err != nil {
 		t.Fatalf("listenNearest: %v", err)
 	}
 	defer listener.Close()
 	if got := listener.Addr().(*net.TCPAddr).Port; got == 0 || got == want {
 		t.Fatalf("bound %d, want some other free port", got)
+	}
+}
+
+// A reserved port is never bound for a forward, even when it is free: it is
+// one this machine's own listener is known by (`discobox admin ahp`'s), and a
+// sandbox that listened on that number would otherwise take the address that
+// listener's clients dial.
+func TestListenNearestPassesOverAReservedPort(t *testing.T) {
+	probe, err := listenTest(t, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	want := probe.Addr().(*net.TCPAddr).Port
+	probe.Close()
+
+	if _, err := listenExact(t.Context(), "127.0.0.1", want, map[int]bool{want: true}); err == nil {
+		t.Fatal("an exact bind took a reserved port")
+	}
+	listener, err := listenNearest(t.Context(), "127.0.0.1", want, DefaultSearch, map[int]bool{want: true})
+	if err != nil {
+		t.Fatalf("listenNearest: %v", err)
+	}
+	defer listener.Close()
+	if got := listener.Addr().(*net.TCPAddr).Port; got == want {
+		t.Fatalf("bound the reserved port %d", got)
 	}
 }

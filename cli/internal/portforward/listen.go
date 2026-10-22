@@ -2,6 +2,7 @@ package portforward
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 )
@@ -19,10 +20,9 @@ const privilegedOffset = 8000
 // listenNearest binds the port closest to want that is free, so a sandbox's
 // 8080 stays 8080 locally when nothing else has it and becomes 8081 when
 // something does.
-func listenNearest(ctx context.Context, address string, want, search int) (net.Listener, error) {
-	var config net.ListenConfig
+func listenNearest(ctx context.Context, address string, want, search int, reserved map[int]bool) (net.Listener, error) {
 	return bindNearest(want, search, func(port int) (net.Listener, error) {
-		return config.Listen(ctx, "tcp", net.JoinHostPort(address, strconv.Itoa(port)))
+		return listenExact(ctx, address, port, reserved)
 	})
 }
 
@@ -124,7 +124,10 @@ func bindNearest[T any](want, search int, bind func(port int) (T, error)) (T, er
 
 // listenExact binds want and nothing else, for a forward whose local number is
 // not the caller's to choose — see Options.Exact.
-func listenExact(ctx context.Context, address string, want int) (net.Listener, error) {
+func listenExact(ctx context.Context, address string, want int, reserved map[int]bool) (net.Listener, error) {
+	if reserved[want] {
+		return nil, fmt.Errorf("local port %d is reserved", want)
+	}
 	var config net.ListenConfig
 	return config.Listen(ctx, "tcp", net.JoinHostPort(address, strconv.Itoa(want)))
 }

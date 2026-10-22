@@ -34,8 +34,9 @@ func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (tui.Forw
 	// place opening a sandbox's ports to the network on the strength of having
 	// been attached to.
 	forward.forwarder = portforward.New(ctx, portforward.Options{
-		Dialer:  dialer,
-		Observe: forward.observe,
+		Dialer:   dialer,
+		Reserved: reservedLocalPorts(),
+		Observe:  forward.observe,
 	})
 	go forward.follow(ctx, d.client, d.projectID, sandboxID)
 	return forward, nil

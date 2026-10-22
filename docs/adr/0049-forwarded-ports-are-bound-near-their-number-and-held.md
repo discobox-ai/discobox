@@ -1,6 +1,6 @@
 # 0049 — Forwarded ports are bound near their own number, and held once given
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 narrowed by [ADR 26-10-17-354](26-10-17-354-discobox-admin-ahp-serves-discoboxes-as-agent-host-sessions.md))
 - **Date**: 2026-08-18
 
 ## Context
