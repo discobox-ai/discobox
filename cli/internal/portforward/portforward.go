@@ -139,6 +139,10 @@ type Options struct {
 	// cannot take its own port reports BindFailed and stays unbound, which is
 	// the honest answer and the one a caller can tell the user about.
 	Exact bool
+	// Reserved are local TCP ports no binding takes, whatever it forwards:
+	// ports this machine's own listeners are known by. A target that wants one
+	// is moved to the nearest free port past it, or, when Exact, fails to bind.
+	Reserved []int
 	// Observe receives every status change. It is called from the forwarder's
 	// own goroutines and from Set, possibly concurrently, so an observer that
 	// writes anywhere shared must serialize itself.
@@ -147,13 +151,14 @@ type Options struct {
 
 // Forwarder owns the local sockets for a set of remote ports.
 type Forwarder struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	dialer  Dialer
-	address string
-	search  int
-	exact   bool
-	observe func(Event)
+	ctx      context.Context
+	cancel   context.CancelFunc
+	dialer   Dialer
+	address  string
+	search   int
+	exact    bool
+	reserved map[int]bool
+	observe  func(Event)
 	// flowIdle and flowRedial are flowIdleTimeout and flowRedialDelay, held
 	// here so a test can shorten them.
 	flowIdle   time.Duration
@@ -205,11 +210,15 @@ func New(ctx context.Context, opts Options) *Forwarder {
 		address:    opts.BindAddress,
 		search:     opts.Search,
 		exact:      opts.Exact,
+		reserved:   map[int]bool{},
 		observe:    opts.Observe,
 		flowIdle:   flowIdleTimeout,
 		flowRedial: flowRedialDelay,
 		bound:      map[targetKey]*binding{},
 		bindFailed: map[targetKey]string{},
+	}
+	for _, port := range opts.Reserved {
+		forwarder.reserved[port] = true
 	}
 	if forwarder.address == "" {
 		forwarder.address = DefaultBindAddress
@@ -299,7 +308,7 @@ func (f *Forwarder) Set(targets []Target) {
 		}
 		delete(f.bindFailed, key)
 		f.bound[key] = bound
-		events = append(events, Event{Kind: Bound, Target: target, Local: bound.local})
+		events = append(events, Event{Kind: Bound, Target: target, Local: bound.local, Reserved: target.Network != UDP && f.reserved[target.Port]})
 		f.wg.Add(1)
 		if len(bound.packets) > 0 {
 			go f.relay(bound)
@@ -326,9 +335,9 @@ func (f *Forwarder) bind(target Target) (*binding, error) {
 	case target.Network == UDP:
 		bound.packets, err = listenPacketNearest(f.ctx, f.address, target.Port, f.search)
 	case f.exact:
-		bound.listener, err = listenExact(f.ctx, f.address, target.Port)
+		bound.listener, err = listenExact(f.ctx, f.address, target.Port, f.reserved)
 	default:
-		bound.listener, err = listenNearest(f.ctx, f.address, target.Port, f.search)
+		bound.listener, err = listenNearest(f.ctx, f.address, target.Port, f.search, f.reserved)
 	}
 	if err != nil {
 		return nil, err

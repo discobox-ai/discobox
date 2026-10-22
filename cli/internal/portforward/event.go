@@ -29,13 +29,15 @@ const (
 
 // Event is one status change. Local is the local port involved, which is zero
 // only for BindFailed; Peer is the local client's address and is set for the
-// per-connection kinds.
+// per-connection kinds. Reserved marks a Bound whose own number was passed
+// over because it is reserved (Options.Reserved), not because it was taken.
 type Event struct {
-	Kind   Kind
-	Target Target
-	Local  int
-	Peer   string
-	Err    error
+	Kind     Kind
+	Target   Target
+	Local    int
+	Peer     string
+	Err      error
+	Reserved bool
 }
 
 // String is the one-line form the CLI prints. It is here rather than in the
@@ -61,7 +63,11 @@ func (e Event) String() string {
 		if e.Local == e.Target.Port {
 			return fmt.Sprintf("listening on %s -> discobox %s%s%s", local, remote, protocolSuffix(e.Target), serviceSuffix(e.Target))
 		}
-		return fmt.Sprintf("listening on %s -> discobox %s%s%s (%s was taken)", local, remote, protocolSuffix(e.Target), serviceSuffix(e.Target), remote)
+		why := "was taken"
+		if e.Reserved {
+			why = "is reserved"
+		}
+		return fmt.Sprintf("listening on %s -> discobox %s%s%s (%s %s)", local, remote, protocolSuffix(e.Target), serviceSuffix(e.Target), remote, why)
 	case BindFailed:
 		return fmt.Sprintf("discobox %s%s could not be bound locally: %v", remote, serviceSuffix(e.Target), e.Err)
 	case Gone:
