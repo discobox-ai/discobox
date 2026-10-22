@@ -110,6 +110,9 @@ func (f *fakeService) Facts(context.Context) (agentcreds.FactsResponse, error) {
 
 // serve points the CLI at a real handler over HTTP, so these exercise the wire
 // format rather than an in-process shortcut.
+// aPolicy is a policy as the flags ask for one, which every request carries.
+var aPolicy = []string{"--statement", "allow read on anything in repository $primary.repo", "--define", "repository=a GitHub repository"}
+
 func serve(t *testing.T, svc agentcreds.Service) {
 	t.Helper()
 	server := httptest.NewServer(agentcreds.NewHandler(svc))
@@ -178,6 +181,8 @@ func TestRequestJSONPreservesShellHostileText(t *testing.T) {
 		Hosts:         []string{"api.github.com"},
 		Justification: justification,
 		Uses:          []agentcreds.RequestedUse{{Description: "Open a PR against the current repo"}},
+		Statements:    []string{"allow read on anything in repository $primary.repo"},
+		Definitions:   map[string]string{"repository": "a GitHub repository"},
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -202,7 +207,7 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 	svc := &fakeService{}
 	serve(t, svc)
 
-	body := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"grantTTLSeconds":14400}`
+	body := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"grantTTLSeconds":14400}`
 	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -210,7 +215,7 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 		t.Fatalf("grantTTLSeconds = %d, want the 14400 the JSON asked for", svc.gotRequest.GrantTTLSeconds)
 	}
 
-	flags := []string{"request", "--name", "github", "--env-var", "GITHUB_TOKEN", "--hosts", "api.github.com", "--use", "Open a PR"}
+	flags := append([]string{"request", "--name", "github", "--env-var", "GITHUB_TOKEN", "--hosts", "api.github.com", "--use", "Open a PR"}, aPolicy...)
 	svc.gotRequest = agentcreds.RequestBody{}
 	if _, stderr, code := capture(t, "", func() int { return Run(append(flags, "--grant-ttl", "30m")) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
@@ -223,14 +228,14 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 	if _, _, code := capture(t, "", func() int { return Run(append(flags, "--grant-ttl", "1500ms")) }); code != exitUsage {
 		t.Fatalf("exit = %d, want a usage error for a lifetime in fractions of a second", code)
 	}
-	negative := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"grantTTLSeconds":-1}`
+	negative := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"grantTTLSeconds":-1}`
 	if _, _, code := capture(t, negative, func() int { return Run([]string{"request", "--json"}) }); code != exitUsage {
 		t.Fatalf("exit = %d, want a usage error for a negative lifetime", code)
 	}
 	// The ceiling matters more than the floor: an ask nobody bounded is how a
 	// human ends up one keystroke from a credential that outlives the work, and
 	// one big enough to overflow a duration reads as forever.
-	tooLong := fmt.Sprintf(`{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"grantTTLSeconds":%d}`, int64(agentcreds.MaxGrantTTLSeconds)+1)
+	tooLong := fmt.Sprintf(`{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"grantTTLSeconds":%d}`, int64(agentcreds.MaxGrantTTLSeconds)+1)
 	if _, stderr, code := capture(t, tooLong, func() int { return Run([]string{"request", "--json"}) }); code != exitUsage {
 		t.Fatalf("exit = %d, want a usage error for an ask over the ceiling: %s", code, stderr)
 	}
@@ -249,7 +254,7 @@ func TestRequestCarriesAnAskToDelegate(t *testing.T) {
 	svc := &fakeService{}
 	serve(t, svc)
 
-	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"delegate"}`
+	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"purpose":"delegate"}`
 	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -259,7 +264,7 @@ func TestRequestCarriesAnAskToDelegate(t *testing.T) {
 
 	svc.gotRequest = agentcreds.RequestBody{}
 	if _, stderr, code := capture(t, "", func() int {
-		return Run([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate"})
+		return Run(append([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate"}, aPolicy...))
 	}); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -269,7 +274,7 @@ func TestRequestCarriesAnAskToDelegate(t *testing.T) {
 
 	svc.gotRequest = agentcreds.RequestBody{}
 	if _, stderr, code := capture(t, "", func() int {
-		return Run([]string{"request", "com.github.api", "--use", "Open a PR"})
+		return Run(append([]string{"request", "com.github.api", "--use", "Open a PR"}, aPolicy...))
 	}); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -278,7 +283,7 @@ func TestRequestCarriesAnAskToDelegate(t *testing.T) {
 	}
 
 	svc.gotRequest = agentcreds.RequestBody{}
-	unknown := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"both"}`
+	unknown := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"purpose":"both"}`
 	if _, _, code := capture(t, unknown, func() int { return Run([]string{"request", "--json"}) }); code != exitUsage {
 		t.Fatalf("exit = %d, want a usage error for a purpose that is neither use nor delegate", code)
 	}
@@ -294,7 +299,7 @@ func TestAnAskToDelegateRefusesAServiceThatDropsIt(t *testing.T) {
 	svc := &fakeService{predatesPurpose: true}
 	serve(t, svc)
 
-	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"delegate","wait":true}`
+	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"purpose":"delegate","wait":true}`
 	_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code != exitError || !strings.Contains(stderr, "as an ask to use") {
 		t.Fatalf("exit = %d, stderr = %s; want the dropped delegation reported", code, stderr)
@@ -312,7 +317,7 @@ func TestAGrantedDelegationSaysRunTakesNoneOfItsUses(t *testing.T) {
 	serve(t, svc)
 
 	stdout, stderr, code := capture(t, "", func() int {
-		return Run([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate", "--wait"})
+		return Run(append([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate", "--wait"}, aPolicy...))
 	})
 	if code != exitOK || !strings.Contains(stdout, "run takes none of them") {
 		t.Fatalf("exit = %d, stdout = %q, stderr = %s; want the delegation's uses marked as not run uses", code, stdout, stderr)
@@ -325,7 +330,7 @@ func TestRequestNamesAWellKnownCredentialByID(t *testing.T) {
 	svc := &fakeService{}
 	serve(t, svc)
 
-	args := []string{"request", "com.github.api", "--use", "Open a pull request against the current repo"}
+	args := append([]string{"request", "com.github.api", "--use", "Open a pull request against the current repo"}, aPolicy...)
 	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -336,7 +341,7 @@ func TestRequestNamesAWellKnownCredentialByID(t *testing.T) {
 	// Wherever it falls: an agent writing the flags first is asking for the
 	// same thing, and dropping the ID there would answer a different ask.
 	svc.gotRequest = agentcreds.RequestBody{}
-	args = []string{"request", "--use", "Open a pull request", "com.github.api", "--why", "the fix is ready"}
+	args = append([]string{"request", "--use", "Open a pull request", "com.github.api", "--why", "the fix is ready"}, aPolicy...)
 	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -351,7 +356,7 @@ func TestRequestNamesAWellKnownCredentialByID(t *testing.T) {
 	}
 
 	svc.gotRequest = agentcreds.RequestBody{}
-	body := `{"id":"com.github.api","uses":[{"description":"Open a PR"}]}`
+	body := `{"id":"com.github.api","uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"}}`
 	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
@@ -548,7 +553,7 @@ func TestWaitReportsAGrantedRequestWithItsUseIDs(t *testing.T) {
 	}})
 
 	body := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],` +
-		`"uses":[{"description":"Open a PR"}],"wait":true,"timeoutSeconds":5}`
+		`"uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"wait":true,"timeoutSeconds":5}`
 	stdout, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code != exitOK {
 		t.Fatalf("exit = %d, want 0", code)
@@ -578,7 +583,7 @@ func TestGrantedUsesSayHowLongTheyLast(t *testing.T) {
 		status:      agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Uses: uses},
 	})
 
-	body := `{"id":"com.github.api","uses":[{"description":"Push the branch"}],"grantTTLSeconds":1800,"wait":true,"timeoutSeconds":5}`
+	body := `{"id":"com.github.api","uses":[{"description":"Push the branch"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"grantTTLSeconds":1800,"wait":true,"timeoutSeconds":5}`
 	approved, _, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code != exitOK {
 		t.Fatalf("request exit = %d, want 0", code)
@@ -622,7 +627,7 @@ func TestWaitOnADeniedRequestExitsNonZero(t *testing.T) {
 	serve(t, &fakeService{status: agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusDenied}})
 
 	body := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["api.github.com"],` +
-		`"uses":[{"description":"Open a PR"}],"wait":true,"timeoutSeconds":5}`
+		`"uses":[{"description":"Open a PR"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"},"wait":true,"timeoutSeconds":5}`
 	_, _, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code == exitOK {
 		t.Fatal("a denied request exited 0")
@@ -651,7 +656,7 @@ func TestRequestNamesSeveralHosts(t *testing.T) {
 		{"--hosts", " api.github.com, ", "--hosts", "githubcopilot.com"},
 	} {
 		svc.gotRequest = agentcreds.RequestBody{}
-		full := append([]string{"request", "com.github.api"}, append(args, "--use", "run copilot")...)
+		full := append([]string{"request", "com.github.api"}, append(append(args, "--use", "run copilot"), aPolicy...)...)
 		if _, stderr, code := capture(t, "", func() int { return Run(full) }); code != exitOK {
 			t.Fatalf("%q: exit = %d, want 0: %s", args, code, stderr)
 		}
@@ -661,7 +666,7 @@ func TestRequestNamesSeveralHosts(t *testing.T) {
 	}
 
 	svc.gotRequest = agentcreds.RequestBody{}
-	body := `{"name":"github","envVar":"GH_TOKEN","hosts":["api.github.com","githubcopilot.com"],"uses":[{"description":"run copilot"}]}`
+	body := `{"name":"github","envVar":"GH_TOKEN","hosts":["api.github.com","githubcopilot.com"],"uses":[{"description":"run copilot"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"}}`
 	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}

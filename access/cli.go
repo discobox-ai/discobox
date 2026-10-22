@@ -162,23 +162,18 @@ func usage(w io.Writer) {
       Ask a human for a credential. Returns a request id immediately unless
       you wait for an answer.
 
-      Each use is one job, not one command: the job and its target, what it
-      reads and each kind of write it makes, and what it will never do. "Fix
-      issue #43 in acme/web as a pull request from branch fix-43 into main.
-      Read anything in the repository; push that branch, open and update the
-      pull request, and comment on it. Never push main or any other branch,
-      force-push, delete a branch, merge or close the pull request, open one
-      in another repository, comment on unrelated issues, delete a comment,
-      or read secrets." Rule out the dangerous neighbor of each write: the
-      same action wider, harsher, or on the target beside yours.
+      Ask for a policy: statements, one per --statement (a "statements"
+      list in --json), that say exactly what the job may do and what it must
+      never do, and a definition for every word they use but read, create,
+      update, delete, manage, anything and anywhere (--define
+      WORD=DEFINITION, a "definitions" map in --json). The policy is what the
+      grant enforces: run's commands are judged against it, whichever use
+      they name. A request without one is refused.
 
-      Ask for a policy beside the use: statements, one per --statement (a
-      "statements" list in --json), that say exactly what may be done, and a
-      definition for every word they use but read, create, update, delete,
-      manage, anything and anywhere (--define WORD=DEFINITION, a
-      "definitions" map in --json). With a policy, run's commands are judged
-      against it, whichever use they name, and the use only names the job.
-      Without one, the use alone is what is judged.
+      Beside it, one use per job, in a line: the job and its target ("Fix
+      issue #43 in acme/web as a pull request from branch fix-43 into
+      main"). Its ID is what run takes; it names the job, and the person
+      approving reads it.
 
         %[1]s request com.github.api --use "Fix issue #43 in acme/web as a pull request" \
           --statement 'allow read on anything in repository $primary.repo' \
@@ -198,7 +193,7 @@ func usage(w io.Writer) {
       refused here with what to fix, and nothing is sent.
 
       ID names a well-known credential (com.github.api), which says its own
-      name, variable, and host; give only --use and --why. --hosts may still
+      name, variable, and host; give only --use, the policy, and --why. --hosts may still
       name the hosts beneath the ID's you will reach: com.github.api for
       Copilot CLI is --hosts api.github.com,githubcopilot.com.
 
@@ -215,7 +210,22 @@ func usage(w io.Writer) {
           "envVar": "GITHUB_TOKEN",
           "hosts": ["api.github.com"],
           "justification": "the user's task asks me to open a PR",
-          "uses": [{"description": "Open a PR from fix-43 into main of acme/web. Read anything in the repository; push that branch and open the PR. Never push main or another branch, force-push, delete a branch, merge or close the PR, open one in another repository, or read secrets."}],
+          "uses": [{"description": "Open a PR from fix-43 into main of acme/web"}],
+          "statements": [
+            "allow read on anything in repository \"acme/web\"",
+            "allow push on branch \"fix-43\" in repository \"acme/web\"",
+            "allow create on pull request in repository \"acme/web\" when \"its head is fix-43 and its base is main\"",
+            "deny force-push, delete on branch in anywhere",
+            "deny read on secret in anywhere"
+          ],
+          "definitions": {
+            "repository": "a GitHub repository",
+            "branch": "a git branch in a repository",
+            "pull request": "a GitHub pull request",
+            "secret": "an Actions, Dependabot or environment secret",
+            "push": "add commits to a branch",
+            "force-push": "move a branch with --force and no lease"
+          },
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
@@ -228,8 +238,8 @@ func usage(w io.Writer) {
       cannot ask for forever. timeoutSeconds is only how long --wait waits.
 
       "purpose": "delegate" (--delegate) asks to hand the credential on to
-      other sandboxes rather than to use it: the approval lets you delegate it
-      for the uses you name, and run nothing with it yourself. Leave it out to
+      other sandboxes rather than to use it: the approval lets you hand on
+      policies within the one you ask for, and run nothing with it yourself. Leave it out to
       ask to use the credential. Someone who needs both asks twice.
 
       With flags: --name, --env-var, --hosts, --why, --use (repeatable),

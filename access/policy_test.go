@@ -73,13 +73,23 @@ func TestRequestSendsThePolicyItsStatementsSay(t *testing.T) {
 		t.Fatalf("policy = %#v, want %#v from the JSON body", svc.gotRequest.Policy, want)
 	}
 
-	// Uses alone are a request as before, with no policy.
-	svc.gotRequest = agentcreds.RequestBody{}
-	if _, stderr, code := capture(t, "", func() int { return Run([]string{"request", "com.github.api", "--use", "Open a PR"}) }); code != exitOK {
-		t.Fatalf("exit = %d, want 0: %s", code, stderr)
-	}
-	if svc.gotRequest.Policy != nil {
-		t.Fatalf("policy = %#v, want none for a request of uses alone", svc.gotRequest.Policy)
+	// Uses alone are refused before anything is sent, with how to write a
+	// policy: the policy is what a grant enforces.
+	for _, run := range []struct {
+		stdin string
+		args  []string
+	}{
+		{args: []string{"request", "com.github.api", "--use", "Open a PR"}},
+		{stdin: `{"id":"com.github.api","uses":[{"description":"Open a PR"}]}`, args: []string{"request", "--json"}},
+	} {
+		svc.gotRequest = agentcreds.RequestBody{}
+		_, stderr, code := capture(t, run.stdin, func() int { return Run(run.args) })
+		if code != exitUsage || !strings.Contains(stderr, "asks for a policy beside its uses") || !strings.Contains(stderr, "--statement") {
+			t.Fatalf("%v: exit = %d, stderr = %s; want uses alone refused with how to write a policy", run.args, code, stderr)
+		}
+		if svc.gotRequest.ID != "" {
+			t.Fatalf("%v: request = %#v, want nothing sent", run.args, svc.gotRequest)
+		}
 	}
 }
 

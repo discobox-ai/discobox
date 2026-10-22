@@ -102,7 +102,8 @@ func useExpiry(use agentcreds.Use) string {
 // spell the second --delegate, and empty asks to use the credential.
 //
 // Statements and Definitions are a policy as an agent writes it, in
-// sentences; the request sends its structure (policy.Written).
+// sentences; the request sends its structure (policy.Written). Every request
+// asks for one.
 type requestInput struct {
 	ID              string                    `json:"id,omitempty"`
 	Name            string                    `json:"name"`
@@ -216,6 +217,14 @@ func runRequest(ctx context.Context, args []string) int {
 	requested, err := policy.Written(input.Statements, input.Definitions)
 	if err != nil {
 		return usageError(out, "%v", err)
+	}
+	// Every ask carries a policy (agentcreds.RequestBody.Policy): one
+	// without is the protocol's invalid ask, refused here before it is sent,
+	// in the protocol's words with this client's flags and the grammar.
+	if requested == nil {
+		return usageError(out, "%s. Give one per --statement (a \"statements\" list in --json), such as "+
+			"'allow read on anything in repository $primary.repo' and 'deny delete on branch in anywhere', and define a word with --define WORD=DEFINITION "+
+			"(a \"definitions\" map); %s facts lists the variables a statement may name. A statement reads: %s", agentcreds.NoPolicyAsked, Name, policy.Grammar)
 	}
 
 	client := newClient()

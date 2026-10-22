@@ -52,7 +52,7 @@ shape, so they deliberately do not get the same interface.
 | Operation | Input | Why |
 | --- | --- | --- |
 | `run` | argv after `--`, and whatever the command reads on stdin | The declared command **is** the argv executed. Encoding it as JSON inserts a translation step between what the model wrote and what runs, and costs the child's exit status. A command that takes its request on stdin (`discobox new --json`, `gh api --input -`) is judged with it: see the judge, below. |
-| `request` | JSON on stdin (`--json`), or flags, after an optional well-known ID | Nested, and carries free text — a justification, use descriptions, a policy's statements — through a shell that reads quotes and apostrophes as syntax. A well-known ID (`com.github.api`) stands in for the name, variable, and host, which the implementation fills from the root `wellknown` registry. A policy is written as sentences (`--statement`, `--define`), below. |
+| `request` | JSON on stdin (`--json`), or flags, after an optional well-known ID | Nested, and carries free text — a justification, use descriptions, a policy's statements — through a shell that reads quotes and apostrophes as syntax. A well-known ID (`com.github.api`) stands in for the name, variable, and host, which the implementation fills from the root `wellknown` registry. Every request carries a policy, written as sentences (`--statement`, `--define`), below. |
 | `list` | nothing | — |
 | `trust` | a host argument and flags, or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. It carries free text for the reason `request` does. Nothing is run under it, so there is nothing to judge here; the proxy judges every request to the trusted host against its uses. |
 | `trusts` | nothing | — |
@@ -104,9 +104,9 @@ Rules the shape depends on:
 
 ## Policies as sentences
 
-A request may ask for a policy beside its uses
+A request asks for a policy beside its uses
 ([ADR 26-10-20-782](../docs/adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
-§§1, 3). The agent writes **sentences**; the protocol carries the
+§§1, 3); every grant an agent takes carries one (#312). The agent writes **sentences**; the protocol carries the
 **structure** (`RequestBody.Policy`); everything printed back is sentences
 again. `policy.go` is the whole of it:
 
@@ -118,9 +118,15 @@ again. `policy.go` is the whole of it:
   Definitions with no statements are refused, not dropped. The body takes
   sentences, never the structure: the agent's form is the sentence, and one
   input shape is one set of errors to teach.
-- **Uses stay.** Discobox requires at least one use, and the use ID is what
-  `run` takes; with a policy, the use names the job and the policy is what is
-  judged. No statements is a request of uses alone, as before.
+- **Uses stay, and name the job.** Discobox requires at least one use, and
+  the use ID is what `run` takes; the policy is what is judged, and the
+  person approving reads the use as the agent's own words for the job.
+- **No statements is refused** (`invalid`, exit 2) before anything is sent:
+  the protocol requires a policy on every ask (`agentcreds.RequestBody`), so
+  this is the protocol's rule, not this client's, and it is said in the
+  protocol's words (`agentcreds.NoPolicyAsked`), with this client's flags
+  and `policy.Grammar`. An implementation refuses the same ask in the same
+  protocol words, so an older client that sends one learns it there.
 - **Out**: `list`, a request's status and `wait` print a policy with
   `policy.FormatStatements`, each definition, and — once approved — each
   variable with its resolved value or that it resolved to nothing. `--json`

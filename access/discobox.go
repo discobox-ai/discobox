@@ -115,14 +115,17 @@ func primarySentence(facts policy.Facts) string {
 func describeSource(source policy.Source) string {
 	var b strings.Builder
 	if source.Remote != nil {
-		b.WriteString(source.Remote.Host + "/" + source.Remote.Repo)
+		b.WriteString(source.Remote.Host)
+		b.WriteString("/")
+		b.WriteString(source.Remote.Repo)
 	} else {
 		b.WriteString("no network remote")
 	}
 	if source.Ref != nil {
 		b.WriteString(" at ")
 		if source.Ref.Type != "" {
-			b.WriteString(source.Ref.Type + " ")
+			b.WriteString(source.Ref.Type)
+			b.WriteString(" ")
 		}
 		b.WriteString(source.Ref.Name)
 	}

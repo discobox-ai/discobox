@@ -117,7 +117,7 @@ func TestPendingCreationIncludesResumeNotice(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			svc := &fakeService{trustStatus: agentcreds.TrustRequestStatus{RequestID: "treq_1", Status: agentcreds.StatusPending}}
 			serve(t, svc)
-			body := `{"name":"example","envVar":"EXAMPLE_TOKEN","hosts":["example.test"],"uses":[{"description":"read"}]}`
+			body := `{"name":"example","envVar":"EXAMPLE_TOKEN","hosts":["example.test"],"uses":[{"description":"read"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"}}`
 			id := "sreq_1"
 			if kind == "trust" {
 				body = `{"host":"example.test","uses":[{"description":"read"}]}`
