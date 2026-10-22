@@ -211,7 +211,7 @@ func TestAutomaticUpgradeRespectsAManualProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if target, err := svc.currentImageRepin(ctx, stored); err != nil || !target.Available {
+	if target, err := svc.currentRepin(ctx, stored); err != nil || !target.Available {
 		t.Fatalf("target = %+v, %v; want the upgrade still on offer", target, err)
 	}
 }

@@ -15,6 +15,7 @@ type Sandbox = contract.Sandbox
 type Status = contract.Status
 type AssignedPort = contract.AssignedPort
 type ImageRef = contract.ImageRef
+type BundlePin = contract.BundlePin
 type ResolvedHarnessConfig = contract.ResolvedHarnessConfig
 type ProviderStatus = contract.ProviderStatus
 type ProviderConfigField = contract.ProviderConfigField

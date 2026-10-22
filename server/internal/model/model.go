@@ -887,14 +887,25 @@ func (p *Pool) EverCreated() bool {
 // silently, and the symptom is a container that stops being rebuilt for a
 // change that should rebuild it.
 type SandboxManifest struct {
-	HarnessConfigID      *string              `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	HarnessMode          string               `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
-	Model                *string              `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
-	ModelServiceTier     *string              `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
-	ModelReasoningLevel  *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
-	Prompt               []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
-	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
-	ImageDigest          string               `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match."`
+	HarnessConfigID     *string  `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	HarnessMode         string   `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
+	Model               *string  `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
+	ModelServiceTier    *string  `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
+	ModelReasoningLevel *string  `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
+	Prompt              []string `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
+	Image               string   `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
+	ImageDigest         string   `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match."`
+	// The bundles a box applies (ADR 26-10-16-423 §§7, 13): its harness
+	// config's, and the platform its server's release names, each pinned by
+	// digest. They move as the image pin does — at create, by an upgrade or a
+	// repair, and for a stopped sandbox when what they were taken from moves
+	// — and are what the pool lets the box fetch. Omitted when empty, which
+	// keeps the fingerprint of a sandbox pinned to no bundle what it was
+	// before bundles.
+	Bundle               string               `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"Harness bundle this sandbox is pinned to"`
+	BundleDigest         string               `gorm:"column:bundle_digest;not null;type:text;default:''" json:"bundleDigest,omitempty" doc:"Manifest digest of the harness bundle this sandbox is pinned to"`
+	PlatformBundle       string               `gorm:"column:platform_bundle;not null;type:text;default:''" json:"platformBundle,omitempty" doc:"Platform bundle this sandbox is pinned to"`
+	PlatformBundleDigest string               `gorm:"column:platform_bundle_digest;not null;type:text;default:''" json:"platformBundleDigest,omitempty" doc:"Manifest digest of the platform bundle this sandbox is pinned to"`
 	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
 	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
 	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`

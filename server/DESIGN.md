@@ -812,20 +812,28 @@ tag never moves a running sandbox.
   every built-in image on each server start and refreshes `ImageDigest` whenever
   the reference *or* the digest changed. `RefreshHarnessConfigImage` is the same
   operation for user-registered images, which have no automatic trigger. Both
-  reach sandboxes through `applyResolvedImageDigest` (below).
+  reach sandboxes through `applyResolvedPins` (below).
+- **The bundles are pinned with the image** (ADR 26-10-16-423 §7). A sandbox
+  pins its harness config's `Bundle`/`BundleDigest` beside the image it twins,
+  and `PlatformBundle`/`PlatformBundleDigest`, the platform the release's
+  reference resolves to. Every re-pin below moves all three, and the pins are
+  what the pool lets the box fetch (`resources/assets`, `pool-agent`).
 - **Availability is derived, never stored.** `services.SandboxUpgrade` compares
   the sandbox's pin to its preloaded harness config on every read and projects
-  `runtime.upgrade`. Nothing caches it, so no write path can forget to
-  invalidate it.
+  `runtime.upgrade`, against the platform last resolved. Nothing caches it,
+  so no write path can forget to invalidate it.
 - **Upgrading is a re-pin and nothing else.** `UpgradeSandbox` writes the
-  harness config's current `Image`/`ImageDigest` as intent. That changes the
+  harness config's current image and bundle, and the current platform, as
+  intent. That changes the
   spec fingerprint, so the ordinary reconcile carries it to the pool agent,
   which replaces the container that no longer matches — restarting it into the
   new image if it was running and leaving it stopped if it was not (ADR 0021).
   There is no upgrade operation and no upgrade counter.
 - **A stopped sandbox follows its harness image; a live one never moves.** When
-  a harness config's resolved digest changes, `applyResolvedImageDigest` runs
-  `UpgradeHarnessConfigSandboxes`: the same re-pin as the action, through the
+  a harness config's resolved image or bundle changes, `applyResolvedPins` runs
+  `UpgradeHarnessConfigSandboxes`, and when the release's platform reference
+  resolves somewhere new — first on every start — `UpgradePlatformSandboxes`
+  does the same for every project's sandboxes: the same re-pin as the action, through the
   same `recordSandboxIntent`, for that config's sandboxes observed stopped,
   and its failed sandboxes that are stopped or were never observed
   (ADR 0082, ADR 0121). A project opts out with `sandboxUpgradePolicy: manual`. No

@@ -3448,6 +3448,18 @@ components:
                 imageDigest:
                     description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it.
                     type: string
+                bundle:
+                    description: The harness bundle this sandbox is pinned to (ADR 26-10-16-423 §7). Pinned with the image it twins, and moved with it.
+                    type: string
+                bundleDigest:
+                    description: Manifest digest of the harness bundle this sandbox is pinned to.
+                    type: string
+                platformBundle:
+                    description: The platform bundle this sandbox is pinned to, the one its server's release named when it was pinned (ADR 26-10-16-423 §7). Written at create and by an upgrade, and for a stopped sandbox when the release's reference resolves somewhere new.
+                    type: string
+                platformBundleDigest:
+                    description: Manifest digest of the platform bundle this sandbox is pinned to.
+                    type: string
                 name:
                     description: Sandbox name
                     maxLength: 200
@@ -4420,14 +4432,21 @@ components:
         SandboxUpgrade:
             additionalProperties: false
             description: |-
-                Availability of a newer harness image for this sandbox. Derived at read time by
-                comparing the sandbox's pinned image digest to its harness config's current one;
-                it is never stored. Absent when the sandbox pins no digest (the default image, or
-                a sandbox created before pinning existed).
+                Availability of a newer harness image or bundle, or platform bundle, for this
+                sandbox. Derived at read time by comparing the sandbox's pins to its harness
+                config's current ones and to the platform bundle its server's release last
+                resolved to; it is never stored. Absent when the sandbox pins no digest (the
+                default image, or a sandbox created before pinning existed).
             properties:
                 available:
-                    description: Whether the harness config now resolves to a different image than this sandbox is pinned to
+                    description: Whether the harness config now resolves to a different image or bundle, or the release to a different platform bundle, than this sandbox is pinned to
                     type: boolean
+                currentBundleDigest:
+                    description: Harness bundle digest this sandbox is pinned to
+                    type: string
+                currentPlatformBundleDigest:
+                    description: Platform bundle digest this sandbox is pinned to
+                    type: string
                 currentImage:
                     description: Image reference this sandbox is running
                     type: string
@@ -4435,15 +4454,23 @@ components:
                     description: Config digest this sandbox is pinned to. Not a manifest digest; it matches what a local Docker daemon reports as an image ID.
                     type: string
                 reason:
-                    description: Why an upgrade is available
+                    description: Why an upgrade is available, the first pin that moved
                     enum:
                         - imageDigestChanged
+                        - bundleDigestChanged
+                        - platformBundleDigestChanged
+                    type: string
+                targetBundleDigest:
+                    description: Harness bundle digest an upgrade would pin this sandbox to
                     type: string
                 targetImage:
                     description: Image reference this sandbox's harness config resolves to now
                     type: string
                 targetImageDigest:
                     description: Config digest an upgrade would pin this sandbox to
+                    type: string
+                targetPlatformBundleDigest:
+                    description: Platform bundle digest an upgrade would pin this sandbox to
                     type: string
             required:
                 - available

@@ -39,7 +39,7 @@ func TestCreateKeepsItsFeatures(t *testing.T) {
 	if !maps.Equal(sb.Features, want) {
 		t.Fatalf("stored features = %v, want %v", sb.Features, want)
 	}
-	read, err := services.SandboxToAPI(sb, nil)
+	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

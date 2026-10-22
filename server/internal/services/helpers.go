@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -282,7 +285,7 @@ func SandboxGitFromModel(sandbox *model.Sandbox) *serverapi.SandboxGitIdentity {
 	return git
 }
 
-func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (serverapi.Sandbox, error) {
+func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.Sandbox, error) {
 	if sandbox == nil {
 		return serverapi.Sandbox{}, nil
 	}
@@ -292,6 +295,14 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if sandbox.ImageDigest != "" {
 		config["imageDigest"] = sandbox.ImageDigest
+	}
+	if sandbox.BundleDigest != "" {
+		config["bundle"] = sandbox.Bundle
+		config["bundleDigest"] = sandbox.BundleDigest
+	}
+	if sandbox.PlatformBundleDigest != "" {
+		config["platformBundle"] = sandbox.PlatformBundle
+		config["platformBundleDigest"] = sandbox.PlatformBundleDigest
 	}
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
@@ -372,7 +383,7 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
 	}
-	if upgrade := SandboxUpgrade(sandbox, fallback); upgrade != nil {
+	if upgrade := SandboxUpgrade(sandbox, basis); upgrade != nil {
 		runtime["upgrade"] = upgrade
 	}
 	if sandbox.AutomaticRepair != nil {
@@ -466,11 +477,66 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	return result, nil
 }
 
-// SandboxImageTarget is an image identity: the reference to run and the digest
-// saying which build that reference currently is.
-type SandboxImageTarget struct {
+// BundlePin is a bundle by reference and the manifest digest it is pinned to
+// (ADR 26-10-16-423 §§7, 13).
+type BundlePin struct {
+	Reference string
+	Digest    string
+}
+
+// Name is the name the asset API addresses the bundle by.
+func (p BundlePin) Name() string { return BundleName(p.Reference) }
+
+// BundleName is the name a bundle is addressed by: the last component of its
+// reference's repository, so ghcr.io/discobox-ai/discobox-platform:v1 and a
+// development build's discobox-platform:local are both discobox-platform.
+// Empty for a reference that does not parse.
+func BundleName(ref string) string {
+	parsed, err := name.ParseReference(strings.TrimSpace(ref))
+	if err != nil {
+		return ""
+	}
+	return path.Base(parsed.Context().RepositoryStr())
+}
+
+// SandboxPinTarget is what a sandbox is pinned to: the image to run and the
+// digest saying which build that reference currently is, and the harness and
+// platform bundles the box applies.
+type SandboxPinTarget struct {
 	Image  string
 	Digest string
+	Bundle BundlePin
+	// Platform is the platform bundle the release's reference resolves to;
+	// zero when it is not known, which leaves the sandbox's own in place.
+	Platform BundlePin
+}
+
+// Empty reports whether the target has nothing to move a sandbox to.
+func (t SandboxPinTarget) Empty() bool { return t == SandboxPinTarget{} }
+
+// Apply writes the target's pins onto sandbox. A harness image or a platform
+// the target does not name leaves the sandbox's as it is.
+func (t SandboxPinTarget) Apply(sandbox *model.Sandbox) {
+	if t.Digest != "" {
+		sandbox.Image, sandbox.ImageDigest = t.Image, t.Digest
+		sandbox.Bundle, sandbox.BundleDigest = t.Bundle.Reference, t.Bundle.Digest
+	}
+	if t.Platform.Digest != "" {
+		sandbox.PlatformBundle, sandbox.PlatformBundleDigest = t.Platform.Reference, t.Platform.Digest
+	}
+}
+
+// upgradeReason is why an upgrade is available: the first pin that moved.
+func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
+	switch {
+	case t.Digest != "" && t.Digest != strings.TrimSpace(sandbox.ImageDigest):
+		return "imageDigestChanged"
+	case t.Digest != "" && t.Bundle.Digest != sandbox.BundleDigest:
+		return "bundleDigestChanged"
+	case t.Platform.Digest != "" && t.Platform.Digest != sandbox.PlatformBundleDigest:
+		return "platformBundleDigestChanged"
+	}
+	return "imageDigestChanged"
 }
 
 // SandboxUpgradeTarget reports what an upgrade would move sandbox to, and
@@ -491,8 +557,16 @@ type SandboxImageTarget struct {
 // is the failure ADR 0016 §1 exists to prevent. An unpinned sandbox is eligible
 // rather than excluded — its tag may no longer resolve anywhere, so adopting
 // the current image is its only way forward.
-// A zero SandboxImageTarget means there is nothing to move to, which is a
+// A zero SandboxPinTarget means there is nothing to move to, which is a
 // different answer from "already up to date" and is reported differently.
+//
+// The bundles move with the image (ADR 26-10-16-423 §7): the harness bundle
+// is the config's, and platform the bundle the release's reference resolves
+// to now, zero when that is not known. A pin that moved, any of the three,
+// makes an upgrade available. The platform is every box's, so it is a target
+// of its own even for a sandbox whose harness has nothing to move to; only a
+// config-mode sandbox, which runs the configure flow and is thrown away,
+// follows nothing.
 //
 // config is the sandbox's harness config, or the project's fallback `shell`
 // config when the sandbox has none yet. A sandbox with no harness config is
@@ -503,22 +577,47 @@ type SandboxImageTarget struct {
 // A config whose image is not published for the sandbox's platform is nothing
 // to move to: a sandbox never leaves its own (ADR 0145 §1). A sandbox whose
 // pool has not yet declared one is not held back by it.
-func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (SandboxImageTarget, bool) {
-	if sandbox.HarnessMode == "config" || config == nil {
-		return SandboxImageTarget{}, false
+func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, platform BundlePin) (SandboxPinTarget, bool) {
+	if sandbox.HarnessMode == "config" {
+		return SandboxPinTarget{}, false
+	}
+	var target SandboxPinTarget
+	available := false
+	if image, digest, ok := harnessImageTarget(sandbox, config); ok {
+		target.Image, target.Digest = image, digest
+		target.Bundle = BundlePin{Reference: strings.TrimSpace(config.Bundle), Digest: strings.TrimSpace(config.BundleDigest)}
+		available = sandbox.HarnessConfigID == nil || digest != strings.TrimSpace(sandbox.ImageDigest) ||
+			target.Bundle.Digest != sandbox.BundleDigest
+	}
+	if platform.Digest != "" {
+		target.Platform = platform
+		available = available || platform.Digest != sandbox.PlatformBundleDigest
+	}
+	return target, available
+}
+
+// harnessImageTarget is the image config offers sandbox, when it offers one:
+// a config with an image and its digest, published for the sandbox's
+// platform.
+func harnessImageTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (image, digest string, ok bool) {
+	if config == nil {
+		return "", "", false
 	}
 	if !sandbox.Platform.IsZero() && config.Platforms.Publishes(sandbox.Platform) != nil {
-		return SandboxImageTarget{}, false
+		return "", "", false
 	}
-	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
-	if image == "" || digest == "" {
-		return SandboxImageTarget{}, false
-	}
-	target := SandboxImageTarget{Image: image, Digest: digest}
-	if sandbox.HarnessConfigID == nil {
-		return target, true
-	}
-	return target, digest != strings.TrimSpace(sandbox.ImageDigest)
+	image, digest = strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
+	return image, digest, image != "" && digest != ""
+}
+
+// SandboxUpgradeBasis is what a sandbox's available upgrade is read against
+// besides its own harness config: the project's reserved `shell` config,
+// which a legacy sandbox with no harness config of its own upgrades to (ADR
+// 0032 §4; nil when seeding has not created it), and the platform bundle the
+// release's reference was last resolved to (zero when it has not been).
+type SandboxUpgradeBasis struct {
+	Fallback *model.HarnessConfig
+	Platform BundlePin
 }
 
 // SandboxUpgrade renders the upgrade field of a sandbox API response, or nil
@@ -528,27 +627,40 @@ func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (
 // cached flag would have to be invalidated by every path that writes a harness
 // config, and the first one that forgot would leave a sandbox misreporting its
 // own state.
-func SandboxUpgrade(sandbox *model.Sandbox, fallback *model.HarnessConfig) map[string]any {
+func SandboxUpgrade(sandbox *model.Sandbox, basis SandboxUpgradeBasis) map[string]any {
 	if sandbox == nil {
 		return nil
 	}
 	config := sandbox.HarnessConfig
 	if sandbox.HarnessConfigID == nil {
-		config = fallback
+		config = basis.Fallback
 	}
-	target, available := SandboxUpgradeTarget(sandbox, config)
-	if target.Digest == "" {
+	target, available := SandboxUpgradeTarget(sandbox, config, basis.Platform)
+	if target.Empty() {
 		return nil
 	}
 	upgrade := map[string]any{
 		"available":          available,
 		"currentImage":       sandbox.Image,
 		"currentImageDigest": sandbox.ImageDigest,
-		"targetImage":        target.Image,
-		"targetImageDigest":  target.Digest,
+	}
+	if target.Digest != "" {
+		upgrade["targetImage"], upgrade["targetImageDigest"] = target.Image, target.Digest
+	}
+	if sandbox.BundleDigest != "" {
+		upgrade["currentBundleDigest"] = sandbox.BundleDigest
+	}
+	if target.Bundle.Digest != "" {
+		upgrade["targetBundleDigest"] = target.Bundle.Digest
+	}
+	if sandbox.PlatformBundleDigest != "" {
+		upgrade["currentPlatformBundleDigest"] = sandbox.PlatformBundleDigest
+	}
+	if target.Platform.Digest != "" {
+		upgrade["targetPlatformBundleDigest"] = target.Platform.Digest
 	}
 	if available {
-		upgrade["reason"] = "imageDigestChanged"
+		upgrade["reason"] = target.upgradeReason(sandbox)
 	}
 	return upgrade
 }
@@ -694,10 +806,10 @@ func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
 	return title
 }
 
-func SandboxesToAPI(sandboxes []model.Sandbox, fallback *model.HarnessConfig) ([]serverapi.Sandbox, error) {
+func SandboxesToAPI(sandboxes []model.Sandbox, basis SandboxUpgradeBasis) ([]serverapi.Sandbox, error) {
 	out := make([]serverapi.Sandbox, 0, len(sandboxes))
 	for i := range sandboxes {
-		converted, err := SandboxToAPI(&sandboxes[i], fallback)
+		converted, err := SandboxToAPI(&sandboxes[i], basis)
 		if err != nil {
 			return nil, err
 		}

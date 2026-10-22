@@ -366,9 +366,18 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	// and a command from another produce a container that starts and a harness
 	// that does not. That is most obvious under `--harness`, and is the same
 	// shear in miniature whenever the destination's pin has moved.
+	// The bundles are this server's for the same reason: the archive's name
+	// what its own server pinned (ADR 26-10-16-423 §7).
+	sb.Bundle, sb.BundleDigest = "", ""
 	if image := strings.TrimSpace(harnessConfig.Image); image != "" {
 		sb.Image, sb.ImageDigest = image, strings.TrimSpace(harnessConfig.ImageDigest)
+		sb.Bundle, sb.BundleDigest = strings.TrimSpace(harnessConfig.Bundle), strings.TrimSpace(harnessConfig.BundleDigest)
 	}
+	platformBundle, err := s.currentPlatform(ctx)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
+	}
+	sb.PlatformBundle, sb.PlatformBundleDigest = platformBundle.Reference, platformBundle.Digest
 	if root := sb.Source.Root(); root != "" {
 		sb.SourceRoot = &root
 	}

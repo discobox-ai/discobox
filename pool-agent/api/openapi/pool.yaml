@@ -499,6 +499,21 @@ components:
                 denyByDefault:
                     type: boolean
             type: object
+        BundlePin:
+            additionalProperties: false
+            description: A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it.
+            properties:
+                name:
+                    description: The bundle's name, the last component of its reference's repository, which the server's asset routes and assets.discobox.internal address it by.
+                    type: string
+                digest:
+                    description: The manifest or index digest the sandbox is pinned to.
+                    pattern: ^sha256:[a-f0-9]{64}$
+                    type: string
+            required:
+            - name
+            - digest
+            type: object
         PoolSandboxCreateRequest:
             additionalProperties: false
             properties:
@@ -508,6 +523,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                bundles:
+                    description: The bundles the sandbox is pinned to, the platform's first and then its harness's. The pool records them, replacing what an earlier create recorded, and assets.discobox.internal answers the sandbox only manifests and blobs they reach. Absent or empty is none.
+                    items:
+                        $ref: '#/components/schemas/BundlePin'
+                    nullable: true
+                    type: array
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
                 egress:

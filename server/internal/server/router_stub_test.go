@@ -155,8 +155,8 @@ func (s *routerTestServices) ForceJob(_ context.Context, projectID, _ string) (*
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
-func (s *routerTestServices) FallbackHarnessConfig(context.Context, string) (*model.HarnessConfig, error) {
-	return nil, nil
+func (s *routerTestServices) UpgradeBasis(context.Context, string) (services.SandboxUpgradeBasis, error) {
+	return services.SandboxUpgradeBasis{}, nil
 }
 
 func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string, _ []string, _ []sandboxmeta.Selector, _ ...store.SandboxListOption) ([]model.Sandbox, error) {

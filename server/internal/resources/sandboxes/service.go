@@ -51,6 +51,19 @@ type Service struct {
 	// holds a discobox giving them to what it was delegated (ADR
 	// 26-09-30-782 §1).
 	secrets *resourcesecrets.Service
+	// platform answers the platform bundle the release names, which every
+	// sandbox is pinned to (ADR 26-10-16-423 §7). Nil pins none.
+	platform PlatformBundles
+}
+
+// PlatformBundles is what the release's platform bundle is pinned to.
+type PlatformBundles interface {
+	// CurrentPlatform resolves the release's reference, at most as stale as
+	// the resolver keeps it; zero when the server names no platform.
+	CurrentPlatform(ctx context.Context) (services.BundlePin, error)
+	// LatestPlatform is what the reference last resolved to, without asking
+	// again; zero when it has not resolved.
+	LatestPlatform() services.BundlePin
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine) *Service {
@@ -115,6 +128,11 @@ func (s *Service) SetServerPeerID(id string) {
 // prepared by.
 func (s *Service) SetSecrets(secrets *resourcesecrets.Service) {
 	s.secrets = secrets
+}
+
+// SetPlatformBundles gives the service what pins a sandbox's platform bundle.
+func (s *Service) SetPlatformBundles(platform PlatformBundles) {
+	s.platform = platform
 }
 
 // SandboxProviderCatalogItem describes a registered sandbox provider type.
@@ -260,6 +278,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	image := strings.TrimSpace(config.Image.Or(""))
 	imageDigest := ""
+	var bundle services.BundlePin
 	harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
@@ -292,7 +311,17 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			// sandbox runs; the digest does, and the pool host enforces it
 			// (ADR 0016 §1).
 			imageDigest = strings.TrimSpace(harnessConfig.ImageDigest)
+			// The bundle is pinned with the image it twins (ADR 26-10-16-423 §7).
+			bundle = services.BundlePin{Reference: strings.TrimSpace(harnessConfig.Bundle), Digest: strings.TrimSpace(harnessConfig.BundleDigest)}
 		}
+	}
+	// Every box applies the platform, whatever its harness: it is pinned
+	// here and moved only by a re-pin (ADR 26-10-16-423 §7). A platform the
+	// server names and cannot resolve fails the create rather than leave a
+	// box pinned to none.
+	platformBundle, err := s.currentPlatform(ctx)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
 	}
 	if image == "" {
 		// Only reachable when the harness config declares no image, or when a
@@ -320,6 +349,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			Prompt:               config.Prompt,
 			Image:                image,
 			ImageDigest:          imageDigest,
+			Bundle:               bundle.Reference,
+			BundleDigest:         bundle.Digest,
+			PlatformBundle:       platformBundle.Reference,
+			PlatformBundleDigest: platformBundle.Digest,
 			Env:                  map[string]string(config.Env.Or(nil)),
 			Source:               source,
 			SourceCodeReferences: sourceCodeReferences,
@@ -831,7 +864,7 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 	if sandbox.DesiredState == model.DesiredStateArchived {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it instead")
 	}
-	repin, err := s.currentImageRepin(ctx, sandbox)
+	repin, err := s.currentRepin(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -996,7 +1029,7 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
-	repin, err := s.currentImageRepin(ctx, existing)
+	repin, err := s.currentRepin(ctx, existing)
 	if err != nil {
 		return nil, err
 	}
@@ -1024,16 +1057,17 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 }
 
 // UpgradeHarnessConfigSandboxes moves this harness config's stopped sandboxes,
-// healthy or failed, onto the image it now resolves to (ADR 0082, ADR 0121).
+// healthy or failed, onto the image and bundle it now resolves to (ADR 0082,
+// ADR 0121).
 //
 // It is the same operation as UpgradeSandbox, performed for a caller that is
-// not a person: the same imageRepin, applied through the same
+// not a person: the same sandboxRepin, applied through the same
 // recordSandboxIntent, decided by the same services.SandboxUpgradeTarget the
 // read path reports `upgrade.available` from. There is no automatic-upgrade
 // code path — there is an automatic *author* of the upgrade every sandbox
 // already had.
 //
-// Delivery is therefore also unchanged. The re-pin moves ImageDigest, which is
+// Delivery is therefore also unchanged. The re-pin moves the pins, which are
 // in SandboxManifest.Fingerprint(), so the pool agent rebuilds the container
 // whose spec_fingerprint label no longer matches and — because it found that
 // container stopped — leaves the replacement stopped (ADR 0021 §3). Nothing
@@ -1052,6 +1086,86 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 	if harnessConfigID == "" {
 		return nil
 	}
+	return s.upgradeStoppedSandboxes(ctx, projectID, harnessConfigID)
+}
+
+// UpgradePlatformSandboxes moves every project's stopped sandboxes onto the
+// platform bundle the release's reference now resolves to (ADR 26-10-16-423
+// §7). It is UpgradeHarnessConfigSandboxes for the pin every sandbox shares,
+// run when that reference resolves to a digest it had not, as a server
+// starting on a new release first does.
+func (s *Service) UpgradePlatformSandboxes(ctx context.Context) error {
+	projects, err := s.store.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, project := range projects {
+		if err := s.upgradeStoppedSandboxes(ctx, project.ID, ""); err != nil {
+			failures = append(failures, fmt.Errorf("project %s: %w", project.ID, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// PinStoppedSandboxBundles pins each stopped sandbox created before bundles
+// to its harness config's bundle, when the sandbox runs the image that config
+// pins (ADR 26-10-16-423 §7): the image the bundle twins, so the pin is no
+// upgrade, only what the sandbox already runs, named. It runs on every start.
+//
+// It is recorded intent, as a re-pin is, so the sandbox is reconciled and its
+// pool sent the create that rebuilds its container and records the pin. Only
+// a stopped sandbox, so the rebuild is one nobody is using; a running one is
+// pinned at a start that finds it stopped, or by an upgrade or repair, and
+// reports its available upgrade until then. Unlike an upgrade it is not the
+// project's policy to refuse: nothing it runs changes. The platform is not
+// pinned here; UpgradePlatformSandboxes moves stopped sandboxes onto it.
+func (s *Service) PinStoppedSandboxBundles(ctx context.Context) error {
+	projects, err := s.store.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		candidates, err := s.store.ListStoppedSandboxes(ctx, project.ID, "")
+		if err != nil {
+			return err
+		}
+		for i := range candidates {
+			sb := &candidates[i]
+			if sb.BundleDigest != "" || sb.HarnessConfigID == nil || awaitingSourcePush(sb) {
+				continue
+			}
+			config, err := s.store.GetHarnessConfig(ctx, project.ID, *sb.HarnessConfigID)
+			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					continue
+				}
+				return err
+			}
+			bundle, digest := strings.TrimSpace(config.Bundle), strings.TrimSpace(config.BundleDigest)
+			if bundle == "" || digest == "" || strings.TrimSpace(config.ImageDigest) == "" || config.ImageDigest != sb.ImageDigest {
+				continue
+			}
+			if _, err := s.recordSandboxIntent(ctx, project.ID, sb.ID, model.DesiredStatePresent, func(sb *model.Sandbox) {
+				// Read again under the intent: a sandbox pinned since is left.
+				if sb.BundleDigest == "" && sb.ImageDigest == config.ImageDigest {
+					sb.Bundle, sb.BundleDigest = bundle, digest
+				}
+			}); err != nil {
+				slog.WarnContext(ctx, "skip pinning a stopped sandbox's bundle; cannot record intent",
+					"projectId", project.ID, "sandboxId", sb.ID, "error", err)
+				continue
+			}
+			slog.InfoContext(ctx, "pinned stopped sandbox to its harness bundle",
+				"projectId", project.ID, "sandboxId", sb.ID, "bundle", bundle, "bundleDigest", digest)
+		}
+	}
+	return nil
+}
+
+// upgradeStoppedSandboxes re-pins a project's stopped sandboxes on one harness
+// config, or on any when harnessConfigID is empty, whose pins have moved.
+func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnessConfigID string) error {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -1064,7 +1178,7 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 	if !model.SandboxUpgradesAutomatically(project) {
 		return nil
 	}
-	candidates, err := s.store.ListStoppedSandboxesForHarnessConfig(ctx, projectID, harnessConfigID)
+	candidates, err := s.store.ListStoppedSandboxes(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return err
 	}
@@ -1078,10 +1192,10 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 		if awaitingSourcePush(sb) {
 			continue
 		}
-		repin, err := s.currentImageRepin(ctx, sb)
+		repin, err := s.currentRepin(ctx, sb)
 		if err != nil {
 			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot resolve target",
-				"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID, "error", err)
+				"projectId", projectID, "sandboxId", sb.ID, "error", err)
 			continue
 		}
 		if !repin.Available {
@@ -1089,29 +1203,34 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 		}
 		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, repin.apply); err != nil {
 			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot record intent",
-				"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID, "error", err)
+				"projectId", projectID, "sandboxId", sb.ID, "error", err)
 			continue
 		}
-		slog.InfoContext(ctx, "upgraded stopped sandbox to its harness image",
-			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID,
+		configID := ""
+		if sb.HarnessConfigID != nil {
+			configID = *sb.HarnessConfigID
+		}
+		slog.InfoContext(ctx, "upgraded stopped sandbox to its current pins",
+			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", configID,
 			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Digest,
+			"previousBundleDigest", sb.BundleDigest, "bundleDigest", repin.Bundle.Digest,
+			"previousPlatformBundleDigest", sb.PlatformBundleDigest, "platformBundleDigest", repin.Platform.Digest,
 			"retryingFailure", sb.ErrorMessage != nil || sb.State == model.SandboxStateFailed)
 	}
 	return nil
 }
 
-// imageRepin is the change that moves a sandbox onto its harness config's
-// current image: the pin itself, and the harness config a legacy sandbox adopts
-// along with it.
+// sandboxRepin is the change that moves a sandbox onto its harness config's
+// current image and bundle and the platform its server's release names now,
+// and the harness config a legacy sandbox adopts along with them.
 //
 // It exists because two operations write it — upgrade, whose whole content it
 // is, and repair, which carries it on the rebuild it was already doing
 // (ADR 0064 §1). They must not be able to pin differently, and the difference
 // between them is only what an unavailable target means, which each decides for
 // itself before calling apply.
-type imageRepin struct {
-	Image  string
-	Digest string
+type sandboxRepin struct {
+	services.SandboxPinTarget
 
 	// HarnessConfigID is set only when the re-pin also adopts a config: a
 	// sandbox created before every sandbox carried one resolves its target
@@ -1129,52 +1248,73 @@ type imageRepin struct {
 
 // apply writes the re-pin onto the sandbox being recorded. An unavailable
 // target writes nothing: the sandbox keeps the pin it has.
-func (r imageRepin) apply(sb *model.Sandbox) {
+func (r sandboxRepin) apply(sb *model.Sandbox) {
 	if !r.Available {
 		return
 	}
-	sb.Image = r.Image
-	sb.ImageDigest = r.Digest
+	r.Apply(sb)
 	if r.HarnessConfigID != "" {
 		adopt := r.HarnessConfigID
 		sb.HarnessConfigID = &adopt
 	}
 }
 
-// currentImageRepin resolves what moving the sandbox onto its harness config's
-// current image would change, without changing anything. It loads the config
-// the shared rule needs; the rule itself lives in services.SandboxUpgradeTarget
-// so this and the read path that reports an available upgrade cannot answer
-// differently.
-func (s *Service) currentImageRepin(ctx context.Context, sb *model.Sandbox) (imageRepin, error) {
+// currentRepin resolves what moving the sandbox onto its harness config's
+// current pins would change, without changing anything. It loads the config
+// and the platform the shared rule needs; the rule itself lives in
+// services.SandboxUpgradeTarget so this and the read path that reports an
+// available upgrade cannot answer differently.
+func (s *Service) currentRepin(ctx context.Context, sb *model.Sandbox) (sandboxRepin, error) {
 	var config *model.HarnessConfig
 	var err error
 	adopt := ""
 	if sb.HarnessConfigID == nil {
 		// Not converged yet: it moves to the fallback, adopting it.
 		if config, err = s.fallbackHarnessConfig(ctx, sb.ProjectID); err != nil {
-			return imageRepin{}, err
+			return sandboxRepin{}, err
 		}
 		if config != nil {
 			adopt = config.ID
 		}
 	} else if config, err = s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID)); err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
-			return imageRepin{}, err
+			return sandboxRepin{}, err
 		}
 		config = nil
 	}
-	target, available := services.SandboxUpgradeTarget(sb, config)
-	if target.Digest == "" {
+	// A platform that cannot be resolved now is no move of it: the re-pin
+	// still carries the harness's, and the sandbox keeps the platform it has
+	// (SandboxPinTarget.Apply). Repair is a recovery path, and a fan-out runs
+	// once per move; neither may be refused for a registry being away.
+	platform, err := s.currentPlatform(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "re-pin without the platform bundle; it cannot be resolved",
+			"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
+		platform = services.BundlePin{}
+	}
+	target, available := services.SandboxUpgradeTarget(sb, config, platform)
+	if target.Empty() {
 		// Nothing to move to: report what it runs now, so callers can tell that
 		// apart from a re-pin that is merely already applied.
-		return imageRepin{Image: sb.Image, Digest: sb.ImageDigest}, nil
+		return sandboxRepin{SandboxPinTarget: services.SandboxPinTarget{Image: sb.Image, Digest: sb.ImageDigest}}, nil
 	}
-	repin := imageRepin{Image: target.Image, Digest: target.Digest, Available: available}
-	if available {
+	repin := sandboxRepin{SandboxPinTarget: target, Available: available}
+	// A config is adopted only with its image: a re-pin that moves the
+	// platform alone keeps the image the sandbox runs, and that image beside
+	// another config's command is a harness that does not start.
+	if available && target.Digest != "" {
 		repin.HarnessConfigID = adopt
 	}
 	return repin, nil
+}
+
+// currentPlatform is the platform bundle the release's reference resolves to
+// now (ADR 26-10-16-423 §7), zero when the server names none.
+func (s *Service) currentPlatform(ctx context.Context) (services.BundlePin, error) {
+	if s.platform == nil {
+		return services.BundlePin{}, nil
+	}
+	return s.platform.CurrentPlatform(ctx)
 }
 
 // fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
@@ -1195,11 +1335,18 @@ func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (
 	return config, nil
 }
 
-// FallbackHarnessConfig exposes the reserved `shell` config to the API mappers,
+// UpgradeBasis exposes what an upgrade is read against to the API mappers,
 // which report a sandbox's available upgrade and must give the same answer this
-// service applies.
-func (s *Service) FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
-	return s.fallbackHarnessConfig(ctx, projectID)
+// service applies. The platform is the one last resolved, never asked for
+// afresh: a read is not held up by a registry.
+func (s *Service) UpgradeBasis(ctx context.Context, projectID string) (services.SandboxUpgradeBasis, error) {
+	var basis services.SandboxUpgradeBasis
+	if s.platform != nil {
+		basis.Platform = s.platform.LatestPlatform()
+	}
+	fallback, err := s.fallbackHarnessConfig(ctx, projectID)
+	basis.Fallback = fallback
+	return basis, err
 }
 
 // CompleteSandboxSourcePush reports that a client finished delivering a

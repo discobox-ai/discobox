@@ -15,6 +15,36 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it.
+// Ref: #/components/schemas/BundlePin
+type BundlePin struct {
+	// The bundle's name, the last component of its reference's repository, which the server's asset
+	// routes and assets.discobox.internal address it by.
+	Name string `json:"name"`
+	// The manifest or index digest the sandbox is pinned to.
+	Digest string `json:"digest"`
+}
+
+// GetName returns the value of Name.
+func (s *BundlePin) GetName() string {
+	return s.Name
+}
+
+// GetDigest returns the value of Digest.
+func (s *BundlePin) GetDigest() string {
+	return s.Digest
+}
+
+// SetName sets the value of Name.
+func (s *BundlePin) SetName(val string) {
+	s.Name = val
+}
+
+// SetDigest sets the value of Digest.
+func (s *BundlePin) SetDigest(val string) {
+	s.Digest = val
+}
+
 // A sandbox's effective egress policy (ADR 26-10-01-032), merged by the
 // control plane. Unrestricted when denyByDefault is false, and allow is then
 // ignored; restricted, the sandbox reaches only the allow entries, so an
@@ -1597,6 +1627,69 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilBundlePinArray returns new OptNilBundlePinArray with value set to v.
+func NewOptNilBundlePinArray(v []BundlePin) OptNilBundlePinArray {
+	return OptNilBundlePinArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilBundlePinArray is optional nullable []BundlePin.
+type OptNilBundlePinArray struct {
+	Value []BundlePin
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilBundlePinArray was set.
+func (o OptNilBundlePinArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilBundlePinArray) Reset() {
+	var v []BundlePin
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilBundlePinArray) SetTo(v []BundlePin) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilBundlePinArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilBundlePinArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []BundlePin
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilBundlePinArray) Get() (v []BundlePin, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilBundlePinArray) Or(d []BundlePin) []BundlePin {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4046,8 +4139,12 @@ func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/PoolSandboxCreateRequest
 type PoolSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI        `json:"$schema"`
-	Config SandboxConfig `json:"config"`
+	Schema OptURI `json:"$schema"`
+	// The bundles the sandbox is pinned to, the platform's first and then its harness's. The pool
+	// records them, replacing what an earlier create recorded, and assets.discobox.internal answers the
+	// sandbox only manifests and blobs they reach. Absent or empty is none.
+	Bundles OptNilBundlePinArray `json:"bundles"`
+	Config  SandboxConfig        `json:"config"`
 	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built
 	// so it is in force from the sandbox's first request. Absent means unrestricted.
 	Egress OptEgressPolicy `json:"egress"`
@@ -4072,6 +4169,11 @@ type PoolSandboxCreateRequest struct {
 // GetSchema returns the value of Schema.
 func (s *PoolSandboxCreateRequest) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetBundles returns the value of Bundles.
+func (s *PoolSandboxCreateRequest) GetBundles() OptNilBundlePinArray {
+	return s.Bundles
 }
 
 // GetConfig returns the value of Config.
@@ -4117,6 +4219,11 @@ func (s *PoolSandboxCreateRequest) GetSecretEnv() OptNilPoolSandboxCreateRequest
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetBundles sets the value of Bundles.
+func (s *PoolSandboxCreateRequest) SetBundles(val OptNilBundlePinArray) {
+	s.Bundles = val
 }
 
 // SetConfig sets the value of Config.

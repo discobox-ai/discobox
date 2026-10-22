@@ -87,7 +87,7 @@ true of it, and true *by rule* rather than by slug:
   image: a harness's twin carries its bundle's label, and the sandbox agent
   image the platform layer's, though nothing reads them off it. A manifest
   edit then moves `ImageDigest`, which seeding compares and
-  `applyResolvedImageDigest` fans out.
+  `applyResolvedPins` fans out.
 - The harness's egress level is two fields: `ImageEgressHosts`, the hosts the
   image declares, replaced by every re-snapshot, and `Egress`, what a person
   set, which a re-snapshot never touches (ADR 26-10-01-032 §3) and only
@@ -208,10 +208,10 @@ true of it, and true *by rule* rather than by slug:
 
 ## A resolved digest reaches the sandboxes running it
 
-`applyResolvedImageDigest` is the one place a newly resolved image reaches the
-sandboxes on that config (ADR 0082). The rule is stated on the field rather than
-on a list of callers: **wherever `ImageDigest` is written to a value different
-from the one it replaced**, the config's eligible stopped sandboxes are
+`applyResolvedPins` is the one place a newly resolved image or bundle reaches
+the sandboxes on that config (ADR 0082, ADR 26-10-16-423 §7). The rule is stated
+on the fields rather than on a list of callers: **wherever `ImageDigest` or
+`BundleDigest` is written to a value different from the one it replaced**, the config's eligible stopped sandboxes are
 re-pinned onto it through `SandboxRuntime.UpgradeHarnessConfigSandboxes`, which
 does nothing when the project's automatic-upgrade policy is off (ADR 0082 §3).
 

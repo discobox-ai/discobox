@@ -5,6 +5,7 @@ package model
 
 import poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 
+type BundlePin = poolagentapi.BundlePin
 type EgressPolicy = poolagentapi.EgressPolicy
 type ErrorDetail = poolagentapi.ErrorDetail
 type ErrorModel = poolagentapi.ErrorModel

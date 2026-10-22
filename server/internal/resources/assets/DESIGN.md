@@ -45,12 +45,27 @@ else — never a tag's answer that no pin records:
   recorded digest: a moved tag is followed only once the config is re-pinned
   (ADR 0016).
 
-A sandbox pins no bundle of its own: it runs its harness's runnable image. A
-pin whose digest is no `sha256:` digest (a build-mode development image, its
+- **each sandbox's** `Bundle`/`BundleDigest` and
+  `PlatformBundle`/`PlatformBundleDigest` (ADR 26-10-16-423 §7). A sandbox
+  keeps its pins after its config is re-pinned and after the release moves
+  on, until it is re-pinned itself, so a pool is answered what its boxes were
+  handed. Sandbox pins are digest scope only: a name resolves through the
+  first two.
+
+A pin whose digest is no `sha256:` digest (a build-mode development image, its
 own reference until a pool builds it) has no content and is left out. A blob
 is in scope when a pin's manifest — or, under an index, any manifest it lists
 that can be read — names it as config or layer; what the store holds is
 looked at before a listed manifest is fetched.
+
+## The platform pin
+
+The service is also where the platform a sandbox is pinned to comes from
+(`CurrentPlatform`, and `LatestPlatform` for a read that must not wait), and
+it tells the sandbox service when the release's reference resolves to a
+digest other than the one before (`OnPlatformMoved`), first on every start
+(`ResolvePlatform`), so stopped sandboxes follow the release (ADR 26-10-16-423
+§7).
 
 ## Blob store
 
@@ -91,8 +106,8 @@ flowchart LR
   detached from the first reader's cancellation and bounded by
   `fetchTimeout`.
 - **Removal is by reference** (`Prune`, hourly): a blob goes once no pin
-  reaches it — any project's harness config, or a platform digest this server
-  answered — and it is older than an hour, so one fetched for a pin made
+  reaches it — any project's harness config or sandbox, or a platform digest
+  this server answered — and it is older than an hour, so one fetched for a pin made
   since the sweep read the pins stays. Reach is read from the store alone.
   While the platform cannot be resolved nothing goes.
 

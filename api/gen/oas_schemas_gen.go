@@ -25380,6 +25380,17 @@ type SandboxConfig struct {
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
 	// by a restart; the pool host refuses an image that does not match it.
 	ImageDigest OptString `json:"imageDigest"`
+	// The harness bundle this sandbox is pinned to (ADR 26-10-16-423 §7). Pinned with the image it
+	// twins, and moved with it.
+	Bundle OptString `json:"bundle"`
+	// Manifest digest of the harness bundle this sandbox is pinned to.
+	BundleDigest OptString `json:"bundleDigest"`
+	// The platform bundle this sandbox is pinned to, the one its server's release named when it was
+	// pinned (ADR 26-10-16-423 §7). Written at create and by an upgrade, and for a stopped sandbox when
+	// the release's reference resolves somewhere new.
+	PlatformBundle OptString `json:"platformBundle"`
+	// Manifest digest of the platform bundle this sandbox is pinned to.
+	PlatformBundleDigest OptString `json:"platformBundleDigest"`
 	// Sandbox name.
 	Name string `json:"name"`
 	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
@@ -25450,6 +25461,26 @@ func (s *SandboxConfig) GetImage() string {
 // GetImageDigest returns the value of ImageDigest.
 func (s *SandboxConfig) GetImageDigest() OptString {
 	return s.ImageDigest
+}
+
+// GetBundle returns the value of Bundle.
+func (s *SandboxConfig) GetBundle() OptString {
+	return s.Bundle
+}
+
+// GetBundleDigest returns the value of BundleDigest.
+func (s *SandboxConfig) GetBundleDigest() OptString {
+	return s.BundleDigest
+}
+
+// GetPlatformBundle returns the value of PlatformBundle.
+func (s *SandboxConfig) GetPlatformBundle() OptString {
+	return s.PlatformBundle
+}
+
+// GetPlatformBundleDigest returns the value of PlatformBundleDigest.
+func (s *SandboxConfig) GetPlatformBundleDigest() OptString {
+	return s.PlatformBundleDigest
 }
 
 // GetName returns the value of Name.
@@ -25535,6 +25566,26 @@ func (s *SandboxConfig) SetImage(val string) {
 // SetImageDigest sets the value of ImageDigest.
 func (s *SandboxConfig) SetImageDigest(val OptString) {
 	s.ImageDigest = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *SandboxConfig) SetBundle(val OptString) {
+	s.Bundle = val
+}
+
+// SetBundleDigest sets the value of BundleDigest.
+func (s *SandboxConfig) SetBundleDigest(val OptString) {
+	s.BundleDigest = val
+}
+
+// SetPlatformBundle sets the value of PlatformBundle.
+func (s *SandboxConfig) SetPlatformBundle(val OptString) {
+	s.PlatformBundle = val
+}
+
+// SetPlatformBundleDigest sets the value of PlatformBundleDigest.
+func (s *SandboxConfig) SetPlatformBundleDigest(val OptString) {
+	s.PlatformBundleDigest = val
 }
 
 // SetName sets the value of Name.
@@ -30388,30 +30439,50 @@ func (s *SandboxUpdateConfig) SetName(val OptString) {
 	s.Name = val
 }
 
-// Availability of a newer harness image for this sandbox. Derived at read time by
-// comparing the sandbox's pinned image digest to its harness config's current one;
-// it is never stored. Absent when the sandbox pins no digest (the default image, or
-// a sandbox created before pinning existed).
+// Availability of a newer harness image or bundle, or platform bundle, for this
+// sandbox. Derived at read time by comparing the sandbox's pins to its harness
+// config's current ones and to the platform bundle its server's release last
+// resolved to; it is never stored. Absent when the sandbox pins no digest (the
+// default image, or a sandbox created before pinning existed).
 // Ref: #/components/schemas/SandboxUpgrade
 type SandboxUpgrade struct {
-	// Whether the harness config now resolves to a different image than this sandbox is pinned to.
+	// Whether the harness config now resolves to a different image or bundle, or the release to a
+	// different platform bundle, than this sandbox is pinned to.
 	Available bool `json:"available"`
+	// Harness bundle digest this sandbox is pinned to.
+	CurrentBundleDigest OptString `json:"currentBundleDigest"`
+	// Platform bundle digest this sandbox is pinned to.
+	CurrentPlatformBundleDigest OptString `json:"currentPlatformBundleDigest"`
 	// Image reference this sandbox is running.
 	CurrentImage OptString `json:"currentImage"`
 	// Config digest this sandbox is pinned to. Not a manifest digest; it matches what a local Docker
 	// daemon reports as an image ID.
 	CurrentImageDigest OptString `json:"currentImageDigest"`
-	// Why an upgrade is available.
+	// Why an upgrade is available, the first pin that moved.
 	Reason OptSandboxUpgradeReason `json:"reason"`
+	// Harness bundle digest an upgrade would pin this sandbox to.
+	TargetBundleDigest OptString `json:"targetBundleDigest"`
 	// Image reference this sandbox's harness config resolves to now.
 	TargetImage OptString `json:"targetImage"`
 	// Config digest an upgrade would pin this sandbox to.
 	TargetImageDigest OptString `json:"targetImageDigest"`
+	// Platform bundle digest an upgrade would pin this sandbox to.
+	TargetPlatformBundleDigest OptString `json:"targetPlatformBundleDigest"`
 }
 
 // GetAvailable returns the value of Available.
 func (s *SandboxUpgrade) GetAvailable() bool {
 	return s.Available
+}
+
+// GetCurrentBundleDigest returns the value of CurrentBundleDigest.
+func (s *SandboxUpgrade) GetCurrentBundleDigest() OptString {
+	return s.CurrentBundleDigest
+}
+
+// GetCurrentPlatformBundleDigest returns the value of CurrentPlatformBundleDigest.
+func (s *SandboxUpgrade) GetCurrentPlatformBundleDigest() OptString {
+	return s.CurrentPlatformBundleDigest
 }
 
 // GetCurrentImage returns the value of CurrentImage.
@@ -30429,6 +30500,11 @@ func (s *SandboxUpgrade) GetReason() OptSandboxUpgradeReason {
 	return s.Reason
 }
 
+// GetTargetBundleDigest returns the value of TargetBundleDigest.
+func (s *SandboxUpgrade) GetTargetBundleDigest() OptString {
+	return s.TargetBundleDigest
+}
+
 // GetTargetImage returns the value of TargetImage.
 func (s *SandboxUpgrade) GetTargetImage() OptString {
 	return s.TargetImage
@@ -30439,9 +30515,24 @@ func (s *SandboxUpgrade) GetTargetImageDigest() OptString {
 	return s.TargetImageDigest
 }
 
+// GetTargetPlatformBundleDigest returns the value of TargetPlatformBundleDigest.
+func (s *SandboxUpgrade) GetTargetPlatformBundleDigest() OptString {
+	return s.TargetPlatformBundleDigest
+}
+
 // SetAvailable sets the value of Available.
 func (s *SandboxUpgrade) SetAvailable(val bool) {
 	s.Available = val
+}
+
+// SetCurrentBundleDigest sets the value of CurrentBundleDigest.
+func (s *SandboxUpgrade) SetCurrentBundleDigest(val OptString) {
+	s.CurrentBundleDigest = val
+}
+
+// SetCurrentPlatformBundleDigest sets the value of CurrentPlatformBundleDigest.
+func (s *SandboxUpgrade) SetCurrentPlatformBundleDigest(val OptString) {
+	s.CurrentPlatformBundleDigest = val
 }
 
 // SetCurrentImage sets the value of CurrentImage.
@@ -30459,6 +30550,11 @@ func (s *SandboxUpgrade) SetReason(val OptSandboxUpgradeReason) {
 	s.Reason = val
 }
 
+// SetTargetBundleDigest sets the value of TargetBundleDigest.
+func (s *SandboxUpgrade) SetTargetBundleDigest(val OptString) {
+	s.TargetBundleDigest = val
+}
+
 // SetTargetImage sets the value of TargetImage.
 func (s *SandboxUpgrade) SetTargetImage(val OptString) {
 	s.TargetImage = val
@@ -30469,17 +30565,26 @@ func (s *SandboxUpgrade) SetTargetImageDigest(val OptString) {
 	s.TargetImageDigest = val
 }
 
-// Why an upgrade is available.
+// SetTargetPlatformBundleDigest sets the value of TargetPlatformBundleDigest.
+func (s *SandboxUpgrade) SetTargetPlatformBundleDigest(val OptString) {
+	s.TargetPlatformBundleDigest = val
+}
+
+// Why an upgrade is available, the first pin that moved.
 type SandboxUpgradeReason string
 
 const (
-	SandboxUpgradeReasonImageDigestChanged SandboxUpgradeReason = "imageDigestChanged"
+	SandboxUpgradeReasonImageDigestChanged          SandboxUpgradeReason = "imageDigestChanged"
+	SandboxUpgradeReasonBundleDigestChanged         SandboxUpgradeReason = "bundleDigestChanged"
+	SandboxUpgradeReasonPlatformBundleDigestChanged SandboxUpgradeReason = "platformBundleDigestChanged"
 )
 
 // AllValues returns all SandboxUpgradeReason values.
 func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
 	return []SandboxUpgradeReason{
 		SandboxUpgradeReasonImageDigestChanged,
+		SandboxUpgradeReasonBundleDigestChanged,
+		SandboxUpgradeReasonPlatformBundleDigestChanged,
 	}
 }
 
@@ -30487,6 +30592,10 @@ func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
 func (s SandboxUpgradeReason) MarshalText() ([]byte, error) {
 	switch s {
 	case SandboxUpgradeReasonImageDigestChanged:
+		return []byte(s), nil
+	case SandboxUpgradeReasonBundleDigestChanged:
+		return []byte(s), nil
+	case SandboxUpgradeReasonPlatformBundleDigestChanged:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -30498,6 +30607,12 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 	switch SandboxUpgradeReason(data) {
 	case SandboxUpgradeReasonImageDigestChanged:
 		*s = SandboxUpgradeReasonImageDigestChanged
+		return nil
+	case SandboxUpgradeReasonBundleDigestChanged:
+		*s = SandboxUpgradeReasonBundleDigestChanged
+		return nil
+	case SandboxUpgradeReasonPlatformBundleDigestChanged:
+		*s = SandboxUpgradeReasonPlatformBundleDigestChanged
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

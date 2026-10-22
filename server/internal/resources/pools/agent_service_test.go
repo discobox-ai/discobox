@@ -463,7 +463,7 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	apiSandbox, err := services.SandboxToAPI(sandboxModel, nil)
+	apiSandbox, err := services.SandboxToAPI(sandboxModel, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("project sandbox through the API schema: %v\nstored: %s", err, sandboxModel.Resources)
 	}
