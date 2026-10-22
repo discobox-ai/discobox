@@ -913,6 +913,12 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		}
 	}
 	row.ImageUnavailable = sb.Runtime.ErrorReason.Or("") == apiclientgen.SandboxRuntimeErrorReasonImageUnavailable
+	// The folder an editor opens the discobox at, as its SSH host does, by
+	// the discobox's own path rules.
+	row.Platform = declaredPlatform(sb.Platform.Or(""))
+	if folder, err := sandboxSSHFolder(&sb, ""); err == nil {
+		row.Workdir = folder
+	}
 	row.Usage = toTUIUsage(sb)
 	if source, ok := sb.Config.Source.Get(); ok {
 		// What the run options offer to cut a new discobox from, spelled the

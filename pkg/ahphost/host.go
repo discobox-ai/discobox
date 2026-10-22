@@ -55,6 +55,21 @@ type Boxes interface {
 	SendInput(ctx context.Context, sandboxID, execID, text string) error
 	// PutImage carries an image into the discobox and says where it put it.
 	PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error)
+
+	// The discobox's files, as its default user (ADR 26-10-22-499; see
+	// workspace.go for paths and errors). StatFile reports a symlink as
+	// itself; ListFiles is a directory's entries.
+	StatFile(ctx context.Context, sandboxID, path string) (FileInfo, error)
+	ListFiles(ctx context.Context, sandboxID, path string) ([]FileInfo, error)
+	ReadFile(ctx context.Context, sandboxID, path string) ([]byte, error)
+	WriteFile(ctx context.Context, sandboxID, path string, write FileWrite) error
+	// MakeDirectory makes a directory and its missing parents.
+	MakeDirectory(ctx context.Context, sandboxID, path string) error
+	RemoveFile(ctx context.Context, sandboxID, path string, recursive bool) error
+	// MoveFile and CopyFile put from at to, replacing what is there only
+	// when replace is set.
+	MoveFile(ctx context.Context, sandboxID, from, to string, replace bool) error
+	CopyFile(ctx context.Context, sandboxID, from, to string, replace bool) error
 }
 
 // Config is a host's settings.
@@ -70,10 +85,10 @@ type Config struct {
 	Version string
 	// Poll is how often the discoboxes are listed again.
 	Poll time.Duration
-	// Workspace is the discobox's own filesystem and git, given only to a
-	// host running in the one discobox it serves (ADR 26-10-22-853): its
-	// session's folder is then a local path, and it serves that discobox's
-	// files and changesets. Nil for the CLI's host.
+	// Workspace is what only a host in the one discobox it serves has: its
+	// working tree's watches and git (ADR 26-10-22-853). Its session's folder
+	// is then a local path, and it serves that discobox's changesets. Nil for
+	// the CLI's host.
 	Workspace Workspace
 	// Logf reports what the host cannot tell a client.
 	Logf func(format string, args ...any)

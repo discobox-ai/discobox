@@ -5,13 +5,17 @@
 package ahplocal
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/ahphost"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	"github.com/discobox-ai/discobox/sandbox-agent/localexec"
 )
 
@@ -44,8 +48,12 @@ func (b *Boxes) List(ctx context.Context) (ahphost.Listing, error) {
 		Harness:     box.Harness,
 		HarnessName: box.HarnessName,
 		Source:      box.Workdir,
-		DiffBase:    box.DiffBase,
-		Created:     b.started,
+		Workdir:     box.Workdir,
+		// This host runs in the discobox, so the discobox's platform is
+		// the one it runs on.
+		Platform: platform.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH},
+		DiffBase: box.DiffBase,
+		Created:  b.started,
 	}
 	if box.Agent != nil {
 		out.Agent = *box.Agent
@@ -150,15 +158,13 @@ func (b *Boxes) SendInput(ctx context.Context, _, execID, text string) error {
 	return b.client.Input(ctx, execID, text)
 }
 
-// PutImage writes a pasted image where the CLI's copy of one goes.
+// PutImage writes a pasted image where the CLI's copy of one goes, through
+// the files API's own write (ADR 26-10-22-499 §4).
 func (b *Boxes) PutImage(_ context.Context, _, name string, data []byte) (string, error) {
-	dir := filepath.Join(os.TempDir(), "discobox-paste")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+	path := sandboxpath.PastedImageDir + "/" + filepath.Base(name)
+	result, _, err := files.Do(files.Request{Op: files.OpWrite, Path: path, Parents: true}, bytes.NewReader(data))
+	if err != nil {
+		return "", fileError(err, false)
 	}
-	path := filepath.Join(dir, filepath.Base(name))
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return "", err
-	}
-	return path, nil
+	return result.Stat.Path, nil
 }

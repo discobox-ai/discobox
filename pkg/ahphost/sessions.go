@@ -9,6 +9,7 @@ import (
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 
 	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // session is one discobox as an AHP session. A session a client created has
@@ -197,22 +198,23 @@ func activity(s *session) string {
 	return s.box.Agent.Title
 }
 
-// workingDirectory is the session's folder. VS Code opens a terminal for an
-// active session in it, so from the CLI, which serves many discoboxes, it
-// names the discobox in a file URI's authority — the directory alone would not
-// say which discobox's — with the source the discobox was cut from as its
-// path, which is what the session list shows the folder as. A host in the
-// discobox serves the one: its folder is the plain local path of the working
-// tree, which is what Open in Editor opens over Remote-SSH.
+// workingDirectory is the session's folder: the discobox's working tree, a
+// path in the discobox (Box.Workdir), whose files the host serves and where
+// VS Code opens a terminal for the session. From the CLI, which serves many
+// discoboxes, it names the discobox in a file URI's authority — the path
+// alone would not say which discobox's. A host in the discobox serves the
+// one, and its folder is the plain local path, which is what Open in Editor
+// opens over Remote-SSH.
 func (h *Host) workingDirectory(s *session) string {
 	if !s.hasBox {
 		return ""
 	}
-	path := s.box.Source
-	if path == "" || s.box.SourceRemote {
-		path = "/"
+	paths := sandboxpath.For(s.box.Platform)
+	path := s.box.Workdir
+	if path == "" {
+		path = paths.WorkingRoot()
 	}
-	u := url.URL{Scheme: "file", Path: path}
+	u := url.URL{Scheme: "file", Path: toURIPath(paths, path)}
 	if h.cfg.Workspace == nil {
 		u.Host = s.box.ID
 	}

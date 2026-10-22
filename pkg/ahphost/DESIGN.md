@@ -53,12 +53,20 @@ flowchart LR
   context it was opened with, so only the open is bounded (`openContext`).
 - **A client's disconnect cleans up only that client's own** drafts and exited
   shells (`owner`).
-- **Files and changesets are a host in the discobox's alone**, through
-  `Config.Workspace` — the discobox's own filesystem and git, which the
-  sandbox agent implements (`sandbox-agent/ahplocal`) and the CLI's host has
-  none of, so it answers the `resource*` commands as unserved. This package
-  speaks the protocol: the `resource*` commands, watch channels released when
-  their last subscriber goes, and two changesets — the branch against
-  `Box.DiffBase` and the uncommitted changes — recomputed each poll while
-  watched, whose before side reads `discobox-git:///<path>?rev=`. Such a host
-  creates no discoboxes: `createSession` is refused.
+- **Files are every host's, through `Boxes`, as the discobox's default
+  user** (ADR 26-10-22-499): the CLI over the files API, the in-box host with
+  the same operations in its own process. A `file:` URI names its discobox as
+  the session's folder does — by its authority from the CLI, not at all in a
+  discobox — and a discobox that is not running is refused, not started.
+  `Boxes` writes a file whole, so an append, an insert or a truncate past the
+  start is read, spliced and written back only if the file is still at the
+  version read.
+- **Watches and changesets are a host in the discobox's alone**, through
+  `Config.Workspace` — inotify and git, which the sandbox agent implements
+  (`sandbox-agent/ahplocal`) and the CLI's host has none of
+  (`createResourceWatch` is unserved there, ADR 26-10-22-499 Deferred). This
+  package speaks the protocol: watch channels released when their last
+  subscriber goes, and two changesets — the branch against `Box.DiffBase` and
+  the uncommitted changes — recomputed each poll while watched, whose before
+  side reads `discobox-git:///<path>?rev=`. Such a host creates no
+  discoboxes: `createSession` is refused.

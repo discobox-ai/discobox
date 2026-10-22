@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -329,6 +330,14 @@ type Sandbox struct {
 	// SourceRemote marks a Source that is a repository URL rather than a
 	// directory on a client.
 	SourceRemote bool
+	// Platform is the discobox's own, which its paths are spelled by
+	// (sandboxpath): Workdir is a path by its rules.
+	Platform platform.Platform
+	// Workdir is the directory the discobox's working tree is at inside it —
+	// where its primary source landed, else its working root — or empty
+	// when the discobox does not say. A path in the discobox, never on this
+	// machine.
+	Workdir string
 	// RepositoryIdentity is the repository an approval rule names to be for
 	// this discobox: its source's URL, else the remote a local source tracks,
 	// as host/path (sourceref.NormalizeRemote, as the server reduces it).

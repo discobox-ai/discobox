@@ -80,11 +80,19 @@ func (h *Host) handleRequest(c *conn, id json.RawMessage, method string, params 
 	case "sessionConfigCompletions":
 		c.reply(id, ahptypes.SessionConfigCompletionsResult{Items: []ahptypes.SessionConfigValueItem{}}, nil)
 	default:
-		if h.cfg.Workspace != nil && resourceMethods[method] {
+		if resourceMethods[method] || (method == "createResourceWatch" && h.cfg.Workspace != nil) {
 			go func() {
 				ctx, cancel := context.WithTimeout(c.ctx, opTimeout)
 				defer cancel()
-				result, err := h.handleResource(ctx, c, method, params)
+				var (
+					result any
+					err    error
+				)
+				if method == "createResourceWatch" {
+					result, err = h.createResourceWatch(c, params)
+				} else {
+					result, err = h.handleResource(ctx, method, params)
+				}
 				c.reply(id, result, err)
 			}()
 			return

@@ -16,8 +16,20 @@
   message then went nowhere. Anything new that a disconnect forgets carries
   its owner and is checked against it.
 - **What only a host in the discobox can do keys on `Config.Workspace`**, and
-  the filesystem, git and inotify stay behind that interface, in the sandbox
-  agent (`ahplocal`): this package is in the root module and the CLI's build.
+  git and inotify stay behind that interface, in the sandbox agent
+  (`ahplocal`): this package is in the root module and the CLI's build.
+- **A file operation never starts a discobox.** `filePath` refuses one that is
+  not running: VS Code lists and stats the folders of every session it shows,
+  and the files API's read starts a stopped discobox (ADR 26-10-22-499 §3).
 - **A host in a discobox creates no discoboxes.** `createSession` is refused
   there before a first message — the prompt — could be lost to a create that
   cannot succeed.
+- **A session's folder is a path in the discobox, never the client's.**
+  `Box.Workdir` is where the working tree is inside the discobox; `Box.Source`
+  is what it was cut from on a client, which names and groups the session but
+  is no path the discobox has. The folder once was the client's path, and a
+  listing of it found nothing — or the wrong directory. A test that resolves
+  files reaches them through the folder a session advertises.
+- **A link lists as what it points at.** The files API reports a symlink as
+  itself; `followLink` resolves it one level, so a linked folder is a folder
+  in VS Code's picker and explorer.

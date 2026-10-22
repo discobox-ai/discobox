@@ -226,7 +226,7 @@ func (b ahpBoxes) List(ctx context.Context) (ahphost.Listing, error) {
 func ahpBox(box tui.Sandbox) ahphost.Box {
 	return ahphost.Box{
 		ID: box.ID, Name: box.Name, Server: box.Server, State: ahphost.BoxState(box.State), Agent: box.Agent,
-		Harness: box.Harness, HarnessName: box.HarnessName, Source: box.Source, SourceRemote: box.SourceRemote, Created: box.Created,
+		Harness: box.Harness, HarnessName: box.HarnessName, Source: box.Source, SourceRemote: box.SourceRemote, Workdir: box.Workdir, Platform: box.Platform, Created: box.Created,
 	}
 }
 

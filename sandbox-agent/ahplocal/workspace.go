@@ -3,11 +3,8 @@ package ahplocal
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -16,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -37,257 +33,12 @@ const watchDirLimit = 20000
 // a larger one is listed without a count.
 const untrackedCountLimit = 1 << 20
 
-// Workspace is this discobox's filesystem and git, as the user the host runs
-// as reaches them: there is no privilege here to cross, only that user's own
-// permissions (ADR 26-10-22-853 §1).
+// Workspace is this discobox's working tree as only a host in it reaches it
+// (ADR 26-10-22-853 §1): inotify watches and git, as the user the host runs
+// as. Its files are Boxes' (files.go), done as the files API does them.
 type Workspace struct{}
 
 var _ ahphost.Workspace = Workspace{}
-
-func (Workspace) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
-
-func (Workspace) WriteFile(path string, write ahphost.FileWrite) error {
-	if write.IfMatch != "" {
-		info, err := os.Stat(path)
-		if err != nil {
-			return err
-		}
-		if etag(info) != write.IfMatch {
-			return ahphost.ErrChanged
-		}
-	}
-	flags := os.O_WRONLY | os.O_CREATE
-	if write.CreateOnly {
-		flags |= os.O_EXCL
-	}
-	if write.Mode == ahptypes.ResourceWriteModeTruncate {
-		f, err := os.OpenFile(path, flags, 0o644) //nolint:gosec // G302/G304: a file the user's editor writes, as their files are.
-		if err != nil {
-			return err
-		}
-		if err := f.Truncate(write.Position); err != nil {
-			_ = f.Close()
-			return err
-		}
-		if _, err := f.WriteAt(write.Data, write.Position); err != nil {
-			_ = f.Close()
-			return err
-		}
-		return f.Close()
-	}
-	// append and insert keep every byte there is and splice the data in: at
-	// Position bytes back from the end, or from the start.
-	old, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err == nil && write.CreateOnly {
-		return fmt.Errorf("%s: %w", path, fs.ErrExist)
-	}
-	at := write.Position
-	if write.Mode == ahptypes.ResourceWriteModeAppend {
-		at = int64(len(old)) - write.Position
-	}
-	if at < 0 || at > int64(len(old)) {
-		return fmt.Errorf("position %d is outside %s: %w", write.Position, path, fs.ErrInvalid)
-	}
-	out := append(append(append([]byte{}, old[:at]...), write.Data...), old[at:]...)
-	perm := fs.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		perm = info.Mode().Perm()
-	}
-	return os.WriteFile(path, out, perm) //nolint:gosec // G306: the file's own mode, or what a new file the user makes gets.
-}
-
-func (Workspace) ReadDir(path string) ([]ahphost.DirEntry, error) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ahphost.DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		// A symlink lists as what it points at, which is what a folder
-		// picker opens.
-		info, err := os.Stat(filepath.Join(path, entry.Name()))
-		out = append(out, ahphost.DirEntry{Name: entry.Name(), Dir: err == nil && info.IsDir()})
-	}
-	return out, nil
-}
-
-func (Workspace) Stat(path string, follow bool) (ahphost.FileInfo, error) {
-	resolved := path
-	var (
-		info fs.FileInfo
-		err  error
-	)
-	if follow {
-		if resolved, err = filepath.EvalSymlinks(path); err != nil {
-			return ahphost.FileInfo{}, err
-		}
-		info, err = os.Stat(resolved)
-	} else {
-		info, err = os.Lstat(path)
-	}
-	if err != nil {
-		return ahphost.FileInfo{}, err
-	}
-	out := ahphost.FileInfo{Path: resolved, Type: ahptypes.ResourceTypeFile, Size: info.Size(), ModTime: info.ModTime(), Etag: etag(info)}
-	switch {
-	case info.Mode()&fs.ModeSymlink != 0:
-		out.Type = ahptypes.ResourceTypeSymlink
-	case info.IsDir():
-		out.Type = ahptypes.ResourceTypeDirectory
-	}
-	return out, nil
-}
-
-// etag is a file's version as Stat offers it and WriteFile's IfMatch checks
-// it: its size and modification time.
-func etag(info fs.FileInfo) string {
-	return fmt.Sprintf("%x-%x", info.Size(), info.ModTime().UnixNano())
-}
-
-func (Workspace) Mkdir(path string) error {
-	if info, err := os.Stat(path); err == nil && !info.IsDir() {
-		return fmt.Errorf("%s is not a directory: %w", path, fs.ErrExist)
-	}
-	return os.MkdirAll(path, 0o755) //nolint:gosec // G301: a folder the user makes, as theirs are.
-}
-
-func (Workspace) Remove(path string, recursive bool) error {
-	if !recursive {
-		return os.Remove(path)
-	}
-	if _, err := os.Lstat(path); err != nil {
-		return err
-	}
-	return os.RemoveAll(path)
-}
-
-// checkTransfer refuses a copy or move that would destroy its own source —
-// onto itself, or into itself — and one onto something that exists unless
-// it may be replaced. It says whether to exists.
-func checkTransfer(from, to string, replace bool) (bool, error) {
-	if _, err := os.Lstat(from); err != nil {
-		return false, err
-	}
-	if from == to {
-		return false, fmt.Errorf("%s onto itself: %w", from, fs.ErrInvalid)
-	}
-	if rel, err := filepath.Rel(from, to); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return false, fmt.Errorf("%s into itself: %w", from, fs.ErrInvalid)
-	}
-	_, err := os.Lstat(to)
-	if err == nil && !replace {
-		return true, fmt.Errorf("%s: %w", to, fs.ErrExist)
-	}
-	return err == nil, nil
-}
-
-// Copy copies beside to first and puts the copy in place only once it is
-// whole, so a copy that fails leaves to as it was.
-func (Workspace) Copy(from, to string, replace bool) error {
-	exists, err := checkTransfer(from, to, replace)
-	if err != nil {
-		return err
-	}
-	staged, err := sibling(to, "copy")
-	if err != nil {
-		return err
-	}
-	if err := copyTree(from, staged); err != nil {
-		_ = os.RemoveAll(staged)
-		return err
-	}
-	return replaceWith(to, staged, exists)
-}
-
-// Move renames, replacing to only once from is in hand: across filesystems,
-// where a rename cannot go, it copies and then removes from.
-func (w Workspace) Move(from, to string, replace bool) error {
-	exists, err := checkTransfer(from, to, replace)
-	if err != nil {
-		return err
-	}
-	if err := replaceWith(to, from, exists); !errors.Is(err, syscall.EXDEV) {
-		return err
-	}
-	if err := w.Copy(from, to, replace); err != nil {
-		return err
-	}
-	return os.RemoveAll(from)
-}
-
-// replaceWith renames src to dst. A dst that exists is set aside first, and
-// put back if the rename fails, since a directory cannot be renamed over.
-func replaceWith(dst, src string, exists bool) error {
-	if !exists {
-		return os.Rename(src, dst)
-	}
-	aside, err := sibling(dst, "old")
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(dst, aside); err != nil {
-		return err
-	}
-	if err := os.Rename(src, dst); err != nil {
-		_ = os.Rename(aside, dst)
-		return err
-	}
-	return os.RemoveAll(aside)
-}
-
-// sibling is a fresh name beside path, on its filesystem.
-func sibling(path, what string) (string, error) {
-	suffix := make([]byte, 6)
-	if _, err := rand.Read(suffix); err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".ahp-"+what+"-"+hex.EncodeToString(suffix)), nil
-}
-
-// copyTree copies a file, symlink or directory, keeping modes.
-func copyTree(from, to string) error {
-	return filepath.WalkDir(from, func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(from, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(to, rel)
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		switch {
-		case entry.IsDir():
-			return os.MkdirAll(target, info.Mode().Perm())
-		case info.Mode()&fs.ModeSymlink != 0:
-			link, err := os.Readlink(p)
-			if err != nil {
-				return err
-			}
-			return os.Symlink(link, target) //nolint:gosec // G122: the user's own tree, with their permissions; a link they can swap is theirs to follow.
-		}
-		in, err := os.Open(p) //nolint:gosec // G122: as above, no privilege is crossed.
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm()) //nolint:gosec // G304: a path below the copy's own destination.
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(out, in); err != nil {
-			_ = out.Close()
-			return err
-		}
-		return out.Close()
-	})
-}
 
 // Watch watches root with inotify, and each directory below it as it appears
 // when recursive.
