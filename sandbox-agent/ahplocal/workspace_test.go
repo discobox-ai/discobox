@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +127,11 @@ func TestTransfersNeverLoseTheirSource(t *testing.T) {
 }
 
 func TestAWatchReportsChangesItIsNotToldToSkip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Nothing runs this host on a Windows sandbox: its local exec socket
+		// serves no one there (localexec).
+		t.Skip("the in-box AHP host does not run on Windows")
+	}
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "node_modules", "x"), "")
 	got := make(chan []ahptypes.ResourceChange, 16)

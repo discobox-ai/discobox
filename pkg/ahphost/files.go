@@ -10,7 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
@@ -118,10 +118,10 @@ func localPath(uri string) (string, error) {
 	if u.Scheme != "file" || (u.Host != "" && u.Host != "localhost") {
 		return "", errorf(ahptypes.ErrorCodeNotFound, "%s is not a file on this discobox", uri)
 	}
-	if !filepath.IsAbs(u.Path) {
+	if !path.IsAbs(u.Path) {
 		return "", errorf(ahptypes.ErrorCodeInvalidParams, "%s is not an absolute path", uri)
 	}
-	return filepath.Clean(u.Path), nil
+	return path.Clean(u.Path), nil
 }
 
 func fileURI(path string) string {
@@ -184,7 +184,7 @@ func (h *Host) resourceRead(ctx context.Context, p ahptypes.ResourceReadParams) 
 func contentTypeOf(uri string, data []byte) string {
 	byExt := ""
 	if u, err := url.Parse(uri); err == nil {
-		byExt = mime.TypeByExtension(filepath.Ext(u.Path))
+		byExt = mime.TypeByExtension(path.Ext(u.Path))
 	}
 	if isText(data) {
 		if strings.HasPrefix(byExt, "text/") {

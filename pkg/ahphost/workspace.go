@@ -12,9 +12,10 @@ import (
 // in that discobox has (ADR 26-10-22-853 §1): the sandbox agent gives it one,
 // and the CLI's host, across discoboxes, has none (Config.Workspace is nil).
 // A host with a Workspace serves the one discobox it runs in, with its
-// working tree's files and changesets. Paths are absolute paths on this
-// machine; errors are the fs package's (fs.ErrNotExist, fs.ErrExist,
-// fs.ErrPermission, fs.ErrInvalid) or ErrChanged.
+// working tree's files and changesets. Paths are the absolute,
+// slash-separated paths of file URIs; errors are the fs package's
+// (fs.ErrNotExist, fs.ErrExist, fs.ErrPermission, fs.ErrInvalid) or
+// ErrChanged.
 type Workspace interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, write FileWrite) error

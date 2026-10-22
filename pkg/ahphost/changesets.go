@@ -3,7 +3,7 @@ package ahphost
 import (
 	"context"
 	"net/url"
-	"path/filepath"
+	"path"
 	"reflect"
 	"strings"
 
@@ -163,8 +163,8 @@ func (h *Host) readBase(ctx context.Context, uri string) ([]byte, error) {
 	if err == nil {
 		rev = u.Query().Get("rev")
 	}
-	if err != nil || !filepath.IsAbs(u.Path) || rev == "" || strings.HasPrefix(rev, "-") {
+	if err != nil || !path.IsAbs(u.Path) || rev == "" || strings.HasPrefix(rev, "-") {
 		return nil, errorf(ahptypes.ErrorCodeInvalidParams, "%s names no file at a revision", uri)
 	}
-	return h.cfg.Workspace.ReadRevision(ctx, filepath.Clean(u.Path), rev)
+	return h.cfg.Workspace.ReadRevision(ctx, path.Clean(u.Path), rev)
 }
