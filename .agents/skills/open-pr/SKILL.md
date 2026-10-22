@@ -30,7 +30,7 @@ remote — possibly a mirror — and `discobox` is the pool; in a discobox creat
 before ADR 26-10-10-545, `origin` is the pool and `upstream` is that remote.
 Check `git remote -v`, and do not push to any of them by name: every GitHub call
 goes through `discobox-access`, with the URL spelled out. `deliver-issue` and
-`develop` ask for their own uses up front; check `discobox-access list` and
+`develop` ask for their own up front; check `discobox-access list` and
 request only what is missing, in one request:
 
 ```bash
@@ -39,16 +39,51 @@ discobox-access request --json <<'EOF'
   "id": "com.github.api",
   "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox and get its CI green",
   "uses": [
-    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green. Read anything in the repository; push that branch, open and update the pull request, comment on it, and re-run its failed CI. Never push main or any other branch, force-push, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, cancel or delete a run, start any other workflow, or read secrets."}
+    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green"}
   ],
+  "statements": [
+    "allow read on anything in repository \"discobox-ai/discobox\"",
+    "allow push on branch \"<branch>\" in repository \"discobox-ai/discobox\"",
+    "allow create, update on pull request in repository \"discobox-ai/discobox\" when \"its head is <branch> and its base is main\"",
+    "allow create on comment within pull request in repository \"discobox-ai/discobox\" when \"the pull request's head is <branch>\"",
+    "allow rerun on workflow run in repository \"discobox-ai/discobox\" when \"it ran for branch <branch>\"",
+    "deny force-push, delete on branch in anywhere",
+    "deny merge, close on pull request in anywhere",
+    "deny close, assign, retitle on issue in anywhere",
+    "deny delete, update on label in anywhere",
+    "deny delete on comment in anywhere",
+    "deny cancel, delete on workflow run in anywhere",
+    "deny dispatch on workflow in anywhere",
+    "deny read on secret in anywhere"
+  ],
+  "definitions": {
+    "repository": "a GitHub repository",
+    "branch": "a git branch in a repository",
+    "pull request": "a GitHub pull request",
+    "issue": "a GitHub issue",
+    "label": "a label a repository defines, which its issues and pull requests carry",
+    "comment": "a comment on an issue or pull request, a review on a pull request, or a reply to one",
+    "workflow": "a GitHub Actions workflow",
+    "workflow run": "a run of a GitHub Actions workflow",
+    "secret": "an Actions, Dependabot or environment secret",
+    "push": "create a branch or add commits to it, or move it with --force-with-lease",
+    "force-push": "move a branch with --force and no lease",
+    "merge": "merge a pull request into its base",
+    "close": "close an issue or pull request without merging it",
+    "assign": "set or change who an issue is assigned to",
+    "retitle": "change an issue's title",
+    "rerun": "re-run a workflow run's failed jobs",
+    "cancel": "stop a workflow run in progress",
+    "dispatch": "start a workflow run by hand"
+  },
   "grantTTLSeconds": 14400,
   "wait": true
 }
 EOF
 ```
 
-Name the branch in the use (§1 picks it): it is the use's target, and a push
-to any other branch is refused.
+Name the branch in the statements (§1 picks it): it is the policy's target,
+and a push to any other branch is refused.
 Git takes the token through a one-shot credential helper:
 
 ```bash

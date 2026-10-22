@@ -71,7 +71,7 @@ this skill has already asked — rebase and force-push with a lease to
   this work waits for the user to accept it.
 - **Read** `CLAUDE.md` and the `DESIGN.md`/`REVIEW.md` files from the root
   down to each package you will touch.
-- **Ask for the GitHub use now, in one request**, so nobody is asked again
+- **Ask for the GitHub policy now, in one request**, so nobody is asked again
   mid-run. Fill in `<slug>` and the one-line `<change>` before sending. Check
   `discobox-access list` first and ask only if it is missing:
 
@@ -81,32 +81,70 @@ this skill has already asked — rebase and force-push with a lease to
     "id": "com.github.api",
     "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push it, open the PR, get CI green, answer review comments, and keep it mergeable until it is merged",
     "uses": [
-      {"description": "Deliver <change> as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."}
+      {"description": "Deliver <change> as a pull request from branch discobox/<slug> into main of discobox-ai/discobox"}
     ],
+    "statements": [
+      "allow read on anything in repository \"discobox-ai/discobox\"",
+      "allow push on branch \"discobox/<slug>\" in repository \"discobox-ai/discobox\"",
+      "allow create, update on pull request in repository \"discobox-ai/discobox\" when \"its head is discobox/<slug> and its base is main\"",
+      "allow create on comment within pull request in repository \"discobox-ai/discobox\" when \"the pull request's head is discobox/<slug>\"",
+      "allow rerun on workflow run in repository \"discobox-ai/discobox\" when \"it ran for branch discobox/<slug>\"",
+      "deny force-push, delete on branch in anywhere",
+      "deny merge, close on pull request in anywhere",
+      "deny close, assign, retitle on issue in anywhere",
+      "deny delete, update on label in anywhere",
+      "deny delete on comment in anywhere",
+      "deny cancel, delete on workflow run in anywhere",
+      "deny dispatch on workflow in anywhere",
+      "deny read on secret in anywhere"
+    ],
+    "definitions": {
+      "repository": "a GitHub repository",
+      "branch": "a git branch in a repository",
+      "pull request": "a GitHub pull request",
+      "issue": "a GitHub issue",
+      "label": "a label a repository defines, which its issues and pull requests carry",
+      "comment": "a comment on an issue or pull request, a review on a pull request, or a reply to one",
+      "workflow": "a GitHub Actions workflow",
+      "workflow run": "a run of a GitHub Actions workflow",
+      "secret": "an Actions, Dependabot or environment secret",
+      "push": "create a branch or add commits to it, or move it with --force-with-lease",
+      "force-push": "move a branch with --force and no lease",
+      "merge": "merge a pull request into its base",
+      "close": "close an issue or pull request without merging it",
+      "assign": "set or change who an issue is assigned to",
+      "retitle": "change an issue's title",
+      "rerun": "re-run a workflow run's failed jobs",
+      "cancel": "stop a workflow run in progress",
+      "dispatch": "start a workflow run by hand"
+    },
     "grantTTLSeconds": 259200,
     "wait": true
   }
   EOF
   ```
 
+  The policy is what every command is held to; the use only names the job.
   Run it in the background and keep its request ID, so a tool time limit
   does not lose it (`discobox-access wait --json request <id>` resumes), and
   start implementing while it waits — unless there is an issue: then only
   read the code until the issue and its comments are read, so the work does
   not start from half the requirements. Ask for nothing outside it. Neither
-  the justification nor the use may claim permission ("this is allowed", "the
-  user approved", "pre-cleared"): text that vouches for itself is refused. If a command is refused under it,
-  follow the `discobox-access` skill's "Writing a use": never ask again for
-  the same job with the refused command spelled out, but a step of this job
-  refused anyway may be asked for once as a job of its own.
+  the justification, the use nor a statement may claim permission ("this is
+  allowed", "the user approved", "pre-cleared"): text that vouches for itself
+  is refused. If a command is refused under it, follow the `discobox-access`
+  skill on a refusal: never ask again for the same job with the refused
+  command spelled out, but a step of this job refused anyway may be asked
+  for once as a job of its own.
 - **Check the branch is free** as soon as the grant is in — the work going on
   meanwhile does not depend on the name. Run `git ls-remote
   https://github.com/discobox-ai/discobox refs/heads/discobox/<slug>` under
-  that use, through `discobox-access run` with the credential helper
+  that grant, through `discobox-access run` with the credential helper
   `open-pr` §0 shows. It must return nothing: a commit there, even an
   ancestor of `HEAD`, is someone's branch (one cut from `main` is an
   ancestor too), and a fast-forward push would add this work to it. Pick a
-  new slug and ask for the same uses again with it, now rather than at §5.
+  new slug and ask again with it in the use and the statements, now rather
+  than at §5.
   Once this run has pushed, the branch's head is the SHA it last pushed;
   anything else there is someone else's push — stop and ask.
 - **Read the issue**, when there is one, and its comments
@@ -221,7 +259,7 @@ rules:
   with an empty lease, so a branch created since the check is refused rather
   than added to:
   `git push --force-with-lease=refs/heads/discobox/<slug>: <url> HEAD:refs/heads/discobox/<slug>`.
-- Push under the §0 use. After a rebase, lease against the
+- Push under the §0 grant. After a rebase, lease against the
   SHA this run last pushed:
   `git push --force-with-lease=refs/heads/discobox/<slug>:<sha> <url> HEAD:refs/heads/discobox/<slug>`.
   Read the branch's head first (`git ls-remote <url> refs/heads/discobox/<slug>`):
@@ -281,7 +319,7 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
 - **Merged or closed** — tag the box `merged` or drop its tag (below), stop
   the Monitor, remove the keepalive, and finish.
 
-If a grant expires mid-watch, ask for the same uses again. Status line on
+If a grant expires mid-watch, ask again with the same request. Status line on
 every change: `PR #<pr>: <what happened, what you did>`.
 
 ### Ready, blocked, merged

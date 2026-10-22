@@ -42,13 +42,15 @@ SUPERVISE='^Supervise the discoboxes I created'
 ANSWER='^Answer pending credential requests'
 TRACK='^Track the work my discoboxes do'
 
-# The checkout the skills are read from: a worker's ask is approved only when it is, word for word,
-# the use its skill asks for (cmd_approve). Without the skills nothing is approved here.
+# The checkout the skills are read from: a worker's ask is approved only when its policy is, word for
+# word, the one its skill asks for (cmd_approve). Without the skills nothing is approved here.
 ROOT=${ORCH_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}
-# skill_use <skill> <prefix>: the use that skill's SKILL.md asks for, whose text starts with prefix.
-skill_use() {
-	[ -n "$ROOT" ] && grep -o "\"description\": \"$2[^\"]*\"" "$ROOT/.agents/skills/$1/SKILL.md" 2>/dev/null |
-		head -1 | sed 's/^"description": "//; s/"$//'
+# skill_policy <skill> <prefix>: the policy that skill's SKILL.md asks for in the request whose use
+# starts with prefix, as {"statements": [...], "definitions": {...}}, compact and sorted.
+skill_policy() {
+	[ -n "$ROOT" ] || return 0
+	awk '/discobox-access request --json <</{f=1; next} f && /^ *EOF$/{f=0; next} f' "$ROOT/.agents/skills/$1/SKILL.md" 2>/dev/null |
+		jq -cS --arg p "$2" 'select((.uses[0].description // "") | startswith($p)) | {statements, definitions}' 2>/dev/null | head -1
 }
 
 # use <credential-name> <regex>: the live use ID whose description matches.
@@ -147,16 +149,16 @@ cmd_retire() { # retire <issue>|<discobox-id> [merged]: a triage box has no issu
 	echo "#$n $id tagged ${tags[*]} and stopped"
 }
 
-# A worker's ask is approved here only when its one use is the use its own skill asks for, with its
+# A worker's ask is approved here only when its policy is the policy its own skill asks for, with its
 # issue filled in: deliver-issue §0 for a delivering box, triage-issue §0 for a triaging one. The
-# server's delegation check refuses a use that drops a "Never …" of its line, but a judge can miss
+# server holds a policy within the delegation's in code, but a judge reads conditions and can miss
 # one, and nothing here reads the ask; anything else goes to the lead to read, as NEEDS LEAD.
 cmd_approve() { # approve pending com.github.api use requests from workers, once each
 	local u reqs
 	u=$(use ai.discobox.sandbox "$ANSWER"); need "$u" "answering requests" || return 1
 	reqs=$(discobox-access run --use "$u" -- discobox secret request ls -o json </dev/null 2>/dev/null |
 		jq -r '.secretRequests[]? | select(.status=="pending")
-			| "\(.id) \(.sandboxId) \(.purpose) \(.wellKnownId) \(.uses // [] | map(.description) | @json | @base64)"')
+			| "\(.id) \(.sandboxId) \(.purpose) \(.wellKnownId) \({statements: (.policy.sentences // []), definitions: (.policy.definitions // {})} | @json | @base64)"')
 	while read -r rid sid purpose wk asked; do
 		[ -z "$rid" ] && continue
 		grep -qx "$rid" "$ORCH_DIR/tried.txt" && continue
@@ -164,17 +166,17 @@ cmd_approve() { # approve pending com.github.api use requests from workers, once
 		local n want; n=$(awk -v s="$sid" '$2==s{print $1}' "$W")
 		[ -z "$n" ] && n=$(awk -v s="$sid" '$1==s{print "t"$2}' "$T")
 		case "$n" in
-		t*) want=$(skill_use triage-issue 'Triage issues') ;;
-		?*) want=$(skill_use deliver-issue 'Deliver issue #<N>'); want=${want//<N>/$n} ;;
+		t*) want=$(skill_policy triage-issue 'Triage issues') ;;
+		?*) want=$(skill_policy deliver-issue 'Deliver issue #<N>'); want=${want//<N>/$n} ;;
 		*) want= ;;
 		esac
 		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$wk" = com.github.api ] && [ -n "$want" ] &&
-			[ "$(echo "$asked" | base64 -d | jq -c .)" = "$(jq -cn --arg w "$want" '[$w]')" ]; then
-			local res; res=$(discobox-access run --use "$u" -- discobox secret request approve "$rid" </dev/null 2>&1 | tail -3 | head -1 | cut -c1-300)
+			[ "$(echo "$asked" | base64 -d | jq -cS .)" = "$want" ]; then
+			local res; res=$(discobox-access run --use "$u" -- discobox secret request approve "$rid" --policy-as-asked </dev/null 2>&1 | tail -3 | head -1 | cut -c1-300)
 			echo "$(date -u +%FT%H:%M) approve $rid for #$n: $res" >>"$ORCH_DIR/approvals.log"
 			case "$res" in GRANT*) echo "approved #$n $rid" ;; *) echo "REFUSED #$n $rid: $res" ;; esac
 		else
-			echo "NEEDS LEAD: $rid from $sid ($purpose ${wk:-custom}): not its skill's use word for word; read it"
+			echo "NEEDS LEAD: $rid from $sid ($purpose ${wk:-custom}): not its skill's policy word for word; read it"
 		fi
 	done <<<"$reqs"
 }
