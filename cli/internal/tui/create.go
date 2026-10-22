@@ -312,7 +312,7 @@ func (c *createCard) requestFrom(source string) RunRequest {
 	req := c.opts.request(c.prompt, source)
 	if c.base != nil {
 		req.Prompt = append([]string(nil), c.base.Prompt...)
-		req.Grant, req.Pool = c.base.Grant, c.base.Pool
+		req.Grant, req.GrantStatement, req.GrantDefine, req.Pool = c.base.Grant, c.base.GrantStatement, c.base.GrantDefine, c.base.Pool
 		req.SkipDeclaredSources = c.base.SkipDeclaredSources
 	}
 	return req

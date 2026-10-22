@@ -670,6 +670,7 @@ func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 	typeInto(t, m, "envVar", "GH_TOKEN")
 	typeInto(t, m, "use", "Open a pull request")
 	send(t, m, keyPress("enter"))
+	writeGrantPolicy(t, m, ds)
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
@@ -677,6 +678,59 @@ func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 	got := ds.createdGrants[0]
 	if got.EnvVar != "GH_TOKEN" || len(got.Uses) != 1 || got.Uses[0] != "Open a pull request" {
 		t.Fatalf("grant = %#v, want the variable and the use that were typed", got)
+	}
+	if got.Policy == nil || len(got.Policy.Statements) != 1 || got.Policy.Definitions["repository"] == "" {
+		t.Fatalf("grant policy = %#v, want the statement and definition written", got.Policy)
+	}
+}
+
+// writeGrantPolicy writes the policy a grant taken through discobox-access
+// carries (#312), on the step after the form, as a rule's is written: nothing
+// is minted before it, finishing with no statement is refused, and a word
+// left undefined is said.
+func writeGrantPolicy(t *testing.T, m *Model, ds *fakeSource) {
+	t.Helper()
+	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(m.dialog.title, "what it may do") {
+		t.Fatalf("dialog = %s, want the step asking what the grant may do", describe(m.dialog))
+	}
+	if len(ds.createdGrants) != 0 {
+		t.Fatalf("created = %#v, want nothing minted before its policy", ds.createdGrants)
+	}
+	drain(t, m, m.dialog.action(""), 0)
+	if m.dialog == nil || m.dialog.kind != dlgInput || len(ds.createdGrants) != 0 {
+		t.Fatalf("dialog = %s, created = %#v; want a grant with no statement refused", describe(m.dialog), ds.createdGrants)
+	}
+	drain(t, m, m.dialog.action(`allow read on anything in repository "org/repo"`), 0)
+	if !strings.Contains(cardWords(m), "not a policy yet") {
+		t.Fatalf("card = %q, want the undefined word said", cardWords(m))
+	}
+	drain(t, m, m.dialog.action("repository = a GitHub repository"), 0)
+	drain(t, m, m.dialog.action(""), 0)
+}
+
+// Stepping back from the policy keeps both the form's answers and the lines
+// written, and nothing is minted.
+func TestAGrantPolicyStepGoesBackToTheForm(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+
+	send(t, m, keyPress(grantCreateKey))
+	onRow(t, m, "taken")
+	send(t, m, keyPress("right"))
+	typeInto(t, m, "envVar", "GH_TOKEN")
+	typeInto(t, m, "use", "Open a pull request")
+	send(t, m, keyPress("ctrl+s"))
+	drain(t, m, m.dialog.action(`allow read on anything in repository "org/repo"`), 0)
+	send(t, m, keyPress("esc"))
+	if m.dialog == nil || m.dialog.kind != dlgForm || formValue(t, m, "use") != "Open a pull request" {
+		t.Fatalf("dialog = %s, want the form back as it was answered", describe(m.dialog))
+	}
+	send(t, m, keyPress("ctrl+s"))
+	if m.dialog == nil || !strings.Contains(wholeCard(m), "allow read on anything") {
+		t.Fatalf("card = %q, want the line written before kept", wholeCard(m))
+	}
+	if len(ds.createdGrants) != 0 {
+		t.Fatalf("created = %#v, want nothing minted", ds.createdGrants)
 	}
 }
 
@@ -972,6 +1026,7 @@ func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
 	typeInto(t, m, "use", "Open a PR")
 	chooseTTL(t, m, "ttl", ttlNever)
 	send(t, m, keyPress("ctrl+s"))
+	writeGrantPolicy(t, m, ds)
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)

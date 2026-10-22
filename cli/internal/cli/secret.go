@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
@@ -134,9 +136,28 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 
 func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	var secretRef, scope, scopeKey, envVar, ttl string
-	var uses, hosts []string
+	var uses, hosts, statements []string
+	definitions := policy.Definitions{}
 	var delegate bool
-	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", Long: `Creates a grant directly, without a request to approve.
+
+With no --use, it is a standing grant: it authorizes the sentinel the
+discobox, harness config or project is already provisioned with.
+
+With --use, it is a grant an agent takes through discobox-access, one use at
+a time, which nothing in the discobox can read. It carries a policy, written
+as discobox-access writes one: a --statement for each sentence, and a --define
+for each word a statement uses that is not a default (read, create, update,
+delete, manage, anything, anywhere). The policy is what is enforced; the use
+names the job.
+
+  --use "Triage issues in org/repo" \
+  --statement 'allow read on anything in repository "org/repo"' \
+  --statement 'deny delete on anything in anywhere' \
+  --define 'repository=a GitHub repository'
+
+A grant wider than one discobox may carry only a policy that uses no
+variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -175,6 +196,20 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 			}
 			body.SetUses(apiclientgen.NewOptNilSecretUseArray(declared))
 		}
+		// A grant an agent takes carries the policy it is held to (#312); the
+		// server refuses uses without one, and one without uses.
+		written, err := writtenPolicy(statements, definitions, "--statement", "--define")
+		if err != nil {
+			return err
+		}
+		switch {
+		case written != nil && len(uses) == 0:
+			return errors.New("a policy is granted only beside uses: give --use with --statement")
+		case written == nil && len(uses) > 0:
+			return errors.New("a grant with --use carries a policy: give each sentence of what it may do with --statement, and each word that is not a default with --define WORD=DEFINITION")
+		case written != nil:
+			body.SetPolicy(apiclientgen.NewOptAccessPolicy(*written))
+		}
 		if strings.TrimSpace(envVar) != "" {
 			body.SetEnvVar(apiclientgen.NewOptString(strings.TrimSpace(envVar)))
 		}
@@ -196,9 +231,11 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Limit the grant to these hosts, comma-separated or repeated; defaults to the secret's host")
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLCreateFlagUsage)
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "What the credential may be used for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time. Sandbox scope and a host are required")
+	cmd.Flags().StringArrayVar(&uses, "use", nil, "The job the credential is taken for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time, under the policy --statement gives. A host is required")
 	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable an agent receives the credential in; required with --use")
-	cmd.Flags().BoolVar(&delegate, "delegate", false, "Make this a delegation grant: the discobox may delegate the credential to other discoboxes, and may not use it itself. Sandbox scope and --use are required")
+	cmd.Flags().StringArrayVar(&statements, "statement", nil, "A statement of the policy the grant carries, as a sentence (repeatable); required with --use")
+	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word a statement uses that is not a default (repeatable)")
+	cmd.Flags().BoolVar(&delegate, "delegate", false, "Make this a delegation grant: the discobox may hand on policies within this one's to other discoboxes, and may not use the credential itself. Sandbox scope, --use and --statement are required")
 	return cmd
 }
 

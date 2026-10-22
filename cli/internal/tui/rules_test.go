@@ -244,7 +244,7 @@ func TestTheWrittenPolicyIsLoadedToEdit(t *testing.T) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}
 	}
-	if strings.Contains(card, "not a policy a rule can have yet") {
+	if strings.Contains(card, "not a policy yet") {
 		t.Fatalf("card = %q, want no problem said of a policy", card)
 	}
 	// One taken up, edited in place.
@@ -281,7 +281,7 @@ func TestAPolicyThatDoesNotParseIsRefusedWhereItIsWritten(t *testing.T) {
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
 	drain(t, m, m.dialog.action("allow read issue in repository $primary.repo"), 0)
 	card := cardWords(m)
-	for _, want := range []string{"not a policy a rule can have yet", `line 4: at "in" (byte 17)`, "a statement reads: allow|deny", "word = what it means"} {
+	for _, want := range []string{"not a policy yet", `line 4: at "in" (byte 17)`, "a statement reads: allow|deny", "word = what it means"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}
@@ -293,7 +293,7 @@ func TestAPolicyThatDoesNotParseIsRefusedWhereItIsWritten(t *testing.T) {
 	// Fixed, it is a policy again, and goes on.
 	send(t, m, keyPress("up"))
 	drain(t, m, m.dialog.action("deny delete on anything in anywhere"), 0)
-	if strings.Contains(cardWords(m), "not a policy a rule can have yet") {
+	if strings.Contains(cardWords(m), "not a policy yet") {
 		t.Fatalf("card = %q, want no problem left", cardWords(m))
 	}
 	drain(t, m, m.dialog.action(""), 0)

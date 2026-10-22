@@ -14,6 +14,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/wellknown"
@@ -604,7 +605,7 @@ func (a *App) writeApprovalRule(cmd *cobra.Command, rule *apimodel.ApprovalRule)
 	fmt.Fprintf(tw, "FOR\t%s\n", ruleRepositoriesText(rule))
 	// The rule's policy is what is approved; a person wrote or chose it, and
 	// every statement is shown whole, in the words --statement writes it in.
-	approves, err := policyFromAPI(rule.Policy)
+	approves, err := apipolicy.From(rule.Policy)
 	if err != nil {
 		return err
 	}
@@ -634,7 +635,7 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 	fmt.Fprintln(tw, "ID\tSTATE\tCREDENTIAL\tHOSTS\tPURPOSE\tFOR\tPOLICY\tEXPIRES")
 	for i := range rules {
 		rule := &rules[i]
-		approves, err := policyFromAPI(rule.Policy)
+		approves, err := apipolicy.From(rule.Policy)
 		if err != nil {
 			return err
 		}
@@ -697,7 +698,7 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 	if written, ok := proposals.Policy.Get(); ok {
 		fmt.Fprintln(out, "  written by the project's judge: the same work on any target of its kind")
 		if proposed, ok := written.Policy.Get(); ok {
-			read, err := policyFromAPI(proposed)
+			read, err := apipolicy.From(proposed)
 			if err != nil {
 				return err
 			}

@@ -11,6 +11,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -215,7 +216,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 	if asked, ok := r.Policy.Get(); ok {
 		// A policy that does not convert is left off: the approval then
 		// sends none, and the server refuses it rather than grant one unread.
-		if read, err := policyFromAPI(asked); err == nil {
+		if read, err := apipolicy.From(asked); err == nil {
 			shown := safePolicy(read)
 			req.Policy, req.PolicyLines, req.PolicyShown = &read, safePolicyLines(read), &shown
 		}
@@ -573,7 +574,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 			with.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 		}
 		if rule.Policy != nil {
-			approves, err := apiPolicy(*rule.Policy)
+			approves, err := apipolicy.To(*rule.Policy)
 			if err != nil {
 				return err
 			}
@@ -583,7 +584,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	}
 	// The policy the card rendered, as the server sent it.
 	if approval.Policy != nil {
-		sent, err := apiPolicy(*approval.Policy)
+		sent, err := apipolicy.To(*approval.Policy)
 		if err != nil {
 			return err
 		}
@@ -684,7 +685,7 @@ func ruleProposals(body *apimodel.RuleProposalsBody) (tui.RuleProposals, error) 
 			Refused: terminalSafe(strings.TrimSpace(written.Refused.Or(""))),
 		}
 		if proposed, ok := written.Policy.Get(); ok {
-			stored, err := policyFromAPI(proposed)
+			stored, err := apipolicy.From(proposed)
 			if err != nil {
 				return tui.RuleProposals{}, err
 			}
@@ -734,7 +735,7 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 		// A rule the server holds with no repository is one somebody made
 		// for every discobox: no route stores one any other way.
 		rule.EveryDiscobox = len(r.Repositories) == 0
-		approves, err := policyFromAPI(r.Policy)
+		approves, err := apipolicy.From(r.Policy)
 		if err != nil {
 			return nil, err
 		}
@@ -766,7 +767,7 @@ func (d *apiDataSource) CreateRule(ctx context.Context, server string, rule tui.
 	if rule.Policy == nil {
 		return tui.Rule{}, errors.New("a rule says what it approves: a policy")
 	}
-	approves, err := apiPolicy(*rule.Policy)
+	approves, err := apipolicy.To(*rule.Policy)
 	if err != nil {
 		return tui.Rule{}, err
 	}
@@ -808,7 +809,7 @@ func (d *apiDataSource) UpdateRule(ctx context.Context, server, ruleID string, c
 	}
 	body := &apimodel.UpdateApprovalRuleBody{Repositories: change.Repositories}
 	if change.Policy != nil {
-		approves, err := apiPolicy(*change.Policy)
+		approves, err := apipolicy.To(*change.Policy)
 		if err != nil {
 			return err
 		}
@@ -980,7 +981,7 @@ func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.Gr
 			grant.Expires = expires
 		}
 		if approved, ok := g.Policy.Get(); ok {
-			read, err := policyFromAPI(approved)
+			read, err := apipolicy.From(approved)
 			if err != nil {
 				return nil, err
 			}
@@ -1033,6 +1034,13 @@ func (d *apiDataSource) CreateGrant(ctx context.Context, server string, grant tu
 		}
 		body.SetUses(apiclientgen.NewOptNilSecretUseArray(declared))
 		body.SetEnvVar(apiclientgen.NewOptString(grant.EnvVar))
+	}
+	if grant.Policy != nil {
+		sent, err := apipolicy.To(*grant.Policy)
+		if err != nil {
+			return tui.Grant{}, err
+		}
+		body.SetPolicy(apiclientgen.NewOptAccessPolicy(sent))
 	}
 	res, err := d.client.CreateSecretGrant(ctx, body, apiclientgen.CreateSecretGrantParams{ProjectId: d.projectID})
 	if err != nil {

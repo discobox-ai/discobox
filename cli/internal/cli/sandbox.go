@@ -30,6 +30,8 @@ type sandboxCreateOptions struct {
 	env                  []string
 	secret               []string
 	grant                []string
+	grantStatement       []string
+	grantDefine          []string
 	sourceURL            string
 	sourceRef            string
 	sourceRefType        string
@@ -619,7 +621,9 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
 	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api, which answers with the secret marked for it and its own variable; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, and nothing in the discobox can read it. HOST defaults to the secret's host, or the ID's, and may only narrow the ID's")
+	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api, which answers with the secret marked for it and its own variable; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it. HOST defaults to the secret's host, or the ID's, and may only narrow the ID's")
+	cmd.Flags().StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
+	cmd.Flags().StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
 	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
@@ -688,7 +692,7 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	if len(secrets) > 0 {
 		config.SetSecrets(secrets)
 	}
-	grants, err := sandboxcreate.ParseGrants(opts.grant)
+	grants, err := sandboxcreate.ParseGrants(opts.grant, opts.grantStatement, opts.grantDefine)
 	if err != nil {
 		return nil, err
 	}

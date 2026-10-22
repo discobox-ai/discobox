@@ -21,6 +21,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
+| `internal/apipolicy` | A credential policy between the API's shape (`apimodel.AccessPolicy`) and the `policy` package's, through the generated type's own JSON. One home, because the CLI's request and rule commands, the console's data source, and `sandboxcreate`'s `--grant` parse all send or read one. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/policyview` | A credential policy as the person approving it reads it (ADR 26-10-20-782 §3): statements grouped by scope, the `anywhere` denies once under `global`, conditions under their statement, each variable followed by its resolved value (or "does not resolve, so it matches nothing"), and each non-default word followed by its definition where it is first used. Each line carries the sentence's `policy.Tokens`, noted, so the console highlights it as syntax; the CLI prints its plain text. Display only: what an approval sends is the policy as read, never these lines. Shared by the console's request and grant cards and the CLI's `secret request get`, `approve` and `grant ls`; `Unbound` draws a rule's policy, its variables bare since a rule binds them to whichever discobox asks. |
@@ -2808,15 +2809,30 @@ own; see the console design doc.
 ## Grants and a Request as JSON (ADR 26-09-24-630)
 
 `discobox new --grant` gives the new discobox uses of credentials in
-`admin box create --grant`'s form. Both parse through
-`sandboxcreate.ParseGrants` and resolve a secret's name to its ID through
+`admin box create --grant`'s form. Every grant carries a policy (#312):
+`--grant-statement CREDENTIAL=SENTENCE` and `--grant-define
+CREDENTIAL=WORD=DEFINITION`, CREDENTIAL being what the `--grant` names before
+its `=`, matched as repeated `--grant` values are grouped, so the hosts in
+another order are the same grant. Both commands parse through
+`sandboxcreate.ParseGrants`, which refuses a grant with no statement, a
+statement for no grant, and a policy that does not validate before anything
+is sent, and resolve a secret's name to its ID through
 `App.resolveGrantSecrets`; `PromptOptions.Grants` carries the result, and the
-window, handed `--grant` as given (`RunRequest.Grant`), parses and resolves in
-its own create.
+window, handed the three flags as given (`RunRequest.Grant`,
+`GrantStatement`, `GrantDefine`), parses and resolves in its own create.
+
+`secret grant create` takes the same policy as `--statement` and `--define`
+beside `--use` (a delegation's included), and refuses either without the
+other: a grant with uses carries a policy, and a standing grant, with no
+uses, carries none. `secret request ls|get -o json` prints a request's policy
+with a `sentences` list beside its structure (`requestJSON`), as
+discobox-access prints one, so a lead compares a worker's ask with its
+skill's word for word.
 
 `--json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
 as one object whose fields are the run flags', with grants spelled the way
-`discobox-access request --json` asks for a credential. It fills the same
+`discobox-access request --json` asks for a credential — `uses`,
+`statements` and `definitions`. It fills the same
 `runCommandOptions` the flags do, so one validation and one create path serve
 both; it refuses any run flag or word beside it rather than merging two
 answers, forces `-d`, asks nothing (stdin is the request), and prints the
