@@ -1236,20 +1236,21 @@ func TestRepairRunsOnAWedgedBox(t *testing.T) {
 	}
 }
 
-// Repair rebuilds, so it is offered on the two shapes that need rebuilding and
-// refused — with the reason, on the menu — on a box that is working.
-func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
+// Repair is not kept for a box that looks broken: a running one can be wedged
+// behind a container that looks fine, and R rebuilds it all the same.
+func TestRepairRunsOnARunningBox(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
+	box := m.list.targets()[0]
+	if box.State != StateRunning {
+		t.Fatalf("state = %s, want the box under the cursor running", box.State)
+	}
 
 	send(t, m, keyPress("R"))
-	if len(ds.did) != 0 {
-		t.Fatalf("did = %v, want nothing: the box under the cursor is running", ds.did)
-	}
-	if m.dialog == nil || !strings.Contains(m.dialog.view(m.st, &m.zones, 120, 40), "nothing is wrong with it") {
-		t.Fatal("a refused repair should say why")
+	if len(ds.did) != 1 || ds.did[0] != "repair "+box.ID {
+		t.Fatalf("did = %v, want a repair on the running box under the cursor", ds.did)
 	}
 }
 

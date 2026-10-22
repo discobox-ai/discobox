@@ -799,24 +799,16 @@ func (s Sandbox) attachable() bool {
 
 // repairable reports whether repair is offered for this box.
 //
-// It is the counterpart of attachable, and asks the same two axes for the
-// opposite answer: a box with a latched error, or one nothing has ever reported
-// a container for, is the wedge repair exists for (ADR 0035) — the first may be
-// broken behind a container that looks fine, the second never got one built.
-// Everything else is working, and repair is a rebuild, not a refresh.
-//
-// Three states answer for themselves, as they do in attachable. Archived has no
-// container by intent, and unarchive is what brings it back; the server refuses
-// repair on it with the same reasoning (ADR 0035). Starting is a create still
-// in flight whose agent has not reported yet — its missing container is the
-// operation running, not a wedge, and tearing it down is the opposite of
-// waiting for it (ADR 0039 tier 1). Repairing is a repair already running.
+// Repair is offered on every box but an archived one. A latched error, or a box
+// nothing has ever reported a container for, is the wedge repair exists for
+// (ADR 0035), but a box can be broken behind a state that looks fine — a
+// container that runs and a harness that does not, a create or a repair that
+// will never land — and the person looking at it is the one who knows. The
+// server takes a repair in any of those states. Archived has no container by
+// intent, and unarchive is what brings it back; the server refuses repair on it
+// with the same reasoning (ADR 0035).
 func (s Sandbox) repairable() bool {
-	switch s.State {
-	case StateArchived, StateStarting, StateRepairing:
-		return false
-	}
-	return s.State == StateError || !s.HasRuntime
+	return s.State != StateArchived
 }
 
 // elsewhere is what the row says about a discobox created under another client
