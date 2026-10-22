@@ -358,7 +358,9 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   Stop the server by its own pid (`pgrep -f $S/discobox-server`) *before*
   removing its pools, or it recreates them.
 - The server's config file is found by XDG (`~/.config/discobox`), not
-  `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env.
+  `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env. Name one of
+  your own with `DISCOBOX_CONFIG_FILE=<file>` in its env; a file that fails
+  to load exits 1 before anything is created.
 - With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
 - Its pool runs the released `ghcr.io/discobox-ai/discobox-pool-agent:latest`,
   not your checkout's, so anything the pool agent gained since the last
@@ -373,7 +375,20 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 
 - It exits at start (`project … has no harness to run`) until at least one
   `discobox-harness-*:local` image exists; on a fresh box wait for the image
-  watcher to build one.
+  watcher to build one. It also exits that way, every harness failing on
+  `platform bundle: inspect bundle "discobox-platform:local"`, when the image
+  watcher process predates the tree it watches (a `go run` does not rebuild
+  itself) and so has never built the platform bundle. Without restarting the
+  user's loop: start from a copy of its database instead
+  (`sqlite3 .tmp/discobox/discobox.db ".backup $S/data/discobox.db"`, then
+  `DATABASE_DSN=sqlite3://$S/data/discobox.db`), whose harnesses are already
+  seeded. Delete from `pools`, `sandbox_provider_instances`,
+  `reconcile_dirty` and `pool_bootstrap_tokens`, clear the projects'
+  `default_pool_id`/`judge_pool_id`/`judge_sandbox_id`, and set
+  `DISCOBOX_JUDGE_COMMANDS=false`: the copy then never touches Docker, and
+  never collides with the loop's pools, which share its IDs.
+- A pool route on that server, with no real pool: see the no-Docker case
+  under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid).
 - To race new intent against a pool's first reconcile (supersede paths):
   `admin pool create`, then `admin pool delete` ~3s later — `EnsurePool` of a
   Docker pool takes ~10s, so the delete lands mid-run. Watch `admin job ls -o
@@ -468,6 +483,11 @@ P=$(docker ps --format '{{.Names}}' | sed -n 's/^discobox-vm-//p' | head -1)
 docker exec discobox-vm-$P find /var/lib/discobox/identity -name agent.key   # .../<projectId>/<poolId>/agent.key
 ```
 
+- No pool at all — the isolated server on a copy of the loop's database,
+  above: with that server stopped, insert a `pools` row whose `public_key`
+  is `poolauth.EncodePublicKey` of a key you generate (`provider_instance_id`
+  naming nothing, so nothing provisions it) and a `sandboxes` row on it
+  (`created_by_user_id` is required), and mint with that key as above.
 - The asset store is `.tmp/discobox/cache/assets/blobs/sha256/`. A blob removed
   or damaged there (`dd conv=notrunc`) is what exercises refetch and the
   digest check on the way out; a damaged one must never come back whole —
