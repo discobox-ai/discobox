@@ -37,8 +37,9 @@ plane refreshes.
   fact in your notes, and carry the distinction into the ADR and the report.
 - **Probe with fakes, not credentials.** A fake model server and a fake
   identity host answer almost every question. Ask for a real credential
-  (`discobox-access`) only for what a fake cannot show, scoped to the literal
-  calls. See [probing-a-cli.md](probing-a-cli.md).
+  (`discobox-access`) only for what a fake cannot show, with a policy that
+  allows the literal calls and nothing else. See
+  [probing-a-cli.md](probing-a-cli.md).
 - **Decisions about security posture are the user's.** If the CLI's
   credential reaches more than its model API (a GitHub token with `repo`,
   a cloud key), stop and ask with the trade-offs before designing around it.
