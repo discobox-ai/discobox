@@ -38,8 +38,8 @@ are what tells them apart (`SecretRequest.FromProtocol`).
 | | Reactive | Protocol-originated |
 | --- | --- | --- |
 | Origin | The proxy hit an unresolvable sentinel | An agent asked, through the agent credentials protocol |
-| Carries | type, host, sandbox | plus name, env var, justification, declared uses, and optionally the lifetime asked for |
-| Approval mints | a grant at the chosen scope | a sandbox-scoped, host-scoped grant with minted use IDs, and a stable binding |
+| Carries | type, host, sandbox | plus name, env var, justification, declared uses, a policy, and optionally the lifetime asked for |
+| Approval mints | a grant at the chosen scope | a sandbox-scoped, host-scoped grant with minted use IDs and the policy approved, and a stable binding |
 
 A protocol-originated ask that repeats an open one — same sandbox, variable,
 host, well-known ID and purpose, and the same uses and lifetime — is answered
@@ -86,6 +86,9 @@ strictness is refused rather than silently relaxed:
 - **Use IDs are always minted here.** A requester supplies descriptions, never
   IDs, so an agent cannot name the use it will later present. An approver may
   rewrite the descriptions; supplied IDs are dropped either way.
+- **A policy is mandatory** (#312, [below](#every-agent-grant-carries-a-policy)).
+  An ask without one is refused when it is filed (`errNoPolicyAsked`, which
+  says how to write one), and an approval names the policy it approves.
 
 **An approval is one write.** Rebinding the answering secret and setting its
 grant limit (`secretHost`, `secretMaxGrantTTLSeconds`) ride on the approval. The
@@ -122,7 +125,7 @@ how a grant asks for the wildcard (`askedHosts`).
 
 A credential the sandbox cannot read — no environment variable, no
 `secrets.json`, no sentinel in the proxy's match set — is a `SandboxSecret`
-marked `AgentRequested` plus a grant carrying uses. Nothing else produces it,
+marked `AgentRequested` plus a grant carrying uses and a policy. Nothing else produces it,
 and the two halves are what make it work: the flag keeps the credential out of
 the sandbox, and the uses are what `discobox-access` names to take a value
 (`ListLiveAgentGrants` matches only a grant that has some).
@@ -150,28 +153,39 @@ Two paths mint that pair, and they mint the same thing:
   agent says what it needs and why, and a person answers.
 - **`CreateSecretGrant` with uses**, the pre-approval: somebody who already
   knows the answer grants it ahead of the asking. It carries the same
-  obligations — concrete hosts, use IDs minted here, and an environment
-  variable naming where the wrapped command receives it — but may sit at any of
-  the three scopes. A sandbox-scoped one binds immediately, and a failed binding
+  obligations — concrete hosts, use IDs minted here, a policy, and an
+  environment variable naming where the wrapped command receives it — but may
+  sit at any of the three scopes. A sandbox-scoped one binds immediately, and a failed binding
   deletes the grant, as a failed approval leaves none; a wider one binds lazily as
   above.
 
 A grant with no uses is the ordinary standing kind: it authorizes the sentinel
 the sandbox is already provisioned with, which anything in the sandbox can
-read. An environment variable without uses is refused rather than ignored:
-there is no delivery to name.
+read. An environment variable or a policy without uses is refused rather than
+ignored: there is no delivery to name, and nothing a policy could narrow.
 
-## A policy beside the uses
+## Every agent grant carries a policy
 
-A protocol-originated request, a grant with uses, and a grant given on a create
-may carry a policy (`policy.Policy`, ADR 26-10-20-782 §1) beside their uses,
-stored as one JSON column. A grant is still activated by its uses, and a grant
-without a policy is judged by them as before.
+A protocol-originated request, a grant with uses, and a grant given on a
+create carry a policy (`policy.Policy`, ADR 26-10-20-782 §1) beside their
+uses, stored as one JSON column (#312). The policy is what is enforced; the
+uses name the job, in the agent's own words, and are what `discobox-access
+run` presents.
 
+- **Uses and a policy go together** (`guardPolicy`, in `mintGrantAs` and
+  `PrepareSandboxGrants`): a grant with uses and no policy, or a policy and no
+  uses, is a 400. A grant without uses hands its sentinel's value to any
+  request, which no policy narrows, so a standing grant — a harness config's,
+  a person's `secret grant create` with no `--use` — carries none.
+- **Agent grants without one are gone** (`retireAgentGrantsWithoutPolicy`):
+  the upgrade deletes every grant with uses or a delegation that has no
+  policy, and every pending agent request with none, as revoking would.
+  Standing grants are never touched: a harness resolves its secrets only
+  through them.
 - **Judged against whole** (`ApprovedUse`, `ApprovedCredentialUse`): a command
-  or request under a grant that carries a policy is judged against the policy
-  rather than the sentence of the use it named, whichever use that was; the
-  judges package binds it to the discobox asking.
+  or request under a grant is judged against its policy rather than the
+  sentence of the use it named, whichever use that was; the judges package
+  binds it to the discobox asking.
 - **Validated where it enters** (`services.PolicyFromAPI`): a policy that does
   not validate, or that is larger than a judge job can carry
   (`judge.PolicyFits`), is a 400 before anyone is asked, and whatever a client
@@ -191,35 +205,31 @@ without a policy is judged by them as before.
   the form a person approves shows its variables' values (§3). The request
   keeps its policy unresolved; a discobox that is gone resolves nothing, and
   every variable shows as matching nothing.
-- **An approval names the policy it approves.** An approval of a request
-  that carries one sends the policy it approves — the one asked for, or an
-  edit — or is refused, so nothing is recorded as approved that was not sent.
+- **An approval names the policy it approves.** An approval of an agent's
+  request sends the policy it approves — the one asked for, or an edit — or
+  is refused, so nothing is recorded as approved that was not sent; a request
+  an older server filed with none is refused, to be denied and asked again.
   A person's `resolved` is the values they were shown: `commitApproval` holds
   the grant's to them inside the transaction, and a value that resolves
   otherwise, or a variable shown as matching nothing that resolves now, is a
   409 that grants nothing (`errPolicyResolvedOtherwise`).
   A rule answers only such a request, and is proposed or made only from one
   (`ruleTestable`, `ruleProposable`): a rule's policy is what a request's is
-  held to, and uses alone have none.
+  held to.
 - **A discobox hands on a policy only within its own** (ADR 26-10-20-782
   §11), approving a request of a discobox it created or giving one on a
-  create. `delegationsCovering` keeps, of the delegations the hand-off's
-  facts fit, those that carry a policy the given one is `policy.Within` —
-  the given policy resolved for the discobox it goes to, each delegation's
-  bound now for its holder; a delegated deny carried by one that refuses at
-  least as much, and an allow with no condition refused under one with any
-  (§11 as ADR 26-10-22-689 amends it) — and asks the judge only about
-  conditions code left unsettled (`judgeConditions`), the two statements as they resolved,
-  in the question it answers about uses. `judgeDelegations` then reads the
-  uses among those, as for any hand-off, so a policy and its uses are both
-  within one delegation. A delegation without a policy hands on none; a
-  hand-off with uses alone is judged by uses whatever the delegation carries,
-  and is not bound by its allows and denies (ADR 26-10-20-782 §11, Deferred).
+  create. `delegationCovering` tries the delegations the hand-off's facts
+  fit, longest-lived first, and takes the first whose policy the given one is
+  `policy.Within` — the given policy resolved for the discobox it goes to,
+  each delegation's bound now for its holder; a delegated deny carried by one
+  that refuses at least as much, and an allow with no condition refused under
+  one with any (§11 as ADR 26-10-22-689 amends it) — asking the judge only
+  about conditions code left unsettled (`judgeConditions`), the two
+  statements as they resolved. The uses handed on are not judged: the policy
+  alone bounds a hand-off. A delegation without a policy hands nothing on.
   Nothing a discobox hands on is shown to a person, so there is no shown
   value to hold it to.
 - **Another policy is another ask**: `asksTheSame` compares it with the uses.
-- A policy rides only beside uses: a grant without them hands its sentinel's
-  value to any request, which no policy narrows.
 - **The writer sees the record it resolves against**
   (`SandboxPolicyFacts`, `GET /api/pools/{poolId}/sandbox-policy-facts`): a
   pool reads its sandbox's `Sandbox.PolicyFacts` with every variable resolved
@@ -289,11 +299,12 @@ request
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
 §1): each grant is made under a live delegation grant it holds of that secret,
 covering the host and fitting the lifetime it named (`delegationsOf`,
-`delegationsFitting`), whose uses the judge finds its uses within — chosen as
-an approval's is ([below](#delegation-grants)), every grant at once, once
-every grant has passed what can refuse it without the judge
-(`judgeDelegations`, the new discobox's row as `DelegationAsk.For`: it is not
-stored yet, and the judge is told what it is created with,
+`delegationsFitting`), whose policy its policy is within — chosen as an
+approval's is ([below](#delegation-grants)), every grant at once, once every
+grant has passed what can refuse it without the judge
+(`delegationCovering`, the new discobox's record what the policy resolves
+against and its row `DelegationAsk.For` when a condition goes to the judge:
+it is not stored yet, and the judge is told what it is created with,
 ADR 26-10-14-691 §4). A lifetime it did
 not name is then fitted to the delegation chosen. The create's transaction
 holds each grant to its delegation again (`HoldDelegations`), so a delegation
@@ -310,10 +321,10 @@ and a discobox that needs both holds two grants.
   sentinel, is offered by no broker listing, and is skipped by every lookup
   that hands a credential out (`FindLiveGrant`, `ListLiveAgentGrants`;
   `SecretGrant.MayUse`).
-- **It is one discobox's, with uses** (`guardPurpose`, in `mintGrantAs`
-  beside the host and lifetime guards): a grant wider than a discobox has
-  nobody in particular to delegate it, and one without uses has nothing a
-  delegation could name.
+- **It is one discobox's, with uses and a policy** (`guardPurpose` and
+  `guardPolicy`, in `mintGrantAs` beside the host and lifetime guards): a
+  grant wider than a discobox has nobody in particular to delegate it, and
+  its policy is what every policy handed on under it must fall within.
 - **An agent may ask for one.** An agent credentials request carries a
   `Purpose` (`SecretRequest.Purpose`, `use` unless the agent asked to
   delegate), and approving it mints a grant with that purpose. An ask to
@@ -332,39 +343,48 @@ and a discobox that needs both holds two grants.
   secret's delegations, those the lifetime fits are candidates
   (`delegationsFor`, `delegationsFitting`): one the approver named must end no
   later than the delegation, and one nobody named needs a delegation with
-  time left. Whether the uses handed on — the request's, or the ones the
-  approver narrowed them to — fall within a delegation's uses is a reading, so
-  it is asked of the project's judge (`judgeDelegations`, through
-  `services.JudgeService.JudgeDelegation`, with the requesting discobox's row,
-  read here, so the judge is told what the discobox receiving the uses was
-  created with — ADR 26-10-14-691 §4) before the transaction — last,
-  after every check that can refuse without it — once per candidate, each on
-  its own: never against several delegations' uses together, which no one
-  delegation the grant is bounded by, held to, and traced to would hold.
-  The approval is made under the longest-lived the judge says yes to.
-  - **Asks go one after another, and the first yes ends them**, so the one
-    allow verdict an approval leaves names the delegation it was made under,
-    and the project's judge — shared with every request — is asked no more
-    than the choice needs. They share one deadline
-    (`services.DelegationBound`) that fits the pool gate's two minutes.
-    Candidates whose uses read the same are asked once, of the longest-lived.
-  - **Anything but an explicit yes refuses**, including no judge at all. A
-    refusal under every candidate names each one's reason; a judge that could
-    not answer about one, when none said yes, is the refusal given instead,
-    since that one might have.
+  time left. Whether the policy approved falls within a delegation's is
+  code's comparison (`delegationCovering`, `policy.Within`), made before the
+  transaction — last, after every check that can refuse without it — once per
+  candidate, each on its own: never against several delegations' policies
+  together, which no one delegation the grant is bounded by, held to, and
+  traced to would hold. The approval is made under the longest-lived that
+  covers it. The uses handed on are not judged against the delegation's: they
+  name the job, and the policy is what the grant enforces (ADR 26-10-20-782
+  §11, as amended in #312).
+  - **A condition code cannot compare is the judge's** (`judgeConditions`,
+    through `services.JudgeService.JudgeDelegation`, with the requesting
+    discobox's row, read here, so the judge is told what the discobox
+    receiving the policy was created with — ADR 26-10-14-691 §4): one allow
+    handed on against one delegated allow that covers it but for its
+    conditions. Candidates are tried one after another, and the first that
+    covers ends them, so the condition verdicts an approval leaves name the
+    delegation it was made under, and the project's judge — shared with every
+    request — is asked no more than the choice needs. They share one
+    deadline (`services.DelegationBound`) that fits the pool gate's two
+    minutes. Candidates whose policies say the same are tried once, the
+    longest-lived.
+  - **Anything but covered refuses**, including no judge for a condition that
+    needs one. A refusal under every candidate names each one's reason; a
+    judge that could not answer about one, when none covered, is the refusal
+    given instead, since that one might have.
   - **The chosen delegation is read again** by its ID in the approval's
     transaction (`delegatedTTL`): still live and covering the host, with the
-    uses the judge read, a lifetime nobody named fitted to its remaining time
-    and one the approver named refused if it does not fit. The lifetime is
-    fitted against, and the expiry stamped from, one reading of the clock
-    (`mintGrantAs` takes it): a second, later one would let the grant outlive
-    its delegation by the time between them.
+    policy the hand-off was held to, a lifetime nobody named fitted to its
+    remaining time and one the approver named refused if it does not fit. The
+    lifetime is fitted against, and the expiry stamped from, one reading of
+    the clock (`mintGrantAs` takes it): a second, later one would let the
+    grant outlive its delegation by the time between them.
 
-  The delegation verdict names the delegation grant
+  A handed-on grant names the delegation it was made under
+  (`SecretGrant.DelegationID`, as a rule's grant names its rule), on an
+  approval and on a create alike: that is how it is traced to the delegation
+  that allowed it, whether or not a judge was asked. A delegation verdict,
+  when a condition was put to the judge, names the delegation grant
   (`GrantID`) and the request being approved (`SecretRequestID`), and the
-  request names the grant the approval minted: that chain is how a handed-on
-  grant is traced to the delegation that allowed it. A request that names no uses is a person's, since a grant without
-  uses authorizes everything sent to its host.
+  request names the grant the approval minted. A request the proxy
+  opened names no uses and asks for no policy, and is a person's, since a
+  grant without uses authorizes everything sent to its host.
 
 ## Approval rules
 
@@ -492,9 +512,10 @@ flowchart LR
   anybody. A discobox is shown none of it.
 - **A rule may hand on a gate** (§9), which only a person otherwise
   approves: a rule is that person's approval given in advance. **It approves
-  no delegation yet** (ADR 26-10-22-689 §4): a delegation's uses still bound
-  a hand-off of uses alone, and a rule holds a request's policy, never its
-  uses. `checkRule` refuses a rule to delegate, and `ruleProposable` and
+  no delegation yet** (ADR 26-10-22-689 §4): its Deferred waited on every
+  hand-off being bound by the delegation's policy, which it now is (#312),
+  and stays deferred until a rule that hands on the power to hand on is
+  asked for. `checkRule` refuses a rule to delegate, and `ruleProposable` and
   `ProposeApprovalRuleFromGrant` a request or grant that delegates.
 
 **"Auto approve" proposes a policy, held to the request before it is shown**

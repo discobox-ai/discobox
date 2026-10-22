@@ -194,7 +194,7 @@ components:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
                 purposes:
-                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the uses the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
+                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the one delegated allow that covers the allow handed on but for its conditions, as its sentence; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
                     items:
                         type: string
                     type: array
@@ -209,7 +209,7 @@ components:
                 stdin:
                     $ref: '#/components/schemas/JudgeInput'
                 uses:
-                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
+                    description: For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
                     items:
                         type: string
                     type: array

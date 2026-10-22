@@ -104,12 +104,17 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err != nil {
 		return nil, err
 	}
-	// A policy rides beside the uses (ADR 26-10-20-782 §1). It is validated
-	// now so that one a person could not approve is refused before anyone is
-	// asked.
+	// A request asks for a policy beside its uses (ADR 26-10-20-782 §1): the
+	// policy is what its grant enforces, and the uses only name the job
+	// (#312). It is validated now so that one a person could not approve is
+	// refused before anyone is asked, and one left out is refused with how to
+	// write it.
 	askedPolicy, err := services.PolicyFromAPI(input.Policy)
 	if err != nil {
 		return nil, err
+	}
+	if askedPolicy == nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, agentcreds.NoPolicyAsked+"; `discobox-access request --help` shows how to write one, and `discobox-access facts` the variables a statement may name")
 	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether

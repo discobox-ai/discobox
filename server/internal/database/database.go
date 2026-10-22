@@ -166,6 +166,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireApprovalRuleUses(write); err != nil {
 		return err
 	}
+	if err := retireAgentGrantsWithoutPolicy(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
 }
 
@@ -234,6 +237,60 @@ func retireApprovalRuleUses(db *gorm.DB) error {
 	for _, column := range retired {
 		if err := dropRetiredColumn(db, &model.ApprovalRule{}, "approval_rules", column); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// retireAgentGrantsWithoutPolicy takes out what was approved, or asked for,
+// as uses alone (#312, ADR 26-10-20-782 §11): every grant an agent takes
+// through discobox-access, and every delegation, now carries a policy, and a
+// hand-off is bound by its delegation's. An agent grant — one with uses, or a
+// delegation — with no policy is deleted, as revoking it deletes it: its
+// request stays approved and reads as denied, and its verdicts go on naming
+// it. A pending agent request with no policy is deleted too, since nothing can
+// approve it; the agent waiting on it is told it is gone and asks again with
+// a policy. Each is logged with what it said.
+//
+// Standing grants, with no uses, are never touched: the harness-config grants
+// `discobox configure` writes and a person's `secret grant create` without
+// uses authorize a sentinel the discobox already holds, which no policy
+// narrows, and a harness resolves its secrets only through them.
+//
+// It runs on every start, and finds nothing once nothing writes such a row.
+func retireAgentGrantsWithoutPolicy(db *gorm.DB) error {
+	migrator := db.Migrator()
+	const noPolicy = "(policy IS NULL OR policy = '' OR policy = 'null')"
+	const hasUses = "(uses IS NOT NULL AND uses NOT IN ('', 'null', '[]'))"
+	if migrator.HasTable(&model.SecretGrant{}) {
+		var grants []map[string]any
+		if err := db.Table("secret_grants").Select("id", "project_id", "secret_id", "scope", "scope_key", "purpose", "uses").
+			Where(noPolicy+" AND ("+hasUses+" OR purpose = ?)", model.SecretGrantPurposeDelegate).
+			Order("id").Find(&grants).Error; err != nil {
+			return err
+		}
+		for _, grant := range grants {
+			log.Printf("deleted %s grant %s of project %s (secret %s, %s %s, uses %q): a grant an agent takes now carries a policy, and is asked for anew with one",
+				columnText(grant["purpose"]), columnText(grant["id"]), columnText(grant["project_id"]), columnText(grant["secret_id"]),
+				columnText(grant["scope"]), columnText(grant["scope_key"]), columnText(grant["uses"]))
+			if err := db.Exec("DELETE FROM secret_grants WHERE id = ?", grant["id"]).Error; err != nil {
+				return err
+			}
+		}
+	}
+	if migrator.HasTable(&model.SecretRequest{}) {
+		var requests []map[string]any
+		if err := db.Table("secret_requests").Select("id", "project_id", "sandbox_id", "uses").
+			Where(noPolicy+" AND "+hasUses+" AND status = ?", model.SecretRequestStatusPending).
+			Order("id").Find(&requests).Error; err != nil {
+			return err
+		}
+		for _, req := range requests {
+			log.Printf("deleted pending request %s of project %s from %s (uses %q): a request now carries a policy, and is asked anew with one",
+				columnText(req["id"]), columnText(req["project_id"]), columnText(req["sandbox_id"]), columnText(req["uses"]))
+			if err := db.Exec("DELETE FROM secret_requests WHERE id = ?", req["id"]).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil

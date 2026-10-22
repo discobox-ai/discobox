@@ -61,7 +61,7 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 		t.Fatalf("create advisory request: %v", err)
 	}
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(selected.ID),
 	})
 	if err != nil {
@@ -402,6 +402,7 @@ func TestAGrantWithUsesIsTakenOnlyThroughTheCLI(t *testing.T) {
 		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{
 			{Description: "Open a pull request against the current repo"},
 		}),
+		Policy: policyAsked(t),
 	})
 	if err != nil {
 		t.Fatalf("grant: %v", err)
@@ -456,10 +457,12 @@ func TestAGrantWithUsesRefusesTheWrongShape(t *testing.T) {
 			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
 			ScopeKey: serverapi.NewOptString(testSandboxID), Hosts: []string{},
 			EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use,
+			Policy: policyAsked(t),
 		}, "requires a host"},
 		{"no environment variable", services.CreateSecretGrantBody{
 			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
 			ScopeKey: serverapi.NewOptString(testSandboxID), Hosts: []string{"api.github.com"}, Uses: use,
+			Policy: policyAsked(t),
 		}, "environment variable"},
 		{"a variable with no uses", services.CreateSecretGrantBody{
 			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
@@ -496,6 +499,7 @@ func TestAWiderGrantBindsWhenTheAgentFirstAsks(t *testing.T) {
 		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{
 			{Description: "Open a pull request against the current repo"},
 		}),
+		Policy: policyAsked(t),
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
@@ -560,10 +564,10 @@ func TestTheNarrowerGrantKeepsTheVariable(t *testing.T) {
 
 	for _, g := range []services.CreateSecretGrantBody{
 		{SecretId: theirs.ID, Scope: serverapi.CreateSecretGrantBodyScopeProject,
-			Hosts: []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use},
+			Hosts: []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use, Policy: policyAsked(t)},
 		{SecretId: mine.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
 			ScopeKey: serverapi.NewOptString(testSandboxID),
-			Hosts:    []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use},
+			Hosts:    []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use, Policy: policyAsked(t)},
 	} {
 		if _, err := svc.CreateSecretGrant(ctx, "project-1", g); err != nil {
 			t.Fatalf("grant: %v", err)
@@ -830,14 +834,14 @@ func TestApprovalTakesTheSecretsLimitAndIsBoundByIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create request: %v", err)
 	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	if _, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId:        serverapi.NewOptString(secret.ID),
 		GrantTTLSeconds: serverapi.NewOptInt64(86400),
 	}); err == nil {
 		t.Fatal("an approval outlived the secret's limit")
 	}
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}

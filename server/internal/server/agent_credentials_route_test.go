@@ -44,7 +44,7 @@ func TestAgentCredentialRoutesRequireTheBrokerScope(t *testing.T) {
 
 	listPath := "/api/pools/" + routeTestPoolID + "/sandbox-credentials?sandboxId=" + routeTestSandboxID
 	requestBody := `{"sandboxId":"` + routeTestSandboxID + `","name":"github","envVar":"GITHUB_TOKEN",` +
-		`"hosts":["api.github.com"],"uses":[{"description":"Open a PR"}]}`
+		`"hosts":["api.github.com"],"uses":[{"description":"Open a PR"}],` + routePolicy + `}`
 	requestPath := "/api/pools/" + routeTestPoolID + "/sandbox-credential-requests"
 
 	for _, tc := range []struct {
@@ -110,7 +110,7 @@ func TestAgentCredentialRequestAndPollOverHTTP(t *testing.T) {
 
 	body := `{"sandboxId":"` + routeTestSandboxID + `","name":"github","envVar":"GITHUB_TOKEN",` +
 		`"hosts":["api.github.com"],"justification":"the task asks me to open a PR",` +
-		`"uses":[{"description":"Open a PR against the current repo"}]}`
+		`"uses":[{"description":"Open a PR against the current repo"}],` + routePolicy + `}`
 	resp := callRoute(t, router, http.MethodPost, "/api/pools/"+routeTestPoolID+"/sandbox-credential-requests", body, token)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("request status = %d, body = %s", resp.Code, resp.Body.String())
@@ -147,12 +147,25 @@ func TestAgentCredentialRequestAndPollOverHTTP(t *testing.T) {
 	// A hostless ask must be refused at the edge, since approving it could only
 	// produce a wildcard grant.
 	hostless := `{"sandboxId":"` + routeTestSandboxID + `","name":"github","envVar":"GITHUB_TOKEN",` +
-		`"uses":[{"description":"Open a PR"}]}`
+		`"uses":[{"description":"Open a PR"}],` + routePolicy + `}`
 	bad := callRoute(t, router, http.MethodPost, "/api/pools/"+routeTestPoolID+"/sandbox-credential-requests", hostless, token)
 	if bad.Code != http.StatusBadRequest {
 		t.Fatalf("hostless request status = %d, want 400; body = %s", bad.Code, bad.Body.String())
 	}
+
+	// So must an ask with uses alone: the policy is what its grant enforces.
+	usesAlone := `{"sandboxId":"` + routeTestSandboxID + `","name":"github","envVar":"GITHUB_TOKEN",` +
+		`"hosts":["api.github.com"],"uses":[{"description":"Open a PR"}]}`
+	bad = callRoute(t, router, http.MethodPost, "/api/pools/"+routeTestPoolID+"/sandbox-credential-requests", usesAlone, token)
+	if bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "asks for a policy beside its uses") {
+		t.Fatalf("uses-alone request status = %d, want 400 saying a policy is asked for; body = %s", bad.Code, bad.Body.String())
+	}
 }
+
+// routePolicy is the policy an ask over HTTP carries, as discobox-access
+// sends it: every request asks for one (#312).
+const routePolicy = `"policy":{"statements":[{"effect":"allow","actions":["read"],"resourceType":"issue",` +
+	`"scope":{"type":"repository","name":"acme/web"}}],"definitions":{"issue":"A GitHub issue.","repository":"A GitHub repository."}}`
 
 func callRoute(t *testing.T, router http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
 	t.Helper()

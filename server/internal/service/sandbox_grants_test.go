@@ -11,6 +11,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -28,7 +29,31 @@ func githubGrant(secretID string) serverapi.SandboxGrant {
 		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
 		Hosts:    []string{"github.com"},
 		Uses:     []serverapi.SecretUse{{Description: "push a branch to org/repo"}},
+		Policy:   pushPolicy(givenPush),
 	}
+}
+
+// delegatedPush is what the lead may hand on, and givenPush what it gives: the
+// same allow under another condition, so the judge reads the two conditions
+// (ADR 26-10-20-782 §11).
+const (
+	delegatedPush = `allow push on branch "*" in repository "org/repo" when "it is a discobox branch"`
+	givenPush     = `allow push on branch "*" in repository "org/repo" when "it is the discobox branch of its issue"`
+)
+
+// pushPolicy is a policy of the sentences, with the words they use defined.
+func pushPolicy(sentences ...string) serverapi.OptAccessPolicy {
+	statements, err := policy.ParseStatements(sentences)
+	if err != nil {
+		panic(err)
+	}
+	out, err := services.APIPolicy(&policy.Policy{Statements: statements, Definitions: map[string]string{
+		"push": "Add commits to a branch.", "branch": "A git branch.", "repository": "A GitHub repository, owner/name.",
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 func createGitHubSecret(ctx context.Context, t *testing.T, svc interface {
@@ -142,6 +167,12 @@ func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *mod
 		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
 		Uses: []model.SecretUse{{UseID: "use-delegated", Description: "push branches to org/repo, for the discoboxes I create"}},
 	}
+	delegated, err := services.PolicyFromAPI(pushPolicy(delegatedPush))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := delegated.Resolve(policy.Facts{Discobox: policy.Discobox{ID: "sbx-lead"}})
+	grant.Policy = &resolved
 	if lifetime > 0 {
 		expires := time.Now().UTC().Add(lifetime)
 		grant.ExpiresAt = &expires
@@ -154,8 +185,8 @@ func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *mod
 
 // What a sandbox creates it creates as the user who created it, and the grants
 // it gives are recorded as its own doing. It gives uses, never values, and only
-// under a delegation it holds that the judge finds them within (ADR
-// 26-09-30-782 §1).
+// under a delegation it holds whose policy holds the one it gives — here with
+// the conditions the judge reads (ADR 26-09-30-782 §1, ADR 26-10-20-782 §11).
 func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
@@ -279,6 +310,7 @@ func TestADiscoboxIsGivenAWellKnownCredentialByID(t *testing.T) {
 		grant := serverapi.SandboxGrant{
 			WellKnownId: serverapi.NewOptString(id),
 			Uses:        []serverapi.SecretUse{{Description: "read issues in org/repo"}},
+			Policy:      pushPolicy(givenPush),
 		}
 		if host != "" {
 			grant.Hosts = []string{host}
@@ -336,6 +368,14 @@ func TestADiscoboxIsGivenAWellKnownCredentialByID(t *testing.T) {
 func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
+	workers, err := services.APIPolicy(&policy.Policy{
+		Statements:  []policy.Statement{{Effect: policy.Allow, Actions: []string{policy.ActionCreate}, ResourceType: "discobox", Scope: policy.Scope{Type: "project", Name: "default"}}},
+		Definitions: map[string]string{"discobox": "A Discobox sandbox.", "project": "A Discobox project, by its name."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workersPolicy := workers
 	lead, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
 		Config:      serverapi.SandboxCreateConfig{Name: "lead"},
@@ -347,11 +387,12 @@ func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 		SandboxId: lead.ID,
 		ID:        serverapi.NewOptString(wellknown.DiscoboxSandbox),
 		Uses:      []serverapi.SecretUse{{Description: "create workers"}},
+		Policy:    workersPolicy,
 	})
 	if err != nil {
 		t.Fatalf("ask: %v", err)
 	}
-	approved, err := svc.ApproveSecretRequest(ctx, projectID, req.ID, services.ApproveSecretRequestBody{})
+	approved, err := svc.ApproveSecretRequest(ctx, projectID, req.ID, services.ApproveSecretRequestBody{Policy: workersPolicy})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -363,6 +404,7 @@ func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 			SecretId: serverapi.NewOptString(approved.SecretID),
 			EnvVar:   serverapi.NewOptString("DISCOBOX_TOKEN"),
 			Uses:     []serverapi.SecretUse{{Description: "create more workers"}},
+			Policy:   workersPolicy,
 		}},
 	})
 	requireStatus(t, err, http.StatusForbidden)

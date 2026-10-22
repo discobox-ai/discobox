@@ -25,6 +25,7 @@ func askFor(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, id 
 		SandboxId: testSandboxID,
 		ID:        serverapi.NewOptString(id),
 		Uses:      []apimodel.SecretUse{{Description: "open a pull request against org/repo"}},
+		Policy:    policyAsked(t),
 	})
 	if err != nil {
 		t.Fatalf("ask for %s: %v", id, err)
@@ -59,6 +60,7 @@ func TestAnAskByWellKnownIDCarriesWhatTheIDNames(t *testing.T) {
 		ID:        serverapi.NewOptString(wellknown.GitHubAPI),
 		Hosts:     []string{"api.github.com"},
 		Uses:      []apimodel.SecretUse{{Description: "read the issues in org/repo"}},
+		Policy:    policyAsked(t),
 	})
 	if err != nil || !slices.Equal(narrower.Hosts, []string{"api.github.com"}) || narrower.EnvName != "GH_TOKEN" {
 		t.Fatalf("request = %+v, %v; want the narrower host kept", narrower, err)
@@ -85,9 +87,9 @@ func TestTheFirstApprovalOfABoundCredentialMarksItsSecret(t *testing.T) {
 	secret := createBearerSecret(ctx, t, svc)
 
 	first := askFor(ctx, t, svc, wellknown.GitHubAPI)
-	_, err := svc.ApproveSecretRequest(ctx, "project-1", first.ID, services.ApproveSecretRequestBody{})
+	_, err := approveAsAsked(ctx, t, svc, "project-1", first.ID, services.ApproveSecretRequestBody{})
 	requireStatus(t, err, http.StatusBadRequest)
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", first.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); err != nil {
+	if _, err := approveAsAsked(ctx, t, svc, "project-1", first.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); err != nil {
 		t.Fatalf("approve naming the secret: %v", err)
 	}
 	marked, err := st.FindSecretByWellKnownID(ctx, "project-1", wellknown.GitHubAPI)
@@ -99,11 +101,12 @@ func TestTheFirstApprovalOfABoundCredentialMarksItsSecret(t *testing.T) {
 		SandboxId: testSandboxID,
 		ID:        serverapi.NewOptString(wellknown.GitHubAPI),
 		Uses:      []apimodel.SecretUse{{Description: "read the issues in org/repo"}},
+		Policy:    policyAsked(t),
 	})
 	if err != nil {
 		t.Fatalf("ask again: %v", err)
 	}
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", second.ID, services.ApproveSecretRequestBody{})
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", second.ID, services.ApproveSecretRequestBody{})
 	if err != nil || approved.SecretID != secret.ID {
 		t.Fatalf("approved = %+v, %v; want the marked secret bound without being named", approved, err)
 	}
@@ -119,7 +122,7 @@ func TestAFailedApprovalMarksNothing(t *testing.T) {
 
 	req := askFor(ctx, t, svc, wellknown.GitHubAPI)
 	// Project scope is refused for a protocol request (ADR 0031 §5).
-	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+	_, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID),
 		Scope:    serverapi.NewOptApproveSecretRequestBodyScope(serverapi.ApproveSecretRequestBodyScopeProject),
 	})
@@ -142,6 +145,7 @@ func TestAnAskByIDDoesNotReuseAPlainAsk(t *testing.T) {
 		EnvVar:    "GH_TOKEN",
 		Hosts:     []string{"github.com"},
 		Uses:      []apimodel.SecretUse{{Description: "read the issues in org/repo"}},
+		Policy:    policyAsked(t),
 	})
 	if err != nil {
 		t.Fatalf("plain ask: %v", err)
@@ -169,10 +173,10 @@ func TestTheDiscoboxAPIIsApprovedWithNoSecret(t *testing.T) {
 	if !slices.Equal(req.Hosts, []string{"api.discobox.internal"}) || req.EnvName != "DISCOBOX_TOKEN" {
 		t.Fatalf("request = %+v, want the discobox API's host and variable", req)
 	}
-	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(github.ID)})
+	_, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(github.ID)})
 	requireStatus(t, err, http.StatusBadRequest)
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{})
 	if err != nil {
 		t.Fatalf("approve without a secret: %v", err)
 	}
@@ -186,7 +190,7 @@ func TestTheDiscoboxAPIIsApprovedWithNoSecret(t *testing.T) {
 	if again.ID == req.ID {
 		t.Fatal("a second ask reused the approved one")
 	}
-	second, err := svc.ApproveSecretRequest(ctx, "project-1", again.ID, services.ApproveSecretRequestBody{})
+	second, err := approveAsAsked(ctx, t, svc, "project-1", again.ID, services.ApproveSecretRequestBody{})
 	if err != nil || second.SecretID != gate.ID {
 		t.Fatalf("second approval = %+v, %v; want the same gate secret", second, err)
 	}
@@ -214,6 +218,7 @@ func TestTheDiscoboxAPIsHostIsAskedForOnlyByID(t *testing.T) {
 			EnvVar:    "DISCOBOX_TOKEN",
 			Hosts:     []string{host},
 			Uses:      []apimodel.SecretUse{{Description: "create a discobox"}},
+			Policy:    policyAsked(t),
 		})
 		requireStatus(t, err, http.StatusBadRequest)
 	}
@@ -226,7 +231,7 @@ func TestTheGateSecretIsNotEdited(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	req := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -256,10 +261,10 @@ func TestOnlyAPersonApprovesTheDiscoboxAPI(t *testing.T) {
 	})
 
 	req := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
-	_, err := svc.ApproveSecretRequest(lead, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	_, err := approveAsAsked(lead, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{})
 	requireStatus(t, err, http.StatusForbidden)
 
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{}); err != nil {
+	if _, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{}); err != nil {
 		t.Fatalf("a person approving it: %v", err)
 	}
 }

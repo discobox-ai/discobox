@@ -413,7 +413,7 @@ func TestApprovingCannotMoveAnExchangeSecretOffItsRecipe(t *testing.T) {
 	}
 	req := createAgentRequest(ctx, t, svc)
 	for _, host := range []string{"api.github.com", ""} {
-		_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		_, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
 			SecretId:   apigen.NewOptString(sec.ID),
 			SecretHost: apigen.NewOptString(host),
 		})

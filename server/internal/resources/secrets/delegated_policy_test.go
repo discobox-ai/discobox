@@ -21,13 +21,15 @@ import (
 // ask to delegate with that policy does.
 func delegatePolicy(t *testing.T, st *store.Store, secret *model.Secret, host string, sentences ...string) *model.SecretGrant {
 	t.Helper()
-	statements, err := policy.ParseStatements(sentences)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := policy.Policy{Statements: statements, Definitions: definitionsFor(statements)}
+	return delegatePolicyFor(t, st, secret, host, time.Hour, sentences...)
+}
+
+// delegatePolicyFor is delegatePolicy, lapsing after lifetime.
+func delegatePolicyFor(t *testing.T, st *store.Store, secret *model.Secret, host string, lifetime time.Duration, sentences ...string) *model.SecretGrant {
+	t.Helper()
+	p := workerPolicy(t, sentences...)
 	resolved := p.Resolve(policy.Facts{Discobox: policy.Discobox{ID: leadID}})
-	grant := delegate(t, st, secret, host, time.Hour)
+	grant := delegate(t, st, secret, host, lifetime)
 	grant.Policy = &resolved
 	if err := st.UpdateSecretGrant(context.Background(), grant); err != nil {
 		t.Fatalf("give the delegation its policy: %v", err)
@@ -48,10 +50,14 @@ func workerPolicy(t *testing.T, sentences ...string) policy.Policy {
 // definitionsFor defines each word the statements use that needs one, and no
 // other: a policy may not define a word it does not use.
 func definitionsFor(statements []policy.Statement) map[string]string {
-	glossary := map[string]string{"pull request": "A GitHub pull request.", "repository": handedOnPolicy().Definitions["repository"], "issue": handedOnPolicy().Definitions["issue"]}
+	glossary := map[string]string{
+		"pull request": "A GitHub pull request.", "repository": handedOnPolicy().Definitions["repository"], "issue": handedOnPolicy().Definitions["issue"],
+		"branch": "A git branch.", "workflow run": "A GitHub Actions run.", "review": "A review of a pull request.",
+		"push": "Add commits to a branch.", "rerun": "Re-run a run's failed jobs.",
+	}
 	out := map[string]string{}
 	for _, s := range statements {
-		for _, word := range []string{s.ResourceType, s.Scope.Type} {
+		for _, word := range append([]string{s.ResourceType, s.Scope.Type}, s.Actions...) {
 			if definition, ok := glossary[word]; ok {
 				out[word] = definition
 			}
@@ -109,14 +115,14 @@ func TestALeadHandsOnAPolicyWithinItsOwn(t *testing.T) {
 	}
 }
 
-// A delegation with no policy hands on no policy. A hand-off of uses alone is
-// judged by its uses, under any delegation, until agents can write a policy
-// (#297): it is not bound by a delegation's allows and denies.
-func TestAHandOffWithoutAPolicyIsJudgedByItsUses(t *testing.T) {
+// A hand-off is bound by its policy alone (ADR 26-10-20-782 §11, #312): a
+// policy within the delegation's is approved with no judge to ask, whatever
+// the uses beside it say, and carries those uses as asked. A delegation with
+// no policy hands nothing on.
+func TestAHandOffIsBoundByItsPolicyNotItsUses(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
-	judge := &delegationJudge{allow: true}
-	svc.SetJudge(judge)
+	svc.SetJudge(nil)
 	secret := createBoundSecret(ctx, t, svc, "github", "", 86400)
 	bare := delegate(t, st, secret, "github.com", time.Hour)
 	bare.Policy = nil
@@ -124,20 +130,32 @@ func TestAHandOffWithoutAPolicyIsJudgedByItsUses(t *testing.T) {
 		t.Fatal(err)
 	}
 	asked := workerPolicy(t, `allow read on issue in repository "acme/web"`)
-	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, asked) })
-	_, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
+	_, err := approveAsLead(svc, workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, asked) }),
+		services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
 	wantStatus(t, err, http.StatusForbidden, "carries no policy to hand on")
 
-	delegatePolicy(t, st, secret, "github.com", `allow read on issue in repository "acme/web"`)
-	usesAlone := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
-		b.Policy = serverapi.OptAccessPolicy{}
-		b.Uses = []apimodel.SecretUse{{Description: "read issue 44"}}
+	held := delegatePolicy(t, st, secret, "github.com", `allow read on issue in repository "acme/web"`)
+	uses := []apimodel.SecretUse{{Description: "push main and delete every branch"}}
+	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) {
+		b.Policy = apiPolicy(t, asked)
+		b.Uses = uses
 	})
-	if _, err := approveAsLead(svc, usesAlone, services.ApproveSecretRequestBody{}); err != nil {
-		t.Fatalf("uses alone: %v", err)
+	approved, err := approveAsLead(svc, req, services.ApproveSecretRequestBody{Policy: apiPolicy(t, asked)})
+	if err != nil {
+		t.Fatalf("approve a policy within the delegation's with no judge: %v", err)
 	}
-	if asks := judge.asks(); len(asks) != 1 || !slices.Equal(asks[0].Uses, []string{"read issue 44"}) {
-		t.Fatalf("judge asked %+v, want the uses once", asks)
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(useDescriptions(grant.Uses), []string{uses[0].Description}) || grant.Policy == nil ||
+		!slices.Equal(policy.FormatStatements(grant.Policy.Statements), policy.FormatStatements(asked.Statements)) {
+		t.Fatalf("grant = %+v, want the uses and the policy as asked", grant)
+	}
+	// Code settled it and no judge was asked, so no verdict names the
+	// delegation: the grant does.
+	if grant.DelegationID != held.ID {
+		t.Fatalf("grant delegation = %q, want the one it was handed on under, %s", grant.DelegationID, held.ID)
 	}
 }
 

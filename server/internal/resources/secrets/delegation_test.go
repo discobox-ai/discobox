@@ -13,7 +13,8 @@ import (
 
 // delegationGrant is a person's grant to the test discobox of a GitHub token
 // for it to hand on, in the shape delegation requires: one discobox, with uses.
-func delegationGrant(secretID string) services.CreateSecretGrantBody {
+func delegationGrant(t *testing.T, secretID string) services.CreateSecretGrantBody {
+	t.Helper()
 	return services.CreateSecretGrantBody{
 		SecretId: secretID,
 		Scope:    serverapi.CreateSecretGrantBodyScopeSandbox,
@@ -22,6 +23,7 @@ func delegationGrant(secretID string) services.CreateSecretGrantBody {
 		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
 		Uses:     serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "push a branch to org/repo"}}),
 		Purpose:  serverapi.NewOptCreateSecretGrantBodyPurpose(serverapi.CreateSecretGrantBodyPurposeDelegate),
+		Policy:   policyAsked(t),
 	}
 }
 
@@ -32,7 +34,7 @@ func TestAGrantIsForUseUnlessItSaysOtherwise(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 
-	body := delegationGrant(secret.ID)
+	body := delegationGrant(t, secret.ID)
 	body.Purpose = serverapi.OptCreateSecretGrantBodyPurpose{}
 	grant, err := svc.CreateSecretGrant(ctx, "project-1", body)
 	if err != nil {
@@ -52,7 +54,7 @@ func TestADelegationGrantIsNotTheHoldersToUse(t *testing.T) {
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 
-	grant, err := svc.CreateSecretGrant(ctx, "project-1", delegationGrant(secret.ID))
+	grant, err := svc.CreateSecretGrant(ctx, "project-1", delegationGrant(t, secret.ID))
 	if err != nil {
 		t.Fatalf("grant: %v", err)
 	}
@@ -80,17 +82,17 @@ func TestADelegationGrantRefusesTheWrongShape(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 
-	projectWide := delegationGrant(secret.ID)
+	projectWide := delegationGrant(t, secret.ID)
 	projectWide.Scope = serverapi.CreateSecretGrantBodyScopeProject
 	projectWide.ScopeKey = serverapi.OptString{}
 	projectWide.Uses = serverapi.OptNilSecretUseArray{}
 	projectWide.EnvVar = serverapi.OptString{}
 
-	noUses := delegationGrant(secret.ID)
+	noUses := delegationGrant(t, secret.ID)
 	noUses.Uses = serverapi.OptNilSecretUseArray{}
 	noUses.EnvVar = serverapi.OptString{}
 
-	nobody := delegationGrant(secret.ID)
+	nobody := delegationGrant(t, secret.ID)
 	nobody.ScopeKey = serverapi.NewOptString("sbx-nobody")
 
 	for name, tc := range map[string]struct {
@@ -113,7 +115,7 @@ func TestAGrantsUseIsWrittenOnOneLine(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
-	body := delegationGrant(secret.ID)
+	body := delegationGrant(t, secret.ID)
 	body.Uses = serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "push a branch to org/repo\r\nnever main"}})
 	if _, err := svc.CreateSecretGrant(ctx, "project-1", body); err == nil || !strings.Contains(err.Error(), "one line") {
 		t.Fatalf("err = %v, want the use refused for running over several lines", err)

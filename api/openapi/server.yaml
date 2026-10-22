@@ -512,7 +512,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: A policy for the grant (ADR 26-10-20-782). Its variables resolve for the sandbox being created, not the discobox creating it.
+                    description: The policy the grant carries (ADR 26-10-20-782), which every grant with uses must; it is what is enforced, and its uses name the job. Its variables resolve for the sandbox being created, not the discobox creating it.
                 grantTTLSeconds:
                     description: How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
                     format: int64
@@ -3871,7 +3871,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: A policy the agent asks for, beside its uses (ADR 26-10-20-782).
+                    description: The policy the agent asks for, beside its uses (ADR 26-10-20-782). Required; a request without one is refused as invalid, with how to write one.
             required:
                 - sandboxId
                 - name
@@ -5113,7 +5113,7 @@ components:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
                 purposes:
-                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the uses the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
+                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the one delegated allow that covers the allow handed on but for its conditions, as its sentence; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
                     items:
                         type: string
                     type: array
@@ -5128,7 +5128,7 @@ components:
                 stdin:
                     $ref: '#/components/schemas/JudgeInput'
                 uses:
-                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
+                    description: For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
                     items:
                         type: string
                     type: array
@@ -5715,7 +5715,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy approved -- the one the request asked for, as read, or one in its place. A request that asks for a policy is refused an approval without one, so nothing is approved that was not sent. A discobox approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section 11). A person's resolved is the values they were shown, absent for none; each variable the approved policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A value shown for a variable the approved policy does not use is ignored.
+                    description: The policy approved -- the one the request asked for, as read, or one in its place. An agent's request is refused an approval without one, so nothing is approved that was not sent. A discobox approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section 11). A person's resolved is the values they were shown, absent for none; each variable the approved policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A value shown for a variable the approved policy does not use is ignored.
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -5821,7 +5821,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: A policy for the grant (ADR 26-10-20-782). Its variables resolve only for a grant scoped to one sandbox; a project or harness config grant may carry a policy that uses none.
+                    description: The policy the grant carries (ADR 26-10-20-782). Required with uses, and refused without them. Its variables resolve only for a grant scoped to one sandbox; a project or harness config grant may carry a policy that uses none.
                 purpose:
                     description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it delegate the credential to other discoboxes and authorizes nothing it sends itself; sandbox scope, with uses, only.
                     enum:
@@ -6344,7 +6344,7 @@ components:
                     type: array
                 policy:
                     $ref: '#/components/schemas/AccessPolicy'
-                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). A command or request under the grant is judged against it rather than against a use's sentence.
+                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). Every grant with uses carries one. A command or request under the grant is judged against it rather than against a use's sentence.
                 purpose:
                     description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
                     enum:
@@ -6353,6 +6353,9 @@ components:
                     type: string
                 ruleId:
                     description: The approval rule the grant was minted under, when a rule approved the request rather than a person or a discobox (ADR 26-10-12-330). The grant is independent of the rule once made.
+                    type: string
+                delegationId:
+                    description: The delegation grant a discobox handed this grant on under, when a discobox approved the request or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation that allowed it; the grant is independent of it once made.
                     type: string
                 createdAt:
                     description: Creation timestamp

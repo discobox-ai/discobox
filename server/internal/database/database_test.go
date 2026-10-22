@@ -2123,6 +2123,98 @@ func TestMigrateDeletesRulesWrittenAsUses(t *testing.T) {
 	}
 }
 
+// An agent grant — one with uses, or a delegation — approved with no policy
+// comes out of the upgrade deleted, and so does a pending agent request that
+// asks for none (#312): a grant an agent takes now carries a policy. A grant
+// with a policy, a standing grant with no uses, a reactive request and a
+// request already answered are kept, however many times the server starts.
+func TestMigrateDeletesAgentGrantsWithoutPolicy(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	write := db.Write.WithContext(ctx)
+	if err := write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	asked := &policy.Policy{Statements: []policy.Statement{{
+		Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+		Scope: policy.Scope{Type: "repository", Name: "org/repo"},
+	}}, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}}
+	uses := []model.SecretUse{{UseID: "use_1", Description: "read issues in org/repo"}}
+	for _, g := range []model.SecretGrant{
+		{ID: "g-uses", Uses: uses, EnvName: "GH_TOKEN", Purpose: model.SecretGrantPurposeUse},
+		{ID: "g-delegate", Uses: uses, Purpose: model.SecretGrantPurposeDelegate},
+		{ID: "g-policy", Uses: uses, EnvName: "GH_TOKEN", Policy: asked, Purpose: model.SecretGrantPurposeUse},
+		{ID: "g-delegate-policy", Uses: uses, Policy: asked, Purpose: model.SecretGrantPurposeDelegate},
+		{ID: "g-standing", Purpose: model.SecretGrantPurposeUse},
+	} {
+		g.ProjectID, g.SecretID, g.Scope, g.ScopeKey = "project-1", "secret-1", model.SecretGrantScopeProject, "project-1"
+		if err := write.Create(&g).Error; err != nil {
+			t.Fatalf("create grant %s: %v", g.ID, err)
+		}
+	}
+	for _, r := range []model.SecretRequest{
+		{ID: "r-uses", Uses: uses},
+		{ID: "r-policy", Uses: uses, Policy: asked},
+		{ID: "r-reactive"},
+		{ID: "r-answered", Uses: uses, Status: model.SecretRequestStatusApproved},
+	} {
+		r.ProjectID, r.RequestedBy, r.Type = "project-1", "user-1", model.SecretTypeToken
+		if r.Status == "" {
+			r.Status = model.SecretRequestStatusPending
+		}
+		if err := write.Create(&r).Error; err != nil {
+			t.Fatalf("create request %s: %v", r.ID, err)
+		}
+	}
+
+	var logged bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	for run := 1; run <= 2; run++ {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatalf("upgrade migrate %d: %v", run, err)
+		}
+		var grants, requests []string
+		if err := write.Model(&model.SecretGrant{}).Order("id").Pluck("id", &grants).Error; err != nil {
+			t.Fatalf("list grants: %v", err)
+		}
+		if want := []string{"g-delegate-policy", "g-policy", "g-standing"}; !reflect.DeepEqual(grants, want) {
+			t.Fatalf("run %d: grants = %v, want %v", run, grants, want)
+		}
+		if err := write.Model(&model.SecretRequest{}).Order("id").Pluck("id", &requests).Error; err != nil {
+			t.Fatalf("list requests: %v", err)
+		}
+		if want := []string{"r-answered", "r-policy", "r-reactive"}; !reflect.DeepEqual(requests, want) {
+			t.Fatalf("run %d: requests = %v, want %v", run, requests, want)
+		}
+	}
+	said := logged.String()
+	for _, want := range []string{"use grant g-uses", "delegate grant g-delegate", "pending request r-uses", "read issues in org/repo"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("log = %q, want it to say %q", said, want)
+		}
+	}
+	if strings.Count(said, "deleted ") != 3 {
+		t.Errorf("log = %q, want one line for each of the three rows deleted, once", said)
+	}
+}
+
 // A sandbox's pending egress push becomes a pending proxy policy push, once,
 // however many times the server starts (ADR 26-10-16-470 §5).
 func TestMigrateMovesEgressPushesToProxyPolicy(t *testing.T) {

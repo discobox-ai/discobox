@@ -659,7 +659,14 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if sent, ok := input.Policy.Get(); ok {
 			shownResolved = sent.Resolved.Or(nil)
 		}
-		if approvedPolicy == nil && req.Policy != nil {
+		// Every grant an agent takes carries a policy (#312); a request that
+		// asks for none was written by a server from before, and is answered
+		// by being denied, so the agent asks again with one.
+		if req.Policy == nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"this request asks for uses alone, and a grant an agent takes carries a policy; deny it, and the agent asks again with one")
+		}
+		if approvedPolicy == nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				"this request asks for a policy; approve it by sending the policy you approve (read it with `discobox secret request get`, then `discobox secret request approve --policy-as-asked`)")
 		}
@@ -682,10 +689,11 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 	}
 
-	// Whether the uses a discobox hands on fall within what it was delegated is
-	// the judge's reading, asked before the transaction because it takes a
-	// while; it settles which delegation the approval is made under, and that
-	// one is held to again inside the transaction. It
+	// Whether the policy a discobox hands on falls within what it was
+	// delegated is code's comparison, with the judge's reading of conditions,
+	// asked before the transaction because a judge takes a while; it settles
+	// which delegation the approval is made under, and that one is held to
+	// again inside the transaction. It
 	// is asked last, once every check that can refuse the approval without it
 	// has passed — a discobox cannot change the secret, so its binding and
 	// limit are what the transaction will find — so a verdict is the decision
@@ -703,22 +711,19 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if req.WellKnownID != "" {
 			credential = req.WellKnownID
 		}
-		// The judge is told what the discobox the uses go to was created
-		// with, beside the one handing them on (ADR 26-10-14-691).
+		// The policy resolves for the discobox it goes to, and the judge is
+		// told what that discobox was created with, beside the one handing
+		// it on (ADR 26-10-14-691).
 		requester, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
 		if err != nil {
 			return nil, apperrors.NotFound(err, "the discobox that asked was not found")
 		}
 		// A policy is handed on only under a delegation whose own policy it
-		// is within (ADR 26-10-20-782 §11); its uses are then judged as any
-		// are, among those. Both under one bound: the gate holds the call
-		// open for one.
+		// is within (ADR 26-10-20-782 §11), under one bound: the gate holds
+		// the call open for one.
 		judgeCtx, cancel := context.WithTimeout(ctx, services.DelegationBound)
 		defer cancel()
-		if delegations, err = s.delegationsCovering(judgeCtx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
-			return nil, err
-		}
-		if delegation, err = s.judgeDelegations(judgeCtx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, requester); err != nil {
+		if delegation, err = s.delegationCovering(judgeCtx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
 			return nil, err
 		}
 	}
@@ -886,14 +891,17 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 				return err
 			}
 		}
-		ruleID := ""
+		ruleID, delegationID := "", ""
+		if a.delegation != nil {
+			delegationID = a.delegation.ID
+		}
 		if a.rule != nil {
 			if ttl, err = heldRule(ctx, txStore, a, secret, ttl); err != nil {
 				return err
 			}
 			ruleID = a.rule.ID
 		}
-		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.policy, a.purpose, ruleID)
+		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.policy, a.purpose, ruleID, delegationID)
 		if err != nil {
 			return err
 		}
@@ -1287,21 +1295,18 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 			"an environment variable is only meaningful with uses: without them the grant authorizes the sentinel the sandbox already holds")
 	}
 
-	// A policy rides beside uses (ADR 26-10-20-782 §1): a grant without them
-	// hands its sentinel's value to any request, which no policy narrows.
+	// A policy rides beside uses, and uses beside a policy (guardPolicy, in
+	// mintGrantAs).
 	granted, err := services.PolicyFromAPI(input.Policy)
 	if err != nil {
 		return nil, err
-	}
-	if granted != nil && len(uses) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a policy is granted only beside uses")
 	}
 
 	purpose, err := grantPurpose(string(input.Purpose.Or("")))
 	if err != nil {
 		return nil, err
 	}
-	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, granted, purpose, "")
+	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, granted, purpose, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -1471,7 +1476,7 @@ func formatTTL(seconds int64) string {
 // now is the instant the grant's lifetime runs from: its expiry is now plus
 // ttlSeconds, and never a later reading of the clock, so a lifetime a caller
 // fitted at now ends where it was fitted to.
-func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, asked *policy.Policy, purpose, ruleID string) (*model.SecretGrant, error) {
+func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, asked *policy.Policy, purpose, ruleID, delegationID string) (*model.SecretGrant, error) {
 	hosts = hostscope.List(hosts...)
 	if err := guardGrantHosts(secret, hosts); err != nil {
 		return nil, err
@@ -1482,6 +1487,9 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, uses, purpose); err != nil {
 		return nil, err
 	}
+	if err := guardPolicy(uses, asked); err != nil {
+		return nil, err
+	}
 	approved, err := s.resolveGrantPolicy(ctx, projectID, scope, scopeKey, asked)
 	if err != nil {
 		return nil, err
@@ -1489,17 +1497,18 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 	principal, _ := auth.PrincipalFromContext(ctx)
 	grantedBy := grantedByOf(principal)
 	grant := &model.SecretGrant{
-		ProjectID: projectID,
-		SecretID:  secret.ID,
-		Scope:     scope,
-		ScopeKey:  scopeKey,
-		Hosts:     hosts,
-		GrantedBy: grantedBy,
-		Uses:      uses,
-		Policy:    approved,
-		EnvName:   strings.TrimSpace(envName),
-		Purpose:   purpose,
-		RuleID:    ruleID,
+		ProjectID:    projectID,
+		SecretID:     secret.ID,
+		Scope:        scope,
+		ScopeKey:     scopeKey,
+		Hosts:        hosts,
+		GrantedBy:    grantedBy,
+		Uses:         uses,
+		Policy:       approved,
+		EnvName:      strings.TrimSpace(envName),
+		Purpose:      purpose,
+		RuleID:       ruleID,
+		DelegationID: delegationID,
 	}
 	if ttlSeconds > 0 {
 		exp := now.Add(time.Duration(ttlSeconds) * time.Second)
