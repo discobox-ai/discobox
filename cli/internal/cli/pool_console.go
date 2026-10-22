@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 
+	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
@@ -129,7 +130,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 // openPoolConsoleAttach dials the console websocket. The size travels as query
 // parameters so the shell's first prompt is already drawn at the caller's size,
 // before the session's own resize tracking has said anything.
-func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID string, rows, cols int) (*directAttachFrames, error) {
+func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID string, rows, cols int) (execstream.Conn, error) {
 	baseURL, httpClient, err := a.httpClient()
 	if err != nil {
 		return nil, err
@@ -164,5 +165,6 @@ func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID strin
 		}
 		return nil, fmt.Errorf("open pool console: %w", err)
 	}
-	return &directAttachFrames{conn: websocket.NetConn(ctx, conn, websocket.MessageBinary)}, nil
+	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+	return execstream.StreamConn(netConn), nil
 }

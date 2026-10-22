@@ -15,26 +15,25 @@ import (
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahpws"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // fakeBoxes is Discobox as the host sees it, recording what it was asked.
 type fakeBoxes struct {
 	mu      sync.Mutex
-	boxes   []tui.Sandbox
-	execs   map[string][]tui.Exec
+	boxes   []Box
+	execs   map[string][]Exec
 	opened  []string // sandbox/exec attached
 	inputs  []string // sandbox/exec: text
 	verbs   []string // verb sandbox
-	runs    []tui.RunRequest
+	runs    []CreateRequest
 	shells  []string
 	streams []*fakeStream
 	// listingCut is a listing whose context ended as soon as List returned.
 	listingCut bool
 }
 
-func (f *fakeBoxes) List(ctx context.Context) (tui.Listing, error) {
+func (f *fakeBoxes) List(ctx context.Context) (Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// The console's listing leaves a slow server's request running past the
@@ -48,23 +47,23 @@ func (f *fakeBoxes) List(ctx context.Context) (tui.Listing, error) {
 			f.mu.Unlock()
 		}
 	}()
-	return tui.Listing{Sandboxes: append([]tui.Sandbox(nil), f.boxes...)}, nil
+	return Listing{Boxes: append([]Box(nil), f.boxes...)}, nil
 }
 
-func (f *fakeBoxes) Harnesses(context.Context, string) ([]tui.Harness, error) {
-	return []tui.Harness{{Slug: "claude", Name: "Claude Code", State: tui.HarnessEnabled}}, nil
+func (f *fakeBoxes) Harnesses(context.Context) ([]Harness, error) {
+	return []Harness{{Slug: "claude", Name: "Claude Code"}}, nil
 }
 
-func (f *fakeBoxes) Run(_ context.Context, req tui.RunRequest, _ func(string), _ func()) (tui.Sandbox, error) {
+func (f *fakeBoxes) Create(_ context.Context, req CreateRequest, _ func(string)) (Box, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.runs = append(f.runs, req)
-	box := tui.Sandbox{ID: "sbx_new", Name: "new", State: tui.StateStarting, Harness: req.Harness, Created: time.Now()}
+	box := Box{ID: "sbx_new", Name: "new", State: BoxStarting, Harness: req.Harness, Created: time.Now()}
 	f.boxes = append(f.boxes, box)
 	return box, nil
 }
 
-func (f *fakeBoxes) Do(_ context.Context, verb tui.Verb, id string) error {
+func (f *fakeBoxes) Do(_ context.Context, verb Verb, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.verbs = append(f.verbs, string(verb)+" "+id)
@@ -73,13 +72,13 @@ func (f *fakeBoxes) Do(_ context.Context, verb tui.Verb, id string) error {
 
 func (f *fakeBoxes) Rename(context.Context, string, string) error { return nil }
 
-func (f *fakeBoxes) Execs(_ context.Context, id string) ([]tui.Exec, error) {
+func (f *fakeBoxes) Execs(_ context.Context, id string) ([]Exec, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.execs[id], nil
 }
 
-func (f *fakeBoxes) OpenExec(ctx context.Context, id, execID string, _, _ int) (tui.Terminal, error) {
+func (f *fakeBoxes) OpenExec(ctx context.Context, id, execID string, _, _ int) (Stream, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.opened = append(f.opened, id+"/"+execID)
@@ -88,17 +87,17 @@ func (f *fakeBoxes) OpenExec(ctx context.Context, id, execID string, _, _ int) (
 	return s, nil
 }
 
-func (f *fakeBoxes) NewShell(ctx context.Context, id string, _, _ int) (tui.Exec, tui.Terminal, error) {
+func (f *fakeBoxes) NewShell(ctx context.Context, id string, _, _ int) (Exec, Stream, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.shells = append(f.shells, id)
 	s := attached(ctx)
 	f.streams = append(f.streams, s)
-	return tui.Exec{ID: "shell-1", Tty: true, Live: true}, s, nil
+	return Exec{ID: "shell-1", Live: true}, s, nil
 }
 
-func (f *fakeBoxes) NewTerminal(ctx context.Context, _ string, _, _ int) (tui.Exec, tui.Terminal, error) {
-	return tui.Exec{ID: "term-2", Harness: "claude", Live: true}, attached(ctx), nil
+func (f *fakeBoxes) NewTerminal(ctx context.Context, _ string, _, _ int) (Exec, Stream, error) {
+	return Exec{ID: "term-2", Harness: "claude", Live: true}, attached(ctx), nil
 }
 
 func (f *fakeBoxes) EndExec(context.Context, string, string) error { return nil }
@@ -114,11 +113,11 @@ func (f *fakeBoxes) PutImage(context.Context, string, string, []byte) (string, e
 	return "/tmp/img.png", nil
 }
 
-func (f *fakeBoxes) snapshot() (opened, inputs, verbs []string, runs []tui.RunRequest, shells []string) {
+func (f *fakeBoxes) snapshot() (opened, inputs, verbs []string, runs []CreateRequest, shells []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.opened...), append([]string(nil), f.inputs...), append([]string(nil), f.verbs...),
-		append([]tui.RunRequest(nil), f.runs...), append([]string(nil), f.shells...)
+		append([]CreateRequest(nil), f.runs...), append([]string(nil), f.shells...)
 }
 
 // fakeStream is an attach: what is sent on out is read, what is written is
@@ -171,16 +170,15 @@ func (s *fakeStream) typed() string {
 	return string(s.written)
 }
 
-func (s *fakeStream) Close() error                     { s.once.Do(func() { close(s.closed) }); return nil }
-func (s *fakeStream) Resize(int, int) error            { return nil }
-func (s *fakeStream) Repaint() error                   { return nil }
-func (s *fakeStream) Events() <-chan tui.TerminalEvent { return nil }
+func (s *fakeStream) Close() error          { s.once.Do(func() { close(s.closed) }); return nil }
+func (s *fakeStream) Resize(int, int) error { return nil }
+func (s *fakeStream) Repaint() error        { return nil }
 
 const testToken = "secret"
 
-func runningBox() tui.Sandbox {
-	return tui.Sandbox{
-		ID: "sbx_1", Name: "fix-tests", State: tui.StateRunning, Harness: "claude", HarnessName: "Claude Code",
+func runningBox() Box {
+	return Box{
+		ID: "sbx_1", Name: "fix-tests", State: BoxRunning, Harness: "claude", HarnessName: "Claude Code",
 		Source: "/home/me/src/app", Created: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		Agent: programstatus.Status{State: programstatus.Working, Msg: "running the tests", ReportedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)},
 	}
@@ -292,7 +290,7 @@ func TestAConnectionNeedsTheToken(t *testing.T) {
 }
 
 func TestADiscoboxIsASession(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, init := connect(ctx, t, srv)
 
@@ -334,16 +332,16 @@ func TestADiscoboxIsASession(t *testing.T) {
 
 func TestAStatusIsWhatTheAgentReported(t *testing.T) {
 	for _, tc := range []struct {
-		box  func(*tui.Sandbox)
+		box  func(*Box)
 		want ahptypes.SessionStatus
 	}{
-		{func(b *tui.Sandbox) { b.Agent.State = programstatus.Idle }, ahptypes.SessionStatusIdle},
-		{func(b *tui.Sandbox) { b.Agent.State = programstatus.Done }, ahptypes.SessionStatusIdle},
-		{func(b *tui.Sandbox) { b.Agent.State = programstatus.Blocked }, ahptypes.SessionStatusInputNeeded},
-		{func(b *tui.Sandbox) { b.Agent.State = programstatus.Error }, ahptypes.SessionStatusError},
-		{func(b *tui.Sandbox) { b.Agent = programstatus.Status{} }, ahptypes.SessionStatusIdle},
-		{func(b *tui.Sandbox) { b.State = tui.StateStopped }, ahptypes.SessionStatusIdle},
-		{func(b *tui.Sandbox) { b.State = tui.StateArchived }, ahptypes.SessionStatusIdle | ahptypes.SessionStatusIsArchived},
+		{func(b *Box) { b.Agent.State = programstatus.Idle }, ahptypes.SessionStatusIdle},
+		{func(b *Box) { b.Agent.State = programstatus.Done }, ahptypes.SessionStatusIdle},
+		{func(b *Box) { b.Agent.State = programstatus.Blocked }, ahptypes.SessionStatusInputNeeded},
+		{func(b *Box) { b.Agent.State = programstatus.Error }, ahptypes.SessionStatusError},
+		{func(b *Box) { b.Agent = programstatus.Status{} }, ahptypes.SessionStatusIdle},
+		{func(b *Box) { b.State = BoxStopped }, ahptypes.SessionStatusIdle},
+		{func(b *Box) { b.State = BoxArchived }, ahptypes.SessionStatusIdle | ahptypes.SessionStatusIsArchived},
 	} {
 		box := runningBox()
 		tc.box(&box)
@@ -357,8 +355,8 @@ func TestAStatusIsWhatTheAgentReported(t *testing.T) {
 
 func TestAChatShowsItsTerminalLive(t *testing.T) {
 	boxes := &fakeBoxes{
-		boxes: []tui.Sandbox{runningBox()},
-		execs: map[string][]tui.Exec{"sbx_1": {{ID: "exec-primary", Harness: "claude", Primary: true, Live: true}}},
+		boxes: []Box{runningBox()},
+		execs: map[string][]Exec{"sbx_1": {{ID: "exec-primary", Harness: "claude", Primary: true, Live: true}}},
 	}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
@@ -416,7 +414,7 @@ func TestAChatShowsItsTerminalLive(t *testing.T) {
 }
 
 func TestAQueuedMessageIsTypedIntoTheTerminal(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	chatURI := "ahp-chat:/sbx_1/primary"
@@ -454,8 +452,8 @@ func TestAQueuedMessageIsTypedIntoTheTerminal(t *testing.T) {
 
 func TestObservingAStoppedDiscoboxDoesNotWakeIt(t *testing.T) {
 	box := runningBox()
-	box.State = tui.StateStopped
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{box}}
+	box.State = BoxStopped
+	boxes := &fakeBoxes{boxes: []Box{box}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	if _, _, err := client.Subscribe(ctx, "ahp-session:/sbx_1"); err != nil {
@@ -488,7 +486,7 @@ func TestObservingAStoppedDiscoboxDoesNotWakeIt(t *testing.T) {
 }
 
 func TestDisposingASessionArchivesItsDiscobox(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	if err := client.Request(ctx, "disposeSession", ahptypes.DisposeSessionParams{Channel: "ahp-session:/sbx_1"}, nil); err != nil {
@@ -501,7 +499,7 @@ func TestDisposingASessionArchivesItsDiscobox(t *testing.T) {
 }
 
 func TestATerminalInASessionsDirectoryIsAShellInItsDiscobox(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	cwd := "file://sbx_1/home/me/src/app"
@@ -577,7 +575,7 @@ func TestANewSessionIsCreatedByItsFirstMessage(t *testing.T) {
 		return len(runs) == 1
 	})
 	_, _, _, runs, _ := boxes.snapshot()
-	if runs[0].Harness != "claude" || runs[0].Source != "/home/me/src/app" || len(runs[0].Prompt) != 1 || runs[0].Prompt[0] != "fix the flaky test" || runs[0].IncludeDirty != "false" {
+	if runs[0].Harness != "claude" || runs[0].Source != "/home/me/src/app" || runs[0].Prompt != "fix the flaky test" {
 		t.Fatalf("run %+v", runs[0])
 	}
 	// The discobox the listing then finds is this session's, not a second.
@@ -629,8 +627,8 @@ func TestATerminalKeepsOnlyItsTail(t *testing.T) {
 
 func TestAnExecThatExitsLeavesItsTerminalExited(t *testing.T) {
 	boxes := &fakeBoxes{
-		boxes: []tui.Sandbox{runningBox()},
-		execs: map[string][]tui.Exec{"sbx_1": {{ID: "exec-primary", Harness: "claude", Primary: true, Live: true}}},
+		boxes: []Box{runningBox()},
+		execs: map[string][]Exec{"sbx_1": {{ID: "exec-primary", Harness: "claude", Primary: true, Live: true}}},
 	}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
@@ -669,7 +667,7 @@ func TestAnExecThatExitsLeavesItsTerminalExited(t *testing.T) {
 }
 
 func TestACreatedChatIsNotListedTwice(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	if err := client.Request(ctx, "createChat", ahptypes.CreateChatParams{Channel: "ahp-session:/sbx_1", Chat: "ahp-chat:/client-chosen"}, nil); err != nil {
@@ -677,7 +675,7 @@ func TestACreatedChatIsNotListedTwice(t *testing.T) {
 	}
 	// The discobox now lists the exec the chat was made for.
 	boxes.mu.Lock()
-	boxes.execs = map[string][]tui.Exec{"sbx_1": {
+	boxes.execs = map[string][]Exec{"sbx_1": {
 		{ID: "exec-primary", Harness: "claude", Primary: true, Live: true},
 		{ID: "term-2", Harness: "claude", Live: true},
 	}}
@@ -701,7 +699,7 @@ func TestACreatedChatIsNotListedTwice(t *testing.T) {
 }
 
 func TestAShellWhoseExecIsGoneIsExitedNotRetried(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	host := New(Config{Boxes: boxes, Token: testToken, Poll: 20 * time.Millisecond, Logf: t.Logf})
@@ -729,7 +727,7 @@ func TestAShellWhoseExecIsGoneIsExitedNotRetried(t *testing.T) {
 }
 
 func TestAListingOutlivesThePollThatAsked(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	connect(ctx, t, srv)
 	time.Sleep(200 * time.Millisecond)
@@ -743,15 +741,15 @@ func TestAListingOutlivesThePollThatAsked(t *testing.T) {
 // failingStart is fakeBoxes whose discoboxes cannot be started.
 type failingStart struct{ *fakeBoxes }
 
-func (f failingStart) Do(ctx context.Context, verb tui.Verb, id string) error {
+func (f failingStart) Do(ctx context.Context, verb Verb, id string) error {
 	_ = f.fakeBoxes.Do(ctx, verb, id)
 	return errors.New("cannot start sandbox: it has no runtime on its pool")
 }
 
 func TestAMessageToADiscoboxThatCannotStartSaysSo(t *testing.T) {
 	box := runningBox()
-	box.State = tui.StateError
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{box}}
+	box.State = BoxError
+	boxes := &fakeBoxes{boxes: []Box{box}}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	host := New(Config{Boxes: failingStart{boxes}, Token: testToken, Poll: 20 * time.Millisecond, Logf: t.Logf})
@@ -798,7 +796,7 @@ func TestAMessageToADiscoboxThatCannotStartSaysSo(t *testing.T) {
 // VS Code opens a terminal by itself, in the person's home folder when no
 // session is shown; a refusal would be drawn as an error.
 func TestATerminalInAFolderThatNamesNoDiscoboxSaysSo(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
 	cwd := "file:///home/me"
@@ -826,7 +824,7 @@ func TestATerminalInAFolderThatNamesNoDiscoboxSaysSo(t *testing.T) {
 }
 
 func TestAnExitedShellIsForgottenWhenItsClientGoes(t *testing.T) {
-	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	host := New(Config{Boxes: boxes, Token: testToken, Poll: 20 * time.Millisecond, Logf: t.Logf})

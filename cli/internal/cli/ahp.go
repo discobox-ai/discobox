@@ -17,7 +17,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/cli/internal/ahphost"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/pkg/ahphost"
 	"github.com/discobox-ai/discobox/pkg/version"
 )
 
@@ -62,7 +63,13 @@ port must not be one a discobox can listen behind. Discobox's own port
 forwards never take it. VS Code forwards a discobox it has open over
 Remote-SSH by itself, though: keep it off this port, for example with
 "remote.portsAttributes": {"7591": {"onAutoForward": "ignore"}} in your user
-settings.`,
+settings.
+
+To open one discobox in a full editor, a discobox serves itself too
+(ADR 26-10-22-853): set "chat.sshRemoteAgentHostCommand" to
+"discobox-sandbox-agent ahp" and run VS Code's "Agents: Connect to Remote Agent
+Host via SSH" on the discobox's SSH host. Its session has the discobox's files
+and changes, and Open in Editor opens it over Remote-SSH.`,
 		Example: `  discobox admin ahp
   discobox admin ahp --listen 127.0.0.1:9000`,
 		Args: cobra.NoArgs,
@@ -73,6 +80,14 @@ settings.`,
 	cmd.Flags().StringVar(&listen, "listen", ahpDefaultListen, "Loopback address to listen on; only the default port is kept from discobox port forwards")
 	return cmd
 }
+
+// ahpSSHCommandSetting is the VS Code setting naming the command VS Code runs
+// over SSH to start an agent host, and ahpSSHCommand the sandbox agent's
+// (ADR 26-10-22-853 §3).
+const (
+	ahpSSHCommandSetting = "chat.sshRemoteAgentHostCommand"
+	ahpSSHCommand        = "discobox-sandbox-agent ahp"
+)
 
 // ahpHostEntry is one entry of VS Code's chat.remoteAgentHosts setting.
 type ahpHostEntry struct {
@@ -115,7 +130,7 @@ func (a *App) runAHP(cmd *cobra.Command, listen string) error {
 	}
 	stderr := cmd.ErrOrStderr()
 	host := ahphost.New(ahphost.Config{
-		Boxes:   ds,
+		Boxes:   ahpBoxes{ds: ds},
 		Token:   token,
 		Source:  source,
 		Version: version.String(),
@@ -131,6 +146,7 @@ func (a *App) runAHP(cmd *cobra.Command, listen string) error {
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), string(entry)); err != nil {
 		return err
 	}
+	_, _ = fmt.Fprintf(stderr, "To open one discobox in an editor, set %q to %q and connect to that discobox with \"Agents: Connect to Remote Agent Host via SSH\".\n", ahpSSHCommandSetting, ahpSSHCommand)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -187,4 +203,108 @@ func ahpToken() (string, error) {
 		return "", err
 	}
 	return token, nil
+}
+
+// ahpBoxes is the console's data source as the AHP host reads it: the same
+// calls, every server's, with the host's own types at the boundary — the host
+// is shared with the sandbox agent (ADR 26-10-22-853) and cannot import the
+// console's.
+type ahpBoxes struct{ ds *apiDataSource }
+
+func (b ahpBoxes) List(ctx context.Context) (ahphost.Listing, error) {
+	listing, err := b.ds.List(ctx)
+	if err != nil {
+		return ahphost.Listing{}, err
+	}
+	out := ahphost.Listing{Quiet: append(append([]string(nil), listing.Unreachable...), listing.Waiting...)}
+	for _, box := range listing.Sandboxes {
+		out.Boxes = append(out.Boxes, ahpBox(box))
+	}
+	return out, nil
+}
+
+func ahpBox(box tui.Sandbox) ahphost.Box {
+	return ahphost.Box{
+		ID: box.ID, Name: box.Name, Server: box.Server, State: ahphost.BoxState(box.State), Agent: box.Agent,
+		Harness: box.Harness, HarnessName: box.HarnessName, Source: box.Source, SourceRemote: box.SourceRemote, Created: box.Created,
+	}
+}
+
+func ahpExec(exec tui.Exec) ahphost.Exec {
+	return ahphost.Exec{ID: exec.ID, Harness: exec.Harness, Tool: exec.Tool, Service: exec.Service, Primary: exec.Primary, Live: exec.Live}
+}
+
+// Harnesses is the primary's enabled harnesses: where a create goes.
+func (b ahpBoxes) Harnesses(ctx context.Context) ([]ahphost.Harness, error) {
+	harnesses, err := b.ds.Harnesses(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	var out []ahphost.Harness
+	for _, harness := range harnesses {
+		if harness.State != tui.HarnessDisabled {
+			out = append(out, ahphost.Harness{Slug: harness.Slug, Name: harness.Name})
+		}
+	}
+	return out, nil
+}
+
+// Create is `discobox new` in the background: detached, and with uncommitted
+// work left out, the console's answer when nobody is asked (Enter means no).
+func (b ahpBoxes) Create(ctx context.Context, req ahphost.CreateRequest, report func(string)) (ahphost.Box, error) {
+	run := tui.RunRequest{Harness: req.Harness, Source: req.Source, IncludeDirty: "false", Detach: true}
+	if req.Prompt != "" {
+		run.Prompt = []string{req.Prompt}
+	}
+	box, err := b.ds.Run(ctx, run, report, nil)
+	if err != nil {
+		return ahphost.Box{}, err
+	}
+	return ahpBox(box), nil
+}
+
+func (b ahpBoxes) Do(ctx context.Context, verb ahphost.Verb, sandboxID string) error {
+	return b.ds.Do(ctx, tui.Verb(verb), sandboxID)
+}
+
+func (b ahpBoxes) Rename(ctx context.Context, sandboxID, name string) error {
+	return b.ds.Rename(ctx, sandboxID, name)
+}
+
+func (b ahpBoxes) Execs(ctx context.Context, sandboxID string) ([]ahphost.Exec, error) {
+	execs, err := b.ds.Execs(ctx, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ahphost.Exec, 0, len(execs))
+	for _, exec := range execs {
+		out = append(out, ahpExec(exec))
+	}
+	return out, nil
+}
+
+func (b ahpBoxes) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (ahphost.Stream, error) {
+	return b.ds.OpenExec(ctx, sandboxID, execID, cols, rows)
+}
+
+func (b ahpBoxes) NewShell(ctx context.Context, sandboxID string, cols, rows int) (ahphost.Exec, ahphost.Stream, error) {
+	exec, term, err := b.ds.NewShell(ctx, sandboxID, cols, rows)
+	return ahpExec(exec), term, err
+}
+
+func (b ahpBoxes) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (ahphost.Exec, ahphost.Stream, error) {
+	exec, term, err := b.ds.NewTerminal(ctx, sandboxID, cols, rows)
+	return ahpExec(exec), term, err
+}
+
+func (b ahpBoxes) EndExec(ctx context.Context, sandboxID, execID string) error {
+	return b.ds.EndExec(ctx, sandboxID, execID)
+}
+
+func (b ahpBoxes) SendInput(ctx context.Context, sandboxID, execID, text string) error {
+	return b.ds.SendInput(ctx, sandboxID, execID, text)
+}
+
+func (b ahpBoxes) PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error) {
+	return b.ds.PutImage(ctx, sandboxID, name, data)
 }

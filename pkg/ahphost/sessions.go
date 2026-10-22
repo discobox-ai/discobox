@@ -8,7 +8,6 @@ import (
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -19,7 +18,7 @@ type session struct {
 	uri string
 	key string
 
-	box    tui.Sandbox
+	box    Box
 	hasBox bool
 
 	// harness, source and createdAt are a created session's, from
@@ -67,7 +66,7 @@ func (s *session) boxID() string {
 	return s.box.ID
 }
 
-func (s *session) running() bool { return s.hasBox && s.box.State == tui.StateRunning }
+func (s *session) running() bool { return s.hasBox && s.box.State == BoxRunning }
 
 func (s *session) provider() string {
 	if s.hasBox && s.box.Harness != "" {
@@ -86,7 +85,7 @@ func (s *session) title() string {
 // newSessionLocked makes the session for uri, with its primary chat: a
 // discobox's when box is given, and a created session's otherwise. h.mu must
 // be held.
-func (h *Host) newSessionLocked(uri string, box *tui.Sandbox) *session {
+func (h *Host) newSessionLocked(uri string, box *Box) *session {
 	s := &session{uri: uri, key: sessionKey(uri), subs: map[*conn]struct{}{}, createdAt: time.Now()}
 	if box != nil {
 		s.box, s.hasBox = *box, true
@@ -128,7 +127,7 @@ func (h *Host) summaryLocked(s *session) ahptypes.SessionSummary {
 	if activity := activity(s); activity != "" {
 		sum.Activity = &activity
 	}
-	if dir := workingDirectory(s); dir != "" {
+	if dir := h.workingDirectory(s); dir != "" {
 		sum.WorkingDirectories = []ahptypes.URI{dir}
 	}
 	chatURIs := make([]string, 0, len(h.chats))
@@ -157,7 +156,7 @@ func (h *Host) summaryLocked(s *session) ahptypes.SessionSummary {
 // the read and archived flags.
 func (h *Host) statusLocked(s *session) ahptypes.SessionStatus {
 	status := ahptypes.SessionStatusIdle
-	if s.hasBox && s.box.State == tui.StateRunning {
+	if s.hasBox && s.box.State == BoxRunning {
 		switch s.box.Agent.State {
 		case programstatus.Working:
 			status = ahptypes.SessionStatusInProgress
@@ -170,7 +169,7 @@ func (h *Host) statusLocked(s *session) ahptypes.SessionStatus {
 	if s.read {
 		status |= ahptypes.SessionStatusIsRead
 	}
-	if s.hasBox && s.box.State == tui.StateArchived {
+	if s.hasBox && s.box.State == BoxArchived {
 		status |= ahptypes.SessionStatusIsArchived
 	}
 	return status
@@ -186,8 +185,8 @@ func activity(s *session) string {
 		return ""
 	}
 	switch s.box.State {
-	case tui.StateRunning:
-	case tui.StateArchived:
+	case BoxRunning:
+	case BoxArchived:
 		return ""
 	default:
 		return string(s.box.State)
@@ -198,11 +197,14 @@ func activity(s *session) string {
 	return s.box.Agent.Title
 }
 
-// workingDirectory names the discobox in a file URI's authority: VS Code opens
-// a terminal for an active session in its working directory, and the
-// directory alone would not say which discobox's. The path is the source the
-// discobox was cut from, which is what the session list shows the folder as.
-func workingDirectory(s *session) string {
+// workingDirectory is the session's folder. VS Code opens a terminal for an
+// active session in it, so from the CLI, which serves many discoboxes, it
+// names the discobox in a file URI's authority — the directory alone would not
+// say which discobox's — with the source the discobox was cut from as its
+// path, which is what the session list shows the folder as. A host in the
+// discobox serves the one: its folder is the plain local path of the working
+// tree, which is what Open in Editor opens over Remote-SSH.
+func (h *Host) workingDirectory(s *session) string {
 	if !s.hasBox {
 		return ""
 	}
@@ -210,18 +212,30 @@ func workingDirectory(s *session) string {
 	if path == "" || s.box.SourceRemote {
 		path = "/"
 	}
-	u := url.URL{Scheme: "file", Host: s.box.ID, Path: path}
+	u := url.URL{Scheme: "file", Path: path}
+	if h.cfg.Workspace == nil {
+		u.Host = s.box.ID
+	}
 	return u.String()
 }
 
 // boxFromCwd is the session a terminal's working directory names
-// (workingDirectory), or nil.
+// (workingDirectory), or nil. In a discobox, every local folder is its own.
 func (h *Host) boxFromCwd(cwd string) *session {
 	u, err := url.Parse(cwd)
-	if err != nil || u.Scheme != "file" || u.Host == "" {
+	if err != nil || u.Scheme != "file" {
 		return nil
 	}
-	if uri, ok := h.boxSessions[u.Host]; ok {
+	if h.cfg.Workspace != nil {
+		if u.Host != "" {
+			return nil
+		}
+		for _, uri := range h.boxSessions {
+			return h.sessions[uri]
+		}
+		return nil
+	}
+	if uri, ok := h.boxSessions[u.Host]; ok && u.Host != "" {
 		return h.sessions[uri]
 	}
 	return nil
@@ -248,6 +262,7 @@ func (h *Host) refreshSessionStateLocked(s *session) {
 	s.state.Status = sum.Status
 	s.state.WorkingDirectories = sum.WorkingDirectories
 	h.publishSummaryLocked(s, sum)
+	h.refreshChangesetsLocked(s)
 }
 
 // publishSummaryLocked tells the root's subscribers what changed in a
@@ -328,7 +343,7 @@ func (h *Host) removeSessionLocked(s *session) {
 func (h *Host) activeSessionsLocked() {
 	n := int64(0)
 	for _, s := range h.sessions {
-		if s.hasBox && s.box.State != tui.StateArchived {
+		if s.hasBox && s.box.State != BoxArchived {
 			n++
 		}
 	}

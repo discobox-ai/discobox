@@ -13,6 +13,7 @@ require (
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/mdlayher/vsock v1.3.0
+	github.com/microsoft/agent-host-protocol/clients/go v1.0.0
 	github.com/ogen-go/ogen v1.20.3
 	github.com/tc-hib/winres v0.3.1
 	github.com/things-go/go-socks5 v0.1.1

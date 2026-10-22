@@ -20,6 +20,7 @@ require (
 	github.com/go-faster/jx v1.2.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/klauspost/compress v1.18.5
+	github.com/microsoft/agent-host-protocol/clients/go v1.0.0
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	golang.org/x/net v0.61.0
 	golang.org/x/sys v0.49.0
@@ -81,6 +82,7 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

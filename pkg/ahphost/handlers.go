@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
-
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // protocolVersion is the one version this host speaks, the SDK's: VS Code
@@ -82,6 +80,15 @@ func (h *Host) handleRequest(c *conn, id json.RawMessage, method string, params 
 	case "sessionConfigCompletions":
 		c.reply(id, ahptypes.SessionConfigCompletionsResult{Items: []ahptypes.SessionConfigValueItem{}}, nil)
 	default:
+		if h.cfg.Workspace != nil && resourceMethods[method] {
+			go func() {
+				ctx, cancel := context.WithTimeout(c.ctx, opTimeout)
+				defer cancel()
+				result, err := h.handleResource(ctx, c, method, params)
+				c.reply(id, result, err)
+			}()
+			return
+		}
 		h.cfg.Logf("ahp: a client asked for %s, which this host does not serve", method)
 		c.reply(id, nil, errorf(ahptypes.ErrorCodeMethodNotFound, "%s is not served by this host", method))
 	}
@@ -144,6 +151,9 @@ func (h *Host) handleNotification(c *conn, method string, params json.RawMessage
 		}
 		if t := h.terminals[p.Channel]; t != nil {
 			h.releaseLocked(t)
+		}
+		if w := h.watches[p.Channel]; w != nil {
+			h.releaseWatchLocked(w)
 		}
 	case "dispatchAction":
 		var p ahptypes.DispatchActionParams
@@ -239,6 +249,20 @@ func (h *Host) subscribeLocked(c *conn, channel string) (*ahptypes.Snapshot, err
 			go func() { _ = stream.Repaint() }()
 		}
 		h.ensureAttachedLocked(t)
+	case h.changesets[channel] != nil:
+		cs := h.changesets[channel]
+		// One nobody watched has not been recomputed since: what it holds
+		// is stale until the computation started below lands.
+		if len(cs.subs) == 0 && cs.state.Status == ahptypes.ChangesetStatusReady {
+			cs.state.Status = ahptypes.ChangesetStatusRecomputing
+		}
+		cs.subs[c] = struct{}{}
+		snap.State.Changeset = &cs.state
+		h.computeChangesetLocked(cs)
+	case h.watches[channel] != nil:
+		w := h.watches[channel]
+		w.subs[c] = struct{}{}
+		snap.State.ResourceWatch = &w.state
 	default:
 		return nil, errorf(ahptypes.ErrorCodeNotFound, "no channel %s", channel)
 	}
@@ -269,9 +293,9 @@ func (h *Host) handleSessionAction(s *session, act ahptypes.StateAction, origin 
 	var do func(ctx context.Context, id string) error
 	switch a := act.Value.(type) {
 	case *ahptypes.SessionIsArchivedChangedAction:
-		verb := tui.VerbUnarchive
+		verb := VerbUnarchive
 		if a.IsArchived {
-			verb = tui.VerbArchive
+			verb = VerbArchive
 		}
 		do = func(ctx context.Context, id string) error { return h.cfg.Boxes.Do(ctx, verb, id) }
 	case *ahptypes.SessionTitleChangedAction:
@@ -319,6 +343,12 @@ func (h *Host) handleSessionAction(s *session, act ahptypes.StateAction, origin 
 // the client named, when that is a folder on this machine, and from the
 // directory the host runs in otherwise.
 func (h *Host) createSession(c *conn, p ahptypes.CreateSessionParams) error {
+	// A host in a discobox serves that discobox and makes none: refused
+	// here, before a first message — the prompt — is lost to a create that
+	// cannot succeed.
+	if h.cfg.Workspace != nil {
+		return errorf(ahptypes.ErrorCodeInvalidRequest, "this host serves only the discobox it runs in; create discoboxes with `discobox admin ahp`")
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.sessions[p.Channel] != nil {
@@ -365,7 +395,7 @@ func (h *Host) disposeSession(ctx context.Context, uri string) error {
 	}
 	id := s.box.ID
 	h.mu.Unlock()
-	if err := h.cfg.Boxes.Do(ctx, tui.VerbArchive, id); err != nil {
+	if err := h.cfg.Boxes.Do(ctx, VerbArchive, id); err != nil {
 		return err
 	}
 	h.kick()
@@ -433,7 +463,7 @@ func (h *Host) createChat(ctx context.Context, p ahptypes.CreateChatParams) erro
 // open lost a race with its deadline, or its session or URI was gone by the
 // time it opened — ending it rather than leaving it running in the discobox
 // where nothing shows it.
-func (h *Host) abandon(stream tui.Terminal, release func(), sandboxID, execID string) {
+func (h *Host) abandon(stream Stream, release func(), sandboxID, execID string) {
 	_ = stream.Close()
 	release()
 	ctx, cancel := context.WithTimeout(h.ctx, opTimeout)

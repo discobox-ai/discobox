@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -625,8 +624,8 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 	}
 	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
 	frames := &websocketAttachFrames{
-		directAttachFrames: &directAttachFrames{conn: netConn},
-		socket:             conn,
+		Conn:   execstream.StreamConn(netConn),
+		socket: conn,
 	}
 	go func() {
 		if err := pingAttachWebSocket(ctx, conn); err != nil {
@@ -1239,28 +1238,11 @@ func writeSandboxExecLogs(stdout, stderr io.Writer, entries []apimodel.SandboxEx
 	return nil
 }
 
-// directAttachFrames is an execstream.Conn over a single websocket, for attaches
-// that do not reconnect.
-type directAttachFrames struct {
-	conn io.ReadWriteCloser
-	mu   sync.Mutex
-}
-
-func (c *directAttachFrames) ReadFrame() (frame.Frame, error) { return frame.Read(c.conn) }
-
-func (c *directAttachFrames) WriteFrame(typ byte, payload []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return frame.Write(c.conn, typ, payload)
-}
-
-func (c *directAttachFrames) Close() error { return c.conn.Close() }
-
 // websocketAttachFrames adds the websocket's native control ping/pong to the
 // framed stream. The resumable library consumes this optional capability for
 // timing events without putting diagnostic bytes into the terminal protocol.
 type websocketAttachFrames struct {
-	*directAttachFrames
+	execstream.Conn
 	socket *websocket.Conn
 }
 

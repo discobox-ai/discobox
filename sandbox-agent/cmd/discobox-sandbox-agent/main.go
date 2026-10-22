@@ -112,6 +112,13 @@ func run(name string, args []string) int {
 		defer stop()
 		return runProvision(ctx, args[1:])
 	}
+	// Serves this discobox to VS Code's Agents window over SSH (ADR
+	// 26-10-22-853). Closing the SSH channel hangs it up.
+	if len(args) > 0 && args[0] == "ahp" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer stop()
+		return runAHP(ctx, args[1:], os.Stdin, os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 && args[0] == "export" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

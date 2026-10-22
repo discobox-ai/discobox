@@ -20,7 +20,6 @@ require (
 	github.com/discobox-ai/review v0.0.0-20261015034015-734c627938e9
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/go-faster/jx v1.2.0
-	github.com/microsoft/agent-host-protocol/clients/go v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0
@@ -68,6 +67,7 @@ require (
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
+	github.com/microsoft/agent-host-protocol/clients/go v1.0.0 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

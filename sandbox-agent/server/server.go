@@ -31,6 +31,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
+	"github.com/discobox-ai/discobox/sandbox-agent/localexec"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
@@ -157,6 +158,9 @@ type agentRuntime struct {
 	// sourceConverger clones the sources the runtime-config document names
 	// and answers their origins' credential helper (ADR 0126 §4).
 	sourceConverger *sourceconverge.Converger
+	// localExecs is the exec API the sandbox user reaches on a local socket
+	// (ADR 26-10-22-853 §2).
+	localExecs *localExecs
 }
 
 // defaultListenAddress is where the agent serves when the manifest names no
@@ -393,6 +397,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 
 		awaitProvision:  awaitProvision,
 		sourceConverger: sourceConverger,
+		localExecs:      &localExecs{h: handler, harness: cfg.Harness},
 	}, nil
 }
 
@@ -676,6 +681,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}
 	}()
 	go serveCredentials(ctx, logger, cfg.CredentialsBridgePath)
+	go serveLocalExecs(ctx, logger, built.localExecs, localexec.SocketPath(cfg.RuntimeDir))
 	// The sources converge on the document the intake holds: the one it
 	// restored at start, here, and each one delivered after, from the
 	// handler (ADR 0126 §4).

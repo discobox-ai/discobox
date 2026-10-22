@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	sandboxgen "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -118,7 +119,7 @@ type sshSession struct {
 	cols, rows   uint16
 	env          map[string]string
 	attached     bool
-	attachConn   *frameConn
+	attachConn   execstream.Conn
 }
 
 // run processes session channel requests until requests closes (the SSH
@@ -268,7 +269,7 @@ func (sess *sshSession) reply(req *ssh.Request, ok bool) {
 	}
 }
 
-func (sess *sshSession) currentAttachConn() *frameConn {
+func (sess *sshSession) currentAttachConn() execstream.Conn {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	return sess.attachConn
@@ -415,7 +416,7 @@ func buildCreateExecRequest(target execTarget, ptyRequested bool, cols, rows uin
 // is load-bearing and matches the CLI's: attach first, then start. A fast
 // command's output is broadcast as it exits, so starting before the attach
 // websocket is open races the exec to its own output.
-func createAndDialExec(ctx context.Context, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, execReq sandboxgen.CreateSandboxExecRequest) (*frameConn, error) {
+func createAndDialExec(ctx context.Context, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, execReq sandboxgen.CreateSandboxExecRequest) (execstream.Conn, error) {
 	client := sandboxagentclient.HTTPClient(lease)
 
 	createURL, err := sandboxagentclient.TargetURL(lease.BaseURL, sandboxModel.ProjectID, sandboxModel.PoolID, sandboxModel.ID, "/execs")
@@ -490,7 +491,7 @@ func startExec(ctx context.Context, client *http.Client, lease *transport.HTTPCl
 // pump bridges the SSH channel and the exec attach connection until the exec
 // exits or either side closes, then releases lease. Per ADR 0008 this glue is
 // its own small type at this transport boundary, not shared with the CLI's.
-func (sess *sshSession) pump(conn *frameConn, lease *transport.HTTPClientLease) {
+func (sess *sshSession) pump(conn execstream.Conn, lease *transport.HTTPClientLease) {
 	defer lease.Release()
 	defer conn.Close()
 
@@ -561,22 +562,3 @@ func (sess *sshSession) sendExitStatus(exit frame.ExitPayload) {
 	}
 	_, _ = sess.channel.SendRequest("exit-status", false, ssh.Marshal(&exitStatusMsg{Status: uint32(code)}))
 }
-
-// frameConn adapts a net.Conn (here, a websocket wrapped by
-// websocket.NetConn) to frame-oriented read/write. Concurrent writers (the
-// stdin pump plus window-change/signal handlers) share one mutex-guarded
-// connection.
-type frameConn struct {
-	conn io.ReadWriteCloser
-	mu   sync.Mutex
-}
-
-func (c *frameConn) ReadFrame() (frame.Frame, error) { return frame.Read(c.conn) }
-
-func (c *frameConn) WriteFrame(typ byte, payload []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return frame.Write(c.conn, typ, payload)
-}
-
-func (c *frameConn) Close() error { return c.conn.Close() }

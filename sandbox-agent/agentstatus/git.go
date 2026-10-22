@@ -58,7 +58,7 @@ func gitStatusForSource(ctx context.Context, source sandboxconfig.Source, user *
 	// running git from outside — the point of reporting status at all. A base
 	// the repository does not have (or a failure of any kind) drops the stat,
 	// not the source: the status above is still true.
-	if base, ok := resolveDiffBase(sourceCtx, source, user); ok {
+	if base, ok := ResolveDiffBase(sourceCtx, source, user); ok {
 		if files, added, deleted, ok := runDiffShortstat(sourceCtx, source.Target, base, user); ok {
 			status.DiffBase = base
 			status.DiffFiles, status.DiffAdded, status.DiffDeleted = files, added, deleted
@@ -67,13 +67,13 @@ func gitStatusForSource(ctx context.Context, source sandboxconfig.Source, user *
 	return status
 }
 
-// resolveDiffBase is the commit the diff stat measures from: the commit the
+// ResolveDiffBase is the commit the diff stat measures from: the commit the
 // source was spawned at, forwarded to the merge base with its upstream
 // tracking ref once the sandbox has fetched — so commits it pulled rather
 // than wrote stop counting as its changes. This is ADR 0018's base
 // resolution, carried into the agent when the command that ran it went away
 // (ADR 0037).
-func resolveDiffBase(ctx context.Context, source sandboxconfig.Source, user *execs.User) (string, bool) {
+func ResolveDiffBase(ctx context.Context, source sandboxconfig.Source, user *execs.User) (string, bool) {
 	spawn := strings.TrimSpace(source.BaseCommit)
 	if spawn == "" {
 		return "", false

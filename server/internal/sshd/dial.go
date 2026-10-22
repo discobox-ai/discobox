@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
+	"github.com/discobox-ai/discobox/pkg/execstream"
 )
 
 // dialFrameWebSocket dials a websocket at u (already built via
@@ -17,7 +18,7 @@ import (
 // session-channel exec attach and the direct-tcpip tunnel attach: both are
 // "dial a websocket at the pool-agent target and speak execstream/frame over
 // it" (ADR 0024 §§1, 4).
-func dialFrameWebSocket(ctx context.Context, client *http.Client, u *url.URL, what string) (*frameConn, error) {
+func dialFrameWebSocket(ctx context.Context, client *http.Client, u *url.URL, what string) (execstream.Conn, error) {
 	switch u.Scheme {
 	case "https":
 		u.Scheme = "wss"
@@ -34,5 +35,5 @@ func dialFrameWebSocket(ctx context.Context, client *http.Client, u *url.URL, wh
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
-	return &frameConn{conn: netConn}, nil
+	return execstream.StreamConn(netConn), nil
 }

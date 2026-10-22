@@ -10,7 +10,6 @@ import (
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
@@ -38,7 +37,7 @@ type terminal struct {
 	state  ahptypes.TerminalState
 	subs   map[*conn]struct{}
 
-	stream  tui.Terminal
+	stream  Stream
 	opening bool
 	// gen counts the streams this terminal has had, so a reader still
 	// draining one that was let go does not write into its successor.
@@ -200,7 +199,7 @@ func (h *Host) attach(t *terminal, gen int, sandboxID, execID string, cols, rows
 
 // adoptLocked makes stream the terminal's. The attach replays the screen, so
 // what the terminal held before is cleared rather than drawn twice.
-func (h *Host) adoptLocked(t *terminal, stream tui.Terminal, release func()) {
+func (h *Host) adoptLocked(t *terminal, stream Stream, release func()) {
 	t.gen++
 	t.stream = stream
 	t.pending = nil
@@ -212,7 +211,7 @@ func (h *Host) adoptLocked(t *terminal, stream tui.Terminal, release func()) {
 }
 
 // read sends a stream's output to the terminal's subscribers until it ends.
-func (h *Host) read(t *terminal, stream tui.Terminal, gen int, release func()) {
+func (h *Host) read(t *terminal, stream Stream, gen int, release func()) {
 	defer func() {
 		_ = stream.Close()
 		release()
@@ -296,7 +295,7 @@ func (h *Host) handleTerminalAction(t *terminal, act ahptypes.StateAction, origi
 	if a, ok := act.Value.(*ahptypes.TerminalInputAction); ok {
 		h.mu.Lock()
 		stream := t.stream
-		stopped := t.s.hasBox && !t.s.running() && t.s.box.State != tui.StateArchived
+		stopped := t.s.hasBox && !t.s.running() && t.s.box.State != BoxArchived
 		h.mu.Unlock()
 		switch {
 		case stream != nil:

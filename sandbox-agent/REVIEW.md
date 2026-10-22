@@ -391,7 +391,8 @@ user waits on every single start.
 ## Idle stop
 
 - **Every client connection this process serves must hold `autostop`** —
-  exec attach, one-shot attach, `tcp/attach` and `udp/attach` today — for as
+  exec attach, one-shot attach, `tcp/attach` and `udp/attach`, and the local
+  exec socket's attach (which is the same `attachExecHTTP`) today — for as
   long as the client is connected. A files API write holds it too; a files
   API read does not, since a hold's release is activity and reading is never
   activity (below): an editor listing a discobox must not keep it up. The shims' attacher counts are not enough: a tunnel has
@@ -458,3 +459,26 @@ user waits on every single start.
   line numbers as the core, without saying so. A run that stops at the round
   cap or on a question has edited the tree since an earlier run's card, and is
   exactly when the user is handed the change to judge.
+
+## The local exec socket
+
+- **Only root and the default user get in.** Every process in the sandbox can
+  connect (`localexec`, 0666), so `admit` checks the uid the kernel recorded
+  for the peer (`SO_PEERCRED`). A shell as the default user is that user's
+  sudo: letting another account — a service's own, `nobody` — reach it is a
+  local root escalation. This rests on the sandbox user being the box's
+  administrator anyway; if an account in the box is ever meant to be held
+  apart from it, nothing that account can reach may lead to this socket.
+- **Every route serves the default user's execs only.** A route that resolves
+  an exec goes through `served`, and one that creates an exec never takes a
+  user from the request. Adding the generic create, or a field naming a user,
+  a command or an environment, hands any other identity to the default user.
+- **"Ours" is proved, not assumed, against the resolved user.** The default
+  user is `execs.Manager.ResolveUser` with an empty request, never
+  `DefaultUser()`: the manifest may name the user without a uid, and then a
+  uid check refused the sandbox user itself. An exec naming a user is ours
+  only by matching uid, or by name when the exec was recorded without one; an
+  unknown match is not ours.
+- **A route reuses the agent's own handler for what it serves.** The attach is
+  `attachExecHTTP`, which holds `autostop` and maps exec errors; a local copy
+  of it dropped both.
