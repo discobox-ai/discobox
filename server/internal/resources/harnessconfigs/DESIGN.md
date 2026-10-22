@@ -494,8 +494,12 @@ Delete is refused (409) while any sandbox still references the config.
   (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
   works from inside a user request, which is the point.
 - That lease addresses the **pool host**, not the sandbox: the pool agent passes
-  exec routes through to the agent under `/api/project/{p}/pool/{p}/sandboxes/{s}/…`,
+  exec and files routes through to the agent under `/api/project/{p}/pool/{p}/sandboxes/{s}/…`,
   and requests carry two tokens — the pool's on `Authorization`, the agent's on
-  `X-Discobox-Sandbox-Agent-Authorization` for the pool agent to forward inward. The
-  generated sandbox client cannot express that route shape, so `oneShotRunner`
-  makes those calls directly.
+  `X-Discobox-Sandbox-Agent-Authorization` for the pool agent to forward inward.
+  `sandboxagentclient` builds that route and carries both tokens; the
+  generated sandbox client cannot express the route shape, so `agentClient`
+  makes those calls directly through it. The previous configuration is seeded, and the
+  configure output read back, through the files API (ADR 26-10-22-499), as the
+  sandbox's default user — not through execs of `sh` and `cat` — so the lease
+  asks for `exec:read` (the primary's status) and `files:read`/`files:write`.
