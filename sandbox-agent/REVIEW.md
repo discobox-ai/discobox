@@ -407,3 +407,13 @@ user waits on every single start.
   pipe returns exactly one write: a pump that buffers, coalesces, or reads
   less than a whole reply drops it while attached. A second path for the
   reply (a channel beside the pipe) reorders it against DA1.
+
+## The discobox-review skill
+
+- **Every path through the skill that changes the tree ends by writing a new
+  review card or clearing the one signed `card`.** discobox-review does not
+  carry a card's places when the tree moves (discobox-ai/review ADR
+  26-10-21-407, Deferred): the window marks whatever hunks now sit at the old
+  line numbers as the core, without saying so. A run that stops at the round
+  cap or on a question has edited the tree since an earlier run's card, and is
+  exactly when the user is handed the change to judge.
