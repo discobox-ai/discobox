@@ -107,7 +107,7 @@ func (r *registry) image(t *testing.T, label string) image {
 	img := image{config: r.add(config), layer: r.add(layer)}
 	data, err := json.Marshal(map[string]any{
 		"schemaVersion": 2,
-		"mediaType":     mediaTypeOCIManifest,
+		"mediaType":     imagecache.MediaTypeOCIManifest,
 		"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": img.config, "size": len(config)},
 		"layers":        []any{map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": img.layer, "size": len(layer)}},
 	})
@@ -127,7 +127,7 @@ func (r *registry) index(t *testing.T, children ...image) string {
 		r.mu.Lock()
 		size := len(r.content[child.manifest])
 		r.mu.Unlock()
-		manifests = append(manifests, map[string]any{"mediaType": mediaTypeOCIManifest, "digest": child.manifest, "size": size})
+		manifests = append(manifests, map[string]any{"mediaType": imagecache.MediaTypeOCIManifest, "digest": child.manifest, "size": size})
 	}
 	data, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": manifests})
 	if err != nil {
@@ -143,6 +143,7 @@ const (
 )
 
 type fixture struct {
+	db       *database.DB
 	service  *Service
 	registry *registry
 	dir      string
@@ -166,7 +167,7 @@ func newFixture(t *testing.T) *fixture {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	f := &fixture{registry: newRegistry(), dir: t.TempDir()}
+	f := &fixture{db: db, registry: newRegistry(), dir: t.TempDir()}
 	f.platform = f.registry.image(t, "platform")
 	f.index = f.registry.index(t, f.platform)
 	f.registry.tags[platformRef] = f.index
@@ -232,9 +233,9 @@ func TestAPoolIsAnsweredWhatItsScopePins(t *testing.T) {
 	// Its own harness's bundle, the release's platform index, and the
 	// platform manifest the index lists.
 	for _, tc := range []struct{ name, digest, mediaType string }{
-		{"discobox-harness-acme", f.acme.manifest, mediaTypeOCIManifest},
-		{"discobox-platform", f.index, mediaTypeOCIIndex},
-		{"discobox-platform", f.platform.manifest, mediaTypeOCIManifest},
+		{"discobox-harness-acme", f.acme.manifest, imagecache.MediaTypeOCIManifest},
+		{"discobox-platform", f.index, imagecache.MediaTypeOCIIndex},
+		{"discobox-platform", f.platform.manifest, imagecache.MediaTypeOCIManifest},
 	} {
 		content, err := f.service.AssetManifest(ctx, "pool-1", tc.name, tc.digest)
 		if err != nil {
@@ -565,23 +566,5 @@ func TestOnlyTheReleasesBundlesArePulledWithTheServersCredentials(t *testing.T) 
 	}
 	if f.registry.releases[acmeRef] {
 		t.Fatalf("a project's bundle was pulled with the server's credentials")
-	}
-}
-
-func TestParseManifestRefusesWhatIsNoManifest(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		data string
-	}{
-		{"an image config", `{"architecture":"amd64","os":"linux","config":{"Labels":{}}}`},
-		{"an image config naming a schema", `{"schemaVersion":2,"config":{"Labels":{}}}`},
-		{"an unknown media type", `{"schemaVersion":2,"mediaType":"text/plain","manifests":[]}`},
-		{"no JSON", `layer bytes`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if read, err := parseManifest([]byte(tc.data)); err == nil {
-				t.Fatalf("parsed as %s", read.MediaType)
-			}
-		})
 	}
 }

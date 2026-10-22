@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/discobox-ai/discobox/devimage"
@@ -183,6 +184,15 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		PlatformBundle: options.Harnesses.PlatformBundle,
 		ReleaseBundles: releaseBundles,
 	})
+	// Every sandbox is pinned to the platform the release names, and a
+	// stopped one follows it when the reference resolves somewhere new (ADR
+	// 26-10-16-423 §7).
+	sandboxService.SetPlatformBundles(assetService)
+	assetService.OnPlatformMoved(func(ctx context.Context) {
+		if err := sandboxService.UpgradePlatformSandboxes(ctx); err != nil {
+			slog.WarnContext(ctx, "platform bundle moved but stopped sandboxes were not upgraded", "error", err)
+		}
+	})
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService, sandboxService),
 		HarnessConfigService:           harnessConfigService,
@@ -249,6 +259,12 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
 	s.assets.StartPruning(ctx)
+	go s.assets.ResolvePlatform(ctx)
+	go func() {
+		if err := s.PinStoppedSandboxBundles(ctx); err != nil {
+			slog.WarnContext(ctx, "pin stopped sandboxes' bundles", "error", err)
+		}
+	}()
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()

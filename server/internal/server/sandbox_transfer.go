@@ -12,7 +12,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
@@ -105,11 +104,8 @@ func sandboxImportHandler(service services.SandboxService) http.Handler {
 		// the API's Sandbox (`name` is top-level on one and under `config` on
 		// the other), and a client decoding the generated type refuses it
 		// outright (ADR 0118: whoever serves an API is strict).
-		var fallback *model.HarnessConfig
-		if config, err := service.FallbackHarnessConfig(r.Context(), projectID); err == nil {
-			fallback = config
-		}
-		body, err := services.SandboxToAPI(result.Sandbox, fallback)
+		basis, _ := service.UpgradeBasis(r.Context(), projectID)
+		body, err := services.SandboxToAPI(result.Sandbox, basis)
 		if err != nil {
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return

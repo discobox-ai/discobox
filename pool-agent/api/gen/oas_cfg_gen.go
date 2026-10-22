@@ -22,6 +22,7 @@ var regexMap = map[string]ogenregex.Regexp{
 	"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$": ogenregex.MustCompile("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"),
 	"^dns_[0-9]+$":                           ogenregex.MustCompile("^dns_[0-9]+$"),
 	"^http_[0-9]+$":                          ogenregex.MustCompile("^http_[0-9]+$"),
+	"^sha256:[a-f0-9]{64}$":                  ogenregex.MustCompile("^sha256:[a-f0-9]{64}$"),
 }
 var (
 	// Allocate option closure once.

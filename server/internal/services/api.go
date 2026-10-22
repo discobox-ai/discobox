@@ -171,11 +171,9 @@ var (
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
-	// FallbackHarnessConfig is the project's reserved `shell` config, which a
-	// legacy sandbox with no harness config of its own upgrades to
-	// (ADR 0032 §4); create never ends at it (ADR 0048). The API mappers need
-	// it to report that upgrade. Nil when seeding has not created it.
-	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
+	// UpgradeBasis is what the API mappers report a sandbox's available
+	// upgrade against, so they give the answer an upgrade applies.
+	UpgradeBasis(ctx context.Context, projectID string) (SandboxUpgradeBasis, error)
 	// ListSandboxes filters on the sandboxes' recorded tags as well as where
 	// they came from; no selectors lists them whatever their tags.
 	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error)

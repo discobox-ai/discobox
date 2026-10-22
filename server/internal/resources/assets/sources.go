@@ -93,7 +93,7 @@ func (d daemonSource) resolve(ctx context.Context, ref string, release bool, blo
 		return "", errNotHere
 	}
 	digest := localimage.Digest(inspected)
-	if _, done := d.imported.Load(digest); !done || !present(blobs, digest) {
+	if _, done := d.imported.Load(digest); !done || !blobs.HasBlob(digest) {
 		held, err := importSave(ctx, client, ref, inspected, blobs)
 		if err != nil {
 			return "", fmt.Errorf("read %s from the Docker daemon: %w", ref, err)
@@ -101,16 +101,6 @@ func (d daemonSource) resolve(ctx context.Context, ref string, release bool, blo
 		d.imported.Store(digest, held)
 	}
 	return digest, nil
-}
-
-// present reports whether blobs holds digest.
-func present(blobs *imagecache.Layout, digest string) bool {
-	body, _, err := blobs.OpenBlob(digest)
-	if err != nil {
-		return false
-	}
-	_ = body.Close()
-	return true
 }
 
 // importSave puts every blob of what the daemon saves for ref into blobs, each

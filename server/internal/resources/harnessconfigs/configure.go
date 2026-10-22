@@ -120,9 +120,9 @@ type SandboxRuntime interface {
 	// on them (ADR 26-10-02-924).
 	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
 	// UpgradeHarnessConfigSandboxes moves this config's stopped sandboxes onto
-	// the image it now resolves to (ADR 0082). Called wherever this config's
-	// ImageDigest is written to a different value, through
-	// applyResolvedImageDigest.
+	// the image and bundle it now resolves to (ADR 0082). Called wherever this
+	// config's ImageDigest or BundleDigest is written to a different value,
+	// through applyResolvedPins.
 	UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, harnessConfigID string) error
 	// MarkProxyPolicyChangedTx converges this config's discoboxes onto a changed
 	// egress level — a person's, or the hosts its image declares

@@ -263,7 +263,7 @@ func (s *Service) reinspect(ctx context.Context, config *model.HarnessConfig, bu
 // resnapshot writes what reinspect read of config's image and bundle onto it.
 func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, bundle string, metadata imageMetadata) (*model.HarnessConfig, error) {
 	image, bundle := strings.TrimSpace(config.Image), strings.TrimSpace(bundle)
-	previousDigest := config.ImageDigest
+	previous := configPins(config)
 	previousHosts := config.ImageEgressHosts
 	config.Bundle, config.BundleDigest = bundle, metadata.BundleDigest
 	config.ImageDigest = metadata.Digest
@@ -283,8 +283,8 @@ func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, b
 	}
 	slog.InfoContext(ctx, "refreshed harness config image",
 		"harnessConfigId", config.ID, "image", image, "bundle", bundle,
-		"previousImageDigest", previousDigest, "imageDigest", metadata.Digest, "bundleDigest", metadata.BundleDigest)
-	s.applyResolvedImageDigest(ctx, config.ProjectID, config.ID, previousDigest, metadata.Digest)
+		"previousImageDigest", previous.image, "imageDigest", metadata.Digest, "bundleDigest", metadata.BundleDigest)
+	s.applyResolvedPins(ctx, config.ProjectID, config.ID, previous, configPins(config))
 	stored, err := s.store.GetHarnessConfig(ctx, config.ProjectID, config.ID)
 	if err != nil {
 		return nil, err
@@ -508,7 +508,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"harnessConfigId", config.ID, "slug", seed.Slug, "image", image)
 			continue
 		}
-		previousDigest := existing.ImageDigest
+		previous := configPins(existing)
 		previousHosts := existing.ImageEgressHosts
 		existing.Bundle, existing.BundleDigest = bundle, metadata.BundleDigest
 		existing.Image = image
@@ -529,8 +529,8 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		}
 		slog.InfoContext(ctx, "updated built-in harness config image",
 			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image, "bundle", bundle,
-			"previousImageDigest", previousDigest, "imageDigest", metadata.Digest, "bundleDigest", metadata.BundleDigest)
-		s.applyResolvedImageDigest(ctx, projectID, existing.ID, previousDigest, metadata.Digest)
+			"previousImageDigest", previous.image, "imageDigest", metadata.Digest, "bundleDigest", metadata.BundleDigest)
+		s.applyResolvedPins(ctx, projectID, existing.ID, previous, configPins(existing))
 	}
 	return nil
 }
@@ -620,32 +620,44 @@ func (s *Service) markEgressChangedTx(ctx context.Context, txStore *store.Store,
 	return s.sandboxes.MarkProxyPolicyChangedTx(ctx, txStore, txDB, config.ProjectID, "", config.ID)
 }
 
-// applyResolvedImageDigest is the single place a harness config's resolved
-// image reaches its sandboxes (ADR 0082 §1).
+// pins is what a harness config pins a sandbox to: its image and its bundle.
+type pins struct {
+	image  string
+	bundle string
+}
+
+func configPins(config *model.HarnessConfig) pins {
+	return pins{image: config.ImageDigest, bundle: config.BundleDigest}
+}
+
+// applyResolvedPins is the single place a harness config's resolved image and
+// bundle reach its sandboxes (ADR 0082 §1, ADR 26-10-16-423 §7).
 //
-// The rule is stated on the field rather than on a list of callers: wherever
-// ImageDigest is written to a value different from the one it replaced, that
-// config's eligible stopped sandboxes are re-pinned onto it. A built-in
-// reseeded at startup and a custom harness re-pulled by its owner are the same
-// event to a sandbox running it, so they go through the same function instead
-// of each remembering independently — and a future writer of the field inherits
-// the behavior by calling this rather than by being amended into a list.
+// The rule is stated on the fields rather than on a list of callers: wherever
+// ImageDigest or BundleDigest is written to a value different from the one it
+// replaced, that config's eligible stopped sandboxes are re-pinned onto it. A
+// built-in reseeded at startup and a custom harness re-pulled by its owner are
+// the same event to a sandbox running it, so they go through the same
+// function instead of each remembering independently — and a future writer of
+// the fields inherits the behavior by calling this rather than by being
+// amended into a list.
 //
-// A digest that did not move does nothing: the fan-out costs a query per
-// config, and SeedBuiltIns runs on every project ensure.
+// Pins that did not move do nothing: the fan-out costs a query per config, and
+// SeedBuiltIns runs on every project ensure.
 //
-// Best effort. The digest is already persisted by the time this runs, so a
+// Best effort. The pins are already persisted by the time this runs, so a
 // failure here loses the upgrade, not the refresh — and the sandboxes it
 // missed keep reporting an available upgrade and are picked up the next time
-// this config's image resolves.
-func (s *Service) applyResolvedImageDigest(ctx context.Context, projectID, configID, previousDigest, digest string) {
-	if s.sandboxes == nil || strings.TrimSpace(digest) == "" || previousDigest == digest {
+// this config's pins move.
+func (s *Service) applyResolvedPins(ctx context.Context, projectID, configID string, previous, resolved pins) {
+	if s.sandboxes == nil || strings.TrimSpace(resolved.image) == "" || previous == resolved {
 		return
 	}
 	if err := s.sandboxes.UpgradeHarnessConfigSandboxes(ctx, projectID, configID); err != nil {
 		slog.WarnContext(ctx, "harness image resolved but stopped sandboxes were not upgraded",
-			"harnessConfigId", configID, "previousImageDigest", previousDigest,
-			"imageDigest", digest, "error", err)
+			"harnessConfigId", configID, "previousImageDigest", previous.image,
+			"imageDigest", resolved.image, "previousBundleDigest", previous.bundle,
+			"bundleDigest", resolved.bundle, "error", err)
 	}
 }
 

@@ -111,9 +111,9 @@ func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaul
 	return refs, nil
 }
 
-// ListStoppedSandboxesForHarnessConfig returns the sandboxes on one harness
-// config that a change to that config's image may be applied to unattended
-// (ADR 0082 §2, ADR 0121).
+// ListStoppedSandboxes returns a project's sandboxes on one harness config,
+// or on any when harnessConfigID is empty, that a change to their pins may be
+// applied to unattended (ADR 0082 §2, ADR 0121, ADR 26-10-16-423 §7).
 //
 // Every condition here is a state question. Whether a sandbox is *behind* is
 // not asked here at all: that rule is services.SandboxUpgradeTarget, the same
@@ -131,14 +131,20 @@ func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaul
 // is admitted (ADR 0121): that is the first create that failed before any
 // container was seen, which has nothing running to restart and is exactly the
 // sandbox a new image may fix.
-func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projectID, harnessConfigID string) ([]model.Sandbox, error) {
+//
+// An empty harnessConfigID lists the project's stopped sandboxes whatever
+// their harness: the platform's re-pin is every one's (ADR 26-10-16-423 §7).
+func (s *Store) ListStoppedSandboxes(ctx context.Context, projectID, harnessConfigID string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
+	query := read.Where("project_id = ?", projectID)
+	if harnessConfigID != "" {
+		query = query.Where("harness_config_id = ?", harnessConfigID)
+	}
 	var sandboxes []model.Sandbox
-	err = read.
-		Where("project_id = ? AND harness_config_id = ?", projectID, harnessConfigID).
+	err = query.
 		Where("desired_state = ?", model.DesiredStatePresent).
 		// Settled, and nothing in flight against it: an unsettled row is
 		// already being acted on. A settled failure is included (ADR 0121) —

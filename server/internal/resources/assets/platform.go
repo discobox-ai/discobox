@@ -7,22 +7,28 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // platformPins is the platform bundle the release pins, as the digests its
 // reference has resolved to while this server runs.
 //
-// The release pins the platform by reference — a release tag, or a
-// development build's :local — and nothing records the digest a box was
-// given, so a digest is never dropped once answered: a pool part way through
-// fetching the platform it was handed keeps being answered it after the tag
-// moves. The set is this process's: a box runs the platform its server ships
-// from its next start (ADR 26-10-16-423 §7), which is the digest a restarted
-// server resolves.
+// The release names the platform by reference — a release tag, or a
+// development build's :local — and a digest is never dropped once answered:
+// a pool part way through fetching the platform it was handed keeps being
+// answered it after the tag moves. What a box was given lasts longer than
+// this process, as its sandbox's pin (ADR 26-10-16-423 §7), which the scope
+// reads beside these.
 type platformPins struct {
 	ref     string
 	resolve func(ctx context.Context, ref string) (string, error)
 	now     func() time.Time
+	// moved is told, off the resolving read's path, each digest the
+	// reference resolves to that differs from the one before, the first
+	// included: sandboxes are pinned to the platform, and a stopped one
+	// follows it (ADR 26-10-16-423 §7).
+	moved func(digest string)
 
 	mu       sync.Mutex
 	digests  []string
@@ -49,7 +55,7 @@ func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
 	if p == nil || p.ref == "" {
 		return nil, nil
 	}
-	if _, digest, ok := strings.Cut(p.ref, "@"); ok && digestPattern.MatchString(digest) {
+	if digest := p.fixed(); digest != "" {
 		return []string{digest}, nil
 	}
 	p.mu.Lock()
@@ -68,6 +74,9 @@ func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
 		cancel()
 		p.mu.Lock()
 		p.tried, p.lastErr, p.inFlight = p.now(), err, nil
+		if err == nil && digest != p.latest && p.moved != nil {
+			go p.moved(digest)
+		}
 		if err == nil {
 			p.latest = digest
 			if !slices.Contains(p.digests, digest) {
@@ -93,13 +102,35 @@ func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
 	return slices.Clone(p.digests), nil
 }
 
+// fixed is the digest a reference pinned by digest names, empty for one
+// that names a tag.
+func (p *platformPins) fixed() string {
+	if _, digest, ok := strings.Cut(p.ref, "@"); ok && imagecache.IsDigest(digest) {
+		return digest
+	}
+	return ""
+}
+
+// current is what the reference last resolved to, without asking again.
+func (p *platformPins) current() string {
+	if p == nil || p.ref == "" {
+		return ""
+	}
+	if digest := p.fixed(); digest != "" {
+		return digest
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.latest
+}
+
 // newest is what the reference resolves to now, which a name resolution
 // answers: resolved afresh, and an error when that fails.
 func (p *platformPins) newest(ctx context.Context) (string, error) {
 	if _, err := p.pins(ctx, true); err != nil {
 		return "", err
 	}
-	if _, digest, ok := strings.Cut(p.ref, "@"); ok && digestPattern.MatchString(digest) {
+	if digest := p.fixed(); digest != "" {
 		return digest, nil
 	}
 	p.mu.Lock()

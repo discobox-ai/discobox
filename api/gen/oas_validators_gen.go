@@ -8461,6 +8461,10 @@ func (s SandboxUpgradeReason) Validate() error {
 	switch s {
 	case "imageDigestChanged":
 		return nil
+	case "bundleDigestChanged":
+		return nil
+	case "platformBundleDigestChanged":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

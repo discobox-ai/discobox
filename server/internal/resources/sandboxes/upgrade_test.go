@@ -76,9 +76,9 @@ func TestUpgradeTargetDetectsRebuildUnderTheSameTag(t *testing.T) {
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 	sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
 
-	target, err := svc.currentImageRepin(ctx, sb)
+	target, err := svc.currentRepin(ctx, sb)
 	if err != nil {
-		t.Fatalf("currentImageRepin: %v", err)
+		t.Fatalf("currentRepin: %v", err)
 	}
 	if !target.Available || target.Digest != "sha256:new" {
 		t.Fatalf("target = %+v, want available with the new digest", target)
@@ -91,9 +91,9 @@ func TestUpgradeTargetIsUnavailableWhenDigestsMatch(t *testing.T) {
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:same")
 	sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:same")
 
-	target, err := svc.currentImageRepin(ctx, sb)
+	target, err := svc.currentRepin(ctx, sb)
 	if err != nil {
-		t.Fatalf("currentImageRepin: %v", err)
+		t.Fatalf("currentRepin: %v", err)
 	}
 	if target.Available {
 		t.Fatalf("target = %+v, want unavailable", target)
@@ -110,9 +110,9 @@ func TestUpgradeTargetOffersConfigImageToUnpinnedSandboxes(t *testing.T) {
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 
 	unpinned := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:stale", "")
-	target, err := svc.currentImageRepin(ctx, unpinned)
+	target, err := svc.currentRepin(ctx, unpinned)
 	if err != nil {
-		t.Fatalf("currentImageRepin: %v", err)
+		t.Fatalf("currentRepin: %v", err)
 	}
 	if !target.Available || target.Image != "discobox-harness-codex:local" || target.Digest != "sha256:new" {
 		t.Fatalf("unpinned target = %+v, want available with the config's image and digest", target)
@@ -128,7 +128,7 @@ func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 
 	configMode := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
 	configMode.HarnessMode = "config"
-	if target, err := svc.currentImageRepin(ctx, configMode); err != nil || target.Available {
+	if target, err := svc.currentRepin(ctx, configMode); err != nil || target.Available {
 		t.Fatalf("config-mode target = %+v, %v; want unavailable", target, err)
 	}
 }
@@ -155,7 +155,7 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
 
 	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
-	target, err := svc.currentImageRepin(ctx, harnessless)
+	target, err := svc.currentRepin(ctx, harnessless)
 	if err != nil {
 		t.Fatalf("upgrade target: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	// Even on the fallback's own digest: what the upgrade changes is adopting
 	// the config, not the image.
 	current := pinnedSandbox(t, st, "", shell.Image, shell.ImageDigest)
-	if target, err := svc.currentImageRepin(ctx, current); err != nil || !target.Available {
+	if target, err := svc.currentRepin(ctx, current); err != nil || !target.Available {
 		t.Fatalf("target = %+v, %v; want available while still unconverged", target, err)
 	}
 }
@@ -195,7 +195,7 @@ func TestUpgradeSandboxAdoptsTheFallbackConfig(t *testing.T) {
 		t.Fatalf("image = %s@%s, want the shell config's", upgraded.Image, upgraded.ImageDigest)
 	}
 	// Converged: nothing further to do.
-	if target, err := svc.currentImageRepin(ctx, upgraded); err != nil || target.Available {
+	if target, err := svc.currentRepin(ctx, upgraded); err != nil || target.Available {
 		t.Fatalf("target = %+v, %v; want unavailable once converged", target, err)
 	}
 }
@@ -207,7 +207,7 @@ func TestUpgradeTargetWithoutASeededFallback(t *testing.T) {
 	svc, st := newBindingFixture(t)
 
 	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:local", "sha256:old")
-	if target, err := svc.currentImageRepin(ctx, harnessless); err != nil || target.Available {
+	if target, err := svc.currentRepin(ctx, harnessless); err != nil || target.Available {
 		t.Fatalf("target = %+v, %v; want unavailable with no fallback seeded", target, err)
 	}
 }
@@ -260,7 +260,7 @@ func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
 			t.Fatalf("state %q: pin moved to %q/%q without an upgrade", state, stored.Image, stored.ImageDigest)
 		}
 		// The upgrade is still offered — it is reported, not applied.
-		target, err := svc.currentImageRepin(ctx, stored)
+		target, err := svc.currentRepin(ctx, stored)
 		if err != nil {
 			t.Fatalf("state %q: currentImageRepin: %v", state, err)
 		}

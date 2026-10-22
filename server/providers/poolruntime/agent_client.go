@@ -761,6 +761,13 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.SpecFingerprint != "" {
 		config.SpecFingerprint = poolclient.NewOptString(opts.SpecFingerprint)
 	}
+	if len(opts.Bundles) > 0 {
+		bundles := make([]poolapimodel.BundlePin, 0, len(opts.Bundles))
+		for _, pin := range opts.Bundles {
+			bundles = append(bundles, poolapimodel.BundlePin{Name: pin.Name, Digest: pin.Digest})
+		}
+		out.Bundles = poolclient.NewOptNilBundlePinArray(bundles)
+	}
 	config.Start = poolclient.NewOptBool(opts.Start)
 	if opts.Env != nil {
 		config.Env = poolclient.NewOptSandboxConfigEnv(poolclient.SandboxConfigEnv(opts.Env))

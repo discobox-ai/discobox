@@ -50,7 +50,7 @@ func TestCreateKeepsItsSkillsAndRefusesBadOnes(t *testing.T) {
 	if !reflect.DeepEqual(sb.Skills, want) {
 		t.Fatalf("stored skills = %#v, want %#v", sb.Skills, want)
 	}
-	read, err := services.SandboxToAPI(sb, nil)
+	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

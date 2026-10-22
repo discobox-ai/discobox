@@ -174,13 +174,13 @@ func (s *Service) recordAutomaticRepair(ctx context.Context, observed *model.San
 	if s.engine == nil {
 		return false, errors.New("reconcile engine is required")
 	}
-	var repin imageRepin
+	var repin sandboxRepin
 	project, err := s.store.GetProject(ctx, observed.ProjectID)
 	if err != nil {
 		return false, err
 	}
 	if model.SandboxUpgradesAutomatically(project) {
-		if repin, err = s.currentImageRepin(ctx, observed); err != nil {
+		if repin, err = s.currentRepin(ctx, observed); err != nil {
 			return false, err
 		}
 	}

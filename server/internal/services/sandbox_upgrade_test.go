@@ -33,7 +33,7 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 		name          string
 		sandbox       *model.Sandbox
 		config        *model.HarnessConfig
-		wantTarget    SandboxImageTarget
+		wantTarget    SandboxPinTarget
 		wantAvailable bool
 	}{
 		{
@@ -42,44 +42,44 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 			name:          "harnessless upgrades to the fallback",
 			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old"),
 			config:        shell,
-			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
+			wantTarget:    SandboxPinTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
 			wantAvailable: true,
 		},
 		{
 			name:          "harnessless on the fallback's own digest is still unconverged",
 			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:new", "sha256:new"),
 			config:        shell,
-			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
+			wantTarget:    SandboxPinTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
 			wantAvailable: true,
 		},
 		{
 			name:          "converged sandbox on the shell config is up to date",
 			sandbox:       sandboxWithHarness("harness-shell", "discobox-sandbox-agent:new", "sha256:new"),
 			config:        shell,
-			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
+			wantTarget:    SandboxPinTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
 			wantAvailable: false,
 		},
 		{
 			name:          "harnessed upgrades to its config's image",
 			sandbox:       sandboxWithHarness("harness-1", "discobox-harness-codex:old", "sha256:codex-old"),
 			config:        &model.HarnessConfig{Image: "discobox-harness-codex:new", ImageDigest: "sha256:codex-new"},
-			wantTarget:    SandboxImageTarget{Image: "discobox-harness-codex:new", Digest: "sha256:codex-new"},
+			wantTarget:    SandboxPinTarget{Image: "discobox-harness-codex:new", Digest: "sha256:codex-new"},
 			wantAvailable: true,
 		},
 		{
 			name:       "no config at all has nothing to move to",
 			sandbox:    sandboxWithHarness("harness-1", "discobox-harness-codex:old", "sha256:codex-old"),
-			wantTarget: SandboxImageTarget{},
+			wantTarget: SandboxPinTarget{},
 		},
 		{
 			name:       "a config with no digest cannot be compared",
 			sandbox:    sandboxWithHarness("harness-1", "discobox-harness-codex:old", "sha256:codex-old"),
 			config:     &model.HarnessConfig{Image: "discobox-harness-codex:new"},
-			wantTarget: SandboxImageTarget{},
+			wantTarget: SandboxPinTarget{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config)
+			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config, BundlePin{})
 			if target != tc.wantTarget || available != tc.wantAvailable {
 				t.Fatalf("target = %+v available = %v, want %+v / %v", target, available, tc.wantTarget, tc.wantAvailable)
 			}
@@ -90,8 +90,8 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 			if tc.sandbox.HarnessConfigID != nil {
 				tc.sandbox.HarnessConfig = tc.config
 			}
-			rendered := SandboxUpgrade(tc.sandbox, tc.config)
-			if tc.wantTarget == (SandboxImageTarget{}) {
+			rendered := SandboxUpgrade(tc.sandbox, SandboxUpgradeBasis{Fallback: tc.config})
+			if tc.wantTarget == (SandboxPinTarget{}) {
 				if rendered != nil {
 					t.Fatalf("rendered %v for a sandbox with nothing to move to", rendered)
 				}
@@ -115,7 +115,7 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
 	sb := sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old")
 	sb.HarnessMode = "config"
-	if target, available := SandboxUpgradeTarget(sb, shellConfig()); target != (SandboxImageTarget{}) || available {
+	if target, available := SandboxUpgradeTarget(sb, shellConfig(), BundlePin{}); target != (SandboxPinTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
 }
@@ -125,10 +125,10 @@ func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
 // inspected — and then an unconverged sandbox has nowhere to go yet.
 func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
 	sb := sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old")
-	if target, available := SandboxUpgradeTarget(sb, nil); target != (SandboxImageTarget{}) || available {
+	if target, available := SandboxUpgradeTarget(sb, nil, BundlePin{}); target != (SandboxPinTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
-	if rendered := SandboxUpgrade(sb, nil); rendered != nil {
+	if rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{}); rendered != nil {
 		t.Fatalf("rendered %v with no fallback config", rendered)
 	}
 }
@@ -141,12 +141,12 @@ func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
 	config.Platforms = platform.NewSet(platform.Platform{OS: "linux", Arch: "riscv64"})
 	sb := sandboxWithHarness("harness-shell", "discobox-sandbox-agent:old", "sha256:old")
 	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
-	if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "" || available {
+	if target, available := SandboxUpgradeTarget(sb, config, BundlePin{}); target.Digest != "" || available {
 		t.Fatalf("target = %+v, available = %t; want nothing to move to", target, available)
 	}
 	for _, platforms := range []platform.Set{platform.NewSet(sb.Platform, config.Platforms[0]), nil} {
 		config.Platforms = platforms
-		if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "sha256:new" || !available {
+		if target, available := SandboxUpgradeTarget(sb, config, BundlePin{}); target.Digest != "sha256:new" || !available {
 			t.Fatalf("platforms %q: target = %+v, available = %t; want the config's image", platforms, target, available)
 		}
 	}
@@ -157,18 +157,100 @@ func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
 func TestSandboxToAPIIncludesThePlatform(t *testing.T) {
 	sb := sandboxWithHarness("", "img", "sha256:a")
 	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
-	out, err := SandboxToAPI(sb, nil)
+	out, err := SandboxToAPI(sb, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := out.Platform.Or(""); got != "linux/arm64" {
 		t.Fatalf("platform = %q, want linux/arm64", got)
 	}
-	out, err = SandboxToAPI(sandboxWithHarness("", "img", "sha256:a"), nil)
+	out, err = SandboxToAPI(sandboxWithHarness("", "img", "sha256:a"), SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out.Platform.IsSet() {
 		t.Fatalf("platform = %q, want none for a sandbox with no platform recorded", out.Platform.Value)
+	}
+}
+
+// The bundles move with the image (ADR 26-10-16-423 §7): a harness bundle or
+// a platform bundle that moved makes an upgrade available on its own, an
+// upgrade writes all three pins, and a platform nobody has resolved leaves the
+// sandbox's own in place rather than counting as moved.
+func TestSandboxUpgradeTargetFollowsTheBundles(t *testing.T) {
+	config := &model.HarnessConfig{
+		Image: "discobox-harness-codex:v1", ImageDigest: "sha256:image",
+		Bundle: "ghcr.io/discobox-ai/discobox-harness-codex:v1", BundleDigest: "sha256:bundle-new",
+	}
+	platform := BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: "sha256:platform-new"}
+	current := func() *model.Sandbox {
+		sb := sandboxWithHarness("harness-1", "discobox-harness-codex:v1", "sha256:image")
+		sb.Bundle, sb.BundleDigest = config.Bundle, "sha256:bundle-new"
+		sb.PlatformBundle, sb.PlatformBundleDigest = platform.Reference, "sha256:platform-new"
+		return sb
+	}
+	for _, tc := range []struct {
+		name       string
+		sandbox    func(*model.Sandbox)
+		platform   BundlePin
+		wantReason any
+	}{
+		{name: "nothing moved", platform: platform},
+		{name: "the harness bundle moved", sandbox: func(sb *model.Sandbox) { sb.BundleDigest = "sha256:bundle-old" }, platform: platform, wantReason: "bundleDigestChanged"},
+		{name: "a sandbox pinned to no bundle", sandbox: func(sb *model.Sandbox) { sb.Bundle, sb.BundleDigest = "", "" }, platform: platform, wantReason: "bundleDigestChanged"},
+		{name: "the platform moved", sandbox: func(sb *model.Sandbox) { sb.PlatformBundleDigest = "sha256:platform-old" }, platform: platform, wantReason: "platformBundleDigestChanged"},
+		{name: "a platform not resolved is not a move", sandbox: func(sb *model.Sandbox) { sb.PlatformBundleDigest = "sha256:platform-old" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sb := current()
+			if tc.sandbox != nil {
+				tc.sandbox(sb)
+			}
+			target, available := SandboxUpgradeTarget(sb, config, tc.platform)
+			if available != (tc.wantReason != nil) {
+				t.Fatalf("available = %v, want %v", available, tc.wantReason != nil)
+			}
+			sb.HarnessConfig = config
+			rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Platform: tc.platform})
+			if rendered["reason"] != tc.wantReason {
+				t.Fatalf("reason = %v, want %v", rendered["reason"], tc.wantReason)
+			}
+			previousPlatform := sb.PlatformBundleDigest
+			target.Apply(sb)
+			if sb.ImageDigest != "sha256:image" || sb.Bundle != config.Bundle || sb.BundleDigest != "sha256:bundle-new" {
+				t.Fatalf("applied pins = %q %q %q, want the config's", sb.ImageDigest, sb.Bundle, sb.BundleDigest)
+			}
+			wantPlatform := tc.platform.Digest
+			if wantPlatform == "" {
+				wantPlatform = previousPlatform
+			}
+			if sb.PlatformBundleDigest != wantPlatform {
+				t.Fatalf("applied platform = %q, want %q", sb.PlatformBundleDigest, wantPlatform)
+			}
+		})
+	}
+}
+
+// The platform is every box's (ADR 26-10-16-423 §7): a sandbox whose harness
+// has nothing to move to still follows it, without its image being touched,
+// and a config-mode sandbox follows nothing.
+func TestThePlatformIsATargetWithoutAHarnessOne(t *testing.T) {
+	platform := BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: "sha256:platform-new"}
+	sb := sandboxWithHarness("harness-1", "discobox-harness-codex:old", "sha256:codex-old")
+	sb.PlatformBundleDigest = "sha256:platform-old"
+	target, available := SandboxUpgradeTarget(sb, nil, platform)
+	if !available || target.Digest != "" || target.Platform != platform {
+		t.Fatalf("target = %+v available = %v, want the platform alone", target, available)
+	}
+	if rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Platform: platform}); rendered["reason"] != "platformBundleDigestChanged" {
+		t.Fatalf("rendered %v, want the platform's upgrade", rendered)
+	}
+	target.Apply(sb)
+	if sb.ImageDigest != "sha256:codex-old" || sb.PlatformBundleDigest != platform.Digest {
+		t.Fatalf("applied image %q platform %q, want the image kept and the platform moved", sb.ImageDigest, sb.PlatformBundleDigest)
+	}
+	sb.HarnessMode = "config"
+	if target, available := SandboxUpgradeTarget(sb, nil, platform); !target.Empty() || available {
+		t.Fatalf("config-mode target = %+v available = %v, want nothing", target, available)
 	}
 }

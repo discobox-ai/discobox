@@ -29,7 +29,7 @@ func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 			RunCommand: []string{"codex"},
 		},
 	}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestSandboxToAPIIncludesCalculatedDisplayState(t *testing.T) {
 		},
 		RuntimeState: model.SandboxRuntimeStateRunning,
 	}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestSandboxToAPIOmitsUnobservedRuntimeState(t *testing.T) {
 			ObservedGeneration: 1,
 		},
 	}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestSandboxToAPIReportsASourceDelivery(t *testing.T) {
 			Generation:   2,
 		},
 	}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestSandboxToAPIReportsASourceDelivery(t *testing.T) {
 
 	delivered := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	sandbox.SourceDeliveredAt = &delivered
-	out, err = SandboxToAPI(sandbox, nil)
+	out, err = SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
 		createdBy *string
 		want      string
 	}{{&lead, lead}, {nil, ""}} {
-		out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", CreatedByUserID: "user-1", CreatedBySandboxID: tc.createdBy}, nil)
+		out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", CreatedByUserID: "user-1", CreatedBySandboxID: tc.createdBy}, SandboxUpgradeBasis{})
 		if err != nil {
 			t.Fatalf("SandboxToAPI: %v", err)
 		}
@@ -294,7 +294,7 @@ func TestSandboxUserValidateAccountRefusesIDsOffLinux(t *testing.T) {
 // of a level its flags leave out by reading it back from here.
 func TestSandboxToAPIIncludesItsEgressLevel(t *testing.T) {
 	sandbox := &model.Sandbox{ID: "sb_1", ProjectID: "p1", Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}

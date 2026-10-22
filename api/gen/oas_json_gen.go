@@ -40888,6 +40888,30 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Bundle.Set {
+			e.FieldStart("bundle")
+			s.Bundle.Encode(e)
+		}
+	}
+	{
+		if s.BundleDigest.Set {
+			e.FieldStart("bundleDigest")
+			s.BundleDigest.Encode(e)
+		}
+	}
+	{
+		if s.PlatformBundle.Set {
+			e.FieldStart("platformBundle")
+			s.PlatformBundle.Encode(e)
+		}
+	}
+	{
+		if s.PlatformBundleDigest.Set {
+			e.FieldStart("platformBundleDigest")
+			s.PlatformBundleDigest.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -40921,7 +40945,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [17]string{
+var jsonFieldsNameOfSandboxConfig = [21]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -40934,11 +40958,15 @@ var jsonFieldsNameOfSandboxConfig = [17]string{
 	9:  "features",
 	10: "image",
 	11: "imageDigest",
-	12: "name",
-	13: "prompt",
-	14: "source",
-	15: "sourceCodeReferences",
-	16: "user",
+	12: "bundle",
+	13: "bundleDigest",
+	14: "platformBundle",
+	15: "platformBundleDigest",
+	16: "name",
+	17: "prompt",
+	18: "source",
+	19: "sourceCodeReferences",
+	20: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -41088,8 +41116,48 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
+		case "bundle":
+			if err := func() error {
+				s.Bundle.Reset()
+				if err := s.Bundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundle\"")
+			}
+		case "bundleDigest":
+			if err := func() error {
+				s.BundleDigest.Reset()
+				if err := s.BundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundleDigest\"")
+			}
+		case "platformBundle":
+			if err := func() error {
+				s.PlatformBundle.Reset()
+				if err := s.PlatformBundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"platformBundle\"")
+			}
+		case "platformBundleDigest":
+			if err := func() error {
+				s.PlatformBundleDigest.Reset()
+				if err := s.PlatformBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"platformBundleDigest\"")
+			}
 		case "name":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -41160,8 +41228,8 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00010100,
-		0b00000000,
+		0b00000100,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -51498,6 +51566,18 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Available)
 	}
 	{
+		if s.CurrentBundleDigest.Set {
+			e.FieldStart("currentBundleDigest")
+			s.CurrentBundleDigest.Encode(e)
+		}
+	}
+	{
+		if s.CurrentPlatformBundleDigest.Set {
+			e.FieldStart("currentPlatformBundleDigest")
+			s.CurrentPlatformBundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.CurrentImage.Set {
 			e.FieldStart("currentImage")
 			s.CurrentImage.Encode(e)
@@ -51516,6 +51596,12 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.TargetBundleDigest.Set {
+			e.FieldStart("targetBundleDigest")
+			s.TargetBundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.TargetImage.Set {
 			e.FieldStart("targetImage")
 			s.TargetImage.Encode(e)
@@ -51527,15 +51613,25 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 			s.TargetImageDigest.Encode(e)
 		}
 	}
+	{
+		if s.TargetPlatformBundleDigest.Set {
+			e.FieldStart("targetPlatformBundleDigest")
+			s.TargetPlatformBundleDigest.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxUpgrade = [6]string{
+var jsonFieldsNameOfSandboxUpgrade = [10]string{
 	0: "available",
-	1: "currentImage",
-	2: "currentImageDigest",
-	3: "reason",
-	4: "targetImage",
-	5: "targetImageDigest",
+	1: "currentBundleDigest",
+	2: "currentPlatformBundleDigest",
+	3: "currentImage",
+	4: "currentImageDigest",
+	5: "reason",
+	6: "targetBundleDigest",
+	7: "targetImage",
+	8: "targetImageDigest",
+	9: "targetPlatformBundleDigest",
 }
 
 // Decode decodes SandboxUpgrade from json.
@@ -51543,7 +51639,7 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxUpgrade to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -51558,6 +51654,26 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"available\"")
+			}
+		case "currentBundleDigest":
+			if err := func() error {
+				s.CurrentBundleDigest.Reset()
+				if err := s.CurrentBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentBundleDigest\"")
+			}
+		case "currentPlatformBundleDigest":
+			if err := func() error {
+				s.CurrentPlatformBundleDigest.Reset()
+				if err := s.CurrentPlatformBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentPlatformBundleDigest\"")
 			}
 		case "currentImage":
 			if err := func() error {
@@ -51589,6 +51705,16 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
 			}
+		case "targetBundleDigest":
+			if err := func() error {
+				s.TargetBundleDigest.Reset()
+				if err := s.TargetBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetBundleDigest\"")
+			}
 		case "targetImage":
 			if err := func() error {
 				s.TargetImage.Reset()
@@ -51609,6 +51735,16 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"targetImageDigest\"")
 			}
+		case "targetPlatformBundleDigest":
+			if err := func() error {
+				s.TargetPlatformBundleDigest.Reset()
+				if err := s.TargetPlatformBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetPlatformBundleDigest\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -51618,8 +51754,9 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00000001,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -51683,6 +51820,10 @@ func (s *SandboxUpgradeReason) Decode(d *jx.Decoder) error {
 	switch SandboxUpgradeReason(v) {
 	case SandboxUpgradeReasonImageDigestChanged:
 		*s = SandboxUpgradeReasonImageDigestChanged
+	case SandboxUpgradeReasonBundleDigestChanged:
+		*s = SandboxUpgradeReasonBundleDigestChanged
+	case SandboxUpgradeReasonPlatformBundleDigestChanged:
+		*s = SandboxUpgradeReasonPlatformBundleDigestChanged
 	default:
 		*s = SandboxUpgradeReason(v)
 	}

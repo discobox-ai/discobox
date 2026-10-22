@@ -76,8 +76,8 @@ func (f *fakeSandboxService) AcquireRunningSandboxHTTPClient(context.Context, st
 func (f *fakeSandboxService) ReadSandboxInventory(context.Context, string, string, []string, services.InventoryRead) ([]byte, error) {
 	panic("not implemented")
 }
-func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*model.HarnessConfig, error) {
-	return nil, nil
+func (f *fakeSandboxService) UpgradeBasis(context.Context, string) (services.SandboxUpgradeBasis, error) {
+	return services.SandboxUpgradeBasis{}, nil
 }
 func (f *fakeSandboxService) PurgeSandbox(context.Context, string, string) error {
 	panic("not implemented")

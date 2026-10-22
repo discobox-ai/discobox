@@ -62,9 +62,13 @@ flowchart LR
   until it does, the sandbox says so in its own listing.
 - The upgrade rule has exactly one implementation,
   `services.SandboxUpgradeTarget`. Two callers use it: the read path that
-  reports an available upgrade, and `Service.currentImageRepin`, which resolves
-  the change that `UpgradeSandbox`, `RepairSandbox`, and
-  `UpgradeHarnessConfigSandboxes` apply. Sharing it means a sandbox cannot
+  reports an available upgrade, and `Service.currentRepin`, which resolves
+  the change that `UpgradeSandbox`, `RepairSandbox`,
+  `UpgradeHarnessConfigSandboxes` and `UpgradePlatformSandboxes` apply. The
+  change is all of a sandbox's pins: image, harness bundle and platform bundle
+  (ADR 26-10-16-423 §7). The read path is handed the platform last resolved
+  (`UpgradeBasis`) so it never waits on a registry; the re-pin resolves it,
+  at most a minute stale. Sharing it means a sandbox cannot
   accept an upgrade its listing says it does not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
@@ -349,19 +353,22 @@ else here, a clean converge is followed by the same start instruction an
 explicit start sends — still an instruction, never stored intent.
 
 That same intent carries the re-pin an upgrade would (ADR 0064): repair always
-rebuilds on the harness config's current image. `currentImageRepin` is the one
+rebuilds on the harness config's current image. `currentRepin` is the one
 resolver both operations write through, so they cannot pin differently, and
-`imageRepin.apply` is what each hands `recordSandboxIntent`. The two differ only
+`sandboxRepin.apply` is what each hands `recordSandboxIntent`. The two differ only
 in what an unavailable target means — upgrade 409s, because the re-pin is what
 it was asked for; repair proceeds on the pin it has, because the re-pin is a
 rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
 (ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
-`ImageDigest` moves, and it re-pins the config's present, settled sandboxes
-that are `ready` and observed `stopped`, or `failed` and observed `stopped` or
+`ImageDigest` or `BundleDigest` moves, and `UpgradePlatformSandboxes` is the
+same for every project's sandboxes whenever the release's platform reference
+resolves to a new digest (`assets.Service.OnPlatformMoved`, first on every
+start). Each re-pins its present, settled sandboxes — the config's, or for
+the platform every project's — that are `ready` and observed `stopped`, or `failed` and observed `stopped` or
 never observed at all — the eligibility query is
-`Store.ListStoppedSandboxesForHarnessConfig`, and whether each is actually
+`Store.ListStoppedSandboxes`, and whether each is actually
 behind is still `SandboxUpgradeTarget`'s answer, never restated in SQL.
 A failed sandbox is included (ADR 0121): the re-pin is intent, so it clears the
 latched error and the reconciler retries the create on the new image — at most
@@ -370,8 +377,16 @@ re-pinned. It is the plain upgrade, not a repair: no teardown, no start. A
 sandbox still owed a client push is skipped, because the retry could only park
 it at `awaiting_source` again.
 
+`PinStoppedSandboxBundles` runs on every start beside them. A stopped sandbox
+created before bundles, on the image its harness config pins, is pinned to
+that config's bundle — the image's twin, so nothing it runs changes and no
+upgrade policy applies. It is recorded intent like a re-pin, so the pool is
+sent the create that rebuilds the stopped container and records the pin; a
+running one is left until it is found stopped, upgraded or repaired, since
+the pin is in the fingerprint and would restart it.
+
 There is no automatic-upgrade code path, only an automatic author of the upgrade
-every sandbox already had: the same `imageRepin`, the same
+every sandbox already had: the same `sandboxRepin`, the same
 `recordSandboxIntent`, the same generation bump, so the pool agent cannot tell
 one from a typed `POST .../upgrade`. Delivery is therefore also unchanged — the
 re-pin moves the manifest fingerprint, the pool agent rebuilds the container that

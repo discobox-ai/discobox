@@ -3,14 +3,15 @@ package assets
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"time"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // Removal is by reference (ADR 26-10-16-423 §13): a blob leaves the store
-// when no pin — a harness config of any project, or a platform digest this
-// server has answered — reaches it any more.
+// when no pin — a sandbox or harness config of any project, or a platform
+// digest this server has answered — reaches it any more.
 const (
 	// pruneInterval is how often the store is swept.
 	pruneInterval = time.Hour
@@ -54,13 +55,24 @@ func (s *Service) Prune(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("prune skipped: list harness config bundles: %w", err)
 	}
+	sandboxes, err := s.store.ListSandboxBundles(ctx, "")
+	if err != nil {
+		return 0, fmt.Errorf("prune skipped: list sandbox bundles: %w", err)
+	}
 	keep := map[string]bool{}
+	for _, sb := range sandboxes {
+		for _, digest := range []string{sb.BundleDigest, sb.PlatformBundleDigest} {
+			if imagecache.IsDigest(digest) {
+				s.blobs.Reach(digest, keep)
+			}
+		}
+	}
 	for _, digest := range platform {
-		s.reach(digest, keep)
+		s.blobs.Reach(digest, keep)
 	}
 	for _, config := range configs {
-		if digestPattern.MatchString(config.BundleDigest) {
-			s.reach(config.BundleDigest, keep)
+		if imagecache.IsDigest(config.BundleDigest) {
+			s.blobs.Reach(config.BundleDigest, keep)
 		}
 	}
 	removed, err := s.blobs.PruneBlobs(func(digest string) bool { return keep[digest] }, s.now().Add(-pruneGrace))
@@ -70,48 +82,4 @@ func (s *Service) Prune(ctx context.Context) (int, error) {
 		}
 	}
 	return removed, err
-}
-
-// reach marks digest and everything beneath it the store holds.
-func (s *Service) reach(digest string, keep map[string]bool) {
-	if keep[digest] {
-		return
-	}
-	keep[digest] = true
-	read, ok := s.storedManifest(digest)
-	if !ok {
-		return
-	}
-	for _, child := range read.Manifests {
-		s.reach(child.Digest, keep)
-	}
-	if read.Config != nil {
-		keep[read.Config.Digest] = true
-	}
-	for _, layer := range read.Layers {
-		keep[layer.Digest] = true
-	}
-}
-
-// storedManifest reads a manifest the store already holds, fetching nothing.
-func (s *Service) storedManifest(digest string) (manifest, bool) {
-	if cached, ok := s.manifests.Load(digest); ok {
-		if read, ok := cached.(manifest); ok {
-			return read, true
-		}
-	}
-	body, size, err := s.blobs.OpenBlob(digest)
-	if err != nil {
-		return manifest{}, false
-	}
-	defer body.Close()
-	if size > maxManifestBytes {
-		return manifest{}, false
-	}
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return manifest{}, false
-	}
-	read, err := parseManifest(data)
-	return read, err == nil
 }

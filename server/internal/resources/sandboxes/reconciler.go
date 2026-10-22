@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/imagecache"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"gorm.io/gorm"
 )
@@ -567,6 +569,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		},
 	}
 	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
+	opts.Bundles = sandboxBundlePins(sb)
 	opts.SpecFingerprint = sb.Fingerprint()
 	opts.PoolID = sb.PoolID
 	opts.Platform = sb.Platform
@@ -717,4 +720,21 @@ func setProviderState(sb *model.Sandbox, runtimeSandbox *Sandbox) {
 // rebuilds without starting, whatever the runtime last reported.
 func sandboxHasNeverRun(state string) bool {
 	return state == model.SandboxStatePending || state == model.SandboxStateAwaitingSource
+}
+
+// sandboxBundlePins is what the sandbox is pinned to as its pool addresses
+// it, the platform first. A pin with no content digest — a build-mode
+// development image, its own reference until a pool builds it — has nothing
+// to fetch and is left out, as the asset API leaves it out of scope.
+func sandboxBundlePins(sb *model.Sandbox) []BundlePin {
+	var pins []BundlePin
+	for _, pin := range []services.BundlePin{
+		{Reference: sb.PlatformBundle, Digest: sb.PlatformBundleDigest},
+		{Reference: sb.Bundle, Digest: sb.BundleDigest},
+	} {
+		if name := pin.Name(); name != "" && imagecache.IsDigest(pin.Digest) {
+			pins = append(pins, BundlePin{Name: name, Digest: pin.Digest})
+		}
+	}
+	return pins
 }

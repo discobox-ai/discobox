@@ -7,10 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -90,8 +88,54 @@ func newService(store *store.Store, opts Options, sources, resolvers []source) *
 	return s
 }
 
-// digestPattern is a digest this API addresses content by.
-var digestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+// OnPlatformMoved has moved run, detached from any read, each time the
+// release's platform reference resolves to a digest other than the one before,
+// the first resolution included. Set it before the service is used.
+func (s *Service) OnPlatformMoved(moved func(ctx context.Context)) {
+	s.platform.moved = func(string) { moved(context.Background()) }
+}
+
+// ResolvePlatform resolves the release's platform reference now, so the
+// sandboxes pinned to it follow a release the server starts on without
+// waiting for a read to ask (ADR 26-10-16-423 §7). A reference pinned by
+// digest never resolves, and is reported moved here instead.
+func (s *Service) ResolvePlatform(ctx context.Context) {
+	if s.platform.ref == "" {
+		return
+	}
+	if s.platform.fixed() != "" {
+		if s.platform.moved != nil {
+			go s.platform.moved(s.platform.fixed())
+		}
+		return
+	}
+	if _, err := s.platform.pins(ctx, true); err != nil {
+		slog.Warn("resolve the platform bundle", "reference", s.platform.ref, "error", err)
+	}
+}
+
+// CurrentPlatform is the platform bundle the release's reference resolves
+// to, asked again once the last answer is a minute old; zero when the server
+// names none.
+func (s *Service) CurrentPlatform(ctx context.Context) (services.BundlePin, error) {
+	if s.platform.ref == "" {
+		return services.BundlePin{}, nil
+	}
+	if _, err := s.platform.pins(ctx, false); err != nil {
+		return services.BundlePin{}, err
+	}
+	return s.LatestPlatform(), nil
+}
+
+// LatestPlatform is what the release's platform reference last resolved to,
+// without asking again; zero when it has not resolved.
+func (s *Service) LatestPlatform() services.BundlePin {
+	digest := s.platform.current()
+	if digest == "" {
+		return services.BundlePin{}
+	}
+	return services.BundlePin{Reference: s.platform.ref, Digest: digest}
+}
 
 // ResolveAssetName answers the manifest a bundle name in the pool's scope is
 // pinned to now, for registration and re-pinning: the platform's, resolved
@@ -104,7 +148,7 @@ func (s *Service) ResolveAssetName(ctx context.Context, poolID, name string) (se
 	if err != nil {
 		return services.AssetContent{}, err
 	}
-	if s.platform.ref != "" && bundleName(s.platform.ref) == name {
+	if s.platform.ref != "" && services.BundleName(s.platform.ref) == name {
 		digest, err := s.platform.newest(ctx)
 		if err != nil {
 			return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
@@ -137,7 +181,7 @@ func (s *Service) ResolveAssetName(ctx context.Context, poolID, name string) (se
 // AssetManifest answers a manifest by digest: a pin's own, or one its index lists,
 // under the name of that pin.
 func (s *Service) AssetManifest(ctx context.Context, poolID, name, digest string) (services.AssetContent, error) {
-	if !digestPattern.MatchString(digest) {
+	if !imagecache.IsDigest(digest) {
 		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("digest %q is not sha256:<64 hex>", digest))
 	}
 	pins, platformErr, err := s.scope(ctx, poolID)
@@ -171,7 +215,7 @@ func (s *Service) AssetManifest(ctx context.Context, poolID, name, digest string
 // AssetBlob answers a blob by digest when a manifest in the pool's scope
 // references it.
 func (s *Service) AssetBlob(ctx context.Context, poolID, digest string) (services.AssetContent, error) {
-	if !digestPattern.MatchString(digest) {
+	if !imagecache.IsDigest(digest) {
 		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("digest %q is not sha256:<64 hex>", digest))
 	}
 	pins, platformErr, err := s.scope(ctx, poolID)
@@ -206,7 +250,7 @@ func (s *Service) references(ctx context.Context, p pin, digest string) bool {
 		slog.Warn("asset pin unreadable", "reference", p.ref, "digest", p.digest, "error", err)
 		return false
 	}
-	if top.references(digest) {
+	if top.References(digest) {
 		return true
 	}
 	var missing []string
@@ -215,12 +259,12 @@ func (s *Service) references(ctx context.Context, p pin, digest string) bool {
 			missing = append(missing, child.Digest)
 			continue
 		}
-		if read, err := s.manifest(ctx, p, child.Digest); err == nil && read.references(digest) {
+		if read, err := s.manifest(ctx, p, child.Digest); err == nil && read.References(digest) {
 			return true
 		}
 	}
 	for _, child := range missing {
-		if read, err := s.manifest(ctx, p, child); err == nil && read.references(digest) {
+		if read, err := s.manifest(ctx, p, child); err == nil && read.References(digest) {
 			return true
 		}
 	}
@@ -258,31 +302,11 @@ func (s *Service) openManifest(ctx context.Context, p pin, digest string) (servi
 }
 
 func (s *Service) open(digest, mediaType string) (services.AssetContent, error) {
-	body, size, err := s.blobs.OpenBlob(digest)
+	body, size, err := s.blobs.OpenServedBlob(digest)
 	if err != nil {
 		return services.AssetContent{}, fmt.Errorf("open %s: %w", digest, err)
 	}
-	return services.AssetContent{MediaType: mediaType, Digest: digest, Size: size, Body: &damagedBlob{ReadCloser: body, blobs: s.blobs, digest: digest}}, nil
-}
-
-// damagedBlob gives up a blob whose bytes on disk turn out not to be its
-// digest's, so the next read fetches it again rather than failing the same
-// way. Its file is closed first: Windows does not remove a file that is open.
-type damagedBlob struct {
-	io.ReadCloser
-	blobs  *imagecache.Layout
-	digest string
-}
-
-func (d *damagedBlob) Read(p []byte) (int, error) {
-	n, err := d.ReadCloser.Read(p)
-	if err != nil && !errors.Is(err, io.EOF) {
-		_ = d.Close()
-		if removeErr := d.blobs.RemoveBlob(d.digest); removeErr != nil {
-			slog.Warn("remove damaged asset blob", "digest", d.digest, "error", removeErr)
-		}
-	}
-	return n, err
+	return services.AssetContent{MediaType: mediaType, Digest: digest, Size: size, Body: body}, nil
 }
 
 // ensure makes digest, a manifest or blob of p, present in the store, from
@@ -315,7 +339,7 @@ func (s *Service) ensure(ctx context.Context, p pin, digest string, isManifest b
 	return err
 }
 
-func (s *Service) has(digest string) bool { return present(s.blobs, digest) }
+func (s *Service) has(digest string) bool { return s.blobs.HasBlob(digest) }
 
 // resolve answers what ref names now, leaving its top-level manifest in the
 // store.

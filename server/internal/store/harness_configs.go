@@ -35,6 +35,26 @@ func (s *Store) ListHarnessConfigBundles(ctx context.Context) ([]model.HarnessCo
 	return configs, err
 }
 
+// ListSandboxBundles is the bundles the sandboxes of a project, or of every
+// project when projectID is empty, are pinned to, as each sandbox's ID and its
+// four bundle columns alone: what a pool of the project is answered and what
+// the asset store keeps blobs for (ADR 26-10-16-423 §§7, 13).
+func (s *Store) ListSandboxBundles(ctx context.Context, projectID string) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := read.Model(&model.Sandbox{}).
+		Select("id", "bundle", "bundle_digest", "platform_bundle", "platform_bundle_digest").
+		Where("bundle_digest <> '' OR platform_bundle_digest <> ''")
+	if projectID != "" {
+		query = query.Where("project_id = ?", projectID)
+	}
+	var sandboxes []model.Sandbox
+	err = query.Find(&sandboxes).Error
+	return sandboxes, err
+}
+
 func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

@@ -100,7 +100,7 @@ func TestSandboxDisplayNamePrefersTheMetaName(t *testing.T) {
 	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In" {
 		t.Fatalf("display name = %q, want the name the sandbox was given", got)
 	}
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestSandboxDisplayNamePrefersTheMetaName(t *testing.T) {
 
 func TestSandboxToAPIIncludesCalculatedDisplayName(t *testing.T) {
 	sandbox := titledSandbox(`[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","state":"running","attacherCount":0,"execStatus":"running"}]`)
-	out, err := SandboxToAPI(sandbox, nil)
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}

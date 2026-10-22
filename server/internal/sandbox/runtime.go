@@ -255,6 +255,17 @@ type CreateOptions struct {
 	// Platform is the sandbox's, which a pool-backed provider places by: a
 	// pool that hosts another platform refuses the sandbox (ADR 0145 §1).
 	Platform platform.Platform
+	// Bundles are the bundles the sandbox is pinned to, the platform's first
+	// and then its harness's (ADR 26-10-16-423 §§7, 13). A pool records them
+	// as what the box may fetch from assets.discobox.internal.
+	Bundles []BundlePin
+}
+
+// BundlePin is a bundle as the asset API addresses it: its name and the
+// manifest digest a sandbox is pinned to.
+type BundlePin struct {
+	Name   string
+	Digest string
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied
