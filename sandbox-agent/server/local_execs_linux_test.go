@@ -1,5 +1,9 @@
 package server
 
+// The local exec socket's rules are about one account against another, by the
+// peer's uid: a Linux sandbox's. Elsewhere a sandbox has one account, and the
+// socket serves no one (local_execs_peer_other.go).
+
 import (
 	"context"
 	"encoding/json"
@@ -12,8 +16,6 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/localexec"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
-
-func ptrInt64(v int64) *int64 { return &v }
 
 // The local socket serves and creates only the sandbox's default user's
 // execs: an exec running as anyone else is not there to list, attach to, type
@@ -135,3 +137,4 @@ func TestTheLocalSocketAdmitsAUserNamedWithoutAUID(t *testing.T) {
 		t.Fatal("another uid was admitted")
 	}
 }
+func ptrInt64(v int64) *int64 { return &v }
