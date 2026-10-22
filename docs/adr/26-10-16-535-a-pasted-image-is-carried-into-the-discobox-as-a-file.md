@@ -1,6 +1,7 @@
 # 26-10-16-535 — A pasted image is carried into the discobox as a file
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's exec of `sh -c 'cat > …'` superseded in part by
+  [26-10-22-499](26-10-22-499-a-discobox-has-a-files-api-that-acts-as-its-user.md))
 - **Date**: 2026-10-16
 
 ## Context
