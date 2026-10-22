@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"time"
@@ -83,6 +84,13 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 	// unconfigured, so they are visible but not selectable until configured.
 	if err := s.harnessConfigs.SeedBuiltIns(ctx, project.ID); err != nil {
 		return nil, err
+	}
+	// The server configuration file's gateways, now that the project its
+	// default handle names exists (ADR 26-10-17-271 §4).
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		return s.gateways.ApplyConfiguredGatewaysTx(ctx, txStore, txDB)
+	}); err != nil {
+		return nil, fmt.Errorf("apply the server configuration file's gateways: %w", err)
 	}
 	if opts.skipProvider {
 		return project, nil

@@ -407,8 +407,9 @@ type gatewayHeadersResponse struct {
 
 // ResolveGatewayHeaders asks the control plane for the server environment
 // values a sandbox's gateway sets headers from (ADR 26-10-16-470 §4). The
-// control plane checks the sandbox is this pool's and that its project's
-// gateway names each variable; any answer but 200 is no answer, which the
+// control plane checks the sandbox is this pool's, that its project's gateway
+// is one the server configuration file keeps (ADR 26-10-17-271 §3), and that
+// it names each variable; any answer but 200 is no answer, which the
 // proxy holds the request on rather than sending it without its headers.
 func (r *secretResolver) ResolveGatewayHeaders(ctx context.Context, req proxy.GatewayHeadersRequest) (map[string]string, error) {
 	rc, err := readResolveContext(r.contextPath)

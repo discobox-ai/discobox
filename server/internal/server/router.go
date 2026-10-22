@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/handlers"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -133,6 +134,9 @@ type AppOptions struct {
 	// discobox, which decides it, rather than
 	// refusing it. A refusal Jev is sure of stands either way.
 	JudgeJevFallback bool
+	// ConfiguredGateways is the server configuration file's gateways
+	// (ADR 26-10-17-271).
+	ConfiguredGateways gateways.Configured
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -224,6 +228,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Judging:                        opts.Judging,
 		JudgeJev:                       opts.JudgeJev,
 		JudgeJevFallback:               opts.JudgeJevFallback,
+		ConfiguredGateways:             opts.ConfiguredGateways,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 		OverlayDir:                     opts.OverlayDir,

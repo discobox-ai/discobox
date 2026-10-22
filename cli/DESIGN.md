@@ -918,9 +918,12 @@ visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
 `ssh-proxy` and `uninstall` are not root commands.
 
 `admin gateway` manages the project's gateways (ADR 26-10-16-470 §6): `set`
-is the API's `PUT`, so it replaces a gateway whole from its flags, and `get`
-shows a header taken from the server's environment as `env:VAR` — the value is
-the server's and never reaches the CLI.
+is the API's `PUT`, so it replaces a gateway whole from its flags, which take
+written header values only. `ls` and `get` show what manages each gateway; one
+the server configuration file keeps is changed only there, and is the only
+kind whose header comes from the server's environment, which `get` shows as
+`env:VAR` — the value is the server's and never reaches the CLI
+(ADR 26-10-17-271).
 
 `admin server` runs the API server process; `admin remote` is the registry of
 servers this client lists discoboxes from (ADR 0116 §3, spelled by ADR 0119).

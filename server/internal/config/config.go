@@ -252,6 +252,11 @@ type Config struct {
 	// duration, and that spelling is not ours to change. The file spells it as
 	// a duration like every other interval here.
 	OTelMetricExportInterval time.Duration `yaml:"otelMetricExportInterval" default:"1s" doc:"How often metrics are exported. The OTEL_METRIC_EXPORT_INTERVAL environment variable sets this too, in milliseconds, as the OpenTelemetry specification defines it."`
+
+	// Projects is what the server keeps on its projects, by handle: default
+	// or a project ID (ADR 26-10-17-271). No environment variable can spell
+	// it, so the file alone sets it.
+	Projects map[string]ProjectSettings `yaml:"projects" doc:"What the server keeps on its projects, keyed by default (the default user's default project) or a project ID. A project that does not exist is skipped with a warning. When default is a project also named by its ID, the entry under its ID applies." example:"{default: {gateways: {anthropic: {match: 'https://api.anthropic.com/v1', target: 'https://gateway.example.com/anthropic/v1', requestHeaders: {set: [{name: cf-aig-authorization, valueFrom: {env: DISCOBOX_GATEWAY_CF_TOKEN}}]}}}}}"`
 }
 
 // IrohSettings configures the iroh transport's reach.
@@ -531,6 +536,9 @@ func (c *Config) validate(configured func(string) bool) error {
 	}
 	if c.OTelMetricsEnabled && c.OTelMetricExportInterval <= 0 {
 		return fmt.Errorf("otelMetricExportInterval must be greater than 0")
+	}
+	if _, _, err := c.GatewayRoutes(); err != nil {
+		return err
 	}
 	switch c.JudgeBackend {
 	case JudgeBackendAuto:

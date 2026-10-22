@@ -37,9 +37,10 @@ func (h *Handler) GetProjectGateway(ctx context.Context, params serverapi.GetPro
 func (h *Handler) PutProjectGateway(ctx context.Context, req *apimodel.PutProjectGatewayBody, params serverapi.PutProjectGatewayParams) (serverapi.PutProjectGatewayRes, error) {
 	route := gateway.Route{Match: req.Match, Target: req.Target}
 	if headers, ok := req.RequestHeaders.Get(); ok {
-		var err error
-		if route.RequestHeaders, err = gatewayHeadersFromAPI(headers); err != nil {
-			return apiError(err), nil
+		route.RequestHeaders = gateway.HeaderModifier{
+			Remove: headers.Remove,
+			Set:    gatewayHeadersFromAPI(headers.Set),
+			Add:    gatewayHeadersFromAPI(headers.Add),
 		}
 	}
 	gw, err := h.services.Gateways.PutProjectGateway(ctx, params.ProjectId, params.GatewayName, route)
@@ -87,6 +88,7 @@ func projectGatewayToAPI(gw model.ProjectGateway) apimodel.ProjectGateway {
 			Set:    gatewayHeadersToAPI(gw.RequestHeaders.Set),
 			Add:    gatewayHeadersToAPI(gw.RequestHeaders.Add),
 		},
+		ManagedBy: serverapi.ProjectGatewayManagedBy(gw.ManagedBy),
 		CreatedAt: gw.CreatedAt,
 		UpdatedAt: gw.UpdatedAt,
 	}
@@ -110,27 +112,13 @@ func gatewayHeadersToAPI(headers []gateway.Header) []apimodel.GatewayHeader {
 	return out
 }
 
-func gatewayHeadersFromAPI(in apimodel.GatewayHeaderModifier) (gateway.HeaderModifier, error) {
-	set, err := gatewayHeaderListFromAPI(in.Set)
-	if err != nil {
-		return gateway.HeaderModifier{}, err
-	}
-	add, err := gatewayHeaderListFromAPI(in.Add)
-	if err != nil {
-		return gateway.HeaderModifier{}, err
-	}
-	return gateway.HeaderModifier{Remove: in.Remove, Set: set, Add: add}, nil
-}
-
-func gatewayHeaderListFromAPI(in []apimodel.GatewayHeader) ([]gateway.Header, error) {
+// gatewayHeadersFromAPI reads a put's headers, each a written value: only the
+// server configuration file takes one from the environment (ADR 26-10-17-271
+// §3).
+func gatewayHeadersFromAPI(in []apimodel.PutGatewayHeader) []gateway.Header {
 	var out []gateway.Header
 	for _, header := range in {
-		value, hasValue := header.Value.Get()
-		source, hasSource := header.ValueFrom.Get()
-		if hasValue == hasSource {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "header "+header.Name+" needs exactly one of value and valueFrom")
-		}
-		out = append(out, gateway.Header{Name: header.Name, Value: value, Env: source.Env})
+		out = append(out, gateway.Header{Name: header.Name, Value: header.Value})
 	}
-	return out, nil
+	return out
 }

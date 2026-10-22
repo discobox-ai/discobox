@@ -4521,7 +4521,8 @@ func (s *GatewayHeaderModifier) SetAdd(val []GatewayHeader) {
 	s.Add = val
 }
 
-// Where a header's value comes from when it is not written in the gateway.
+// Where a header's value comes from when it is not written in the gateway. Only a gateway the server
+// configuration file keeps has one (ADR 26-10-17-271 §3).
 // Ref: #/components/schemas/GatewayHeaderValueSource
 type GatewayHeaderValueSource struct {
 	// An environment variable of the Discobox server, named DISCOBOX_GATEWAY_<NAME>. The pool's proxy
@@ -11019,52 +11020,6 @@ func (o OptFloat64) Or(d float64) float64 {
 	return d
 }
 
-// NewOptGatewayHeaderModifier returns new OptGatewayHeaderModifier with value set to v.
-func NewOptGatewayHeaderModifier(v GatewayHeaderModifier) OptGatewayHeaderModifier {
-	return OptGatewayHeaderModifier{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptGatewayHeaderModifier is optional GatewayHeaderModifier.
-type OptGatewayHeaderModifier struct {
-	Value GatewayHeaderModifier
-	Set   bool
-}
-
-// IsSet returns true if OptGatewayHeaderModifier was set.
-func (o OptGatewayHeaderModifier) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptGatewayHeaderModifier) Reset() {
-	var v GatewayHeaderModifier
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptGatewayHeaderModifier) SetTo(v GatewayHeaderModifier) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptGatewayHeaderModifier) Get() (v GatewayHeaderModifier, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptGatewayHeaderModifier) Or(d GatewayHeaderModifier) GatewayHeaderModifier {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptGatewayHeaderValueSource returns new OptGatewayHeaderValueSource with value set to v.
 func NewOptGatewayHeaderValueSource(v GatewayHeaderValueSource) OptGatewayHeaderValueSource {
 	return OptGatewayHeaderValueSource{
@@ -14762,6 +14717,52 @@ func (o OptProjectSandboxUpgradePolicy) Get() (v ProjectSandboxUpgradePolicy, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptProjectSandboxUpgradePolicy) Or(d ProjectSandboxUpgradePolicy) ProjectSandboxUpgradePolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPutGatewayHeaderModifier returns new OptPutGatewayHeaderModifier with value set to v.
+func NewOptPutGatewayHeaderModifier(v PutGatewayHeaderModifier) OptPutGatewayHeaderModifier {
+	return OptPutGatewayHeaderModifier{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPutGatewayHeaderModifier is optional PutGatewayHeaderModifier.
+type OptPutGatewayHeaderModifier struct {
+	Value PutGatewayHeaderModifier
+	Set   bool
+}
+
+// IsSet returns true if OptPutGatewayHeaderModifier was set.
+func (o OptPutGatewayHeaderModifier) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPutGatewayHeaderModifier) Reset() {
+	var v PutGatewayHeaderModifier
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPutGatewayHeaderModifier) SetTo(v PutGatewayHeaderModifier) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPutGatewayHeaderModifier) Get() (v PutGatewayHeaderModifier, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPutGatewayHeaderModifier) Or(d PutGatewayHeaderModifier) PutGatewayHeaderModifier {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -20331,6 +20332,10 @@ type ProjectGateway struct {
 	// Where they go, as an http(s) URL of an origin and a path that replaces match's.
 	Target         string                `json:"target"`
 	RequestHeaders GatewayHeaderModifier `json:"requestHeaders"`
+	// What keeps the gateway: api, written through these routes, or config, kept by the server
+	// configuration file, which refuses a put or delete of it and a put of another gateway with its
+	// match (ADR 26-10-17-271 §3).
+	ManagedBy ProjectGatewayManagedBy `json:"managedBy"`
 	// Principal ID that first wrote the gateway.
 	CreatedBy OptString `json:"createdBy"`
 	// Creation timestamp.
@@ -20367,6 +20372,11 @@ func (s *ProjectGateway) GetTarget() string {
 // GetRequestHeaders returns the value of RequestHeaders.
 func (s *ProjectGateway) GetRequestHeaders() GatewayHeaderModifier {
 	return s.RequestHeaders
+}
+
+// GetManagedBy returns the value of ManagedBy.
+func (s *ProjectGateway) GetManagedBy() ProjectGatewayManagedBy {
+	return s.ManagedBy
 }
 
 // GetCreatedBy returns the value of CreatedBy.
@@ -20414,6 +20424,11 @@ func (s *ProjectGateway) SetRequestHeaders(val GatewayHeaderModifier) {
 	s.RequestHeaders = val
 }
 
+// SetManagedBy sets the value of ManagedBy.
+func (s *ProjectGateway) SetManagedBy(val ProjectGatewayManagedBy) {
+	s.ManagedBy = val
+}
+
 // SetCreatedBy sets the value of CreatedBy.
 func (s *ProjectGateway) SetCreatedBy(val OptString) {
 	s.CreatedBy = val
@@ -20431,6 +20446,50 @@ func (s *ProjectGateway) SetUpdatedAt(val time.Time) {
 
 func (*ProjectGateway) getProjectGatewayRes() {}
 func (*ProjectGateway) putProjectGatewayRes() {}
+
+// What keeps the gateway: api, written through these routes, or config, kept by the server
+// configuration file, which refuses a put or delete of it and a put of another gateway with its
+// match (ADR 26-10-17-271 §3).
+type ProjectGatewayManagedBy string
+
+const (
+	ProjectGatewayManagedByAPI    ProjectGatewayManagedBy = "api"
+	ProjectGatewayManagedByConfig ProjectGatewayManagedBy = "config"
+)
+
+// AllValues returns all ProjectGatewayManagedBy values.
+func (ProjectGatewayManagedBy) AllValues() []ProjectGatewayManagedBy {
+	return []ProjectGatewayManagedBy{
+		ProjectGatewayManagedByAPI,
+		ProjectGatewayManagedByConfig,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ProjectGatewayManagedBy) MarshalText() ([]byte, error) {
+	switch s {
+	case ProjectGatewayManagedByAPI:
+		return []byte(s), nil
+	case ProjectGatewayManagedByConfig:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ProjectGatewayManagedBy) UnmarshalText(data []byte) error {
+	switch ProjectGatewayManagedBy(data) {
+	case ProjectGatewayManagedByAPI:
+		*s = ProjectGatewayManagedByAPI
+		return nil
+	case ProjectGatewayManagedByConfig:
+		*s = ProjectGatewayManagedByConfig
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {
@@ -20801,7 +20860,80 @@ type PurgeSandboxNoContent struct{}
 
 func (*PurgeSandboxNoContent) purgeSandboxRes() {}
 
-// A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470).
+// One header a gateway put through the API sets or adds.
+// Ref: #/components/schemas/PutGatewayHeader
+type PutGatewayHeader struct {
+	// Header name.
+	Name string `json:"name"`
+	// The header's value.
+	Value string `json:"value"`
+}
+
+// GetName returns the value of Name.
+func (s *PutGatewayHeader) GetName() string {
+	return s.Name
+}
+
+// GetValue returns the value of Value.
+func (s *PutGatewayHeader) GetValue() string {
+	return s.Value
+}
+
+// SetName sets the value of Name.
+func (s *PutGatewayHeader) SetName(val string) {
+	s.Name = val
+}
+
+// SetValue sets the value of Value.
+func (s *PutGatewayHeader) SetValue(val string) {
+	s.Value = val
+}
+
+// The headers a gateway put through the API changes, as GatewayHeaderModifier, each with a written
+// value (ADR 26-10-17-271 §3).
+// Ref: #/components/schemas/PutGatewayHeaderModifier
+type PutGatewayHeaderModifier struct {
+	// Header names to remove.
+	Remove []string `json:"remove"`
+	// Headers to set, replacing any value the request has.
+	Set []PutGatewayHeader `json:"set"`
+	// Headers to add beside any value the request has.
+	Add []PutGatewayHeader `json:"add"`
+}
+
+// GetRemove returns the value of Remove.
+func (s *PutGatewayHeaderModifier) GetRemove() []string {
+	return s.Remove
+}
+
+// GetSet returns the value of Set.
+func (s *PutGatewayHeaderModifier) GetSet() []PutGatewayHeader {
+	return s.Set
+}
+
+// GetAdd returns the value of Add.
+func (s *PutGatewayHeaderModifier) GetAdd() []PutGatewayHeader {
+	return s.Add
+}
+
+// SetRemove sets the value of Remove.
+func (s *PutGatewayHeaderModifier) SetRemove(val []string) {
+	s.Remove = val
+}
+
+// SetSet sets the value of Set.
+func (s *PutGatewayHeaderModifier) SetSet(val []PutGatewayHeader) {
+	s.Set = val
+}
+
+// SetAdd sets the value of Add.
+func (s *PutGatewayHeaderModifier) SetAdd(val []PutGatewayHeader) {
+	s.Add = val
+}
+
+// A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470). A header
+// here takes a written value: a value from the server's environment is set only in the server
+// configuration file, and so is a gateway that file keeps (ADR 26-10-17-271 §3).
 // Ref: #/components/schemas/PutProjectGatewayBody
 type PutProjectGatewayBody struct {
 	// A URL to the JSON Schema for this object.
@@ -20811,8 +20943,8 @@ type PutProjectGatewayBody struct {
 	Match string `json:"match"`
 	// Where they go, as an http(s) URL of an origin and a path that replaces match's. No user, query, or
 	// fragment.
-	Target         string                   `json:"target"`
-	RequestHeaders OptGatewayHeaderModifier `json:"requestHeaders"`
+	Target         string                      `json:"target"`
+	RequestHeaders OptPutGatewayHeaderModifier `json:"requestHeaders"`
 }
 
 // GetSchema returns the value of Schema.
@@ -20831,7 +20963,7 @@ func (s *PutProjectGatewayBody) GetTarget() string {
 }
 
 // GetRequestHeaders returns the value of RequestHeaders.
-func (s *PutProjectGatewayBody) GetRequestHeaders() OptGatewayHeaderModifier {
+func (s *PutProjectGatewayBody) GetRequestHeaders() OptPutGatewayHeaderModifier {
 	return s.RequestHeaders
 }
 
@@ -20851,7 +20983,7 @@ func (s *PutProjectGatewayBody) SetTarget(val string) {
 }
 
 // SetRequestHeaders sets the value of RequestHeaders.
-func (s *PutProjectGatewayBody) SetRequestHeaders(val OptGatewayHeaderModifier) {
+func (s *PutProjectGatewayBody) SetRequestHeaders(val OptPutGatewayHeaderModifier) {
 	s.RequestHeaders = val
 }
 

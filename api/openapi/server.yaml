@@ -7471,6 +7471,12 @@ components:
                     type: string
                 requestHeaders:
                     $ref: '#/components/schemas/GatewayHeaderModifier'
+                managedBy:
+                    description: 'What keeps the gateway: api, written through these routes, or config, kept by the server configuration file, which refuses a put or delete of it and a put of another gateway with its match (ADR 26-10-17-271 §3)'
+                    enum:
+                        - api
+                        - config
+                    type: string
                 createdBy:
                     description: Principal ID that first wrote the gateway
                     type: string
@@ -7488,12 +7494,13 @@ components:
                 - match
                 - target
                 - requestHeaders
+                - managedBy
                 - createdAt
                 - updatedAt
             type: object
         PutProjectGatewayBody:
             additionalProperties: false
-            description: A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470).
+            description: 'A gateway as a whole, which replaces any gateway of the same name (ADR 26-10-16-470). A header here takes a written value: a value from the server''s environment is set only in the server configuration file, and so is a gateway that file keeps (ADR 26-10-17-271 §3).'
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -7510,10 +7517,44 @@ components:
                     example: https://gateway.example.com/anthropic/v1
                     type: string
                 requestHeaders:
-                    $ref: '#/components/schemas/GatewayHeaderModifier'
+                    $ref: '#/components/schemas/PutGatewayHeaderModifier'
             required:
                 - match
                 - target
+            type: object
+        PutGatewayHeaderModifier:
+            additionalProperties: false
+            description: The headers a gateway put through the API changes, as GatewayHeaderModifier, each with a written value (ADR 26-10-17-271 §3).
+            properties:
+                remove:
+                    description: Header names to remove
+                    items:
+                        type: string
+                    type: array
+                set:
+                    description: Headers to set, replacing any value the request has
+                    items:
+                        $ref: '#/components/schemas/PutGatewayHeader'
+                    type: array
+                add:
+                    description: Headers to add beside any value the request has
+                    items:
+                        $ref: '#/components/schemas/PutGatewayHeader'
+                    type: array
+            type: object
+        PutGatewayHeader:
+            additionalProperties: false
+            description: One header a gateway put through the API sets or adds.
+            properties:
+                name:
+                    description: Header name
+                    type: string
+                value:
+                    description: The header's value
+                    type: string
+            required:
+                - name
+                - value
             type: object
         GatewayHeaderModifier:
             additionalProperties: false
@@ -7552,7 +7593,7 @@ components:
             type: object
         GatewayHeaderValueSource:
             additionalProperties: false
-            description: Where a header's value comes from when it is not written in the gateway.
+            description: Where a header's value comes from when it is not written in the gateway. Only a gateway the server configuration file keeps has one (ADR 26-10-17-271 §3).
             properties:
                 env:
                     description: An environment variable of the Discobox server, named DISCOBOX_GATEWAY_<NAME>. The pool's proxy asks the server for its value when a request needs it and keeps it for five minutes; the value is never stored, listed, or sent to a discobox. A request whose variable the server does not set is refused with 502.
