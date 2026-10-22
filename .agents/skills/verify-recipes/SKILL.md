@@ -509,8 +509,8 @@ d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
   blobs/sha256/` in the pool container; `rm` or `dd conv=notrunc` a blob there
   to exercise refetch and the digest check (a damaged one is cut short, never
   whole). The socket is `/var/lib/discobox/proxy/projects/*/pools/*/assets.sock`.
-- A dev shell bundle has no layers; walk the platform index's amd64 child for
-  blobs. Clean up with `d rm` then `d admin box purge`.
+- A dev shell bundle has no layers; the dev platform bundle is one manifest
+  (the watcher exports no index), so walk its layers for blobs. Clean up with `d rm` then `d admin box purge`.
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 

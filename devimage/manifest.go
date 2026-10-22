@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 const (
@@ -148,7 +150,7 @@ func (m Manifest) Validate() error {
 		if strings.TrimSpace(bundle.Reference) == "" {
 			return fmt.Errorf("development image manifest bundle %d has no reference", i)
 		}
-		if !validDigest(bundle.Digest) {
+		if !imagecache.IsDigest(bundle.Digest) {
 			return fmt.Errorf("development image manifest bundle %q has invalid digest %q", bundle.Reference, bundle.Digest)
 		}
 		if !filepath.IsAbs(bundle.Layout) {
