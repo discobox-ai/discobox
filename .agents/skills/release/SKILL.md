@@ -144,8 +144,8 @@ Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
 is covered by the same grant. Ask for all of it in one request, so the human
 answers once and the release then runs without them.
 
-1. **Settle the version first.** The tag's use names it, and a version changed
-   after the grant is a second request. If the user did not name one and it is
+1. **Settle the version first.** The tag's statement names it, and a version
+   changed after the grant is a second request. If the user did not name one and it is
    not a plain patch bump, ask the patch-or-minor question now, not at the tag.
 2. **Request before anything else, in the background**, and run the local
    `ci:test` and `ci:check` while the human answers:
@@ -158,8 +158,28 @@ discobox-access request --json <<'EOF'
   "hosts": ["github.com"],
   "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
   "uses": [
-    {"description": "Release vX.Y.Z of discobox-ai/discobox. Read anything in the repository and in discobox-ai/homebrew-tap; push main and the annotated tag vX.Y.Z. Never force-push, push any other branch or tag, delete or move a tag, delete or edit a release, write to discobox-ai/homebrew-tap, or read secrets."}
+    {"description": "Release vX.Y.Z of discobox-ai/discobox"}
   ],
+  "statements": [
+    "allow read on anything in repository \"discobox-ai/discobox\"",
+    "allow read on anything in repository \"discobox-ai/homebrew-tap\"",
+    "allow push on branch \"main\" in repository \"discobox-ai/discobox\"",
+    "allow create on tag \"vX.Y.Z\" in repository \"discobox-ai/discobox\"",
+    "deny force-push, delete on branch in anywhere",
+    "deny update, delete on tag in anywhere",
+    "deny update, delete on release in anywhere",
+    "deny create, update, delete, push on anything in repository \"discobox-ai/homebrew-tap\"",
+    "deny read on secret in anywhere"
+  ],
+  "definitions": {
+    "repository": "a GitHub repository",
+    "branch": "a git branch in a repository",
+    "secret": "an Actions, Dependabot or environment secret",
+    "push": "create a branch or add commits to it, or move it with --force-with-lease",
+    "force-push": "move a branch with --force and no lease",
+    "tag": "a git tag in a repository",
+    "release": "a GitHub release, its notes and its assets"
+  },
   "wait": true,
   "timeoutSeconds": 3600
 }
@@ -169,17 +189,17 @@ EOF
 Each of these is shaped by something that went wrong on the release that wrote
 it down:
 
-- **The tag's use names a version, never a commit.** The release commit moves
-  whenever CI needs a fix or `main` moves under you — one release went through
+- **The tag's statement names a version, never a commit.** The release commit
+  moves whenever CI needs a fix or `main` moves under you — one release went through
   three candidate commits — and an approval naming one commit cannot honestly
   be stretched to another. §3's gate is what picks the commit.
 - **The justification says how long.** The approver picks the grant's lifetime
   and the request has no field for it. One grant lasted an hour, less than a
   release with a CI fix in it takes.
 - **Never two requests in flight.** One filed while another is still pending
-  comes back as that one — same request ID, same uses — and what it asked for
-  is never shown to anyone. If a use turns out to be missing, wait until
-  nothing is pending, then ask.
+  comes back as that one — same request ID, same policy — and what it asked
+  for is never shown to anyone. If a statement turns out to be missing, wait
+  until nothing is pending, then ask.
 - **`unavailable` with a control-plane 503 is a restart, not an answer.** The
   human never saw the request. Retry once before telling them to approve
   anything.

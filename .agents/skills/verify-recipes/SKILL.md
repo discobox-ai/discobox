@@ -453,13 +453,14 @@ harness, which has no model credential here, so a lead's call never gets a
 verdict. Use the isolated server above with `DISCOBOX_JUDGE_COMMANDS=false`
 in its env file. Then: `new -d -H shell` a lead; inside it,
 `discobox-access request --json` for `ai.discobox.sandbox` with the uses to
-drive (no `wait`); approve it from outside with `discobox secret request
-approve <id>`; read the use IDs with `discobox-access list --json` in the
+drive and a policy (no `wait`); approve it from outside with `discobox secret
+request approve <id> --policy-as-asked`; read the use IDs with `discobox-access list --json` in the
 lead; and run `discobox-access run --use <id> -- discobox …` there.
 
 - Ask for `ai.discobox.sandbox` with `--json` (`{"id":"ai.discobox.sandbox",
-  "justification":…,"uses":[…]}`): by flags it is refused for want of an env
-  var and a host.
+  "justification":…,"uses":[…],"statements":[…],"definitions":{…}}`, as
+  orchestrate-issues §1 writes one): by flags it is refused for want of an
+  env var and a host.
 - A lead answers only the requests of discoboxes it created (`403 … only the
   requests of discoboxes it created`): have it `discobox new` the worker, then
   approve the worker's request under a `secret grant create --delegate` grant
@@ -825,9 +826,11 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
   with `DISCOBOX_JUDGE_CREDENTIALS=true` in the env file; with the stub judge
   as the default harness, commands can stay judged too. The job's `facts` name
   the discobox a call targets (ADR 26-10-14-320 §5).
-- `discobox-access run` in a box triggers a command job. Have a box create a
-  child with `--grant` under a `purpose: delegate` grant to trigger a
-  delegation job.
+- `discobox-access run` in a box triggers a command job. A delegation job is
+  asked only for a condition code cannot compare: have a box create a child
+  with `--grant` and a `--grant-statement` whose allow words its `when`
+  otherwise than the `purpose: delegate` grant's (`secret grant create
+  --delegate --statement …`).
 - Approving `com.github.api` with a secret bound only to `api.github.com`
   needs `--hosts api.github.com`: the well-known credential's default hosts
   include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.

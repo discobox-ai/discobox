@@ -60,3 +60,9 @@ Global review expectations:
   every such artifact gets a check in `release:verify` that the release
   binary's own architecture has one.
 - Update package-local design docs when changing architecture or data model.
+- When a skill's credential ask is rewritten from a use into a policy, carry
+  every limit the use said — each "Never …", each "my …" or "this …" — into a
+  deny, a `created by $this`, or a condition: once a grant carries a policy,
+  the use's words limit nothing (`judge.Job.UnderPolicy` drops them), so a
+  limit left only in the use is gone. `internal/skillpolicies` checks the
+  sentences parse, not that they say enough.
