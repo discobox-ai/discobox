@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 func digestOf(data []byte) string {
@@ -57,7 +59,7 @@ func writeLayout(t *testing.T, manifests []map[string]string, blobs ...[]byte) s
 
 func TestLayoutDigestIsTheOneManifestItsIndexLists(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":2}`)
-	path := writeLayout(t, []map[string]string{{"mediaType": ociManifestMediaType, "digest": digestOf(manifest)}}, manifest)
+	path := writeLayout(t, []map[string]string{{"mediaType": imagecache.MediaTypeOCIManifest, "digest": digestOf(manifest)}}, manifest)
 	got, err := LayoutDigest(path)
 	if err != nil {
 		t.Fatal(err)
@@ -74,9 +76,9 @@ func TestLayoutDigestRefusesAnythingButOneManifest(t *testing.T) {
 	one := digestOf([]byte("one"))
 	for name, manifests := range map[string][]map[string]string{
 		"none":      {},
-		"two":       {{"mediaType": ociManifestMediaType, "digest": one}, {"mediaType": ociManifestMediaType, "digest": digestOf([]byte("two"))}},
+		"two":       {{"mediaType": imagecache.MediaTypeOCIManifest, "digest": one}, {"mediaType": imagecache.MediaTypeOCIManifest, "digest": digestOf([]byte("two"))}},
 		"an index":  {{"mediaType": "application/vnd.oci.image.index.v1+json", "digest": one}},
-		"no digest": {{"mediaType": ociManifestMediaType, "digest": "sha256:short"}},
+		"no digest": {{"mediaType": imagecache.MediaTypeOCIManifest, "digest": "sha256:short"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got, err := LayoutDigest(writeLayout(t, manifests)); err == nil {
@@ -120,7 +122,7 @@ func TestLayoutBlobsAreReadByTheDigestTheirNamesClaim(t *testing.T) {
 
 func TestCheckRefusesALayoutHoldingAnotherBundle(t *testing.T) {
 	manifest, other := []byte(`{"schemaVersion":2}`), []byte(`{"schemaVersion":2,"other":true}`)
-	path := writeLayout(t, []map[string]string{{"mediaType": ociManifestMediaType, "digest": digestOf(manifest)}}, manifest)
+	path := writeLayout(t, []map[string]string{{"mediaType": imagecache.MediaTypeOCIManifest, "digest": digestOf(manifest)}}, manifest)
 	if err := (Bundle{Reference: "b:dev", Digest: digestOf(manifest), Layout: path}).Check(); err != nil {
 		t.Fatalf("Check() = %v, want the layout accepted", err)
 	}

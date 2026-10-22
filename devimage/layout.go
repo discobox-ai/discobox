@@ -8,14 +8,8 @@ import (
 	"io"
 	"os"
 	"strings"
-)
 
-// The media types an OCI image layout's index lists a bundle under: one image
-// manifest, which is what a development build of a FROM scratch stage exports
-// (ADR 26-10-16-423 §2).
-const (
-	ociManifestMediaType    = "application/vnd.oci.image.manifest.v1+json"
-	dockerManifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // maxLayoutIndex bounds the index.json read from a layout: it lists one
@@ -57,10 +51,10 @@ func LayoutDigest(path string) (string, error) {
 			return "", fmt.Errorf("bundle layout %s lists %d manifests, not one bundle's", path, len(index.Manifests))
 		}
 		entry := index.Manifests[0]
-		if entry.MediaType != ociManifestMediaType && entry.MediaType != dockerManifestMediaType {
+		if entry.MediaType != imagecache.MediaTypeOCIManifest && entry.MediaType != imagecache.MediaTypeDockerManifest {
 			return "", fmt.Errorf("bundle layout %s lists a %s, not an image manifest", path, entry.MediaType)
 		}
-		if !validDigest(entry.Digest) {
+		if !imagecache.IsDigest(entry.Digest) {
 			return "", fmt.Errorf("bundle layout %s lists the manifest digest %q", path, entry.Digest)
 		}
 		return entry.Digest, nil
@@ -134,7 +128,7 @@ func layoutBlobDigest(header *tar.Header) (string, bool) {
 		return "", false
 	}
 	hex, ok := strings.CutPrefix(layoutName(header.Name), "blobs/sha256/")
-	if !ok || !validDigest("sha256:"+hex) {
+	if !ok || !imagecache.IsDigest("sha256:"+hex) {
 		return "", false
 	}
 	return "sha256:" + hex, true
@@ -142,21 +136,6 @@ func layoutBlobDigest(header *tar.Header) (string, bool) {
 
 func layoutName(name string) string {
 	return strings.TrimPrefix(name, "./")
-}
-
-// validDigest reports whether digest is a sha256 digest in its canonical
-// form: 64 lowercase hex digits.
-func validDigest(digest string) bool {
-	hex, ok := strings.CutPrefix(digest, "sha256:")
-	if !ok || len(hex) != 64 {
-		return false
-	}
-	for _, c := range hex {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
 }
 
 // Check reports whether bundle's layout still holds the bundle it records: a

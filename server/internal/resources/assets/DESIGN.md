@@ -100,7 +100,10 @@ flowchart LR
   published manifest names is never rewritten; the watcher removes it only
   once a manifest naming its successor's successor is published. Nothing is
   remembered between reads, so a blob pruned or found damaged is put back
-  from the layout.
+  from the layout — for the bundles of the manifest the server started with,
+  the only ones it holds as the release's. A sandbox still pinned to an
+  earlier development bundle is answered from what the store holds of it and
+  nothing else: its dev tag is no release reference, and no registry has it.
 - **Credentials**: the server's keychain pulls only the references the release
   names — the platform bundle and the built-in harnesses' bundles. A
   project-supplied reference is pulled anonymously: a project configures no
