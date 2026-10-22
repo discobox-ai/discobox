@@ -90,6 +90,10 @@ type Config struct {
 	// empty and nothing was looked for.
 	ConfigFile     string `yaml:"-"`
 	ConfigFileRead bool   `yaml:"-"`
+	// Warnings are what Load read and accepted but an operator should change:
+	// a retired key it still reads for one release (retiredKeys). The server
+	// logs them at startup, beside the file it read.
+	Warnings []string `yaml:"-"`
 
 	// Server settings.
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
@@ -125,7 +129,7 @@ type Config struct {
 	SandboxReconcileJobConcurrency int           `yaml:"sandboxReconcileJobConcurrency" env:"SANDBOX_RECONCILE_JOB_CONCURRENCY" default:"4" doc:"How many sandbox reconcile jobs run at once."`
 
 	// Sandbox settings.
-	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
+	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Retired in server.yaml, where it is read with a warning and refused from the next release: remove it rather than moving it to platformBundle, which names a platform bundle and not an image. Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
 	// PlatformBundle is the platform bundle every harness's manifest is
 	// composed on (ADR 26-10-16-423 §2): the one this build pins, unless
 	// configured or a release manifest names its own.
@@ -136,7 +140,7 @@ type Config struct {
 	// the digest is what lets such a sandbox report and take an upgrade
 	// (ADR 0016 §1's "a digest and not just a tag"). Empty when unknown, which
 	// simply means those sandboxes report no upgrade.
-	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
+	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Retired in server.yaml, where it is read with a warning and refused from the next release. Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
 
 	// JudgeCommands has the judge decide whether the command
 	// `discobox-access run` declares carries out the use it names, before the
@@ -356,6 +360,7 @@ func Load() (*Config, error) {
 		fromEnv["otelMetricExportInterval"] = true
 	}
 	configured := func(path string) bool { return fromFile[path] || fromEnv[path] }
+	cfg.Warnings = retiredKeyWarnings(fromFile)
 
 	// Defaults that are computed rather than literal, applied only where
 	// nothing claimed the field.
@@ -457,6 +462,28 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// retiredKeys are the server.yaml keys read for one release, with a warning,
+// before a release refuses them (ADR 26-10-16-423 §10), each with what to do
+// about it. They keep their meaning until then: the runnable images they name
+// still run, and platformBundle takes over their role with a bundle. The
+// warning is for the file alone, which is the operator's (ADR 0096); their
+// environment variables are how development points a server at its builds.
+var retiredKeys = []struct{ key, advice string }{
+	{"defaultSandboxImage", "a sandbox with no harness then runs this build's image; do not move its value to platformBundle, which names a platform bundle and not an image"},
+	{"defaultSandboxImageDigest", "it goes with defaultSandboxImage"},
+}
+
+// retiredKeyWarnings names each retired key the file set.
+func retiredKeyWarnings(fromFile map[string]bool) []string {
+	var warnings []string
+	for _, retired := range retiredKeys {
+		if fromFile[retired.key] {
+			warnings = append(warnings, fmt.Sprintf("%s is retired and the next release refuses it: remove it (%s)", retired.key, retired.advice))
+		}
+	}
+	return warnings
 }
 
 // HasIrohEndpoint reports whether listen names an iroh endpoint, the one

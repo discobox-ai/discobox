@@ -11,6 +11,7 @@ import (
 
 	"github.com/adrg/xdg"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
@@ -360,5 +361,39 @@ func TestAuthRequiredNeedsSomeoneToAuthenticate(t *testing.T) {
 	writeConfigFile(t, "authRequired: true\nlisten: ['"+local.Scheme+"://', 'iroh://']\n")
 	if cfg, err := Load(); err != nil || !cfg.AuthRequired {
 		t.Fatalf("Load() with an iroh endpoint = %v, %v; want authRequired on", cfg, err)
+	}
+}
+
+// server.yaml's defaultSandboxImage and its digest are retired (ADR
+// 26-10-16-423 §10): for one release a file that sets them still runs as it
+// did, with a warning for each, and the environment variables that share
+// their names warn of nothing.
+func TestRetiredSandboxImageKeysStillWorkWithAWarning(t *testing.T) {
+	const image = "ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	clearConfigEnv(t)
+	writeConfigFile(t, "defaultSandboxImage: "+image+"\ndefaultSandboxImageDigest: "+digest+"\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DefaultSandboxImage != image || cfg.DefaultSandboxImageDigest != digest {
+		t.Fatalf("DefaultSandboxImage = %q digest %q, want the file's", cfg.DefaultSandboxImage, cfg.DefaultSandboxImageDigest)
+	}
+	if cfg.PlatformBundle != harness.PlatformBundleRef() {
+		t.Fatalf("PlatformBundle = %q, want this build's: the retired key names a runnable image, never a bundle", cfg.PlatformBundle)
+	}
+	if len(cfg.Warnings) != 2 || !strings.Contains(cfg.Warnings[0], "defaultSandboxImage is retired") || !strings.Contains(cfg.Warnings[0], "platformBundle") || !strings.Contains(cfg.Warnings[1], "defaultSandboxImageDigest is retired") {
+		t.Fatalf("Warnings = %q, want one for each retired key", cfg.Warnings)
+	}
+
+	writeConfigFile(t, "port: 9999\n")
+	t.Setenv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", "discobox-sandbox-agent:dev")
+	t.Setenv("DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST", digest)
+	if cfg, err = Load(); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DefaultSandboxImage != "discobox-sandbox-agent:dev" || len(cfg.Warnings) != 0 {
+		t.Fatalf("DefaultSandboxImage = %q, Warnings = %q, want the environment's and no warning", cfg.DefaultSandboxImage, cfg.Warnings)
 	}
 }
