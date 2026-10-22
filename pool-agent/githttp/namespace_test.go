@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/gitbackend"
+	"github.com/discobox-ai/discobox/pkg/gitbackend"
 )
 
 // cacheFixture is one bare repository holding two sandboxes' namespaces, as a

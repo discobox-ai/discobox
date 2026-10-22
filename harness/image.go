@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxpath"
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // ImageAPIVersion is the contract version for the payload carried by

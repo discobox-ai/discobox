@@ -15,12 +15,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // What the request gave is forwarded verbatim. What it did not give stays

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/discobox-ai/discobox/configfile"
+	"github.com/discobox-ai/discobox/pkg/configfile"
 )
 
 // ExampleFileName is the reference a server writes beside the configuration

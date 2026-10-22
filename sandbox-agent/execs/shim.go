@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
 )

@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
 // releaseWithBundles writes v0.8.0's manifest with a bundle named for its
 // platform and each of its harnesses, as a release from bundles on has.
 func releaseWithBundles(t *testing.T) string {
 	t.Helper()
-	m, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+	m, err := releasemanifest.Read("../../../pkg/releasemanifest/examples/v0.8.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestReleaseManifestOverridesDevelopmentImageSettings(t *testing.T) {
 // any harness's from.
 func TestAReleaseFromBeforeBundlesIsRefused(t *testing.T) {
 	clearConfigEnv(t)
-	path, err := filepath.Abs("../../../releasemanifest/examples/v0.8.0.json")
+	path, err := filepath.Abs("../../../pkg/releasemanifest/examples/v0.8.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}

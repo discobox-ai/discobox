@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // The image build assembles the platform tree from sandbox-agent/features and

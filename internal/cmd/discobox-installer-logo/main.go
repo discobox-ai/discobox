@@ -1,7 +1,7 @@
 // Command discobox-installer-logo draws the console's mark into the install
 // scripts, as the escape sequences each language can carry (ADR 0110).
 //
-//	go generate ./installer
+//	go generate ./pkg/installer
 //
 // The mark is cell data in cli/internal/tui/logo.json, generated from a
 // terminal capture by scripts/logo-cells.mjs and rendered by the console through

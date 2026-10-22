@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/go-chi/chi/v5"
 
 	services "github.com/discobox-ai/discobox/server/internal/services"

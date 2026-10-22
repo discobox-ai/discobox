@@ -9,11 +9,11 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/registry"
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/version"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
-	"github.com/discobox-ai/discobox/version"
 
 	internalserver "github.com/discobox-ai/discobox/server/internal/server"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"

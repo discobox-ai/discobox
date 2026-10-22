@@ -10,7 +10,7 @@ transport helpers where OpenAPI does not model the stream.
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
 | `cmd/discobox-clipwatch` | The Windows clipboard helper the Linux CLI carries and runs from WSL (`internal/clipwatch`). Windows only. |
-| `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
+| `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `pkg/execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
 | `internal/sandboxapply` | `discobox apply`'s fetch: a source's sandbox commits fetched into the local repository under `refs/discobox/apply/<sandbox>/<slug>` (ADR 0014). |
 | `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
@@ -690,7 +690,7 @@ of the CLI/server binary version. An explicit `--binary` can run against its ima
 release manifest outranks a sibling binary: its matching `servers` entry supplies
 the verified download, including when this CLI is a development build. The manifest's image roles supply staging
 directly, including for development binaries, and the environment passes the
-same file to the server. See [release manifests](../releasemanifest/DESIGN.md).
+same file to the server. See [release manifests](../pkg/releasemanifest/DESIGN.md).
 
 The CLI does not contain the control plane. `discobox admin server` resolves a
 `discobox-server` binary and runs it as a child, passing through its stdio and
@@ -1175,7 +1175,7 @@ still this CLI's, and is parsed by the root — see
 ## Declared Tools (ADR 0125)
 
 `discobox tools git` and `tools ssh` are commands. Every other tool is a
-declaration in the root [`tools`](../tools) package's model, and
+declaration in the root [`tools`](../pkg/tools) package's model, and
 `discobox tools <id>` runs whichever declaration wins.
 
 ```mermaid
@@ -1412,11 +1412,11 @@ positional argument shared with the command itself (`shell`, resolved by
 ## Attach Stream Pattern
 
 Terminal and exec attach use the same framed stream protocol and the same
-session, `execstream/client`.
+session, `pkg/execstream/client`.
 
-- The session is not defined here either. `execstream/client` owns the attach
+- The session is not defined here either. `pkg/execstream/client` owns the attach
   session — output demux, resize tracking, signal forwarding, suspend — and
-  `execstream/frame` owns the wire format. This module supplies transports
+  `pkg/execstream/frame` owns the wire format. This module supplies transports
   (`directAttachFrames`, the reconnecting frames) and policy, and never
   re-declares a frame constant: the compiler cannot catch a mirror that has
   drifted, and a corrupted stream is the first symptom.
@@ -1481,7 +1481,7 @@ session, `execstream/client`.
   an option or callback to the shared session when the behavior is protocol
   plumbing; add resource-specific code only when the semantics differ.
 - Harness-terminal attaches use the shared reconnecting framed transport in
-  `execstream/resume`. It retries websocket failures with capped exponential
+  `pkg/execstream/resume`. It retries websocket failures with capped exponential
   backoff, restores resize/readiness state so the sandbox shim repaints the
   terminal, and stops retrying once the authoritative exec record is terminal.
 - The reconnect decision (`sandboxExecAttachDone`, consulted before every redial)
@@ -1506,7 +1506,7 @@ session, `execstream/client`.
   the client never starts a sandbox to keep an attach alive.
 - The way out of a terminal attach is the leader then `d` (`detachFilter`,
   `internal/cli/sandbox_terminals.go`), matched over the raw input bytes and
-  nothing else: `execstream/client` never learns the chord, and never learns
+  nothing else: `pkg/execstream/client` never learns the chord, and never learns
   where the leader came from. The leader is the console's
   (`internal/keys`, `App.leader`), resolved once from `DISCOBOX_LEADER` in
   `App.validate` so a misspelling is reported before a terminal is handed over,
@@ -1518,7 +1518,7 @@ session, `execstream/client`.
   a key programs want (Ctrl-P is history-back everywhere) and matches nothing
   the console does.
 - The other way out is repeated Ctrl-C, and it is the session's, not this
-  module's: `execstream/client` owns the escape because the evidence it needs
+  module's: `pkg/execstream/client` owns the escape because the evidence it needs
   is the stream's own (`execstream.Delivery` acknowledgements), and because a
   stalled attach must be escapable from the signal path too, where no input
   copier runs. Interrupts count only while the remote demonstrably has not
@@ -1565,7 +1565,7 @@ session, `execstream/client`.
   a low delivery RTT can exonerate the attach path, but the client cannot
   reliably correlate an arbitrary output frame to one keystroke or claim that
   the application echoed it. Follow the status interpretation and hysteresis
-  policy in [`execstream/resume/DESIGN.md`](../execstream/resume/DESIGN.md)
+  policy in [`pkg/execstream/resume/DESIGN.md`](../pkg/execstream/resume/DESIGN.md)
   when exposing these events in a CLI or TUI.
 
 ## Port Forwarding (ADR 0049)
@@ -1694,7 +1694,7 @@ droplet, the local Docker host — for debugging that backend
 ([ADR 0051](../docs/adr/0051-the-pool-console-attaches-through-the-driver.md)).
 
 It reuses the attach machinery rather than inventing a second one: the same
-`execstream/client.Session` with raw mode, resize tracking, and the leader-key
+`pkg/execstream/client.Session` with raw mode, resize tracking, and the leader-key
 detach chord that `discobox attach` uses, over a websocket to the control plane's
 console route. What differs is that there is no exec to create or start first
 and no reconnecting transport — the console container is persistent, so a

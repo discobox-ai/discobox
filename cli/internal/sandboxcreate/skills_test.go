@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 func writeSkillsTestFile(t *testing.T, path, content string, mode os.FileMode) {

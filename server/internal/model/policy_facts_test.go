@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 

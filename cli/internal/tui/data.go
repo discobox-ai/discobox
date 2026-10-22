@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/policy"
-	"github.com/discobox-ai/discobox/programstatus"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/review/source"
 	"github.com/discobox-ai/x/id"

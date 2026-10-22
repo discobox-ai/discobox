@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

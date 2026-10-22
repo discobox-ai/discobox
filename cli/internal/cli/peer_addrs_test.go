@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 func TestPeerAddrsRoundTrip(t *testing.T) {

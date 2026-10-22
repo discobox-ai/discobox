@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/resume"
 )
 
 const (

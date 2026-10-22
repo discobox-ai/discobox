@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 // tcp:connect is not udp:connect. The two tunnels share an authorization

@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/discobox-ai/discobox/policy"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // A rule answers requests nobody is shown, so the rules a project holds have

@@ -3,7 +3,7 @@ package agentstatus
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 

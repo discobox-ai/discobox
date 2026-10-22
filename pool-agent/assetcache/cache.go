@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
 // Fetch reads path, beneath the pool's asset prefix on the control plane

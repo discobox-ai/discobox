@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc"
 )

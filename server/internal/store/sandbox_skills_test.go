@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 

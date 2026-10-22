@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
 func TestAttachExitFrameReturnsExitCode(t *testing.T) {

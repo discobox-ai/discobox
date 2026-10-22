@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

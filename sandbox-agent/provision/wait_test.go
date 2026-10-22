@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 func writeStatus(t *testing.T, path string, status provisionspec.Status) {

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/releasemanifest"
-	"github.com/discobox-ai/discobox/serverstage"
-	"github.com/discobox-ai/discobox/version"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
+	"github.com/discobox-ai/discobox/pkg/version"
 )
 
 // The server is a separate program (ADR 0099). The CLI does not contain it; it

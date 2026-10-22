@@ -16,8 +16,8 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Power operations are instructions (ADR 0017 §9). They act and return whether

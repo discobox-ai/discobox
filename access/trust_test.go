@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 func TestTrustSendsHostUsesAndCA(t *testing.T) {

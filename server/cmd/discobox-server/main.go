@@ -8,8 +8,8 @@ import (
 	"slices"
 	"syscall"
 
+	"github.com/discobox-ai/discobox/pkg/version"
 	"github.com/discobox-ai/discobox/server"
-	"github.com/discobox-ai/discobox/version"
 )
 
 func main() {

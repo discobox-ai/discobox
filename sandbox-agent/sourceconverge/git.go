@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // repository is one source's checkout, and who git runs as in it.

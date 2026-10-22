@@ -16,9 +16,9 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/health"
-	"github.com/discobox-ai/discobox/version"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/pkg/version"
 )
 
 // statusLayerAPI is the one layer this command adds above the transport: an

@@ -54,7 +54,7 @@ carrying the sandbox's client certificate. Its `Dialer` is how anything in a
 sandbox reaches a pool service — the bridge, and the credentials relay in
 `sandbox-agent/credentials` — and it has two layers:
 
-- **Transport**, chosen by the URL's scheme through [`wire`](../wire), the same
+- **Transport**, chosen by the URL's scheme through [`wire`](../pkg/wire), the same
   place every other transport in the system is chosen: `https://host:port`
   dials TCP (a Docker pool's `https://discobox-pool-proxy:17080`),
   `vsock://cid:port` an AF_VSOCK context, and `unix:///path` a socket, so a
@@ -496,7 +496,7 @@ Key properties:
   (assets) refuses anything but GET and HEAD with a 405 before the upstream
   sees it. No swap, no cache, no gateway; the response is audited on the
   ordinary response path, and an unreachable upstream is a 502. An `Upstream`
-  is a [`wire`](../wire) URL: the pool points origins at a loopback listener
+  is a [`wire`](../pkg/wire) URL: the pool points origins at a loopback listener
   of its agent's, which also takes the pool's sandbox token, and assets at a
   Unix socket. This proxy sends a sandbox's ordinary egress from the same
   network namespace, so a loopback port is one a sandbox can reach with a
@@ -838,7 +838,7 @@ passes `order=asc` for a follower reading forward from a `since` bound and
 refuses them.
 
 A row's ID is written `http_<row>` wherever it leaves this package
-([`auditid`](../auditid)): `audit.HTTPExchange.ID` is an integer in the database
+([`auditid`](../pkg/auditid)): `audit.HTTPExchange.ID` is an integer in the database
 and in Go, and the prefixed string in JSON and on every path and parameter that
 names a record. The integer is what the write order and the cursor need; the
 prefix is what makes an ID say which trail it came from, beside the `cvd_` and

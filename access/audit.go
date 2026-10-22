@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // runAudit reads this sandbox's own outbound requests back from the

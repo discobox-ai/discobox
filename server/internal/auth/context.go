@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 type principalKey struct{}

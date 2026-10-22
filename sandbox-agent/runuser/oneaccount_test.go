@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // The single-account resolver is the one darwin and windows use. It is built

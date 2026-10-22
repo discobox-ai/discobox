@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // The sandbox's data root is its $HOME, and unarchiving is a create against a

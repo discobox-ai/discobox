@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	idpkg "github.com/discobox-ai/x/id"
 )
 

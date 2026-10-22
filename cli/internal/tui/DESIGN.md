@@ -2317,7 +2317,7 @@ picture of the screen, and the program's own redraw behind it.
 Taking the size takes it *from* the other client, which is the same bargain a
 resize always was: one terminal, one size, last one to say wins. Between two
 windows that is symmetric — whoever presses Ctrl-L next takes it back. A
-`discobox attach --raw` on the other end is not: `execstream/client.Session`
+`discobox attach --raw` on the other end is not: `pkg/execstream/client.Session`
 sends a size only when its own terminal changes and has no repaint to ask with,
 so it cannot take the size back without its user physically resizing the
 window. Giving it the same two frames is what would close that, and is not done

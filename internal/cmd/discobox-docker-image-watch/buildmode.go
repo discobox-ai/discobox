@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 // BuildModeEnv forces development image build-mode on or off, overriding the

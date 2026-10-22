@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/sandboxservices"
+	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // forwardSandboxes is the listing with the first sandbox serving something, so

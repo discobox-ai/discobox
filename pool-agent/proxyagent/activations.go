@@ -4,9 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/secretformat"
-	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // activationTTL is how long one ephemeral sentinel stays usable. It is the

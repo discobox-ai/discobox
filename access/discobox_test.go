@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/agentcreds"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // workerFacts is a discobox a lead created from discobox-ai/discobox at main,

@@ -22,9 +22,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/runcca"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
-	"github.com/discobox-ai/discobox/runcca"
 )
 
 // ociState is what runc feeds a hook on stdin.

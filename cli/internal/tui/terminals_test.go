@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // The leader plus c opens another of the discobox's own terminals, beside the

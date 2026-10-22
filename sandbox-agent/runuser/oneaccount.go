@@ -5,7 +5,7 @@ import (
 	osuser "os/user"
 	"strings"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // currentOSUser is who this process is, as the OS names it. It is a variable

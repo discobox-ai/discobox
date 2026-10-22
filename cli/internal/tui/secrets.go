@@ -9,9 +9,9 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/secretformat"
-	"github.com/discobox-ai/discobox/secretroute"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"

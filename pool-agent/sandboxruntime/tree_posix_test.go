@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/discobox-ai/discobox/tarsums"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 )
 
 // A symlink an archive creates must not become a way for a later entry in the

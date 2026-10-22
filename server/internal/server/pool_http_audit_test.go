@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/discobox-ai/discobox/server/internal/sandbox"

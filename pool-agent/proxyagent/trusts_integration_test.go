@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

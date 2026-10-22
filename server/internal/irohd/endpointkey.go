@@ -23,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/privatefs"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // endpointKeyFileName is the server's persistent iroh identity inside its data

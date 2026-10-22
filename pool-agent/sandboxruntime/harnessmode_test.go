@@ -11,8 +11,8 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Only a sandbox created in a mode other than run carries the harness-mode

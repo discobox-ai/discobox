@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/agentcreds"
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // Host trust (ADR 0149): the hosts a discobox trusts by a pin, and the asks

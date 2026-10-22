@@ -12,15 +12,15 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcejudges "github.com/discobox-ai/discobox/server/internal/resources/judges"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // noRules is a judge that reads no approval rule, for the fakes that judge

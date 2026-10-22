@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/discobox-ai/discobox/provisionspec"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // The bundle trees a box provisions at boot: the platform's, and the

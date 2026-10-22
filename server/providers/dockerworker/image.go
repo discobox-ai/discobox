@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
 // DefaultPoolImage is the default pool-agent container image launched by the

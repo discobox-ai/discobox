@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"

@@ -10,8 +10,8 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/discobox-ai/discobox/gitbackend"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/gitbackend"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 const (

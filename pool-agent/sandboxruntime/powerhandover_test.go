@@ -3,7 +3,7 @@ package sandboxruntime
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // The document hands a sandbox its power only once its status advertised it,

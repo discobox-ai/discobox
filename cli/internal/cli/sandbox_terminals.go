@@ -13,9 +13,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 
 	"github.com/spf13/cobra"
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 

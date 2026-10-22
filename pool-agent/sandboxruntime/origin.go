@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // sourceCachesFileName records, per sandbox, which of this pool's Git caches

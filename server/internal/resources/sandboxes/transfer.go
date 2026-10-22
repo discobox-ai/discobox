@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxmeta"
-	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
+	"github.com/discobox-ai/discobox/pkg/version"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -20,8 +22,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/tarsums"
-	"github.com/discobox-ai/discobox/version"
 	"github.com/discobox-ai/x/id"
 )
 

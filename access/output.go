@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // emitter renders results and failures in whichever mode the caller asked for.

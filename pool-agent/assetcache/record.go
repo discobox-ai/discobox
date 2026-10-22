@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
 // RecordFileName is, per sandbox, the bundles it is pinned to (ADR

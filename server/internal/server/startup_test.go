@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/pkg/health"
 )
 
 // Until the router exists, every request is answered with what startup is

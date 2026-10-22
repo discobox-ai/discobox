@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
 // ExitCode reports the exit status the CLI should exit with silently, which is

@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/version"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/version"
 )
 
 // versionServerTimeout bounds how long a version waits for the server to say

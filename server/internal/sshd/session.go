@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	sandboxgen "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"

@@ -3,7 +3,7 @@
 How a box is provisioned from its features
 ([ADR 26-10-16-423](../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
 §§3–6). What a feature's `provision.yaml` may say, and the `provision.json`
-document, are the root [`provisionspec`](../../provisionspec) contract; this
+document, are the root [`provisionspec`](../../pkg/provisionspec) contract; this
 package is what is done with them.
 
 ## Steps

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // A refresh request asks for a new value of a token the project holds

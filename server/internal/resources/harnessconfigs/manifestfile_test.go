@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
 )
 
 // overlayManifest is a darwin overlay's manifest file: the sandbox agent's base

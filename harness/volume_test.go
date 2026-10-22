@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 var testRuntime = VolumeRuntime{Home: "/home/darren", UID: 1000, GID: 1000}

@@ -14,13 +14,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/controlplane"
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/controlplane"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

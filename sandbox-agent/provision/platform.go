@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Platform is what a step's selector is matched against: the box's GOOS and

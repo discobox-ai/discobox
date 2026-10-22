@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // originTestRequest is a sandbox with a cache-delivered primary from a

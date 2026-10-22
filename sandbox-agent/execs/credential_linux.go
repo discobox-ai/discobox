@@ -5,8 +5,8 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // The credential an exec is launched with is Linux's: a sandbox there runs

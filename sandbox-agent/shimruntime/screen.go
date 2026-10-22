@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/vt"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // DefaultScrollbackLines bounds the history a repaint snapshot carries. A late

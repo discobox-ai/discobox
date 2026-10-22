@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
 

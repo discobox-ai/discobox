@@ -35,7 +35,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // The identity vocabulary is shared with the manifest and the pool agent, so it

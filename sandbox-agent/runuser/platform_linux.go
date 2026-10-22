@@ -1,6 +1,6 @@
 package runuser
 
-import "github.com/discobox-ai/discobox/sandboxuser"
+import "github.com/discobox-ai/discobox/pkg/sandboxuser"
 
 // Identity is every field a run identity has on this platform, which is what
 // a caller that launches a process and describes it asks Resolve for. On Linux

@@ -22,8 +22,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/discobox-ai/discobox/declared"
-	"github.com/discobox-ai/discobox/sandboxservices"
+	"github.com/discobox-ai/discobox/pkg/declared"
+	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 	"github.com/discobox-ai/x/frontmatter"
 )
 

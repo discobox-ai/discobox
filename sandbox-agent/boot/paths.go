@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // sandboxPaths judges paths inside this sandbox. Boot runs inside it, so the

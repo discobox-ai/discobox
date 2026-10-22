@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/fsdurable"
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // RecordsDir is where a box keeps what has been applied to it. It is on the

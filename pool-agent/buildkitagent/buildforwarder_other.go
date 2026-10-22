@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 // A per-build forwarder is built out of network namespaces, setns, and process

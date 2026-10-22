@@ -12,8 +12,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/discobox-ai/discobox/configfile"
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/configfile"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // The generated schema and the loader describe the same surface. If they can

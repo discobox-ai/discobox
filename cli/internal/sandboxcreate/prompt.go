@@ -11,12 +11,12 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/randomname"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
-	"github.com/discobox-ai/discobox/sandboxuser"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/randomname"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
 // PromptOptions describes the client-side inputs used to create a sandbox for

@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/controlplane"
-	"github.com/discobox-ai/discobox/execstream/client"
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/releasemanifest"
-	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/pkg/controlplane"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
 
 func (a *App) newServerCommand() *cobra.Command {
@@ -101,7 +101,7 @@ const serverStopGrace = 30 * time.Second
 // takes a server down holding its provider state and the data directory's
 // singleton lock; this change's own launch path documents what that costs, in
 // the widened start window a replacement needs while the previous server is
-// still draining (endpoint/autolaunch.go). WaitDelay is the backstop for a
+// still draining (pkg/endpoint/autolaunch.go). WaitDelay is the backstop for a
 // server that will not stop being asked.
 func runServerProcess(cmd *cobra.Command, path string, env []string) error {
 	//nolint:gosec // The path is the resolved server binary; see serverResolver.

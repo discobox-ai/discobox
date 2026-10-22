@@ -24,7 +24,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/discobox-ai/discobox/installer"
+	"github.com/discobox-ai/discobox/pkg/installer"
 )
 
 func main() {

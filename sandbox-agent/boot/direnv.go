@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // seedDirenvConfig whitelists the sandbox's own source trees in the run user's

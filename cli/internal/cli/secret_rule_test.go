@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // policyJSON is a policy as the API carries it, from its sentences and the

@@ -9,7 +9,7 @@ Decision records: [ADR 0025](../../docs/adr/0025-the-sandbox-user-is-one-contrac
 [ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md).
 
 The type, the layer precedence, and the `Fields` vocabulary belong to
-[`sandboxuser`](../../sandboxuser/DESIGN.md) in the root module. This package
+[`sandboxuser`](../../pkg/sandboxuser/DESIGN.md) in the root module. This package
 adds the half that needs the image: completion against its `/etc/passwd` and
 `/etc/group`. `runuser.User`, `Layers`, and `Fields` are aliases of the
 `sandboxuser` types, not parallel ones.

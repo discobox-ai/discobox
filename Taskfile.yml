@@ -966,7 +966,7 @@ tasks:
           # build context, and counting it hid a missing COPY.
           copied="$(awk -v stage="$stage" '
             /^FROM / { current = ""; for (i = 2; i < NF; i++) if (toupper($i) == "AS") current = $(i + 1) }
-            /^COPY [a-z]/ && current == stage { split($2, parts, "/"); print parts[1] }' "$dockerfile" | sort -u)"
+            /^COPY [a-z]/ && current == stage { split($2, parts, "/"); print (parts[1] == "pkg" ? parts[1] "/" parts[2] : parts[1]) }' "$dockerfile" | sort -u)"
           if [ -z "$copied" ]; then
             missing="$missing$dockerfile: no stage named $stage copies anything; the stage that builds $module was renamed
         "
@@ -974,7 +974,7 @@ tasks:
           fi
           for dep in $(cd "$module" && go list -deps ./... |
                          sed -n 's|^github.com/discobox-ai/discobox/||p' |
-                         cut -d/ -f1 | sort -u); do
+                         awk -F/ '{ print ($1 == "pkg" ? $1 "/" $2 : $1) }' | sort -u); do
             if ! printf '%s\n' "$copied" | grep -qx "$dep"; then
               missing="$missing$dockerfile: $module imports $dep, which nothing copies into the build context
         "
@@ -1255,7 +1255,7 @@ tasks:
       # Both binaries carry the release version: the CLI prints it, the server
       # answers it on /healthz, and the CLI compares the two to decide whether
       # the running server is older than the one it would start.
-      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}{{end}}
+      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}{{end}}
       # A release build autolaunches a server; a development build never does
       # (cli/internal/cli/server_autolaunch_test.go).
       CLI_LDFLAGS: -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
@@ -1318,13 +1318,13 @@ tasks:
           fi
           set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
           # Export from a host build even when the server asset targets Windows.
-          go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}" \
+          go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}" \
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
           manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
           go build -trimpath \
-          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/serverstage.DefaultManifest=$manifest}" \
+          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}" \
           -o "../{{.OUT}}" {{.CLI_MAIN}}
         cd ..
         if [ -n "$manifest" ]; then

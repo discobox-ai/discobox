@@ -4,7 +4,7 @@
 SSH server (`golang.org/x/crypto/ssh`) that maps SSH session channels onto the
 existing exec primitive and serves `direct-tcpip` through the sandbox-agent's
 `/tcp/attach` endpoint. The sandbox runs no `sshd` — every SSH primitive here
-is translated into the same `execs` primitive and `execstream/frame` codec the
+is translated into the same `execs` primitive and `pkg/execstream/frame` codec the
 CLI already drives.
 
 It binds no listener. The one way in is `GET /ssh/connect` on the API router
@@ -164,7 +164,7 @@ converts a signal death to the shell convention (128+signum), so
 `tcpip.go`'s `handleDirectTCPIPChannel` unmarshals the RFC 4254 §7.2
 payload, authorizes with `tcp:connect`, and dials the sandbox-agent's
 `/tcp/attach?host=&port=` endpoint via the same `dialFrameWebSocket` helper
-session channels use — reusing `execstream/frame`'s
+session channels use — reusing `pkg/execstream/frame`'s
 `Input`/`Stdout`/`CloseInput`/`CloseOutput` rather than raw bytes is
 specifically what lets a half-close cross this tunnel (a websocket has none of
 its own; TCP does, and `rsync`-shaped protocols depend on it). An

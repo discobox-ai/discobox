@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/bridge"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 const poolServerName = "discobox-pool-proxy"

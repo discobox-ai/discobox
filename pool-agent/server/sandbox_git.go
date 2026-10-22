@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/discobox-ai/discobox/gitbackend"
+	"github.com/discobox-ai/discobox/pkg/gitbackend"
 	"github.com/discobox-ai/discobox/pool-agent/githttp"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"

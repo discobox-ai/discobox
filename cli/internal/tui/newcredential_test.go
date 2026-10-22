@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // onNewCredentialForm is whether the card up is the new-secret form a request

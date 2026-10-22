@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	tea "charm.land/bubbletea/v2"
 )

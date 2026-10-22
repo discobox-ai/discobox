@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 // TestStampBuildModeImagesProducesBuildableManifest runs build-mode against the

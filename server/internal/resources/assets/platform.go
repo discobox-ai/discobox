@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
 // platformPins is the platform bundle the release pins, as the digests its

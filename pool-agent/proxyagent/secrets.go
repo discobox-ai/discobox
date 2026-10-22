@@ -18,14 +18,14 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/proxy/gateway"
-	"github.com/discobox-ai/discobox/secretroute"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

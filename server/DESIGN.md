@@ -118,7 +118,7 @@ Current proxy routes:
 - `/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach?host=&port=`
   forwards the websocket upgrade to the sandbox-agent `/tcp/attach` endpoint,
   which dials `host:port` from inside the sandbox's network namespace and
-  speaks `execstream/frame` over it (ADR 0024 §§3-4). It is that tunnel exposed
+  speaks `pkg/execstream/frame` over it (ADR 0024 §§3-4). It is that tunnel exposed
   at the HTTP edge for clients that are not speaking SSH; `internal/sshd`
   reaches the same endpoint in-process for `direct-tcpip` channels. Everything
   past the handshake is the tunnel's own framing, so the server validates the
@@ -132,7 +132,7 @@ Current proxy routes:
 
 `/api/projects/{projectId}/pools/{poolId}/console` is hand-wired next to the
 proxies above but is not one of them: nothing is forwarded to a pool agent. The
-control plane terminates the websocket itself and pumps `execstream/frame`
+control plane terminates the websocket itself and pumps `pkg/execstream/frame`
 between the client and a TTY the provider opened on the pool host
 (`server/providers/DESIGN.md#pool-host-console`), so the console answers on a
 host whose pool agent never came up — the case an operator opens one for.
@@ -361,7 +361,7 @@ set independently of the server binary version. It takes precedence over image
 settings, disables development image sync, and supplies harness seeding and
 provider image pins from the same inventory. Startup stages those images before
 service initialization and exposes the download phase through startup health.
-See [release manifests](../releasemanifest/DESIGN.md).
+See [release manifests](../pkg/releasemanifest/DESIGN.md).
 
 `config.Load` resolves three layers in order: literal defaults from struct
 tags, then the configuration file, then the environment. The environment wins
@@ -396,7 +396,7 @@ field tagged `yaml:"-"` is derived rather than configured. A setting with no
 literal default and no boolean type must carry an example, and every example
 must decode as its setting's type.
 The walk over them — decode, environment overlay, reference and schema — is the
-root module's [`configfile`](../configfile), shared with the CLI's
+root module's [`configfile`](../pkg/configfile), shared with the CLI's
 `client.yaml`. `internal/config/genschema` emits two artifacts from the same
 walk the loader binds, so a setting cannot be loadable and undocumented: `server/config.schema.json`
 for an editor, and `server/server.example.yaml`, the commented reference listing

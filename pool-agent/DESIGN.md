@@ -25,7 +25,7 @@ from the in-sandbox `sandbox-agent` API.
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
-| `githttp` | Serves a source's origin through the shared [`gitbackend`](../gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
+| `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It never fetches. See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
@@ -43,7 +43,7 @@ from the in-sandbox `sandbox-agent` API.
 1. The pool provider starts the pool container with the `poolagent.Bootstrap`
    contract rendered as `DISCOBOX_*` environment variables, which `FromEnv`
    reads back. The control plane and the agent's listener are one URL each, and
-   the scheme alone picks the transport ([`wire`](../wire), in the root
+   the scheme alone picks the transport ([`wire`](../pkg/wire), in the root
    module).
 2. Before systemd boots, the agent writes the proxy unit's environment and
    prepares the proxy CA bundle and the BuildKit/registry configuration, then
@@ -1322,7 +1322,7 @@ flowchart LR
   means the image's own account
   ([ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §§4–5). This is structural rather than a rule to remember: `resolveSandboxUser`
-  calls [`sandboxuser.Merge`](../sandboxuser/DESIGN.md), which performs no
+  calls [`sandboxuser.Merge`](../pkg/sandboxuser/DESIGN.md), which performs no
   lookups, and this module cannot import the resolver at all
   ([ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) §4).
 - Absent is absent, all the way onto the wire. `DISCOBOX_USER_*` is stamped only

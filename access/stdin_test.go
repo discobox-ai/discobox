@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // What a command reads on stdin is shown to the judge (ADR 26-09-27-905): for

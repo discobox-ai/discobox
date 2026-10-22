@@ -13,11 +13,11 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/execstream"
-	"github.com/discobox-ai/discobox/execstream/client"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/resume"
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/execstream"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // Open connects a terminal for one of this CLI's own commands — apply — drawn

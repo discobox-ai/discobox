@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
 // Removal is by reference (ADR 26-10-16-423 §13): a blob leaves the store

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/x/shorttmp"
 )
 

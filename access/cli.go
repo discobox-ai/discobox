@@ -51,8 +51,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/discobox-ai/discobox/agentcreds"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // Name is how the CLI refers to itself in help and diagnostics.

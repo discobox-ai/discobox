@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

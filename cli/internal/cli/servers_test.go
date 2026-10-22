@@ -10,7 +10,7 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // useTempServersFile points the registered servers at a directory of the

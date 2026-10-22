@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 const envFile = ".env"

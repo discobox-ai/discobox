@@ -3,7 +3,7 @@ package dockerworker
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 func testImage(reference string, args map[string]string) devimage.Image {

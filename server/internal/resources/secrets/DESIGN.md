@@ -849,7 +849,7 @@ default, so a limit somebody chose is kept.
 ## What a host scope covers
 
 A host on a grant, a secret, or an approved use is a **scope**, read by the
-root [`hostscope`](../../../../hostscope) package: it covers itself and
+root [`hostscope`](../../../../pkg/hostscope) package: it covers itself and
 everything beneath it, and never its parent. `github.com` answers for
 `api.github.com`; `api.github.com` answers for neither `github.com` nor
 `uploads.github.com`.

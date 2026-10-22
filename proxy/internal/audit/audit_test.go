@@ -11,7 +11,7 @@ import (
 
 	"github.com/discobox-ai/x/gormdb"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 )
 
 func TestRecorderDropsInsteadOfBlocking(t *testing.T) {

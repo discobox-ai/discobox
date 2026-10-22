@@ -3,7 +3,7 @@ package sandboxruntime
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 // withTestRoot is a pool container's filesystem relocated under a temporary

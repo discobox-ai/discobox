@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // irohIdentityFileName is this machine's iroh identity: the key whose public

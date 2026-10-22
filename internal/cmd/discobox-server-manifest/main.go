@@ -44,8 +44,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/discobox-ai/discobox/releasemanifest"
-	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
 
 type stringList []string

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/host"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/host"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // screenPipe returns a pipe standing in for the PTY master: EnableScreen

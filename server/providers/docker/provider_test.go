@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"

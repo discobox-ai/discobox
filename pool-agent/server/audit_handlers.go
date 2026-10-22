@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/go-chi/chi/v5"
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"

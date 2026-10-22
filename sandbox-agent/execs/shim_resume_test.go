@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/execstream"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/resume"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 )
 

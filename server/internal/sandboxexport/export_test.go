@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // tarOf builds an archive from name -> content, the shape a pool agent's tree

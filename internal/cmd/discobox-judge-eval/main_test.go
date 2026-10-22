@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 )
 
 // Every recorded case loads as the runner asks it, its policy included: each

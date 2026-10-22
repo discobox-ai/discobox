@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // TestMain lets the test binary stand in for the agent's git-credential mode,

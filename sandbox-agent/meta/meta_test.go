@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
 func TestReadMissingFileIsEmptyMeta(t *testing.T) {

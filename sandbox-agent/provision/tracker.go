@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Tracker is what a run reports as it goes, and the box's provision.json

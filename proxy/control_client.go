@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 )
 

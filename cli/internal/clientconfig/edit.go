@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/discobox-ai/discobox/configfile"
+	"github.com/discobox-ai/discobox/pkg/configfile"
 )
 
 // ErrNoFile is an edit with nowhere to write: FileVar set empty, which reads

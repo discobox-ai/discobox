@@ -5,9 +5,9 @@ import (
 	"path"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxshell"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxshell"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // shellLauncher is the image's `discobox-shell`: it runs the shell a client

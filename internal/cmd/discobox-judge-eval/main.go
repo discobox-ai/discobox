@@ -26,7 +26,7 @@
 // The wrapper is any harness's discobox-prompt — harness/claude-code/prompt.sh,
 // harness/codex-cli/prompt.sh — run with this environment, so its CLI and its
 // credentials are whatever this environment has. With -jev it asks TypeSafe's
-// Jev instead, the way a server that judges with Jev does (judge/jev), with
+// Jev instead, the way a server that judges with Jev does (pkg/judge/jev), with
 // the key in DISCOBOX_JEV_API_KEY. It exits 1 when any run answered what its
 // case does not accept.
 package main
@@ -47,9 +47,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/judge/jev"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/judge/jev"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // Expectation is what a correct judge may answer a case with.

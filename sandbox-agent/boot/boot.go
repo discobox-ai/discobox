@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Wire is a pool container's boot: discobox-wire.service runs it from the

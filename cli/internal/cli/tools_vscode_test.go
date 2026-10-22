@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // fakeEditor puts a `code` on PATH that records the arguments it was run with,

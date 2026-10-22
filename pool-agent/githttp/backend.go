@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"slices"
 
-	"github.com/discobox-ai/discobox/gitbackend"
+	"github.com/discobox-ai/discobox/pkg/gitbackend"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 )

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 )
 

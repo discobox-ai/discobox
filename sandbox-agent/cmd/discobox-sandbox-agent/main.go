@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/boot"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"

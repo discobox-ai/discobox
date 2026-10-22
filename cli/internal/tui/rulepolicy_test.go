@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // mustPolicy is the policy lines a rule is edited in say, for a fixture.

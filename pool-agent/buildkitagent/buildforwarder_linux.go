@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"golang.org/x/sys/unix"
 )

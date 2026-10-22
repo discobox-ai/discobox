@@ -12,7 +12,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
 )
 
 func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
