@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
 ---
 
 # Verifying the console
@@ -890,3 +890,32 @@ wake_at, wake_epoch from sandboxes where id='<sbx>'"` every 10s.
   `wake_epoch`; nothing starts it at the wake time.
 - Idle is the same path with `reason=idle`, but the dev pool's 30-minute
   timeout cannot be shortened in place (see the runtime-config section).
+
+# Verifying the files API (`sandbox-agent/files`, `.../files/*`)
+
+Drive it through the dev loop's server with curl, as the default user
+(ScopeAll), on a box made after the image watcher has rebuilt the
+sandbox-agent and harness images (`.env`'s `DISCOBOX_DEFAULT_SANDBOX_IMAGE`
+and `DISCOBOX_HARNESS_SHELL_IMAGE` tags exist in `docker images`; a box
+created while the tag is still being built fails with `No such image`).
+
+```bash
+B=http://127.0.0.1:8080/api/projects/default/sandboxes/<sbx_id>/files
+curl -s "$B/stat?path=~"
+printf hi | curl -s -X PUT -H 'Content-Type: application/octet-stream' \
+  --data-binary @- "$B/content?path=notes/a.md&parents=true"
+curl -s "$B/content?path=/etc/shadow" -w ' [%{http_code}]\n'   # 403: runs as the user
+d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, not root
+```
+
+- There is no `discobox exec`; `shell <id> <command…>` runs one, and needs
+  `</dev/null` from a tool shell.
+- The CLI's callers: a user tool script (`$XDG_CONFIG_HOME/discobox/tools/<n>.sh`,
+  `tools <n> --discobox-id <id>`), a tool's `files:` (a `.yaml` tool with the
+  default under `tools/<id>/`), a pasted image (console recipe above), and
+  harness configure (`go tool task build:harness-stub-image`, `admin harness
+  create --bundle discobox-harness-stub:local --image
+  discobox-harness-stub-image:local`, `admin harness configure stub` twice in
+  tmux: the second run prints the seeded previous config). Delete the stub
+  harness after purging its archived `configure-*` boxes, which hold it.
+
