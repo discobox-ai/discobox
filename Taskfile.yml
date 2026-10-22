@@ -635,7 +635,9 @@ tasks:
   dev:docker-image-watch:
     desc: Build and continuously rebuild pool, sandbox, and harness development images
     cmds:
-      - go run ./internal/cmd/discobox-dev-lock docker-image-watch go run ./internal/cmd/discobox-docker-image-watch
+      # The watcher runs buildx:builder only in local-build mode (Linux by
+      # default). macOS/Windows send build recipes to the pool without Docker.
+      - go run ./internal/cmd/discobox-dev-lock docker-image-watch go run ./internal/cmd/discobox-docker-image-watch -bundle-builder {{.BUILDX_BUILDER}}
 
   dev:pool-agent-image-watch:
     desc: Alias for dev:docker-image-watch

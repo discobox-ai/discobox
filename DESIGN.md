@@ -420,6 +420,12 @@ Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.
 
+In local-build mode (the Linux default), the watcher prepares `buildx:builder`
+and selects it explicitly for OCI bundle exports. Runnable images retain the
+host Docker builder and its local parent images. macOS and Windows default to
+describing builds for the pool and do not initialize or require host Docker;
+`DISCOBOX_DEV_DOCKER_IMAGE_BUILD` overrides the platform's mode.
+
 The pool VM guest — the kernel, initrd, and root filesystem a VM-backed pool
 boots — is built from [`vm-image/`](vm-image/DESIGN.md) and released on its own
 `vm/v*` line with its own workflow (ADR 0062 §3); the server pins its digest. It

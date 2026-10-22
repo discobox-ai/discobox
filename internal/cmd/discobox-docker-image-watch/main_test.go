@@ -39,6 +39,12 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	gotNames := make([]string, 0, len(specs))
 	gotEnvKeys := map[string]bool{}
 	for _, spec := range specs {
+		if spec.bundle && !strings.Contains(strings.Join(spec.buildArgs, " "), "--builder "+*bundleBuilder+" ") {
+			t.Errorf("%s does not select the OCI bundle builder: %v", spec.name, spec.buildArgs)
+		}
+		if !spec.bundle && contains(spec.buildArgs, "--builder") {
+			t.Errorf("%s overrides the runnable-image builder: %v", spec.name, spec.buildArgs)
+		}
 		gotNames = append(gotNames, spec.name)
 		if spec.envImageKey == "" {
 			t.Fatalf("%s does not update an image reference in .env", spec.name)

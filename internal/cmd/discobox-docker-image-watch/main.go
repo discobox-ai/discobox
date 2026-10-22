@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
@@ -23,6 +24,8 @@ import (
 
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
+
+var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder for local OCI bundle exports")
 
 // bundleLayoutDir is where the watcher exports each bundle, as the OCI image
 // layout tar <name>/<hex>.tar named by the digest of the manifest it holds,
@@ -101,6 +104,7 @@ var harnessImages = []harnessImage{
 }
 
 func main() {
+	flag.Parse()
 	log.SetFlags(0)
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
@@ -119,6 +123,13 @@ func run(ctx context.Context) error {
 	}
 	if len(specs) == 0 {
 		return errors.New("no Docker images configured")
+	}
+	// Only local builds need host Docker. macOS and Windows default to
+	// describing builds for the pool, and Linux can opt into that mode too.
+	if !buildModeEnabled() {
+		if err := runCommand(ctx, repoRoot, "go", "tool", "task", "buildx:builder", "BUILDX_BUILDER="+*bundleBuilder); err != nil {
+			return fmt.Errorf("prepare bundle builder: %w", err)
+		}
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -622,10 +633,10 @@ func digestLayout(layoutDir, digest string) string {
 // is involved: a bundle is applied by the sandbox agent, never run (ADR
 // 26-10-16-423 §13). Neither provenance nor an SBOM is attached, so the
 // layout's index lists the one manifest the bundle is pinned by. The OCI
-// exporter needs BuildKit able to export one: the containerd image store, or a
-// builder other than the docker driver, which buildx says when it is neither.
+// exporter uses the docker-container builder prepared at watcher startup,
+// independently of the host daemon's image store and runnable-image builds.
 func bundleBuildArgs(layoutDir string, args ...string) []string {
-	return append([]string{"buildx", "build", "--provenance=false", "--sbom=false",
+	return append([]string{"buildx", "build", "--builder", *bundleBuilder, "--provenance=false", "--sbom=false",
 		"--output", "type=oci,dest=" + partialLayout(layoutDir)}, args...)
 }
 
