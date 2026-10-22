@@ -8,9 +8,9 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/dnsforward"
 	"github.com/discobox-ai/discobox/proxy"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (

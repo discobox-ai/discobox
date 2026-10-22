@@ -12,7 +12,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 // tunnelTestServer stands in for the control-plane route, speaking the

@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {

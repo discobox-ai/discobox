@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/moby/moby/client"
 )

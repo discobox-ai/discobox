@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 type fakeAdmission map[endpoint.IrohID]bool

@@ -7,10 +7,10 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // copilotHosts are the two sites Copilot CLI sends one GitHub token to, which

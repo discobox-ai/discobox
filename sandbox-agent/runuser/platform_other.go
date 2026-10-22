@@ -5,7 +5,7 @@ package runuser
 import (
 	"runtime"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // Identity is every field a run identity has on this platform, which is what

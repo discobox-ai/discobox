@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 )
 
 // Held answers which sandboxes the control plane still holds on this pool.

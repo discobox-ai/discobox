@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // skipWithoutPOSIXIDs skips a test that describes a Linux sandbox's identity:

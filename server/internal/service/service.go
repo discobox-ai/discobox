@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/discobox-ai/discobox/devimage"
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/judge/jev"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"

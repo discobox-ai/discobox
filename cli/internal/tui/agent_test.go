@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 func agentBoxes() []Sandbox {

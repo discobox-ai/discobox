@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"

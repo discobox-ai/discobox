@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	sandboxtools "github.com/discobox-ai/discobox/tools"
+	sandboxtools "github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // toolDirs are where this sandbox's tools are declared: the image's, and the

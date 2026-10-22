@@ -13,8 +13,8 @@ import (
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (

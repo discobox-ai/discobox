@@ -11,7 +11,7 @@ import (
 	"time"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"

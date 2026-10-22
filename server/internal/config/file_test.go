@@ -11,8 +11,8 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/discobox-ai/discobox/controlplane"
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/controlplane"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // writeConfigFile writes a configuration file and points Load at it.

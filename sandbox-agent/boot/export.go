@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/sandboxtree"
-	"github.com/discobox-ai/discobox/tarsums"
+	"github.com/discobox-ai/discobox/pkg/sandboxtree"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 )
 
 // exportMountPaths are where the export mode reads each subtree it may be asked

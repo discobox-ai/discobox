@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // createSecret is one project secret, marked with a well-known ID or not.

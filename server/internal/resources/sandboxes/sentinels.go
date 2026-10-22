@@ -6,7 +6,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/store"

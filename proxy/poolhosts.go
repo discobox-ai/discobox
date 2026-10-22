@@ -10,9 +10,9 @@ import (
 	"github.com/elazarl/goproxy"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 // PoolHostConfig names a host the pool answers its sandboxes at itself: its

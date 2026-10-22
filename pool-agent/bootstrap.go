@@ -15,10 +15,10 @@ import (
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/controlplane"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/controlplane"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

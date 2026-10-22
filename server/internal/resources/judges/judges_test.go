@@ -16,8 +16,8 @@ import (
 	"gorm.io/gorm"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"

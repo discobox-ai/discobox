@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/discobox-ai/discobox/wire"
+	"github.com/discobox-ai/discobox/pkg/wire"
 )
 
 // DialConfig names a pool service and the sandbox material that authenticates

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // A uid with no account cannot have its primary group resolved, and the old

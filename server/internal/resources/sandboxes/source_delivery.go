@@ -10,13 +10,13 @@ import (
 	"unicode"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
-	"github.com/discobox-ai/discobox/sourcecache"
 )
 
 // sourceDataKey identifies the durable pool-local data shared by every sandbox

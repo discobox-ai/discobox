@@ -34,7 +34,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/discobox-ai/discobox/gitbackend"
+	"github.com/discobox-ai/discobox/pkg/gitbackend"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 )
 

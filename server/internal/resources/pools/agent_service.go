@@ -14,9 +14,9 @@ import (
 	"github.com/go-faster/jx"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
-	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"

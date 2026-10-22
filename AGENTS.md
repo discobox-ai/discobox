@@ -33,9 +33,13 @@
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
 - `access`: nested Go module for `discobox-access`, the in-sandbox client of the agent credentials protocol.
 - `termpane`: nested Go module; a reusable Bubble Tea component that draws a live terminal from any stream. No dependency on the rest of the repository.
-- Other root-module packages (`execstream`, `harness`, `proxy`, `agentcreds`,
-  `sandboxconfig`, `sandboxuser`, `runcca`, `endpoint`, and more): shared
-  cross-module contracts and components; see the package map in `DESIGN.md`.
+- `pkg`: the root module's shared cross-module library packages (`pkg/execstream`,
+  `pkg/agentcreds`, `pkg/sandboxconfig`, `pkg/sandboxuser`, `pkg/runcca`,
+  `pkg/endpoint`, and more); see the package map in `DESIGN.md`. New shared
+  packages go here, not at the repository root.
+- `harness`, `proxy`: root-module components kept at the root because each is
+  a component in its own right (one Docker image context per harness; the pool
+  proxy) rather than a library package.
 - `internal/cmd`: development and build tools, under `internal` because they are
   this repository's own and nothing outside it should build them:
   `discobox-docker-image-watch` (local base, pool-agent, sandbox-agent, and

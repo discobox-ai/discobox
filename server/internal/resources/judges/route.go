@@ -17,9 +17,9 @@ import (
 	"github.com/go-faster/jx"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/judge/jev"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"

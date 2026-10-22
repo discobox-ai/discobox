@@ -3,7 +3,7 @@ package execs
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // A macOS exec inherits the agent's own account, so even a resolved user

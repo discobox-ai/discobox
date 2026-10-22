@@ -15,12 +15,12 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/policy"
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/proxy/egress"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )

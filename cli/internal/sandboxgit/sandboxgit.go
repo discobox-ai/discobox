@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/sourcecache"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 )
 
 // SourcePushBranch is the branch a delivered source's commits land on when

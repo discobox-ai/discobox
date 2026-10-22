@@ -10,7 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // newToolsCommand groups the commands that run a development tool against a

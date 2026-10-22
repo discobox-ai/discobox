@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy"
-	"github.com/discobox-ai/discobox/secretroute"
 )
 
 func TestUpsertAndRemoveSentinels(t *testing.T) {

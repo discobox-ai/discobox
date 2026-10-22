@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/uselines"
-	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/policy"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"

@@ -13,8 +13,8 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/secretroute"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // secretRenewalOptions is how a token is renewed: how long a value lasts, and

@@ -54,7 +54,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"golang.org/x/term"
 )
 

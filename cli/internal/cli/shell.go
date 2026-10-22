@@ -8,8 +8,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	idpkg "github.com/discobox-ai/x/id"
 )
 

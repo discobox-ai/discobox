@@ -18,8 +18,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/filelock"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // `discobox admin uninstall` takes back everything Discobox keeps on this machine

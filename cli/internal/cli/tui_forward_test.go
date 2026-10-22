@@ -12,7 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 // forwardTestServer answers the two requests a launcher forward makes: what the

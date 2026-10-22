@@ -22,9 +22,9 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the

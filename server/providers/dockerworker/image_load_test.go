@@ -19,8 +19,8 @@ import (
 
 	"github.com/moby/moby/api/types/jsonstream"
 
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache/imagecachetest"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"

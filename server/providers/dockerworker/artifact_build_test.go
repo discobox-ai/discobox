@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 // The arguments are checked before a daemon is contacted, so a

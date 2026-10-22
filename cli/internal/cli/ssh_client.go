@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/endpoint"
-	execclient "github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	execclient "github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
 // sshClientSession is what an OpenSSH client this command starts needs to

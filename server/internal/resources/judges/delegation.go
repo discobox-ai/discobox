@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"

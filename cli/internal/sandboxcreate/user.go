@@ -11,8 +11,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/sandboxuser"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 

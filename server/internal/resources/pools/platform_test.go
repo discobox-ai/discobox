@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
 )
 
 // A pool agent declares the one platform its pool hosts (ADR 0145 §1). One

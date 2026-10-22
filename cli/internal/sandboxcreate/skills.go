@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // userSkillDirectories are the home-relative directories --user-skills reads,

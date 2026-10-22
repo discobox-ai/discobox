@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // A volume path is a path inside the sandbox, judged by the sandbox's platform:

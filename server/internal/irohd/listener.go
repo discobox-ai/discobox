@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // ListenerWatch keeps an eye on this server's iroh listener and reports what it

@@ -46,8 +46,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // DefaultSandboxJSON is the sandbox's static bootstrap manifest.

@@ -15,7 +15,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // sourceDeclaresTools is a sandbox whose primary source declares a reviewer of

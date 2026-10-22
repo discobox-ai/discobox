@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
 // pushGuestImage serves an in-process registry holding one image with the given

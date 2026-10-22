@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // An approval rule's policy as a card edits it (ADR 26-10-12-330): one line

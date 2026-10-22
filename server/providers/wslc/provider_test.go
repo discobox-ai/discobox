@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )

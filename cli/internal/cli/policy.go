@@ -11,7 +11,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // policyFromAPI is a policy as the API carries it, in the policy package's

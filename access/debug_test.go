@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // --debug prints the call a command makes, both ways, on stderr, and leaves

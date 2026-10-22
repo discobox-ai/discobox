@@ -12,7 +12,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
-	"github.com/discobox-ai/discobox/sandboxshell"
+	"github.com/discobox-ai/discobox/pkg/sandboxshell"
 )
 
 func testSandboxWithID(id string) apimodel.Sandbox {

@@ -38,7 +38,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"

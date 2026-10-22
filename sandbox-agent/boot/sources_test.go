@@ -3,8 +3,8 @@ package boot
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // The bug this pins: a sandbox whose manifest named no user had no source

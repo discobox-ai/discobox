@@ -3,7 +3,7 @@ package config
 import (
 	"reflect"
 
-	"github.com/discobox-ai/discobox/configfile"
+	"github.com/discobox-ai/discobox/pkg/configfile"
 )
 
 // SchemaID is where the generated schema is published, and what a

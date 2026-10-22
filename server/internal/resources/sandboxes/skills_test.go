@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	"github.com/discobox-ai/discobox/server/internal/services"

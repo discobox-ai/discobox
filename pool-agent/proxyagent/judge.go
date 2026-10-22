@@ -15,9 +15,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 // Asking the project's judge (ADR 26-09-22-838 §4).

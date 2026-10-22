@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 func readDirenvConfig(t *testing.T, home string) (string, bool) {

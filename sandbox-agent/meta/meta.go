@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
 // ErrInvalidFile is a meta file that exists but is not valid. A write refuses

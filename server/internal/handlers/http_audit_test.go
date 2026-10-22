@@ -6,7 +6,7 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	svcapi "github.com/discobox-ai/discobox/server/internal/services"
 )

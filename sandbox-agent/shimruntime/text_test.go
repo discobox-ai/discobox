@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 func screenRuntime(t *testing.T, rows, cols uint16) *Runtime {

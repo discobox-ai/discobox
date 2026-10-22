@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 

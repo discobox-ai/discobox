@@ -24,13 +24,13 @@ import (
 
 	"github.com/moby/moby/client"
 
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
-	guestvsock "github.com/discobox-ai/discobox/vsock"
-	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

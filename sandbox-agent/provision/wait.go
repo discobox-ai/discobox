@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // waitPoll is how often a waiter reads provision.json again.

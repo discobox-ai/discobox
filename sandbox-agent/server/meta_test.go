@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
-	"github.com/discobox-ai/discobox/sandboxmeta"
 )
 
 func metaHandler(t *testing.T, home string) *handler {

@@ -10,7 +10,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )

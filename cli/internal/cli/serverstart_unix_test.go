@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/health"
-	"github.com/discobox-ai/discobox/releasemanifest"
-	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -166,7 +166,7 @@ func TestAutolaunchKeepsSelectedOlderServerAcrossInvocations(t *testing.T) {
 			manifest, fetches := servedManifest(t, "v0.8.0")
 			selected := serverSource{manifest: manifestFile(t, manifest)}
 			if source != "legacy" {
-				full, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+				full, err := releasemanifest.Read("../../../pkg/releasemanifest/examples/v0.8.0.json")
 				if err != nil {
 					t.Fatal(err)
 				}

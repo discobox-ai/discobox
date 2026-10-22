@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // A tool's configuration lives on this machine, not in the project and not in

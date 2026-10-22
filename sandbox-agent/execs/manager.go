@@ -16,14 +16,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/x/id"
 )
 

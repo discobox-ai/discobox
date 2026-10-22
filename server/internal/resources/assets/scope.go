@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 

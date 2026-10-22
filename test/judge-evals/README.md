@@ -14,7 +14,7 @@ go tool task eval:judge -- -case 'approve-*' -json /tmp/report.json -logs /tmp/j
 ```
 
 Jev is asked directly, the way a server with `judgeBackend: jev` asks it
-(`judge/jev`), with the key in `DISCOBOX_JEV_API_KEY`:
+(`pkg/judge/jev`), with the key in `DISCOBOX_JEV_API_KEY`:
 
 ```bash
 go tool task eval:judge:jev                         # one run per case

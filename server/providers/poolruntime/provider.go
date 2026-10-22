@@ -22,7 +22,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"

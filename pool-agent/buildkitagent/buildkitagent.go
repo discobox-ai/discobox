@@ -21,7 +21,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 const (

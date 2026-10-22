@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // factsTimeout bounds every git lookup gatherFacts makes, combined. A fact

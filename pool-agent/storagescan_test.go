@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 func testScanner(poolID string) *storageScanner {

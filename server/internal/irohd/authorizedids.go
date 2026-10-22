@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // authorizedIDsFileName is the server-wide list of peer IDs allowed to connect

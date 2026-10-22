@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/discobox-ai/discobox/runcca"
+	"github.com/discobox-ai/discobox/pkg/runcca"
 )
 
 // runCAAnchor is discobox-ca-anchor, which establishes trust for a CA inside a

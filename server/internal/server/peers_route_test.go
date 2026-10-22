@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // The /peers routes through the real router.

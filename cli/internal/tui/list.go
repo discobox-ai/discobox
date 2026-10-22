@@ -9,8 +9,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/programstatus"
-	"github.com/discobox-ai/discobox/sandboxservices"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // sandboxList is the upper pane: every sandbox in the project, newest-created

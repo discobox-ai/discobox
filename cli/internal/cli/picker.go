@@ -17,8 +17,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // errPickCanceled reports that the user dismissed a picker without choosing.

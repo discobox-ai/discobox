@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // selfIdentity is a home directory owned by whoever runs the test. seedGitConfig

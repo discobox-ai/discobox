@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/controlplane"
-	"github.com/discobox-ai/discobox/devimage"
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/controlplane"
+	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/x/gormdb"
 )
 

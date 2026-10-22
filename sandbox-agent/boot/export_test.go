@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sandboxtree"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxpath"
-	"github.com/discobox-ai/discobox/sandboxtree"
-	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // What stays behind is named by where boot stores each declared path, so the

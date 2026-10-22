@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 
 	tea "charm.land/bubbletea/v2"
 )

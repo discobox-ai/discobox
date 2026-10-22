@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/discobox-ai/discobox/health"
-	"github.com/discobox-ai/discobox/version"
+	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/pkg/version"
 )
 
 // processStart is when this server process began. Uptime is reported against

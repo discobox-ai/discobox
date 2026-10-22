@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func runGitCommand(t *testing.T, dir string, args ...string) {

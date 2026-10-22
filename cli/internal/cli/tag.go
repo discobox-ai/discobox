@@ -8,7 +8,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
 // newTagCommand is `discobox tag`: the everyday form of update-sandbox-meta,

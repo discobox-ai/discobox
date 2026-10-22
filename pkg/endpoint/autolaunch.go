@@ -1,0 +1,544 @@
+package endpoint
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/discobox-ai/discobox/pkg/health"
+	"golang.org/x/mod/semver"
+)
+
+const (
+	defaultProbePath     = health.Path
+	defaultProbeInterval = 100 * time.Millisecond
+	// probesBeforeGone is how many consecutive unanswered probes mean a server
+	// that had been answering has exited rather than stalled. See waitReady.
+	probesBeforeGone = 3
+)
+
+// Command is a program to launch, and the arguments to launch it with.
+type Command struct {
+	Path string
+	Args []string
+}
+
+// LaunchOptions describes a local server process that can be started on demand.
+type LaunchOptions struct {
+	Endpoint string
+	LockPath string
+	LogPath  string
+	// Command resolves the program to start. It is called at most once, and
+	// only when a server actually has to be started — never for one that is
+	// already running.
+	//
+	// A func rather than a path because resolving it can cost something: the
+	// CLI's server is a separate binary it may have to download and verify
+	// first (ADR 0099), and a build with no server to download fails to
+	// resolve one at all. Neither is a price a caller should pay to discover
+	// that the server it wanted is already up.
+	Command       func(context.Context) (Command, error)
+	Env           []string
+	ProbePath     string
+	ProbeTimeout  time.Duration
+	StartTimeout  time.Duration
+	ReadyTimeout  time.Duration
+	ProbeInterval time.Duration
+	// ExpectedVersion is the version carried by the launching binary. When a
+	// local server reports an older semantic version, EnsureRunning replaces it
+	// before returning.
+	ExpectedVersion string
+
+	// OnProgress reports launch steps and each status a starting server reports,
+	// so a caller can show what it is waiting for. Never called for a server
+	// that is already ready and needs no upgrade.
+	OnProgress func(health.Status)
+}
+
+// EnsureRunning starts the configured command when the local endpoint is not
+// accepting requests. It serializes startup with a filesystem lock so concurrent
+// CLIs do not spawn duplicate local servers.
+//
+// It reports whether this call is what started the server. A caller that
+// launched one has left a process running on the user's machine that outlives
+// it, which is worth saying out loud; one that found a server already up has
+// nothing to report.
+func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
+	replacedOlder := false
+	if opts.Endpoint == "" {
+		opts.Endpoint = DefaultEndpoint()
+	}
+	// A server that is already up needs nothing, and one that is still starting
+	// needs waiting on rather than a second process started alongside it.
+	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if !olderServer(status, opts.ExpectedVersion) {
+			if !status.Starting() {
+				return false, nil
+			}
+			return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		}
+	} else if !isProbeConnectionError(err) {
+		return false, err
+	}
+	opts.progress(health.Status{Status: health.StatusStarting, Phase: "waiting for the startup lock"})
+	unlock, err := acquireLaunchLock(opts.lockPath())
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	replaceOlder := false
+	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if olderServer(status, opts.ExpectedVersion) {
+			replaceOlder = true
+		} else if status.Starting() {
+			if err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout())); err != nil {
+				return false, err
+			}
+		} else {
+			return false, nil
+		}
+	} else if !isProbeConnectionError(err) {
+		return false, err
+	}
+	// Resolved before an older server is stopped, never after. Resolving can
+	// mean downloading a server and the images it runs (ADR 0099, ADR 0113) —
+	// minutes, on the first run of a new version — and the server being
+	// replaced goes on answering for all of it. Only the switch-over is a gap.
+	//
+	// Under the launch lock and after the last probe, so it is done once per
+	// machine that actually needs a server rather than once per CLI invocation,
+	// and two CLIs racing to start one do not both download it.
+	command, err := resolveCommand(ctx, opts)
+	if err != nil {
+		return false, err
+	}
+	if replaceOlder {
+		opts.progress(health.Status{Status: health.StatusStarting, Phase: "stopping the older server"})
+		if err := replaceOlderServer(ctx, opts); err != nil {
+			return false, err
+		}
+		replacedOlder = true
+	}
+	opts.progress(health.Status{Status: health.StatusStarting, Phase: "launching the server"})
+	child, err := startDetached(ctx, opts, command)
+	if err != nil {
+		return false, err
+	}
+	// Two deadlines, because two different things go wrong. A process that
+	// never answers at all has died — misconfigured, or asked to run a command
+	// it does not have — and there is no point waiting minutes for it. One that
+	// answers "starting" is working, and cutting it off at ten seconds is how a
+	// first run against an empty database looked like a failure.
+	startWait := opts.startTimeout()
+	if replacedOlder {
+		// The old listener disappears before its server has finished draining
+		// providers and released the data-directory singleton. The replacement
+		// is alive but cannot bind during that interval, so this is a known
+		// shutdown/start transition rather than a child that never came up.
+		startWait = opts.readyTimeout()
+	}
+	deadline := time.Now().Add(startWait)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		status, err := probeEndpoint(ctx, opts)
+		if err == nil {
+			if !status.Starting() {
+				return true, nil
+			}
+			return true, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		}
+		lastErr = err
+		// Cancellation first, because it is also what killed the process. A
+		// child started with exec.CommandContext is killed by os/exec the
+		// moment ctx is done, so an interrupted CLI sees its own server exit
+		// and would otherwise report it as a server that died on startup.
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
+		// A launched process that has already exited is not going to answer,
+		// and the start timeout is the wrong thing to spend on it: a server
+		// that refuses to start — no WSL Containers on Windows, no harness —
+		// dies in milliseconds, and its explanation is in the log before the
+		// first probe. Waiting the rest out says nothing and delays every
+		// command that autolaunches after it.
+		if child.exited() {
+			return true, fmt.Errorf("local server at %s exited during startup%s", opts.Endpoint, opts.logTail())
+		}
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case <-time.After(opts.probeInterval()):
+		}
+	}
+	return true, fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
+}
+
+// olderServer is deliberately one-way. An older CLI must not downgrade a
+// newer server, and an unversioned development build or legacy health response
+// does not provide enough evidence to replace a running process.
+func olderServer(status health.Status, expected string) bool {
+	return semver.IsValid(status.Version) && semver.IsValid(expected) && semver.Compare(status.Version, expected) < 0
+}
+
+func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
+	target, err := Parse(opts.Endpoint)
+	if err != nil {
+		return err
+	}
+	baseURL, client, err := HTTPClient(target, nil)
+	if err != nil {
+		return err
+	}
+	shutdownCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("stop older local server: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("stop older local server: %s", resp.Status)
+	}
+	// Server shutdown includes draining reconcilers and VM backends. Give it the
+	// same long allowance as startup after the process has begun answering,
+	// rather than the short deadline used for a child that never binds.
+	deadline := time.Now().Add(opts.readyTimeout())
+	for time.Now().Before(deadline) {
+		_, err := probeEndpoint(ctx, opts)
+		if isProbeConnectionError(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(opts.probeInterval()):
+		}
+	}
+	return fmt.Errorf("older local server at %s did not stop", opts.Endpoint)
+}
+
+// waitReady polls a server that has answered "starting" until it is ready.
+func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
+	var last health.Status
+	answered, unanswered := false, 0
+	for time.Now().Before(deadline) {
+		status, err := probeEndpoint(ctx, opts)
+		switch {
+		case err == nil && !status.Starting():
+			return nil
+		case err == nil:
+			answered, unanswered = true, 0
+			// On the step changing, not on every poll: uptime moves with each
+			// answer, so comparing whole statuses reports the same step over
+			// and over.
+			if status.Status != last.Status || status.Phase != last.Phase {
+				opts.progress(status)
+				last = status
+			}
+		case !isProbeConnectionError(err):
+			return err
+		case answered:
+			// It was answering and now it is not. A server holds its listeners
+			// for the whole of startup and releases them only when the process
+			// ends, so this is one that gave up — a step that failed — rather
+			// than one that is busy, and waiting out the generous ready
+			// deadline for a process that has exited is minutes of saying
+			// nothing when its last words are already in the log.
+			//
+			// Not on the first failure: a probe has a timeout of its own, and
+			// one that expires on a loaded machine is a slow answer rather than
+			// a dead server. A short run of them is neither.
+			unanswered++
+			if unanswered >= probesBeforeGone {
+				return fmt.Errorf("local server at %s stopped while starting (last step: %s)%s",
+					opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(opts.probeInterval()):
+		}
+	}
+	return fmt.Errorf("local server at %s did not finish starting (last step: %s)%s",
+		opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+}
+
+// phaseOrUnknown names the last step a server reported, for an error that has
+// to say something about a server that never said what it was doing.
+func phaseOrUnknown(status health.Status) string {
+	if phase := strings.TrimSpace(status.Phase); phase != "" {
+		return phase
+	}
+	return "unknown"
+}
+
+// probeEndpoint asks the endpoint how it is. A reachable server answers with a
+// status; anything else is an error, and only a connection error means "not
+// running" (see isProbeConnectionError).
+func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, error) {
+	target, err := Parse(opts.Endpoint)
+	if err != nil {
+		return health.Status{}, err
+	}
+	baseURL, client, err := HTTPClient(target, nil)
+	if err != nil {
+		return health.Status{}, err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, baseURL+opts.probePath(), nil)
+	if err != nil {
+		return health.Status{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return health.Status{}, err
+	}
+	defer resp.Body.Close()
+	var status health.Status
+	// A body is not required: an older server, or one behind a proxy that
+	// answers the probe itself, still counts as up.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&status); err != nil {
+		status = health.Status{}
+	}
+	switch {
+	case resp.StatusCode == http.StatusServiceUnavailable && status.Starting():
+		return status, nil
+	case resp.StatusCode < 200 || resp.StatusCode >= 500:
+		return health.Status{}, fmt.Errorf("local server probe returned %s", resp.Status)
+	}
+	if status.Status == "" {
+		status.Status = health.StatusReady
+	}
+	return status, nil
+}
+
+// launchedProcess is the server process this call started, when it is one this
+// process can watch. Its only question is whether that process is still alive,
+// which is what tells a server that died on startup apart from one that is
+// merely slow to bind.
+//
+// A server started as a user service has none: systemd owns the process, this
+// one never had a handle on it, and the probe loop's own reasoning about a
+// server that stopped answering is what covers it there.
+type launchedProcess struct {
+	done <-chan struct{}
+}
+
+// exited reports whether the launched process is already gone. A nil receiver —
+// nothing this process is watching — is never gone, so the caller has no case
+// to switch on.
+func (p *launchedProcess) exited() bool {
+	if p == nil {
+		return false
+	}
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveCommand asks the caller which program to start.
+func resolveCommand(ctx context.Context, opts LaunchOptions) (Command, error) {
+	if opts.Command == nil {
+		return Command{}, fmt.Errorf("server command is required")
+	}
+	command, err := opts.Command(ctx)
+	if err != nil {
+		return Command{}, err
+	}
+	if command.Path == "" {
+		return Command{}, fmt.Errorf("server command is required")
+	}
+	return command, nil
+}
+
+// startDetached starts the resolved server program in the background.
+func startDetached(ctx context.Context, opts LaunchOptions, command Command) (*launchedProcess, error) {
+	// The child's output went nowhere, so a server that died on startup died
+	// silently and the only symptom was a caller waiting out its timeout on a
+	// socket nothing had bound. It goes to a file instead — opened here, before
+	// either way of starting the process, because the systemd unit is told to
+	// append to the same file and needs the directory to exist.
+	logFile, err := openServerLog(opts.logPath(), command.Path, command.Args)
+	if err != nil {
+		return nil, err
+	}
+	defer logFile.Close()
+	if started, err := startUserService(ctx, opts, command, logFile); err != nil {
+		return nil, err
+	} else if started {
+		return nil, nil
+	}
+	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
+	cmd := exec.CommandContext(ctx, command.Path, command.Args...)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.Stdin = nil
+	cmd.Env = append(os.Environ(), opts.Env...)
+	setDetachedProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start local server: %w", err)
+	}
+	// Reaped rather than left behind: the server is meant to outlive this
+	// process, so this waits only to learn that it did not — and a Wait that
+	// returns also releases the process handle and stops the context watchdog
+	// os/exec left running for it.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = cmd.Wait()
+	}()
+	return &launchedProcess{done: done}, nil
+}
+
+func userServiceUnitName(opts LaunchOptions, command Command) string {
+	sum := sha256.Sum256([]byte(opts.Endpoint))
+	suffix := hex.EncodeToString(sum[:])[:16]
+	return systemdUnitName(filepath.Base(command.Path), suffix)
+}
+
+func systemdUnitName(name, suffix string) string {
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	name = strings.ToLower(name)
+	// The program is discobox-server, and the unit is named after what it is
+	// rather than after the file: "-server" is appended below, and a machine
+	// upgraded from the CLI that used to run the server in-process must not
+	// end up with a second unit under a second name for the same endpoint.
+	name = strings.TrimSuffix(name, "-server")
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	base := strings.Trim(b.String(), "-_")
+	if base == "" {
+		base = "discobox"
+	}
+	if !strings.HasPrefix(base, "discobox") {
+		base = "discobox-" + base
+	}
+	return base + "-server-" + suffix
+}
+
+func (o LaunchOptions) lockPath() string {
+	if o.LockPath != "" {
+		return o.LockPath
+	}
+	endpoint, err := Parse(o.Endpoint)
+	if err != nil {
+		return filepath.Join(os.TempDir(), "discobox-server-startup.lock")
+	}
+	switch endpoint.Scheme {
+	case "unix":
+		return endpoint.Value + ".lock"
+	case "npipe":
+		return filepath.Join(os.TempDir(), "discobox-server-startup.lock")
+	default:
+		return filepath.Join(os.TempDir(), "discobox-server-startup.lock")
+	}
+}
+
+// logPath is where a launched server's output is kept. See ServerLogPath.
+func (o LaunchOptions) logPath() string {
+	if o.LogPath != "" {
+		return o.LogPath
+	}
+	return ServerLogPath()
+}
+
+// logTail is the last launch's output, for an error to carry, along with where
+// the rest of it is. Empty when there is nothing to show, so it can be appended
+// unconditionally.
+func (o LaunchOptions) logTail() string {
+	tail := lastServerLogLaunch(o.logPath())
+	if tail == "" {
+		return ""
+	}
+	return fmt.Sprintf("\nthe local server said (full log: %s):\n%s", o.logPath(), tail)
+}
+
+// progress reports a starting server's status, when a caller asked to see it.
+func (o LaunchOptions) progress(status health.Status) {
+	if o.OnProgress != nil {
+		o.OnProgress(status)
+	}
+}
+
+func (o LaunchOptions) probePath() string {
+	if o.ProbePath != "" {
+		return o.ProbePath
+	}
+	return defaultProbePath
+}
+
+func (o LaunchOptions) probeTimeout() time.Duration {
+	if o.ProbeTimeout > 0 {
+		return o.ProbeTimeout
+	}
+	return 500 * time.Millisecond
+}
+
+// startTimeout bounds how long to wait for a launched server to answer at all.
+// Short, because a process that has not answered by now is not coming.
+func (o LaunchOptions) startTimeout() time.Duration {
+	if o.StartTimeout > 0 {
+		return o.StartTimeout
+	}
+	return 10 * time.Second
+}
+
+// readyTimeout bounds how long to wait for a server that is answering
+// "starting" to finish. Generous, because it is doing real work — migrating a
+// database, reaching a registry — and reporting what it is doing while it does.
+func (o LaunchOptions) readyTimeout() time.Duration {
+	if o.ReadyTimeout > 0 {
+		return o.ReadyTimeout
+	}
+	return 5 * time.Minute
+}
+
+func (o LaunchOptions) probeInterval() time.Duration {
+	if o.ProbeInterval > 0 {
+		return o.ProbeInterval
+	}
+	return defaultProbeInterval
+}
+
+func isProbeConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	return true
+}

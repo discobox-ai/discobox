@@ -20,11 +20,11 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // A sandbox materializes its own sources (ADR 0126 §4): the pool says, in the

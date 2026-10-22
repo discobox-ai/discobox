@@ -85,7 +85,7 @@
               pkgs.unzip
               pkgs.bats
               pkgs.shellcheck
-              # installer/'s tests run install.ps1 wherever PowerShell is
+              # pkg/installer/'s tests run install.ps1 wherever PowerShell is
               # found. The Windows runner has its own; this puts it on every
               # other one, so the script is not tested on Windows alone.
               pkgs.powershell

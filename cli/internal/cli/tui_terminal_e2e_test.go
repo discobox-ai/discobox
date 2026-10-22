@@ -11,7 +11,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/localpty"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 const paneE2EEnv = "DISCOBOX_PANE_E2E"

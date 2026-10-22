@@ -15,7 +15,7 @@
 
 The sandbox's effective runtime configuration (`/etc/discobox/sandbox.json`)
 is not a REST contract type and is not generated here. It is the hand-written
-`sandboxconfig` package (repo root) — see `../../sandboxconfig/DESIGN.md` and
+`pkg/sandboxconfig` package — see `../../pkg/sandboxconfig/DESIGN.md` and
 `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md`.
 
 ## Generation

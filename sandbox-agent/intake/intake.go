@@ -31,9 +31,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // Layout is where a document's files land.

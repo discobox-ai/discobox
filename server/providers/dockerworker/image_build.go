@@ -13,7 +13,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/moby/client"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 // mobyExporter is the image exporter dockerd's embedded BuildKit registers

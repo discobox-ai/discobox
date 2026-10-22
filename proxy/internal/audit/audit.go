@@ -21,7 +21,7 @@ import (
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 )
 
 const tracerName = "github.com/discobox-ai/discobox/proxy"

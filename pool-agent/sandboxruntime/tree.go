@@ -23,10 +23,10 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxtree"
-	"github.com/discobox-ai/discobox/sandboxuser"
-	"github.com/discobox-ai/discobox/tarsums"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxtree"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 )
 
 // A sandbox's durable tree is the half of it that outlives its container: the

@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 func hasScheme(t *testing.T, endpoints []string, scheme string) bool {

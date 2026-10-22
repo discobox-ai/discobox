@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // sandboxPaths judges paths inside this sandbox. The agent runs inside it, so

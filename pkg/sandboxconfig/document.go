@@ -1,0 +1,486 @@
+// Package sandboxconfig assembles a sandbox's effective configuration from
+// three attribute-owned layers (docs/adr/0012). A field appears on a layer's
+// type if and only if that layer may set it; no domain object is embedded in
+// more than one layer.
+package sandboxconfig
+
+import (
+	"strings"
+
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
+)
+
+// Document is the full, unmerged input to Effective. Runtime is assembled by
+// the control plane/pool-agent from the create request, Image is snapshotted
+// from the registered harness image's OCI label, and Project is read once
+// from the resolved source repository at clone time.
+type Document struct {
+	Runtime RuntimeLayer  `json:"runtime"`
+	Image   ImageLayer    `json:"image"`
+	Project *ProjectLayer `json:"project,omitempty"`
+}
+
+// RuntimeLayer carries pool-agent/control-plane-owned sandbox identity,
+// resources, and per-sandbox intent. Every field here is runtime-owned; no
+// other layer may set it, except where explicitly noted as an override grant
+// on ImageLayer/ProjectLayer.
+type RuntimeLayer struct {
+	SandboxID string `json:"sandboxId"`
+	// Image is the identity of the image this sandbox actually runs — the
+	// resolved image ID the pool host launched, not the (mutable) reference it
+	// was asked for. Diagnostic: Effective drops it, so it reaches sandbox.json
+	// only under _provenance. That is deliberate — nothing inside the sandbox
+	// makes decisions from it, but "which image is this sandbox actually
+	// running" is the first question a version-skew investigation asks
+	// (ADR 0016).
+	Image        string       `json:"image,omitempty"`
+	Provider     Provider     `json:"provider"`
+	AgentRuntime AgentRuntime `json:"agentRuntime"`
+	Sources      []Source     `json:"sources,omitempty"`
+
+	Model               string   `json:"model,omitempty"`
+	ModelReasoningLevel string   `json:"modelReasoningLevel,omitempty"`
+	ModelServiceTier    string   `json:"modelServiceTier,omitempty"`
+	Prompt              []string `json:"prompt,omitempty"`
+	// Description is the one the sandbox was created with. It is a seed, not
+	// the sandbox's description: the sandbox agent writes it into the meta
+	// file only when there is no meta file yet, and from then on that file is
+	// the description (ADR 0136).
+	Description string            `json:"description,omitempty"`
+	User        User              `json:"user"`
+	Git         GitIdentity       `json:"git"`
+	Env         map[string]string `json:"env,omitempty"`
+
+	// ProxyEnvs names the subset of Env's keys that carry proxy-trust
+	// material (proxy.ClientMaterial.EnvironmentVars) rather than ordinary
+	// environment. It is the one list sandbox-agent's runc wrapper reads to
+	// know which env vars to republish into a nested Docker container's spec
+	// (see docs/adr/0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md);
+	// the wrapper never hardcodes env var names itself.
+	ProxyEnvs []string `json:"proxyEnvs,omitempty"`
+
+	// HarnessMode is what this sandbox exists for (HarnessMode* below); it is
+	// a selection, not a capability grant, so it stays runtime-owned.
+	HarnessMode string `json:"harnessMode,omitempty"`
+
+	// Files overlays onto the image's declared files, by path.
+	Files []File `json:"files,omitempty"`
+
+	// Skills are the skills the sandbox was created with (ADR 26-10-09-395).
+	// Single-writer: neither the image nor the project contributes any; theirs
+	// are installed from their own directories.
+	Skills Skills `json:"skills,omitempty"`
+
+	// SkillsSources are the directories of skills sources whose skills are
+	// linked in after Skills are written, in order (ADR 26-10-14-294 §3).
+	SkillsSources []SkillsSource `json:"skillsSources,omitempty"`
+
+	// Features are the repository's features as the client read them from
+	// its settings.json at create (ADR 26-10-16-423 §§4, 11): the box
+	// provisions every feature but those turned off here. Single-writer:
+	// the client is the only reader of them in that file.
+	Features map[string]Feature `json:"features,omitempty"`
+}
+
+// Provider is non-secret provider context for the sandbox runtime.
+type Provider struct {
+	Kind      string            `json:"kind"`
+	ProjectID string            `json:"projectId,omitempty"`
+	PoolID    string            `json:"poolId,omitempty"`
+	Endpoints map[string]string `json:"endpoints,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	// PublicKeys are the keys the sandbox trusts, by name
+	// (ControlPlanePublicKeyName, PoolPublicKeyName). Public halves only: the
+	// bootstrap holds no private key (ADR 26-10-08-127 §1).
+	PublicKeys map[string]string `json:"publicKeys,omitempty"`
+	// Pool is where the sandbox's pool serves it, when it has one. Static:
+	// it is part of the bootstrap, and the sandbox renders its bridges from it
+	// and the credentials a runtime-config document delivers
+	// (ADR 26-10-08-127 §4).
+	Pool *PoolEndpoints `json:"pool,omitempty"`
+}
+
+const (
+	// ControlPlanePublicKeyName is the control plane's key in
+	// Provider.PublicKeys, which verifies every sandbox-agent token it mints.
+	ControlPlanePublicKeyName = "controlPlane"
+	// PoolPublicKeyName is the pool's key in Provider.PublicKeys. It verifies
+	// the tokens the pool signs to deliver runtime-config documents, and
+	// nothing else (ADR 26-10-08-127 §3). A bootstrap that names it is one a
+	// pool delivers runtime config to.
+	PoolPublicKeyName = "pool"
+)
+
+// PoolEndpoints is where a pool serves its sandbox: the far end of each of
+// the sandbox's bridges. Only the pool knows these; where the sandbox listens
+// for them is the sandbox's own (SandboxEgressListenAddress and its
+// siblings).
+type PoolEndpoints struct {
+	// Proxy is the pool's egress proxy, which both the sandbox's egress
+	// forwarder and its nested-Docker forwarder reach.
+	Proxy string `json:"proxy"`
+	// Credentials is the pool's agent-credentials endpoint (ADR 0031).
+	Credentials string `json:"credentials,omitempty"`
+	// DNS is the pool's DNS-over-TLS server, as host:port.
+	DNS string `json:"dns,omitempty"`
+	// BuildKit is the pool's BuildKit mediator (ADR 0044); empty for a pool
+	// with no builder.
+	BuildKit string `json:"buildkit,omitempty"`
+	// ServerName is the name the pool's server certificate is verified as.
+	// The URLs above are wire URLs whose scheme picks the transport, and a
+	// vsock or unix one has no host to take the name from (ADR 0144 §4).
+	ServerName string `json:"serverName,omitempty"`
+}
+
+// The addresses the sandbox's own forwarders listen on. They are the
+// sandbox's, not the pool's: the sandbox renders its bridges with them, and a
+// pool reads the same constants only for the settings it makes that must agree
+// with them — the proxy env in the bootstrap, and the DNS server a container
+// runtime hands the sandbox (ADR 26-10-08-127 §4).
+const (
+	// SandboxEgressListenAddress is the loopback egress forwarder every
+	// HTTP(S)_PROXY in the sandbox names.
+	SandboxEgressListenAddress = "127.0.0.1:17008"
+	// SandboxBuildKitListenAddress is the loopback forwarder to the pool's
+	// BuildKit mediator.
+	SandboxBuildKitListenAddress = "127.0.0.1:17082"
+	// SandboxDNSAddress is the link-local address the sandbox's DNS stub
+	// claims, and the one name server its runtime gives it.
+	SandboxDNSAddress = "169.254.53.53"
+	// SandboxDNSListenAddress is the stub's listener.
+	SandboxDNSListenAddress = SandboxDNSAddress + ":53"
+)
+
+// AwaitsRuntimeConfig reports whether a pool delivers this sandbox a
+// runtime-config document, which is what holds its first harness launch until
+// one is applied (ADR 26-10-08-127 §6).
+func (p Provider) AwaitsRuntimeConfig() bool {
+	return strings.TrimSpace(p.PublicKeys[PoolPublicKeyName]) != ""
+}
+
+// AgentRuntime holds sandbox-agent daemon-local runtime settings.
+type AgentRuntime struct {
+	ListenAddress          string `json:"listenAddress"`
+	WorkingRoot            string `json:"workingRoot"`
+	RuntimeDir             string `json:"runtimeDir"`
+	DatabasePath           string `json:"databasePath"`
+	ResourceSampleInterval string `json:"resourceSampleInterval,omitempty"`
+	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
+}
+
+// Source is a source the sandbox-agent bind-mounts from /.discobox/sources/<slug>
+// onto its in-sandbox target, and clones from the origin its runtime-config
+// document names (ADR 0126 §4).
+type Source struct {
+	Slug   string `json:"slug"`
+	Target string `json:"target"`
+	// WorkingDirectory is where a terminal and the harness start, when the
+	// create named a directory beneath Target to start in: `-C DIR/SUB`, or
+	// `-C SOURCE//PATH` (ADR 26-10-15-664 §3). Only the primary source has
+	// one. Absent means Target.
+	WorkingDirectory string `json:"workingDirectory,omitempty"`
+	// UID and GID are the ownership the sandbox must give the mounted source.
+	// They are pointers because the pool agent frequently cannot know them --
+	// the account lives in the image and may not exist until boot creates it --
+	// and absent has to be expressible. As plain ints, "not given" arrived as 0
+	// and boot chowned the primary source tree to root, in exactly the case
+	// (no manifest user) where the sandbox is least likely to be running as
+	// root (ADR 0033 §3).
+	//
+	// Absent means boot supplies the identity it resolved, which it has in hand
+	// at that point and which is the better answer anyway.
+	UID *int64 `json:"uid,omitempty"`
+	GID *int64 `json:"gid,omitempty"`
+	// BaseCommit is the commit the source was spawned at, from the create
+	// request's checkout. The sandbox-agent measures its reported diff stat
+	// against it, which is what lets a listing show what a sandbox has changed
+	// without running git from outside. Absent when the source has no recorded
+	// checkout commit; the diff stat is then simply not reported.
+	BaseCommit string `json:"baseCommit,omitempty"`
+	// AwaitsDelivery marks a source the client pushes in after the sandbox's
+	// container is created, which the sandbox clones on the resume that
+	// follows (ADR 0001). Absent means the sandbox can clone it from its
+	// origin as soon as it boots, which is every clone-delivered source.
+	//
+	// The sandbox holds its harness launch when any source carries this, until
+	// pool-agent reports the sandbox settled (SourcesReadyFileName), so nothing
+	// runs against a workspace that has not arrived.
+	AwaitsDelivery bool `json:"awaitsDelivery,omitempty"`
+	// UpstreamRef is the remote-tracking ref the source would fetch upstream
+	// into, derived from the branch it was cloned at. Once the sandbox has
+	// fetched, the diff stat's base moves forward to the merge base with this
+	// ref, so commits the sandbox pulled rather than wrote stop counting as
+	// its changes — the same rule `discobox diff` resolves with. It is the
+	// pool's copy of the branch, which a client's push moves: under the
+	// PoolRemote when there is one, and under origin otherwise. The ref is
+	// verified in the repository rather than assumed, so naming one that does
+	// not exist costs nothing.
+	UpstreamRef string `json:"upstreamRef,omitempty"`
+	// RefName and RefType are the branch or tag the source is checked out
+	// at, as the create request named them; RefType is "branch" or "tag".
+	// With the runtime-config document's pinned commit they are what the
+	// sandbox agent checks out when it clones the source (ADR 0126 §4): a
+	// branch is created at the pin, anything else is a detached checkout.
+	RefName string `json:"refName,omitempty"`
+	RefType string `json:"refType,omitempty"`
+	// UpstreamURL is the source's own remote: a remote-URL source's URL, and
+	// for a local checkout the remote its client reported. A clone
+	// configures it once, so the project's real remote is known inside the
+	// sandbox: as origin when PoolRemote is set, and otherwise as a remote
+	// named upstream.
+	UpstreamURL string `json:"upstreamUrl,omitempty"`
+	// PoolRemote names the remote the checkout reaches its pool through,
+	// for a source delivered into the pool's cache (ADR 26-10-10-545 §6):
+	// the sandbox clones from the pool under this name, and origin is the
+	// source's own remote. Absent is a source delivered before that, whose
+	// origin is the pool.
+	PoolRemote string `json:"poolRemote,omitempty"`
+	// Workspace is the client's uncommitted work, delivered as a snapshot
+	// commit on the source's origin and restored into the working tree, all
+	// unstaged, by the clone. Absent for a clean checkout.
+	Workspace *SourceWorkspace `json:"workspace,omitempty"`
+}
+
+// SourceWorkspace is a dirty workspace's snapshot: a commit on SnapshotRef
+// whose parent is BaseCommit and whose tree is the client's working tree.
+type SourceWorkspace struct {
+	BaseCommit  string `json:"baseCommit"`
+	SnapshotRef string `json:"snapshotRef"`
+}
+
+// SourceMaterializedMarker is the file, inside a source checkout's .git
+// directory, that says the checkout has been materialized: cloned, checked
+// out and its workspace restored, once. Whoever materializes a source writes
+// it last and reads it first, because materializing again over a workspace
+// the sandbox has been using since would discard its work. It lives under
+// .git so it is never an untracked file in the working tree. The sandbox agent
+// writes the commit it materialized into it; one a pool wrote, before the
+// sandbox cloned its own sources (ADR 0126 §4), is empty.
+const SourceMaterializedMarker = "discobox-materialized"
+
+// User is the sandbox user identity as the manifest publishes it. It is an
+// alias rather than a parallel type: the manifest, the pool agent, and the
+// launch path describe identity with one type, so a field cannot mean one
+// thing here and something else one layer in (ADR 0025 §1).
+//
+// Fields the request did not give stay unset: the pool agent cannot resolve a
+// sandbox's names or invent its ids, so it forwards what it was told and the
+// sandbox resolves the rest (ADR 0025 §4). A wholly empty User means the
+// manifest named nobody and the image's own account stands (ADR 0025 §5).
+type User = sandboxuser.User
+
+// GitIdentity is the authorship the sandbox commits under. It is deliberately
+// not part of User: User is the account a process runs as, one schema shared
+// with exec create (ADR 0025 §1), and a single exec has no committer of its own.
+// The two are independently absent — a sandbox running as the image's own
+// account still commits as the caller — so neither nests in the other.
+//
+// Runtime-owned and single-writer: no image or project layer contributes to it.
+// Either field may be empty; boot writes only what it was given.
+type GitIdentity struct {
+	UserName  string `json:"userName,omitempty"`
+	UserEmail string `json:"userEmail,omitempty"`
+}
+
+// Configured reports whether anything was named at all. It is the one test for
+// "did the request give a git identity", so adding a field here means teaching
+// this function rather than every call site — the same rule sandboxuser.Named
+// follows for run identity.
+func (g GitIdentity) Configured() bool {
+	return strings.TrimSpace(g.UserName) != "" || strings.TrimSpace(g.UserEmail) != ""
+}
+
+// File is a file to write into the harness's home directory when the harness
+// is installed.
+type File struct {
+	Path       string `json:"path" doc:"The file's path, relative to the sandbox user's home directory."`
+	Content    string `json:"content" doc:"The file's content."`
+	CreateOnly bool   `json:"createOnly,omitempty" doc:"Leave the file alone when it already exists."`
+	Template   bool   `json:"template,omitempty" doc:"Render the content against the public sandbox configuration before writing it."`
+}
+
+// ImageLayer carries the immutable harness contract and defaults baked into
+// one sandbox image, snapshotted from the registered image's OCI label.
+type ImageLayer struct {
+	HarnessID          string `json:"harnessId,omitempty"`
+	HarnessName        string `json:"harnessName,omitempty"`
+	HarnessDescription string `json:"harnessDescription,omitempty"`
+
+	// RunCommand and RelaunchCommand are an override grant: the project layer
+	// may replace them wholesale.
+	RunCommand      []string `json:"runCommand,omitempty"`
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
+	// ConfigCommand is image-owned only; no other layer may set it.
+	ConfigCommand []string `json:"configCommand,omitempty"`
+
+	Files   []File            `json:"files,omitempty"`
+	Volumes []harness.Volume  `json:"volumes,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	// Secrets are the harness's declared credentials. The sandbox needs them
+	// for their Delivery alone: a secret delivered by file must not also be
+	// exported as an environment variable, and only the declaration says which
+	// (harness.SecretDeliveryFile). Image-owned; no other layer may set it.
+	Secrets []harness.Secret `json:"secrets,omitempty"`
+	// AdditionalGroups names OS groups (already present in the image, e.g.
+	// "docker") the sandbox user is added to at boot, alongside its own
+	// primary group. Image-owned only, like Volumes: no other layer grants
+	// system-level access on the image's behalf.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
+}
+
+// ProjectLayer is the resolved source repository's contribution, read by
+// pool-agent at the commit it clones and, for a push-delivered source, re-read
+// when the push lands, before the sandbox is released to run anything. Nothing
+// reads it inside a running sandbox (docs/adr/0012 §7).
+type ProjectLayer struct {
+	// RunCommand and RelaunchCommand are override-grant only: when non-empty
+	// they replace the image's value wholesale.
+	RunCommand      []string `json:"runCommand,omitempty" doc:"The command the harness runs, replacing the harness image's."`
+	RelaunchCommand []string `json:"relaunchCommand,omitempty" doc:"The command the harness is relaunched with, replacing the harness image's."`
+
+	WorkingDirectorySubpath string `json:"workingDirectorySubpath,omitempty" doc:"The directory beneath the repository the harness starts in."`
+
+	// FilesAdd appends new files by path; it never overrides an existing
+	// image- or runtime-declared path.
+	FilesAdd []File `json:"filesAdd,omitempty" doc:"Files written into the sandbox. A path the harness image or the sandbox already declares is left as it is."`
+}
+
+// LocalSubnetsToken is a placeholder pool-agent writes into env values that
+// must name the sandbox's own directly-connected networks — in practice the
+// NO_PROXY list, so a sandbox never sends traffic destined for its own
+// networks out through the egress proxy.
+//
+// It exists so neither side has to know the other's business. pool-agent does
+// not know which subnets a sandbox ends up on: Docker allocates them, and the
+// nested-Docker bridge does not exist until dockerd first starts. sandbox-agent
+// does know, but has no business parsing proxy-variable syntax to work out
+// where a subnet list belongs. A token both sides treat as opaque keeps that
+// split: pool-agent decides *where* local subnets are needed, sandbox-agent
+// decides *what* they are.
+const LocalSubnetsToken = "%LOCAL_SUBNETS%" //nolint:gosec // G101: a placeholder token, not a credential.
+
+// ResolveLocalSubnetsToken substitutes LocalSubnetsToken in value with subnets
+// (each sandbox-agent's own enumeration of its directly-connected networks),
+// joined the same way the rest of an env-list value is: comma-separated. value
+// is returned unchanged when it carries no token, so calling this
+// unconditionally on every env value is safe.
+//
+// The substitution collapses any resulting empty entries (a leading, trailing,
+// or doubled comma) rather than leaving them for the NO_PROXY parser to trip
+// over — that happens whenever subnets is empty, or the token sits at either
+// end of value.
+func ResolveLocalSubnetsToken(value string, subnets []string) string {
+	if !strings.Contains(value, LocalSubnetsToken) {
+		return value
+	}
+	value = strings.ReplaceAll(value, LocalSubnetsToken, strings.Join(subnets, ","))
+	return strings.Trim(strings.ReplaceAll(value, ",,", ","), ",")
+}
+
+// SandboxGroups is the supplementary set the sandbox's user belongs to.
+//
+// Two layers can name one: the harness image declares groups as a label, and a
+// create request may name its own. They are all-or-nothing rather than unioned
+// (ADR 0025 §2), so a request naming any replaces the label's entirely and a
+// request naming none inherits them.
+//
+// It exists as one function because it was two. Boot materialized the image
+// label's groups into /etc/group while the exec defaults preferred the
+// manifest user's, so a sandbox that declared its own groups had them in every
+// exec's credential while the OS account was never added to them. Which list
+// is authoritative is one question and must have one answer.
+func (c Config) SandboxGroups() []string {
+	if len(c.User.AdditionalGroups) > 0 {
+		return append([]string(nil), c.User.AdditionalGroups...)
+	}
+	return append([]string(nil), c.AdditionalGroups...)
+}
+
+// PrimarySourceSlug names the primary source where no slug is given, and it is
+// always the name the primary's source data is mounted under,
+// `/.discobox/data-per-source/primary`, whatever the primary's own slug. Harness
+// images read that fixed path in every sandbox, so the control plane never
+// gives it to a source code reference and pool-agent mounts the primary's data
+// — shared by key, or private to the sandbox — there.
+const PrimarySourceSlug = "primary"
+
+// WorkingRoot is the directory this sandbox works in: the manifest's, or its
+// platform's default (sandboxpath.Paths.WorkingRoot) when it names none — what
+// a manifest an older pool agent wrote leaves out.
+func (c Config) WorkingRoot(paths sandboxpath.Paths) string {
+	if root := strings.TrimSpace(c.AgentRuntime.WorkingRoot); root != "" {
+		return root
+	}
+	return paths.WorkingRoot()
+}
+
+// SandboxConfigDir is where the sandbox's config volume is bound inside the
+// container, and so where every file in this contract is read from. Boot places
+// the bind (sandbox-agent/boot); pool-agent writes the files behind it from the
+// host, and the mount is read-only so nothing inside can answer itself.
+const SandboxConfigDir = "/etc/discobox"
+
+// SourcesReadyFileName is the file pool-agent creates in the config volume once
+// every one of the sandbox's sources is materialized and the document beside it
+// is final. It is the signal a sandbox whose source arrives by push waits on
+// before running anything: until the client's push has landed and been checked
+// out, the workspace is an empty repository, and the configuration the project
+// itself declares (its .discobox/settings.json) cannot have been read yet either.
+//
+// It is a separate signal from the per-source materialized marker deliberately.
+// That marker is written the moment a source's checkout completes, which is
+// before pool-agent has re-read the project layer and decided whether the
+// container has to be rebuilt to honor it — a sandbox gated on it would launch
+// its harness against a configuration about to be replaced.
+const SourcesReadyFileName = "ready"
+
+// SourcesReadyPath is SourcesReadyFileName as the sandbox sees it.
+const SourcesReadyPath = SandboxConfigDir + "/" + SourcesReadyFileName
+
+// SourcesAwaitDelivery reports whether any of these sources is still to be
+// delivered by the sandbox's client, which is what makes the readiness signal
+// apply. A config that predates the field says no, which is correct for it:
+// every source it names was materialized before its container existed.
+func SourcesAwaitDelivery(sources []Source) bool {
+	for _, source := range sources {
+		if source.AwaitsDelivery {
+			return true
+		}
+	}
+	return false
+}
+
+// AwaitsSourceDelivery reports whether the sandbox is waiting on its client for
+// any of its sources.
+func (c Config) AwaitsSourceDelivery() bool { return SourcesAwaitDelivery(c.Sources) }
+
+// What a sandbox exists for. The control plane writes one of these into a
+// sandbox's document, the pool carries it, and the sandbox agent reads it —
+// three modules whose only agreement is this document, which is why the words
+// live here rather than in any one of them.
+const (
+	// HarnessModeRun is the ordinary discobox: a harness terminal to work in,
+	// the repository's services, and an idle timeout. The empty mode is this.
+	HarnessModeRun = "run"
+	// HarnessModeConfig exists to run a harness's setup command once, driven
+	// by the control plane, rather than to be worked in.
+	HarnessModeConfig = "config"
+	// HarnessModeJudge is the project's judge (ADR 26-09-22-838 §1): it answers
+	// judging asks and nothing else. No terminal is launched in it, no
+	// repository services start, and it is not powered off when idle, since
+	// being ready is the whole of what it is for.
+	HarnessModeJudge = "judge"
+)
+
+// WorkedIn reports whether a sandbox in this harness mode exists to be worked
+// in. The modes that answer no each exist to do one thing for somebody else.
+func WorkedIn(harnessMode string) bool {
+	switch harnessMode {
+	case HarnessModeConfig, HarnessModeJudge:
+		return false
+	default:
+		return true
+	}
+}

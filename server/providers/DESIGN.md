@@ -215,7 +215,7 @@ An explicit release manifest in `ServerDefaults.Release` pins provider images
 before constructing a driver or engine, including guest and kernel references.
 VM resolvers bypass local guest builds in this mode. The manifest's image roles
 also supply startup cache staging; see
-[release manifests](../../releasemanifest/DESIGN.md).
+[release manifests](../../pkg/releasemanifest/DESIGN.md).
 
 ## Sandbox Base Image
 

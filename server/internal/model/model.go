@@ -17,14 +17,14 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/internal/originkey"
-	"github.com/discobox-ai/discobox/judge"
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/judge"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/policy"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/proxy/egress"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/secretroute"
-	"github.com/discobox-ai/discobox/sourcecache"
-	"github.com/discobox-ai/discobox/sourceref"
 	"github.com/discobox-ai/x/id"
 )
 

@@ -21,9 +21,9 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
-	"github.com/discobox-ai/discobox/sandboxmeta"
-	"github.com/discobox-ai/discobox/sourceref"
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
+	"github.com/discobox-ai/discobox/pkg/tools"
 	"github.com/discobox-ai/x/gitutil"
 )
 

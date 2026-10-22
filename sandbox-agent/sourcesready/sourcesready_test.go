@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // Every sandbox whose sources were materialized before its container existed

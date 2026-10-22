@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"

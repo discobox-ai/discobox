@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
 )
 
 const (

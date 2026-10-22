@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // A sandbox with nothing to wire (a VM guest, ADR 26-10-09-143 §1) is provisioned

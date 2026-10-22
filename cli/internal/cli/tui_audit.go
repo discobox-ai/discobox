@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/pkg/auditid"
 
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )

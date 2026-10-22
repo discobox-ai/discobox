@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 func TestAttachTCPTunnelRequiresTCPConnectScope(t *testing.T) {

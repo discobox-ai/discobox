@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // wireConfig rebinds the config volume onto /etc/discobox so the running

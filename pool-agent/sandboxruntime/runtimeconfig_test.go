@@ -29,10 +29,10 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func runtimeConfigTestRuntime(t *testing.T) *DockerSandboxRuntime {

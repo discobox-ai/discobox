@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/discobox-ai/discobox/health"
-	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
 
 // sgr matches the color escapes the styled line carries, so a test can measure

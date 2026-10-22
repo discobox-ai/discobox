@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/x/shorttmp"

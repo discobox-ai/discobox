@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/devimage"
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"

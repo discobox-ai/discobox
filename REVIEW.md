@@ -6,6 +6,14 @@ this directory and parent directories.
 Global review expectations:
 
 - Keep changes scoped to the package responsibility.
+- A new shared root-module package goes under `pkg/`, not at the repository
+  root; the root holds only components and `internal` (`DESIGN.md`, root module
+  package map).
+- Moving a directory: check backticked paths as well as markdown links, in docs
+  and comments alike, and check that a backticked `a/b` is a path at all before
+  rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
+  `../../sandboxconfig/DESIGN.md`, and rewrote the GitHub labels
+  `platform/windows` and `platform/macos` because they looked like paths.
 - Preserve desired-state reconciliation semantics for orchestrated resources.
 - Persist accepted intent and resource changes in the same transaction as the
   reconcile dirty mark that drives them (`MarkDirtyTx`); there is no separate

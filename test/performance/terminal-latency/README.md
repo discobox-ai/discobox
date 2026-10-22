@@ -118,7 +118,7 @@ was flowing while latency was sampled. In particular, growth in `nr_throttled`
 or `throttled_usec` alongside latency outliers is evidence of CPU QoS
 throttling rather than byte-copy overhead.
 
-The shared `execstream/resume` package exposes an opt-in action observer
+The shared `pkg/execstream/resume` package exposes an opt-in action observer
 (`resume.WithObserver`, which the transport probe uses) rather than creating an OpenTelemetry span for every keystroke. The observer is the
 annotation point: the harness gets exact monotonic timestamps without an
 exporter, while normal terminal traffic pays no clock or export cost. It can be

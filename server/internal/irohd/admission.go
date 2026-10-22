@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // storeWait is how long an admission check waits for the store before giving

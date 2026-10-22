@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/moby/moby/client"
 )

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // trustInput is the JSON body `trust --json` reads from stdin: the protocol's

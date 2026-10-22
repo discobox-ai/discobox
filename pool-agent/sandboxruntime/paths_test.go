@@ -1,8 +1,8 @@
 package sandboxruntime
 
 import (
-	"github.com/discobox-ai/discobox/platform"
-	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // linuxPaths are the path rules of the sandboxes these tests make: Linux, what

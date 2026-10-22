@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/hostscope"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"

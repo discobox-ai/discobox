@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 func statements(t *testing.T, sentences ...string) []policy.Statement {

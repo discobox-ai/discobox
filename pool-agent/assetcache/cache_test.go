@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

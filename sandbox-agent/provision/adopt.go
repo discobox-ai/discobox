@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // SystemPath is the PATH every user's session starts from. A command a

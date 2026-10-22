@@ -313,7 +313,7 @@ launchers, and configure scripts.
   and never omits `--no-tools`.
 
   **With `--output-schema`, stdout is one JSON document and nothing else.** The
-  answer is decoded strictly ([`judge`](../judge/DESIGN.md)): prose around it,
+  answer is decoded strictly ([`judge`](../pkg/judge/DESIGN.md)): prose around it,
   a code fence, or a transcript with the answer somewhere inside is an answer
   that cannot be read, and a wrapper that cannot be told to say only the answer
   normalizes its own output — `discobox-prompt-answer`, which the

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // tarGz is a gzipped tar of entries, each a name and, for a file, its content,

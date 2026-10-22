@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/fsdurable"
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
 

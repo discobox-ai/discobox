@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // Enter on a picker lists every option at once, with what each means; ←→

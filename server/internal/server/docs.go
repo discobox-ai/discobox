@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	rootopenapi "github.com/discobox-ai/discobox/api/openapi"
-	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/pkg/health"
 )
 
 const scalarDocsHTML = `<!doctype html>

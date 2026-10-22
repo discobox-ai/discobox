@@ -177,7 +177,7 @@ A server may judge with Jev instead (ADR 26-10-01-324). `judgeBackend: jev`
 chooses it, and so does the default, `auto`, when `jevApiKey` is set. The
 backend is the server's choice, like judging itself. With `jevUnsure: refuse`
 no project wants a judge discobox, so the convergence makes none and takes away
-any made before the switch. `put` sends the job to Jev (`judge/jev`) rather than to a discobox:
+any made before the switch. `put` sends the job to Jev (`pkg/judge/jev`) rather than to a discobox:
 there is nothing to reach, so the bound is `judge.Timeout` alone. Everything
 around the call is unchanged: the question read from the live grant, standing
 rows (Jev proposes none, but rows a judge discobox left still cover until they

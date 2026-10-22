@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"

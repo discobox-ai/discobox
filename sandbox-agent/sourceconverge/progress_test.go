@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // git redraws a meter in place with carriage returns and ends it with a

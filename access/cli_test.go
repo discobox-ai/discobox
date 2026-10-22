@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // The CLI is driven by an LLM, so what is asserted here is the contract an

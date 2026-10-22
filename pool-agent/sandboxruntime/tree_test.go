@@ -21,9 +21,9 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/layout"
-	"github.com/discobox-ai/discobox/sandboxtree"
-	"github.com/discobox-ai/discobox/tarsums"
+	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/sandboxtree"
+	"github.com/discobox-ai/discobox/pkg/tarsums"
 )
 
 // exportDaemon is a Docker daemon holding no sandbox containers, whose one

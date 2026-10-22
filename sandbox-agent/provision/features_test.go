@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 const head = "apiVersion: discobox.ai/provision/v1\n"

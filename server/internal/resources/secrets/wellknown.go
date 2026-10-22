@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // This file is the control plane's side of well-known credentials: an ask that

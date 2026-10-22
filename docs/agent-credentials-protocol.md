@@ -190,7 +190,7 @@ that carries a policy is judged against the policy, whichever use was named.
 The wire carries the policy's structure only. A client lets its caller write
 statements as sentences and shows them back as sentences — the `policy`
 package's `ParseStatements` and `FormatStatements`, whose grammar is
-`policy/DESIGN.md`'s — and should validate before it sends, so a malformed
+`pkg/policy/DESIGN.md`'s — and should validate before it sends, so a malformed
 policy is refused where it was written; `discobox-access request --statement`
 does both.
 

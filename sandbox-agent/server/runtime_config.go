@@ -8,9 +8,9 @@ import (
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // GetSandboxRuntimeConfig answers with the runtime-config document the sandbox

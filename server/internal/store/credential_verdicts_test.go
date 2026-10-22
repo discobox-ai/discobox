@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )

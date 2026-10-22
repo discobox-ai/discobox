@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 	"github.com/discobox-ai/x/shorttmp"

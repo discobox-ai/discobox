@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 // HostMount describes an additional host path mounted into pool-agent

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/discobox-ai/discobox/fsdurable"
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
+	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
 

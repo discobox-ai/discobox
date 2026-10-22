@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // ProjectSkillsDir is where a repository declares the agent skills it wants the

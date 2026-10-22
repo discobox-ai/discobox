@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/wire"
+	"github.com/discobox-ai/discobox/pkg/wire"
 )
 
 const (

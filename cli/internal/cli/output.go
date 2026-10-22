@@ -15,15 +15,15 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/discobox-ai/discobox/agentcreds"
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/uselines"
-	"github.com/discobox-ai/discobox/sandboxmeta"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 func writeJSON(w io.Writer, value any) error {

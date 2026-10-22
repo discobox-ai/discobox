@@ -147,7 +147,7 @@ Do not infer the crash time from the last preload, or treat preloads as failures
 The `server failed` path in `server/internal/server/server.go:serveAll` shuts
 down serving and returns the listener error. Pool-sync warnings in
 `server/providers/poolruntime/provider.go:ReconcilePool` are best-effort and do
-not themselves terminate the server. `endpoint/autolaunch.go:EnsureRunning`
+not themselves terminate the server. `pkg/endpoint/autolaunch.go:EnsureRunning`
 can launch a replacement server on a later CLI invocation; that is a possible
 explanation for recovery, not something the incident logs prove.
 

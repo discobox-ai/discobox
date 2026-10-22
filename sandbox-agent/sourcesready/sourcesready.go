@@ -31,7 +31,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // backstopInterval re-checks the file in case an fsnotify event is dropped, or

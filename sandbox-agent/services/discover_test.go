@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxservices"
+	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // writeService puts one declaration in root's service directory.

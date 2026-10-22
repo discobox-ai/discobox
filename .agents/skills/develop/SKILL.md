@@ -169,7 +169,7 @@ Run the tests of what you touched, then `go tool task check-hooks`:
   keepalive refreshed.
 - `installer` `*DrawsTheMarkOnlyWhereItShows` failing only inside a discobox
   is the box's `FORCE_COLOR`: confirm with
-  `env -u FORCE_COLOR -u CLICOLOR_FORCE -u COLORTERM go test ./installer/ -run DrawsTheMark`.
+  `env -u FORCE_COLOR -u CLICOLOR_FORCE -u COLORTERM go test ./pkg/installer/ -run DrawsTheMark`.
 
 Status line: `implemented: <what>, tests <pass/fail>, hooks <state>`.
 

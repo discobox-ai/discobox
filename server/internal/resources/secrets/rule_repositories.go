@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/sourceref"
 )
 
 // Which discoboxes an approval rule is for is a list of repositories, compared

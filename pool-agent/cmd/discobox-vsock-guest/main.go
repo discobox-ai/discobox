@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	guestvsock "github.com/discobox-ai/discobox/vsock"
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
 )
 
 func main() {

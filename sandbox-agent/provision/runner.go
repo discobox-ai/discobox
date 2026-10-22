@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Result is what became of one step in a run.

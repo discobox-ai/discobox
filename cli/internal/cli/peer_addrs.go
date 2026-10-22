@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
 // A client remembers where a server answered, and offers those addresses back

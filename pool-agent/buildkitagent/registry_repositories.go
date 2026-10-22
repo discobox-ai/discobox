@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 // The pool registry keeps a repository per name under a fixed tree, which is

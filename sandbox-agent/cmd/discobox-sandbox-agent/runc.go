@@ -5,7 +5,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/discobox-ai/discobox/runcca"
+	"github.com/discobox-ai/discobox/pkg/runcca"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 )
 

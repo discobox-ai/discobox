@@ -17,7 +17,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/configfile"
+	"github.com/discobox-ai/discobox/pkg/configfile"
 )
 
 // FileVar names the configuration file, and DefaultFileName is what Load reads

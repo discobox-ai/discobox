@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const deliveryTestSandboxID = "sandbox-1"

@@ -10,7 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
 
 // The terminal's read, type, and wait routes (ADR 0137), raw: one API call

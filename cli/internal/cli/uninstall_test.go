@@ -15,8 +15,8 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/internal/filelock"
+	"github.com/discobox-ai/discobox/pkg/health"
 )
 
 // uninstallHome points every directory the uninstall resolves into a temporary

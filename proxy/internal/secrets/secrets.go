@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
 )
 
 // ErrDenied indicates a sentinel is unknown, unapproved, or not permitted for

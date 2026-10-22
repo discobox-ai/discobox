@@ -16,8 +16,8 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/clientconfig"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
 // listProjectSkillsSources is the project's skills sources, in the order they

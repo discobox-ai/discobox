@@ -15,7 +15,7 @@ package policyview
 import (
 	"strconv"
 
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // Kind is what a line of the rendering is, for a surface that sets each kind

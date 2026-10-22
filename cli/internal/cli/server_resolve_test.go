@@ -15,11 +15,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
-	"github.com/discobox-ai/discobox/releasemanifest"
-	"github.com/discobox-ai/discobox/serverstage"
-	"github.com/discobox-ai/discobox/version"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache/imagecachetest"
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
+	"github.com/discobox-ai/discobox/pkg/version"
 )
 
 // fakeInstall is a directory holding a discobox with a server beside it, which
@@ -437,7 +437,7 @@ func TestExplicitReleaseStagesImagesWithADevelopmentBinary(t *testing.T) {
 
 func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) {
 	binary, fetches := servedManifest(t, "v0.8.0")
-	m, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+	m, err := releasemanifest.Read("../../../pkg/releasemanifest/examples/v0.8.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) 
 func TestReleaseManifestRejectsCorruptServerDownload(t *testing.T) {
 	binary, _ := servedManifest(t, "v0.8.0")
 	binary.Assets[0].SHA256 = strings.Repeat("0", 64)
-	m, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+	m, err := releasemanifest.Read("../../../pkg/releasemanifest/examples/v0.8.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}

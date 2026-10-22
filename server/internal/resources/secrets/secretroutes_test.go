@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/secretroute"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	"github.com/discobox-ai/discobox/server/internal/services"

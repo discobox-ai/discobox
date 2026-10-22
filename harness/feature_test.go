@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Each harness bundle carries its harness as a feature (ADR 26-10-16-423

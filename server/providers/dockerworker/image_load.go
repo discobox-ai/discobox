@@ -18,7 +18,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/stringid"
 
-	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 

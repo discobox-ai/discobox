@@ -16,10 +16,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/discobox-ai/discobox/execstream"
-	"github.com/discobox-ai/discobox/execstream/client"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/execstream"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/resume"
 
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
@@ -27,7 +27,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/sandboxshell"
+	"github.com/discobox-ai/discobox/pkg/sandboxshell"
 )
 
 type sandboxExecCreateOptions struct {

@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/execstream/host"
-	"github.com/discobox-ai/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/host"
+	"github.com/discobox-ai/discobox/pkg/execstream/resume"
 )
 
 // This test crosses the actual CLI websocket boundary. It deliberately drops

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // TestNestedDockerAsksTheStub holds the image's daemon.json to the stub's

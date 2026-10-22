@@ -16,7 +16,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 // tunnelDialTimeout bounds the handshake only. Once the tunnel is up it lives

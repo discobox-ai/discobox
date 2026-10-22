@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxshell"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
-	"github.com/discobox-ai/discobox/sandboxshell"
 )
 
 // writePasswd is now runuser's business: the passwd format is parsed in one

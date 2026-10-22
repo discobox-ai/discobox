@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 // A built image can leave the daemon without any file changing — reclamation

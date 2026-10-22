@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/agentcreds"
-	"github.com/discobox-ai/discobox/policy"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // The sentences the help teaches, with the definitions their words need.

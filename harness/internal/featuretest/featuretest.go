@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/provisionspec"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Feature is a harness's loaded feature.

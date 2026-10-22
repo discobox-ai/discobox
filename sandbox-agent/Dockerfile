@@ -11,36 +11,36 @@ ARG TARGETOS TARGETARCH
 WORKDIR /src
 
 COPY go.mod go.sum ./
-COPY agentcreds ./agentcreds
+COPY pkg/agentcreds ./pkg/agentcreds
 COPY access ./access
 COPY api ./api
-COPY auditid ./auditid
-COPY declared ./declared
-COPY execstream ./execstream
-COPY fsdurable ./fsdurable
-COPY gitbackend ./gitbackend
+COPY pkg/auditid ./pkg/auditid
+COPY pkg/declared ./pkg/declared
+COPY pkg/execstream ./pkg/execstream
+COPY pkg/fsdurable ./pkg/fsdurable
+COPY pkg/gitbackend ./pkg/gitbackend
 COPY harness ./harness
-COPY hostscope ./hostscope
-COPY judge ./judge
-COPY platform ./platform
-COPY policy ./policy
-COPY programstatus ./programstatus
-COPY provisionspec ./provisionspec
+COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/judge ./pkg/judge
+COPY pkg/platform ./pkg/platform
+COPY pkg/policy ./pkg/policy
+COPY pkg/programstatus ./pkg/programstatus
+COPY pkg/provisionspec ./pkg/provisionspec
 COPY proxy ./proxy
-COPY runcca ./runcca
-COPY sandboxconfig ./sandboxconfig
-COPY sandboxpath ./sandboxpath
-COPY sandboxmeta ./sandboxmeta
-COPY sandboxservices ./sandboxservices
-COPY sandboxshell ./sandboxshell
-COPY sandboxtree ./sandboxtree
-COPY sandboxuser ./sandboxuser
-COPY sourcecache ./sourcecache
-COPY sourceref ./sourceref
-COPY tarsums ./tarsums
-COPY tools ./tools
-COPY vsock ./vsock
-COPY wire ./wire
+COPY pkg/runcca ./pkg/runcca
+COPY pkg/sandboxconfig ./pkg/sandboxconfig
+COPY pkg/sandboxpath ./pkg/sandboxpath
+COPY pkg/sandboxmeta ./pkg/sandboxmeta
+COPY pkg/sandboxservices ./pkg/sandboxservices
+COPY pkg/sandboxshell ./pkg/sandboxshell
+COPY pkg/sandboxtree ./pkg/sandboxtree
+COPY pkg/sandboxuser ./pkg/sandboxuser
+COPY pkg/sourcecache ./pkg/sourcecache
+COPY pkg/sourceref ./pkg/sourceref
+COPY pkg/tarsums ./pkg/tarsums
+COPY pkg/tools ./pkg/tools
+COPY pkg/vsock ./pkg/vsock
+COPY pkg/wire ./pkg/wire
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -90,15 +90,15 @@ ARG TARGETOS TARGETARCH
 WORKDIR /src
 
 COPY go.mod go.sum ./
-COPY fsdurable ./fsdurable
+COPY pkg/fsdurable ./pkg/fsdurable
 COPY harness ./harness
-COPY hostscope ./hostscope
-COPY platform ./platform
-COPY provisionspec ./provisionspec
-COPY sandboxconfig ./sandboxconfig
-COPY sandboxpath ./sandboxpath
-COPY sandboxuser ./sandboxuser
-COPY sourceref ./sourceref
+COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/platform ./pkg/platform
+COPY pkg/provisionspec ./pkg/provisionspec
+COPY pkg/sandboxconfig ./pkg/sandboxconfig
+COPY pkg/sandboxpath ./pkg/sandboxpath
+COPY pkg/sandboxuser ./pkg/sandboxuser
+COPY pkg/sourceref ./pkg/sourceref
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -117,39 +117,39 @@ ARG TARGETOS TARGETARCH
 WORKDIR /src
 
 COPY go.mod go.sum ./
-COPY agentcreds ./agentcreds
+COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
-COPY auditid ./auditid
-COPY configfile ./configfile
-COPY controlplane ./controlplane
-COPY declared ./declared
-COPY endpoint ./endpoint
-COPY execstream ./execstream
-COPY fsdurable ./fsdurable
+COPY pkg/auditid ./pkg/auditid
+COPY pkg/configfile ./pkg/configfile
+COPY pkg/controlplane ./pkg/controlplane
+COPY pkg/declared ./pkg/declared
+COPY pkg/endpoint ./pkg/endpoint
+COPY pkg/execstream ./pkg/execstream
+COPY pkg/fsdurable ./pkg/fsdurable
 COPY harness ./harness
-COPY health ./health
-COPY hostscope ./hostscope
-COPY imagecache ./imagecache
+COPY pkg/health ./pkg/health
+COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/imagecache ./pkg/imagecache
 COPY internal ./internal
-COPY platform ./platform
-COPY policy ./policy
-COPY programstatus ./programstatus
-COPY randomname ./randomname
-COPY releasemanifest ./releasemanifest
-COPY sandboxconfig ./sandboxconfig
-COPY sandboxpath ./sandboxpath
-COPY sandboxmeta ./sandboxmeta
-COPY sandboxservices ./sandboxservices
-COPY sandboxshell ./sandboxshell
-COPY sandboxuser ./sandboxuser
-COPY secretformat ./secretformat
-COPY secretroute ./secretroute
-COPY serverstage ./serverstage
-COPY sourcecache ./sourcecache
-COPY sourceref ./sourceref
-COPY tools ./tools
-COPY version ./version
-COPY wellknown ./wellknown
+COPY pkg/platform ./pkg/platform
+COPY pkg/policy ./pkg/policy
+COPY pkg/programstatus ./pkg/programstatus
+COPY pkg/randomname ./pkg/randomname
+COPY pkg/releasemanifest ./pkg/releasemanifest
+COPY pkg/sandboxconfig ./pkg/sandboxconfig
+COPY pkg/sandboxpath ./pkg/sandboxpath
+COPY pkg/sandboxmeta ./pkg/sandboxmeta
+COPY pkg/sandboxservices ./pkg/sandboxservices
+COPY pkg/sandboxshell ./pkg/sandboxshell
+COPY pkg/sandboxuser ./pkg/sandboxuser
+COPY pkg/secretformat ./pkg/secretformat
+COPY pkg/secretroute ./pkg/secretroute
+COPY pkg/serverstage ./pkg/serverstage
+COPY pkg/sourcecache ./pkg/sourcecache
+COPY pkg/sourceref ./pkg/sourceref
+COPY pkg/tools ./pkg/tools
+COPY pkg/version ./pkg/version
+COPY pkg/wellknown ./pkg/wellknown
 COPY termpane ./termpane
 COPY cli ./cli
 

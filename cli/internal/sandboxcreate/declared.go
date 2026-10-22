@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/x/gitutil"
 )
 

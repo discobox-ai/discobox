@@ -12,10 +12,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
-	"github.com/discobox-ai/discobox/sandboxconfig"
-	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 const runtimeConfigPath = "/api/projects/project-1/sandboxes/sandbox-1/runtime-config"

@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/sandboxservices"
+	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // The protocol is the repetitive half of a port list, so it is said once per

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
 func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {

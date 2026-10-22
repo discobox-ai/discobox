@@ -21,11 +21,11 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/health"
-	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/serverstage"
-	"github.com/discobox-ai/discobox/sourceref"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
 const defaultProjectAlias = "default"

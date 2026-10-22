@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/programstatus"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // The window speaks OSC 7501 to the terminal it runs in for the discobox it

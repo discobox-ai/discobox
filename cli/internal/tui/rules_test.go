@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // "Auto approve" makes a standing answer out of one request, and most of its

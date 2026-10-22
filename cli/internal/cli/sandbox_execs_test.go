@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandboxshell"
+	"github.com/discobox-ai/discobox/pkg/sandboxshell"
 )
 
 func TestCreateSandboxExecBodyParsesUserObject(t *testing.T) {

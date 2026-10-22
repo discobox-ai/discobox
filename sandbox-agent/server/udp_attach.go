@@ -12,7 +12,7 @@ import (
 	"github.com/coder/websocket"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
-	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 // udpDatagramLimit is the largest datagram the tunnel carries in either
