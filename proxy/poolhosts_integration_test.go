@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -35,7 +36,7 @@ func TestHTTPProxyPoolHostsAreForwardedAsTheCertificatesSandbox(t *testing.T) {
 		mu       sync.Mutex
 		requests []seen
 	)
-	listener := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	listener := ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		requests = append(requests, seen{
@@ -52,9 +53,16 @@ func TestHTTPProxyPoolHostsAreForwardedAsTheCertificatesSandbox(t *testing.T) {
 	})
 	upstream := httptest.NewServer(listener)
 	defer upstream.Close()
-	// The assets listener on a Unix socket, as the pool serves it.
+	// The assets listener on a Unix socket, as the pool serves it. The
+	// socket's directory is short, since a socket path over ~100 bytes does
+	// not bind, and a test's own temporary directory can be longer.
 	dir := t.TempDir()
-	socket := filepath.Join(dir, "assets.sock")
+	sockets, err := os.MkdirTemp("", "ph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockets) })
+	socket := filepath.Join(sockets, "assets.sock")
 	assetsListener, err := wire.Listen(wire.UnixURL(socket))
 	if err != nil {
 		t.Fatal(err)
