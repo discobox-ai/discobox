@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
@@ -259,10 +258,14 @@ func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, c
 	if err := d.app.installToolFiles(ctx, d.projectID, sandboxID, def); err != nil {
 		return tui.Exec{}, nil, err
 	}
+	command, err := d.app.sandboxToolCommand(ctx, d.projectID, sandboxID, def, nil)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, env: append(paneTerminalEnv(), def.Env...),
 		metadata: map[string]string{execToolMetadataKey: def.ID},
-	}, cols, rows, sandboxToolCommand(def, nil)...)
+	}, cols, rows, command...)
 }
 
 // EndExec ends one exec session in the sandbox, killing what is running in it.
@@ -273,32 +276,24 @@ func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) e
 
 func (d *apiDataSource) PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error) {
 	d = d.at(sandboxID)
-	command := []string{"sh", "-c", putImageScript, "sh", name}
-	out, err := d.app.sandboxCommandInput(ctx, d.projectID, sandboxID, command, bytes.NewReader(data))
+	stat, err := d.app.writeSandboxFile(ctx, apiclientgen.WriteSandboxFileParams{
+		ProjectId: d.projectID,
+		SandboxId: sandboxID,
+		Path:      pastedImageDir + "/" + name,
+		Parents:   apiclientgen.NewOptBool(true),
+	}, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("copy %s into the discobox: %w", name, err)
 	}
-	path := strings.TrimSpace(out)
-	if path == "" {
-		return "", fmt.Errorf("copy %s into the discobox: it did not say where it put it", name)
-	}
-	return path, nil
+	return stat.Path, nil
 }
 
-// putImageScript writes its stdin to a fresh file named $1 in a directory of
-// pasted images under the sandbox's temporary directory, and prints the file's
-// path.
-//
-// The bytes ride stdin rather than argv: an argument is capped at 128 KiB on
-// Linux, and a screenshot is routinely more. The name is the console's own —
-// a timestamp and a base name already stripped to a safe alphabet — so it needs
-// no quoting, and the path printed is the path a program in the discobox opens.
-const putImageScript = `set -e
-d="${TMPDIR:-/tmp}/discobox-paste"
-mkdir -p "$d"
-p="$d/$1"
-cat > "$p"
-printf %s "$p"`
+// pastedImageDir is the directory of pasted images in the discobox, where
+// PutImage writes each through the files API as the discobox's user (ADR
+// 26-10-22-499 §4). The name is the console's own — a timestamp and a base
+// name already stripped to a safe alphabet — and the path the write answers
+// with is the path a program in the discobox opens.
+const pastedImageDir = "/tmp/discobox-paste"
 
 // newSandboxSession is what all of them are: create the exec, attach to it,
 // and only then start it.

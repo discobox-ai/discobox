@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
@@ -136,12 +138,16 @@ func (d *apiDataSource) EditToolFile(ctx context.Context, file tui.ToolFile, std
 // installToolFiles puts a tool's files into the sandbox, each one only where
 // there is nothing at that path already.
 //
-// One exec per file, and the decision is made inside the sandbox rather than
-// here: "is there one already" and "write it" have to be the same step, or two
-// windows opening the same tool at once race to create it. The content rides as
-// its own argv element, so there is no quoting to get wrong and no encoding to
-// depend on — only sh, printf and mkdir, which is as portable as the inside of
-// a discobox gets.
+// One write per file through the files API, and the decision is the
+// sandbox's rather than this machine's: a write that fails when the file
+// exists makes "is there one already" and "write it" the same step, so two
+// windows opening the same tool at once cannot race to create it. The content
+// is the request's body, so nothing has to be quoted and no size is too big.
+//
+// The destination is a fixed path under the home directory. A tool whose state
+// has to be keyed on something only the discobox knows — fresh's trust
+// decision, keyed on the working directory — records it in its own script
+// instead (ADR 0125 §6).
 func (a *App) installToolFiles(ctx context.Context, projectID, sandboxID string, def tools.Definition) error {
 	for _, file := range def.Files {
 		home := strings.TrimPrefix(strings.TrimSpace(file.Home), "/")
@@ -152,36 +158,17 @@ func (a *App) installToolFiles(ctx context.Context, projectID, sandboxID string,
 		if err != nil {
 			return err
 		}
-		command := []string{"sh", "-c", installToolFileScript, "sh", home, content}
-		_, errOut, code, err := a.sandboxCommandOutput(ctx, projectID, sandboxID, "", command)
-		if err != nil {
+		// Relative, so it is relative to the default user's home.
+		_, err = a.writeSandboxFile(ctx, apiclientgen.WriteSandboxFileParams{
+			ProjectId: projectID,
+			SandboxId: sandboxID,
+			Path:      home,
+			IfExists:  apiclientgen.NewOptWriteSandboxFileIfExists(apiclientgen.WriteSandboxFileIfExistsFail),
+			Parents:   apiclientgen.NewOptBool(true),
+		}, strings.NewReader(content))
+		if err != nil && !errors.Is(err, errSandboxFileExists) {
 			return fmt.Errorf("install %s: %w", file.Name, err)
-		}
-		if code != 0 {
-			detail := strings.TrimSpace(errOut)
-			if detail == "" {
-				detail = fmt.Sprintf("exit %d", code)
-			}
-			return fmt.Errorf("install %s: %s", file.Name, detail)
 		}
 	}
 	return nil
 }
-
-// installToolFileScript writes $2 to $HOME/$1, and does nothing at all if
-// something is already there.
-//
-// The destination is a fixed path under the home directory. A tool whose state
-// has to be keyed on something only the discobox knows — fresh's trust
-// decision, keyed on the working directory — records it in its own script
-// instead (ADR 0125 §6).
-//
-// The test is an `if` rather than `[ -e "$p" ] && exit 0`: under `set -e` a
-// failing AND-list is the list's own exit status, so the shell would leave with
-// 1 in exactly the case that is supposed to be normal.
-const installToolFileScript = `set -e
-p="$HOME/$1"
-if [ ! -e "$p" ]; then
-	mkdir -p "$(dirname "$p")"
-	printf %s "$2" > "$p"
-fi`

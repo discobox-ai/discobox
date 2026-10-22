@@ -13,12 +13,11 @@ import (
 
 // A tool that catches Ctrl-C and carries on still ends with its own status,
 // and its directory still goes.
-func TestDeliverToolScriptKeepsAToolThatCatchesInterrupt(t *testing.T) {
+func TestRunToolScriptKeepsAToolThatCatchesInterrupt(t *testing.T) {
 	tmp := t.TempDir()
-	body := "#!/bin/sh\ntrap 'echo caught' INT\nkill -INT 0\nsleep 0.2\nexit 7\n"
+	dir := writeToolScript(t, tmp, "catch.sh", "#!/bin/sh\ntrap 'echo caught' INT\nkill -INT 0\nsleep 0.2\nexit 7\n")
 	//nolint:gosec // G204: the script under test, with the test's own fixed arguments.
-	cmd := exec.CommandContext(t.Context(), "sh", "-c", deliverToolScript, "sh", "catch.sh", body)
-	cmd.Env = append(os.Environ(), "TMPDIR="+tmp)
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", runToolScript, "sh", dir, "catch.sh")
 	// Its own process group, so the tool's `kill -INT 0` reaches the shell
 	// and the tool and nothing of the test's.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
