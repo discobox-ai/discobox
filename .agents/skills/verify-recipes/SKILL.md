@@ -919,3 +919,35 @@ d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, n
   tmux: the second run prints the seeded previous config). Delete the stub
   harness after purging its archived `configure-*` boxes, which hold it.
 
+# Verifying the AHP host (`discobox admin ahp`, `cli/internal/ahphost`)
+
+Drive it as VS Code would, with Microsoft's Go client, from a module of its own
+outside the repo (`go.mod` requiring
+`github.com/microsoft/agent-host-protocol/clients/go v1.0.0`; build with
+`GOWORK=off`). Create a box first (`new -d --no-source -H shell` — a shell
+primary shows typed input plainly), then:
+
+```bash
+(cd /tmp && XDG_STATE_HOME=$S/state nohup $BIN --server http://127.0.0.1:8080 \
+  admin ahp --listen 127.0.0.1:17591 >$S/host.out 2>$S/host.err &)
+TOK=$(cat $S/state/discobox/cli/ahp-token)   # tkn query parameter
+```
+
+- `XDG_STATE_HOME` keeps the token out of the real state dir, and a port other
+  than 7591 keeps clear of a real host. Any `admin ahp` run without it writes
+  `~/.local/state/discobox/cli/ahp-token`; delete it if you made it.
+- Subscribe to a terminal with a raw `subscribe` request (`AttachSubscription`
+  first): the SDK's typed `Subscribe` decodes a terminal snapshot, which has a
+  `lifecycle`, as a session's and fails.
+- What is worth driving: `listSessions`; subscribe session → default chat →
+  the running tool call's terminal URI; `terminal/input`; a
+  `chat/pendingMessageSet` (queued) to see the next turn and the text typed;
+  `createTerminal` with `cwd` `file://<box id>/`; `exit` in that shell for
+  `terminal/exited`; `stop` the box and subscribe again (not woken, a
+  "[discobox … is stopped]" line); `disposeSession` (archived, status 65).
+- Editing any file restarts the dev server; a host's poll in flight then logs a
+  503 once. Stop the host by pid — `pkill -f 'admin ahp'` matches your own
+  shell.
+- The reserved port: `python3 -m http.server 7591` in the box, then
+  `discobox proxy <id>` prints `listening on 7592 -> discobox 7591 (7591 is
+  reserved)`.
