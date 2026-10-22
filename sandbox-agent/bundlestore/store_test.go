@@ -1,3 +1,8 @@
+//go:build !windows
+
+// The store runs on the box alone, which is Linux: a pin's link is swapped by
+// renaming a new link over it, which Windows refuses while the old one exists.
+
 package bundlestore
 
 import (

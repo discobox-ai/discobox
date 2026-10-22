@@ -189,7 +189,8 @@ func TestInstallLaysTheUnitsAndTheirEnablement(t *testing.T) {
 		}
 	}
 	target, err := os.Readlink(filepath.Join(root, "etc/systemd/system/sysinit.target.requires/discobox-wire.service"))
-	if err != nil || target != "/etc/systemd/system/discobox-wire.service" {
+	// Windows hands a link back in its own separators.
+	if err != nil || filepath.ToSlash(target) != "/etc/systemd/system/discobox-wire.service" {
 		t.Fatalf("wire link = %q, %v", target, err)
 	}
 }
