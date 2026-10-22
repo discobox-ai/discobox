@@ -64,12 +64,12 @@ func (h *Host) handleRequest(c *conn, id json.RawMessage, method string, params 
 			c.reply(id, nil, err)
 			return
 		}
-		c.reply(id, nil, h.createSession(p))
+		c.reply(id, nil, h.createSession(c, p))
 	case "disposeSession", "createChat", "disposeChat", "createTerminal", "disposeTerminal":
 		go func() {
 			ctx, cancel := context.WithTimeout(c.ctx, opTimeout)
 			defer cancel()
-			c.reply(id, nil, h.handleOperation(ctx, method, params))
+			c.reply(id, nil, h.handleOperation(ctx, c, method, params))
 		}()
 	case "resolveSessionConfig":
 		// VS Code asks before it creates a session what can be configured
@@ -87,7 +87,7 @@ func (h *Host) handleRequest(c *conn, id json.RawMessage, method string, params 
 	}
 }
 
-func (h *Host) handleOperation(ctx context.Context, method string, params json.RawMessage) error {
+func (h *Host) handleOperation(ctx context.Context, c *conn, method string, params json.RawMessage) error {
 	switch method {
 	case "disposeSession":
 		var p ahptypes.DisposeSessionParams
@@ -112,7 +112,7 @@ func (h *Host) handleOperation(ctx context.Context, method string, params json.R
 		if err := decode(params, &p); err != nil {
 			return err
 		}
-		return h.createTerminal(ctx, p)
+		return h.createTerminal(ctx, c, p)
 	default:
 		var p ahptypes.DisposeTerminalParams
 		if err := decode(params, &p); err != nil {
@@ -249,7 +249,9 @@ func (h *Host) subscribeLocked(c *conn, channel string) (*ahptypes.Snapshot, err
 func (h *Host) listLocked() []ahptypes.SessionSummary {
 	items := make([]ahptypes.SessionSummary, 0, len(h.sessions))
 	for _, s := range h.sessions {
-		items = append(items, h.summaryLocked(s))
+		if s.listed {
+			items = append(items, h.summaryLocked(s))
+		}
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].ModifiedAt != items[j].ModifiedAt {
@@ -316,7 +318,7 @@ func (h *Host) handleSessionAction(s *session, act ahptypes.StateAction, origin 
 // the prompt the discobox is created with (deliver). It is cut from the folder
 // the client named, when that is a folder on this machine, and from the
 // directory the host runs in otherwise.
-func (h *Host) createSession(p ahptypes.CreateSessionParams) error {
+func (h *Host) createSession(c *conn, p ahptypes.CreateSessionParams) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.sessions[p.Channel] != nil {
@@ -336,9 +338,9 @@ func (h *Host) createSession(p ahptypes.CreateSessionParams) error {
 			break
 		}
 	}
+	// Not listed until its first message makes a discobox (session.listed).
 	s := h.newSessionLocked(p.Channel, nil)
-	s.harness, s.source = harness, source
-	h.addSessionLocked(s)
+	s.harness, s.source, s.owner = harness, source, c
 	return nil
 }
 
@@ -485,7 +487,7 @@ func (h *Host) removeChatLocked(ch *chat) {
 // which is how VS Code asks for one for the session it shows (sessions.go,
 // workingDirectory). A discobox that is not running is not started for it:
 // the terminal says so and is exited.
-func (h *Host) createTerminal(ctx context.Context, p ahptypes.CreateTerminalParams) error {
+func (h *Host) createTerminal(ctx context.Context, c *conn, p ahptypes.CreateTerminalParams) error {
 	h.mu.Lock()
 	if h.terminals[p.Channel] != nil {
 		h.mu.Unlock()
@@ -506,16 +508,16 @@ func (h *Host) createTerminal(ctx context.Context, p ahptypes.CreateTerminalPara
 		// is none to show — and draws a refusal as an error. A folder that
 		// names no discobox gets a terminal that says so instead.
 		h.cfg.Logf("ahp: a terminal was asked for in %q, which names no discobox", cwd)
-		h.noticeTerminalLocked(p, title, &session{}, "no discobox here: open a discobox's session for a shell in it")
+		h.noticeTerminalLocked(c, p, title, &session{}, "no discobox here: open a discobox's session for a shell in it")
 		h.mu.Unlock()
 		return nil
 	}
-	t := &terminal{uri: p.Channel, s: s, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
+	t := &terminal{uri: p.Channel, s: s, owner: c, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
 	if p.Cols != nil && p.Rows != nil {
 		t.cols, t.rows = int(*p.Cols), int(*p.Rows)
 	}
 	if !s.running() {
-		h.noticeTerminalLocked(p, title, s, "discobox "+s.box.Name+" is "+string(s.box.State))
+		h.noticeTerminalLocked(c, p, title, s, "discobox "+s.box.Name+" is "+string(s.box.State))
 		h.mu.Unlock()
 		return nil
 	}
@@ -548,8 +550,8 @@ func (h *Host) createTerminal(ctx context.Context, p ahptypes.CreateTerminalPara
 // with an exited terminal saying why — what VS Code draws in place of a
 // refusal it would show as an error. s is the session it belongs to, or an
 // empty one when it belongs to none.
-func (h *Host) noticeTerminalLocked(p ahptypes.CreateTerminalParams, title string, s *session, notice string) {
-	t := &terminal{uri: p.Channel, s: s, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
+func (h *Host) noticeTerminalLocked(c *conn, p ahptypes.CreateTerminalParams, title string, s *session, notice string) {
+	t := &terminal{uri: p.Channel, s: s, owner: c, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
 	h.terminals[t.uri] = t
 	h.dispatch(t.uri, ahptypes.StateAction{Value: &ahptypes.TerminalDataAction{
 		Type: ahptypes.ActionTypeTerminalData, Data: "\x1b[2m[" + notice + "]\x1b[0m\r\n",

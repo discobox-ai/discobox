@@ -48,6 +48,9 @@ type terminal struct {
 	rows    int
 	// retryAt is when an attach that failed is tried again.
 	retryAt time.Time
+	// owner is the client whose createTerminal made a shell. Only its going
+	// forgets the shell once it has exited.
+	owner *conn
 	// created is when the terminal was made, which an exec listing taken
 	// before it does not reflect yet.
 	created time.Time

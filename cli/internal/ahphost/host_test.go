@@ -552,6 +552,15 @@ func TestANewSessionIsCreatedByItsFirstMessage(t *testing.T) {
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
+	// A draft is not listed: VS Code creates one for every new session it
+	// shows, and only a first message makes it a discobox.
+	var drafts ahptypes.ListSessionsResult
+	if err := client.Request(ctx, "listSessions", ahptypes.ListSessionsParams{Channel: ahptypes.RootResourceURI}, &drafts); err != nil {
+		t.Fatal(err)
+	}
+	if len(drafts.Items) != 0 {
+		t.Fatalf("listed %+v before its first message", drafts.Items)
+	}
 	res, _, err := client.Subscribe(ctx, uri)
 	if err != nil {
 		t.Fatal(err)
@@ -838,4 +847,35 @@ func TestAnExitedShellIsForgottenWhenItsClientGoes(t *testing.T) {
 		defer host.mu.Unlock()
 		return host.terminals["agenthost-terminal:/home"] == nil
 	})
+}
+
+// Two windows are two clients: one closing forgets its own drafts, never the
+// other's.
+func TestAClientGoingForgetsOnlyItsOwnDrafts(t *testing.T) {
+	boxes := &fakeBoxes{}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	host := New(Config{Boxes: boxes, Token: testToken, Poll: 20 * time.Millisecond, Logf: t.Logf})
+	go func() { _ = host.Run(ctx) }()
+	srv := httptest.NewServer(host)
+	t.Cleanup(srv.Close)
+	a, _ := connect(ctx, t, srv)
+	b, _ := connect(ctx, t, srv)
+	provider := "claude"
+	for client, uri := range map[*ahp.Client]string{a: "ahp-session:/a-draft", b: "ahp-session:/b-draft"} {
+		if err := client.Request(ctx, "createSession", ahptypes.CreateSessionParams{Channel: uri, Provider: &provider}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = b.Shutdown(ctx)
+	eventually(t, "b's draft to be forgotten", func() bool {
+		host.mu.Lock()
+		defer host.mu.Unlock()
+		return host.sessions["ahp-session:/b-draft"] == nil
+	})
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if host.sessions["ahp-session:/a-draft"] == nil {
+		t.Fatal("another client's going forgot a's draft")
+	}
 }

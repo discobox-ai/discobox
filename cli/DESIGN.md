@@ -719,7 +719,10 @@ flowchart LR
   the next one under that message, typed into the terminal through the exec
   input route (a paste when the program asked for one).
 - **A session a client created has no discobox until its first message**, which
-  is the prompt it is created with.
+  is the prompt it is created with. Until then it is a draft: VS Code creates a
+  session for every new-session view it opens, so a draft is neither listed nor
+  announced (`session.listed`), and one nobody has open is forgotten when the
+  client that created it goes — never when another does.
 - **Observing never wakes.** A screen is attached by the exec's own ID while
   someone watches it and the discobox runs, and let go when nobody does.
   Sending a message or typing into a stopped discobox starts it.

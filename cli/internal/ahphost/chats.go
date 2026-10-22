@@ -293,8 +293,8 @@ func (h *Host) create(ctx context.Context, s *session, prompt string) error {
 	s.box, s.hasBox, s.boxCreated = box, true, time.Now()
 	h.boxSessions[box.ID] = s.uri
 	h.refreshSessionStateLocked(s)
+	h.addSessionLocked(s)
 	h.refreshAgentsLocked()
-	h.activeSessionsLocked()
 	h.kick()
 	return nil
 }

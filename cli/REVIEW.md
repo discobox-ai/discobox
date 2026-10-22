@@ -113,6 +113,15 @@
   `ws://` on another address hands the token to anyone on the network
   (`listenLoopback`).
 
+## A client that goes
+
+- **What a client's disconnect cleans up is that client's own.** The AHP host
+  forgets drafts and exited shells when the client that made them goes
+  (`Host.dropConn`, checking `owner`). Sweeping everything nobody watches at
+  that moment removed another, still-connected client's draft, and its first
+  message then went nowhere. Anything new that a disconnect forgets carries its
+  owner and is checked against it.
+
 ## Reading an exec's attach
 
 - **A call whose work outlives it runs under a context that outlives it.** An

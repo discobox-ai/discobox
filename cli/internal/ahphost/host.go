@@ -232,16 +232,24 @@ func (h *Host) dropConn(c *conn) {
 	for uri, t := range h.terminals {
 		delete(t.subs, c)
 		h.releaseLocked(t)
-		// A shell that has exited and that nobody watches any more is
-		// forgotten: VS Code opens one by itself on every connect and need not
+		// A shell this client opened that has exited and that nobody watches
+		// any more is forgotten — another client's, never: VS Code opens one by itself on every connect and need not
 		// dispose of it, and kept, they would pile up for the host's life.
-		if t.shell() && t.exited() && len(t.subs) == 0 {
+		if t.owner == c && t.shell() && t.exited() && len(t.subs) == 0 {
 			delete(h.terminals, uri)
 			changed = true
 		}
 	}
 	if changed {
 		h.terminalsChangedLocked()
+	}
+	// A draft this client created and never sent a message to is forgotten
+	// once nobody has it open — another client's, never: it has no discobox, and VS Code makes
+	// one for every new session it shows.
+	for _, s := range h.sessions {
+		if s.owner == c && !s.hasBox && !s.creating && !h.watchedLocked(s) {
+			h.removeSessionLocked(s)
+		}
 	}
 }
 

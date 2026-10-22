@@ -37,6 +37,15 @@ type session struct {
 	// discobox asks once.
 	starting bool
 
+	// listed is whether the session is in the session list. A session a
+	// client created is not until its first message makes its discobox: VS
+	// Code creates one for every new-session draft it opens, and listing
+	// them would fill the list with sessions nobody sent anything to.
+	listed bool
+	// owner is the client that created a draft. Only its going forgets the
+	// draft: another client's disconnect says nothing about it.
+	owner *conn
+
 	// read is the client's IsRead flag. Discobox has no such state; the host
 	// keeps it so a listing does not reset it, and clears it when the agent
 	// reports something new.
@@ -246,7 +255,7 @@ func (h *Host) refreshSessionStateLocked(s *session) {
 func (h *Host) publishSummaryLocked(s *session, sum ahptypes.SessionSummary) {
 	prev := s.summary
 	s.summary = sum
-	if prev.Resource == "" {
+	if prev.Resource == "" || !s.listed {
 		return
 	}
 	var changes ahptypes.PartialSessionSummary
@@ -285,6 +294,7 @@ func (h *Host) publishSummaryLocked(s *session, sum ahptypes.SessionSummary) {
 
 // addSessionLocked publishes a new session to the root's subscribers.
 func (h *Host) addSessionLocked(s *session) {
+	s.listed = true
 	s.summary = h.summaryLocked(s)
 	h.notifyRoot("root/sessionAdded", ahptypes.SessionAddedParams{Channel: ahptypes.RootResourceURI, Summary: s.summary})
 	h.activeSessionsLocked()
@@ -308,7 +318,9 @@ func (h *Host) removeSessionLocked(s *session) {
 			delete(h.terminals, uri)
 		}
 	}
-	h.notifyRoot("root/sessionRemoved", ahptypes.SessionRemovedParams{Channel: ahptypes.RootResourceURI, Session: s.uri})
+	if s.listed {
+		h.notifyRoot("root/sessionRemoved", ahptypes.SessionRemovedParams{Channel: ahptypes.RootResourceURI, Session: s.uri})
+	}
 	h.terminalsChangedLocked()
 	h.activeSessionsLocked()
 }
