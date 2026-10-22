@@ -398,29 +398,27 @@ func TestAReadRequestShowsWhatItsVariablesResolveTo(t *testing.T) {
 	}
 }
 
-// A request that asks for a policy is a person's to approve each time: no
-// rule is proposed or made from it, since a rule answers uses alone and would
-// approve later asks without the policy that was read.
-func TestNoRuleIsMadeFromARequestWithAPolicy(t *testing.T) {
+// A request that asks for uses alone is a person's to approve each time: no
+// rule is proposed or made from it, since a rule's policy is what a
+// request's is held to, and uses alone have none.
+func TestNoRuleIsMadeFromARequestWithUsesAlone(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
-	asked := pullRequestPolicy()
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
 		SandboxId: testSandboxID, Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"},
-		Uses:   []apimodel.SecretUse{{Description: "open a pull request"}},
-		Policy: apiPolicy(t, asked),
+		Uses: []apimodel.SecretUse{{Description: "open a pull request"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = svc.ProposeApprovalRules(ctx, "project-1", req.ID)
-	wantStatus(t, err, http.StatusBadRequest, "an approval rule answers uses alone")
+	wantStatus(t, err, http.StatusBadRequest, "asks for uses alone")
 	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID), Policy: apiPolicy(t, asked),
-		Rule: serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{Uses: []string{"open a pull request"}}),
+		SecretId: serverapi.NewOptString(secret.ID),
+		Rule:     serverapi.NewOptApproveWithRule(serverapi.ApproveWithRule{Policy: apiPolicy(t, pullRequestPolicy())}),
 	})
-	wantStatus(t, err, http.StatusBadRequest, "an approval rule answers uses alone")
+	wantStatus(t, err, http.StatusBadRequest, "asks for uses alone")
 	if rules, err := st.ListApprovalRules(ctx, "project-1"); err != nil || len(rules) != 0 {
 		t.Fatalf("rules = %v, %v; want none made", rules, err)
 	}
@@ -473,13 +471,15 @@ func TestAnApprovalShownOtherValuesIsRefused(t *testing.T) {
 	}
 }
 
-// A rule is read against uses alone, so a request that carries a policy is
-// never put to one (ADR 26-10-20-782, Deferred: approval rules over policies).
-func TestARuleNeverTestsARequestWithAPolicy(t *testing.T) {
+// A rule holds a request's policy to its own, so only a request that carries
+// a policy is put to one, and one with uses alone never is (ADR 26-10-22-689).
+func TestARuleTestsOnlyARequestWithAPolicy(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
-	req := workerRequest(t, svc, func(b *services.CreateSandboxCredentialRequestBody) { b.Policy = apiPolicy(t, pullRequestPolicy()) })
-	if resourcesecrets.RuleTestable(req) {
-		t.Fatal("a request carrying a policy may be approved by a rule")
+	if req := workerRequest(t, svc, nil); !resourcesecrets.RuleTestable(req) {
+		t.Fatal("a request carrying a policy is never put to a rule")
+	}
+	if req := workerRequest(t, svc, withoutPolicy); resourcesecrets.RuleTestable(req) {
+		t.Fatal("a request with uses alone may be approved by a rule")
 	}
 }
 

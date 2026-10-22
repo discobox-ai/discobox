@@ -153,7 +153,8 @@ func (s *Store) QuestionRecordedUnder(ctx context.Context, projectID, sandboxID,
 }
 
 // AnsweredQuestion returns the newest verdict on record for the question an
-// approval rule asks — its uses read against the uses one request asked for —
+// approval rule asks — the conditions of an allow one request asked for read
+// against those of the rule's allow —
 // or ErrNotFound when it was never answered (ADR 26-10-12-330 §4). digest is
 // the question's; a rule edited since is a different question.
 //

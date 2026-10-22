@@ -1803,9 +1803,9 @@ func (s *JudgeProposal) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("usesAnyTarget")
+		e.FieldStart("statementsAnyTarget")
 		e.ArrStart()
-		for _, elem := range s.UsesAnyTarget {
+		for _, elem := range s.StatementsAnyTarget {
 			e.Str(elem)
 		}
 		e.ArrEnd()
@@ -1813,7 +1813,7 @@ func (s *JudgeProposal) encodeFields(e *jx.Encoder) {
 }
 
 var jsonFieldsNameOfJudgeProposal = [1]string{
-	0: "usesAnyTarget",
+	0: "statementsAnyTarget",
 }
 
 // Decode decodes JudgeProposal from json.
@@ -1825,10 +1825,10 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "usesAnyTarget":
+		case "statementsAnyTarget":
 			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				s.UsesAnyTarget = make([]string, 0)
+				s.StatementsAnyTarget = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
 					var elem string
 					v, err := d.Str()
@@ -1836,14 +1836,14 @@ func (s *JudgeProposal) Decode(d *jx.Decoder) error {
 					if err != nil {
 						return err
 					}
-					s.UsesAnyTarget = append(s.UsesAnyTarget, elem)
+					s.StatementsAnyTarget = append(s.StatementsAnyTarget, elem)
 					return nil
 				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"usesAnyTarget\"")
+				return errors.Wrap(err, "decode field \"statementsAnyTarget\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -1917,6 +1917,12 @@ func (s *JudgeProposalJob) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Definitions.Set {
+			e.FieldStart("definitions")
+			s.Definitions.Encode(e)
+		}
+	}
+	{
 		if s.Hosts != nil {
 			e.FieldStart("hosts")
 			e.ArrStart()
@@ -1927,19 +1933,20 @@ func (s *JudgeProposalJob) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("uses")
+		e.FieldStart("statements")
 		e.ArrStart()
-		for _, elem := range s.Uses {
+		for _, elem := range s.Statements {
 			e.Str(elem)
 		}
 		e.ArrEnd()
 	}
 }
 
-var jsonFieldsNameOfJudgeProposalJob = [3]string{
+var jsonFieldsNameOfJudgeProposalJob = [4]string{
 	0: "credential",
-	1: "hosts",
-	2: "uses",
+	1: "definitions",
+	2: "hosts",
+	3: "statements",
 }
 
 // Decode decodes JudgeProposalJob from json.
@@ -1961,6 +1968,16 @@ func (s *JudgeProposalJob) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"credential\"")
 			}
+		case "definitions":
+			if err := func() error {
+				s.Definitions.Reset()
+				if err := s.Definitions.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"definitions\"")
+			}
 		case "hosts":
 			if err := func() error {
 				s.Hosts = make([]string, 0)
@@ -1980,10 +1997,10 @@ func (s *JudgeProposalJob) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hosts\"")
 			}
-		case "uses":
-			requiredBitSet[0] |= 1 << 2
+		case "statements":
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				s.Uses = make([]string, 0)
+				s.Statements = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
 					var elem string
 					v, err := d.Str()
@@ -1991,14 +2008,14 @@ func (s *JudgeProposalJob) Decode(d *jx.Decoder) error {
 					if err != nil {
 						return err
 					}
-					s.Uses = append(s.Uses, elem)
+					s.Statements = append(s.Statements, elem)
 					return nil
 				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"uses\"")
+				return errors.Wrap(err, "decode field \"statements\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -2010,7 +2027,7 @@ func (s *JudgeProposalJob) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000100,
+		0b00001000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2052,6 +2069,62 @@ func (s *JudgeProposalJob) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *JudgeProposalJob) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s JudgeProposalJobDefinitions) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s JudgeProposalJobDefinitions) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes JudgeProposalJobDefinitions from json.
+func (s *JudgeProposalJobDefinitions) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode JudgeProposalJobDefinitions to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode JudgeProposalJobDefinitions")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s JudgeProposalJobDefinitions) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *JudgeProposalJobDefinitions) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3240,6 +3313,40 @@ func (s OptJudgeNeed) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptJudgeNeed) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes JudgeProposalJobDefinitions as json.
+func (o OptJudgeProposalJobDefinitions) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes JudgeProposalJobDefinitions from json.
+func (o *OptJudgeProposalJobDefinitions) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptJudgeProposalJobDefinitions to nil")
+	}
+	o.Set = true
+	o.Value = make(JudgeProposalJobDefinitions)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptJudgeProposalJobDefinitions) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptJudgeProposalJobDefinitions) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

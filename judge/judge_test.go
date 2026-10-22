@@ -40,12 +40,14 @@ func withDelegation(change func(*judge.Job)) judge.Job {
 	return job
 }
 
-// ruleJob is a discobox's ask read against a rule a person wrote.
+// ruleJob is an allow a discobox asked for read against an allow of a rule
+// a person wrote, which code found the same but for their conditions.
 func ruleJob() judge.Job {
 	return judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Kind: judge.KindRule, Purposes: []string{"read any issue <number> in org/repo", "push a branch discobox/<slug> to org/repo; never main"},
-		Host: "github.com", Credential: "com.github.api", Round: 1,
-		Uses: []string{"gh api GET repos/org/repo/issues/43"},
+		Kind:     judge.KindRule,
+		Purposes: []string{`allow create, update on pull request in repository "org/repo" when "its head is discobox/*"`},
+		Host:     "github.com", Credential: "com.github.api", Round: 1,
+		Uses: []string{`allow create, update on pull request in repository "org/repo" when "its head is discobox/issue-43"`},
 	}
 }
 
@@ -89,7 +91,8 @@ func TestAJobIsJudgeableOrRefusedBeforeAModelReadsIt(t *testing.T) {
 		{"a delegation asked twice", withDelegation(func(j *judge.Job) { j.Round = 2 }), false},
 		{"a rule", ruleJob(), true},
 		{"a rule with nothing asked for", withRule(func(j *judge.Job) { j.Uses = nil }), false},
-		{"a rule asked about a blank use", withRule(func(j *judge.Job) { j.Uses = []string{" "} }), false},
+		{"a rule asked about a blank allow", withRule(func(j *judge.Job) { j.Uses = []string{" "} }), false},
+		{"a rule asked about two allows at once", withRule(func(j *judge.Job) { j.Uses = append(j.Uses, j.Uses[0]) }), false},
 		{"a rule with no host", withRule(func(j *judge.Job) { j.Host = "" }), false},
 		{"a rule asked twice", withRule(func(j *judge.Job) { j.Round = 2 }), false},
 		{"a request whose body was asked for", withRequest(func(j *judge.Job) {
@@ -193,7 +196,8 @@ func TestAJobIsJudgeableOrRefusedBeforeAModelReadsIt(t *testing.T) {
 			j.Purpose, j.Purposes = "read issues in org/repo", nil
 		}), false},
 		{"a delegation with a purpose beside its list", withDelegation(func(j *judge.Job) { j.Purpose = "read issues in org/repo" }), false},
-		{"a rule with a blank use", withRule(func(j *judge.Job) { j.Purposes = append(j.Purposes, " ") }), false},
+		{"a rule with a blank allow", withRule(func(j *judge.Job) { j.Purposes = []string{" "} }), false},
+		{"a rule judged against two of its allows at once", withRule(func(j *judge.Job) { j.Purposes = append(j.Purposes, j.Purposes[0]) }), false},
 		{"a command with a list of uses rather than a policy", withCommand(func(j *judge.Job) {
 			j.Purpose, j.Purposes = "", []string{"open a pull request in org/repo"}
 		}), false},

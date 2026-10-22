@@ -13,6 +13,7 @@ import (
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -20,11 +21,14 @@ import (
 )
 
 func ruleAsk() services.RuleAsk {
-	return services.RuleAsk{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
+	return services.RuleAsk{
 		RuleID: "rule-1", RequestID: "sreq-1", SandboxID: "sbx-worker",
-		RuleUses:   []string{"read any issue <number> in org/repo", "push a branch discobox/<slug> to org/repo; never main"},
-		Uses:       []string{"gh api GET repos/org/repo/issues/43"},
-		Credential: "com.github.api", Hosts: []string{"github.com"},
+		Job: judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
+			Kind:       judge.KindRule,
+			Purposes:   []string{`allow create, update on pull request in repository "org/repo" when "its head is discobox/*"`},
+			Uses:       []string{`allow create, update on pull request in repository "org/repo" when "its head is discobox/issue-43"`},
+			Credential: "com.github.api", Host: "github.com", Round: 1,
+		},
 	}
 }
 
@@ -70,7 +74,7 @@ func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 	}
 	jobs := fake.asked()
 	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindRule || jobs[0].Host != "github.com" ||
-		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().RuleUses) || len(jobs[0].Uses) != 1 {
+		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().Job.Purposes) || len(jobs[0].Uses) != 1 {
 		t.Fatalf("jobs = %+v, want one rule job with the rule's uses as its purposes and the uses asked for", jobs)
 	}
 	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)
@@ -79,7 +83,7 @@ func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 	}
 	row := verdicts[0]
 	if row.RuleID != "rule-1" || row.SecretRequestID != "sreq-1" || row.SandboxID != "sbx-worker" || !row.Allow || row.QuestionDigest == "" ||
-		row.JudgeSandboxID != judgeSandbox.ID || row.PromptVersion != judge.PromptVersion || !strings.Contains(row.Prompt, "issues/43") {
+		row.JudgeSandboxID != judgeSandbox.ID || row.PromptVersion != judge.PromptVersion || !strings.Contains(row.Prompt, "discobox/issue-43") {
 		t.Fatalf("verdict = %+v, want a rule verdict naming the rule, the request, the discobox and the judge, with the question it answered", row)
 	}
 
@@ -95,7 +99,7 @@ func TestARuleIsDecidedOnceAndRecorded(t *testing.T) {
 
 	// Edited uses, or another discobox, is a question nobody answered.
 	edited := ruleAsk()
-	edited.RuleUses = []string{"read any pull request in org/repo"}
+	edited.Job.Purposes = []string{`allow create, update on pull request in repository "org/repo" when "its head is discobox/* and its base is main"`}
 	if answer, err := service.JudgeRule(ctx, "project-1", edited); err != nil || answer.Allow {
 		t.Fatalf("JudgeRule() of an edited rule = %+v, %v, want it asked afresh", answer, err)
 	}
@@ -125,7 +129,7 @@ func TestARuleJobFallsBackLikeAnyOther(t *testing.T) {
 	}
 	jobs := harnessJudge.asked()
 	if len(jobs) != 1 || jobs[0].Kind != sandboxapi.JudgeJobKindRule || jobs[0].Host != "github.com" ||
-		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().RuleUses) || len(jobs[0].Uses) != 1 {
+		jobs[0].Purpose.Set || !slices.Equal(jobs[0].Purposes, ruleAsk().Job.Purposes) || len(jobs[0].Uses) != 1 {
 		t.Fatalf("jobs = %+v, want the rule's uses as its purposes and the uses asked for", jobs)
 	}
 	verdicts := ruleVerdicts(t, appStore, model.CredentialVerdictKindRule)
@@ -170,7 +174,11 @@ func TestARuleIsAReasonToKeepAJudge(t *testing.T) {
 
 	rule := &model.ApprovalRule{
 		ProjectID: "project-1", WellKnownID: "com.github.api", Hosts: []string{"github.com"},
-		Purpose: model.SecretGrantPurposeUse, Uses: []string{"read issues"}, Enabled: true,
+		Purpose: model.SecretGrantPurposeUse, Enabled: true,
+		Policy: &policy.Policy{Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}}, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}},
 	}
 	if err := appStore.CreateApprovalRule(ctx, rule); err != nil {
 		t.Fatal(err)
@@ -250,7 +258,7 @@ func (f *proposingJudge) AcquireSandboxHTTPClientForServer(_ context.Context, pr
 
 func proposalJob() judge.ProposalJob {
 	return judge.ProposalJob{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Uses: ruleAsk().Uses, Credential: "com.github.api", Hosts: []string{"github.com"},
+		Statements: ruleAsk().Job.Uses, Credential: "com.github.api", Hosts: []string{"github.com"},
 	}
 }
 
@@ -260,7 +268,7 @@ func proposalJob() judge.ProposalJob {
 // no proposal.
 func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	ctx := context.Background()
-	const good = `{"usesAnyTarget":["read any issue <number> in org/repo"]}`
+	const good = `{"statementsAnyTarget":["allow read on issue \"*\" in repository $primary.repo"]}`
 	service, appStore, sandboxes := newJudgeTest(t)
 	defaultHarness(t, appStore, "codex", "sha256:one")
 	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
@@ -274,18 +282,18 @@ func TestTheJudgeDiscoboxWritesAProposal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProposeRule() error = %v", err)
 	}
-	if len(proposal.UsesAnyTarget) != 1 {
+	if len(proposal.StatementsAnyTarget) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	if path, _ := fake.path.Load().(string); !strings.HasSuffix(path, "/judge/proposal") {
 		t.Fatalf("path = %q, want the proposal route", path)
 	}
 	job, _ := fake.job.Load().(sandboxapi.JudgeProposalJob)
-	if len(job.Uses) != 1 || len(job.Hosts) != 1 || job.Credential.Or("") != "com.github.api" {
-		t.Fatalf("job = %+v, want the request's uses as data, with what they are about", job)
+	if len(job.Statements) != 1 || len(job.Hosts) != 1 || job.Credential.Or("") != "com.github.api" {
+		t.Fatalf("job = %+v, want the request's statements as data, with what they are about", job)
 	}
 
-	service.SetLeases(newProposingJudge(t, `{"usesAnyTarget":["c"],"hosts":["evil.example"]}`))
+	service.SetLeases(newProposingJudge(t, `{"statementsAnyTarget":["c"],"hosts":["evil.example"]}`))
 	if _, err := service.ProposeRule(ctx, "project-1", proposalJob()); err == nil {
 		t.Fatal("a proposal carrying a field nobody defined was accepted")
 	}

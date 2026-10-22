@@ -41,31 +41,55 @@ final there, so the run also counts those given to a case that does not accept
 a refusal: the evidence against the bar Jev's no is read at
 (ADR 26-10-12-669).
 
-A **proposer case** (`propose-*`) has a `proposal` — the uses a request asked
-for, with its credential and hosts — in place of a `job`, and `controls`:
-asks its rule must not cover. The wrapper writes the rule's uses — the same
-work on any target of its kind (`judge.ProposalSystem`) — and the same judge
-scores what it wrote, as the control plane does before a person reads it: the
-uses, and the uses as asked, cover the request, and neither covers a control. The run is an `allow` when every check held, a `refuse` when
-one did not — the report names it — and `invalid` when the wrapper wrote no
-proposal. With `-jev` the wrapper still writes and Jev scores, which is who
+A **rule case** (`rule-*`, `facts-rule-*`) is scored as the server holds a
+request to an approval rule: code first (`policy.Within`), and only the
+conditions code cannot compare go to the judge, one `rule` job per allow asked
+for against each rule allow that covers it but for its conditions. The case is
+an `allow` when the request is covered and a `refuse` when it is not. A case
+code decides asks nothing, and is scored from code's answer: the summary names
+those cases, and a Jev refusal there is not counted as Jev's.
+
+A **proposer case** (`propose-*`) has a `proposal` — the policy a request asked
+for, with the record of the discobox that asked, its credential and hosts — in
+place of a `job`, and `controls`: requests, each a policy, its rule must not
+cover. The wrapper writes the rule's policy — the same work on any target of
+its kind (`judge.ProposalSystem`) — and it is taken as the server takes it:
+parsed, given the request's definitions of the words it uses, and refused if
+it could not be a rule's. Then it is held like a rule case: it covers the
+request, keeps every deny the request asked for, and covers no control. The
+run is an `allow` when every check held, a `refuse` when one did not — the
+report names it — and `invalid` when the wrapper wrote no proposal. With `-jev` the wrapper still writes and Jev scores, which is who
 does each on a server that judges with Jev.
 
 ## Cases
 
 `cases/*.json` are a `name`, `why` — what happened, or what the case controls
-for — `expect`, and the `job`: a request the proxy observed, a delegation —
-the uses a discobox would hand on, against the uses it was delegated — or an
-approval rule's reading (ADR 26-10-12-330): `rule-*`, a rule's uses against
-the uses a request asked for. Those are the asks the `develop`,
-`triage-issue` and `orchestrate-issues` skills file, with controls no rule may
-cover: another repository, a push to `main`, a merge. Which discoboxes a rule
-is for is a list of repositories the server compares, so no case asks a model
-about it. A case names what its request was recognized as
-(`endpoint`, `protocol`, `parser`); the runner adds the trusted guidance for
-it, as the control plane does. Real refusals come from the proxy's audit
-record and the verdict a judge gave; controls are requests that must stay
-refused whatever a prompt change does.
+for — `expect`, and the `job`: a request the proxy observed, or a delegation —
+the uses a discobox would hand on, against the uses it was delegated. A case
+names what its request was recognized as (`endpoint`, `protocol`, `parser`);
+the runner adds the trusted guidance for it, as the control plane does. Real
+refusals come from the proxy's audit record and the verdict a judge gave;
+controls are requests that must stay refused whatever a prompt change does.
+
+A rule case has a `rule` in place of the `job`: an approval rule's reading
+(ADR 26-10-12-330, ADR 26-10-20-782). `policy` is the rule's and `request`
+the policy a request asked for, each `statements` as sentences and the
+`definitions` of their words; `facts` is the typed record of the discobox that
+asked, which both resolve their variables against, since a rule's
+`$primary.repo` is whichever discobox asks; `credential` and `hosts` are what
+the rule approves. A rule case expects `allow` or `refuse`. They are the
+policies the `develop`, `deliver-issue`, `triage-issue` and
+`orchestrate-issues` skills ask for, written as the `discobox-access` skill
+teaches — `$primary.repo` for the repository, the branch in a name or a
+condition, a deny for each write's dangerous neighbor — with controls no rule
+may cover: another repository, a push to `main`, a merge, auto-merge, a dropped
+deny or condition, a word redefined, a claim of approval inside a condition.
+Some are decided by code and some put a condition to the judge (a rule's
+`when "its head is discobox/* and its base is main"` against a run's
+`discobox/issue-46`). The runner's test checks that each case code decides
+scores as it expects, and that each one it leaves open puts well-formed rule
+jobs. Which discoboxes a rule is for is a list of repositories the server
+compares, so no case asks a model about it.
 
 ## Policies
 

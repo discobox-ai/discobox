@@ -10,8 +10,10 @@ import (
 	"time"
 	"unicode"
 
+	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -25,16 +27,12 @@ import (
 // credential request. A rule approves or says nothing — a request it does not
 // cover waits for a person exactly as it does without one, and no rule denies.
 //
-// A request is held to a rule the way an approval is held to a delegation
-// (delegated_approval.go): the repository the discobox is of, the credential,
-// the hosts, the purpose and the lifetime are facts checked here, and whether
-// what it asked for is within the rule's uses is a reading asked of the judge.
-
-// The most a rule may say. A rule's sentences are read in every job about it.
-const (
-	maxRuleUses     = judge.MaxProposalUses
-	maxRuleSentence = judge.MaxProposalSentence
-)
+// A request is held to a rule the way a policy handed on is held to a
+// delegation's (delegated_approval.go): the repository the discobox is of,
+// the credential, the hosts, the purpose and the lifetime are facts checked
+// here, and the policy it asks for must be within the rule's (policy.Within,
+// ADR 26-10-22-689) — compared by
+// code, with only the conditions code cannot compare asked of the judge.
 
 // Dirtier marks a resource for reconciling. The reconcile engine is one; the
 // service asks it to test rules against what is pending, and to look again at
@@ -111,6 +109,10 @@ func (s *Service) CreateApprovalRule(ctx context.Context, projectID string, inpu
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			"a rule says which discoboxes it is for: the repositories it names, or everyDiscobox for every discobox in the project, which is never assumed")
 	}
+	rulePolicy, err := services.PolicyFromAPI(apigen.NewOptAccessPolicy(input.Policy))
+	if err != nil {
+		return nil, err
+	}
 	rule := &model.ApprovalRule{
 		ProjectID:    projectID,
 		Repositories: input.Repositories,
@@ -118,7 +120,7 @@ func (s *Service) CreateApprovalRule(ctx context.Context, projectID string, inpu
 		SecretID:     input.SecretId.Or(""),
 		Hosts:        input.Hosts,
 		Purpose:      purpose,
-		Uses:         input.Uses,
+		Policy:       rulePolicy,
 		MaxGrantTTL:  input.MaxGrantTTLSeconds.Or(defaultMaxGrantTTLSeconds),
 		CreatedBy:    grantedByOf(principal),
 		Enabled:      input.Enabled.Or(true),
@@ -162,8 +164,10 @@ func (s *Service) UpdateApprovalRule(ctx context.Context, projectID, ruleID stri
 	case input.Repositories != nil:
 		rule.Repositories = input.Repositories
 	}
-	if input.Uses != nil {
-		rule.Uses = input.Uses
+	if edited, err := services.PolicyFromAPI(input.Policy); err != nil {
+		return nil, err
+	} else if edited != nil {
+		rule.Policy = edited
 	}
 	if input.Hosts != nil {
 		rule.Hosts = input.Hosts
@@ -326,17 +330,21 @@ func (s *Service) checkRule(ctx context.Context, rule *model.ApprovalRule, newEx
 		return nil, err
 	}
 	rule.Purpose = purpose
-
-	uses := make([]string, 0, len(rule.Uses))
-	for _, use := range rule.Uses {
-		if use = strings.TrimSpace(use); use != "" {
-			uses = append(uses, use)
-		}
+	// A delegation's uses are what a hand-off of uses alone is still judged
+	// against (delegationsCovering), and a rule holds a request's policy, never
+	// its uses: one minted by a rule would carry uses nobody read. So no rule
+	// delegates until every hand-off is bound by the delegation's policy
+	// (ADR 26-10-22-689 §4, #312).
+	if purpose == model.SecretGrantPurposeDelegate {
+		return bad("a rule does not approve a delegation yet: a delegation's uses still bound what is handed on under it, and a rule holds only a request's policy. Approve a delegation as a person")
 	}
-	rule.Uses = uses
-	if problem := ruleUsesProblem(uses); problem != "" {
+
+	if problem := rulePolicyProblem(rule.Policy); problem != "" {
 		return bad("%s", problem)
 	}
+	// A rule's variables bind to whichever discobox asks, at each test: a
+	// value recorded for one would say nothing about the next.
+	rule.Policy.Resolved = nil
 	if rule.MaxGrantTTL < 0 {
 		return bad("a rule's lifetime cap is a number of seconds; 0 leaves it to the secret's own limit")
 	}
@@ -346,22 +354,16 @@ func (s *Service) checkRule(ctx context.Context, rule *model.ApprovalRule, newEx
 	return secret, nil
 }
 
-// ruleUsesProblem says why a list of uses could not be a rule's, or nothing
-// when it could. A proposal is held to it before it is offered, so nothing is
-// shown as covering that making the rule would refuse.
-func ruleUsesProblem(uses []string) string {
-	switch {
-	case len(uses) == 0:
-		return "a rule says what may be approved: at least one use"
-	case len(uses) > maxRuleUses:
-		return fmt.Sprintf("a rule names at most %d uses", maxRuleUses)
+// rulePolicyProblem says why a policy could not be a rule's
+// (judge.RuleProblem), or nothing when it could. A proposal is held to it
+// before it is offered, so nothing is shown as covering that making the rule
+// would refuse.
+func rulePolicyProblem(p *policy.Policy) string {
+	if p == nil {
+		return "a rule says what may be approved: a policy"
 	}
-	for _, use := range uses {
-		// A person writes a rule's uses one to a line, in the console's
-		// editor, so a use is one line; whatever shows a long one breaks it up.
-		if len(use) > maxRuleSentence || strings.ContainsAny(use, "\r\n") {
-			return fmt.Sprintf("each of a rule's uses is one sentence of at most %d bytes, on one line", maxRuleSentence)
-		}
+	if err := judge.RuleProblem(*p); err != nil {
+		return "policy: " + strings.ReplaceAll(err.Error(), "\n", "; ")
 	}
 	return ""
 }
@@ -491,54 +493,128 @@ func ruleTTL(rule *model.ApprovalRule, req *model.SecretRequest, secret *model.S
 	return ttl
 }
 
-// sameRuleText reports whether a rule still says what the judge read of it:
-// the sentences, and the facts the request was held to.
+// sameRuleText reports whether a rule still says what was read of it: the
+// policy, and the facts the request was held to.
 func sameRuleText(read, now *model.ApprovalRule) bool {
 	return slices.Equal(read.Repositories, now.Repositories) &&
 		read.WellKnownID == now.WellKnownID && read.SecretID == now.SecretID &&
 		read.Purpose == now.Purpose &&
-		slices.Equal(read.Hosts, now.Hosts) && slices.Equal(read.Uses, now.Uses)
+		slices.Equal(read.Hosts, now.Hosts) && samePolicy(read.Policy, now.Policy)
 }
 
-// ruleAsk is a rule's question about one request, composed the same way
-// wherever it is asked — proposing, approving, reconciling, or reading the
-// card — so one answer on record serves all four. The discobox that filed the
-// request is read for it, since the judge is told what that discobox was
-// created with (ADR 26-10-14-691), and the facts are part of the question.
-func (s *Service) ruleAsk(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest) (services.RuleAsk, error) {
+// ruleCoverage is what came of holding a request's policy to a rule's.
+// values are what the policy asked for resolved to, for the discobox that
+// asked, when it was compared: the grant a rule mints is held to them. facts
+// are that discobox's, which they were resolved from. pending is a reading
+// that found a question the judge has not answered yet.
+type ruleCoverage struct {
+	covered bool
+	pending bool
+	reason  string
+	values  map[string]string
+	facts   policy.Facts
+}
+
+// rulePolicyCovers holds given — the policy a request asks for, or a grant
+// approved — to a rule's (judge.HoldToRule, ADR 26-10-22-689), both as their
+// variables resolve for the discobox that filed req: a rule's variables bind
+// to whichever discobox asks. Code decides all of it but the conditions of an
+// allow it found covered otherwise; those are asked of the judge, one allow
+// given against one of the rule's, each answered once and then from the
+// record.
+//
+// reading is the card being read rather than a rule being tested: nobody is
+// asked, and a question with no verdict on record leaves it pending. An error
+// is a judge that could not answer, or a discobox gone, which is not a no.
+func (s *Service) rulePolicyCovers(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest, given *policy.Policy, reading bool) (ruleCoverage, error) {
+	switch {
+	case given == nil:
+		return ruleCoverage{reason: "the request asks for no policy, and a rule approves a policy within its own"}, nil
+	case rule.Policy == nil:
+		// Only a rule an older server wrote has none, and the next start's
+		// migration deletes it (retireApprovalRuleUses).
+		return ruleCoverage{reason: "the rule carries no policy, and approves nothing until it is made again as one"}, nil
+	}
 	asking, err := s.store.GetSandbox(ctx, req.ProjectID, req.SandboxID)
 	if err != nil {
-		return services.RuleAsk{}, apperrors.NotFound(err, "the discobox that asked was not found")
+		return ruleCoverage{}, apperrors.NotFound(err, "the discobox that asked was not found")
 	}
-	return services.RuleAsk{
-		RuleID:     rule.ID,
-		RequestID:  req.ID,
-		SandboxID:  req.SandboxID,
-		Asking:     judge.DiscoboxOf(asking.PolicyFacts()),
-		RuleUses:   rule.Uses,
-		Uses:       useDescriptions(req.Uses),
-		Credential: ruleCredential(rule),
-		Hosts:      rule.Hosts,
-	}, nil
+	facts := asking.PolicyFacts()
+	hold, err := judge.HoldToRule(*given, *rule.Policy, facts, ruleCredential(rule), rule.Hosts)
+	if err != nil {
+		return ruleCoverage{}, apperrors.NewStatusError(http.StatusBadRequest, "a rule's question cannot be put: "+err.Error())
+	}
+	out := ruleCoverage{values: hold.Values, facts: facts, reason: hold.Reason}
+	if hold.Reason != "" {
+		return out, nil
+	}
+	for _, jobs := range hold.Questions {
+		within, pending := false, false
+		var why []string
+		for _, job := range jobs {
+			ask := services.RuleAsk{RuleID: rule.ID, RequestID: req.ID, SandboxID: req.SandboxID, Job: job}
+			answer, answered, err := s.ruleQuestion(ctx, req, ask, reading)
+			if err != nil {
+				return ruleCoverage{}, err
+			}
+			if !answered {
+				pending = true
+				continue
+			}
+			if answer.Allow {
+				within = true
+				break
+			}
+			if reason := strings.TrimSpace(answer.Reason); reason != "" {
+				why = append(why, reason)
+			}
+		}
+		switch {
+		case within:
+		case pending:
+			out.pending = true
+			return out, nil
+		default:
+			out.reason = jobs[0].Uses[0] + ": the judge did not find its conditions within the rule's"
+			if len(why) > 0 {
+				out.reason += " (" + strings.Join(why, "; ") + ")"
+			}
+			return out, nil
+		}
+	}
+	out.covered = true
+	out.reason = "every allow asked for is within an allow of the rule, and every deny of the rule is asked for too"
+	if len(hold.Questions) > 0 {
+		out.reason += "; the judge found the conditions within the rule's"
+	}
+	return out, nil
 }
 
-// ruleUsesCover asks the judge a rule's one question about a request: whether
-// every use asked for is within the rule's (§3). It is asked only of a rule
-// the facts already hold the request to. An error is a judge that could not
-// answer, which is not a no.
-func (s *Service) ruleUsesCover(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest) (covered bool, reason string, err error) {
-	if s.judge == nil {
-		return false, "", apperrors.NewStatusError(http.StatusServiceUnavailable, "no judge can read an approval rule on this server")
+// ruleQuestion is the judge's answer to one of a rule's questions: asked, and
+// recorded, when testing; read from the record when reading, where answered
+// is false for a question nobody has answered yet.
+func (s *Service) ruleQuestion(ctx context.Context, req *model.SecretRequest, ask services.RuleAsk, reading bool) (answer judge.Answer, answered bool, err error) {
+	if !reading {
+		if s.judge == nil {
+			return judge.Answer{}, false, apperrors.NewStatusError(http.StatusServiceUnavailable, "no judge can read an approval rule's conditions on this server")
+		}
+		answer, err := s.judge.JudgeRule(ctx, req.ProjectID, ask)
+		return answer, err == nil, err
 	}
-	ask, err := s.ruleAsk(ctx, rule, req)
+	digest, err := judge.Digest(ask.Job)
 	if err != nil {
-		return false, "", err
+		return judge.Answer{}, false, err
 	}
-	answer, err := s.judge.JudgeRule(ctx, rule.ProjectID, ask)
+	// From a replica: the card is read on every beat of a window, and one
+	// that has not caught up says "still being judged" for a beat longer.
+	verdict, err := s.store.AnsweredQuestion(ctx, req.ProjectID, req.SandboxID, req.ID, digest, false)
+	if errors.Is(err, store.ErrNotFound) {
+		return judge.Answer{}, false, nil
+	}
 	if err != nil {
-		return false, "", err
+		return judge.Answer{}, false, err
 	}
-	return answer.Allow, answer.Reason, nil
+	return judge.Answer{Allow: verdict.Allow, Reason: verdict.Reason}, true, nil
 }
 
 // requesterRepository is the repository the discobox that filed a request is
@@ -584,14 +660,12 @@ func (s *Service) liveRules(ctx context.Context, projectID string) ([]model.Appr
 }
 
 // ruleTestable reports whether a rule may answer this request at all: an
-// agent's own ask for a grant, still pending. A reactive request, a refresh
-// request and a host trust stay a person's (§4), as does an ask that names no
-// uses — there is nothing to read. So is an ask that carries a policy: a rule
-// is read against uses alone, and approving under one would record a policy
-// nobody read as approved (ADR 26-10-20-782, Deferred: approval rules over
-// policies).
+// agent's own ask for a grant, under a policy, still pending. A reactive
+// request, a refresh request and a host trust stay a person's (§4), as does
+// an ask with uses alone: a rule's policy is what a request's policy is held
+// to, and uses alone have none to hold (ADR 26-10-22-689).
 func ruleTestable(req *model.SecretRequest) bool {
-	return req.Status == model.SecretRequestStatusPending && !req.IsRefresh() && req.FromProtocol() && req.SandboxID != "" && req.Policy == nil
+	return req.Status == model.SecretRequestStatusPending && !req.IsRefresh() && req.FromProtocol() && req.SandboxID != "" && req.Policy != nil
 }
 
 // ruleTestDescriber returns what fills in, for a person reading pending
@@ -641,26 +715,14 @@ func (s *Service) ruleTestDescriber(ctx context.Context, projectID string) func(
 	}
 }
 
-// describeRuleReading reads what the judge has already said about a rule's
-// uses and a request's.
+// describeRuleReading compares a rule's policy with a request's, as code
+// does, and reads what the judge has already said of any conditions.
 func (s *Service) describeRuleReading(ctx context.Context, rule *model.ApprovalRule, req *model.SecretRequest, test *model.RuleTest) {
 	test.Stage = model.RuleTestStageContent
-	ask, err := s.ruleAsk(ctx, rule, req)
-	if err != nil {
+	coverage, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, true)
+	if err != nil || coverage.pending {
 		test.Pending = true
 		return
 	}
-	digest, err := judge.Digest(ask.Job())
-	if err != nil {
-		test.Pending = true
-		return
-	}
-	// From a replica: the card is read on every beat of a window, and one
-	// that has not caught up says "still being judged" for a beat longer.
-	verdict, err := s.store.AnsweredQuestion(ctx, req.ProjectID, req.SandboxID, req.ID, digest, false)
-	if err != nil {
-		test.Pending = true
-		return
-	}
-	test.Covered, test.Reason = verdict.Allow, verdict.Reason
+	test.Covered, test.Reason = coverage.covered, coverage.reason
 }

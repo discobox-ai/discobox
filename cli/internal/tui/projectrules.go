@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
@@ -159,7 +160,7 @@ func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule
 		body = append(body, padANSI(marker+st.dimText.Render(truncate(noRules, max(l.width-2, 0))), l.width))
 	}
 	// The credential and repositories columns are as wide as the widest of
-	// them, within bounds, so the uses line up and get the rest.
+	// them, within bounds, so the policies line up and get the rest.
 	credW, forW := 0, 0
 	for _, rule := range l.all {
 		credW = max(credW, lipgloss.Width(credential(rule))+2)
@@ -185,8 +186,8 @@ func (l *ruleList) view(st *styles, z *zones, focused bool, credential func(Rule
 // right end as the terminal narrows, as on the tables above; the credential
 // never goes.
 //
-// The uses are the column that takes what the others leave and is cut to
-// it: they are what tells two rules apart, and Enter reads them whole.
+// The policy is the column that takes what the others leave and is cut to
+// it: it is what tells two rules apart, and Enter reads it whole.
 func (l *ruleList) row(st *styles, rule Rule, credential string, credW, forW, i int, focused bool) string {
 	atCursor := i == l.cursor && focused
 	now := l.now()
@@ -218,16 +219,16 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, credW, forW, i 
 		lead = padANSI(nameStyle.Render(truncate(credential, credW-2)), credW) +
 			ruleStateTone(state).style(st).Render(pad(state, ruleStateWidth))
 		// What it approves takes what the repositories leave, which is most
-		// of a wide row: the uses are what tells one rule from the next.
-		// Narrower, the repositories give up room to the uses down to two
-		// fifths of what the two share once the uses would have less than
-		// ruleUsesWanted, and only then do the uses go.
-		if rest-forW < ruleUsesWanted {
+		// of a wide row: the policy is what tells one rule from the next.
+		// Narrower, the repositories give up room to the policy down to two
+		// fifths of what the two share once the policy would have less than
+		// rulePolicyWanted, and only then does the policy go.
+		if rest-forW < rulePolicyWanted {
 			forW = min(forW, max(ruleDiscoboxesMin, rest*2/5))
 		}
-		usesW := 0
-		if rest-forW >= ruleUsesMin {
-			usesW = rest - forW
+		policyW := 0
+		if rest-forW >= rulePolicyMin {
+			policyW = rest - forW
 		} else {
 			forW = rest
 		}
@@ -236,8 +237,8 @@ func (l *ruleList) row(st *styles, rule Rule, credential string, credW, forW, i 
 			discoboxes = truncate(ruleRowDiscoboxes(rule), forW-2)
 		}
 		lead += st.name.Render(pad(discoboxes, forW))
-		if usesW > 0 {
-			lead += st.dimText.Render(pad(truncate(ruleRowUses(rule), usesW), usesW))
+		if policyW > 0 {
+			lead += st.dimText.Render(pad(truncate(ruleRowPolicy(rule), policyW), policyW))
 		}
 	}
 	line := padANSI(marker+lead+tail, l.width)
@@ -255,8 +256,8 @@ const (
 	ruleStateWidth      = 10
 	ruleDiscoboxesMin   = 16
 	ruleDiscoboxesMax   = 36
-	ruleUsesMin         = 12
-	ruleUsesWanted      = 24
+	rulePolicyMin       = 12
+	rulePolicyWanted    = 24
 	ruleLeadWidth       = ruleCredentialWidth + ruleStateWidth + ruleDiscoboxesMin + 2
 )
 
@@ -275,15 +276,14 @@ func ruleRowDiscoboxes(rule Rule) string {
 	return discoboxes
 }
 
-// ruleRowUses is what a rule approves on one line: its uses in order, each
-// flattened, cut by the column rather than counted, so a row says as much of
-// them as it has room for.
-func ruleRowUses(rule Rule) string {
-	uses := make([]string, 0, len(rule.Uses))
-	for _, use := range rule.Uses {
-		uses = append(uses, strings.Join(strings.Fields(use), " "))
+// ruleRowPolicy is what a rule approves on one line: its statements in
+// order, each its sentence, cut by the column rather than counted, so a row
+// says as much of them as it has room for.
+func ruleRowPolicy(rule Rule) string {
+	if rule.Policy == nil {
+		return ""
 	}
-	return strings.Join(uses, " · ")
+	return strings.Join(policy.FormatStatements(rule.Policy.Statements), " · ")
 }
 
 // ruleRowExpiry is the last column: when the rule itself stops answering.
@@ -575,7 +575,7 @@ func (m *Model) confirmDeleteRule(server string, rule Rule, standing int, back f
 	goes := section{label: "what goes", fields: []field{
 		{label: "credential", value: credential, tone: toneAccent},
 		{label: "for", value: ruleDiscoboxesText(rule)},
-		{label: "approves", value: plural(len(rule.Uses), "use", "uses")},
+		{label: "approves", value: policySize(rule.Policy)},
 	}, lines: []line{
 		{text: "requests it would have answered wait for a person again"},
 		stays,

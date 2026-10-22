@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -215,7 +216,8 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		// A policy that does not convert is left off: the approval then
 		// sends none, and the server refuses it rather than grant one unread.
 		if read, err := policyFromAPI(asked); err == nil {
-			req.Policy, req.PolicyLines = &read, safePolicyLines(read)
+			shown := safePolicy(read)
+			req.Policy, req.PolicyLines, req.PolicyShown = &read, safePolicyLines(read), &shown
 		}
 	}
 	for _, test := range r.RuleTests {
@@ -563,10 +565,19 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// rule that names no repository: one that says neither is sent saying
 	// neither, and the server names the asking discobox's repository or
 	// refuses, and never assumes the wider rule.
+	// The rule's policy is sent only when the person changed it: left out, it
+	// is the request's as asked, which the approval below names as read.
 	if rule := approval.Rule; rule != nil {
-		with := apimodel.ApproveWithRule{Uses: rule.Uses, Repositories: rule.Repositories}
+		with := apimodel.ApproveWithRule{Repositories: rule.Repositories}
 		if rule.EveryDiscobox {
 			with.SetEveryDiscobox(apiclientgen.NewOptBool(true))
+		}
+		if rule.Policy != nil {
+			approves, err := apiPolicy(*rule.Policy)
+			if err != nil {
+				return err
+			}
+			with.SetPolicy(apiclientgen.NewOptAccessPolicy(approves))
 		}
 		body.SetRule(apiclientgen.NewOptApproveWithRule(with))
 	}
@@ -592,16 +603,17 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	return nil
 }
 
-// RuleProposals asks the request's server for the rules "auto approve" may
-// choose between (ADR 26-10-12-330 §7). The server writes the wider uses with
-// a model and puts every one to the judge before answering, so this is on no
-// leash of its own: the window shows that it is waiting, and its context ends
-// the call when the person stops.
+// RuleProposals asks the request's server for the rule "auto approve" starts
+// from (ADR 26-10-12-330 §7). The server writes its policy with a model and
+// holds it to covering the request before answering, so this is on no leash
+// of its own: the window shows that it is waiting, and its context ends the
+// call when the person stops.
 //
-// A proposal is a model's sentence written from an agent's ask, and a reason
+// A proposal is a model's policy written from an agent's ask, and a reason
 // can quote that ask, so each is made safe to draw on the way, as an issue's
-// text is: an escape sequence in one is shown, not obeyed. What is shown is
-// what is sent back when it is chosen, so the rule is the text that was read.
+// text is: an escape sequence in one is shown, not obeyed. The server's own
+// text is kept beside it, and sent for every line left as it was, so the
+// rule is the text that was read.
 func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID string) (tui.RuleProposals, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
@@ -618,11 +630,11 @@ func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID str
 	if err != nil {
 		return tui.RuleProposals{}, err
 	}
-	return ruleProposals(body), nil
+	return ruleProposals(body)
 }
 
 // GrantRuleProposals asks the grant's server for the rule auto approve would
-// have proposed from the request the grant answered, written from the uses
+// have proposed from the request the grant answered, written from the policy
 // the grant approved. Slow for the same reason, and drawn safe the same way.
 func (d *apiDataSource) GrantRuleProposals(ctx context.Context, server, grantID string) (tui.RuleProposals, error) {
 	d, err := d.on(ctx, server)
@@ -640,12 +652,13 @@ func (d *apiDataSource) GrantRuleProposals(ctx context.Context, server, grantID 
 	if err != nil {
 		return tui.RuleProposals{}, err
 	}
-	return ruleProposals(body), nil
+	return ruleProposals(body)
 }
 
 // ruleProposals is a proposal as the window draws it, every sentence made
-// safe to draw.
-func ruleProposals(body *apimodel.RuleProposalsBody) tui.RuleProposals {
+// safe to draw. A written policy that does not convert is shown as none
+// written, with the reason, rather than guessed at.
+func ruleProposals(body *apimodel.RuleProposalsBody) (tui.RuleProposals, error) {
 	hosts := make([]string, 0, len(body.Hosts))
 	for _, host := range body.Hosts {
 		hosts = append(hosts, terminalSafe(host))
@@ -664,24 +677,29 @@ func ruleProposals(body *apimodel.RuleProposalsBody) tui.RuleProposals {
 		Repository:       terminalSafe(strings.TrimSpace(body.Repository.Or(""))),
 		RepositoryStored: strings.TrimSpace(body.Repository.Or("")),
 	}
-	if written, ok := body.Uses.Get(); ok {
-		uses := make([]string, 0, len(written.Uses))
-		for _, use := range written.Uses {
-			uses = append(uses, terminalSafe(strings.TrimSpace(use)))
-		}
-		out.Written = &tui.WrittenUses{
-			Uses:    uses,
-			Stored:  written.Uses,
+	if written, ok := body.Policy.Get(); ok {
+		out.Written = &tui.WrittenPolicy{
 			Covers:  written.Covers,
 			Reason:  terminalSafe(strings.TrimSpace(written.Reason.Or(""))),
 			Refused: terminalSafe(strings.TrimSpace(written.Refused.Or(""))),
 		}
+		if proposed, ok := written.Policy.Get(); ok {
+			stored, err := policyFromAPI(proposed)
+			if err != nil {
+				return tui.RuleProposals{}, err
+			}
+			shown := safePolicy(stored)
+			out.Written.Policy, out.Written.Stored = &shown, &stored
+		}
+		for _, statement := range written.Statements {
+			out.Written.Statements = append(out.Written.Statements, terminalSafe(strings.TrimSpace(statement)))
+		}
 	}
-	return out
+	return out, nil
 }
 
 // Rules lists the project's approval rules, newest first (ADR 26-10-12-330
-// §1). A rule's uses may be a model's sentences written from an agent's ask,
+// §1). A rule's policy may be a model's, written from an agent's ask,
 // and its repositories and who made it are whatever the server recorded, so
 // each is made safe to draw on the way, as a proposal is.
 func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, error) {
@@ -716,14 +734,17 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 		// A rule the server holds with no repository is one somebody made
 		// for every discobox: no route stores one any other way.
 		rule.EveryDiscobox = len(r.Repositories) == 0
+		approves, err := policyFromAPI(r.Policy)
+		if err != nil {
+			return nil, err
+		}
+		shown := safePolicy(approves)
+		rule.Policy = &shown
 		// The server's own text, sent back for every line an edit leaves
 		// alone.
-		rule.Stored = tui.ApprovalRule{Repositories: r.Repositories, Uses: r.Uses, EveryDiscobox: rule.EveryDiscobox}
+		rule.Stored = tui.ApprovalRule{Repositories: r.Repositories, Policy: &approves, EveryDiscobox: rule.EveryDiscobox}
 		for _, host := range r.Hosts {
 			rule.Hosts = append(rule.Hosts, terminalSafe(host))
-		}
-		for _, use := range r.Uses {
-			rule.Uses = append(rule.Uses, terminalSafe(strings.TrimSpace(use)))
 		}
 		if expires, ok := r.ExpiresAt.Get(); ok {
 			rule.Expires = expires
@@ -736,13 +757,20 @@ func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, e
 // CreateRule makes a rule from the secrets screen. Which discoboxes it is for
 // is sent as the person said it — the repositories named, or every discobox
 // in so many words — and the purpose is left to the server, which takes
-// "use". The hosts are sent as the card that made the rule read them. The hosts are sent as the card that made the rule read them.
+// "use". The hosts are sent as the card that made the rule read them.
 func (d *apiDataSource) CreateRule(ctx context.Context, server string, rule tui.NewRule) (tui.Rule, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return tui.Rule{}, err
 	}
-	body := &apimodel.CreateApprovalRuleBody{Repositories: rule.Repositories, Uses: rule.Uses, Hosts: rule.Hosts}
+	if rule.Policy == nil {
+		return tui.Rule{}, errors.New("a rule says what it approves: a policy")
+	}
+	approves, err := apiPolicy(*rule.Policy)
+	if err != nil {
+		return tui.Rule{}, err
+	}
+	body := &apimodel.CreateApprovalRuleBody{Repositories: rule.Repositories, Policy: approves, Hosts: rule.Hosts}
 	if id := strings.TrimSpace(rule.WellKnownID); id != "" {
 		body.SetWellKnownId(apiclientgen.NewOptString(id))
 	} else {
@@ -778,7 +806,14 @@ func (d *apiDataSource) UpdateRule(ctx context.Context, server, ruleID string, c
 	if err != nil {
 		return err
 	}
-	body := &apimodel.UpdateApprovalRuleBody{Repositories: change.Repositories, Uses: change.Uses}
+	body := &apimodel.UpdateApprovalRuleBody{Repositories: change.Repositories}
+	if change.Policy != nil {
+		approves, err := apiPolicy(*change.Policy)
+		if err != nil {
+			return err
+		}
+		body.SetPolicy(apiclientgen.NewOptAccessPolicy(approves))
+	}
 	if change.EveryDiscobox {
 		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 	}
@@ -949,7 +984,8 @@ func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.Gr
 			if err != nil {
 				return nil, err
 			}
-			grant.Policy = safePolicyLines(read)
+			shown := safePolicy(read)
+			grant.Policy, grant.Approved, grant.ApprovedShown = safePolicyLines(read), &read, &shown
 		}
 		if uses, ok := g.Uses.Get(); ok {
 			for _, use := range uses {

@@ -23,7 +23,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
-| `internal/policyview` | A credential policy as the person approving it reads it (ADR 26-10-20-782 §3): statements grouped by scope, the `anywhere` denies once under `global`, conditions under their statement, each variable followed by its resolved value (or "does not resolve, so it matches nothing"), and each non-default word followed by its definition where it is first used. Each line carries the sentence's `policy.Tokens`, noted, so the console highlights it as syntax; the CLI prints its plain text. Display only: what an approval sends is the policy as read, never these lines. Shared by the console's request and grant cards and the CLI's `secret request get`, `approve` and `grant ls`. |
+| `internal/policyview` | A credential policy as the person approving it reads it (ADR 26-10-20-782 §3): statements grouped by scope, the `anywhere` denies once under `global`, conditions under their statement, each variable followed by its resolved value (or "does not resolve, so it matches nothing"), and each non-default word followed by its definition where it is first used. Each line carries the sentence's `policy.Tokens`, noted, so the console highlights it as syntax; the CLI prints its plain text. Display only: what an approval sends is the policy as read, never these lines. Shared by the console's request and grant cards and the CLI's `secret request get`, `approve` and `grant ls`; `Unbound` draws a rule's policy, its variables bare since a rule binds them to whichever discobox asks. |
 | `internal/uselines` | A credential use broken into the lines a person reads it in — a line per sentence, and the writes after "Read …;" and the items of "Never …" set in under theirs — in the shape the discobox-access skill teaches, where it is there. Display only and optimistic: every word kept in order, and a use outside the shape is broken less, never reworded. The server takes a use on one line and stores and judges it as written. Shared by the console's cards and the CLI's `get` tables. |
 | `internal/clipimage` | The images a paste means on this machine: the OS clipboard's (osascript, wl-paste/xclip, PowerShell from Windows and WSL) and the image files a pasted path names. The console carries them into a discobox. |
 | `internal/clipwatch` | Keeping up with the Windows clipboard while the console is open — in process on Windows, through the embedded `discobox-clipwatch` helper (installed under `%LOCALAPPDATA%\discobox\bin\<digest>`, the other builds' copies pruned) on WSL — so a dictation tool's Ctrl-V is answered with the text it pasted before it puts the clipboard back. Event-driven (`AddClipboardFormatListener`), idle at zero CPU. |
@@ -1768,8 +1768,8 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 `creds` lists the judge's verdicts, `--kind` picks one: `command`, a command
 `discobox-access run` declared, judged before its value was minted;
 `request`, a request the proxy observed; `delegation`, a discobox handing a
-credential on; and `rule`, an approval rule's uses read against a request's
-(below), which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
+credential on; and `rule`, the conditions of an allow a request asked for read
+against an approval rule's allow (below), which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
 `command` row of origin `sandbox` predates that: a discobox's own judge's word.
 `RTT` is the round trip each asker timed. `--prompt` prints each verdict in
 full; `--jev-input` does too, with exactly what Jev was sent on a server that
@@ -2825,36 +2825,50 @@ project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
 ## Approval Rules (`discobox secret rule`, ADR 26-10-12-330)
 
 `secret_rule.go`. An approval rule is a project's standing answer to a
-credential request, and the CLI is the two ways a person makes one:
+credential request that asks for a policy, and the CLI is the two ways a
+person makes one. What it approves is a policy, written as discobox-access
+writes one: `--statement` a sentence each, `--define WORD=DEFINITION` a
+non-default word each (`--rule-statement`/`--rule-define` on
+`approve --auto`). It is parsed (`policy.ParseStatements`) and validated
+(`Policy.Validate`) before anything is sent, and a refusal carries
+`policy.Grammar` (`writtenPolicy`, `policy.go`).
 
 - **Directly**: `secret rule create|ls|get|update|delete`, as
   `secret grant create` makes a pre-approval. `create` takes `--repo`
   (repeatable, or comma-separated) or `--every-discobox`, and refuses a rule
   that says neither. `update` sends only the flags given; `--enable`/
-  `--disable` are edits, `--repo` replaces the repositories and
-  `--every-discobox` sends `everyDiscobox`, which removes them. A rule's credential and purpose are
-  not edited.
+  `--disable` are edits, `--repo` replaces the repositories,
+  `--every-discobox` sends `everyDiscobox`, which removes them, and
+  `--statement` replaces the whole policy, so definitions without statements
+  are refused. A rule's credential and purpose are not edited.
 - **From a request**: `secret request approve --auto` sends a `rule` on the
   approve body, so the rule and the approval are one write. With nothing else
-  said it is the narrowest rule: the uses as asked, for the repository of the
-  discobox that asked, which the server names — the CLI reads nothing first.
-  `--rule-repo`, `--rule-every-discobox` and `--rule-use` say otherwise, and
-  are refused without `--auto` rather than dropped. The rule made is read
-  back whole.
+  said it is the narrowest rule: the policy as asked (no `policy` on the
+  rule), for the repository of the discobox that asked, which the server
+  names. `--auto` implies `--policy-as-asked`: the request is read and its
+  policy sent as the approval's, which also refuses a request of uses alone
+  before anything is written. `--rule-repo`, `--rule-every-discobox`,
+  `--rule-statement` and `--rule-define` say otherwise, and are refused
+  without `--auto` rather than dropped. The rule made is read back whole.
 
 A repository is sent as typed: a URL, git's scp-like form, or `host/path`. The
 server reads it, stores it as `host/path`, and refuses a bare `org/repo`.
 
 `secret request propose` prints what auto approve offers — the repository of
-the discobox that asked, and the uses the project's judge wrote (the same
-work on any target of its kind) with what the judge made of them — and makes
-nothing. A written sentence becomes a rule only by being passed to
-`--rule-use`, so the text approved is text the person handled; with no
-`--rule-use` the rule approves the uses as asked.
+the discobox that asked, and the policy the project's judge wrote (the same
+work on any target of its kind) with whether it covers the request and why,
+or why it could not be a rule's — and makes nothing. The policy is printed as
+the `--rule-statement`/`--rule-define` flags that send it, shell-quoted, so
+it becomes a rule only by being passed, and the text approved is text the
+person handled; with none the rule approves the policy as asked. Statements
+the server refused are printed as written, and offered as no flag.
 
-- A proposal is a model's sentence written from an agent's ask, and a rule's
-  uses may be one too: both are shown whole and through `terminalSafe`, as a
-  rule's repositories are.
+- A proposal is a model's policy written from an agent's ask, and a rule's
+  may be one too: both are shown whole and through `terminalSafe`, as a
+  rule's repositories are. `secret rule get` prints the policy as its
+  canonical sentences and `"word" means: …` rows (`policySentenceRows`), the
+  words `--statement` and `--define` write it in, and the variables it binds
+  to whichever discobox asks; `ls` its first statement and how many more.
 - **A rule for every discobox is never what saying nothing makes.** It takes
   its flag on `create`, `update` and `approve --auto`, each refused beside
   repositories, and each sends `everyDiscobox: true` — never an empty or

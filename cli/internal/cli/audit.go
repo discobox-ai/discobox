@@ -370,8 +370,9 @@ they are recorded.
 The project's judge decides about a command before a credential is issued for
 it, about each request the proxy sees carrying a credential when the server
 judges requests, about a discobox handing a credential on, and about an
-approval rule being tested against a credential request: whether what it
-asked for is within the rule's uses (rule); --rule-id picks one rule's. Which
+approval rule being tested against a credential request: whether the
+conditions of an allow it asked for are within those of the rule's (rule);
+--rule-id picks one rule's. Which
 discoboxes a rule is for is compared by the server, and has no verdict. Its
 verdicts are recorded "judge": the server records every answer before giving it, whether it
 allowed, denied, or asked to be shown a request's body, which the proxy
@@ -477,7 +478,7 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's verdicts; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&useID, "use-id", "", "Only verdicts on this approved use")
 	cmd.Flags().StringVar(&grantID, "grant-id", "", "Only verdicts on uses of this grant")
-	cmd.Flags().StringVar(&kind, "kind", "", "Only verdicts on a command, a request, a delegation (a discobox handing a credential on), or a rule (an approval rule's uses read against a request)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Only verdicts on a command, a request, a delegation (a discobox handing a credential on), or a rule (the conditions of an allow a request asked for read against an approval rule's)")
 	cmd.Flags().StringVar(&ruleID, "rule-id", "", "Only verdicts recorded while testing this approval rule")
 	cmd.Flags().BoolVar(&denied, "denied", false, "Only denied verdicts, including a judge asking to see a request's body")
 	cmd.Flags().BoolVar(&allowed, "allowed", false, "Only allowed verdicts")

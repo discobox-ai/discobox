@@ -4,7 +4,6 @@ package services
 import (
 	"context"
 	"io"
-	"strings"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -685,49 +684,31 @@ type JudgeService interface {
 	JudgeCommand(ctx context.Context, poolID string, ask CommandAsk) (judge.Answer, error)
 	JudgeDelegation(ctx context.Context, projectID string, ask DelegationAsk) (judge.Answer, error)
 	// JudgeRule is an approval rule's reading (ADR 26-10-12-330 §5): whether
-	// what a discobox asked for is within the rule's uses. It answers from a
-	// verdict on record for the same question before asking anybody.
+	// the conditions of an allow a discobox asked for are within those of the
+	// rule's allow that covers it otherwise. It answers from a verdict on
+	// record for the same question before asking anybody.
 	JudgeRule(ctx context.Context, projectID string, ask RuleAsk) (judge.Answer, error)
-	// ProposeRule has the project's judge discobox write the wider uses of a
-	// rule from one request (§7). An error is no proposal: no model that can
+	// ProposeRule has the project's judge discobox write the wider policy of
+	// a rule from one request's (§7). An error is no proposal: no model that can
 	// write, or one that did not.
 	ProposeRule(ctx context.Context, projectID string, job judge.ProposalJob) (judge.Proposal, error)
 }
 
-// RuleAsk is whether the uses a request asked for fall within an approval
-// rule's uses (ADR 26-10-12-330 §3). The justification is not in it: it
-// authorizes nothing and can only steer.
+// RuleAsk is whether the conditions of one allow a request asked for are
+// within those of one allow of an approval rule, which code found to cover it
+// in every other part (ADR 26-10-22-689). Job is the question as
+// judge.HoldToRule put it — the two allows as their sentences bound for the
+// discobox that asked, and that discobox's facts (ADR 26-10-14-691) — and the
+// rest says what the verdict is recorded against. The justification is not in
+// it: it authorizes nothing and can only steer.
 type RuleAsk struct {
 	// RuleID is the rule being tested, empty while it is still a proposal.
-	RuleID string
 	// RequestID is the request tested, and SandboxID the discobox that filed
-	// it. Asking is that discobox as it was created, which the judge is told
-	// about (ADR 26-10-14-691): a rule's uses may say "this discobox's
-	// repository" as well as a grant's.
+	// it.
+	RuleID    string
 	RequestID string
 	SandboxID string
-	Asking    judge.Discobox
-	// RuleUses are the rule's uses, the authorization; Uses are the uses the
-	// request asked for, which are judged.
-	RuleUses []string
-	Uses     []string
-	// Credential and Hosts are the rule's, which the server has already held
-	// the request to.
-	Credential string
-	Hosts      []string
-}
-
-// Job is the question as the judge is put it.
-func (a RuleAsk) Job() judge.Job {
-	return judge.Job{
-		Kind:       judge.KindRule,
-		Purposes:   a.RuleUses,
-		Host:       strings.Join(a.Hosts, ", "),
-		Credential: a.Credential,
-		Round:      1,
-		Uses:       a.Uses,
-		Facts:      judge.Facts(a.Asking),
-	}
+	Job       judge.Job
 }
 
 // DelegationBound is how long the judge may take over the uses one grant a

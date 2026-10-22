@@ -215,10 +215,13 @@ rules that answer a request without a person
 ([ADR 26-10-12-330](adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md));
 the protocol is the same either way. A rule is for the repositories it names —
 it answers a discobox whose primary source is one of them — or for every
-discobox in the project, and what it may approve is sentences the judge reads
-the request's `uses` against. A rule only ever approves, so a request
-none covers stays `pending` for a person, and a client cannot tell — and need
-not know — which of the two answered.
+discobox in the project, and what it may approve is a policy: a request is
+covered when the `policy` it asks for falls within the rule's, compared by
+code, with the judge reading only conditions code cannot compare. A rule
+answers only a request that carries a `policy`; one of `uses` alone always
+waits for a person. A rule only ever approves, so a request none covers stays
+`pending` for a person, and a client cannot tell — and need not know — which
+of the two answered.
 
 ```
 GET /v1/credentials/requests/{requestId}

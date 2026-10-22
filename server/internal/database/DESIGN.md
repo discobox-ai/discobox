@@ -49,12 +49,13 @@ by what it is looking for and is idempotent:
    a codex harness's captured `config.toml`),
    moving a secret request's and grant's one `host` into its `hosts` list and
    dropping the column (`moveSecretHostsToLists`, ADR 26-10-02-393 §6),
-   deleting the approval rules that had a scope sentence or a pinned discobox,
-   one logged line each, and dropping those columns and the `scope` verdicts
-   (`retireApprovalRuleScopes`, ADR 26-10-12-330 §2: neither says a
-   repository, so such a rule would otherwise read as one for every discobox;
-   its grants stand, as when a person deletes a rule; all of it runs only
-   while one of the columns is still there),
+   deleting every approval rule with no policy, one logged line each, on
+   every start, so one an older server wrote is gone at the next, and
+   dropping the `uses` column with the older `scope` and `sandbox_id` and
+   the `scope` verdicts while any of those columns is still there
+   (`retireApprovalRuleUses`, ADR 26-10-22-689 §5: a rule now carries a
+   policy, and no code reads a sentence as one; its grants stand, as when a
+   person deletes a rule; a rule with a policy is never touched),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and

@@ -1027,13 +1027,15 @@ func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() 
 	}
 
 	makeRule := action{key: grantRuleItem, press: ruleNewKey, label: "Make a rule from this grant…",
-		detail:  "the project's judge writes its uses from these, as auto approve would have; you choose its discoboxes and read it whole before it is made",
+		detail:  "the project's judge writes its policy from this grant's, as auto approve would have; you choose its discoboxes and read it whole before it is made",
 		enabled: true}
 	switch {
 	case grant.RuleID != "":
 		makeRule.enabled, makeRule.why = false, "approval rule "+grant.RuleID+" minted it, and approves requests like it already"
-	case len(grant.Uses) == 0:
-		makeRule.enabled, makeRule.why = false, "a rule approves uses, and this grant names none"
+	case grant.Approved == nil:
+		makeRule.enabled, makeRule.why = false, "a rule approves a policy, and this grant carries none"
+	case grant.Delegate:
+		makeRule.enabled, makeRule.why = false, "it delegates, and no rule approves a delegation yet"
 	case grant.SecretID == "":
 		makeRule.enabled, makeRule.why = false, "it stands on no secret for a rule to answer with"
 	}

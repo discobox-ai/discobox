@@ -2105,8 +2105,8 @@ func (f *fakeSource) UpdateRule(_ context.Context, server, ruleID string, change
 		case change.Repositories != nil:
 			rule.Repositories, rule.EveryDiscobox = change.Repositories, false
 		}
-		if change.Uses != nil {
-			rule.Uses = change.Uses
+		if change.Policy != nil {
+			rule.Policy = change.Policy
 		}
 		if change.MaxGrantTTL != nil {
 			rule.MaxGrantTTL = *change.MaxGrantTTL

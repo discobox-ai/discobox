@@ -274,13 +274,13 @@ func (s *ApprovalRule) Validate() error {
 		})
 	}
 	if err := func() error {
-		if s.Uses == nil {
-			return errors.New("nil is invalid value")
+		if err := s.Policy.Validate(); err != nil {
+			return err
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "uses",
+			Name:  "policy",
 			Error: err,
 		})
 	}
@@ -307,6 +307,24 @@ func (s *ApproveSecretRequestBody) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Rule.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rule",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.Scope.Get(); ok {
 			if err := func() error {
@@ -419,6 +437,36 @@ func (s *ApproveTrustRequestBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "uses",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ApproveWithRule) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Policy.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "policy",
 			Error: err,
 		})
 	}
@@ -627,13 +675,13 @@ func (s *CreateApprovalRuleBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if s.Uses == nil {
-			return errors.New("nil is invalid value")
+		if err := s.Policy.Validate(); err != nil {
+			return err
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "uses",
+			Name:  "policy",
 			Error: err,
 		})
 	}
@@ -2888,13 +2936,13 @@ func (s *JudgeProposal) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.UsesAnyTarget == nil {
+		if s.StatementsAnyTarget == nil {
 			return errors.New("nil is invalid value")
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "usesAnyTarget",
+			Name:  "statementsAnyTarget",
 			Error: err,
 		})
 	}
@@ -2911,13 +2959,13 @@ func (s *JudgeProposalJob) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.Uses == nil {
+		if s.Statements == nil {
 			return errors.New("nil is invalid value")
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "uses",
+			Name:  "statements",
 			Error: err,
 		})
 	}
@@ -5542,6 +5590,36 @@ func (s *ResourceHistoryResponse) Validate() error {
 	return nil
 }
 
+func (s *RulePolicyProposal) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Policy.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "policy",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *RuleProposalsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -5571,7 +5649,7 @@ func (s *RuleProposalsBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Uses.Get(); ok {
+		if value, ok := s.Policy.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -5584,7 +5662,7 @@ func (s *RuleProposalsBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "uses",
+			Name:  "policy",
 			Error: err,
 		})
 	}
@@ -5644,29 +5722,6 @@ func (s RuleTestStage) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
-}
-
-func (s *RuleUsesProposal) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if s.Uses == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "uses",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
 }
 
 func (s *Sandbox) Validate() error {
@@ -9245,6 +9300,36 @@ func (s TrustPinKind) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *UpdateApprovalRuleBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Policy.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "policy",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
 }
 
 func (s *UpdateHarnessConfigBody) Validate() error {

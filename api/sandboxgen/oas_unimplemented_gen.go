@@ -271,11 +271,11 @@ func (UnimplementedHandler) ListSandboxTools(ctx context.Context, params ListSan
 
 // ProposeSandboxRule implements propose-sandbox-rule operation.
 //
-// Has this discobox's harness write the uses a person starts an approval rule from (ADR
-// 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a
-// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
-// the uses a request asked for; the prompt, the schema, the model role and the tools restriction are
-// the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+// Has this discobox's harness write the policy a person starts an approval rule from (ADR
+// 26-10-12-330) — the policy a request asked for, as the same work on any target of its kind. Only
+// a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
+// the statements a request asked for; the prompt, the schema, the model role and the tools
+// restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 func (UnimplementedHandler) ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (r *JudgeProposal, _ error) {

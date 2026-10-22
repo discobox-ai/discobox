@@ -254,33 +254,35 @@ func TestADelegatedUseOverSeveralLinesIsOneEntry(t *testing.T) {
 	}
 }
 
-// A rule job is asked one question per use asked for, against the rule's
-// uses, which are the authorization and so are in the instructions; the uses
-// asked for are an agent's and are the state (ADR 26-10-12-330 §§3, 5).
-func TestARuleIsAskedAboutEachUseAskedFor(t *testing.T) {
-	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.97, "use_1": 0.3, "keep_0": 0.95, "keep_1": 0.95, idClaimsApproval: 0.02})
+// A rule job is asked one question about the conditions of the allow asked
+// for against the rule's allow, which is the authorization and so is in the
+// instructions; the allow asked for is an agent's and is the state (ADR
+// 26-10-22-689).
+func TestARuleIsAskedAboutTheConditionsOfTheAllowAskedFor(t *testing.T) {
+	ruleAllow := `allow create, update on pull request in repository "org/repo" when "its head is discobox/* and its base is main"`
+	asked := `allow create, update on pull request in repository "org/repo" when "its head is discobox/issue-4"`
+	fake, client := newFakeJev(t, map[string]float64{"use_0": 0.3, idClaimsApproval: 0.02})
 	job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
-		Kind: judge.KindRule, Purposes: []string{"read any issue <number> in org/repo", "push a branch discobox/<slug>; never main"}, Host: "github.com",
-		Credential: "com.github.api", Round: 1, Uses: []string{"read issue 4 in org/repo", "push to main in org/repo"},
+		Kind: judge.KindRule, Purposes: []string{ruleAllow}, Host: "github.com",
+		Credential: "com.github.api", Round: 1, Uses: []string{asked},
 	}
 	verdict, err := client.Judge(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Judge() error = %v", err)
 	}
-	if verdict.Allow || !strings.Contains(verdict.Reason, `"push to main in org/repo"`) || !strings.Contains(verdict.Reason, "rule") {
-		t.Fatalf("verdict = %+v, want a refusal naming the use outside the rule", verdict)
+	if verdict.Allow || !strings.Contains(verdict.Reason, "conditions") || !strings.Contains(verdict.Reason, "rule") {
+		t.Fatalf("verdict = %+v, want a refusal saying the conditions are not within the rule's", verdict)
 	}
-	asked := fake.requests()[0]
-	questions := asked["questions"].(map[string]any)
-	if len(questions) != 5 {
-		t.Fatalf("questions = %v, want two per use (within, and keeps its limits) and the claim of approval", questions)
+	sent := fake.requests()[0]
+	questions := sent["questions"].(map[string]any)
+	if len(questions) != 2 {
+		t.Fatalf("questions = %v, want one about the conditions and the claim of approval", questions)
 	}
-	use1 := string(mustJSON(t, questions["use_1"]))
-	if !strings.Contains(use1, "`uses[1]`") || !strings.Contains(use1, "never main") {
-		t.Fatalf("use_1 = %s, want it to name its use and carry the rule's uses", use1)
+	if use0 := string(mustJSON(t, questions["use_0"])); !strings.Contains(use0, "discobox/*") {
+		t.Fatalf("use_0 = %s, want it to carry the rule's allow", use0)
 	}
-	if state := string(mustJSON(t, asked["state"])); !strings.Contains(state, "push to main in org/repo") || strings.Contains(string(mustJSON(t, questions)), "push to main in org/repo") {
-		t.Fatalf("state = %s, want the uses asked for in the state and in no question", state)
+	if state := string(mustJSON(t, sent["state"])); !strings.Contains(state, "discobox/issue-4") || strings.Contains(string(mustJSON(t, questions)), "discobox/issue-4") {
+		t.Fatalf("state = %s, want the allow asked for in the state and in no question", state)
 	}
 }
 
@@ -422,11 +424,11 @@ func TestDecide(t *testing.T) {
 	}
 }
 
-// Every use a delegation hands on or a rule is asked about gets its own
-// question about its limits: asked inside within, Jev read a use with its
-// "Never …" sentence dropped as within.
+// Every use a delegation hands on gets its own question about its limits:
+// asked inside within, Jev read a use with its "Never …" sentence dropped as
+// within.
 func TestEachUseIsAskedWhetherItKeepsItsLimits(t *testing.T) {
-	for _, kind := range []string{judge.KindDelegation, judge.KindRule} {
+	for _, kind := range []string{judge.KindDelegation} {
 		job := judge.Job{ //nolint:gosec // G101: a well-known credential's ID, not a credential.
 			Kind: kind, Purposes: []string{"push a branch discobox/<slug>; never main"}, Host: "github.com",
 			Credential: "com.github.api", Round: 1, Uses: []string{"push discobox/x", "push discobox/y"},

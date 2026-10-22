@@ -1,17 +1,74 @@
 {
   "name": "rule-lead-reads-as-asked",
-  "why": "orchestrate-issues' own GitHub use, reads and issue writes, against itself.",
+  "why": "orchestrate-issues' own GitHub policy, reads and issue writes, against itself.",
   "expect": "allow",
-  "job": {
-    "kind": "rule",
-    "purposes": [
-      "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, file an issue in another repository, or read secrets."
-    ],
-    "host": "github.com",
+  "rule": {
+    "policy": {
+      "statements": [
+        "allow read on anything in repository $primary.repo",
+        "allow create on issue in repository $primary.repo",
+        "allow create on comment within issue in repository $primary.repo",
+        "deny push, merge, close on anything in anywhere",
+        "deny retitle on issue in anywhere",
+        "deny delete on comment in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "issue": "a GitHub issue",
+        "merge": "merge a pull request into its base",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "retitle": "change an issue's title or body",
+        "secret": "an Actions, Dependabot or environment secret"
+      }
+    },
+    "request": {
+      "statements": [
+        "allow read on anything in repository $primary.repo",
+        "allow create on issue in repository $primary.repo",
+        "allow create on comment within issue in repository $primary.repo",
+        "deny push, merge, close on anything in anywhere",
+        "deny retitle on issue in anywhere",
+        "deny delete on comment in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "issue": "a GitHub issue",
+        "merge": "merge a pull request into its base",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "retitle": "change an issue's title or body",
+        "secret": "an Actions, Dependabot or environment secret"
+      }
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_6t1n8c3vqk2m9x4w",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "discobox",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "discobox-ai/discobox",
+            "url": "https://github.com/discobox-ai/discobox"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    },
     "credential": "com.github.api",
-    "round": 1,
-    "uses": [
-      "Track the work my discoboxes do in discobox-ai/discobox. Read anything in the repository; file issues for work I hand to a discobox, and comment on issues. Never push, merge, or close anything, edit an issue's title or body, delete a comment, file an issue in another repository, or read secrets."
+    "hosts": [
+      "github.com"
     ]
   }
 }

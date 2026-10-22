@@ -198,15 +198,18 @@ without a policy is judged by them as before.
   the grant's to them inside the transaction, and a value that resolves
   otherwise, or a variable shown as matching nothing that resolves now, is a
   409 that grants nothing (`errPolicyResolvedOtherwise`).
-  A rule never answers such a request, nor is proposed or made from one
-  (`ruleTestable`, `ruleProposable`): rules are read against uses.
+  A rule answers only such a request, and is proposed or made only from one
+  (`ruleTestable`, `ruleProposable`): a rule's policy is what a request's is
+  held to, and uses alone have none.
 - **A discobox hands on a policy only within its own** (ADR 26-10-20-782
   §11), approving a request of a discobox it created or giving one on a
   create. `delegationsCovering` keeps, of the delegations the hand-off's
   facts fit, those that carry a policy the given one is `policy.Within` —
   the given policy resolved for the discobox it goes to, each delegation's
-  bound now for its holder — and asks the judge only about conditions code
-  left unsettled (`judgeConditions`), the two statements as they resolved,
+  bound now for its holder; a delegated deny carried by one that refuses at
+  least as much, and an allow with no condition refused under one with any
+  (§11 as ADR 26-10-22-689 amends it) — and asks the judge only about
+  conditions code left unsettled (`judgeConditions`), the two statements as they resolved,
   in the question it answers about uses. `judgeDelegations` then reads the
   uses among those, as for any hand-off, so a policy and its uses are both
   within one delegation. A delegation without a policy hands on none; a
@@ -366,19 +369,23 @@ and a discobox that needs both holds two grants.
 ## Approval rules
 
 An `ApprovalRule` is a project's standing answer to a credential request
-([ADR 26-10-12-330](../../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)):
-a request like this, from a discobox of these repositories, is approved
-without asking. `rules.go` owns the rule and what holds a request to it,
-`rule_repositories.go` which discoboxes a rule is for, `rule_requests.go` the
-reconciler that tests rules, and `rule_proposals.go` what "auto approve" offers.
+([ADR 26-10-12-330](../../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md);
+its policy, [ADR 26-10-22-689](../../../../docs/adr/26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md)):
+a request whose policy falls within this one, from a discobox of these
+repositories, is approved without asking. `rules.go` owns the rule and what
+holds a request to it, `rule_repositories.go` which discoboxes a rule is for,
+`rule_requests.go` the reconciler that tests rules, and `rule_proposals.go`
+what "auto approve" offers.
 
 ```mermaid
 flowchart LR
-    ask["agent files a request"] -->|"pending, returns at once"| dirty[(ruleRequest dirty)]
+    ask["agent files a request with a policy"] -->|"pending, returns at once"| dirty[(ruleRequest dirty)]
     made["rule made or edited"] --> dirty
     dirty --> test["RuleRequests.Reconcile"]
-    test -->|"facts: repository, credential, hosts, purpose"| content["JudgeRule: rule's uses vs uses asked"]
-    content -->|"covers"| write["commitApproval: grant as asked, RuleID"]
+    test -->|"facts: repository, credential, hosts, purpose"| within["policy.Within: request's policy vs rule's"]
+    within -->|"conditions code cannot compare"| content["JudgeRule: one allow vs one allow"]
+    within -->|"covers"| write["commitApproval: grant as asked, RuleID"]
+    content -->|"within"| write
     test -. "no rule covers" .-> person["stays pending for a person"]
 ```
 
@@ -388,21 +395,35 @@ flowchart LR
   (`CreateApprovalRule`) or by answering a request with a `rule` on the
   approve body, which makes the rule and approves under it in one write. The
   sandbox role lists none of the routes.
-- **One question, composed one way** (`ruleAsk`): proposing, approving,
-  reconciling and reading the card all build it from the rule, the request,
-  and the requesting discobox's row, whose facts the judge is told
-  (ADR 26-10-14-691), so one answer on record (`judge.Digest`) serves all
-  four.
-- **Facts are checked here; the uses are the judge's** (`ruleFacts`,
-  `ruleUsesCover`), the way an approval is held to a delegation:
+- **A rule carries a policy** (`ApprovalRule.Policy`), stored as structure
+  and written and shown as sentences by its clients. It is held to what a
+  grant's is (`rulePolicyProblem`: `Policy.Validate`, `judge.PolicyFits`) and
+  must allow something. It records no resolved values: its variables bind to
+  whichever discobox asks, at each test, so `$primary.repo` is the asking
+  discobox's repository.
+- **Facts are checked here; the policy is code's, its conditions the
+  judge's** (`ruleFacts`, `rulePolicyCovers`), the way a policy handed on is
+  held to a delegation's:
   - the same credential — the well-known ID the request names, or, for an ask
     that names none, a secret whose host binding covers the hosts asked for;
   - a discobox of one of the rule's repositories (below);
   - the same purpose, hosts within the rule's, and the secret's own binding;
   - the lifetime, fitted and never refused (`ruleTTL`): the ask, else the
     hour, capped by the rule and the secret's limit;
-  - the rule's uses against the uses asked for, which is the judge's. The
-    justification is not shown.
+  - the request's policy `policy.Within` the rule's, both resolved for the
+    asking discobox: every allow asked for within an allow of the rule, every
+    deny of the rule asked for too, and a word both use defined alike. A word
+    defined otherwise is not covered: the request waits for a person.
+  - an allow code found covered but for its conditions is put to the judge
+    (`JudgeRule`, kind `rule`), one allow asked for against one of the
+    rule's, each as its sentence bound for the asking discobox; it is within
+    when the judge finds it within any one. The judge is told the asking
+    discobox's facts (ADR 26-10-14-691); the justification is not shown.
+- **One question, composed one way** (`rulePolicyCovers`): proposing,
+  approving, reconciling and reading the card all build each condition
+  question from the rule, the request and the requesting discobox's row, so
+  one answer on record (`judge.Digest`) serves all four. Reading the card
+  (`reading`) asks nobody: a question with no verdict on record is pending.
 - **Which discoboxes a rule is for is a list of repositories, compared**
   (`rule_repositories.go`, §2). A rule with none is for every discobox in the
   project. One with some answers a discobox whose **primary source** is one
@@ -435,20 +456,22 @@ flowchart LR
   is no scan: a run whose judge could not answer fails and is retried by the
   engine's backoff, which a periodic re-mark would cancel, and a lost mark
   costs what no rule costs — a person is asked. Only a pending agent
-  credentials request is tested
-  (`ruleTestable`): reactive requests, refresh requests and host trusts stay
-  a person's.
+  credentials request that carries a policy is tested
+  (`ruleTestable`): reactive requests, refresh requests, asks with uses
+  alone and host trusts stay a person's.
 - **One rule at a time, cheapest step first**: rules that name repositories
   before rules for every discobox (`liveRules`), each on its own, never
-  several rules' uses together. The first that
+  several rules' policies together. The first that
   covers ends it. A judge that could not answer about some rule, when none
   covered, fails the run so the request is tested again.
 - **A rule's approval is a person's approval's write** (`commitApproval`,
   shared with a person's and a delegated approval): the grant is
-  sandbox-scoped with the uses **as asked**, so each box holds its own branch
-  and not the class, and names the rule (`SecretGrant.RuleID`). The rule is
-  read again in the transaction (`heldRule`): still live, with the text the
-  judge read, else nothing is minted. `GrantedBy` is the person who made the
+  sandbox-scoped with the uses and the policy **as asked**, so each box holds
+  its own branch and not the class, and names the rule
+  (`SecretGrant.RuleID`). Its policy must resolve as it did when it was held
+  to the rule (`approvalWrite.shown`), else nothing is minted. The rule is
+  read again in the transaction (`heldRule`): still live, with the text that
+  was read, else nothing is minted. `GrantedBy` is the person who made the
   rule.
 - **A grant is independent of its rule.** Disabling or deleting a rule mints
   nothing more and revokes nothing; `ListSecretGrants` filters by rule. A rule
@@ -458,42 +481,51 @@ flowchart LR
 - **A rule for a well-known credential answers with the secret marked for
   it**, so auto approve is refused when the approval names another.
 - **Each question is asked once.** The judges service answers from the
-  verdict on record for the same job. An edited rule is a different job, so
-  it is tested afresh against what is pending. A repository comparison asks
-  nobody and records nothing.
+  verdict on record for the same job. An edited rule's conditions are
+  different jobs, so it is tested afresh against what is pending. A
+  repository comparison, and what code decides, ask nobody and record
+  nothing.
 - **The card says why** (`ruleTestDescriber`): a person reading a pending
-  request sees each rule tested and the fact or verdict that kept it from
-  covering, read from the record — a replica's, and making nothing — without
-  asking anybody. A discobox is shown none of it.
-- **A rule may hand on a gate or a delegation** (§9), which only a person
-  otherwise approves: a rule is that person's approval given in advance.
+  request sees each rule tested and the fact, the statement code found
+  outside the rule, or the verdict on conditions that kept it from covering,
+  read from the record — a replica's, and making nothing — without asking
+  anybody. A discobox is shown none of it.
+- **A rule may hand on a gate** (§9), which only a person otherwise
+  approves: a rule is that person's approval given in advance. **It approves
+  no delegation yet** (ADR 26-10-22-689 §4): a delegation's uses still bound
+  a hand-off of uses alone, and a rule holds a request's policy, never its
+  uses. `checkRule` refuses a rule to delegate, and `ruleProposable` and
+  `ProposeApprovalRuleFromGrant` a request or grant that delegates.
 
-**"Auto approve" proposes uses, judged before they are shown**
-(`ProposeApprovalRules`, §§7–8). One set: the request's uses written by the
-project's judge discobox as the same work on any target of its kind
-(`JudgeService.ProposeRule`); the credential, hosts and purpose are copied
-from the request by code. What was written is put to the judge as the job a
-rule would later ask, and its verdict recorded and returned with it
-(`RuleProposalsBody.uses`: the uses, `covers`, and the reason), so uses chosen
-as written approve under the verdict on record. Uses that could not be a
-rule's (`ruleUsesProblem`) are returned not covering, unjudged. A person edits
-them before the rule is made; edited text is judged again by the approve
-(`ruleFromApproval`), which refuses a rule that would not cover the request it
-is made from. Where no model can write there are no uses, and the note says
-why; the uses as asked are the client's to start from. The answer also names
-the asking discobox's repository (`repository`, absent when it has none),
-which is what a client offers a rule for; nothing about it is written or
-judged.
+**"Auto approve" proposes a policy, held to the request before it is shown**
+(`ProposeApprovalRules`, §§7–8). One policy: the request's statements written
+by the project's judge discobox as the same work on any target of its kind
+(`JudgeService.ProposeRule`); the credential, hosts, purpose and the words'
+definitions are copied from the request by code, so a word the model brings
+in has none (`writtenPolicy`). What was written is parsed, held to what a
+rule may be, and held to covering the request as a rule later would be —
+condition questions recorded — and returned with what that found
+(`RuleProposalsBody.policy`: the policy, `covers`, and the reason), so a
+policy chosen as written approves under the verdicts on record. One that
+could not be a rule's is returned `refused`, with the sentences as written,
+uncompared. A person edits it as sentences before the rule is made; an edited
+policy is held to the request again by the approve (`ruleFromApproval`),
+which refuses a rule that would not cover the request it is made from. Where
+no model can write there is no policy, and the note says why; the policy as
+asked is the client's to start from. The answer also names the asking
+discobox's repository (`repository`, absent when it has none), which is what
+a client offers a rule for; nothing about it is written or judged.
 
 **A grant proposes the rule its request would have**
 (`ProposeApprovalRuleFromGrant`, §7): the same proposal (`proposeRule`, from
 a `ruleSource`), from the request the grant answered
 (`GetSecretRequestByGrant`, by the `grantId` approving recorded on it) but
-written from the grant's approved uses and for its hosts and purpose, and
-judged against that request. The request need not be pending, and its
-discobox need not still exist (then no repository). A grant with no uses, or
-no request on record, is refused. Nothing is approved; the client makes the
-rule as any other is made.
+written from the grant's approved policy and for its hosts and purpose, and
+held to covering that policy for the request's discobox. The request need
+not be pending, and its discobox need not still exist (then no repository,
+and nothing to compare against). A grant with no policy, or no request on
+record, is refused. Nothing is approved; the client makes the rule as any
+other is made.
 
 ## The agent credentials broker
 

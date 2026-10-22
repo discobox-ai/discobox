@@ -149,7 +149,7 @@ func (fakeSecretService) ProposeApprovalRules(context.Context, string, string) (
 		Hosts:      []string{"github.com"},
 		Purpose:    "use",
 		Repository: serverapi.NewOptString("github.com/org/repo"),
-		Uses:       serverapi.NewOptRuleUsesProposal(serverapi.RuleUsesProposal{Uses: []string{"read any issue <number>"}, Covers: true}),
+		Policy:     serverapi.NewOptRulePolicyProposal(serverapi.RulePolicyProposal{Policy: serverapi.NewOptAccessPolicy(fakeRulePolicy()), Covers: true}),
 	}, nil
 }
 
@@ -161,7 +161,21 @@ func fakeApprovalRule() model.ApprovalRule {
 	return model.ApprovalRule{
 		ID: "rule_1", ProjectID: "project-1", WellKnownID: "com.github.api",
 		Repositories: []string{"github.com/org/repo"}, Hosts: []string{"github.com"}, Purpose: "use",
-		Uses: []string{"read any issue <number> in org/repo"}, MaxGrantTTL: 3600, Enabled: true,
+		MaxGrantTTL: 3600, Enabled: true,
+		Policy: &policy.Policy{Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}}, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}},
+	}
+}
+
+func fakeRulePolicy() serverapi.AccessPolicy {
+	return serverapi.AccessPolicy{
+		Statements: []serverapi.AccessPolicyStatement{{
+			Effect: serverapi.AccessPolicyStatementEffectAllow, Actions: []string{"read"}, ResourceType: "issue",
+			Scope: serverapi.AccessPolicyScope{Type: "repository", Name: serverapi.NewOptString("$primary.repo")},
+		}},
+		Definitions: serverapi.NewOptAccessPolicyDefinitions(serverapi.AccessPolicyDefinitions{"issue": "a GitHub issue", "repository": "a GitHub repository"}),
 	}
 }
 

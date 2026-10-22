@@ -1,17 +1,96 @@
 {
   "name": "rule-control-another-repository",
-  "why": "Control: the develop use, word for word, for another repository.",
+  "why": "Control: the develop policy, word for word, for another repository named outright: the rule's $primary.repo is the asking discobox's discobox-ai/discobox, and code finds discobox-ai/hooks outside it.",
   "expect": "refuse",
-  "job": {
-    "kind": "rule",
-    "purposes": [
-      "Deliver a change as a pull request from branch discobox/<slug> into main of discobox-ai/discobox. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."
-    ],
-    "host": "github.com",
+  "rule": {
+    "policy": {
+      "statements": [
+        "allow read on anything in repository $primary.repo",
+        "allow push on branch \"discobox/*\" in repository $primary.repo",
+        "allow create, update on pull request in repository $primary.repo when \"its head is discobox/* and its base is main\"",
+        "allow create on comment within pull request in repository $primary.repo",
+        "allow rerun on workflow run in repository $primary.repo when \"it failed\"",
+        "deny push on branch \"main\" in repository $primary.repo",
+        "deny force-push, delete on branch in anywhere",
+        "deny merge, close on pull request in anywhere",
+        "deny delete on comment in anywhere",
+        "deny cancel, delete on workflow run in anywhere",
+        "deny dispatch on workflow in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "branch": "a git branch in a repository",
+        "cancel": "stop a run that is in progress",
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "dispatch": "start a workflow run by hand",
+        "force-push": "move a branch with --force and no lease",
+        "merge": "merge a pull request into its base",
+        "pull request": "a GitHub pull request",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "rerun": "re-run a run's failed jobs",
+        "secret": "an Actions, Dependabot or environment secret",
+        "workflow": "a GitHub Actions workflow",
+        "workflow run": "a GitHub Actions run"
+      }
+    },
+    "request": {
+      "statements": [
+        "allow read on anything in repository \"discobox-ai/hooks\"",
+        "allow push on branch \"discobox/26-10-12-330\" in repository \"discobox-ai/hooks\"",
+        "allow create, update on pull request in repository \"discobox-ai/hooks\" when \"its head is discobox/26-10-12-330 and its base is main\"",
+        "allow create on comment within pull request in repository \"discobox-ai/hooks\"",
+        "allow rerun on workflow run in repository \"discobox-ai/hooks\" when \"it failed\"",
+        "deny push on branch \"main\" in repository \"discobox-ai/hooks\"",
+        "deny force-push, delete on branch in anywhere",
+        "deny merge, close on pull request in anywhere",
+        "deny delete on comment in anywhere",
+        "deny cancel, delete on workflow run in anywhere",
+        "deny dispatch on workflow in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "branch": "a git branch in a repository",
+        "cancel": "stop a run that is in progress",
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "dispatch": "start a workflow run by hand",
+        "force-push": "move a branch with --force and no lease",
+        "merge": "merge a pull request into its base",
+        "pull request": "a GitHub pull request",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "rerun": "re-run a run's failed jobs",
+        "secret": "an Actions, Dependabot or environment secret",
+        "workflow": "a GitHub Actions workflow",
+        "workflow run": "a GitHub Actions run"
+      }
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_6t1n8c3vqk2m9x4w",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "discobox",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "discobox-ai/discobox",
+            "url": "https://github.com/discobox-ai/discobox"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    },
     "credential": "com.github.api",
-    "round": 1,
-    "uses": [
-      "Deliver ADR 26-10-12-330 as a pull request from branch discobox/26-10-12-330 into main of discobox-ai/hooks. Read anything in the repository; push that branch (creating it with an empty --force-with-lease, and with --force-with-lease after a rebase), open and update the pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or any other branch, force-push without a lease, delete a branch, merge or close the pull request, open one in another repository, comment on unrelated issues, delete a comment, cancel or delete a run, start any other workflow, or read secrets."
+    "hosts": [
+      "github.com"
     ]
   }
 }

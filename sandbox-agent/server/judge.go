@@ -107,15 +107,16 @@ func judgeJob(in *sandboxapi.JudgeJob) judge.Job {
 	return job
 }
 
-// ProposeSandboxRule has this discobox's harness write the uses a person
+// ProposeSandboxRule has this discobox's harness write the policy a person
 // starts an approval rule from (ADR 26-10-12-330 §7). Like a
 // judging job, the caller supplies data and nothing else: the prompt, the
 // schema, the model role and the tools restriction are the runtime's.
 func (h *handler) ProposeSandboxRule(ctx context.Context, req *sandboxapi.JudgeProposalJob, _ sandboxapi.ProposeSandboxRuleParams) (*sandboxapi.JudgeProposal, error) {
 	proposal, err := h.terminals.Propose(ctx, judge.ProposalJob{
-		Uses:       req.Uses,
-		Credential: req.Credential.Or(""),
-		Hosts:      req.Hosts,
+		Statements:  req.Statements,
+		Definitions: map[string]string(req.Definitions.Or(nil)),
+		Credential:  req.Credential.Or(""),
+		Hosts:       req.Hosts,
 	})
 	if err != nil {
 		if terminal.Busy(err) {
@@ -124,7 +125,7 @@ func (h *handler) ProposeSandboxRule(ctx context.Context, req *sandboxapi.JudgeP
 		return nil, err
 	}
 	return &sandboxapi.JudgeProposal{
-		UsesAnyTarget: proposal.UsesAnyTarget,
+		StatementsAnyTarget: proposal.StatementsAnyTarget,
 	}, nil
 }
 

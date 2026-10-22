@@ -3847,7 +3847,7 @@ components:
                     description: The project's judge that answered, on a request verdict. It may no longer exist.
                     type: string
                 kind:
-                    description: 'What was judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or an approval rule''s uses being read against what a request asked for (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
+                    description: 'What was judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or the conditions of an allow a request asked for being read against an approval rule''s (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
                     enum:
                         - command
                         - request
@@ -4967,7 +4967,7 @@ components:
                     description: The host the use was approved for.
                     type: string
                 kind:
-                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether what a discobox asked for is within an approval rule''s uses.'
+                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether the conditions of an allow a discobox asked for are within an approval rule''s.'
                     enum:
                         - command
                         - request
@@ -4978,7 +4978,7 @@ components:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
                 purposes:
-                    description: What a job is judged against in place of purpose, one entry each — for a delegation or rule job the uses the discobox was delegated, or the rule's uses; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
+                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the uses the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
                     items:
                         type: string
                     type: array
@@ -4993,7 +4993,7 @@ components:
                 stdin:
                     $ref: '#/components/schemas/JudgeInput'
                 uses:
-                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it asked for, judged against purposes.
+                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
                     items:
                         type: string
                     type: array
@@ -5060,35 +5060,40 @@ components:
             type: object
         JudgeProposalJob:
             additionalProperties: false
-            description: What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox asked for, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
+            description: What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The policy a discobox asked for, as its statements' sentences and the definitions of their words, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
             properties:
                 credential:
                     description: The credential asked for, in the words a person reads, never its value.
                     type: string
+                definitions:
+                    additionalProperties:
+                        type: string
+                    description: What each word of the statements that is not a default means, as the request defined it.
+                    type: object
                 hosts:
                     description: The hosts the request asked to send the credential to.
                     items:
                         type: string
                     type: array
-                uses:
-                    description: The uses the request asked for, verbatim.
+                statements:
+                    description: The statements the request asked for, each as its sentence, verbatim.
                     items:
                         type: string
                     type: array
             required:
-                - uses
+                - statements
             type: object
         JudgeProposal:
             additionalProperties: false
-            description: The uses a model wrote for an approval rule from the uses a request asked for, as the same work on any target of its kind. They authorize nothing; they are judged, and read and edited by a person, before they become a rule.
+            description: The statements a model wrote for an approval rule from the policy a request asked for, as the same work on any target of its kind, each as its sentence. They authorize nothing; the server parses and checks them, and a person reads and edits them, before they become a rule.
             properties:
-                usesAnyTarget:
-                    description: The same work on any target of its kind.
+                statementsAnyTarget:
+                    description: The same work on any target of its kind, one statement's sentence each.
                     items:
                         type: string
                     type: array
             required:
-                - usesAnyTarget
+                - statementsAnyTarget
             type: object
         JudgeInput:
             additionalProperties: false
@@ -5240,7 +5245,7 @@ components:
             x-sandbox-agent-component: true
         ApproveWithRule:
             additionalProperties: false
-            description: Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the request and the request is approved under it, in one write. The rule's credential, hosts and purpose are the request's, copied by the server and never taken from here. Which discoboxes it is for is a list of repositories, or every discobox in the project, which is said and never defaulted. Its uses are what a person chose or wrote, and are held to the judge's word before anything is made, so a rule that would not cover this request is refused. Only a person approves this way.
+            description: Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the request and the request is approved under it, in one write. The rule's credential, hosts and purpose are the request's, copied by the server and never taken from here. Which discoboxes it is for is a list of repositories, or every discobox in the project, which is said and never defaulted. Its policy is what a person chose or wrote, and is held to covering the request's before anything is made -- by code, and by the judge for conditions code cannot compare -- so a rule that would not cover this request is refused. Only a person approves this way.
             properties:
                 expiresAt:
                     description: When the rule stops approving. Left out, it does not lapse.
@@ -5258,11 +5263,9 @@ components:
                     items:
                         type: string
                     type: array
-                uses:
-                    description: What the rule approves, as sentences the judge reads the uses a request asks for against. Left out, the request's uses as asked.
-                    items:
-                        type: string
-                    type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: What the rule approves, as a policy a request's policy must fall within. Its variables bind to whichever discobox asks. Left out, the request's policy as asked. Any resolved values sent are dropped.
             type: object
         ApprovalRule:
             additionalProperties: false
@@ -5320,11 +5323,9 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                uses:
-                    description: What may be approved, as sentences the judge reads the uses a request asks for against
-                    items:
-                        type: string
-                    type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: What may be approved. A request is covered when every allow of its policy falls within an allow of this one and it carries every deny of this one. Its variables bind to the discobox that asked; it carries no resolved values.
                 wellKnownId:
                     description: The well-known credential the rule approves, when it names one by ID
                     type: string
@@ -5333,7 +5334,7 @@ components:
                 - projectId
                 - hosts
                 - purpose
-                - uses
+                - policy
                 - maxGrantTTLSeconds
                 - enabled
                 - createdAt
@@ -5397,16 +5398,14 @@ components:
                 secretId:
                     description: The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
                     type: string
-                uses:
-                    description: What may be approved, as sentences. At least one.
-                    items:
-                        type: string
-                    type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: What may be approved, as a policy with at least one allow. Its variables bind to whichever discobox asks. Any resolved values sent are dropped.
                 wellKnownId:
                     description: The well-known credential the rule approves, by its ID
                     type: string
             required:
-                - uses
+                - policy
             type: object
         UpdateApprovalRuleBody:
             additionalProperties: false
@@ -5444,11 +5443,9 @@ components:
                     items:
                         type: string
                     type: array
-                uses:
-                    description: What may be approved. An edited rule is tested afresh against what is pending.
-                    items:
-                        type: string
-                    type: array
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: Replaces what may be approved. An edited rule is tested afresh against what is pending.
             type: object
         RuleTest:
             additionalProperties: false
@@ -5467,7 +5464,7 @@ components:
                     description: The rule tested
                     type: string
                 stage:
-                    description: 'The stage that decided: facts the server checked, the rule''s repositories among them, or its content, which the judge read'
+                    description: 'The stage that decided: facts the server checked, the rule''s repositories among them, or its content -- its policy against the request''s, compared by code, with the judge reading conditions code cannot compare'
                     enum:
                         - facts
                         - content
@@ -5476,26 +5473,28 @@ components:
                 - ruleId
                 - covered
             type: object
-        RuleUsesProposal:
+        RulePolicyProposal:
             additionalProperties: false
-            description: The uses the project's judge wrote for an approval rule from the uses a request asked for — the same work on any target of its kind — already put to the judge as the question the rule would later ask about this request. A person reads and may edit them before they become a rule; edited, they are judged again on the approve.
+            description: The policy the project's judge wrote for an approval rule from the policy a request asked for -- the same work on any target of its kind -- already held to covering this request, as the rule would later be. A person reads and may edit it before it becomes a rule; edited, it is held to covering the request again on the approve.
             properties:
                 covers:
-                    description: Whether the judge found every use the request asked for within these. False when the judge was not asked.
+                    description: Whether the request's policy falls within this one. False when it was not compared.
                     type: boolean
+                policy:
+                    $ref: '#/components/schemas/AccessPolicy'
+                    description: The policy written. Absent when what was written is not a policy a rule may have, and refused says why.
                 reason:
-                    description: What the judge said. Absent when it was not asked.
+                    description: Why it does or does not cover the request, as code or the judge found. Absent when it was not compared.
                     type: string
                 refused:
-                    description: Why the uses as written could not be a rule's — a use on two lines, too long, too many — so the judge was not asked. Absent when it was.
+                    description: Why what was written could not be a rule's policy -- a statement that does not parse, a word with no definition -- so it was not compared. Absent when it was.
                     type: string
-                uses:
-                    description: The uses written, each one sentence
+                statements:
+                    description: The statements as written, each its sentence, when they were refused.
                     items:
                         type: string
                     type: array
             required:
-                - uses
                 - covers
             type: object
         RuleProposalsBody:
@@ -5516,7 +5515,7 @@ components:
                         type: string
                     type: array
                 note:
-                    description: Why there are no uses written, when no model could write them
+                    description: Why there is no policy written, when no model could write one
                     type: string
                 purpose:
                     description: What a rule made from this request would approve the credential for, copied from the request
@@ -5528,10 +5527,10 @@ components:
                     description: The repository of the discobox that filed the request, as host/path, which a rule made from this request may be for. Absent when it has none (a local source with no remote), and then only a rule for every discobox answers it.
                     type: string
                 wellKnownId:
-                    description: The well-known credential the request asked for by ID, when it named one. A rule made from this proposal is for that ID, and is answered with the secret marked for it; the uses were judged as a rule for it.
+                    description: The well-known credential the request asked for by ID, when it named one. A rule made from this proposal is for that ID, and is answered with the secret marked for it; the policy was held to the request as a rule for it.
                     type: string
-                uses:
-                    $ref: '#/components/schemas/RuleUsesProposal'
+                policy:
+                    $ref: '#/components/schemas/RulePolicyProposal'
             required:
                 - hosts
                 - purpose
@@ -11545,7 +11544,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
         post:
-            description: Has this discobox's harness write the uses a person starts an approval rule from (ADR 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            description: Has this discobox's harness write the policy a person starts an approval rule from (ADR 26-10-12-330) — the policy a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the statements a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
             operationId: propose-sandbox-rule
             parameters:
                 - description: Project that owns the sandbox.
@@ -13182,7 +13181,7 @@ paths:
             tags:
                 - Secrets
         patch:
-            description: Edits an approval rule. Only the fields sent change. A rule whose repositories or uses changed is tested afresh against what is pending; grants it already minted are untouched.
+            description: Edits an approval rule. Only the fields sent change. A rule whose repositories or policy changed is tested afresh against what is pending; grants it already minted are untouched.
             operationId: update-approval-rule
             parameters:
                 - description: Project ID
@@ -13224,7 +13223,7 @@ paths:
                 - Secrets
     /projects/{projectId}/secret-grants/{grantId}/rule-proposals:
         post:
-            description: Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same proposal auto approve makes from that request, but written from the uses the grant approved and for the grant's hosts and purpose, and put to the judge as the question the rule would have asked of that request. A grant that names no uses, or whose request is not on record, has nothing to propose from. Only a person may ask.
+            description: Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same proposal auto approve makes from that request, but written from the policy the grant approved and for the grant's hosts and purpose, and held to covering that grant's policy as the rule would have been. A grant that carries no policy, or whose request is not on record, has nothing to propose from. Only a person may ask.
             operationId: propose-approval-rule-from-grant
             parameters:
                 - description: Project ID
@@ -13260,7 +13259,7 @@ paths:
                 - Secrets
     /projects/{projectId}/secret-requests/{requestId}/rule-proposals:
         post:
-            description: Proposes an approval rule for a pending agent credential request (ADR 26-10-12-330) — the repository of the discobox that asked, which the rule may be for, and uses the project's judge wrote from the request's — the same work on any target of its kind — put to the judge as the question a rule would later ask, with what it said. Where no model can write, there are no uses and a note says why. Only a person may ask.
+            description: Proposes an approval rule for a pending agent credential request (ADR 26-10-12-330) — the repository of the discobox that asked, which the rule may be for, and a policy the project's judge wrote from the request's — the same work on any target of its kind — held to covering the request as a rule later would be, with what that found. Where no model can write, there is no policy and a note says why. Only a person may ask.
             operationId: propose-approval-rules
             parameters:
                 - description: Project ID

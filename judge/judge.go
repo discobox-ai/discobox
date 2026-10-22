@@ -28,7 +28,7 @@ const (
 	Role = "judge"
 	// PromptVersion changes whenever System changes. A stored verdict names
 	// it, so a decision can be read against the words that produced it.
-	PromptVersion = "15"
+	PromptVersion = "16"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
 	//
@@ -111,11 +111,15 @@ const (
 	// delegated statement and one statement handed on, whose conditions alone
 	// are in question (ADR 26-10-20-782 §11).
 	KindDelegation = "delegation"
-	// KindRule is whether what a discobox asked a credential for falls within
-	// the uses of an approval rule, judged before the rule approves the
-	// request (ADR 26-10-12-330 §3). It is a delegation job's shape with its
-	// own words, because who wrote what differs: the rule's uses are a
-	// person's and name a class, and the uses asked for are an agent's.
+	// KindRule is whether an allow a discobox asked for is within an allow
+	// of an approval rule, judged before the rule approves the request
+	// (ADR 26-10-12-330 §3, ADR 26-10-22-689). Code has found the
+	// two the same in every part but their conditions, so its one purpose is
+	// the rule's allow and its one use the allow asked for, each as its
+	// sentence with variables written as the values they resolved to for the
+	// discobox that asked: only their when and unless are in question. The
+	// rule's statement is a person's and names a class; the one asked for is
+	// an agent's.
 	KindRule = "rule"
 )
 
@@ -130,8 +134,9 @@ type Job struct {
 	// command or request job under a grant that carries no policy.
 	Purpose string `json:"purpose,omitempty"`
 	// Purposes are what a job is judged against when it is more than one
-	// sentence, one each. For a delegation or rule job they are uses: what the
-	// discobox was delegated, or the rule's uses. For a command or request job
+	// sentence, one each. For a delegation job they are uses: what the
+	// discobox was delegated. For a rule job it is the one allow of the rule,
+	// as its sentence bound for the discobox asking. For a command or request job
 	// under a grant that carries a policy (ADR 26-10-20-782 §1) they are the
 	// policy's statements as sentences, bound to the discobox asking
 	// (UnderPolicy). They are a list rather than lines of one Purpose, so no
@@ -172,8 +177,9 @@ type Job struct {
 	Request *Request `json:"request,omitempty"`
 	// Uses are the uses a discobox is about to hand on, for a delegation job:
 	// what it would grant, judged against Purposes, which are what it was
-	// delegated. For a rule job they are the uses a discobox asked for, judged
-	// against Purposes, which are the rule's uses.
+	// delegated. For a rule job it is the one allow a discobox asked for, as
+	// its sentence bound for that discobox, whose conditions are judged
+	// against the rule's allow in Purposes.
 	Uses []string `json:"uses,omitempty"`
 	// Guidance is what Discobox knows about what the request was recognized
 	// as (GuidanceFor), set by the trusted side that builds the job and never
@@ -425,13 +431,13 @@ func (j Job) Validate() error {
 		if j.Request != nil || len(j.Command) > 0 {
 			return errors.New("a rule job carries neither a command nor a request")
 		}
-		if len(j.Uses) == 0 {
-			return errors.New("a rule job requires the uses asked for")
+		// One statement against one: which allow of the rule covers which
+		// allow asked for is code's to say, and only the conditions are put.
+		if len(j.Purposes) != 1 || len(j.Uses) != 1 {
+			return errors.New("a rule job asks about one allow asked for against one allow of the rule")
 		}
-		for _, use := range j.Uses {
-			if strings.TrimSpace(use) == "" {
-				return errors.New("a use asked for says what it is for")
-			}
+		if strings.TrimSpace(j.Uses[0]) == "" {
+			return errors.New("the allow asked for says what it allows")
 		}
 		if j.Round != 1 {
 			return errors.New("a rule job is asked once: there is nothing further to show")

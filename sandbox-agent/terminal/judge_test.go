@@ -134,12 +134,12 @@ func TestJudgeAsksWithTheContractsOwnPrompt(t *testing.T) {
 	}
 }
 
-const writtenProposal = `{"usesAnyTarget":["read any issue <number> in org/repo"]}`
+const writtenProposal = `{"statementsAnyTarget":["allow read on issue in repository $primary.repo"]}`
 
 func proposalJob() judge.ProposalJob {
 	return judge.ProposalJob{
-		Uses:  []string{"gh api GET repos/org/repo/issues/43"},
-		Hosts: []string{"github.com"},
+		Statements: []string{`allow read on issue "43" in repository $primary.repo`},
+		Hosts:      []string{"github.com"},
 	}
 }
 
@@ -156,7 +156,7 @@ func TestProposeAsksWithTheProposalsOwnPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Propose() error = %v", err)
 	}
-	if len(proposal.UsesAnyTarget) != 1 {
+	if len(proposal.StatementsAnyTarget) != 1 {
 		t.Fatalf("proposal = %+v", proposal)
 	}
 	asked, err := os.ReadFile(args)
@@ -169,7 +169,7 @@ func TestProposeAsksWithTheProposalsOwnPrompt(t *testing.T) {
 		"--output-schema\n" + judge.ProposalSchema + "\n",
 		"--no-tools\n",
 		judge.ProposalSystem,
-		`"uses":["gh api GET repos/org/repo/issues/43"]`,
+		`"statements":["allow read on issue \"43\" in repository $primary.repo"]`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("the wrapper was asked:\n%s\nwant it to carry %q", got, want)

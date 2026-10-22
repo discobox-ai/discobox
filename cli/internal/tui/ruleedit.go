@@ -18,7 +18,7 @@ import (
 // Making and editing an approval rule from the secrets screen (ADR
 // 26-10-12-330 §1): the same rule a person makes with `discobox secret rule
 // create`, asked a card at a time on the steps auto approve has (rules.go) —
-// which discoboxes, the uses a line at a time, a lifetime — and read whole
+// which discoboxes, the policy a line at a time, a lifetime — and read whole
 // before anything is written, with No the default.
 //
 // The steps are a sequence a draft walks: Esc on one is the one before it,
@@ -41,7 +41,7 @@ type ruleStep int
 const (
 	stepCredential ruleStep = iota
 	stepDiscoboxes
-	stepUses
+	stepPolicy
 	stepGrantCap
 	stepExpiry
 	stepRead
@@ -56,10 +56,10 @@ type ruleDraft struct {
 	// rule is what it will say, as it is drawn. A new rule's hosts are sent
 	// as they are drawn, so the rule stored is the one read.
 	rule Rule
-	// repositories and uses are those two lists as they are being written:
+	// repositories and policy are those two lists as they are being written:
 	// what each line sends beside what it draws, and where the field was
 	// left, half-typed text included, so going back loses nothing.
-	repositories, uses lineList
+	repositories, policy lineList
 	// fromCard is an edit begun on the rule's card, which leaving the first
 	// step and saving both go back to.
 	fromCard bool
@@ -128,13 +128,14 @@ type grantRuleProposedMsg struct {
 }
 
 // proposeGrantRule asks the server for the rule auto approve would have
-// proposed from the request a grant answered, written from the uses the
-// grant approved, and waits where it can be seen: a model writes the uses
-// and the judge reads them. Esc stops the asking and goes back to the grant.
+// proposed from the request a grant answered, written from the policy the
+// grant approved, and waits where it can be seen: a model writes the policy,
+// and it is held to covering the grant's. Esc stops the asking and goes back
+// to the grant.
 func (m *Model) proposeGrantRule(server string, grant Grant, card func() tea.Cmd) tea.Cmd {
 	ctx, stop := context.WithCancel(m.ctx)
 	wait := statusDialog("New rule", "asking the judge to write a rule from this grant…")
-	wait.footer = "a model writes its uses from the grant's, and the judge reads them against the request it answered; it can take a minute or two"
+	wait.footer = "a model writes its policy from the grant's, and it is held to covering the grant's; it can take a minute or two"
 	wait.onCancel = func() tea.Cmd {
 		stop()
 		return card()
@@ -149,9 +150,9 @@ func (m *Model) proposeGrantRule(server string, grant Grant, card func() tea.Cmd
 
 // grantRuleProposed starts the new rule from what was proposed, unless the
 // wait was left: the rule's credential, hosts and purpose are the grant's;
-// its repository the asking discobox's, ticked; its uses the judge's when it
-// found they cover the request the grant answered, and the grant's own when
-// not; and each grant it mints lives as long as this one was given. Every
+// its repository the asking discobox's, ticked; its policy the judge's when
+// it was found to cover the grant's, and the grant's own when not; and each
+// grant it mints lives as long as this one was given. Every
 // step is the new rule's, and the last reads the rule whole.
 func (m *Model) grantRuleProposed(msg grantRuleProposedMsg) tea.Cmd {
 	if m.dialog != msg.wait {
@@ -188,15 +189,11 @@ func (m *Model) grantRuleProposed(msg grantRuleProposedMsg) tea.Cmd {
 	if proposed.Repository != "" {
 		rule.Repositories = []string{proposed.Repository}
 	}
-	asked := make([]string, 0, len(grant.Uses))
-	for _, use := range grant.Uses {
-		asked = append(asked, use.Description)
+	lines := newLineList(policyEditLines(grant.ApprovedShown, grant.Approved))
+	if written := proposed.Written; written != nil && written.Covers && written.Policy != nil {
+		lines = newLineList(policyEditLines(written.Policy, written.Stored))
 	}
-	uses := newLineList(typedLines(asked))
-	if written := proposed.Written; written != nil && written.Covers {
-		uses = newLineList(storedLines(written.Uses, written.Stored))
-	}
-	d := ruleDraft{server: msg.server, rule: rule, uses: uses,
+	d := ruleDraft{server: msg.server, rule: rule, policy: lines,
 		from: &ruleFromGrant{grantID: grant.ID, secretID: grant.SecretID, proposed: proposed, card: msg.card}}
 	return m.ruleStep(d, stepDiscoboxes)
 }
@@ -205,7 +202,7 @@ func (m *Model) grantRuleProposed(msg grantRuleProposedMsg) tea.Cmd {
 func (m *Model) editRule(server string, rule Rule, fromCard bool) tea.Cmd {
 	was := rule
 	d := ruleDraft{server: server, was: &was, rule: rule, fromCard: fromCard,
-		uses: newLineList(storedLines(rule.Uses, rule.Stored.Uses))}
+		policy: newLineList(policyEditLines(rule.Policy, rule.Stored.Policy))}
 	return m.ruleStep(d, stepDiscoboxes)
 }
 
@@ -251,32 +248,44 @@ func (m *Model) ruleStep(d ruleDraft, step ruleStep) tea.Cmd {
 			next := d
 			next.rule.Repositories, next.rule.EveryDiscobox = chosen.Repositories, chosen.EveryDiscobox
 			next.repositories = named
-			return m.ruleStep(next, stepUses)
+			return m.ruleStep(next, stepPolicy)
 		}, func(named lineList) tea.Cmd {
 			return backWith(func(kept *ruleDraft) { kept.repositories = named })(named)
 		})
-	case stepUses:
-		var judged func(lineList) []section
+	case stepPolicy:
+		// What keeps the lines from being a policy is said under them as
+		// they are written, and a list that is not one is not taken.
+		judged := policyProblemsSection
 		if d.from != nil {
-			judged = func(now lineList) []section { return usesSections(d.from.proposed, grantOrigin, now) }
+			judged = func(now lineList) []section {
+				return append(policySections(d.from.proposed, grantOrigin, now), policyProblemsSection(now)...)
+			}
 		}
-		return m.askLines(linesAsk{
+		ask := linesAsk{
 			title:       d.title("what it approves"),
 			sections:    m.draftSections(d),
-			answerLabel: "a use, one sentence",
-			placeholder: "e.g. Comment on any issue in org/repo",
-			written:     "what it approves",
-			footer:      "a request is approved only when every use it asks for is within these",
+			answerLabel: "a line: a statement, or word = what it means",
+			placeholder: "e.g. allow read on issue in repository $primary.repo",
+			written:     "its policy",
+			footer:      "a request is approved only when its policy falls within this one",
 			numbered:    true,
-			required:    "a rule says what it approves: write at least one use",
+			required:    "a rule says what it approves: write at least one statement",
 			sectionsFor: judged,
-		}, d.uses, "", func(uses lineList) tea.Cmd {
+		}
+		keep := func(lines lineList) tea.Cmd {
+			return backWith(func(kept *ruleDraft) { kept.policy = lines })(lines)
+		}
+		var done func(lineList) tea.Cmd
+		done = func(lines lineList) tea.Cmd {
+			_, shown, problems := listPolicy(lines)
+			if len(problems) > 0 {
+				return m.askLines(ask, lines, notAPolicyYet, done, keep)
+			}
 			next := d
-			next.uses, next.rule.Uses = uses, uses.shown()
+			next.policy, next.rule.Policy = lines, shown
 			return m.ruleStep(next, stepGrantCap)
-		}, func(uses lineList) tea.Cmd {
-			return backWith(func(kept *ruleDraft) { kept.uses = uses })(uses)
-		})
+		}
+		return m.askLines(ask, d.policy, "", done, keep)
 	case stepGrantCap:
 		current := d.rule.MaxGrantTTL
 		return m.askDuration(durationAsk{
@@ -508,8 +517,8 @@ func (m *Model) draftSections(d ruleDraft) []section {
 	if d.rule.EveryDiscobox || len(d.rule.Repositories) > 0 {
 		sec.fields = append(sec.fields, field{label: "for", value: ruleFor(d.rule)})
 	}
-	if len(d.rule.Uses) > 0 {
-		sec.fields = append(sec.fields, field{label: "approves", value: plural(len(d.rule.Uses), "use", "uses")})
+	if d.rule.Policy != nil {
+		sec.fields = append(sec.fields, field{label: "approves", value: policySize(d.rule.Policy)})
 	}
 	out := m.fromGrantSection(d)
 	if len(sec.fields) > 0 {
@@ -580,8 +589,12 @@ func (d ruleDraft) change() RuleChange {
 			c.Repositories = repositories
 		}
 	}
-	if uses := d.uses.values(); !slices.Equal(newLineList(storedLines(was.Uses, was.Stored.Uses)).values(), uses) {
-		c.Uses = uses
+	// A policy that does not read back is no change to send: the step that
+	// writes it takes none that does not.
+	sent, _ := parsedPolicy(d.policy.values())
+	before, _ := parsedPolicy(newLineList(policyEditLines(was.Policy, was.Stored.Policy)).values())
+	if sent != nil && !samePolicy(sent, before) {
+		c.Policy = sent
 	}
 	if was.MaxGrantTTL != now.MaxGrantTTL {
 		capped := now.MaxGrantTTL
@@ -599,7 +612,7 @@ func (d ruleDraft) change() RuleChange {
 }
 
 // ruleChangeSections say what an edit changes, before → after, or that it
-// changes nothing. The uses it approved before are listed whole: the rule's
+// changes nothing. The policy it approved before is drawn whole: the rule's
 // text below is what it will say, and what it stops saying is as much the
 // edit as what it starts to.
 func (m *Model) ruleChangeSections(was, now Rule, c RuleChange, at time.Time) []section {
@@ -611,8 +624,8 @@ func (m *Model) ruleChangeSections(was, now Rule, c RuleChange, at time.Time) []
 	if c.EveryDiscobox || c.Repositories != nil {
 		sec.fields = append(sec.fields, field{label: "for", value: ruleFor(was) + " → " + ruleFor(now), tone: toneAccent})
 	}
-	if c.Uses != nil {
-		sec.fields = append(sec.fields, field{label: "approves", value: plural(len(was.Uses), "use", "uses") + " → " + plural(len(now.Uses), "use", "uses") + ", read whole below", tone: toneAccent})
+	if c.Policy != nil {
+		sec.fields = append(sec.fields, field{label: "approves", value: policySize(was.Policy) + " → " + policySize(now.Policy) + ", read whole below", tone: toneAccent})
 	}
 	if c.MaxGrantTTL != nil {
 		sec.fields = append(sec.fields, field{label: "each grant lasts", value: ruleCap(was) + " → " + ruleCap(now), tone: toneAccent})
@@ -621,12 +634,8 @@ func (m *Model) ruleChangeSections(was, now Rule, c RuleChange, at time.Time) []
 		sec.fields = append(sec.fields, field{label: "expires", value: ruleExpiry(was, at) + " → " + ruleExpiry(now, at), tone: toneAccent})
 	}
 	out := []section{sec}
-	if c.Uses != nil {
-		before := section{label: "what it approved before"}
-		for _, use := range was.Uses {
-			before.lines = append(before.lines, useLines(use, toneDim)...)
-		}
-		out = append(out, before)
+	if c.Policy != nil {
+		out = append(out, section{label: "what it approved before", lines: rulePolicyLines(was.Policy, toneDim)})
 	}
 	return out
 }
@@ -656,9 +665,12 @@ func (m *Model) writeRuleDraft(d ruleDraft) tea.Cmd {
 		if d.rule.WellKnownID != "" {
 			secretID = ""
 		}
+		// The policy in the server's text for every line left as it was; the
+		// step that wrote it took none that does not read back.
+		sent, _ := parsedPolicy(d.policy.values())
 		made := NewRule{
 			WellKnownID: d.rule.WellKnownID, SecretID: secretID, Hosts: d.rule.Hosts, Delegate: d.rule.Delegate,
-			ApprovalRule: ApprovalRule{EveryDiscobox: d.rule.EveryDiscobox, Uses: d.uses.values()},
+			ApprovalRule: ApprovalRule{EveryDiscobox: d.rule.EveryDiscobox, Policy: sent},
 			MaxGrantTTL:  d.rule.MaxGrantTTL, Expires: d.rule.Expires,
 		}
 		if !d.rule.EveryDiscobox {
@@ -701,11 +713,12 @@ func (m *Model) ruleWritten(msg ruleWrittenMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// refusalUses finds a server's refusal about a rule's uses.
-var refusalUses = regexp.MustCompile(`\buses?\b`)
+// refusalPolicy finds a server's refusal about a rule's policy: the policy
+// itself, a statement of it, its allows, or a definition.
+var refusalPolicy = regexp.MustCompile(`\bpolic(y|ies)\b|\bstatements?\b|\ballows?\b|\bdefin`)
 
 // refusedStep is the step a server's refusal is about, read from the words
-// the server refuses a rule in: which discoboxes, the uses, the cap, the
+// the server refuses a rule in: which discoboxes, the policy, the cap, the
 // expiry, the credential. Anything else is about the rule as a whole, and
 // goes back to the card that read it.
 func refusedStep(err error, first ruleStep) ruleStep {
@@ -714,8 +727,8 @@ func refusedStep(err error, first ruleStep) ruleStep {
 	switch {
 	case strings.Contains(said, "repositor") || strings.Contains(said, "names no host") || strings.Contains(said, "every discobox"):
 		step = stepDiscoboxes
-	case refusalUses.MatchString(said):
-		step = stepUses
+	case refusalPolicy.MatchString(said):
+		step = stepPolicy
 	case strings.Contains(said, "lifetime cap"):
 		step = stepGrantCap
 	case strings.Contains(said, "expir"):
@@ -733,7 +746,7 @@ func ruleStepName(step ruleStep) string {
 		return "the credential"
 	case stepDiscoboxes:
 		return "which discoboxes"
-	case stepUses:
+	case stepPolicy:
 		return "what it approves"
 	case stepGrantCap:
 		return "the longest grant"

@@ -224,6 +224,12 @@ func TestANewCredentialForAnAnsweredIDIsAPlainToken(t *testing.T) {
 func TestAutoApprovesNewCredentialIsDisabledForAnAnsweredID(t *testing.T) {
 	t.Parallel()
 	m, ds := githubAnswered(t)
+	// A rule answers a request that asks for a policy.
+	ds.mu.Lock()
+	asked := policyRequest()
+	ds.requests[0].Policy, ds.requests[0].PolicyShown, ds.requests[0].PolicyLines = asked.Policy, asked.PolicyShown, asked.PolicyLines
+	ds.mu.Unlock()
+	send(t, m, credentialsLoadedMsg{requests: ds.requests})
 	send(t, m, keyPress("tab"), keyPress(credentialsKey), keyPress(autoApproveKey))
 	var row action
 	for _, item := range m.dialog.items {
@@ -248,7 +254,7 @@ func TestAutoApprovesNewCredentialIsDisabledForAnAnsweredID(t *testing.T) {
 func TestAutoApproveSaysWhatItStoredWhenNoRuleIsMade(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
+	req := policyRequest()
 	req.WellKnownID = wellknown.GitHubAPI
 	ds.requests = []CredentialRequest{req}
 	ds.proposals = proposalsForTheRequest()

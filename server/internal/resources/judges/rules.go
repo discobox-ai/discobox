@@ -20,9 +20,12 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// An approval rule's one reading, and the wording a person chooses one from
+// An approval rule's reading, and the policy a person starts one from
 // (ADR 26-10-12-330). Which discoboxes a rule is for is a list of repositories
-// the secrets service compares; only its uses are read here.
+// the secrets service compares, and so is most of its policy (ADR
+// 26-10-22-689): only the conditions
+// of an allow asked for, against an allow of the rule that covers it but for
+// them, are read here.
 //
 // Rule jobs hang on neither judgeCommands nor judgeCredentials (§6): a rule is
 // its own opt-in, and a job is refused only when there is nothing to ask. A
@@ -33,7 +36,8 @@ import (
 // from a proposal, a reconcile run after one that already asked — is answered
 // from the record. An edited rule is a different job.
 
-// JudgeRule asks whether the uses a request asked for fall within a rule's:
+// JudgeRule asks whether the conditions of an allow a request asked for are
+// within those of a rule's allow:
 // from the record when the same job was already judged, and otherwise by
 // asking and recording. It goes the way every job does: Jev first when the
 // server has a key, what Jev is unsure of handled by jevUnsure, and the judge
@@ -49,7 +53,7 @@ func (s *Service) JudgeRule(ctx context.Context, projectID string, ask services.
 		RuleID:          ask.RuleID,
 		SecretRequestID: ask.RequestID,
 	}
-	job := ask.Job()
+	job := ask.Job
 	if err := job.Validate(); err != nil {
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, "a rule cannot be judged: "+err.Error())
 	}
@@ -154,8 +158,8 @@ func (s *Service) reuse(ctx context.Context, recorded *model.CredentialVerdict, 
 	return answer, nil
 }
 
-// ProposeRule has the project's judge discobox write the wider uses of a rule
-// from one request (§7). Jev writes nothing, so only a judge
+// ProposeRule has the project's judge discobox write the wider policy of a
+// rule from one request's (§7). Jev writes nothing, so only a judge
 // discobox can: a server that judges with Jev and lets its refusals stand has
 // none, and neither has a project whose judge is not up yet. Each is an error
 // saying so, and the caller then offers the narrowest level alone.
@@ -188,7 +192,10 @@ func (s *Service) ProposeRule(ctx context.Context, projectID string, job judge.P
 	if err != nil {
 		return judge.Proposal{}, err
 	}
-	jobBody := sandboxapi.JudgeProposalJob{Uses: job.Uses, Hosts: job.Hosts, Credential: optString(job.Credential)}
+	jobBody := sandboxapi.JudgeProposalJob{Statements: job.Statements, Hosts: job.Hosts, Credential: optString(job.Credential)}
+	if len(job.Definitions) > 0 {
+		jobBody.Definitions = sandboxapi.NewOptJudgeProposalJobDefinitions(job.Definitions)
+	}
 	// Through the pointer, for the reason putSandbox marshals its job so.
 	body, err := json.Marshal(&jobBody)
 	if err != nil {

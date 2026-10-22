@@ -1046,7 +1046,7 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 // answers it.
 func TestAGateIsApprovedWithoutASecret(t *testing.T) {
 	t.Parallel()
-	req := waitingRequest()
+	req := policyRequest()
 	req.Name, req.EnvVar, req.Host, req.WellKnownID = "discobox", "DISCOBOX_TOKEN", "api.discobox.internal", wellknown.DiscoboxSandbox
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{req}
@@ -1058,7 +1058,7 @@ func TestAGateIsApprovedWithoutASecret(t *testing.T) {
 		t.Fatalf("dialog = %s, want only approve, auto approve and deny", describe(m.dialog))
 	}
 	// It says what it hands over before it is agreed to.
-	if card := dialogText(m); !strings.Contains(card, "what approving gives it") || !strings.Contains(card, "within what you separately delegate") {
+	if card := cardWords(m); !strings.Contains(card, "what approving gives it") || !strings.Contains(card, "within what you separately delegate") {
 		t.Fatalf("card = %q, want it to say what approving gives the discobox", card)
 	}
 	drain(t, m, m.dialog.action("gate"), 0)
@@ -1216,18 +1216,23 @@ func TestAGrantsPolicyIsShownOnItsCard(t *testing.T) {
 	}
 }
 
-// A request that asks for a policy is not offered "auto approve": a rule
-// answers uses alone, and the server makes none from such a request.
-func TestARequestWithAPolicyIsNotRuleable(t *testing.T) {
+// Only a request that asks for a policy is offered "auto approve": a rule's
+// content is a policy the request's is held to, so an ask of uses alone stays
+// a person's to answer each time, as the server's ruleProposable says.
+func TestOnlyARequestWithAPolicyIsRuleable(t *testing.T) {
 	t.Parallel()
 	req := waitingRequest()
 	req.SandboxID = "sbx_one"
-	if !req.Ruleable() {
-		t.Fatal("an agent's ask with uses alone is not ruleable")
-	}
-	req.Policy = &policy.Policy{}
 	if req.Ruleable() {
-		t.Fatal("an ask that carries a policy is offered a rule")
+		t.Fatal("an agent's ask with uses alone is offered a rule")
+	}
+	if !policyRequest().Ruleable() {
+		t.Fatal("an agent's ask that carries a policy is not ruleable")
+	}
+	delegating := policyRequest()
+	delegating.Delegate = true
+	if delegating.Ruleable() {
+		t.Fatal("an ask to delegate is offered a rule, which approves no delegation")
 	}
 }
 

@@ -157,11 +157,13 @@ and taking no cursor until the next load reads them.
   read, or failed, takes none.
 - **a row**: credential (a secret by name), state (`enabled`/`disabled`/
   `lapsed`), which discoboxes — its repositories cut to the column, or
-  `every discobox`, led by `delegates` for a rule to delegate — its uses as
-  one line, and expiry. The credential and repositories columns are as wide as
-  the table's widest, within bounds, and the uses take the rest of the row and
-  are cut to it; in a narrow row the repositories give up room to the uses
-  first. Expiry drops first as the window narrows, then the uses, then
+  `every discobox`, led by `delegates` for a rule to delegate, which only an
+  older server made — its policy's
+  statements as one line (`ruleRowPolicy`), and expiry. The credential and
+  repositories columns are as wide as the table's widest, within bounds, and
+  the policy takes the rest of the row and is cut to it; in a narrow row the
+  repositories give up room to the policy first. Expiry drops first as the
+  window narrows, then the policy, then
   the repositories; the credential and state stay. No rules is a line saying
   `n` makes one, and that auto approve does too.
 - **height** (`layout`): the rules take their rows up to a quarter of the
@@ -177,7 +179,9 @@ and taking no cursor until the next load reads them.
   from the same `Rule` value (`ruleFactsSection`, `ruleSections`,
   `ruleHandsOut`; `approval.asRule` is the rule a review is of), with state,
   the cap on each grant, expiry, and who made it and when (`ruleText` is the
-  rule's whole text on every card that shows one). Its rows are `e`, `s`,
+  rule's whole text on every card that shows one; its policy is drawn as the
+  request card draws one, by `policyview.Unbound`, each variable bare since a
+  rule binds it to whichever discobox asks). Its rows are `e`, `s`,
   `d`, and the grants still standing, named by their discobox: Enter reads one
   and `x` revokes it, through the secret's own cards (`reviewGrant`,
   `confirmRevokeGrant`). Esc is back on the rule's row.
@@ -192,15 +196,15 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
 - **the steps**, in order: the credential (a new rule only: a well-known ID a
   project secret answers, or a project secret; one bound to no host is
   disabled and says why), which discoboxes (repositories chosen and named on
-  one card, below, or every discobox, its own row), what it approves (a use a
-  line), its longest grant (presets, `the secret's
+  one card, below, or every discobox, its own row), what it approves (its
+  policy, a line each: below), its longest grant (presets, `the secret's
   own limit`, custom; it opens on an hour, the server's default), when it
   lapses (opens on `never lapses`; an edit of a rule that lapses has `as it
   is` first), and the rule.
 - **back and forth**: each step opens on what the draft holds now, and Esc is
   the step before, so nothing chosen is lost walking back. Esc never changes
   a word: a list step hands back its list as it stands, half-typed text and an
-  edit not yet confirmed included, and the draft keeps it (`ruleDraft.uses`,
+  edit not yet confirmed included, and the draft keeps it (`ruleDraft.policy`,
   `ruleDraft.repositories`). Leaving the first step closes the flow, or goes
   back to the card an edit was begun on.
 - **a list** (`askLines`, `lines.go`): the lines written, then the new line,
@@ -216,7 +220,7 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   A wrapped row is drawn whole
   while the card has room for it, and one row, scrolling under the cursor,
   when it does not. The section title holds still ("what it approves",
-  "repositories"). A rule's uses are numbered `1.`, `2.`… right-aligned past
+  "repositories"). A rule's policy lines are numbered `1.`, `2.`… right-aligned past
   nine, the new line the next number, a wrapped line set in under its text
   (`linesAsk.numbered`, drawn in the menu's key column); repositories are
   not, since ticks and names are not an order. ↑ and ↓ move between lines,
@@ -228,7 +232,8 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   line carries what it draws and what it sends (`listLine`): a line the
   server holds is drawn made safe and sent in the server's own text
   (`Rule.Stored`) until the person changes it, so an edit never rewrites a
-  line nobody touched. The key line puts Esc second, after the one key the
+  line nobody touched — for a policy, what is compared and sent is the policy
+  read back from the lines as sent. The key line puts Esc second, after the one key the
   position needs most, and is short enough to stay whole at 90 columns: a key
   line is cut from its tail, and the way out must survive.
 - **the repositories** are one list with picks above its lines
@@ -244,11 +249,23 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   the card (`dialog.pasteRefused`), not dropped. An entry typed that is one
   of the picks, however spelled (`repositoryIdentity`), chooses that pick
   instead of being a second line. Finishing needs one chosen or named.
+- **the policy** (`rulepolicy.go`) is written as discobox-access writes one:
+  each statement its sentence (`policy.Format`), then each word that is not a
+  default as `word = what it means` (`policyText`; a line opening with
+  `allow` or `deny` is always a statement). The list is read back
+  (`parsedPolicy`: `policy.Parse` a line at a time, then `Policy.Validate`,
+  and at least one allow) as it is written, and what keeps it from being a
+  rule's policy is a section under the steps' own, a line each, with
+  `policy.Grammar` once (`policyProblemsSection`); finishing it then is
+  refused where it was typed (`notAPolicyYet`). The draft draws the policy
+  read from the lines as drawn and sends the one read from them as sent
+  (`listPolicy`).
 - **an edit** starts on which discoboxes — the credential is what a rule is —
   with every step prefilled from the rule. The last card says what changes,
-  before → after, with the uses it approved before listed whole, and sends
+  before → after, with the policy it approved before drawn whole, and sends
   only those (`RuleChange`, `DataSource.UpdateRule`); one that changes
-  nothing sends nothing.
+  nothing sends nothing. A policy is a change when it says something else
+  (`samePolicy`), not when its lines were only reordered.
 - **a new rule** sends what was chosen (`NewRule`, `DataSource.CreateRule`):
   a well-known ID alone, which the server answers with the secret marked for
   it; the cap always, zero being the secret's own limit; every discobox in so
@@ -257,19 +274,21 @@ discoboxes step (`askDiscoboxes`), a list typed a line at a time
   read. The purpose is the server's default, to use, except for a rule made
   of a delegation grant.
 - **a rule made of a grant** (`reviewGrant`'s `n` row, `proposeGrantRule`,
-  `grantRuleProposed`): the grant card offers it when the grant names uses,
+  `grantRuleProposed`): the grant card offers it when the grant carries a
+  policy (`Grant.Approved`),
   stands on a secret, and no rule minted it (otherwise the row says why).
   `DataSource.GrantRuleProposals` is waited on as auto approve's proposal is,
   Esc stopping it. The draft (`ruleDraft.from`) is a new rule whose
   credential, hosts and purpose are the grant's — for the well-known ID when
   its secret answers one — so it starts on which discoboxes, Esc there going
   back to the grant: the asking discobox's repository ticked, the judge's
-  uses when they cover the request the grant answered and the grant's own
-  otherwise, said on the uses step as auto approve says it (`usesSections`
-  with `grantOrigin`), and each grant as long as this one was given. A
-  delegation grant makes a rule to delegate (`NewRule.Delegate`).
+  policy when it covers the grant's and the grant's own otherwise, said on
+  the policy step as auto approve says it (`policySections` with
+  `grantOrigin`), and each grant as long as this one was given. A
+  delegation grant is offered no rule: none approves a delegation yet (ADR
+  26-10-22-689 §4).
 - **a refusal** comes back whole on a card whose Esc is the step it is about
-  (`refusedStep`, read from the server's own words: repositories, uses, the
+  (`refusedStep`, read from the server's own words: repositories, the policy, the
   cap, the expiry, the credential; anything else is the last card), opened on
   what was chosen.
 
@@ -525,8 +544,9 @@ follows the request on the server, which is what keeps this and `discobox
 secret request approve` the same act. A policy is the one thing an approval
 sends back: the request's own, as the card read it, resolved values and all,
 which the server holds the grant to — what `approve --policy-as-asked` sends.
-A request with a policy is not offered auto approve (`Ruleable`): a rule
-answers uses alone. `r` shows the request as the server sent it, as JSON
+Only a request with a policy, asking to use a credential, is offered auto
+approve (`Ruleable`): a rule holds a request's policy to its own, and
+approves no delegation (ADR 26-10-22-689). `r` shows the request as the server sent it, as JSON
 highlighted as a code block is (`showRawRequest`), for when the rendering is
 not enough; Esc goes back to the card. Every secret is offered,
 including one bound to another host: greying those out left the one secret that
@@ -621,8 +641,9 @@ failure never has a changed secret to report.
 (`rules.go`, [ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md) §§7–9).
 `A` on the request card and on a gate's — capitalized for the reason `C` is, and
 on a gate a shift away from the `a` that approves once — is offered only on an
-agent's own ask naming its uses (`CredentialRequest.Ruleable`): a request the
-proxy opened, a refresh, and a trust stay a person's each time. It is the same
+agent's own ask carrying a policy (`CredentialRequest.Ruleable`, as the
+server's `ruleProposable`): a request the proxy opened, an ask of uses alone,
+a refresh, and a trust stay a person's each time. It is the same
 `approval` value with `auto` set, on the same chain, with four steps added:
 
 - **what answers** (`askRuleSecret`): the project's secrets, and "New
@@ -659,33 +680,39 @@ proxy opened, a refresh, and a trust stay a person's each time. It is the same
   (`ApprovalRule.EveryDiscobox`), set by that row alone and passed on by the
   data source only from it; a rule with no repository that did not say it is
   drawn as `not chosen` and sent saying neither.
-- **which uses** (`askRuleContent`): one list (`askLines`), not a menu of
-  levels. It opens on the uses the project's judge wrote
-  (`RuleProposals.Written`, the same work on any target of its kind) when the
-  judge found they cover this request, each sentence drawn whole and wrapped
-  (a wrapping menu draws a long label whole too), sent in the server's text
-  until edited; otherwise on the uses as asked, so there is always something
-  to edit. A section says which (`usesSections`): the model's, with the
-  judge's verdict and reason; changed, that the verdict was on the uses as
-  written and the server judges these when the rule is made; or why the list
-  starts from the ask — the model's did not cover it (shown, with the
-  reason), or no model wrote any (the server's `Note`). The steps after the
+- **its policy** (`askRuleContent`): one list (`askLines`), the policy a
+  line each as a rule is edited (above). It opens on the policy the
+  project's judge wrote (`RuleProposals.Written`, the same work on any target
+  of its kind) when it was found to cover this request, each line drawn whole
+  and wrapped, sent in the server's text until edited; otherwise on the
+  policy as asked (`CredentialRequest.PolicyShown`, sent as `Policy`), so
+  there is always something to edit. A section says which
+  (`policySections`): the model's, with what holding it to the request found
+  and why; changed, that the finding was on it as written and the server
+  holds this one to the request when the rule is made; or why the list
+  starts from the ask — the model's did not cover it (drawn, with the
+  reason), could not be a rule's (its statements as written, with the
+  server's refusal), or no model wrote one (the server's `Note`). A policy
+  left as asked is not sent with the rule (`approval.rule.Policy` nil): the
+  server takes the request's. The approval itself names the request's policy
+  as read, as every approval of one does (`Approval.Policy`). The steps after the
   proposals hand the step before them the approval as it now stands
   (`askAutoDiscoboxes`, `askRuleContent`), so what was written — half-typed
   included — rides every step back and forward.
 - **the rule** (`reviewRule`), after the lifetime and its limit question: the
   full text — credential, hosts, purpose, what answers it, the repositories it
-  is for, every use, the lifetime, and any change to the secret — as a y/n
+  is for, its whole policy, the lifetime, and any change to the secret — as a y/n
   defaulting to No. A rule that names no repository says it `approves for
   discoboxes that do not exist yet, including ones a discobox creates`
-  (`everyDiscobox`); one for a gate or a delegation says what it hands out in
-  the request card's own words (`gateGives`, `delegationPurpose`).
+  (`everyDiscobox`); one for a gate says what it hands out in the request
+  card's own words (`gateGives`). It is never for a delegation, which no
+  rule approves yet (`Ruleable`, ADR 26-10-22-689 §4).
 
 The rule rides on the approval (`Approval.Rule`), one write; its cap is left
-for the server, which takes the lifetime chosen. A refusal — the server judges
-hand-written text and makes no rule that would not cover its own request —
-keeps the server's sentence on the failure card, and Esc there goes back to the
-rule so other discoboxes or other uses can be chosen
+for the server, which takes the lifetime chosen. A refusal — the server holds
+a hand-written policy to the request and makes no rule that would not cover
+it — keeps the server's sentence on the failure card, and Esc there goes back
+to the rule so other discoboxes or another policy can be chosen
 (`credentialAnsweredMsg.again`).
 
 **The request card lists the rules that were tried** (`ruleTestsSection`,

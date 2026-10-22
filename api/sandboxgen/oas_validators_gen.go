@@ -227,13 +227,13 @@ func (s *JudgeProposal) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.UsesAnyTarget == nil {
+		if s.StatementsAnyTarget == nil {
 			return errors.New("nil is invalid value")
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "usesAnyTarget",
+			Name:  "statementsAnyTarget",
 			Error: err,
 		})
 	}
@@ -250,13 +250,13 @@ func (s *JudgeProposalJob) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.Uses == nil {
+		if s.Statements == nil {
 			return errors.New("nil is invalid value")
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "uses",
+			Name:  "statements",
 			Error: err,
 		})
 	}

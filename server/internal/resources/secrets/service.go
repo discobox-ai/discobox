@@ -779,12 +779,13 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if rule != nil {
 		slog.InfoContext(ctx, "a request was approved with a new approval rule",
 			"projectId", projectID, "requestId", req.ID, "grantId", req.GrantID, "ruleId", rule.ID)
-		// The rule was judged before it existed, so its verdicts name no
-		// rule. Read once more now that it has an ID: the judges service
-		// answers from the record and records the answer under the rule, so
-		// the grant just minted is traced to verdicts that name it (§5).
-		// Nobody is asked again, and a failure here changes nothing made.
-		if _, _, err := s.ruleUsesCover(ctx, rule, req); err != nil {
+		// The rule was held to the request before it existed, so any verdict
+		// on its conditions names no rule. Compared once more now that it has
+		// an ID: the judges service answers from the record and records the
+		// answer under the rule, so the grant just minted is traced to
+		// verdicts that name it (§5). Nobody is asked again, and a failure
+		// here changes nothing made.
+		if _, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, false); err != nil {
 			slog.WarnContext(ctx, "a new approval rule's verdict could not be recorded under it",
 				"projectId", projectID, "ruleId", rule.ID, "error", err)
 		}
@@ -976,17 +977,17 @@ func heldRule(ctx context.Context, txStore *store.Store, a *approvalWrite, secre
 // "auto approve" makes (ADR 26-10-12-330 §§1, 7–8), checked and not yet
 // stored. Its credential, hosts and purpose are the approval's own — copied
 // here by code, never taken from what was proposed — and its repositories and
-// uses are what the person chose or wrote.
+// policy are what the person chose or wrote.
 //
 // Which discoboxes it is for is said, never defaulted wide: the repositories
 // named, else the repository of the discobox that asked, and every discobox
 // only when the approval says so in those words.
 //
 // The rule must cover the request it is made from. The facts are held here,
-// the asking discobox's repository among them, and the uses are put to the
-// judge as the job the rule would later ask: a candidate chosen from a
-// proposal is answered from the verdict already on record, and edited text is
-// judged again before it is accepted.
+// the asking discobox's repository among them, and the request's policy is
+// held to the rule's as a later test would hold it: a candidate chosen from a
+// proposal is answered from the verdicts already on record, and an edited one
+// is compared, and its conditions judged, again before it is accepted.
 func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest, chosen apigen.ApproveWithRule, secret *model.Secret,
 	bindTo *string, limit *int64, hosts []string, purpose string, namedTTL apigen.OptInt64, principal auth.Principal) (*model.ApprovalRule, error) {
 	if principal.Type == auth.PrincipalTypeSandbox {
@@ -1030,7 +1031,6 @@ func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest
 		WellKnownID:  req.WellKnownID,
 		Hosts:        hosts,
 		Purpose:      purpose,
-		Uses:         chosen.Uses,
 		CreatedBy:    grantedByOf(principal),
 		Enabled:      true,
 	}
@@ -1051,8 +1051,14 @@ func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest
 				rule.WellKnownID, marked.Name, secret.Name))
 		}
 	}
-	if len(rule.Uses) == 0 {
-		rule.Uses = useDescriptions(req.Uses)
+	// The policy as asked, when the person chose none: checkRule drops the
+	// values it resolved to, which a rule binds afresh for each discobox.
+	if rule.Policy, err = services.PolicyFromAPI(chosen.Policy); err != nil {
+		return nil, err
+	}
+	if rule.Policy == nil {
+		asked := *req.Policy
+		rule.Policy = &asked
 	}
 	// The cap a person named, else the lifetime this approval grants: a rule
 	// made by saying yes once approves for as long as that yes did.
@@ -1076,14 +1082,14 @@ func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
 			"this rule would not cover the request it is made from: %s", plainSentence(reason)))
 	}
-	covered, reason, err := s.ruleUsesCover(ctx, rule, req)
+	coverage, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, false)
 	if err != nil {
 		return nil, err
 	}
-	if !covered {
+	if !coverage.covered {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"this rule would not cover the request it is made from, so it is not made: its uses do not hold what the request asked for (%s); choose a proposal the judge found to cover it, or approve without a rule",
-			plainSentence(reason)))
+			"this rule would not cover the request it is made from, so it is not made: the policy asked for is not within the rule's (%s); choose a proposal found to cover it, or approve without a rule",
+			plainSentence(coverage.reason)))
 	}
 	return rule, nil
 }

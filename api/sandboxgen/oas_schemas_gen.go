@@ -604,14 +604,15 @@ type JudgeJob struct {
 	// The host the use was approved for.
 	Host string `json:"host"`
 	// What is being judged: a command about to run, a request the proxy observed, a discobox about to
-	// hand a credential on by approving another's request, or whether what a discobox asked for is
-	// within an approval rule's uses.
+	// hand a credential on by approving another's request, or whether the conditions of an allow a
+	// discobox asked for are within an approval rule's.
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
-	// What a job is judged against in place of purpose, one entry each — for a delegation or rule job
-	// the uses the discobox was delegated, or the rule's uses; for a command or request job under a
-	// grant that carries a policy, its statements as sentences, bound to the discobox asking.
+	// What a job is judged against in place of purpose, one entry each — for a delegation job the uses
+	// the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a
+	// command or request job under a grant that carries a policy, its statements as sentences, bound to
+	// the discobox asking.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
@@ -619,8 +620,8 @@ type JudgeJob struct {
 	// body.
 	Round int64         `json:"round"`
 	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it
-	// asked for, judged against purposes.
+	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow
+	// it asked for, as its sentence, judged against purposes.
 	Uses []string `json:"uses"`
 }
 
@@ -778,8 +779,8 @@ func (s *JudgeJobDefinitions) init() JudgeJobDefinitions {
 }
 
 // What is being judged: a command about to run, a request the proxy observed, a discobox about to
-// hand a credential on by approving another's request, or whether what a discobox asked for is
-// within an approval rule's uses.
+// hand a credential on by approving another's request, or whether the conditions of an allow a
+// discobox asked for are within an approval rule's.
 type JudgeJobKind string
 
 const (
@@ -864,36 +865,39 @@ func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
 }
 
-// The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
-// any target of its kind. They authorize nothing; they are judged, and read and edited by a person,
-// before they become a rule.
+// The statements a model wrote for an approval rule from the policy a request asked for, as the same
+// work on any target of its kind, each as its sentence. They authorize nothing; the server parses
+// and checks them, and a person reads and edits them, before they become a rule.
 // Ref: #/components/schemas/JudgeProposal
 type JudgeProposal struct {
-	// The same work on any target of its kind.
-	UsesAnyTarget []string `json:"usesAnyTarget"`
+	// The same work on any target of its kind, one statement's sentence each.
+	StatementsAnyTarget []string `json:"statementsAnyTarget"`
 }
 
-// GetUsesAnyTarget returns the value of UsesAnyTarget.
-func (s *JudgeProposal) GetUsesAnyTarget() []string {
-	return s.UsesAnyTarget
+// GetStatementsAnyTarget returns the value of StatementsAnyTarget.
+func (s *JudgeProposal) GetStatementsAnyTarget() []string {
+	return s.StatementsAnyTarget
 }
 
-// SetUsesAnyTarget sets the value of UsesAnyTarget.
-func (s *JudgeProposal) SetUsesAnyTarget(val []string) {
-	s.UsesAnyTarget = val
+// SetStatementsAnyTarget sets the value of StatementsAnyTarget.
+func (s *JudgeProposal) SetStatementsAnyTarget(val []string) {
+	s.StatementsAnyTarget = val
 }
 
-// What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox
-// asked for, which are data. The system prompt, the schema and the tools restriction are the judge
-// runtime's own.
+// What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The
+// policy a discobox asked for, as its statements' sentences and the definitions of their words,
+// which are data. The system prompt, the schema and the tools restriction are the judge runtime's
+// own.
 // Ref: #/components/schemas/JudgeProposalJob
 type JudgeProposalJob struct {
 	// The credential asked for, in the words a person reads, never its value.
 	Credential OptString `json:"credential"`
+	// What each word of the statements that is not a default means, as the request defined it.
+	Definitions OptJudgeProposalJobDefinitions `json:"definitions"`
 	// The hosts the request asked to send the credential to.
 	Hosts []string `json:"hosts"`
-	// The uses the request asked for, verbatim.
-	Uses []string `json:"uses"`
+	// The statements the request asked for, each as its sentence, verbatim.
+	Statements []string `json:"statements"`
 }
 
 // GetCredential returns the value of Credential.
@@ -901,14 +905,19 @@ func (s *JudgeProposalJob) GetCredential() OptString {
 	return s.Credential
 }
 
+// GetDefinitions returns the value of Definitions.
+func (s *JudgeProposalJob) GetDefinitions() OptJudgeProposalJobDefinitions {
+	return s.Definitions
+}
+
 // GetHosts returns the value of Hosts.
 func (s *JudgeProposalJob) GetHosts() []string {
 	return s.Hosts
 }
 
-// GetUses returns the value of Uses.
-func (s *JudgeProposalJob) GetUses() []string {
-	return s.Uses
+// GetStatements returns the value of Statements.
+func (s *JudgeProposalJob) GetStatements() []string {
+	return s.Statements
 }
 
 // SetCredential sets the value of Credential.
@@ -916,14 +925,31 @@ func (s *JudgeProposalJob) SetCredential(val OptString) {
 	s.Credential = val
 }
 
+// SetDefinitions sets the value of Definitions.
+func (s *JudgeProposalJob) SetDefinitions(val OptJudgeProposalJobDefinitions) {
+	s.Definitions = val
+}
+
 // SetHosts sets the value of Hosts.
 func (s *JudgeProposalJob) SetHosts(val []string) {
 	s.Hosts = val
 }
 
-// SetUses sets the value of Uses.
-func (s *JudgeProposalJob) SetUses(val []string) {
-	s.Uses = val
+// SetStatements sets the value of Statements.
+func (s *JudgeProposalJob) SetStatements(val []string) {
+	s.Statements = val
+}
+
+// What each word of the statements that is not a default means, as the request defined it.
+type JudgeProposalJobDefinitions map[string]string
+
+func (s *JudgeProposalJobDefinitions) init() JudgeProposalJobDefinitions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // What trusted code recognized a request, or its body, as, and the version of that code (ADR
@@ -1857,6 +1883,52 @@ func (o OptJudgeNeed) Get() (v JudgeNeed, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptJudgeNeed) Or(d JudgeNeed) JudgeNeed {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeProposalJobDefinitions returns new OptJudgeProposalJobDefinitions with value set to v.
+func NewOptJudgeProposalJobDefinitions(v JudgeProposalJobDefinitions) OptJudgeProposalJobDefinitions {
+	return OptJudgeProposalJobDefinitions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeProposalJobDefinitions is optional JudgeProposalJobDefinitions.
+type OptJudgeProposalJobDefinitions struct {
+	Value JudgeProposalJobDefinitions
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeProposalJobDefinitions was set.
+func (o OptJudgeProposalJobDefinitions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeProposalJobDefinitions) Reset() {
+	var v JudgeProposalJobDefinitions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeProposalJobDefinitions) SetTo(v JudgeProposalJobDefinitions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeProposalJobDefinitions) Get() (v JudgeProposalJobDefinitions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeProposalJobDefinitions) Or(d JudgeProposalJobDefinitions) JudgeProposalJobDefinitions {
 	if v, ok := o.Get(); ok {
 		return v
 	}
