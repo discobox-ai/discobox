@@ -35,6 +35,10 @@
   files count too, local or remote: a box can push the commit a create reads,
   and a JSON key or value decodes `\u001b` to a raw escape. Quote what they
   name (`sandboxcreate.quoteKeys`, `%q`) and escape the line it lands in.
+  An API error the sandbox agent answered with is that text too: moving a
+  step off an exec onto an API call (the files API, ADR 26-10-22-499) moves
+  the box's words out of a stderr that was escaped into an error message that
+  is not, unless the call's error is (`sandboxFileResponse`).
 
 - **Escape the form of a line that is drawn.** A line kept in two forms —
   its text, and the tokens or spans it is drawn from — is escaped in the form

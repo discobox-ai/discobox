@@ -1130,7 +1130,9 @@ was for.
 a root command rather than a `tools` subcommand because it is an everyday verb
 with no `--discobox-id` to inherit: which sandbox is named inside each path.
 
-Nothing in the CLI copies bytes. The sshd already answers the `sftp` subsystem
+`cp` copies no bytes itself, and stays on sftp now that a discobox has a files
+API (ADR 26-10-22-499 §4), which carries what the CLI writes for its own
+purposes — a pasted image, a tool's script and files. The sshd already answers the `sftp` subsystem
 by running the sandbox's `sftp-server` as an exec
 (`server/internal/sshd/DESIGN.md`), which is what a modern `scp` speaks, so
 recursion, permissions and directory creation are scp's and the sandbox's
@@ -1187,7 +1189,7 @@ flowchart LR
   API["GET .../tools\n(image + source)"] --> M
   U["<config dir>/discobox/tools"] --> M
   M --> R{runs}
-  R -->|sandbox| X["exec: program+args, script path,\nor deliverToolScript"]
+  R -->|sandbox| X["exec: program+args, script path,\nor deliverToolScript + runToolScript"]
   R -->|host| H["runHostTool: resolve program →\nssh_config refresh → Remote.Expand → exec"]
 ```
 
@@ -1204,10 +1206,13 @@ flowchart LR
   taken from it: anything with root in the box can answer that route.
 - **Sandbox tools** (`sandboxToolCommand`): `.yaml` → `program[0]` + args; image
   or source script → its path; user script → `deliverToolScript`, which writes it
-  into a `mktemp -d` of its own under `${TMPDIR:-/tmp}`, runs it as a child and
-  removes the directory — not the run user's `~/.cache`, which is a pool-shared
-  volume another discobox as the same user could write into. Files are delivered
-  first (`installToolFiles`, ADR 26-08-27-302 §8–10); the local copy is
+  through the discobox's files API (ADR 26-10-22-499) into a `/tmp/discobox-tool.<random>`
+  directory it creates, mode 0700 and only if nothing is there, and
+  `runToolScript`, the exec, runs it as a child and removes the directory — not
+  the run user's `~/.cache`, which is a pool-shared volume another discobox as
+  the same user could write into. Files are delivered first, each a files API
+  write that fails where a file already is (`installToolFiles`, ADR 26-08-27-302
+  §8–10); the local copy is
   `<config dir>/discobox/tools/<id>/<name>`, seeded from the declaration's
   default.
 - **Host tools** (`tool_run.go`): the program is resolved *before* anything is

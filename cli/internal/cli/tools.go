@@ -166,7 +166,11 @@ func (a *App) runTool(cmd *cobra.Command, id, sandboxArg, source, program string
 	if err := target.app.installToolFiles(ctx, target.projectID, target.sandboxID, def); err != nil {
 		return err
 	}
-	return target.app.runToolInSelected(cmd, target.projectID, target.sandboxID, target.client, source, def.Env, sandboxToolCommand(def, rest))
+	command, err := target.app.sandboxToolCommand(ctx, target.projectID, target.sandboxID, def, rest)
+	if err != nil {
+		return err
+	}
+	return target.app.runToolInSelected(cmd, target.projectID, target.sandboxID, target.client, source, def.Env, command)
 }
 
 // newToolsListCommand is `discobox tools ls`: every tool a discobox offers,

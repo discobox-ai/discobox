@@ -162,30 +162,59 @@ func TestAHostScriptIsHandedTheDiscoboxInItsEnvironment(t *testing.T) {
 }
 
 func TestSandboxToolCommand(t *testing.T) {
+	fake, app := newFakeFilesAPI(t)
 	yaml := tools.Definition{ID: "fresh", Program: []string{"fresh"}, Args: []string{"."}, Layer: tools.LayerImage}
-	if got := strings.Join(sandboxToolCommand(yaml, []string{"x"}), " "); got != "fresh . x" {
-		t.Errorf("yaml tool = %q", got)
+	if got, err := app.sandboxToolCommand(t.Context(), "project-1", "sbx_1", yaml, []string{"x"}); err != nil || strings.Join(got, " ") != "fresh . x" {
+		t.Errorf("yaml tool = %q, %v", got, err)
 	}
 	script := tools.Definition{ID: "lint", Script: true, Path: "/repo/.discobox/tools/lint.sh", Args: []string{"-v"}, Layer: tools.LayerSource}
-	if got := strings.Join(sandboxToolCommand(script, nil), " "); got != "/repo/.discobox/tools/lint.sh -v" {
-		t.Errorf("source script = %q", got)
+	if got, err := app.sandboxToolCommand(t.Context(), "project-1", "sbx_1", script, nil); err != nil || strings.Join(got, " ") != "/repo/.discobox/tools/lint.sh -v" {
+		t.Errorf("source script = %q, %v", got, err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("a tool already in the discobox wrote %v", fake.calls)
 	}
 	defs, err := tools.DiscoverFS(fstestScript("lint.sh", "#!/bin/sh\n#---\n#---\necho \"$@\"\n"), "", tools.LayerUser)
 	if err != nil || len(defs) != 1 || defs[0].Problem != "" {
 		t.Fatalf("defs = %+v, %v", defs, err)
 	}
-	got := sandboxToolCommand(defs[0], []string{"a"})
-	if got[0] != "sh" || got[1] != "-c" || got[2] != deliverToolScript || got[4] != "lint.sh" || !strings.Contains(got[5], "echo") || got[6] != "a" {
-		t.Errorf("user script = %q", got)
+	got, err := app.sandboxToolCommand(t.Context(), "project-1", "sbx_1", defs[0], []string{"a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 7 || got[0] != "sh" || got[1] != "-c" || got[2] != runToolScript || got[5] != "lint.sh" || got[6] != "a" {
+		t.Fatalf("user script = %q", got)
+	}
+	dir := got[4]
+	if !strings.HasPrefix(dir, "/tmp/discobox-tool.") || fake.dirs[dir] != 0o700 {
+		t.Fatalf("dir %q, made %v; want a directory of its own only the user enters", dir, fake.dirs)
+	}
+	written := fake.files[dir+"/lint.sh"]
+	if !strings.Contains(written.content, "echo") || written.mode != "448" {
+		t.Fatalf("script written as %+v, want it executable by the user alone", written)
 	}
 }
 
-// The delivery script is run for real: a script from this machine is written
-// somewhere of its own, runs with the caller's arguments and exit status, and
-// is gone afterwards — nothing left in a directory another run could reach.
-func TestDeliverToolScriptWritesRunsAndRemovesTheScript(t *testing.T) {
+// writeToolScript lays out what deliverToolScript writes in the discobox: the
+// script in a directory of its own.
+func writeToolScript(t *testing.T, root, name, body string) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(root, "discobox-tool.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// The run script is run for real: a script from this machine runs with the
+// caller's arguments and exit status, and its directory is gone afterwards —
+// nothing left where another run could reach it.
+func TestRunToolScriptRunsAndRemovesTheScript(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the delivery script runs in the discobox, under sh")
+		t.Skip("the run script runs in the discobox, under sh")
 	}
 	tmp := t.TempDir()
 	for _, tc := range []struct {
@@ -195,9 +224,9 @@ func TestDeliverToolScriptWritesRunsAndRemovesTheScript(t *testing.T) {
 		{"#!/bin/sh\necho \"hello $1\"\n", "hello world\n", 0},
 		{"#!/bin/sh\necho \"bye $1\"\nexit 3\n", "bye world\n", 3},
 	} {
+		dir := writeToolScript(t, tmp, "hello.sh", tc.body)
 		//nolint:gosec // G204: the script under test, with the test's own fixed arguments.
-		cmd := exec.CommandContext(t.Context(), "sh", "-c", deliverToolScript, "sh", "hello.sh", tc.body, "world")
-		cmd.Env = append(os.Environ(), "TMPDIR="+tmp)
+		cmd := exec.CommandContext(t.Context(), "sh", "-c", runToolScript, "sh", dir, "hello.sh", "world")
 		out, err := cmd.Output()
 		code := 0
 		var exitErr *exec.ExitError

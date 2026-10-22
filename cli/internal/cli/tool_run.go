@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,9 +28,9 @@ import (
 // arguments after the declaration's.
 //
 // A script out of the discobox is run by its path there. One from this machine
-// is not in the discobox at all, so it rides the exec itself: written into a
-// directory of its own and run from there, in one step (deliverToolScript).
-func sandboxToolCommand(def tools.Definition, args []string) []string {
+// is not in the discobox at all, so it is written there first, into a
+// directory of its own, and run from there (deliverToolScript).
+func (a *App) sandboxToolCommand(ctx context.Context, projectID, sandboxID string, def tools.Definition, args []string) ([]string, error) {
 	var command []string
 	switch {
 	case !def.Script:
@@ -35,33 +38,74 @@ func sandboxToolCommand(def tools.Definition, args []string) []string {
 	case def.Layer.InSandbox():
 		command = []string{def.Path}
 	default:
-		command = []string{"sh", "-c", deliverToolScript, "sh", def.FileName, string(def.ScriptData())}
+		dir, err := a.deliverToolScript(ctx, projectID, sandboxID, def)
+		if err != nil {
+			return nil, err
+		}
+		command = []string{"sh", "-c", runToolScript, "sh", dir, def.FileName}
 	}
 	command = append(command, def.Args...)
-	return append(command, args...)
+	return append(command, args...), nil
 }
 
-// deliverToolScript writes $2 into a directory of its own as $1, makes it
-// executable, runs it with the rest of the arguments, and removes it again.
+// deliverToolScript writes a script from this machine into a directory made
+// for this run, through the discobox's files API as its user (ADR
+// 26-10-22-499 §4), and answers with the directory.
 //
 // A directory made for this run and nowhere shared: the run user's cache is a
 // pool-shared volume, where another discobox as the same user could replace the
 // file between the write and the run, and two scripts with one file name would
-// overwrite each other. /tmp is the container's own. The script runs as a child
-// rather than by exec so the directory can go when it ends. The traps are what
-// keep the shell there to remove it: INT and TERM reach the tool as well, so
-// the shell only has to outlive it (a handler, unlike an ignore, is not
-// inherited by the tool) and exit with the tool's own status, which also
-// leaves a tool that catches Ctrl-C and carries on reporting how it ended. A
-// hang-up means the terminal is gone and the shell leaves with it.
-const deliverToolScript = `set -eu
-dir=$(mktemp -d "${TMPDIR:-/tmp}/discobox-tool.XXXXXX")
+// overwrite each other. /tmp is the container's own. The directory is created
+// only if nothing is there and only the user may enter it, so nobody else can
+// put a file in it first. Its name is random rather than mktemp's, since it is
+// named here, and a name taken is tried again.
+func (a *App) deliverToolScript(ctx context.Context, projectID, sandboxID string, def tools.Definition) (string, error) {
+	for range 4 {
+		suffix := make([]byte, 6)
+		if _, err := rand.Read(suffix); err != nil {
+			return "", err
+		}
+		dir := "/tmp/discobox-tool." + hex.EncodeToString(suffix)
+		_, err := a.makeSandboxDirectory(ctx, projectID, sandboxID, &apiclientgen.SandboxFileMkdirRequest{
+			Path: dir,
+			Mode: apiclientgen.NewOptInt64(0o700),
+		})
+		if errors.Is(err, errSandboxFileExists) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("deliver tool %s: %w", def.ID, err)
+		}
+		if _, err := a.writeSandboxFile(ctx, apiclientgen.WriteSandboxFileParams{
+			ProjectId: projectID,
+			SandboxId: sandboxID,
+			Path:      dir + "/" + def.FileName,
+			IfExists:  apiclientgen.NewOptWriteSandboxFileIfExists(apiclientgen.WriteSandboxFileIfExistsFail),
+			Mode:      apiclientgen.NewOptInt64(0o700),
+		}, bytes.NewReader(def.ScriptData())); err != nil {
+			return "", fmt.Errorf("deliver tool %s: %w", def.ID, err)
+		}
+		return dir, nil
+	}
+	return "", fmt.Errorf("deliver tool %s: no free directory under /tmp in the discobox", def.ID)
+}
+
+// runToolScript runs the script deliverToolScript wrote, $2 in the directory
+// $1, with the rest of the arguments, and removes the directory again.
+//
+// The script runs as a child rather than by exec so the directory can go when
+// it ends. The traps are what keep the shell there to remove it: INT and TERM
+// reach the tool as well, so the shell only has to outlive it (a handler,
+// unlike an ignore, is not inherited by the tool) and exit with the tool's own
+// status, which also leaves a tool that catches Ctrl-C and carries on
+// reporting how it ended. A hang-up means the terminal is gone and the shell
+// leaves with it.
+const runToolScript = `set -eu
+dir=$1
 trap 'rm -rf "$dir"' EXIT
 trap 'exit 129' HUP
 trap : INT TERM
-tool="$dir/$1"
-printf %s "$2" > "$tool"
-chmod 700 "$tool"
+tool="$dir/$2"
 shift 2
 "$tool" "$@"`
 

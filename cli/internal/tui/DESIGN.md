@@ -1862,8 +1862,8 @@ screen, the apply overlay or the showing tool, and every place that asked
   from the tool's `Default` the first time anything reads it, and `e` in the
   picker opens it in `$EDITOR` — the real path, in place, so a dotfile manager
   can have it too. `NewTool` puts it into the discobox before the session
-  starts, through one exec that writes only where nothing is there already
-  (`installToolFileScript`). It is a default, not a sync: an edit changes what
+  starts, through one files API write that fails where something is there
+  already (`installToolFiles`, ADR 26-10-22-499). It is a default, not a sync: an edit changes what
   the *next* discobox gets. `Name` and `Home` may differ — fresh's config is
   `config.jsonc` locally and `config.json` in the box, because the tool dictates
   where it reads from while the local extension is what makes editors color it
@@ -2653,7 +2653,8 @@ keys the agents bind; shells are left out, where Ctrl-V is quoted-insert and the
 probe would cost a PowerShell start on WSL per press), an empty bracketed paste
 (what a terminal sends when its paste found no text), and a paste whose every
 word is a path to an image file here (a dragged file; Windows paths go through
-`wslpath`). The image is written into the discobox over an exec's stdin and the
+`wslpath`). The image is written into the discobox through its files API, under
+`/tmp/discobox-paste` as the discobox's user (ADR 26-10-22-499), and the
 path it landed at is pasted instead — the shape a dragged file has, which every
 agent takes as an image. With no image, the key or paste goes through as it
 came.
