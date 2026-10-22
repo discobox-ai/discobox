@@ -721,8 +721,10 @@ every boot. A dev box is delivered its platform (ADR 26-10-16-423 §7): its
 container is `discobox-sandbox-base:dev-*` with `/sbin/init` as PID 1, the
 pool places the agent layer, units and `pins.json`, and the agent fetches
 the rest into its store, then provisions from scratch — core blocks (ready in
-~30s), the rest installs in the background through the pool proxy, and `nix`
-fails by design (its install refuses a booted box's shared `/nix`). To try a
+~30s), the rest installs in the background through the pool proxy (`nix`
+takes minutes: it installs into a private namespace, then seeds the pool's
+`/nix` on first use; check with `d shell $B -- bash -lc 'nix eval --expr
+"1 + 2"'`). To try a
 feature of your own, drop a tree in and restart:
 
 ```bash
