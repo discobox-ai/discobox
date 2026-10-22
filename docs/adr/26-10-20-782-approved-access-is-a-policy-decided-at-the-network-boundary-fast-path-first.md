@@ -1,6 +1,6 @@
 # 26-10-20-782 — Approved access is a policy, decided at the network boundary by a generated fast path before any judge
 
-- **Status**: Accepted
+- **Status**: Accepted (Deferred "approval rules over policies" settled by [26-10-22-689](26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md); §11 amended in issue #317)
 - **Date**: 2026-10-20
 - **Supersedes**:
   - [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
@@ -306,8 +306,10 @@ code, on each side's statements as resolved for its own discobox (§4):
   and its scope are the delegated one's or a literal its glob matches; and a
   delegated allow with parents or a `created by` is matched only by one with
   the same.
-- **Every delegated deny is carried**: the same deny, resolved alike, is in
-  the policy handed on. It may add denies of its own.
+- **Every delegated deny is carried**: a deny that refuses at least as much,
+  resolved alike, is in the policy handed on — the same or more actions, the
+  same or a wider resource, name and scope, and no condition the delegated
+  deny lacks. It may add denies of its own.
 - **A word means what the delegation says it means**: a word both use has the
   same definition in both.
 - **Variables compare as resolved.** `$primary.repo` handed on to a discobox
@@ -315,7 +317,8 @@ code, on each side's statements as resolved for its own discobox (§4):
   variable that does not resolve on either side matches nothing.
 - **Conditions are the judge's.** An allow that keeps the delegated allow's
   conditions, or that adds conditions to one that has none, is covered by
-  code. Otherwise the judge is asked whether the conditions handed on are
+  code, and one with no condition at all, against one with any, is refused
+  by code. Otherwise the judge is asked whether the conditions handed on are
   within the delegated ones, as it is asked about uses today; no answer, no
   hand-off.
 - **Uses are still judged as uses** (ADR 26-09-30-782 §3). A policy rides
@@ -329,7 +332,9 @@ code, on each side's statements as resolved for its own discobox (§4):
 
 Nothing a discobox hands on is shown to a person, so the check is the
 approval; there is no shown value to hold it to. (Amended in issue #298,
-before anything delegated a policy.)
+before anything delegated a policy; its deny and dropped-condition tests
+amended in issue #317, still before, with ADR 26-10-22-689, which holds an
+approval rule to the same comparison.)
 
 ## Measurements
 
