@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/discobox-ai/discobox/tools"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // A tool's file is written through the files API under the default user's
