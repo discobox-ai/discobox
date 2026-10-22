@@ -21,7 +21,7 @@ import (
 // OCI and Docker. Offering them all is what gets a tag answered with its index
 // rather than with a platform the registry picked on the client's behalf.
 var acceptManifests = strings.Join([]string{
-	mediaTypeOCIIndex, mediaTypeDockerList, mediaTypeOCIManifest, mediaTypeDockerManifest,
+	MediaTypeOCIIndex, MediaTypeDockerList, MediaTypeOCIManifest, MediaTypeDockerManifest,
 }, ", ")
 
 // stallTimeout ends a blob download that has stopped arriving. Generous,
@@ -301,12 +301,12 @@ func (r *registry) manifest(ctx context.Context, ref Reference, pinned string) (
 	if resp.StatusCode != http.StatusOK {
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: %s", ref.Name(), resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxManifestBytes+1))
 	if err != nil {
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: %w", ref.Name(), err)
 	}
-	if len(data) > maxManifestBytes {
-		return nil, Descriptor{}, fmt.Errorf("fetch %s: the manifest is larger than %d bytes", ref.Name(), maxManifestBytes)
+	if len(data) > MaxManifestBytes {
+		return nil, Descriptor{}, fmt.Errorf("fetch %s: the manifest is larger than %d bytes", ref.Name(), MaxManifestBytes)
 	}
 	digest := digestOf(data)
 	if strings.HasPrefix(pinned, "sha256:") && digest != pinned {

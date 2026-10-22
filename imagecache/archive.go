@@ -51,7 +51,7 @@ func (i *Image) WriteArchive(w io.Writer, report func(current int64, layersCompl
 		entry.Annotations[AnnotationRefName] = i.Reference.Tag
 		repoTags = []string{i.Reference.qualifiedRepository() + ":" + i.Reference.Tag}
 	}
-	index, err := json.Marshal(imageIndex{SchemaVersion: 2, MediaType: mediaTypeOCIIndex, Manifests: []Descriptor{entry}})
+	index, err := json.Marshal(imageIndex{SchemaVersion: 2, MediaType: MediaTypeOCIIndex, Manifests: []Descriptor{entry}})
 	if err != nil {
 		return err
 	}

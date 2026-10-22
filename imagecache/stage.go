@@ -531,7 +531,7 @@ func (l *Layout) prune(keep map[string]bool, now time.Time) error {
 // with its config and layers.
 func (l *Layout) reach(d Descriptor, reachable map[string]bool) {
 	reachable[d.Digest] = true
-	data, err := l.readBlob(d, maxManifestBytes)
+	data, err := l.readBlob(d, MaxManifestBytes)
 	if err != nil {
 		return
 	}
