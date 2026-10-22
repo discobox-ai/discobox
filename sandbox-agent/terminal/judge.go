@@ -104,6 +104,12 @@ func (s *Service) askJudge(ctx context.Context, system, prompt, schema string) (
 	ctx, cancel := context.WithTimeout(ctx, judge.Timeout)
 	defer cancel()
 
+	// The wrapper is laid by provisioning, including on the judge's first boot.
+	// Share the terminal launch gate and keep its wait within this ask's bound.
+	if err := s.awaitProvisioned(ctx); err != nil {
+		return nil, err
+	}
+
 	env := s.env
 	if s.secretEnv != nil {
 		// Read fresh, as an exec does: the judge's own credential is an

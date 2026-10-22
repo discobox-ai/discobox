@@ -101,6 +101,10 @@ flowchart TD
   `file` step with `merge: json` takes another across its read and its write,
   so features merging into one file in parallel keep each other's keys.
 
+Npm install scripts use a private temporary cache and remove only that cache.
+They run during image builds and after boot, when the user's npm cache can be
+a mounted, pool-shared volume; provisioning must not clear or remove it.
+
 ## Its state
 
 `Tracker` holds the document, replaces `provision.json` whole on each change,

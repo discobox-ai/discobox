@@ -1,7 +1,10 @@
 #!/bin/sh
-# npm's cache is install-time scratch; left behind it put 100MB in every image,
-# and each harness repeats this to install its own CLI.
 set -eu
 
+# Provisioning also runs after boot, when ~/.npm may be a shared cache mount.
+# Keep install scratch out of images without touching that mounted cache.
+npm_config_cache=$(mktemp -d)
+export npm_config_cache
+trap 'rm -rf "$npm_config_cache"' EXIT
+
 npm install -g pnpm
-rm -rf /root/.npm

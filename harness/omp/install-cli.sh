@@ -8,9 +8,12 @@
 # a sandbox does not have, and a download that has hung a build outright.
 # ONNXRUNTIME_NODE_INSTALL_CUDA=skip is its own switch for that; the
 # manifest's env sets it too, for the version store's installs.
-# npm's cache is install-time scratch: left behind, it is half of what this
-# step adds to an image.
 set -eu
 
+# Provisioning also runs after boot, when ~/.npm may be a shared cache mount.
+# Keep install scratch out of images without touching that mounted cache.
+npm_config_cache=$(mktemp -d)
+export npm_config_cache
+trap 'rm -rf "$npm_config_cache"' EXIT
+
 ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent
-rm -rf /root/.npm

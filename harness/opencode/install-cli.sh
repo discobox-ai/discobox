@@ -1,9 +1,12 @@
 #!/bin/sh
 # The harness's CLI, from npm, at its latest release when this step is applied.
 # opencode 2 (@opencode/cli), ADR 26-10-15-848.
-# npm's cache is install-time scratch: left behind, it is half of what this
-# step adds to an image.
 set -eu
 
+# Provisioning also runs after boot, when ~/.npm may be a shared cache mount.
+# Keep install scratch out of images without touching that mounted cache.
+npm_config_cache=$(mktemp -d)
+export npm_config_cache
+trap 'rm -rf "$npm_config_cache"' EXIT
+
 npm install -g @opencode/cli
-rm -rf /root/.npm

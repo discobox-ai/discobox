@@ -794,7 +794,10 @@ development images without a registry.
   caller's deadline, if sooner) and is then a 429 (busy) rather than a verdict:
   the wait and the run's own `judge.Timeout` together stay inside the control
   plane's bound on the ask, so the 429 is written while someone is there to
-  read it. Harness files are installed before every run, so they are written
+  read it. Every ask waits on provisioning readiness within the run's timeout,
+  before resolving the wrapper or installing harness files; a failed feature
+  is reported as a provisioning failure. Harness files are installed before
+  every run, so they are written
   by rename — a createOnly one by link, which never replaces a file another run
   or the harness made meanwhile — and a starting run never reads half of one.
   The route has its own scope (`judge:run`),

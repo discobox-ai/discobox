@@ -474,7 +474,7 @@ func (s *Service) awaitProvisioned(ctx context.Context) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("the sandbox is still provisioning what its terminals need; try again once it is ready: %w", err)
+		return fmt.Errorf("the sandbox is still provisioning what its harness needs; try again once it is ready: %w", err)
 	}
 	return fmt.Errorf("provision the sandbox: %w", err)
 }

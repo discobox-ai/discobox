@@ -74,6 +74,38 @@ func requestJob() judge.Job {
 	}
 }
 
+// A judge's wrapper is provisioned at boot, just like a terminal's launcher.
+// Neither judging nor policy proposals may run it before readiness.
+func TestJudgeWaitsForProvisioning(t *testing.T) {
+	svc := newJudgeService(t, config.HarnessModeJudge, "#!/bin/sh\nprintf '%s' '{\"allow\":true,\"reason\":\"ready\"}'\n")
+	svc.awaitProvision = func(ctx context.Context) error {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("provisioning wait has no deadline")
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := svc.Judge(ctx, requestJob()); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "still provisioning") {
+		t.Fatalf("judge while provisioning: %v", err)
+	}
+
+	failure := errors.New(`feature "node": step "pnpm" failed (log: /var/log/discobox/provision/node.log)`)
+	svc.awaitProvision = func(context.Context) error { return failure }
+	if _, err := svc.Judge(t.Context(), requestJob()); !errors.Is(err, failure) {
+		t.Fatalf("judge after provisioning failed: %v", err)
+	}
+	if _, err := svc.Propose(t.Context(), proposalJob()); !errors.Is(err, failure) {
+		t.Fatalf("proposal after provisioning failed: %v", err)
+	}
+
+	svc.awaitProvision = func(context.Context) error { return nil }
+	if answer, err := svc.Judge(t.Context(), requestJob()); err != nil || !answer.Allow {
+		t.Fatalf("judge once provisioned: %+v, %v", answer, err)
+	}
+}
+
 // What the wrapper answers is what the judge answers, and the three answers a
 // verdict may be all arrive intact.
 func TestJudgeAnswersFromTheHarness(t *testing.T) {
