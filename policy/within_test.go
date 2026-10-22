@@ -84,8 +84,24 @@ func TestWithin(t *testing.T) {
 			`allow push on branch "discobox/x" in repository $primary.repo`,
 			`deny delete on anything in anywhere`,
 		}},
-		{name: "the delegated condition dropped", judge: 1, given: []string{
+		{name: "the delegated condition dropped", refused: "allow update on pull request", given: []string{
 			`allow update on pull request in repository $primary.repo`,
+			`deny delete on anything in anywhere`,
+		}},
+		{name: "a wider deny carries the delegated one", given: []string{
+			`allow push on branch "discobox/x" in repository $primary.repo`,
+			`deny delete, update on anything in anywhere`,
+		}},
+		{name: "a narrower deny does not", refused: `deny delete on anything in anywhere`, given: []string{
+			`allow push on branch "discobox/x" in repository $primary.repo`,
+			`deny delete on branch in anywhere`,
+		}},
+		{name: "a deny that applies only when does not", refused: `deny delete on anything in anywhere`, given: []string{
+			`allow push on branch "discobox/x" in repository $primary.repo`,
+			`deny delete on anything in anywhere when "it is a weekday"`,
+		}},
+		{name: "an unless in place of the delegated when", judge: 1, given: []string{
+			`allow update on pull request in repository $primary.repo unless "its base is not main"`,
 			`deny delete on anything in anywhere`,
 		}},
 		{name: "another condition", judge: 1, given: []string{
@@ -180,5 +196,41 @@ func TestWithinReadsEscapesAsTheGlobsTheyAre(t *testing.T) {
 	same := mustParse(t, `allow push on branch $primary.branch in repository "acme/web"`)
 	if _, err := Within(same, map[string]string{VarPrimaryBranch: "*"}, byVariable, map[string]string{VarPrimaryBranch: "*"}); err != nil {
 		t.Fatalf("the same value on both sides was refused: %v", err)
+	}
+}
+
+// An allow with no condition is wider than one with only an unless, too.
+func TestWithinRefusesAnAllowWithNoConditionUnderAnUnless(t *testing.T) {
+	delegated := mustParse(t, `allow update on pull request in repository $primary.repo unless "it is a draft"`)
+	given := mustParse(t, `allow update on pull request in repository $primary.repo`)
+	if _, err := Within(given, workerValues, delegated, leadValues); err == nil {
+		t.Fatal("an allow with no condition was within one with an unless")
+	}
+}
+
+// A policy carries a deny when one of its own refuses at least as much, and
+// says which deny it does not carry: what a proposed rule is held to, so it
+// never drops a deny the request asked for.
+func TestCarriesDenies(t *testing.T) {
+	held := mustParse(t, `deny merge, close on pull request in repository $primary.repo`)
+	for _, tt := range []struct {
+		name    string
+		given   []string
+		carries bool
+	}{
+		{name: "the same", given: []string{`deny merge, close on pull request in repository $primary.repo`}, carries: true},
+		{name: "more actions, in any order", given: []string{`deny close, delete, merge on pull request in repository $primary.repo`}, carries: true},
+		{name: "everywhere", given: []string{`deny merge, close on anything in anywhere`}, carries: true},
+		{name: "any type in the repository", given: []string{`deny merge, close on anything in repository $primary.repo`}, carries: true},
+		{name: "an action left out", given: []string{`deny merge on pull request in repository $primary.repo`}},
+		{name: "none", given: []string{`allow read on pull request in repository $primary.repo`}},
+		{name: "an exception the held deny has not", given: []string{`deny merge, close on pull request in repository $primary.repo unless "it is green"`}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CarriesDenies(mustParse(t, tt.given...), workerValues, held, workerValues)
+			if (err == nil) != tt.carries {
+				t.Fatalf("CarriesDenies() = %v, want carried %v", err, tt.carries)
+			}
+		})
 	}
 }
