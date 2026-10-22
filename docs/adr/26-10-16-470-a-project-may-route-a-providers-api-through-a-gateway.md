@@ -1,6 +1,7 @@
 # 26-10-16-470 — A project may route a provider's API through a gateway
 
-- **Status**: Accepted
+- **Status**: Accepted (§§1, 4 and 6 narrowed by [26-10-17-271](26-10-17-271-the-server-configuration-file-names-project-gateways.md):
+  `valueFrom` is the server configuration file's alone)
 - **Date**: 2026-10-16
 - **Relates to**: [26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md),
   whose per-sandbox push this rides;
