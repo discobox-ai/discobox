@@ -1,6 +1,6 @@
 ---
 name: discobox-review
-description: Have fresh-eyes subagents review the local changes — the default reviewer, plus one in parallel for each reviewer the repository defines in .discobox/review/*.md — and leave their findings in discobox-review under their own names, address what they raise, then send them back in until every comment is closed and every file approved. Use when the user wants the current work reviewed with discobox-review, or wants such a review driven to sign-off.
+description: Have fresh-eyes subagents review the local changes — the default reviewer, plus one in parallel for each reviewer the repository defines in .discobox/review/*.md — and leave their findings in discobox-review under their own names, address what they raise, then send them back in until every comment is closed and every file approved, and end with one last subagent writing the review card the person reviewing next opens on. Use when the user wants the current work reviewed with discobox-review, or wants such a review driven to sign-off.
 ---
 
 # Review Until Accepted
@@ -22,6 +22,11 @@ side. So what this skill drives to is the *reviewers'* sign-off. It is not the
 user's, and nothing here approves anything on the user's behalf — in the
 window they see each reviewer's tick beside their own, which is still theirs
 to give.
+
+Once they have signed off, one last subagent reads the finished change whole
+and writes its **review card**: a few bullets of what changed and the places
+that are its core, which the window opens on. See
+[The review card](#the-review-card).
 
 There is always the default reviewer. A repository can define more — a
 security reviewer, one that knows its migrations — and then every round is all
@@ -96,7 +101,7 @@ these reviewers find.
   this skill reads exactly as it says.
 - A name is lower-case letters, digits and hyphens, starting with a letter
   (`^[a-z][a-z0-9-]*$`), because it is typed into commands and signs remarks.
-  `reviewer`, `author` and `git-user` are taken, and so is anything equal to
+  `reviewer`, `author`, `card` and `git-user` are taken, and so is anything equal to
   `git config user.name`, which is how the person signs. Skip a file whose name
   fails any of that and tell the user it was skipped.
 - The definitions come from the primary source even when the change under
@@ -378,20 +383,112 @@ nullifies every approval of that file, the last round has to be one where each
 reviewer approved everything *after* your final change — if you edited
 anything after the approvals, run one more round.
 
+Cap the loop at **5 rounds**. If it has not converged by then the disagreement
+is not going to be settled by another round: stop, summarise both positions, and
+put it to the user. A review stopped there writes no card, and clears the one
+an earlier run left (see [The review card](#the-review-card)).
+
 Before you report done, run whatever check this repository tells agents to run
 before handing work back — a build, a lint, a test target, whatever its
 `AGENTS.md` or `CLAUDE.md` names — and report what it says. The reviewer read
 the code; nobody here ran it.
 
-Cap the loop at **5 rounds**. If it has not converged by then the disagreement
-is not going to be settled by another round: stop, summarise both positions, and
-put it to the user.
+Then, at full sign-off, have the review card written — see
+[The review card](#the-review-card) — and only then report.
 
 Report at the end: how many rounds it took, which reviewers ran, what each
 found and you fixed, what you pushed back on and why, the `REVIEW.md` notes you
-added, and anything the user decided. Say whose sign-off it is: the reviewers approved every file, and the
+added, and anything the user decided, and the card as `discobox-review card` prints it.
+Say whose sign-off it is: the reviewers approved every file, and the
 user has approved only what they approved themselves — `discobox-review status
 --by git-user` counts it.
+
+## The review card
+
+The last thing this skill does, after the reviewers' sign-off and the
+repository's check, is have one more subagent write the review card. A card is
+the meat of the change, picked out by something that read it whole: up to six
+bullets of what changed, and the places in the diff that need a reviewer's
+judgement, most important first. It is kept in the review beside the comments,
+and the window opens on it — the bullets above the stack, the core's hunks
+reviewed before the rest. It is for the person who reviews next, so it is
+written from the change as it now stands, not from the rounds it took.
+
+It describes the tree it was written against and is not carried when the tree
+moves: on a tree that has moved since, the window marks whatever hunks now sit
+at its old line numbers as the core, and says nothing. So write it only once
+nothing in this review will change the tree again, and never leave a card of
+this skill's behind on a tree that has moved under it.
+
+First see whether there is one already:
+
+```bash
+discobox-review card
+```
+
+- One signed `by card` is from an earlier run of this skill, and the tree may
+  have moved under it since. It is replaced below; when this run writes none,
+  take it out with `discobox-review card clear`.
+- One signed by anybody else — the person included — is not yours to replace
+  or clear: ask the user.
+
+If the review stopped at the round cap, or on a question still with the user,
+write none — clear one signed `by card`, as above — and say so in the report.
+
+Then note the base the review is measured from, which is what the card
+recommends reviewing from, and the tree as it stands:
+
+```bash
+base=$(discobox-review status | awk '$1 == "merge-base" { print $2 }')
+git status --short
+```
+
+Delegate to **one fresh subagent** — not a reviewer carried over: they read
+the change for faults, thread by thread, and the card wants it read as a
+whole. Give it this brief, with the base filled in:
+
+> You are writing the review card for the local changes in this repository:
+> what the person about to review them reads first. You did not write this
+> change. Your name in this review is `card`.
+>
+> Read `discobox-review card --help` first; it is the whole format. Then read
+> the change: `discobox-review diff --stat`, `discobox-review diff`, and as
+> much of the surrounding code as it takes to tell the core of the change from
+> what only follows from it. `discobox-review list` shows what the reviewers
+> argued over, which is often where judgement is needed.
+>
+> Write a card:
+>
+> - `base`: `<base>`.
+> - `summary`: what changed and why it matters, a short bullet each, at most
+>   six — the change, not a tour of its files.
+> - `core`: the places that need a reviewer's judgement, most important
+>   first, with the line numbers `discobox-review diff` prints. Leave out
+>   tests, comments, documentation, generated files, and edits that only
+>   follow from another, such as call sites of a changed signature. A place
+>   has to hold a line the change made.
+>
+> Keep it by passing it on standard input, never through a file in the
+> working tree, which would put the card in the change it describes:
+>
+>     discobox-review card set --by card - <<'CARD'
+>     { ... }
+>     CARD
+>
+> If `card set` refuses it, it lists everything wrong at once, each where in
+> the card it is: put those right and set it again until it takes it.
+>
+> Do not edit any file. Do not commit. Do not comment, reply, resolve, approve
+> or unapprove, and do not move the review's base.
+>
+> Report back what `discobox-review card` prints.
+
+When it returns, check it kept to that: `git status --short` reads as it did
+before, and the approvals and conversations are as the reviewers left them
+(the checks in [Round 1: address what came back](#round-1-address-what-came-back);
+nothing under `card`). Read the card yourself, too: a summary that misstates
+the change, or a core that is mostly tests, goes back to the same subagent
+with what is wrong with it.
 
 ## Rules
 
@@ -403,6 +500,8 @@ user has approved only what they approved themselves — `discobox-review status
 - A reviewer approves under its own name only, and resolves only what it
   started. Nobody approves for the user, and nobody takes the user's approval
   back.
+- The card is written last, by its own subagent, signed `card`, and passed on
+  standard input — never as a file in the tree.
 - Neither role commits. This skill reviews work; committing it is a separate
   step the user asks for.
 - One subagent per reviewer, carried across rounds — not a new one per round
