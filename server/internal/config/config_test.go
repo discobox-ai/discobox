@@ -150,7 +150,10 @@ func TestLoadDevelopmentImageManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dev-images.json")
 	manifest, err := devimage.NewManifest([]devimage.Image{
 		{Reference: "discobox-pool-agent:dev-test", ID: "sha256:test"},
-	})
+	}, []devimage.Bundle{{
+		Reference: "discobox-platform:dev-0a0a0a0a0a0a", Digest: "sha256:" + strings.Repeat("0a", 32),
+		Layout: filepath.Join(t.TempDir(), "discobox-platform.tar"),
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,6 +169,9 @@ func TestLoadDevelopmentImageManifest(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.DevelopmentImages, manifest.Images) {
 		t.Fatalf("DevelopmentImages = %#v, want %#v", cfg.DevelopmentImages, manifest.Images)
+	}
+	if !reflect.DeepEqual(cfg.DevelopmentBundles, manifest.Bundles) {
+		t.Fatalf("DevelopmentBundles = %#v, want %#v", cfg.DevelopmentBundles, manifest.Bundles)
 	}
 }
 

@@ -76,6 +76,10 @@ type Options struct {
 	// build-mode metadata from it, since those images exist only as build
 	// descriptions until a pool's daemon builds them.
 	DevelopmentImages []devimage.Image
+	// DevelopmentBundles are the bundles the watcher exported as OCI image
+	// layouts: harness seeding reads their labels, and the asset API serves
+	// them, from those layouts (ADR 26-10-16-423 §13).
+	DevelopmentBundles []devimage.Bundle
 	// ControlPlaneStreams carries guest-initiated control-plane connections for
 	// backends that cannot be dialed inward.
 	ControlPlaneStreams *carrierhub.Hub
@@ -139,7 +143,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	sandboxService.SetServerPeerID(options.ServerPeerID)
 	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil, options.OverlayDir)
-	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
+	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages, options.DevelopmentBundles)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.
 	harnessConfigService.SetSandboxRuntime(sandboxService)
@@ -183,6 +187,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		Dir:            options.AssetDir,
 		PlatformBundle: options.Harnesses.PlatformBundle,
 		ReleaseBundles: releaseBundles,
+		Development:    options.DevelopmentBundles,
 	})
 	// Every sandbox is pinned to the platform the release names, and a
 	// stopped one follows it when the reference resolves somewhere new (ADR

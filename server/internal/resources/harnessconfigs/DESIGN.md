@@ -44,7 +44,8 @@ true of it, and true *by rule* rather than by slug:
   one is refused.
 - The bundle's manifest **labels** are authoritative. `resolveHarness`
   inspects the bundle and the image **once** each (local Docker daemon first,
-  registry fallback) and composes the bundle's labels on the platform
+  registry fallback; a development bundle from the OCI image layout the
+  image watcher exported it to, which no daemon holds) and composes the bundle's labels on the platform
   bundle's through `harness.ComposeBundleLabels` — the platform's
   `10-platform` layer, then every `io.discobox.image.v1.<NN>-<name>` layer
   the bundle carries, then its own `io.discobox.image.v1` — before validating
@@ -69,7 +70,8 @@ true of it, and true *by rule* rather than by slug:
 - **A bundle carrying a whiteout is refused**, read from its layers
   (`refuseWhiteouts`): from the registry, the layers of its manifest (the
   platform bundle's for this machine's platform, of its index); from the local
-  daemon, what it saves, for its own platform where the daemon can be asked.
+  daemon, what it saves, for its own platform where the daemon can be asked;
+  from a development bundle's layout, the layers its manifest lists.
   A bundle's tree is its layers side by side, so a deletion has nothing to
   mean. The verdict is its digest's, so each digest's layers are read once
   per process (`verifiedBundles`): the platform bundle's are the agent's
@@ -98,7 +100,8 @@ true of it, and true *by rule* rather than by slug:
   can compare it on either image store: from a registry, the digest the tag is
   served under (an index digest for a multi-platform image), fetched with one
   `remote.Get`; from the local daemon, the `RepoDigests` entry, or the image ID
-  for a never-pushed local build. An index digest is what lets one pin serve a
+  for a never-pushed local build. A development bundle's is the manifest its
+  layout's index lists (`devimage.Bundle`). An index digest is what lets one pin serve a
   pool of each platform the index lists.
 - A config records the **platforms** its image is published for (`os/arch`,
   ADR 0145 §1), read with the labels by every inspection — create, refresh and

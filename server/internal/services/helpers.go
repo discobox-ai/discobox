@@ -489,7 +489,8 @@ func (p BundlePin) Name() string { return BundleName(p.Reference) }
 
 // BundleName is the name a bundle is addressed by: the last component of its
 // reference's repository, so ghcr.io/discobox-ai/discobox-platform:v1 and a
-// development build's discobox-platform:local are both discobox-platform.
+// development build's discobox-platform:dev-<digest> are both
+// discobox-platform.
 // Empty for a reference that does not parse.
 func BundleName(ref string) string {
 	parsed, err := name.ParseReference(strings.TrimSpace(ref))

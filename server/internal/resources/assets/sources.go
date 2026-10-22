@@ -1,23 +1,17 @@
 package assets
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
-	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	dockerclient "github.com/moby/moby/client"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/imagecache"
-	"github.com/discobox-ai/discobox/server/internal/localimage"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 )
 
@@ -34,108 +28,65 @@ type source interface {
 	resolve(ctx context.Context, ref string, release bool, blobs *imagecache.Layout) (string, error)
 }
 
-// daemonSource reads the local Docker daemon, for the bundles the release
-// names alone: on a development server those are what the image watcher
-// built. Any other image the daemon holds — another project's local build,
-// or one pulled on this host with credentials — is not a project's to read
-// through the server, so a reference a project supplied is never looked up
-// here.
+// layoutSource reads the bundles the image watcher exported as OCI image
+// layouts (devimage.Bundle), for the release's references alone: on a
+// development server, the platform bundle and the built-in harnesses' bundles
+// it is configured with. A reference a project supplied is never looked up
+// here, even one naming a development bundle.
 //
-// Its content comes out of what the daemon saves, an OCI layout whose blobs
-// go into the store whole. What each pinned digest's save held is remembered,
-// so a digest it did not hold — another platform's manifest under a
-// development build's index — is not asked of the daemon again, while one it
-// did hold that has left the store since, pruned or found damaged, is saved
-// again.
-type daemonSource struct {
-	imported *sync.Map
+// A pin's content is the whole of its layout, which goes into the store at
+// once and only while the layout's index still lists the pin's digest
+// (devimage.Bundle.Check). Nothing is remembered between reads, so a blob that
+// has left the store since, pruned or found damaged, is put back from the
+// layout as long as the watcher keeps it.
+type layoutSource struct {
+	bundles map[string]devimage.Bundle
 }
 
-func newDaemonSource() daemonSource { return daemonSource{imported: &sync.Map{}} }
+func newLayoutSource(bundles []devimage.Bundle) layoutSource {
+	byRef := make(map[string]devimage.Bundle, len(bundles))
+	for _, bundle := range bundles {
+		byRef[bundle.Reference] = bundle
+	}
+	return layoutSource{bundles: byRef}
+}
 
-func (d daemonSource) fetch(ctx context.Context, p pin, digest string, _ bool, blobs *imagecache.Layout) error {
-	if !p.release {
+func (l layoutSource) fetch(_ context.Context, p pin, digest string, _ bool, blobs *imagecache.Layout) error {
+	bundle, ok := l.bundles[p.ref]
+	if !p.release || !ok || bundle.Digest != p.digest {
 		return errNotHere
 	}
-	if imported, done := d.imported.Load(p.digest); done {
-		if held, ok := imported.(map[string]bool); ok && !held[digest] {
-			return errNotHere
-		}
+	if err := importLayout(bundle, blobs); err != nil {
+		return err
 	}
-	client, err := dockerclient.New(dockerclient.FromEnv)
-	if err != nil {
+	if !blobs.HasBlob(digest) {
 		return errNotHere
 	}
-	defer client.Close()
-	inspected, err := client.ImageInspect(ctx, p.ref)
-	if err != nil || !localimage.Is(inspected, p.digest) {
-		return errNotHere
-	}
-	held, err := importSave(ctx, client, p.ref, inspected, blobs)
-	if err != nil {
-		return fmt.Errorf("read %s from the Docker daemon: %w", p.ref, err)
-	}
-	d.imported.Store(p.digest, held)
 	return nil
 }
 
-func (d daemonSource) resolve(ctx context.Context, ref string, release bool, blobs *imagecache.Layout) (string, error) {
-	if !release {
+func (l layoutSource) resolve(_ context.Context, ref string, release bool, blobs *imagecache.Layout) (string, error) {
+	bundle, ok := l.bundles[ref]
+	if !release || !ok {
 		return "", errNotHere
 	}
-	client, err := dockerclient.New(dockerclient.FromEnv)
-	if err != nil {
-		return "", errNotHere
+	if err := importLayout(bundle, blobs); err != nil {
+		return "", err
 	}
-	defer client.Close()
-	inspected, err := client.ImageInspect(ctx, ref)
-	if err != nil {
-		return "", errNotHere
-	}
-	digest := localimage.Digest(inspected)
-	if _, done := d.imported.Load(digest); !done || !blobs.HasBlob(digest) {
-		held, err := importSave(ctx, client, ref, inspected, blobs)
-		if err != nil {
-			return "", fmt.Errorf("read %s from the Docker daemon: %w", ref, err)
-		}
-		d.imported.Store(digest, held)
-	}
-	return digest, nil
+	return bundle.Digest, nil
 }
 
-// importSave puts every blob of what the daemon saves for ref into blobs, each
-// checked against the digest it is named by, and reports which digests it
-// held. The image is asked for whole
-// first, which keeps an index the daemon holds every platform of; a daemon
-// holding one platform of an index refuses that, and is asked for its own.
-func importSave(ctx context.Context, client *dockerclient.Client, ref string, inspected dockerclient.ImageInspectResult, blobs *imagecache.Layout) (map[string]bool, error) {
-	saved, err := client.ImageSave(ctx, []string{ref})
-	if err != nil {
-		saved, err = client.ImageSave(ctx, []string{ref}, dockerclient.ImageSaveWithPlatforms(ocispec.Platform{OS: inspected.Os, Architecture: inspected.Architecture}))
+// importLayout puts every blob of bundle's layout into blobs, each checked
+// against the digest it is named by. One the store holds already is skipped
+// unread.
+func importLayout(bundle devimage.Bundle, blobs *imagecache.Layout) error {
+	if err := bundle.Check(); err != nil {
+		return fmt.Errorf("read %s: %w", bundle.Reference, err)
 	}
-	if err != nil {
-		return nil, err
+	if err := devimage.WalkLayoutBlobs(bundle.Layout, blobs.PutBlob); err != nil {
+		return fmt.Errorf("read %s: %w", bundle.Reference, err)
 	}
-	defer saved.Close()
-	held := map[string]bool{}
-	entries := tar.NewReader(saved)
-	for {
-		header, err := entries.Next()
-		if errors.Is(err, io.EOF) {
-			return held, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		hex, ok := strings.CutPrefix(header.Name, "blobs/sha256/")
-		if !ok || header.Typeflag != tar.TypeReg {
-			continue
-		}
-		if err := blobs.PutBlob("sha256:"+hex, entries); err != nil {
-			return nil, err
-		}
-		held["sha256:"+hex] = true
-	}
+	return nil
 }
 
 // registrySource reads a bundle's registry. The server's credentials are

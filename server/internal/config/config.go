@@ -231,9 +231,11 @@ type Config struct {
 	DevImageSync     bool   `yaml:"devImageSync" env:"DISCOBOX_DEV_DOCKER_IMAGE_SYNC" doc:"Converge locally built images onto each Docker daemon before it hosts a development pool."`
 	DevImageManifest string `yaml:"devImageManifest" env:"DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST" doc:"Path to the manifest listing the images devImageSync converges. Required when devImageSync is set." example:"/tmp/discobox-dev-images.json"`
 
-	// DevelopmentImages is the image set read from DevImageManifest. Derived,
-	// because it is the contents of a file rather than a setting.
-	DevelopmentImages []devimage.Image `yaml:"-"`
+	// DevelopmentImages is the image set read from DevImageManifest, and
+	// DevelopmentBundles the bundles it exported as OCI image layouts. Derived,
+	// because they are the contents of a file rather than a setting.
+	DevelopmentImages  []devimage.Image  `yaml:"-"`
+	DevelopmentBundles []devimage.Bundle `yaml:"-"`
 
 	// Iroh groups the settings of the iroh transport (ADR 0052).
 	Iroh IrohSettings `yaml:"iroh" doc:"Settings for the iroh transport, which is how a server is reached from another network without a port, a certificate, or a name."`
@@ -443,6 +445,7 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 		cfg.DevelopmentImages = manifest.Images
+		cfg.DevelopmentBundles = manifest.Bundles
 	}
 
 	if err := cfg.validate(configured); err != nil {

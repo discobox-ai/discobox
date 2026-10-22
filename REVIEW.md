@@ -22,6 +22,13 @@ Global review expectations:
   code and design docs cite before writing the header: a proposal that
   reversed several accepted decisions without naming them was the most
   common finding in its review (ADR 26-10-16-423).
+- The image watcher never rewrites what a published development manifest
+  names. It publishes the manifest and `.env` only once a whole pass has
+  built, so whatever a pass rewrites before a later build fails stays named
+  by the manifest still in force: a bundle layout overwritten in place left
+  the server refusing its own platform, the layout holding another digest
+  than the manifest named, until a pass succeeded. Name the output by its content and remove a
+  superseded one only after the manifest replacing it is out.
 - A test server that counts what reaches it must ignore the sandbox-agent's
   port probe (`User-Agent: discobox-sandbox-agent (port probe)`). Every port
   that starts listening is asked `HEAD /` once, and this repository is worked

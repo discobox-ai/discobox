@@ -228,6 +228,7 @@ func Run(ctx context.Context) error {
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 		DefaultSandboxImageDigest:      cfg.DefaultSandboxImageDigest,
 		DevelopmentImages:              cfg.DevelopmentImages,
+		DevelopmentBundles:             cfg.DevelopmentBundles,
 		Harnesses:                      cfg.Harnesses,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,

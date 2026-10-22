@@ -58,7 +58,7 @@ func buildModeImages(metadata string) []devimage.Image {
 func buildModeService(t *testing.T, images []devimage.Image) (*Service, *recordingInspector) {
 	fallback := &recordingInspector{err: errors.New("registry must not be consulted")}
 	svc := &Service{store: newTestStore(t), harnesses: harnessdefs.References{PlatformBundle: platformReference}}
-	svc.inspector = newDevImageInspector(images, fallback)
+	svc.inspector = newDevImageInspector(images, nil, fallback, nil)
 	return svc, fallback
 }
 
@@ -102,7 +102,7 @@ func TestResolveRefusesABuildModeBundleWithNoMetadata(t *testing.T) {
 // registry, so copy-mode and production behavior are untouched.
 func TestInspectFallsBackForImagesTheManifestDoesNotDescribe(t *testing.T) {
 	fallback := &recordingInspector{}
-	inspector := newDevImageInspector(buildModeImages(harnessMetadataJSON), fallback)
+	inspector := newDevImageInspector(buildModeImages(harnessMetadataJSON), nil, fallback, nil)
 
 	if _, err := inspector.Inspect(context.Background(), "ghcr.io/discobox-ai/other:v1"); err != nil {
 		t.Fatalf("Inspect() error = %v", err)
@@ -115,12 +115,13 @@ func TestInspectFallsBackForImagesTheManifestDoesNotDescribe(t *testing.T) {
 	}
 }
 
-// Copy-mode manifests carry no build descriptions, so wrapping must be a no-op
-// rather than an inspector that shadows every lookup with a miss.
-func TestCopyModeManifestLeavesTheInspectorUnchanged(t *testing.T) {
+// A manifest with neither build descriptions nor bundles describes nothing
+// to inspect, so wrapping must be a no-op rather than an inspector that
+// shadows every lookup with a miss.
+func TestAManifestOfImagesAloneLeavesTheInspectorUnchanged(t *testing.T) {
 	fallback := &recordingInspector{}
 	images := []devimage.Image{{Reference: "discobox-pool-agent:dev-abc", ID: "sha256:abc"}}
-	if got := newDevImageInspector(images, fallback); got != imageInspector(fallback) {
+	if got := newDevImageInspector(images, nil, fallback, nil); got != imageInspector(fallback) {
 		t.Fatalf("inspector = %#v, want the fallback returned unchanged", got)
 	}
 }

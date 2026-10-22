@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestManifestRoundTripIsCanonical(t *testing.T) {
 	manifest, err := NewManifest([]Image{
 		{Reference: "example/z:dev", ID: "sha256:zzz"},
 		{Reference: "example/a:dev", ID: "sha256:aaa"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestManifestRejectsDuplicateReference(t *testing.T) {
 	_, err := NewManifest([]Image{
 		{Reference: "example/dev:latest", ID: "sha256:aaa"},
 		{Reference: "example/dev:latest", ID: "sha256:bbb"},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("NewManifest() succeeded with a duplicate reference")
 	}
@@ -64,5 +65,46 @@ func TestReadRejectsUnsupportedVersion(t *testing.T) {
 	}
 	if _, err := Read(path); err == nil {
 		t.Fatal("Read() succeeded with an unsupported version")
+	}
+}
+
+func TestManifestCarriesBundlesBesideImages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "images.json")
+	digest := "sha256:" + strings.Repeat("0a", 32)
+	layout := filepath.Join(t.TempDir(), "discobox-platform.tar")
+	manifest, err := NewManifest([]Image{{Reference: "example/a:dev", ID: "sha256:aaa"}},
+		[]Bundle{{Reference: "discobox-platform:dev-0a0a0a0a0a0a", Digest: digest, Layout: layout}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAtomic(path, manifest); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Bundle{{Reference: "discobox-platform:dev-0a0a0a0a0a0a", Digest: digest, Layout: layout}}
+	if !reflect.DeepEqual(got.Bundles, want) {
+		t.Fatalf("Bundles = %#v, want %#v", got.Bundles, want)
+	}
+}
+
+func TestManifestRejectsAnIncompleteBundle(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("0a", 32)
+	layout := filepath.Join(t.TempDir(), "bundle.tar")
+	images := []Image{{Reference: "example/a:dev", ID: "sha256:aaa"}}
+	for name, bundle := range map[string]Bundle{
+		"no reference":      {Digest: digest, Layout: layout},
+		"no digest":         {Reference: "b:dev", Layout: layout},
+		"a short digest":    {Reference: "b:dev", Digest: "sha256:0a", Layout: layout},
+		"a relative layout": {Reference: "b:dev", Digest: digest, Layout: "build/assets/b.tar"},
+		"an image's name":   {Reference: "example/a:dev", Digest: digest, Layout: layout},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := NewManifest(images, []Bundle{bundle}); err == nil {
+				t.Fatalf("NewManifest() accepted the bundle %#v", bundle)
+			}
+		})
 	}
 }

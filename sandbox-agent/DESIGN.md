@@ -748,9 +748,20 @@ Harness-specific changes rebuild only that harness's bundle and twin; shared
 changes rebuild the base and every twin. Every successful build writes its
 content-addressed development image reference to `.env`
 (`DISCOBOX_PLATFORM_BUNDLE` for the platform bundle); pool and sandbox base
-images also write their image digest. The bundles stay out of the manifest
-below, since nothing runs them: the server reads them from the host's daemon. The watcher atomically writes the complete
-reference-to-image-ID set as `.tmp/discobox-dev-images.json` and enables
+images also write their image digest. On Linux (copy-mode) a bundle never
+enters a Docker daemon, since nothing runs it: the watcher exports it with
+`docker buildx build --output type=oci` to `build/assets/<name>/<hex>.tar`, an
+OCI image layout named by the manifest digest its index lists, and its `.env`
+reference is a dev tag of that digest. The server reads the bundle's labels
+from that layout and serves its blobs to pools from it (ADR 26-10-16-423 §13).
+The OCI exporter needs the containerd image store (or a buildx builder other
+than the `docker` driver); on the classic store every bundle export fails, and
+buildx says why. On macOS and Windows (build-mode) a bundle is described like
+any image and built on each pool's daemon; its labels come from the
+manifest's build arguments, and having no content the server holds, it is
+not served by the asset API. The watcher atomically writes the complete
+reference-to-image-ID set, with each bundle's reference, digest and layout,
+as `.tmp/discobox-dev-images.json` and enables
 development image synchronization in `.env`. On restart the server converges
 that manifest onto every Docker daemon before reconciling its pool-agent
 container, so local-VM, cloud, exec, and host-Docker providers use the same

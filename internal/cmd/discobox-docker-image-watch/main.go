@@ -24,6 +24,11 @@ import (
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
+// bundleLayoutDir is where the watcher exports each bundle, as the OCI image
+// layout tar <name>/<hex>.tar named by the digest of the manifest it holds,
+// for the server to serve from (ADR 26-10-16-423 §13).
+const bundleLayoutDir = "build/assets"
+
 // baseSpecName is the Docker driver's sandbox base image, which both agent
 // images build FROM via the BASE_IMAGE build arg.
 const baseSpecName = "sandbox-base"
@@ -71,11 +76,13 @@ type imageSpec struct {
 	parent    string
 	parentArg string
 	// bundle marks a FROM scratch bundle (ADR 26-10-16-423 §2): never run, so
-	// copy-mode leaves it out of the manifest it copies to pool daemons, but
-	// still published in .env, because the server reads its labels from this
-	// host's daemon. Build-mode describes it like any other image, since there
-	// the server reconstructs its labels from the manifest's build arguments.
-	bundle bool
+	// copy-mode exports it into layoutDir, as an OCI image layout tar named by
+	// its digest, rather than into any Docker daemon, and records it among the
+	// manifest's bundles, which the server serves and reads its labels from.
+	// Build-mode describes it like any other image, since there the server
+	// reconstructs its labels from the manifest's build arguments.
+	bundle    bool
+	layoutDir string
 }
 
 type harnessImage struct {
@@ -245,23 +252,61 @@ func missingImageSpecs(ctx context.Context, repoRoot string, specs []imageSpec) 
 		// Nothing is built on this host, so there is no local image to miss.
 		return nil, nil
 	}
-	present, err := commandOutput(ctx, repoRoot, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	listed, err := commandOutput(ctx, repoRoot, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
 	if err != nil {
 		return nil, err
 	}
 	tags := map[string]struct{}{}
-	for _, tag := range strings.Fields(present) {
+	for _, tag := range strings.Fields(listed) {
 		tags[tag] = struct{}{}
 	}
-	return missingFrom(specs, tags), nil
+	return missingFrom(specs, builtIn(tags, publishedBundles(repoRoot))), nil
 }
 
-// missingFrom is the decision behind missingImageSpecs, over the set of image
-// references the daemon reports.
-func missingFrom(specs []imageSpec, present map[string]struct{}) []imageSpec {
+// builtIn reports whether a spec's build is still where it was published: an
+// image among the daemon's tags, or a bundle's layout among published, since a
+// bundle is in no daemon.
+func builtIn(tags map[string]struct{}, published []devimage.Bundle) func(imageSpec) bool {
+	return func(spec imageSpec) bool {
+		if spec.bundle {
+			_, ok := publishedBundle(spec, published)
+			return ok
+		}
+		_, ok := tags[spec.baseImage]
+		return ok
+	}
+}
+
+// publishedBundles is the bundles the development manifest last published,
+// none when there is no manifest to read.
+func publishedBundles(repoRoot string) []devimage.Bundle {
+	manifest, err := devimage.Read(filepath.Join(repoRoot, developmentImageManifestFile))
+	if err != nil {
+		return nil
+	}
+	return manifest.Bundles
+}
+
+// publishedBundle is spec's bundle among published, while its layout is still
+// there to serve it from.
+func publishedBundle(spec imageSpec, published []devimage.Bundle) (devimage.Bundle, bool) {
+	for _, bundle := range published {
+		if !strings.HasPrefix(bundle.Reference, spec.devPrefix) || filepath.Dir(bundle.Layout) != spec.layoutDir {
+			continue
+		}
+		if _, err := os.Stat(bundle.Layout); err == nil {
+			return bundle, true
+		}
+	}
+	return devimage.Bundle{}, false
+}
+
+// missingFrom is the decision behind missingImageSpecs, over whether each
+// spec's built image or bundle layout is present.
+func missingFrom(specs []imageSpec, present func(imageSpec) bool) []imageSpec {
 	missing := map[string]bool{}
 	for _, spec := range specs {
-		if _, ok := present[spec.baseImage]; !ok {
+		if !present(spec) {
 			missing[spec.name] = true
 		}
 	}
@@ -465,13 +510,11 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		},
 		{
 			name:        platformSpecName,
-			baseImage:   "discobox-platform:local",
 			devPrefix:   "discobox-platform:dev-",
 			envImageKey: platformBundleEnvKey,
 			buildDir:    repoRoot,
-			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile", "--target", "platform",
-				"--build-arg", harness.LayerMetadataBuildArg + "=",
-				"-t", "discobox-platform:local", "."},
+			buildArgs: bundleBuildArgs(bundleLayoutDirOf(repoRoot, "discobox-platform"), "-f", "sandbox-agent/Dockerfile", "--target", "platform",
+				"--build-arg", harness.LayerMetadataBuildArg+"=", "."),
 			contextDir: repoRoot,
 			dockerfile: "sandbox-agent/Dockerfile",
 			target:     "platform",
@@ -482,6 +525,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			metadataFile: filepath.Join(repoRoot, "sandbox-agent", "image.json"),
 			metadataArg:  harness.LayerMetadataBuildArg,
 			bundle:       true,
+			layoutDir:    bundleLayoutDirOf(repoRoot, "discobox-platform"),
 			files:        sortedFiles(platformSeen),
 		},
 	}
@@ -502,16 +546,15 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		bundleRef := "discobox-harness-" + harnessImage.name
 		imageRef := bundleRef + "-image"
 		// The bundle: FROM scratch, so the harness directory is all it is
-		// built from. Its tag is the name a third party builds FROM.
+		// built from.
 		specs = append(specs, imageSpec{
-			name: "harness-" + harnessImage.name, baseImage: bundleRef + ":local",
+			name:      "harness-" + harnessImage.name,
 			devPrefix: bundleRef + ":dev-", buildDir: repoRoot,
 			envImageKey: harnessBundleEnvKey(harnessImage.name),
 			// The metadata argument is filled in from image.json by buildImage
 			// at build time; the placeholder marks where it lands.
-			buildArgs: []string{"build", "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
-				"--build-arg", harness.MetadataBuildArg + "=",
-				"-t", bundleRef + ":local", harnessDir},
+			buildArgs: bundleBuildArgs(bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
+				"--build-arg", harness.MetadataBuildArg+"=", harnessDir),
 			metadataFile: metadataFile,
 			metadataArg:  harness.MetadataBuildArg,
 			// The harness build context is the harness directory itself, so its
@@ -520,6 +563,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			dockerfile: "Dockerfile",
 			target:     "bundle",
 			bundle:     true,
+			layoutDir:  bundleLayoutDirOf(repoRoot, bundleRef),
 			files:      sortedFiles(bundleSeen),
 		})
 		// The runnable twin a pool runs until the agent applies bundles
@@ -552,6 +596,37 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		})
 	}
 	return specs, nil
+}
+
+// bundleLayoutDirOf is the directory the bundle named name is exported into.
+func bundleLayoutDirOf(repoRoot, name string) string {
+	return filepath.Join(repoRoot, filepath.FromSlash(bundleLayoutDir), name)
+}
+
+// partialLayout is where a bundle's export is written before its digest, and
+// so its name, is known.
+func partialLayout(layoutDir string) string {
+	return filepath.Join(layoutDir, ".partial.tar")
+}
+
+// digestLayout is the layout the bundle pinned by digest is kept at. Named by
+// its content, a rebuild never rewrites the layout a published manifest names:
+// that one is served until the manifest naming its successor is published,
+// whatever fails in between (pruneLayouts).
+func digestLayout(layoutDir, digest string) string {
+	return filepath.Join(layoutDir, strings.TrimPrefix(digest, "sha256:")+".tar")
+}
+
+// bundleBuildArgs is the docker argv exporting a bundle's stage into
+// layoutDir, an OCI image layout tar, by way of partialLayout. No image store
+// is involved: a bundle is applied by the sandbox agent, never run (ADR
+// 26-10-16-423 §13). Neither provenance nor an SBOM is attached, so the
+// layout's index lists the one manifest the bundle is pinned by. The OCI
+// exporter needs BuildKit able to export one: the containerd image store, or a
+// builder other than the docker driver, which buildx says when it is neither.
+func bundleBuildArgs(layoutDir string, args ...string) []string {
+	return append([]string{"buildx", "build", "--provenance=false", "--sbom=false",
+		"--output", "type=oci,dest=" + partialLayout(layoutDir)}, args...)
 }
 
 // harnessImageEnvKey and harnessBundleEnvKey return the .env keys the server
@@ -732,12 +807,21 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	if changedSpecs == nil {
 		changedSpecs = allSpecs
 	}
+	// The pass publishes every bundle, so one the last manifest does not
+	// name a layout for is exported in it, whatever changed.
+	published := publishedBundles(repoRoot)
+	for _, spec := range allSpecs {
+		if _, ok := publishedBundle(spec, published); spec.bundle && !ok && !containsSpec(changedSpecs, spec.name) {
+			changedSpecs = append(changedSpecs, spec)
+		}
+	}
 	// An image is built after whatever it builds FROM, and is handed that
 	// parent's content-hashed dev tag rather than the mutable :local one. A child
 	// can change on its own while its parent is unchanged; in that case the
 	// parent's current dev tag is resolved from its built :local image.
 	ordered := parentsFirst(changedSpecs)
 	built := map[string]string{}
+	exported := map[string]devimage.Bundle{}
 	for _, spec := range ordered {
 		parentImage := ""
 		if spec.parent != "" {
@@ -751,13 +835,22 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 			}
 			parentImage = resolved
 		}
+		if spec.bundle {
+			// Nothing builds FROM a bundle, so it has no tag to hand on.
+			bundle, err := buildBundle(ctx, spec)
+			if err != nil {
+				return err
+			}
+			exported[spec.name] = bundle
+			continue
+		}
 		image, _, err := buildImage(ctx, spec, parentImage)
 		if err != nil {
 			return err
 		}
 		built[spec.name] = image
 	}
-	manifest, bundles, err := developmentImages(ctx, repoRoot, allSpecs)
+	manifest, err := developmentImages(ctx, repoRoot, allSpecs, exported, published)
 	if err != nil {
 		return err
 	}
@@ -765,33 +858,74 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	if err := devimage.WriteAtomic(manifestPath, manifest); err != nil {
 		return fmt.Errorf("write development image manifest: %w", err)
 	}
-	values, err := developmentImageEnv(allSpecs, manifest, bundles, manifestPath)
+	values, err := developmentImageEnv(allSpecs, manifest, manifestPath)
 	if err != nil {
 		return err
 	}
-	return updateEnv(filepath.Join(repoRoot, envFile), values)
+	if err := updateEnv(filepath.Join(repoRoot, envFile), values); err != nil {
+		return err
+	}
+	pruneLayouts(allSpecs, manifest.Bundles, published)
+	return nil
+}
+
+// pruneLayouts removes every bundle layout neither the manifest just
+// published nor the one it replaced names. The replaced one is kept for the
+// server still running on it until it restarts on the new one; only once a
+// pass has published its successor is it given up.
+func pruneLayouts(specs []imageSpec, current, previous []devimage.Bundle) {
+	keep := map[string]bool{}
+	for _, bundle := range append(append([]devimage.Bundle(nil), current...), previous...) {
+		keep[bundle.Layout] = true
+	}
+	for _, spec := range specs {
+		if !spec.bundle {
+			continue
+		}
+		layouts, err := filepath.Glob(filepath.Join(spec.layoutDir, "*.tar"))
+		if err != nil {
+			continue
+		}
+		for _, layout := range layouts {
+			if !keep[layout] && layout != partialLayout(spec.layoutDir) {
+				if err := os.Remove(layout); err != nil {
+					log.Printf("remove superseded bundle layout %s: %v", layout, err)
+				}
+			}
+		}
+	}
 }
 
 // developmentImageEnv derives every published reference from the complete
-// manifest just written, and the bundles inspected with it. A partial rebuild
+// manifest just written, its bundles included. A partial rebuild
 // must not update only its own keys: another process may have moved any
 // mutable :local tag since the previous pass, and publishing that complete
 // snapshot in the manifest while retaining an old .env reference gives the
 // server two different image sets.
-func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, bundles map[string]devimage.Image, manifestPath string) (map[string]string, error) {
+func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, manifestPath string) (map[string]string, error) {
 	values := map[string]string{
 		devimage.SyncEnv:     "true",
 		devimage.ManifestEnv: manifestPath,
 	}
 	used := make(map[int]bool, len(manifest.Images))
+	usedBundles := make(map[int]bool, len(manifest.Bundles))
 	for _, spec := range specs {
 		if spec.bundle {
-			entry, ok := bundles[spec.name]
-			if !ok {
-				return nil, fmt.Errorf("no development bundle inspected for %s", spec.name)
+			bundle := -1
+			for i, entry := range manifest.Bundles {
+				if strings.HasPrefix(entry.Reference, spec.devPrefix) {
+					if bundle >= 0 {
+						return nil, fmt.Errorf("development image manifest has multiple bundles for %s", spec.name)
+					}
+					bundle = i
+				}
 			}
+			if bundle < 0 {
+				return nil, fmt.Errorf("development image manifest has no bundle for %s", spec.name)
+			}
+			usedBundles[bundle] = true
 			if spec.envImageKey != "" {
-				values[spec.envImageKey] = entry.Reference
+				values[spec.envImageKey] = manifest.Bundles[bundle].Reference
 			}
 			continue
 		}
@@ -819,37 +953,43 @@ func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, bundles 
 	if len(used) != len(manifest.Images) {
 		return nil, fmt.Errorf("development image manifest has %d unexpected images", len(manifest.Images)-len(used))
 	}
+	if len(usedBundles) != len(manifest.Bundles) {
+		return nil, fmt.Errorf("development image manifest has %d unexpected bundles", len(manifest.Bundles)-len(usedBundles))
+	}
 	return values, nil
 }
 
-// developmentImages inspects every built image: the manifest of those copied to
-// a destination daemon, and, by spec name, the bundles that stay on this one.
-func developmentImages(ctx context.Context, repoRoot string, specs []imageSpec) (devimage.Manifest, map[string]devimage.Image, error) {
+// developmentImages inspects everything built: the images copied to a
+// destination daemon, and the bundles the server serves from their layouts —
+// exported in this pass, or else as published before it.
+func developmentImages(ctx context.Context, repoRoot string, specs []imageSpec, exported map[string]devimage.Bundle, published []devimage.Bundle) (devimage.Manifest, error) {
 	images := make([]devimage.Image, 0, len(specs))
-	bundles := map[string]devimage.Image{}
+	var bundles []devimage.Bundle
 	for _, spec := range specs {
-		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
-		if err != nil {
-			return devimage.Manifest{}, nil, fmt.Errorf("inspect development image %s: %w", spec.baseImage, err)
-		}
-		imageID = strings.TrimSpace(imageID)
-		image := devimage.Image{
-			Reference: devImageTag(spec.devPrefix, imageID),
-			ID:        imageID,
-		}
-		// Nor is a bundle run: the server reads its labels from this daemon,
-		// and a pool runs the harness's twin until the agent applies bundles.
+		// A bundle is not run: the server serves it from its layout, and a
+		// pool runs the harness's twin until the agent applies bundles.
 		if spec.bundle {
-			bundles[spec.name] = image
+			bundle, ok := exported[spec.name]
+			if !ok {
+				bundle, ok = publishedBundle(spec, published)
+			}
+			if !ok {
+				return devimage.Manifest{}, fmt.Errorf("no layout exported for development bundle %s", spec.name)
+			}
+			bundles = append(bundles, bundle)
 			continue
 		}
-		images = append(images, image)
+		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
+		if err != nil {
+			return devimage.Manifest{}, fmt.Errorf("inspect development image %s: %w", spec.baseImage, err)
+		}
+		imageID = strings.TrimSpace(imageID)
+		images = append(images, devimage.Image{
+			Reference: devImageTag(spec.devPrefix, imageID),
+			ID:        imageID,
+		})
 	}
-	manifest, err := devimage.NewManifest(images)
-	if err != nil {
-		return devimage.Manifest{}, nil, err
-	}
-	return manifest, bundles, nil
+	return devimage.NewManifest(images, bundles)
 }
 
 // parentsFirst returns specs ordered so an image is built after the image it
@@ -969,7 +1109,39 @@ func buildImage(ctx context.Context, spec imageSpec, parentImage string) (string
 	return image, imageID, nil
 }
 
-// devImageTag derives the content-hashed dev tag from a docker image ID.
+// buildBundle exports a bundle's stage to the layout its digest names, which
+// it is renamed to only once the export is whole.
+func buildBundle(ctx context.Context, spec imageSpec) (devimage.Bundle, error) {
+	buildArgs, err := renderBuildArgs(spec, "")
+	if err != nil {
+		return devimage.Bundle{}, err
+	}
+	if err := os.MkdirAll(spec.layoutDir, 0o755); err != nil {
+		return devimage.Bundle{}, fmt.Errorf("create %s: %w", spec.layoutDir, err)
+	}
+	partial := partialLayout(spec.layoutDir)
+	defer func() { _ = os.Remove(partial) }()
+	if err := runCommand(ctx, spec.buildDir, "docker", buildArgs...); err != nil {
+		return devimage.Bundle{}, err
+	}
+	digest, err := devimage.LayoutDigest(partial)
+	if err != nil {
+		return devimage.Bundle{}, err
+	}
+	bundle := devimage.Bundle{
+		Reference: devImageTag(spec.devPrefix, digest),
+		Digest:    digest,
+		Layout:    digestLayout(spec.layoutDir, digest),
+	}
+	if err := os.Rename(partial, bundle.Layout); err != nil {
+		return devimage.Bundle{}, err
+	}
+	log.Printf("built %s as %s (%s)", spec.name, bundle.Layout, digest)
+	return bundle, nil
+}
+
+// devImageTag derives the content-hashed dev tag from a docker image ID, or a
+// bundle's manifest digest.
 func devImageTag(prefix, imageID string) string {
 	shortID := strings.TrimPrefix(imageID, "sha256:")
 	if len(shortID) > 12 {
