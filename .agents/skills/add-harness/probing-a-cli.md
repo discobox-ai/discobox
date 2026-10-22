@@ -121,8 +121,9 @@ settles, and re-run a surprising result.
 ## A real credential
 
 Only for what fakes cannot answer (does the vendor's API accept X?). Ask with
-`discobox-access request`, one use naming the probe and the vendor API it
-reads or writes (its "Writing a use"); save responses
+`discobox-access request`: one use naming the probe, and a policy whose
+statements allow exactly the vendor API calls it reads or writes and deny
+their dangerous neighbours (its "Writing a policy"); save responses
 to a 0600 file under `/dev/shm`, print only redacted summaries, delete them
 afterwards, and tell the user the grant is still live. A refusal is a result:
 do not route around a vendor's access control by presenting as another client.
