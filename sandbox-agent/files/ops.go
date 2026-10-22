@@ -37,6 +37,11 @@ func do(req Request, body io.Reader) (Result, io.ReadCloser, error) {
 		if err != nil {
 			return Result{}, nil, err
 		}
+		// Said here rather than left to the listing's error, which on
+		// Windows calls a file a path not found.
+		if stat.Type == TypeFile || stat.Type == TypeOther {
+			return Result{}, nil, errorf(KindConflict, "%s is not a directory", req.Path)
+		}
 		entries, err := list(req.Path)
 		return Result{Stat: stat, Entries: entries}, nil, err
 	case OpRead:
