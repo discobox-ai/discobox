@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/policy"
 )
 
 // listOutput is what list --json prints: the protocol's list, and the facts
@@ -101,7 +102,7 @@ func useExpiry(use agentcreds.Use) string {
 // spell the second --delegate, and empty asks to use the credential.
 //
 // Statements and Definitions are a policy as an agent writes it, in
-// sentences; the request sends its structure (requestedPolicy).
+// sentences; the request sends its structure (policy.Written).
 type requestInput struct {
 	ID              string                    `json:"id,omitempty"`
 	Name            string                    `json:"name"`
@@ -122,7 +123,7 @@ func runRequest(ctx context.Context, args []string) int {
 		input      requestInput
 		uses       stringList
 		statements stringList
-		defines    = definitionList{}
+		defines    = policy.Definitions{}
 		hosts      hostList
 		structured bool
 		timeout    time.Duration
@@ -212,7 +213,7 @@ func runRequest(ctx context.Context, args []string) int {
 	if input.GrantTTLSeconds < 0 || input.GrantTTLSeconds > agentcreds.MaxGrantTTLSeconds {
 		return usageError(out, "a lifetime to ask for runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds))
 	}
-	requested, err := requestedPolicy(input.Statements, input.Definitions)
+	requested, err := policy.Written(input.Statements, input.Definitions)
 	if err != nil {
 		return usageError(out, "%v", err)
 	}

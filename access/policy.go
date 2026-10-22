@@ -1,61 +1,15 @@
 package access
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/policy"
 )
-
-// requestedPolicy is the policy a request's statements and definitions ask
-// for (ADR 26-10-20-782 §1), or nil when it names no statements: a request
-// of uses alone. It is parsed and validated here, before anything is sent, so
-// an agent reads what is wrong with what it wrote and writes it again, rather
-// than waiting on a person to refuse a policy nobody could approve.
-func requestedPolicy(statements []string, definitions map[string]string) (*policy.Policy, error) {
-	if len(statements) == 0 {
-		if len(definitions) > 0 {
-			return nil, errors.New("definitions give the words of a policy's statements their meaning, and this request has no statements; add them, or leave the definitions out")
-		}
-		return nil, nil
-	}
-	parsed, err := policy.ParseStatements(statements)
-	if err != nil {
-		// Every SyntaxError already says what a statement reads as.
-		return nil, fmt.Errorf("a statement does not parse: %w", err)
-	}
-	p := policy.Policy{Statements: parsed, Definitions: definitions}
-	if err := p.Validate(); err != nil {
-		return nil, fmt.Errorf("the policy is not one a person could approve: %w\na statement reads: %s", err, policy.Grammar)
-	}
-	return &p, nil
-}
-
-// definitionList is --define WORD=DEFINITION, repeatable, one word each.
-type definitionList map[string]string
-
-func (d definitionList) String() string {
-	return strings.Join(slices.Sorted(maps.Keys(d)), ", ")
-}
-
-func (d definitionList) Set(value string) error {
-	word, definition, ok := strings.Cut(value, "=")
-	word = strings.TrimSpace(word)
-	if !ok || word == "" {
-		return fmt.Errorf("%q is not WORD=DEFINITION, as push=\"update a branch's commits\"", value)
-	}
-	if _, seen := d[word]; seen {
-		return fmt.Errorf("%q is defined twice", word)
-	}
-	d[word] = definition
-	return nil
-}
 
 // policyOutput is a policy as --json prints it: its structure, which is what
 // was approved, and each statement as the sentence it reads as, in the same
