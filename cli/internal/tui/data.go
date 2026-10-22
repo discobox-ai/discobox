@@ -1196,8 +1196,11 @@ type RunRequest struct {
 	// Grant is `--grant`, as given: the uses of credentials the new discobox
 	// is given. The window offers no way to name one; it carries them because
 	// `discobox new` opens the window on its own request and that request is
-	// the whole command (WithRun).
-	Grant []string
+	// the whole command (WithRun). GrantStatement and GrantDefine are
+	// `--grant-statement` and `--grant-define`, the policy each carries.
+	Grant          []string
+	GrantStatement []string
+	GrantDefine    []string
 
 	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
 	// options' rows of those names or `discobox new`'s own request; nil for
@@ -1855,6 +1858,9 @@ type NewGrant struct {
 	// the sentinel the discobox already holds.
 	EnvVar string
 	Uses   []string
+	// Policy is what a grant with uses is held to (#312); nil on a standing
+	// grant.
+	Policy *policy.Policy
 }
 
 // Grant is a standing authorization on a secret: who may use it, where it may

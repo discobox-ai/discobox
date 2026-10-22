@@ -32,10 +32,13 @@ type runCommandOptions struct {
 	// raw attaches this terminal to the discobox's terminal directly, instead
 	// of opening the window on it.
 	raw bool
-	// grant is --grant as given, and grants what the create is given: parsed
-	// from it, or read from a --json request.
-	grant  []string
-	grants []apimodel.SandboxGrant
+	// grant is --grant as given, with the policies --grant-statement and
+	// --grant-define give it, and grants what the create is given: parsed
+	// from them, or read from a --json request.
+	grant          []string
+	grantStatement []string
+	grantDefine    []string
+	grants         []apimodel.SandboxGrant
 	// pool is --pool as given: the pool the discobox is placed on, by ID,
 	// short ID, or name. Empty is the project's default pool.
 	pool string
@@ -261,7 +264,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		}
 		args = nil
 	} else {
-		grants, err := sandboxcreate.ParseGrants(opts.grant)
+		grants, err := sandboxcreate.ParseGrants(opts.grant, opts.grantStatement, opts.grantDefine)
 		if err != nil {
 			return err
 		}
@@ -428,7 +431,9 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
 	flags.Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
-	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, and nothing in the discobox can read it")
+	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it")
+	flags.StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
+	flags.StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
 	flags.BoolVar(&opts.json, "json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags
@@ -718,6 +723,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Env:                 opts.prompt.Env,
 		Secret:              opts.prompt.Secret,
 		Grant:               opts.grant,
+		GrantStatement:      opts.grantStatement,
+		GrantDefine:         opts.grantDefine,
 		Include:             opts.prompt.Include,
 		SkillDirs:           opts.skillDirs,
 		UserSkills:          opts.userSkills,

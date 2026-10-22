@@ -433,13 +433,20 @@ environment variable, and everything in the box shares the environment; one with
 declared uses is not in the box at all — `discobox-access` takes it one use at a
 time, for one command, and the value dies minutes later. So the form asks, and
 the narrow answer brings out the variable the wrapped command receives it in and
-the sentence it is granted for. It opens on the ordinary kind: a pre-approval is
+the job it is granted for. It opens on the ordinary kind: a pre-approval is
 usually a credential somebody wants the box simply to have, and the narrow kind
-is mostly what an agent's own request mints. That sentence is what the agent names to take a
-value, and what `run`'s judge holds the command up against. It is asked at every
+is mostly what an agent's own request mints. The job is what the agent names to
+take a value. The narrow kind carries a policy too (#312), which is what `run`'s
+judge holds the command up against: Enter on the form opens a second step
+(`askGrantPolicy`), the line list a rule's policy is written in — a statement
+a line, then `word = what it means` — read as it is written (`parsedPolicy`,
+`policyProblemsSection`), and the grant is minted only once the lines are a
+policy that allows something. Esc goes back to the form as it was answered,
+and the lines are kept for the way forward again. It is asked at every
 scope: the binding it needs is per discobox, but the grant is minted when that
 discobox's agent first asks, so a project grant can carry uses without knowing
-which boxes it will cover.
+which boxes it will cover — and then only a policy that names no variable,
+which only a discobox resolves.
 
 **`p` grants a secret before anything asks for it** — the pre-approval an
 operator makes because they already know the answer. Scope first, since it

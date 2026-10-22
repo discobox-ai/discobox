@@ -634,10 +634,10 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	deliveredAs.required = "a credential taken by the CLI needs a variable to arrive in"
 	deliveredAs.when, deliveredAs.why = takenThroughAccess, injectedNote
 
-	use := textRow("use", "approved use", "e.g. Open a pull request against the current repo", "")
+	use := textRow("use", "the job", "e.g. Triage issues in org/repo", "")
 	use.section = how
-	use.hint = "`discobox-access run` asks a model whether the command it is about to run is this sentence"
-	use.required = "a use is the sentence the credential is granted for"
+	use.hint = "names what it is taken for; the policy written next is what every command is held to"
+	use.required = "a use names the job the credential is granted for"
 	use.when, use.why = takenThroughAccess, injectedNote
 
 	host := textRow("host", "may be sent to", "e.g. github.com", secret.Host)
@@ -654,7 +654,11 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	rows = append(rows, deliveredAs, use, host)
 	rows = append(rows, ttl...)
 
-	secretID := secret.ID
+	secretID, secretName := secret.ID, secret.Name
+	// written is the policy as it was last left, kept for a step back to the
+	// form and forward again.
+	var written lineList
+	var card *dialog
 	d := formDialog("Grant "+secret.Name, newForm(rows...), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
@@ -673,17 +677,54 @@ func (m *Model) askForGrantScope() tea.Cmd {
 		case "sandbox":
 			grant.ScopeKey = f.chosen("sandbox")
 		}
-		if f.chosen("taken") == "access" {
-			grant.EnvVar, grant.Uses = f.value("envVar"), []string{f.value("use")}
+		if f.chosen("taken") != "access" {
+			return m.mintGrant(grant)
 		}
-		return m.mintGrant(grant)
+		// A grant taken through discobox-access carries the policy it is held
+		// to (#312), written next as a rule's is, and minted once it is one.
+		grant.EnvVar, grant.Uses = f.value("envVar"), []string{f.value("use")}
+		return m.askGrantPolicy(secretName, grant, written, func(lines lineList) tea.Cmd {
+			written = lines
+			m.dialog = card
+			return nil
+		})
 	})
 	d.sections = []section{{lines: []line{
 		{text: "a standing grant authorizes this credential before anything asks for it", tone: toneDim},
 	}}}
 	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter grants", "enter"), pressing("esc leaves the secret alone", "esc")}
+	card = d
 	m.dialog = d
 	return nil
+}
+
+// askGrantPolicy asks for the policy a grant taken through discobox-access
+// carries, in the lines a rule's is written in (rulepolicy.go): every
+// statement as its sentence, then every word that is not a default as
+// `word = what it means`. What keeps the lines from being a policy is said
+// under them as they are written, and the grant is minted only once they are
+// one. back returns to the form with the lines as they were left.
+func (m *Model) askGrantPolicy(secretName string, grant NewGrant, lines lineList, back func(lineList) tea.Cmd) tea.Cmd {
+	ask := linesAsk{
+		title:       "Grant " + secretName + ": what it may do",
+		answerLabel: "a line: a statement, or word = what it means",
+		placeholder: `e.g. allow read on anything in repository "org/repo"`,
+		written:     "its policy",
+		footer:      "every command taken under this grant is held to this policy",
+		numbered:    true,
+		required:    "a grant taken through discobox-access says what it may do: write at least one statement",
+		sectionsFor: policyProblemsSection,
+	}
+	var done func(lineList) tea.Cmd
+	done = func(lines lineList) tea.Cmd {
+		sent, _, problems := listPolicy(lines)
+		if len(problems) > 0 {
+			return m.askLines(ask, lines, notAPolicyYet, done, back)
+		}
+		grant.Policy = sent
+		return m.mintGrant(grant)
+	}
+	return m.askLines(ask, lines, "", done, back)
 }
 
 // takenThroughAccess is the answer the variable and the use hang off: a

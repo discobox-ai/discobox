@@ -92,6 +92,14 @@ func TestRunGivesItsGrants(t *testing.T) {
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "--no-source",
 		"--grant", "com.github.api=push a branch to org/repo",
 		"--grant", "npm@registry.npmjs.org:NPM_TOKEN=publish @org/pkg",
+		"--grant-statement", `com.github.api=allow push on branch "fix-42" in repository "org/repo"`,
+		"--grant-define", "com.github.api=push=add commits to a branch",
+		"--grant-define", "com.github.api=branch=a git branch",
+		"--grant-define", "com.github.api=repository=a GitHub repository",
+		"--grant-statement", `npm@registry.npmjs.org:NPM_TOKEN=allow publish on package "@org/pkg" in registry "registry.npmjs.org"`,
+		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=publish=upload a new version of a package",
+		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=package=an npm package",
+		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=registry=an npm registry",
 		"-p", "fix issue 42"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute new: %v", err)
@@ -107,6 +115,11 @@ func TestRunGivesItsGrants(t *testing.T) {
 	}
 	if grants[1]["secretId"] != "sec_npm" || grants[1]["envVar"] != "NPM_TOKEN" || !slices.Equal(grantHostsOf(grants[1]), []string{"registry.npmjs.org"}) {
 		t.Fatalf("second grant = %#v, want npm resolved to its ID", grants[1])
+	}
+	for i, grant := range grants {
+		if asked, _ := grant["policy"].(map[string]any); asked == nil || len(asked["statements"].([]any)) != 1 {
+			t.Fatalf("grant %d = %#v, want the policy its statements say", i, grant)
+		}
 	}
 	if !strings.Contains(out.String(), runJSONSandboxID) {
 		t.Fatalf("output = %q, want the created discobox", out.String())
@@ -135,8 +148,11 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 		"noSource": true,
 		"env": ["MODE=test"],
 		"grants": [
-			{"id": "com.github.api", "uses": [{"description": "push a branch to org/repo"}, {"description": "open a PR"}]},
-			{"secret": "npm", "envVar": "NPM_TOKEN", "uses": [{"description": "publish @org/pkg"}]}
+			{"id": "com.github.api", "uses": [{"description": "push a branch to org/repo"}, {"description": "open a PR"}],
+			 "statements": ["allow read on anything in repository \"org/repo\""], "definitions": {"repository": "a GitHub repository"}},
+			{"secret": "npm", "envVar": "NPM_TOKEN", "uses": [{"description": "publish @org/pkg"}],
+			 "statements": ["allow publish on package \"@org/pkg\" in registry \"registry.npmjs.org\""],
+			 "definitions": {"publish": "upload a new version of a package", "package": "an npm package", "registry": "an npm registry"}}
 		]
 	}`))
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "--json"})
@@ -160,6 +176,9 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 		strings.Join(grantUses(grants[0]), "|") != "push a branch to org/repo|open a PR" ||
 		grants[1]["secretId"] != "sec_npm" || grants[1]["envVar"] != "NPM_TOKEN" {
 		t.Fatalf("grants = %#v, want both, the secret by its ID", posted["grants"])
+	}
+	if asked, _ := grants[1]["policy"].(map[string]any); asked == nil || asked["definitions"].(map[string]any)["registry"] == nil {
+		t.Fatalf("grants = %#v, want each with its policy", posted["grants"])
 	}
 	var printed struct {
 		ID                 string `json:"id"`

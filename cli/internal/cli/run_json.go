@@ -44,14 +44,16 @@ type runJSONRequest struct {
 
 // runJSONGrant is one --grant, spelled the way `discobox-access request --json`
 // asks for a credential: a well-known credential by its ID, or a project secret
-// and the variable its agent receives it in, with the sentences it may be used
-// for.
+// and the variable its agent receives it in, with the jobs it is for and the
+// policy it carries, as sentences and the definitions of their words.
 type runJSONGrant struct {
-	ID     string       `json:"id"`
-	Secret string       `json:"secret"`
-	EnvVar string       `json:"envVar"`
-	Hosts  []string     `json:"hosts"`
-	Uses   []runJSONUse `json:"uses"`
+	ID          string            `json:"id"`
+	Secret      string            `json:"secret"`
+	EnvVar      string            `json:"envVar"`
+	Hosts       []string          `json:"hosts"`
+	Uses        []runJSONUse      `json:"uses"`
+	Statements  []string          `json:"statements"`
+	Definitions map[string]string `json:"definitions"`
 }
 
 type runJSONUse struct {
@@ -141,6 +143,16 @@ func (req runJSONRequest) grants() ([]apimodel.SandboxGrant, error) {
 		if len(grant.Uses) == 0 {
 			return nil, fmt.Errorf(`--json: grants[%d]: want at least one use, as "uses": [{"description": "what it is for"}]`, i)
 		}
+		// Every grant carries the policy it is held to (#312), checked here
+		// as discobox-access checks a request's.
+		asked, err := writtenPolicy(in.Statements, in.Definitions, `"statements"`, `"definitions"`)
+		if err != nil {
+			return nil, fmt.Errorf("--json: grants[%d]: %w", i, err)
+		}
+		if asked == nil {
+			return nil, fmt.Errorf(`--json: grants[%d]: want the policy it carries, as "statements": ["allow read on anything in repository \"org/repo\""], with "definitions" for every word that is not a default`, i)
+		}
+		grant.SetPolicy(apiclientgen.NewOptAccessPolicy(*asked))
 		grants = append(grants, grant)
 	}
 	return grants, nil

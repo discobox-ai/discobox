@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 )
 
 // askedPolicyJSON is a policy as the server answers a read of the request
@@ -184,7 +185,7 @@ func TestTheWindowsRequestKeepsItsPolicyAsSent(t *testing.T) {
 	if req.Policy == nil || len(req.PolicyLines) == 0 {
 		t.Fatalf("request = %#v, want its policy and its rendering", req)
 	}
-	sent, err := apiPolicy(*req.Policy)
+	sent, err := apipolicy.To(*req.Policy)
 	if err != nil {
 		t.Fatal(err)
 	}

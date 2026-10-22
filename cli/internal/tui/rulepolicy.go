@@ -51,7 +51,8 @@ func samePolicy(a, b *policy.Policy) bool {
 // parsedPolicy reads a rule's policy from its lines, with every reason it is
 // not one a rule can have, each a line a card can show: a line that is
 // neither a statement nor a definition, a word defined twice, and each way
-// Validate refuses the whole. A policy with problems is not sent.
+// Validate refuses the whole, and one that allows nothing. A policy with
+// problems is not sent. A grant's policy is read the same way.
 func parsedPolicy(lines []string) (*policy.Policy, []string) {
 	p := &policy.Policy{}
 	var problems []string
@@ -87,7 +88,7 @@ func parsedPolicy(lines []string) (*policy.Policy, []string) {
 		return nil, strings.Split(err.Error(), "\n")
 	}
 	if !slices.ContainsFunc(p.Statements, func(s policy.Statement) bool { return s.Effect == policy.Allow }) {
-		return nil, []string{"a rule approves what its allows allow, and these are all denies"}
+		return nil, []string{"a policy allows only what its allows allow, and these are all denies"}
 	}
 	return p, nil
 }
@@ -114,7 +115,7 @@ func policyProblemsSection(list lineList) []section {
 		return nil
 	}
 	if _, problems := parsedPolicy(shown); len(problems) > 0 {
-		sec := section{label: "not a policy a rule can have yet"}
+		sec := section{label: "not a policy yet"}
 		for _, problem := range problems {
 			sec.lines = append(sec.lines, line{text: problem, bullet: true, tone: toneAlert})
 		}
@@ -170,4 +171,4 @@ func listPolicy(list lineList) (sent, shown *policy.Policy, problems []string) {
 }
 
 // notAPolicyYet is what a list finished while it is not a policy is told.
-const notAPolicyYet = "not a policy a rule can have yet: what is wrong is said above"
+const notAPolicyYet = "not a policy yet: what is wrong is said above"

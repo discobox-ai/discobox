@@ -1229,7 +1229,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant); err != nil {
+	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant, req.GrantStatement, req.GrantDefine); err != nil {
 		return tui.Sandbox{}, err
 	}
 	if err := d.app.resolveGrantSecrets(ctx, d.client, d.projectID, opts.Grants); err != nil {

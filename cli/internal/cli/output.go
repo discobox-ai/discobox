@@ -17,11 +17,13 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
@@ -734,7 +736,11 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 		return nil
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), request)
+		out, err := requestJSON(*request)
+		if err != nil {
+			return err
+		}
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), out)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
@@ -797,6 +803,40 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	return tw.Flush()
 }
 
+// requestJSON is a request as -o json prints it: as the API carries it, with
+// the sentence each statement of its policy reads as beside the policy's
+// structure ("sentences"), as discobox-access prints one, so a reader compares
+// what was asked with what a skill asks for without parsing either.
+func requestJSON(request apimodel.SecretRequest) (json.RawMessage, error) {
+	data, err := request.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+	asked, ok := request.Policy.Get()
+	if !ok {
+		return data, nil
+	}
+	read, err := apipolicy.From(asked)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, fmt.Errorf("decode request: %w", err)
+	}
+	var policyFields map[string]json.RawMessage
+	if err := json.Unmarshal(fields["policy"], &policyFields); err != nil {
+		return nil, fmt.Errorf("decode policy: %w", err)
+	}
+	if policyFields["sentences"], err = json.Marshal(policy.FormatStatements(read.Statements)); err != nil {
+		return nil, err
+	}
+	if fields["policy"], err = json.Marshal(policyFields); err != nil {
+		return nil, err
+	}
+	return json.Marshal(fields)
+}
+
 // requestPurposeText says what approving a request lets its discobox do with
 // the credential, which for an ask to delegate is not the thing a reader would
 // assume.
@@ -815,7 +855,15 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeResourceIDs(cmd.OutOrStdout(), requests, func(request apimodel.SecretRequest) string { return request.ID })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
+		out := make([]json.RawMessage, 0, len(requests))
+		for _, request := range requests {
+			one, err := requestJSON(request)
+			if err != nil {
+				return err
+			}
+			out = append(out, one)
+		}
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": out})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTYPE\tHOSTS\tPURPOSE\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
