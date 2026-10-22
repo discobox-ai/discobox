@@ -109,7 +109,7 @@ func startConfigureForward(ctx context.Context, dialer portforward.Dialer, list 
 
 	ctx, cancel := context.WithCancel(ctx)
 	forward := &configureForward{
-		forwarder: portforward.New(ctx, portforward.Options{Dialer: dialer, Exact: true, Observe: observe}),
+		forwarder: portforward.New(ctx, portforward.Options{Dialer: dialer, Exact: true, Reserved: reservedLocalPorts(), Observe: observe}),
 		cancel:    cancel,
 	}
 	forward.forwarder.Set(targets)

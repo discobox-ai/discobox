@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -155,12 +156,7 @@ recorded.`,
 			if err != nil {
 				return err
 			}
-			res, err := api.SendSandboxExecInput(cmd.Context(), &apimodel.SandboxExecInputBody{Input: parts},
-				apiclientgen.SendSandboxExecInputParams{ProjectId: projectID, SandboxId: resolvedSandboxID, ExecId: terminalID})
-			if err != nil {
-				return err
-			}
-			result, err := expectResponse[apimodel.SandboxExecInputResult](res)
+			result, err := sendSandboxExecInput(cmd.Context(), api, projectID, resolvedSandboxID, terminalID, parts)
 			if err != nil {
 				return err
 			}
@@ -173,6 +169,22 @@ recorded.`,
 	}
 	cmd.Flags().BoolVarP(&literal, "literal", "l", false, "Send every argument as text")
 	return cmd
+}
+
+// sendSandboxExecInput types parts into an exec. The sandbox delivers text as
+// a paste when the program asked for bracketed paste, which is what keeps a
+// multi-line message from being submitted at its first newline.
+func sendSandboxExecInput(ctx context.Context, api *apiclientgen.Client, projectID, sandboxID, execID string, parts []apimodel.SandboxExecInputPart) (apimodel.SandboxExecInputResult, error) {
+	res, err := api.SendSandboxExecInput(ctx, &apimodel.SandboxExecInputBody{Input: parts},
+		apiclientgen.SendSandboxExecInputParams{ProjectId: projectID, SandboxId: sandboxID, ExecId: execID})
+	if err != nil {
+		return apimodel.SandboxExecInputResult{}, err
+	}
+	result, err := expectResponse[apimodel.SandboxExecInputResult](res)
+	if err != nil {
+		return apimodel.SandboxExecInputResult{}, err
+	}
+	return *result, nil
 }
 
 func (a *App) newSandboxTerminalWaitCommand(sandboxID *string) *cobra.Command {

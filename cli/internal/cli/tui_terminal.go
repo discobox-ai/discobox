@@ -288,6 +288,18 @@ func (d *apiDataSource) PutImage(ctx context.Context, sandboxID, name string, da
 	return stat.Path, nil
 }
 
+// SendInput types text into an exec and presses Enter — a message to the
+// harness running there, which is how an AHP client's message reaches it
+// (ADR 26-10-17-354 §3).
+func (d *apiDataSource) SendInput(ctx context.Context, sandboxID, execID, text string) error {
+	d = d.at(sandboxID)
+	_, err := sendSandboxExecInput(ctx, d.client, d.projectID, sandboxID, execID, []apimodel.SandboxExecInputPart{
+		{Text: apiclientgen.NewOptString(text)},
+		{Key: apiclientgen.NewOptString("Enter")},
+	})
+	return err
+}
+
 // pastedImageDir is the directory of pasted images in the discobox, where
 // PutImage writes each through the files API as the discobox's user (ADR
 // 26-10-22-499 §4). The name is the console's own — a timestamp and a base

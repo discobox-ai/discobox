@@ -102,6 +102,7 @@ func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, project
 	forwarder := portforward.New(ctx, portforward.Options{
 		Dialer:      dialer,
 		BindAddress: opts.address,
+		Reserved:    reservedLocalPorts(),
 		Observe: func(event portforward.Event) {
 			writeMu.Lock()
 			defer writeMu.Unlock()

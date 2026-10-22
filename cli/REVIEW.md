@@ -98,3 +98,35 @@
   image by name and bytes (`clipimage.ReadFile`), on a local drive — and never
   trusts the text that named it. A `file://` link's fragment, a `.png` symlink
   and a Windows share path all led somewhere else.
+
+## Listening on this machine
+
+- **A local port this client is known by is one a box's forward must not
+  take.** A box's listening ports are forwarded to the same number on this
+  machine whenever the console or `discobox proxy` follows it, so a box that
+  listens on that number while the listener is down is handed whatever its
+  clients send — `discobox admin ahp`'s VS Code entry carries a token that
+  drives every discobox. Such a port goes in `reservedLocalPorts`, which every
+  `portforward.Options` takes. A forward Discobox does not make — VS Code's own,
+  over Remote-SSH — is beyond it, and the user is told so.
+- **A listener that takes a token in its URL listens on loopback only.** Plain
+  `ws://` on another address hands the token to anyone on the network
+  (`listenLoopback`).
+
+## Reading an exec's attach
+
+- **A call whose work outlives it runs under a context that outlives it.** An
+  attach (`OpenExec`, `NewShell`, `NewTerminal`) lives exactly as long as the
+  context it was opened with, and the console data source's `List` leaves a
+  slow server's request running past the call to be drawn by the next poll. A
+  request's context, or a timeout cancelled when the call returns, ends that
+  work with it — `discobox admin ahp`'s screens died at once that way, and its
+  listing dropped every slow server. Open under a long-lived context and bound
+  only the open (`ahphost.Host.openContext`). A test fake that ignores its
+  context cannot catch this; make it end with the context.
+
+- **An exec's exit is the attach's error, not an interface.** `framedTerminal`
+  ends with `io.EOF` for a clean exit and a `client.ExitError` for any other
+  code; it is not a `tui.ExitReporter`. Code that waits for an exec to end
+  matches those errors, and treats any other error as a lost attach to retry —
+  a test whose fake stream never exits does not cover it.
