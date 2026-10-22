@@ -4,12 +4,24 @@ set -euo pipefail
 
 seed=/usr/local/lib/discobox/nix
 # Once the box is booted, /nix is the pool-shared cache (image.json): the
-# store cannot be installed into it, nor moved off it, and the seed it was cut
-# from is what that cache was seeded with. The step is applied where /nix is
-# the box's own, as an image build or a snapshot provisions.
-if mountpoint -q /nix; then
-  echo "install-nix: /nix is a mount, the pool's shared store: Nix installs before the box boots" >&2
-  exit 1
+# store cannot be installed into it, nor moved off it, and the seed is what
+# that cache is seeded with. A booted box — every box its pool delivers the
+# platform to, provisioning at its first boot (ADR 26-10-16-423 §7) — so
+# installs in a mount namespace of its own, with an empty directory beside
+# the seed bound over /nix, and makes that directory the seed: the same seed
+# an image build leaves, which discobox-nix-seed.service then copies into the
+# pool's cache on first use, merging it into one another box already seeded
+# (ADR 0075, 0085). The pool's cache is never touched here.
+build="$seed.build"
+if [ -z "${DISCOBOX_NIX_PRIVATE:-}" ] && mountpoint -q /nix; then
+  rm -rf "$build"
+  install -d -m 0755 "$build"
+  # shellcheck disable=SC2016 # $1 and $2 are the inner shell's arguments.
+  DISCOBOX_NIX_PRIVATE=1 unshare --mount --propagation private -- \
+    sh -c 'mount --bind "$1" /nix && exec "$2"' sh "$build" "$0"
+  rm -rf "$seed"
+  mv "$build" "$seed"
+  exit 0
 fi
 # What an earlier run of this step left, whole or in part: a seed, which the
 # store is moved onto and would nest inside, and an install, which the
@@ -52,6 +64,11 @@ install -d -m 0755 /usr/local/lib/discobox
   echo "SEED_NIX_STORE=$(readlink -f /nix/var/nix/profiles/default)/bin/nix-store"
 } > /usr/local/lib/discobox/nix-seed.env
 /nix/var/nix/profiles/default/bin/nix-store --dump-db > /usr/local/lib/discobox/nix-db.dump
+# Bound over /nix in a namespace of its own: the directory bound there is the
+# seed, which the caller moves into place.
+if [ -n "${DISCOBOX_NIX_PRIVATE:-}" ]; then
+  exit 0
+fi
 # The store goes aside and /nix is left empty, for the cache volume to bind
 # over. A rename, in the step that installed it: in an image build, moving it
 # in a later layer would copy the whole store up into that layer.

@@ -109,6 +109,11 @@
   runs `--now` on a running box), as the BuildKit bridge has, or a unit that
   pulls it up, as `docker.service`'s `Upholds=` does the nested-Docker
   bridge. A unit laid with neither never starts on that boot.
+- **A step that works only before the box boots fails on every delivered
+  box.** Those provision at first boot, with the pool's mounts in place
+  (`/nix` is the shared cache). `install-nix.sh` installs into a private
+  mount namespace for this reason; a step that refuses a mount, or writes
+  where a volume will be bound, needs the same.
 - **A box whose store holds its pins fetches nothing.** `state.json` maps
   each kept pin to its tree, and `Apply` takes that tree without asking the
   asset host; a boot that needs the network for what it already holds fails
