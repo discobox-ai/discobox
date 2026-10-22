@@ -110,9 +110,9 @@ func TestAttachWhyNamesTheObstacle(t *testing.T) {
 	}
 }
 
-// repairable is attachable read the other way: the two shapes with nothing to
-// join are the two repair rebuilds.
-func TestRepairableIsTheWedge(t *testing.T) {
+// repair is offered on every box but an archived one: a box can be broken
+// behind any state, and only unarchive brings an archived one back.
+func TestRepairableIsAnythingButArchived(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
@@ -122,10 +122,11 @@ func TestRepairableIsTheWedge(t *testing.T) {
 		{"errored with a container", Sandbox{State: StateError, HasRuntime: true}, true},
 		{"errored with no container", Sandbox{State: StateError}, true},
 		{"never reported on", Sandbox{State: StateStopped}, true},
-		{"running", Sandbox{State: StateRunning, HasRuntime: true}, false},
-		{"stopped, with a container", Sandbox{State: StateStopped, HasRuntime: true}, false},
-		{"starting is a create in flight, not a wedge", Sandbox{State: StateStarting}, false},
-		{"repairing is a repair already running", Sandbox{State: StateRepairing}, false},
+		{"running", Sandbox{State: StateRunning, HasRuntime: true}, true},
+		{"stopped, with a container", Sandbox{State: StateStopped, HasRuntime: true}, true},
+		{"suspended", Sandbox{State: StateSuspended, HasRuntime: true}, true},
+		{"starting", Sandbox{State: StateStarting}, true},
+		{"repairing", Sandbox{State: StateRepairing}, true},
 		{"archived is unarchived instead", Sandbox{State: StateArchived}, false},
 		{"archived and errored is still unarchived", Sandbox{State: StateArchived, HasRuntime: true}, false},
 	}

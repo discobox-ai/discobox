@@ -1452,7 +1452,7 @@ reported (absent is not `stopped`).
 `StateRepairing` is a repair recorded and not yet landed, typed or automatic
 (ADR 26-10-12-711 §8). It is drawn as `StateStarting` is — the busy glyph and
 color — and guarded as it is: attachable, because the server holds an action
-until the repair lands, and not repairable, because one is already running.
+until the repair lands.
 For a repair nobody typed, `Sandbox.Message` says what set it off and the
 failure it answers, and the row under the cursor shows it in place of the name,
 as it shows an error's. Once that repair is over the row keeps it as
@@ -1470,13 +1470,15 @@ attaches, and `attachWhy` sends the one that has nothing behind it to repair
 (ADR 0035) rather than naming its state back at it. Guards written as a list of
 states are the wedge ADR 0017 §4 describes.
 
-`repairable` is that pair read the other way, and is what puts repair (`R`,
-`VerbRepair`) on the list: a latched error, or no container ever reported, are
-the two shapes ADR 0035 exists for, and they are exactly where `attachWhy`
-already points. So the reason the list gives for refusing attach names an action
-the list offers. Repair rebuilds on the current image (ADR 0064), which is
-why its detail says so and why it is not merely a heavier upgrade: upgrade needs
-a newer image to exist, repair needs the discobox to be broken.
+`repairable` puts repair (`R`, `VerbRepair`) on the list for every box but an
+archived one, which unarchive brings back and the server refuses to repair
+(ADR 0035). A latched error and no container ever reported are the shapes ADR
+0035 exists for, and where `attachWhy` points, but a box can be broken behind
+any state — a running container whose harness is not, a create or repair that
+will never land — so the list leaves that call to the user, as the server does.
+Repair rebuilds on the current image (ADR 0064), which is why its detail says
+so and why it is not merely a heavier upgrade: upgrade needs a newer image to
+exist, repair does not.
 
 **A box whose image is gone is offered the upgrade** (`imageoffer.go`). The
 server classifies a failure on an image the pool cannot obtain

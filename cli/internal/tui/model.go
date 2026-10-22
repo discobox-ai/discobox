@@ -2244,12 +2244,6 @@ func (m *Model) actions(targets []Sandbox) []action {
 		anyArchived = anyArchived || s.State == StateArchived
 		allArchived = allArchived && s.State == StateArchived
 	}
-	// Repair rebuilds; it is not something to reach for on a box that is
-	// working, so the reason says which of the two it is looking at.
-	repairWhy := "nothing is wrong with it — repair rebuilds a box that is broken or was never built"
-	if !anyRepair && anyArchived {
-		repairWhy = "an archived box is unarchived, not repaired"
-	}
 	attachable := one && targets[0].attachable()
 	// Apply is drawn in a pane, which shows one discobox, and it runs git in
 	// the sandbox — so an archived one, which has no container to run it in,
@@ -2282,8 +2276,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: renameWhy},
 		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
-		{key: repairKey, press: repairKey, label: "repair", detail: "rebuild a broken box on the current image, keeping its work", enabled: anyRepair,
-			why: repairWhy},
+		{key: repairKey, press: repairKey, label: "repair", detail: "rebuild the box on the current image, keeping its work", enabled: anyRepair,
+			why: "an archived box is unarchived, not repaired"},
 		{key: "t", press: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
 			why: "not running"},
 		{key: "T", press: "T", label: "start", detail: "power a stopped box back on, or thaw a suspended one", enabled: anyStopped,
@@ -4338,7 +4332,7 @@ func (m *Model) helpText() string {
 		"    z      open it in Zed, in its own window",
 		"    y      apply back to this directory",
 		"    u      upgrade to the current image",
-		"    R      repair — rebuild a broken discobox in place on the",
+		"    R      repair — rebuild the discobox in place on the",
 		"           current image, keeping its workspace and changes",
 		"    " + credentialsKey + "      answer the credential request waiting on it",
 		"    e      rename          t  stop",
