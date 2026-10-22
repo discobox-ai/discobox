@@ -22,7 +22,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 
-	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxtree"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
@@ -52,11 +52,6 @@ var ErrTreeExists = errors.New("sandbox data already exists on this pool")
 // transfer (ADR 0123 §2).
 var ErrSandboxRunning = errors.New("sandbox is running; stop it before exporting it")
 
-// ErrExportUnsupported refuses to export a sandbox whose image carries no
-// export mode: its sandbox agent predates it, and would read the argument as
-// an ordinary start (ADR 0129 §3).
-var ErrExportUnsupported = errors.New("the sandbox's image predates export; run `discobox admin box upgrade` on it, then export it")
-
 // ErrExportInProgress refuses a second export of a sandbox while one is
 // running: killing the first would cost whoever is reading it.
 var ErrExportInProgress = errors.New("this sandbox is already being exported")
@@ -70,8 +65,10 @@ type TreeImage struct {
 	Digest string
 }
 
-// exportAgentPath is the sandbox agent inside every sandbox image, which the
-// export container runs in place of the image's init.
+// exportAgentPath is the sandbox agent inside a sandbox image, which the
+// export container runs in place of the image's init. A sandbox delivered its
+// platform has no agent in its image: the agent of its platform pin is bound
+// there instead (sandboxAgent).
 const exportAgentPath = "/usr/local/bin/discobox-sandbox-agent"
 
 // exportStderrLimit bounds what is kept of the export mode's own account of
@@ -173,11 +170,16 @@ func composeTree(ctx context.Context, w io.Writer, exported io.Reader, origins s
 // sandbox's own trees, not on this host as root -- a symlink the sandbox wrote
 // resolves inside the sandbox's world, where it always pointed.
 func (r *DockerSandboxRuntime) runExportMode(ctx context.Context, sandboxID string, image TreeImage) (io.ReadCloser, error) {
-	imageID, err := r.exportImage(ctx, sandboxID, image)
+	imageID, agent, err := r.exportImage(ctx, sandboxID, image)
 	if err != nil {
 		return nil, err
 	}
 	var mounts []mount.Mount
+	if agent != "" {
+		// Read-only, into a container that is not the box and runs only
+		// this: the pool's own copy, which nothing in the sandbox reaches.
+		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: r.daemonPath(agent), Target: exportAgentPath, ReadOnly: true})
+	}
 	var subtrees []string
 	for _, tree := range []struct {
 		subtree, host, target string
@@ -278,27 +280,39 @@ func (r *DockerSandboxRuntime) runExportMode(ctx context.Context, sandboxID stri
 	return stream, nil
 }
 
-// exportImage resolves the image a sandbox's tree is read with, and refuses
-// one without the export mode.
-func (r *DockerSandboxRuntime) exportImage(ctx context.Context, sandboxID string, image TreeImage) (string, error) {
+// exportImage resolves the image a sandbox's tree is read with, and the agent
+// to bind into it when its image has none. A sandbox delivered its platform
+// is read with the provider's sandbox base image and the agent of its
+// platform pin; any other with the image it is pinned to, which holds its
+// agent.
+func (r *DockerSandboxRuntime) exportImage(ctx context.Context, sandboxID string, image TreeImage) (string, string, error) {
+	if _, ok, err := r.deliveredPins(sandboxID); err != nil {
+		return "", "", err
+	} else if ok {
+		agent, _, err := r.sandboxAgent(ctx, sandboxID)
+		if err != nil {
+			return "", "", fmt.Errorf("the agent to export sandbox %s with: %w", sandboxID, err)
+		}
+		// The base image its container runs, which is the pool's current one
+		// only until that moves; with no container, the pool's.
+		base := r.sandboxBaseImage
+		if sb, err := r.GetSandbox(ctx, sandboxID); err == nil && sb.Image != "" {
+			base = sb.Image
+		}
+		imageID, err := r.resolveSandboxImage(ctx, sandboxID, base, "")
+		if err != nil {
+			return "", "", err
+		}
+		return imageID, filepath.Join(r.agentsDir(), agentlayer.Hex(agent.Digest), agentBinaryName), nil
+	}
 	reference, digest := strings.TrimSpace(image.Name), strings.TrimSpace(image.Digest)
 	if reference == "" && digest == "" {
-		return "", fmt.Errorf("%w: the export named no image to read the sandbox with", ErrImageUnavailable)
+		return "", "", fmt.Errorf("%w: the export named no image to read the sandbox with", ErrImageUnavailable)
 	}
 	// The same resolution a create makes, so an export reads with the image the
 	// sandbox runs and fails, when that image is gone, the way a start would.
 	imageID, err := r.resolveSandboxImage(ctx, sandboxID, reference, digest)
-	if err != nil {
-		return "", err
-	}
-	inspected, err := r.client.ImageInspect(ctx, imageID)
-	if err != nil {
-		return "", fmt.Errorf("inspect image %q: %w", imageID, err)
-	}
-	if inspected.Config == nil || inspected.Config.Labels[harness.TreeExportLabel] != harness.TreeExportLabelValue {
-		return "", ErrExportUnsupported
-	}
-	return imageID, nil
+	return imageID, "", err
 }
 
 // exportModeResult is how the export mode ended: nil only when its output was

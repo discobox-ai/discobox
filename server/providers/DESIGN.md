@@ -233,10 +233,14 @@ does — the release manifest's `Images.SandboxBase`, then a provider's
 `sandboxBaseImage` setting, the server's `dockerSandboxBaseImage`, and
 `dockerworker.DefaultSandboxBaseImage`, which a release overwrites at link
 time (`EffectiveSandboxBaseImage`). Every provider that runs the pool agent in
-Docker offers the setting. What the resolved image decides is what the pool
-preloads beside the images its sandboxes name; a sandbox's own image is still
-the sandbox-agent or harness image built `FROM` the base. It is not part of the
-pool-agent container, so it is outside `configRevision`.
+Docker offers the setting. The resolved image is what the pool preloads
+beside the images its sandboxes name, and what every sandbox delivered its
+platform runs: the engine hands it to the pool agent as
+`DISCOBOX_SANDBOX_BASE_IMAGE` (`sandboxruntime.EnvSandboxBaseImage`), so it is
+part of the pool container's environment and its `configRevision`, and a
+moved base image recreates the pool container (`pool-agent/DESIGN.md`,
+ADR 26-10-16-423 §7). A sandbox delivered no platform still runs its own
+image, the harness image built `FROM` the base.
 
 ## Development Image Convergence
 

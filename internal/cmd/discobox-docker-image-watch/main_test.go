@@ -597,3 +597,22 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(out)
 }
+
+// release:image clamps a bundle's file times as the watcher does, and a box
+// fetches only the layers its store lacks, so the two must name one epoch:
+// apart, a release's bundles share no layer with the dev loop's and nothing
+// else would say so.
+func TestReleaseImageClampsBundlesToTheWatchersEpoch(t *testing.T) {
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "--build-arg SOURCE_DATE_EPOCH=" + harness.BundleSourceDateEpoch + "{{else}}"
+	if !strings.Contains(string(taskfile), want) {
+		t.Fatalf("Taskfile.yml's release:image does not build bundles with %q; it must match harness.BundleSourceDateEpoch", want)
+	}
+}

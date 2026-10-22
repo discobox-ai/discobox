@@ -1096,10 +1096,20 @@ func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 	return buildArgs, nil
 }
 
+// bundleOutputArgs build a bundle with every file's time clamped to one
+// epoch. A box fetches only the layers its store lacks (ADR 26-10-16-423
+// §7), and a layer's bytes carry its files' times: a binary rebuilt the same
+// or a file checked out again would otherwise be a new layer every box
+// fetches again.
+var bundleOutputArgs = []string{"--output", "type=docker,rewrite-timestamp=true", "--build-arg", "SOURCE_DATE_EPOCH=" + harness.BundleSourceDateEpoch}
+
 func buildImage(ctx context.Context, spec imageSpec, parentImage string) (string, string, error) {
 	buildArgs, err := renderBuildArgs(spec, parentImage)
 	if err != nil {
 		return "", "", err
+	}
+	if spec.bundle {
+		buildArgs = append(buildArgs[:1:1], append(bundleOutputArgs, buildArgs[1:]...)...)
 	}
 	if err := runCommand(ctx, spec.buildDir, "docker", buildArgs...); err != nil {
 		return "", "", err

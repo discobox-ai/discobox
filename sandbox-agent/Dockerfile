@@ -12,6 +12,7 @@ WORKDIR /src
 
 COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
+COPY pkg/agentlayer ./pkg/agentlayer
 COPY access ./access
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
@@ -21,6 +22,8 @@ COPY pkg/fsdurable ./pkg/fsdurable
 COPY pkg/gitbackend ./pkg/gitbackend
 COPY harness ./harness
 COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/imagecache ./pkg/imagecache
+COPY internal/filelock ./internal/filelock
 COPY pkg/judge ./pkg/judge
 COPY pkg/platform ./pkg/platform
 COPY pkg/policy ./pkg/policy
@@ -172,6 +175,14 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # One feature per layer, stablest first, each after those it requires: a
 # provisioning step skips what an earlier layer recorded, so editing one
 # feature applies that feature and the ones after it, and not the 4GB before.
+#
+# A pool runs this image, through a harness's runnable twin built FROM it,
+# only for a sandbox delivered no platform: one with a pin that is not a
+# content digest, a build-mode development image's. A delivered sandbox's
+# container starts from the sandbox base image instead, with the agent layer
+# and units placed in it, and fetches its bundles (ADR 26-10-16-423 §7). This
+# image lays the same units itself, below, and runs its agent from its own
+# tree through the same /opt/discobox/current.
 FROM ${BASE_IMAGE} AS sandbox-agent
 
 ENV NIX_CONFIG="experimental-features = nix-command flakes"
@@ -303,6 +314,11 @@ COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /opt/
 COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /opt/discobox/bundles/platform/features/core/discobox-access
 COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /opt/discobox/bundles/platform/features/review/discobox-review
 COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /opt/discobox/bundles/platform/features/discobox-cli/discobox
+# The agent's units, the ones a pool places in a delivered box, run the agent
+# from /opt/discobox/current; here that is the platform tree, which holds the
+# agent at the same path its layer does.
+RUN ln -s bundles/platform /opt/discobox/current \
+    && /opt/discobox/current/features/core/discobox-sandbox-agent install
 
 # The platform bundle's layer label (the platform stage below), which nothing
 # reads off this image: it is here so this image's digest, which a sandbox
@@ -312,13 +328,6 @@ COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /opt/discobox/bundle
 # building an image whose identity misses the layer.
 ARG IMAGE_LAYER_METADATA
 LABEL io.discobox.image.v1.10-platform="${IMAGE_LAYER_METADATA:?IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"}"
-# The agent above has the export mode, which the pool agent checks for before
-# it runs one (harness.TreeExportLabel, ADR 0129 §3).
-LABEL io.discobox.tree-export.v1=tar
-# It serves the sandbox's own repository, which the pool agent checks for
-# before it forwards the worktree route here (harness.WorktreeGitLabel,
-# ADR 0126 §4).
-LABEL io.discobox.worktree-git.v1=smart-http
 
 WORKDIR /workspace
 # No VOLUME directives: discobox-wire.service wires all persistent and cached
@@ -329,7 +338,10 @@ EXPOSE 6080 6900
 # overrides the entrypoint: `docker run --entrypoint bash`.
 ENTRYPOINT ["/sbin/init"]
 
-# The platform bundle (ADR 26-10-16-423 §7): every platform feature under
+# The platform bundle (ADR 26-10-16-423 §7), each COPY --link: a box fetches
+# only the layers its store lacks, and without --link every layer carries the
+# /features/ directory as the stage last left it, so an edit to one feature
+# would move every layer after it. Every platform feature under
 # /features/<name>/, the same trees the stage above copies into
 # /opt/discobox/bundles/platform/features/ and provisions, and the manifest in
 # labels. FROM scratch because the agent applies it rather than anything
@@ -341,31 +353,34 @@ ENTRYPOINT ["/sbin/init"]
 # with --target sandbox-agent.
 FROM scratch AS platform
 
-COPY sandbox-agent/features/build /features/build
-COPY sandbox-agent/features/cli /features/cli
-COPY sandbox-agent/features/python /features/python
-COPY sandbox-agent/features/shells-editors /features/shells-editors
-COPY sandbox-agent/features/direnv /features/direnv
-COPY sandbox-agent/features/browser /features/browser
-COPY sandbox-agent/features/desktop /features/desktop
-COPY assets/brand /features/desktop/brand
-COPY sandbox-agent/features/nix /features/nix
-COPY sandbox-agent/features/rust /features/rust
-COPY sandbox-agent/features/node /features/node
-COPY sandbox-agent/features/bun /features/bun
-COPY sandbox-agent/features/mise /features/mise
-COPY sandbox-agent/features/brew /features/brew
-COPY sandbox-agent/features/go /features/go
-COPY sandbox-agent/features/docker /features/docker
-COPY sandbox-agent/features/review /features/review
-COPY sandbox-agent/features/discobox-cli /features/discobox-cli
-COPY sandbox-agent/features/core /features/core
-COPY harness/prompt-answer.sh /features/core/prompt-answer.sh
-COPY access/skills/discobox-access /features/core/skills/discobox-access
-COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
-COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
-COPY --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review
-COPY --from=discobox-cli-builder --chmod=0755 /out/discobox /features/discobox-cli/discobox
+COPY --link sandbox-agent/features/build /features/build
+COPY --link sandbox-agent/features/cli /features/cli
+COPY --link sandbox-agent/features/python /features/python
+COPY --link sandbox-agent/features/shells-editors /features/shells-editors
+COPY --link sandbox-agent/features/direnv /features/direnv
+COPY --link sandbox-agent/features/browser /features/browser
+COPY --link sandbox-agent/features/desktop /features/desktop
+COPY --link assets/brand /features/desktop/brand
+COPY --link sandbox-agent/features/nix /features/nix
+COPY --link sandbox-agent/features/rust /features/rust
+COPY --link sandbox-agent/features/node /features/node
+COPY --link sandbox-agent/features/bun /features/bun
+COPY --link sandbox-agent/features/mise /features/mise
+COPY --link sandbox-agent/features/brew /features/brew
+COPY --link sandbox-agent/features/go /features/go
+COPY --link sandbox-agent/features/docker /features/docker
+COPY --link sandbox-agent/features/review /features/review
+COPY --link sandbox-agent/features/discobox-cli /features/discobox-cli
+COPY --link sandbox-agent/features/core /features/core
+COPY --link harness/prompt-answer.sh /features/core/prompt-answer.sh
+COPY --link access/skills/discobox-access /features/core/skills/discobox-access
+COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
+COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review
+COPY --link --from=discobox-cli-builder --chmod=0755 /out/discobox /features/discobox-cli/discobox
+# The agent layer: the agent alone, and the bundle's last layer, which is how
+# a pool finds it to place in a box before the box boots (agentlayer.AgentLayer,
+# ADR 26-10-16-423 §7). Keep it last and keep it one COPY.
+COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
 
 # The platform's manifest layer: the env, volumes, groups, and seed files true
 # of every box the platform provisions, rather than of any harness. A harness

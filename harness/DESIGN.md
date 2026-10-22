@@ -12,10 +12,12 @@ launchers, and configure scripts.
   and never run, whose labels carry its manifest. The platform is a bundle
   too, and a harness bundle never inherits it: the server composes the
   platform bundle's `10-platform` layer (`PlatformLayer`) under the harness
-  bundle's own (`ComposeBundleLabels`). Until the agent applies bundles
-  itself, each harness also has a runnable image built from the platform's
-  with its bundle provisioned into it, which a pool runs and whose labels
-  nothing reads.
+  bundle's own (`ComposeBundleLabels`). Each harness also still has a
+  runnable image built from the platform's with its bundle provisioned into
+  it, which a sandbox pins and a pool runs only for a sandbox delivered no
+  platform (a pin that is no content digest, build mode's): a box delivered its platform
+  runs the provider's sandbox base image and applies its bundles itself at
+  every start (§7, `agentlayer`).
 - One bundle contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
   volumes, supplementary groups (`additionalGroups`), features, the
@@ -110,11 +112,6 @@ launchers, and configure scripts.
   refused on a `cache` path, which never travels (`ValidateVolume`, which also
   judges kind and scope, and which both registration and `ResolveVolumes`
   call). Absent means the path travels.
-- **`TreeExportLabel`** says an image's sandbox agent has the export mode that
-  reads a stopped sandbox's tree. `sandbox-agent/Dockerfile` sets it and every
-  image built from it inherits it; the pool agent refuses to export a sandbox
-  whose image lacks it, because an older agent reads the mode's argument as an
-  ordinary start (ADR 0129 §3).
 - A volume's `mode` is a POSIX mode word, and `ResolveVolumes` converts it to
   `os.FileMode` rather than casting: the two agree only on the low nine bits,
   and setuid/setgid/sticky sit far higher up in Go's encoding than in POSIX's.
@@ -179,8 +176,9 @@ launchers, and configure scripts.
   `bundle`, is `FROM scratch`: the feature's files under
   `/features/<feature>/` and the manifest in labels, published as
   `discobox-harness-<name>`, the name a third party builds `FROM`. Its `image`
-  target is the runnable twin a pool runs until the agent applies bundles
-  itself, `discobox-harness-<name>-image`: `FROM` the sandbox agent image, the
+  target is the runnable twin, which a pool runs only for a sandbox delivered
+  no platform,
+  `discobox-harness-<name>-image`: `FROM` the sandbox agent image, the
   bundle's `/features/` copied into the harness tree,
   `/opt/discobox/bundles/harness`, and `discobox-sandbox-agent provision` run
   over the platform's tree and it. The twin also carries the bundle's

@@ -171,17 +171,18 @@ func TestPoolCreateRequestCarriesFeatures(t *testing.T) {
 	}
 }
 
-// The pool is sent the bundles a sandbox is pinned to, in order, as what its
-// box may fetch from assets.discobox.internal (ADR 26-10-16-423 §13); none is
-// no field at all.
+// The pool is sent the bundles a sandbox is pinned to, each by kind, as what
+// its box may fetch from assets.discobox.internal and, for the platform, the
+// agent it places in the box (ADR 26-10-16-423 §§7, 13); none is no field at
+// all.
 func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 	platform := "sha256:" + strings.Repeat("1", 64)
 	harness := "sha256:" + strings.Repeat("2", 64)
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
-		Bundles: []sandbox.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-codex", Digest: harness}},
+		Bundles: []sandbox.BundlePin{{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platform}, {Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: harness}},
 	})
 	pins, ok := request.Bundles.Get()
-	if !ok || len(pins) != 2 || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
+	if !ok || len(pins) != 2 || pins[0].Kind != "platform" || pins[1].Kind != "harness" || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
 		t.Fatalf("bundles = %+v", pins)
 	}
 	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Bundles.IsSet() {

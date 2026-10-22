@@ -36,6 +36,13 @@ func applyUnitAction(ctx context.Context, action unitAction) error {
 		// that are now in place.
 		return nil
 	}
+	if !systemdUnitInstalled(ctx, action.unit.name) {
+		// A feature's unit the box has not provisioned yet — every delivered
+		// box's first boot runs before its features (ADR 26-10-16-423 §7). It
+		// is no reader that is down: the feature starts it once it lays it,
+		// from the files that are now in place.
+		return nil
+	}
 	//nolint:gosec // G204: the verb is one of unitVerb's constants and the unit name comes from proxyUnits, a fixed list.
 	out, err := exec.CommandContext(ctx, "systemctl", string(verb), action.unit.name).CombinedOutput()
 	if err != nil {
@@ -70,4 +77,13 @@ func awaitListening(ctx context.Context, address string) error {
 
 func systemdUnitActive(ctx context.Context, unit string) bool {
 	return exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", unit).Run() == nil
+}
+
+// systemdUnitInstalled reports whether systemd has a file for unit. One it
+// cannot be asked about counts as installed, so the action is tried and its
+// own error says why.
+func systemdUnitInstalled(ctx context.Context, unit string) bool {
+	//nolint:gosec // G204: the unit name comes from proxyUnits, a fixed list.
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "--property=LoadState", "--value", unit).Output()
+	return err != nil || strings.TrimSpace(string(out)) != "not-found"
 }

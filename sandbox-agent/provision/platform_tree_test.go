@@ -182,10 +182,18 @@ func TestThePlatformBundleCarriesTheTreeTheImageProvisions(t *testing.T) {
 	if len(bundle) == 0 {
 		t.Fatal("the Dockerfile has no platform stage that copies anything")
 	}
-	for _, line := range bundle {
+	// Every bundle COPY is --link, so a layer carries only its own files and
+	// an edit to one feature moves one layer (ADR 26-10-16-423 §7); past
+	// that, the bundle copies what the image does.
+	for i, line := range bundle {
 		if !strings.Contains(line, " "+featuresDir) {
 			t.Errorf("the platform bundle copies outside %s: %s", featuresDir, line)
 		}
+		linked, ok := strings.CutPrefix(line, "COPY --link ")
+		if !ok {
+			t.Errorf("the platform bundle copies without --link: %s", line)
+		}
+		bundle[i] = "COPY " + linked
 	}
 	slices.Sort(image)
 	slices.Sort(bundle)

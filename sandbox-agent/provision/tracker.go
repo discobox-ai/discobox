@@ -154,8 +154,9 @@ func (t *Tracker) ready(err error) {
 	})
 }
 
-// fail reports a run that could not start, which fails readiness.
-func (t *Tracker) fail(err error) {
+// Fail reports a run that could not start, which fails readiness: one whose
+// plan could not be read, or whose bundles could not be fetched.
+func (t *Tracker) Fail(err error) {
 	t.ready(err)
 	t.finished()
 }

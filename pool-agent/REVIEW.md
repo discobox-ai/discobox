@@ -59,6 +59,15 @@ decides is read back from the sandbox's volumes, which the sandbox can write:
 keep a record of your own beside the tree (`runtime-config.json`,
 `project-layer.json`) instead (ADR 26-10-08-127).
 
+The one other write is the agent's placement in a delivered sandbox's
+container, before each start and never into a running one: the agent layer,
+its units and `pins.json` (`placeAgent`, ADR 26-10-16-423 §7 as amended).
+It is pre-boot placement as the bootstrap is — what this boot runs on, which
+the agent reads before any delivery could reach it — and what was placed is
+the pool's record (`agent-placed.json`), never read back from the box. Do not
+widen it to anything a running box must take: that is the runtime-config
+document's.
+
 ## Sandbox user ids
 
 The pool host cannot resolve a sandbox's account (ADR 0025 §4). An id the

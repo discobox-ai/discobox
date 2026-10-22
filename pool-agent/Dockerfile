@@ -10,6 +10,7 @@ ARG TARGETOS TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY pkg/agentlayer ./pkg/agentlayer
 COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid

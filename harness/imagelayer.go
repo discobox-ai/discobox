@@ -47,6 +47,15 @@ const (
 	MetadataBuildArg      = "HARNESS_METADATA"
 	LayerMetadataBuildArg = "IMAGE_LAYER_METADATA"
 
+	// BundleSourceDateEpoch is the time every file in a bundle is built with
+	// (SOURCE_DATE_EPOCH, exported with rewrite-timestamp): 1980-01-01, the
+	// development shell's own. A box fetches only the layers its store lacks
+	// (ADR 26-10-16-423 §7), and a layer's bytes carry its files' times, so a
+	// bundle built twice from the same files must be the same layers. The
+	// image watcher builds with it; release:image spells it in Taskfile.yml,
+	// and the watcher's tests fail when the two differ.
+	BundleSourceDateEpoch = "315532800"
+
 	// LayerNumberReserved is the exclusive upper bound of the "<NN>-" range
 	// Discobox reserves for its own layers. A downstream image numbers from
 	// here so it cannot silently replace one of ours by reusing its key.

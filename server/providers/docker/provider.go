@@ -244,7 +244,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},

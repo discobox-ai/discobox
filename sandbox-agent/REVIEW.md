@@ -79,6 +79,40 @@
   (`featurePlan.whole`); an `async` step in core defers itself and every step
   after it. Readiness reported while a requirement is in the background runs
   core's steps without it.
+- **The content store trusts a digest, never a response.** `bundlestore`
+  checks a manifest's bytes and a blob's against the digest that named them
+  before it parses or extracts either; a layer counts as present only with
+  its `.complete` marker, written after its directory is whole. Never read a
+  pin from anything but `agentlayer.PinsFile`, which the pool places: what
+  the box may fetch is the pool's record, and a pin the box chose would
+  only be refused there.
+- **The agent layer is the platform bundle's last layer, alone.** A pool
+  finds it by position (`agentlayer.AgentLayer`); a `COPY` after the agent's
+  in the `platform` stage, or one beside it, stops every box booting.
+- **Every `COPY` into the `platform` stage is `--link`.** Without it each
+  layer carries `/features/` as the stage last left it, so an edit to one
+  feature moved every layer after it, and every box fetched them all again: a
+  comment in `go`'s provision.yaml moved eleven layers. A layer added there
+  without `--link` brings that back silently.
+- **A delivered box's first boot has no trees when wiring runs.**
+  `discobox-wire.service` and the account step run before the agent fetches
+  its bundles, so a feature's groups do not exist for the account to join and
+  its env is not wired then. What a feature makes before the account must be
+  made again once the store is filled and before readiness
+  (`boot.JoinFeatureGroups`): a first cut left the account without `brew`
+  until the box's next boot.
+- **A unit the intake starts that a feature lays must be started by that
+  feature.** The intake skips a `proxyUnits` unit systemd has no file for,
+  because a delivered box's first delivery lands before its features and
+  failing it would hold the fetch that lays them. So on that boot nothing
+  but the feature starts it: an `enable` entry in its `systemd` step (which
+  runs `--now` on a running box), as the BuildKit bridge has, or a unit that
+  pulls it up, as `docker.service`'s `Upholds=` does the nested-Docker
+  bridge. A unit laid with neither never starts on that boot.
+- **A box whose store holds its pins fetches nothing.** `state.json` maps
+  each kept pin to its tree, and `Apply` takes that tree without asking the
+  asset host; a boot that needs the network for what it already holds fails
+  readiness whenever the pool's asset route is down.
 
 ## Run identity
 

@@ -135,6 +135,10 @@ type Intake struct {
 	// pending is the files whose readers an earlier delivery could not start,
 	// handed to the activator again with the next one. Guarded by mu.
 	pending []string
+	// first is closed once a document is applied, restored or delivered
+	// (WaitApplied).
+	first     chan struct{}
+	firstOnce sync.Once
 }
 
 // Open returns the intake for cfg.Owner's sandbox, and applies the document it
@@ -144,7 +148,7 @@ type Intake struct {
 // delivery repairs it. A document kept for another sandbox or pool is not
 // restored and orders nothing; the first delivery replaces it.
 func Open(ctx context.Context, cfg Config) (*Intake, error) {
-	in := &Intake{layout: cfg.Layout, owner: cfg.Owner, pool: cfg.Pool, activate: cfg.Activate}
+	in := &Intake{layout: cfg.Layout, owner: cfg.Owner, pool: cfg.Pool, activate: cfg.Activate, first: make(chan struct{})}
 	layout, owner := cfg.Layout, cfg.Owner
 	data, err := os.ReadFile(layout.StatePath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -177,8 +181,33 @@ func Open(ctx context.Context, cfg Config) (*Intake, error) {
 	if err := in.commit(ctx, kept, false); err != nil {
 		return in, fmt.Errorf("restore runtime config revision %d: %w", kept.Revision, err)
 	}
-	in.applied.Store(&kept)
+	in.store(&kept)
 	return in, nil
+}
+
+// store holds doc as the one applied.
+func (in *Intake) store(doc *sandboxconfig.RuntimeConfig) {
+	in.applied.Store(doc)
+	in.firstOnce.Do(func() { close(in.first) })
+}
+
+// WaitApplied returns once a document is applied — the one kept from before
+// a restart, or the pool's first delivery — and so once the bridge to the
+// pool that document's material feeds is up: what fetching the box's
+// bundles waits on (ADR 26-10-16-423 §7). It returns the document then
+// held, or ctx's error.
+func (in *Intake) WaitApplied(ctx context.Context) (sandboxconfig.RuntimeConfig, error) {
+	select {
+	case <-in.first:
+	case <-ctx.Done():
+		// One already applied answers whatever ctx says.
+		if doc, ok := in.Applied(); ok {
+			return doc, nil
+		}
+		return sandboxconfig.RuntimeConfig{}, ctx.Err()
+	}
+	doc, _ := in.Applied()
+	return doc, nil
 }
 
 // Applied returns the last document applied, and false when there is none.
@@ -229,7 +258,7 @@ func (in *Intake) Apply(ctx context.Context, doc sandboxconfig.RuntimeConfig) (s
 	if err := in.commit(ctx, doc, true); err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
 	}
-	in.applied.Store(&doc)
+	in.store(&doc)
 	return doc, nil
 }
 

@@ -3,6 +3,7 @@ package provision
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -349,4 +350,29 @@ func stripComponents(name string, strip int) (string, bool) {
 		return "", false
 	}
 	return strings.Join(parts[strip:], "/"), true
+}
+
+// UnpackLayer unpacks a bundle layer, a tar or a gzipped tar told apart by
+// its first bytes, into dir by unpackArchive's rules, and refuses a
+// whiteout: a bundle's layers lie side by side, so a deletion has nothing to
+// mean (ADR 26-10-16-423 §2).
+func UnpackLayer(layer io.Reader, dir string) error {
+	buffered := bufio.NewReader(layer)
+	var reader io.Reader = buffered
+	if magic, err := buffered.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
+		gz, err := gzip.NewReader(buffered)
+		if err != nil {
+			return fmt.Errorf("unpack layer: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+	next := tarEntries(tar.NewReader(reader))
+	return unpackEntries(dir, provisionspec.Unpack{}, func() (archiveEntry, error) {
+		entry, err := next()
+		if err == nil && strings.HasPrefix(path.Base(entry.name), ".wh.") {
+			return archiveEntry{}, fmt.Errorf("%q is a whiteout, which a bundle layer may not carry", entry.name)
+		}
+		return entry, err
+	})
 }

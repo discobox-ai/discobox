@@ -43,20 +43,24 @@ runs, unless it has no features to provision.
 | `discobox-image-provision TREE...` | `Trees` → `Runner.Provision`, no options | Every step blocking, nothing off: the platform image's build, one feature per layer |
 | `discobox-sandbox-agent provision TREE...` | `Trees` → `Runner.Provision`, no options | The same: a harness image's build, its tree onto the platform's |
 
-The images build their trees in place: the platform's features
-(`sandbox-agent/features`) and a harness's own (`harness/<id>`, whose
-directory is its feature) are copied to where boot looks for them and
-applied, and the trees and the records stay in the image, so its boxes find
-every step applied and provision only what drifted or changed. A step that
-lays a binary the build made links it from the tree rather than copying it,
-so a new build is a new file and no step applied again.
-
 At boot the trees are `/opt/discobox/bundles/platform` and
 `/opt/discobox/bundles/harness`, each when present (`BootPlan`); the harness
-tree's features are the harness's. A box with neither has no features:
+tree's features are the harness's. On a box its pool placed pins in, they are
+links into the content store (`bundlestore`), pointed at its pins' trees
+before the run starts, so the paths a step or a link names stay the same
+across upgrades and follow the trees. A step that lays a binary the build
+made links it from the tree rather than copying it, so a new agent is a new
+file and no step applied again. The runnable images build their trees in
+place instead, as a snapshot would; a pool runs them only for a sandbox
+delivered no platform. A box with neither tree has no features:
 `provision.json` lists none, and its tools are its image's. Opt-outs are the
 bootstrap's `features` (`sandbox.json`), which the client read from the
 repository's `.discobox/settings.json`.
+
+Core's steps never lay the agent's own units: they boot a box before any
+feature is provisioned, so they are root `agentlayer`'s, placed by the pool
+with the agent, and laid by `discobox-sandbox-agent install` in the runnable
+image's build.
 
 ## A run
 

@@ -462,14 +462,12 @@ func (l *Layout) image(ref Reference, top Descriptor, platform Platform) (*Image
 // images — the attestation manifests buildx publishes beside every platform,
 // whose platform is unknown/unknown — never match.
 func selectPlatform(indexData []byte, platform Platform) (Descriptor, error) {
-	var idx imageIndex
+	var idx Manifest
 	if err := json.Unmarshal(indexData, &idx); err != nil {
 		return Descriptor{}, fmt.Errorf("read index: %w", err)
 	}
-	for _, entry := range idx.Manifests {
-		if isManifest(entry.MediaType) && platform.matches(entry.Platform) {
-			return entry, nil
-		}
+	if entry, ok := idx.ForPlatform(platform); ok {
+		return entry, nil
 	}
 	return Descriptor{}, fmt.Errorf("published with no %s image", platform)
 }

@@ -1067,10 +1067,11 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 // code path — there is an automatic *author* of the upgrade every sandbox
 // already had.
 //
-// Delivery is therefore also unchanged. The re-pin moves the pins, which are
-// in SandboxManifest.Fingerprint(), so the pool agent rebuilds the container
-// whose spec_fingerprint label no longer matches and — because it found that
-// container stopped — leaves the replacement stopped (ADR 0021 §3). Nothing
+// Delivery is therefore also unchanged. The re-pin moves the pins, so the pool
+// agent rebuilds the container whose spec_fingerprint label no longer matches,
+// or restarts a delivered one into its moved platform
+// (SandboxManifest.DeliveredFingerprint), and — because it found that
+// container stopped — leaves it stopped (ADR 0021 §3). Nothing
 // here starts anything. A failed sandbox takes the same path: the recorded
 // intent clears its latched error, so the reconciler retries the create on the
 // new image instead of treating the failure as settled (ADR 0017 §4). One whose

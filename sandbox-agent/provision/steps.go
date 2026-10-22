@@ -105,8 +105,12 @@ func mergePatch(doc, patch map[string]any) map[string]any {
 }
 
 // applySystemd writes the drop-in first, so a unit enabled in the same step
-// is enabled with it. It reloads the manager only on a running system: units
-// enabled on one that is not are read when it boots.
+// is enabled with it. On a running system it reloads the manager, so it sees
+// the unit files the feature's earlier steps laid, and starts what it
+// enables, as a boot would have: a box provisioned after it booted — every
+// delivered box's first boot (ADR 26-10-16-423 §7) — otherwise runs none of
+// them until it is restarted. On one that is not running, units are read
+// when it boots.
 func (r *Runner) applySystemd(ctx context.Context, out io.Writer, feature provisionspec.Feature, step *provisionspec.SystemdStep) error {
 	if drop := step.DropIn; drop != nil {
 		data, err := os.ReadFile(filepath.Join(feature.Dir, filepath.FromSlash(drop.Source)))
@@ -123,13 +127,20 @@ func (r *Runner) applySystemd(ctx context.Context, out io.Writer, feature provis
 			return err
 		}
 	}
-	if len(step.Enable) > 0 {
-		if err := r.systemctl(ctx, out, append([]string{"enable"}, step.Enable...)...); err != nil {
+	running := r.root() == "/" && dirExists("/run/systemd/system")
+	if running && (step.DropIn != nil || len(step.Enable) > 0) {
+		if err := r.systemctl(ctx, out, "daemon-reload"); err != nil {
 			return err
 		}
 	}
-	if step.DropIn != nil && r.root() == "/" && dirExists("/run/systemd/system") {
-		return r.systemctl(ctx, out, "daemon-reload")
+	if len(step.Enable) > 0 {
+		args := []string{"enable"}
+		if running {
+			args = append(args, "--now")
+		}
+		if err := r.systemctl(ctx, out, append(args, step.Enable...)...); err != nil {
+			return err
+		}
 	}
 	return nil
 }

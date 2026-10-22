@@ -532,6 +532,23 @@ d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 - A dev shell bundle has no layers; the dev platform bundle is one manifest
   (the watcher exports no index), so walk its layers for blobs. Clean up with `d rm` then `d admin box purge`.
 
+## A delivered box's store and what it fetched
+
+- In the box: `/opt/discobox/bundles/{pins.json,state.json,layers,trees}`,
+  `readlink /opt/discobox/current`; on the pool side
+  `.../sandboxes/<sbx>/agent-placed.json` in the pool container.
+- What it fetched since its last start: `d admin audit http --discobox-id <sbx>
+  --since "$(docker inspect -f '{{.State.StartedAt}}' <ctr> | cut -c1-19)Z"
+  --limit 5000 | grep assets.discobox.internal` (table output: `--host` with
+  `-o json` answered 503 here). A restart fetches nothing; a moved platform
+  fetches its manifests and the layers that differ.
+- Move the platform with a comment in one `sandbox-agent/features/*` file and
+  wait for `.env`'s `DISCOBOX_PLATFORM_BUNDLE` to move; a stopped box is
+  re-pinned, a running one is not until upgraded. Compare builds with
+  `docker image inspect <tag> --format '{{range .RootFS.Layers}}{{println .}}{{end}}'`.
+- `d rm $B` is refused by the tool's removal check (a variable target);
+  type the literal id.
+
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
 The pool delivers a runtime-config document at every boot (next section), but
@@ -700,11 +717,13 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
 # Verifying feature provisioning (`sandbox-agent/provision`, provision.json)
 
 A box provisions the trees at `/opt/discobox/bundles/{platform,harness}` on
-every boot. The images ship both, provisioned at build with their step
-records, so a fresh dev box reports every feature `ready`/`snapshot`
-(`jq -r '.features|to_entries[]|select(.value.how != "snapshot")|.key'
-/run/discobox/provision.json` prints nothing). To try a feature of your own,
-drop a tree in and restart:
+every boot. A dev box is delivered its platform (ADR 26-10-16-423 §7): its
+container is `discobox-sandbox-base:dev-*` with `/sbin/init` as PID 1, the
+pool places the agent layer, units and `pins.json`, and the agent fetches
+the rest into its store, then provisions from scratch — core blocks (ready in
+~30s), the rest installs in the background through the pool proxy, and `nix`
+fails by design (its install refuses a booted box's shared `/nix`). To try a
+feature of your own, drop a tree in and restart:
 
 ```bash
 # scratch repo whose settings turn features off; -o json shows config.features

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 // The worktree route is the sandbox agent's to serve (ADR 0126 §4): the pool
@@ -114,46 +111,4 @@ func TestWorktreeRouteRefusesASandboxThatCannotStart(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
 		t.Fatalf("content type = %q: git prints a refusal's body only when it is plain text", got)
 	}
-}
-
-// A sandbox pinned to an image whose agent predates the route is told to
-// upgrade, rather than forwarded to an agent whose router answers a bare 404
-// that git reports as a repository that does not exist.
-func TestWorktreeRouteTellsAnOldSandboxToUpgrade(t *testing.T) {
-	projectID, poolID, sandboxID := "project-1", "pool-1", "sandbox-1"
-	upstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
-			return
-		}
-		t.Errorf("forwarded %s to an agent too old to serve it", r.URL.Path)
-	}))
-	t.Cleanup(upstream.Close)
-	baseURL, err := url.Parse(upstream.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicKey, sign := testPoolTokenSigner(t)
-	router, err := NewRouter(Config{
-		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
-		Runtime:               oldAgentRuntime{newProxyTestRuntime(t, baseURL)},
-		ControlPlanePublicKey: publicKey,
-	})
-	if err != nil {
-		t.Fatalf("new router: %v", err)
-	}
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/git-repositories/primary.git/info/refs?service=git-upload-pack", nil)
-	req.Header.Set("Authorization", "Bearer "+sign(projectID, poolID, sandboxID, ScopeSandboxRead))
-	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
-	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, req)
-	if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "discobox admin box upgrade sandbox-1") {
-		t.Fatalf("status = %d, body = %q; want 409 naming the upgrade", resp.Code, resp.Body.String())
-	}
-}
-
-// oldAgentRuntime is a sandbox whose image predates the worktree route.
-type oldAgentRuntime struct{ proxyTestRuntime }
-
-func (oldAgentRuntime) SandboxServesWorktree(_ context.Context, sandboxID string) error {
-	return fmt.Errorf("%w; run `discobox admin box upgrade %s`, then try again", sandboxruntime.ErrWorktreeUnsupported, sandboxID)
 }

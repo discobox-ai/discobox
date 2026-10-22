@@ -176,7 +176,7 @@ func TestConcurrentSandboxesShareOneFetch(t *testing.T) {
 	f := newFixture(t)
 	harness := newBundle(t, "harness")
 	f.server.add(harness.config, harness.layer, harness.manifest)
-	pin := Pin{Name: "discobox-harness-claude-code", Digest: digestOf(harness.manifest)}
+	pin := Pin{Kind: KindHarness, Name: "discobox-harness-claude-code", Digest: digestOf(harness.manifest)}
 	f.pin(t, "sbx_a", pin)
 	f.pin(t, "sbx_b", pin)
 	f.server.hold = make(chan struct{})
@@ -222,8 +222,8 @@ func TestASandboxIsRefusedAnotherSandboxsBundle(t *testing.T) {
 	platform, harness := newBundle(t, "platform"), newBundle(t, "harness")
 	index := indexOf(t, platform.manifest)
 	f.server.add(platform.config, platform.layer, platform.manifest, index, harness.config, harness.layer, harness.manifest)
-	f.pin(t, "sbx_a", Pin{Name: "discobox-platform", Digest: digestOf(index)})
-	f.pin(t, "sbx_b", Pin{Name: "discobox-harness-shell", Digest: digestOf(harness.manifest)})
+	f.pin(t, "sbx_a", Pin{Kind: KindPlatform, Name: "discobox-platform", Digest: digestOf(index)})
+	f.pin(t, "sbx_b", Pin{Kind: KindHarness, Name: "discobox-harness-shell", Digest: digestOf(harness.manifest)})
 
 	// sbx_a reads its platform: the name, the index's manifest, its layer.
 	rec := f.get("sbx_a", http.MethodGet, "/discobox-platform")
@@ -278,7 +278,7 @@ func TestServerBytesThatAreNotTheDigestAreRefused(t *testing.T) {
 	harness := newBundle(t, "harness")
 	f.server.add(harness.config, harness.layer, harness.manifest)
 	f.server.corrupt[digestOf(harness.layer)] = true
-	f.pin(t, "sbx_a", Pin{Name: "h", Digest: digestOf(harness.manifest)})
+	f.pin(t, "sbx_a", Pin{Kind: KindHarness, Name: "h", Digest: digestOf(harness.manifest)})
 
 	if rec := f.get("sbx_a", http.MethodGet, "/blobs/"+digestOf(harness.layer)); rec.Code != http.StatusBadGateway {
 		t.Fatalf("corrupt blob = %d, want 502", rec.Code)
@@ -298,8 +298,8 @@ func TestSweepRemovesWhatNoRecordReaches(t *testing.T) {
 	f := newFixture(t)
 	kept, dropped := newBundle(t, "kept"), newBundle(t, "dropped")
 	f.server.add(kept.config, kept.layer, kept.manifest, dropped.config, dropped.layer, dropped.manifest)
-	f.pin(t, "sbx_a", Pin{Name: "kept", Digest: digestOf(kept.manifest)})
-	f.pin(t, "sbx_b", Pin{Name: "dropped", Digest: digestOf(dropped.manifest)})
+	f.pin(t, "sbx_a", Pin{Kind: KindHarness, Name: "kept", Digest: digestOf(kept.manifest)})
+	f.pin(t, "sbx_b", Pin{Kind: KindHarness, Name: "dropped", Digest: digestOf(dropped.manifest)})
 	for _, read := range []struct{ sandbox, path string }{
 		{"sbx_a", "/blobs/" + digestOf(kept.layer)},
 		{"sbx_a", "/blobs/" + digestOf(kept.config)},
@@ -334,7 +334,7 @@ func TestSweepRemovesWhatNoRecordReaches(t *testing.T) {
 
 func TestRecordRoundTripsAndRefusesBadPins(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "sbx_a")
-	pins := []Pin{{Name: "discobox-platform", Digest: digestOf([]byte("p"))}, {Name: "discobox-harness-shell", Digest: digestOf([]byte("h"))}}
+	pins := []Pin{{Kind: KindPlatform, Name: "discobox-platform", Digest: digestOf([]byte("p"))}, {Kind: KindHarness, Name: "discobox-harness-shell", Digest: digestOf([]byte("h"))}}
 	if err := WriteRecord(root, pins); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestRecordRoundTripsAndRefusesBadPins(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0] != pins[0] || got[1] != pins[1] {
 		t.Fatalf("ReadRecord() = %v, %v", got, err)
 	}
-	for _, bad := range []Pin{{Name: "../x", Digest: pins[0].Digest}, {Name: "x", Digest: "sha256:nope"}, {Digest: pins[0].Digest}} {
+	for _, bad := range []Pin{{Kind: KindHarness, Name: "../x", Digest: pins[0].Digest}, {Kind: KindHarness, Name: "x", Digest: "sha256:nope"}, {Kind: KindHarness, Digest: pins[0].Digest}, {Name: "x", Digest: pins[0].Digest}} {
 		if err := WriteRecord(root, []Pin{bad}); err == nil {
 			t.Errorf("WriteRecord(%v) accepted", bad)
 		}

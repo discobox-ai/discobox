@@ -122,13 +122,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	startResolveTokenRefresher(ctx, logger, root, bootstrap, registration)
 
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, registration.PrivateKey)
-	if err != nil {
-		return err
-	}
-	// Image reclamation is the Docker pool's alone: the images are its daemon's,
-	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
-	go runtime.WatchImages(ctx, logger)
 	// The bundles its sandboxes are pinned to, fetched from the control plane
 	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
 	assets := assetcache.New(assetcache.Config{
@@ -143,6 +136,13 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 			})
 		},
 	})
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, registration.PrivateKey, assets)
+	if err != nil {
+		return err
+	}
+	// Image reclamation is the Docker pool's alone: the images are its daemon's,
+	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
+	go runtime.WatchImages(ctx, logger)
 	return Serve(ctx, logger, root, bootstrap, registration, runtime, client, assets)
 }
 
@@ -151,7 +151,9 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 //
 // The pool's identity key signs the runtime-config documents it delivers, which
 // is why the runtime is built only once the key is known to be this pool's.
-func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey ed25519.PrivateKey) (*sandboxruntime.DockerSandboxRuntime, error) {
+// Its asset cache is where the agent layer it places in a delivered sandbox
+// comes from.
+func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.DockerSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
@@ -166,6 +168,8 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey 
 		IdentityKey:           identityKey,
 		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
 		Platform:              hostedPlatform(),
+		SandboxBaseImage:      os.Getenv(sandboxruntime.EnvSandboxBaseImage),
+		AgentLayers:           assets,
 	})
 }
 

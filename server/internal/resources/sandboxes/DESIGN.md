@@ -70,6 +70,17 @@ flowchart LR
   (`UpgradeBasis`) so it never waits on a registry; the re-pin resolves it,
   at most a minute stale. Sharing it means a sandbox cannot
   accept an upgrade its listing says it does not have.
+- **A delivered sandbox is not rebuilt by its platform.** A sandbox whose
+  every pin is a content digest, a platform among them, is delivered: it runs
+  the provider's sandbox base image, and its pool places the platform's agent
+  and its pins before every start (`pool-agent/DESIGN.md`, ADR 26-10-16-423
+  §7). Its fingerprint is `SandboxManifest.DeliveredFingerprint`, which leaves
+  out the image and platform pins and nothing else, so a server's moved
+  platform restarts a running sandbox into it and leaves its store and its
+  provisioning in place. Its harness bundle pin stays in: the harness's
+  manifest is what its container is built with, so a moved one rebuilds it.
+  A sandbox with a pin that is not a content digest (`sandboxBundlePins`) is
+  sent none and keeps `SandboxManifest.Fingerprint`, running its image.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
@@ -381,17 +392,19 @@ it at `awaiting_source` again.
 created before bundles, on the image its harness config pins, is pinned to
 that config's bundle — the image's twin, so nothing it runs changes and no
 upgrade policy applies. It is recorded intent like a re-pin, so the pool is
-sent the create that rebuilds the stopped container and records the pin; a
-running one is left until it is found stopped, upgraded or repaired, since
-the pin is in the fingerprint and would restart it.
+sent the create that rebuilds the stopped container — onto the sandbox base
+image, once it carries a platform pin — and records the pin; a running one is
+left until it is found stopped, upgraded or repaired, since the pin would
+restart it.
 
 There is no automatic-upgrade code path, only an automatic author of the upgrade
 every sandbox already had: the same `sandboxRepin`, the same
 `recordSandboxIntent`, the same generation bump, so the pool agent cannot tell
 one from a typed `POST .../upgrade`. Delivery is therefore also unchanged — the
-re-pin moves the manifest fingerprint, the pool agent rebuilds the container that
-no longer matches, and because it found that container stopped it leaves the
-replacement stopped (ADR 0021 §3). Nothing here starts anything.
+re-pin moves the pins the create carries, the pool agent rebuilds a container
+that no longer matches its fingerprint or restarts a delivered one into its
+pins, and because it found that container stopped it leaves it stopped (ADR
+0021 §3). Nothing here starts anything.
 
 The reconciler still never moves a pin (ADR 0021 §2's rule as narrowed by 0082):
 the pin moves only in a recorded intent, and this adds an author of that intent

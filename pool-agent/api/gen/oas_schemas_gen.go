@@ -18,11 +18,19 @@ func (s *ErrorModelStatusCode) Error() string {
 // A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it.
 // Ref: #/components/schemas/BundlePin
 type BundlePin struct {
+	// Which bundle of the sandbox this is. The platform's is the one whose agent layer the pool places
+	// in the sandbox before each start.
+	Kind BundlePinKind `json:"kind"`
 	// The bundle's name, the last component of its reference's repository, which the server's asset
 	// routes and assets.discobox.internal address it by.
 	Name string `json:"name"`
 	// The manifest or index digest the sandbox is pinned to.
 	Digest string `json:"digest"`
+}
+
+// GetKind returns the value of Kind.
+func (s *BundlePin) GetKind() BundlePinKind {
+	return s.Kind
 }
 
 // GetName returns the value of Name.
@@ -35,6 +43,11 @@ func (s *BundlePin) GetDigest() string {
 	return s.Digest
 }
 
+// SetKind sets the value of Kind.
+func (s *BundlePin) SetKind(val BundlePinKind) {
+	s.Kind = val
+}
+
 // SetName sets the value of Name.
 func (s *BundlePin) SetName(val string) {
 	s.Name = val
@@ -43,6 +56,49 @@ func (s *BundlePin) SetName(val string) {
 // SetDigest sets the value of Digest.
 func (s *BundlePin) SetDigest(val string) {
 	s.Digest = val
+}
+
+// Which bundle of the sandbox this is. The platform's is the one whose agent layer the pool places
+// in the sandbox before each start.
+type BundlePinKind string
+
+const (
+	BundlePinKindPlatform BundlePinKind = "platform"
+	BundlePinKindHarness  BundlePinKind = "harness"
+)
+
+// AllValues returns all BundlePinKind values.
+func (BundlePinKind) AllValues() []BundlePinKind {
+	return []BundlePinKind{
+		BundlePinKindPlatform,
+		BundlePinKindHarness,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s BundlePinKind) MarshalText() ([]byte, error) {
+	switch s {
+	case BundlePinKindPlatform:
+		return []byte(s), nil
+	case BundlePinKindHarness:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *BundlePinKind) UnmarshalText(data []byte) error {
+	switch BundlePinKind(data) {
+	case BundlePinKindPlatform:
+		*s = BundlePinKindPlatform
+		return nil
+	case BundlePinKindHarness:
+		*s = BundlePinKindHarness
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // A sandbox's effective egress policy (ADR 26-10-01-032), merged by the
@@ -4140,9 +4196,9 @@ func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
 type PoolSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// The bundles the sandbox is pinned to, the platform's first and then its harness's. The pool
-	// records them, replacing what an earlier create recorded, and assets.discobox.internal answers the
-	// sandbox only manifests and blobs they reach. Absent or empty is none.
+	// The bundles the sandbox is pinned to, each by kind. The pool records them, replacing what an
+	// earlier create recorded, and assets.discobox.internal answers the sandbox only manifests and blobs
+	// they reach. Absent or empty is none.
 	Bundles OptNilBundlePinArray `json:"bundles"`
 	Config  SandboxConfig        `json:"config"`
 	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built

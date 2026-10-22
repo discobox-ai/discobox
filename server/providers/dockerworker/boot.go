@@ -52,6 +52,11 @@ func (e *Engine) poolContainerEnv(bootstrap poolagent.Bootstrap) map[string]stri
 		env[proxyagent.EnvAuditRetention] = e.cfg.ProxyAuditRetention.String()
 	}
 	e.cfg.SetAuditSpoolEnv(env)
+	// The image a sandbox delivered its platform runs (ADR 26-10-16-423
+	// §10), preloaded beside the pool-agent image.
+	if image := strings.TrimSpace(e.cfg.SandboxBaseImage); image != "" {
+		env[sandboxruntime.EnvSandboxBaseImage] = image
+	}
 	if e.cfg.SandboxIdleTimeout > 0 {
 		env[sandboxruntime.EnvSandboxIdleTimeout] = e.cfg.SandboxIdleTimeout.String()
 	}

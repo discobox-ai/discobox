@@ -20,7 +20,6 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
 
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxtree"
 	"github.com/discobox-ai/discobox/pkg/tarsums"
@@ -66,7 +65,7 @@ type exportCreateRequest struct {
 }
 
 func newExportDaemon() *exportDaemon {
-	return &exportDaemon{labels: map[string]string{harness.TreeExportLabel: harness.TreeExportLabelValue}}
+	return &exportDaemon{labels: map[string]string{}}
 }
 
 func (d *exportDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -544,29 +543,6 @@ func TestExportTreeRunsTheExportModeConfinedToTheTree(t *testing.T) {
 	}
 }
 
-// An image whose sandbox agent predates the export mode would read the
-// argument as an ordinary start, so it is refused before anything runs, with
-// the remedy named (ADR 0129 §3).
-func TestExportTreeRefusesAnImageWithoutTheExportMode(t *testing.T) {
-	runtime, daemon, root := exportFixture(t)
-	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
-	daemon.labels = map[string]string{}
-
-	_, err := runtime.ExportTree(t.Context(), "sbx-1", testTreeImage)
-	if !errors.Is(err, ErrExportUnsupported) {
-		t.Fatalf("err = %v, want ErrExportUnsupported", err)
-	}
-	if !strings.Contains(err.Error(), "discobox admin box upgrade") {
-		t.Errorf("err = %q, want the remedy named", err)
-	}
-	if daemon.created != nil {
-		t.Error("an export container was created for an image that cannot export")
-	}
-}
-
-// A mode that fails before writing -- a manifest it cannot read, a user it
-// cannot resolve -- is an error the caller gets as a status, with the mode's
-// own reason in it, rather than an empty archive.
 func TestExportTreeReportsAModeThatFailedAtOnce(t *testing.T) {
 	runtime, daemon, root := exportFixture(t)
 	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)

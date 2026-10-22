@@ -130,7 +130,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the VM's Docker daemon.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
 			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},

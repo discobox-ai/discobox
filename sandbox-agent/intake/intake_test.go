@@ -886,3 +886,39 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+func TestWaitAppliedReturnsOnceADocumentIsDeliveredOrRestored(t *testing.T) {
+	layout := testLayout(t)
+	writeManifest(t, layout)
+	in, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	early, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := in.WaitApplied(early); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitApplied before any delivery = %v, want it to wait", err)
+	}
+	waited := make(chan int64, 1)
+	go func() {
+		doc, err := in.WaitApplied(context.Background())
+		if err != nil {
+			t.Error(err)
+		}
+		waited <- doc.Revision
+	}()
+	if _, err := in.Apply(context.Background(), testDocument(t, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if revision := <-waited; revision != 2 {
+		t.Fatalf("WaitApplied returned revision %d, want 2", revision)
+	}
+	// A restart restores the kept document, which is applied at once.
+	restored, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc, err := restored.WaitApplied(early); err != nil || doc.Revision != 2 {
+		t.Fatalf("WaitApplied after a restart = %d, %v; want the kept revision 2", doc.Revision, err)
+	}
+}

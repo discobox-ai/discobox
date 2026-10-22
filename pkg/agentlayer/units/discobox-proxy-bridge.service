@@ -12,7 +12,7 @@ ConditionPathExists=/etc/discobox/proxy/bridge.json
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge.json --dns
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge.json --dns
 StandardOutput=journal+console
 StandardError=journal+console
 Restart=on-failure
