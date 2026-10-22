@@ -453,7 +453,7 @@ func TestRecordingConcurrentlyLosesNothing(t *testing.T) {
 					failures <- err
 					return
 				}
-				top := Descriptor{MediaType: mediaTypeOCIIndex, Digest: digestOf([]byte(ref.Name())), Size: 1}
+				top := Descriptor{MediaType: MediaTypeOCIIndex, Digest: digestOf([]byte(ref.Name())), Size: 1}
 				if err := layout.record(ref, top, time.Now()); err != nil {
 					failures <- err
 					return

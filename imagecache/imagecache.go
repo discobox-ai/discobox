@@ -54,16 +54,17 @@ const (
 	annotationStaged = "io.discobox.image-cache.staged"
 )
 
+// The media types an index or an image manifest is served and read as.
 const (
-	mediaTypeOCIIndex       = "application/vnd.oci.image.index.v1+json"
-	mediaTypeOCIManifest    = "application/vnd.oci.image.manifest.v1+json"
-	mediaTypeDockerList     = "application/vnd.docker.distribution.manifest.list.v2+json"
-	mediaTypeDockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
+	MediaTypeOCIIndex       = "application/vnd.oci.image.index.v1+json"
+	MediaTypeOCIManifest    = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeDockerList     = "application/vnd.docker.distribution.manifest.list.v2+json"
+	MediaTypeDockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
 )
 
-// maxManifestBytes bounds a manifest read, from a registry or from disk. The
+// MaxManifestBytes bounds a manifest read, from a registry or from disk. The
 // largest real indexes are tens of kilobytes; anything near this is not one.
-const maxManifestBytes = 4 << 20
+const MaxManifestBytes = 4 << 20
 
 // maxConfigBytes bounds reading an image config to learn its platform.
 const maxConfigBytes = 8 << 20
@@ -128,11 +129,11 @@ type imageManifest struct {
 }
 
 func isIndex(mediaType string) bool {
-	return mediaType == mediaTypeOCIIndex || mediaType == mediaTypeDockerList
+	return mediaType == MediaTypeOCIIndex || mediaType == MediaTypeDockerList
 }
 
 func isManifest(mediaType string) bool {
-	return mediaType == mediaTypeOCIManifest || mediaType == mediaTypeDockerManifest
+	return mediaType == MediaTypeOCIManifest || mediaType == MediaTypeDockerManifest
 }
 
 // Layout is an OCI image layout on disk.
@@ -224,7 +225,7 @@ func digestOf(data []byte) string {
 func (l *Layout) readIndex() (imageIndex, error) {
 	data, err := os.ReadFile(filepath.Join(l.dir, indexFileName))
 	if errors.Is(err, fs.ErrNotExist) {
-		return imageIndex{SchemaVersion: 2, MediaType: mediaTypeOCIIndex}, nil
+		return imageIndex{SchemaVersion: 2, MediaType: MediaTypeOCIIndex}, nil
 	}
 	if err != nil {
 		return imageIndex{}, err
@@ -293,7 +294,7 @@ const (
 // half of one.
 func (l *Layout) writeIndex(idx imageIndex) error {
 	idx.SchemaVersion = 2
-	idx.MediaType = mediaTypeOCIIndex
+	idx.MediaType = MediaTypeOCIIndex
 	if idx.Manifests == nil {
 		idx.Manifests = []Descriptor{}
 	}
@@ -419,7 +420,7 @@ func (l *Layout) Lookup(reference string, platform Platform) (*Image, error) {
 // image assembles an Image beneath a top-level descriptor, requiring every blob
 // the platform's image is made of.
 func (l *Layout) image(ref Reference, top Descriptor, platform Platform) (*Image, error) {
-	topData, err := l.readBlob(top, maxManifestBytes)
+	topData, err := l.readBlob(top, MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ref.Name(), err)
 	}
@@ -428,7 +429,7 @@ func (l *Layout) image(ref Reference, top Descriptor, platform Platform) (*Image
 		if manifest, err = selectPlatform(topData, platform); err != nil {
 			return nil, fmt.Errorf("%s: %w", ref.Name(), err)
 		}
-		if manifestData, err = l.readBlob(manifest, maxManifestBytes); err != nil {
+		if manifestData, err = l.readBlob(manifest, MaxManifestBytes); err != nil {
 			return nil, fmt.Errorf("%s: %w", ref.Name(), err)
 		}
 	}
