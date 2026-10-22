@@ -71,7 +71,18 @@ func (h *Host) handleRequest(c *conn, id json.RawMessage, method string, params 
 			defer cancel()
 			c.reply(id, nil, h.handleOperation(ctx, method, params))
 		}()
+	case "resolveSessionConfig":
+		// VS Code asks before it creates a session what can be configured
+		// for it. Nothing can: a discobox's options are `discobox new`'s, and
+		// the session's harness is its provider.
+		c.reply(id, ahptypes.ResolveSessionConfigResult{
+			Schema: ahptypes.SessionConfigSchema{Type: "object", Properties: map[string]ahptypes.SessionConfigPropertySchema{}},
+			Values: map[string]json.RawMessage{},
+		}, nil)
+	case "sessionConfigCompletions":
+		c.reply(id, ahptypes.SessionConfigCompletionsResult{Items: []ahptypes.SessionConfigValueItem{}}, nil)
 	default:
+		h.cfg.Logf("ahp: a client asked for %s, which this host does not serve", method)
 		c.reply(id, nil, errorf(ahptypes.ErrorCodeMethodNotFound, "%s is not served by this host", method))
 	}
 }
@@ -480,29 +491,31 @@ func (h *Host) createTerminal(ctx context.Context, p ahptypes.CreateTerminalPara
 		h.mu.Unlock()
 		return errorf(ahptypes.ErrorCodeAlreadyExists, "terminal %s exists", p.Channel)
 	}
-	var s *session
+	cwd := ""
 	if p.Cwd != nil {
-		s = h.boxFromCwd(*p.Cwd)
-	}
-	if s == nil {
-		h.mu.Unlock()
-		return errorf(ahptypes.ErrorCodeInvalidParams, "the working directory names no discobox")
+		cwd = *p.Cwd
 	}
 	title := "Shell"
 	if p.Name != nil && *p.Name != "" {
 		title = *p.Name
+	}
+	s := h.boxFromCwd(cwd)
+	if s == nil {
+		// VS Code opens a terminal by itself — for the session it shows, in
+		// that session's folder, and in the person's home folder when there
+		// is none to show — and draws a refusal as an error. A folder that
+		// names no discobox gets a terminal that says so instead.
+		h.cfg.Logf("ahp: a terminal was asked for in %q, which names no discobox", cwd)
+		h.noticeTerminalLocked(p, title, &session{}, "no discobox here: open a discobox's session for a shell in it")
+		h.mu.Unlock()
+		return nil
 	}
 	t := &terminal{uri: p.Channel, s: s, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
 	if p.Cols != nil && p.Rows != nil {
 		t.cols, t.rows = int(*p.Cols), int(*p.Rows)
 	}
 	if !s.running() {
-		h.terminals[t.uri] = t
-		h.dispatch(t.uri, ahptypes.StateAction{Value: &ahptypes.TerminalDataAction{
-			Type: ahptypes.ActionTypeTerminalData, Data: "\x1b[2m[discobox " + s.box.Name + " is " + string(s.box.State) + "]\x1b[0m\r\n",
-		}}, nil)
-		h.dispatch(t.uri, ahptypes.StateAction{Value: &ahptypes.TerminalExitedAction{Type: ahptypes.ActionTypeTerminalExited}}, nil)
-		h.terminalsChangedLocked()
+		h.noticeTerminalLocked(p, title, s, "discobox "+s.box.Name+" is "+string(s.box.State))
 		h.mu.Unlock()
 		return nil
 	}
@@ -529,6 +542,20 @@ func (h *Host) createTerminal(ctx context.Context, p ahptypes.CreateTerminalPara
 	h.adoptLocked(t, stream, release)
 	h.terminalsChangedLocked()
 	return nil
+}
+
+// noticeTerminalLocked answers a createTerminal that has no shell to give
+// with an exited terminal saying why — what VS Code draws in place of a
+// refusal it would show as an error. s is the session it belongs to, or an
+// empty one when it belongs to none.
+func (h *Host) noticeTerminalLocked(p ahptypes.CreateTerminalParams, title string, s *session, notice string) {
+	t := &terminal{uri: p.Channel, s: s, subs: map[*conn]struct{}{}, cols: defaultCols, rows: defaultRows, created: time.Now(), state: newTerminalState(title, p.Claim)}
+	h.terminals[t.uri] = t
+	h.dispatch(t.uri, ahptypes.StateAction{Value: &ahptypes.TerminalDataAction{
+		Type: ahptypes.ActionTypeTerminalData, Data: "\x1b[2m[" + notice + "]\x1b[0m\r\n",
+	}}, nil)
+	h.dispatch(t.uri, ahptypes.StateAction{Value: &ahptypes.TerminalExitedAction{Type: ahptypes.ActionTypeTerminalExited}}, nil)
+	h.terminalsChangedLocked()
 }
 
 // disposeTerminal ends a shell. A screen is its chat's, and goes with it.

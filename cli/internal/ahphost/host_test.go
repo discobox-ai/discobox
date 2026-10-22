@@ -785,3 +785,57 @@ func TestAMessageToADiscoboxThatCannotStartSaysSo(t *testing.T) {
 		t.Fatalf("starts %v, want one", verbs)
 	}
 }
+
+// VS Code opens a terminal by itself, in the person's home folder when no
+// session is shown; a refusal would be drawn as an error.
+func TestATerminalInAFolderThatNamesNoDiscoboxSaysSo(t *testing.T) {
+	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	srv, ctx := startHost(t, boxes)
+	client, _ := connect(ctx, t, srv)
+	cwd := "file:///home/me"
+	if err := client.Request(ctx, "createTerminal", ahptypes.CreateTerminalParams{
+		Channel: "agenthost-terminal:/home", Cwd: &cwd,
+		Claim: ahptypes.TerminalClaim{Value: &ahptypes.TerminalClientClaim{Kind: ahptypes.TerminalClaimKindClient, ClientId: "client-1"}},
+	}, nil); err != nil {
+		t.Fatalf("createTerminal: %v", err)
+	}
+	state, _ := subscribeTerminal(ctx, t, client, "agenthost-terminal:/home")
+	if _, ok := state.Lifecycle.Value.(*ahptypes.TerminalExitedLifecycleState); !ok || len(state.Content) == 0 ||
+		!strings.Contains(partText(state.Content[0]), "no discobox here") {
+		t.Fatalf("terminal %+v", state)
+	}
+	if _, _, _, _, shells := boxes.snapshot(); len(shells) != 0 {
+		t.Fatalf("shells %v", shells)
+	}
+	// Typing into it, and disposing it, are harmless.
+	if _, err := client.Dispatch(ctx, "agenthost-terminal:/home", ahptypes.StateAction{Value: &ahptypes.TerminalInputAction{Type: ahptypes.ActionTypeTerminalInput, Data: "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Request(ctx, "disposeTerminal", ahptypes.DisposeTerminalParams{Channel: "agenthost-terminal:/home"}, nil); err != nil {
+		t.Fatalf("disposeTerminal: %v", err)
+	}
+}
+
+func TestAnExitedShellIsForgottenWhenItsClientGoes(t *testing.T) {
+	boxes := &fakeBoxes{boxes: []tui.Sandbox{runningBox()}}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	host := New(Config{Boxes: boxes, Token: testToken, Poll: 20 * time.Millisecond, Logf: t.Logf})
+	go func() { _ = host.Run(ctx) }()
+	srv := httptest.NewServer(host)
+	t.Cleanup(srv.Close)
+	client, _ := connect(ctx, t, srv)
+	cwd := "file:///home/me"
+	if err := client.Request(ctx, "createTerminal", ahptypes.CreateTerminalParams{
+		Channel: "agenthost-terminal:/home", Cwd: &cwd,
+		Claim: ahptypes.TerminalClaim{Value: &ahptypes.TerminalClientClaim{Kind: ahptypes.TerminalClaimKindClient, ClientId: "client-1"}},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Shutdown(ctx)
+	eventually(t, "the notice terminal to be forgotten", func() bool {
+		host.mu.Lock()
+		defer host.mu.Unlock()
+		return host.terminals["agenthost-terminal:/home"] == nil
+	})
+}

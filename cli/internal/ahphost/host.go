@@ -228,9 +228,20 @@ func (h *Host) dropConn(c *conn) {
 	for _, ch := range h.chats {
 		delete(ch.subs, c)
 	}
-	for _, t := range h.terminals {
+	changed := false
+	for uri, t := range h.terminals {
 		delete(t.subs, c)
 		h.releaseLocked(t)
+		// A shell that has exited and that nobody watches any more is
+		// forgotten: VS Code opens one by itself on every connect and need not
+		// dispose of it, and kept, they would pile up for the host's life.
+		if t.shell() && t.exited() && len(t.subs) == 0 {
+			delete(h.terminals, uri)
+			changed = true
+		}
+	}
+	if changed {
+		h.terminalsChangedLocked()
 	}
 }
 
