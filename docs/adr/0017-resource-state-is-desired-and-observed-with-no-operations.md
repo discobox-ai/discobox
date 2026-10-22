@@ -9,6 +9,7 @@
   [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md),
   which lets the server hold one scheduled start, sent once; everything else
   stands.
+- **Narrowed by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §7, as amended — a sandbox delivered its platform is fingerprinted without its image and platform pins, and a moved one restarts it rather than rebuilding it (§§5, 11)
 - **Date**: 2026-07-30
 - **Relates to**: [ADR 0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md),
   whose re-pin rule this model would have made correct by construction, and

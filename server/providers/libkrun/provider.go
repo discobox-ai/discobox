@@ -340,7 +340,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "kernelImageDir", Label: "Kernel Artifact Directory", Type: "string", Description: "Boot this kernel instead of the published image, and fail if it is missing.", Advanced: true},
 			{Key: "kernelImageLocalDir", Label: "Local Kernel Build", Type: "string", Placeholder: effectiveKernelLocalDir(""), Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
 			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU, up to libkrun's limit of 255. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},

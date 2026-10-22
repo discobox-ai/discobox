@@ -36,7 +36,9 @@ true of it, and true *by rule* rather than by slug:
   **bundle**, the `FROM scratch` image of its features whose labels are its
   manifest, and its **image**, the runnable image built from the platform's
   with that bundle provisioned into it, which a sandbox pins and a pool runs
-  until the agent applies bundles itself. A config records both, each with
+  only for a sandbox delivered no platform (a build-mode pin, which is no
+  content digest): a delivered box runs the provider's sandbox base image and
+  applies its bundles at every start (ADR 26-10-16-423 §7). A config records both, each with
   its digest (`Bundle`/`BundleDigest`, `Image`/`ImageDigest`). The image's
   labels are never read: it carries the manifest's labels only so its digest
   moves with them (below), and nothing makes it carry the right ones. A `file://` manifest file is the one registration with no bundle —
@@ -83,9 +85,11 @@ true of it, and true *by rule* rather than by slug:
   and no `FROM scratch` bundle has. So a runnable image of several GB named
   as either bundle is refused for its labels and never saved.
 - **The runnable image's digest moves with the manifest.** It is what a
-  sandbox pins, what an upgrade re-pins and what recreates a container, and
-  the harness env, files and volumes reach a container only when it is
-  created. So every input the snapshot is composed from is part of that
+  sandbox pins and what an upgrade re-pins, and the harness env, files and
+  volumes reach a container only when it is created. A delivered sandbox's
+  container is not rebuilt by the image digest: its harness bundle pin, which
+  moves with the same manifest, rebuilds it, and its platform pin only
+  restarts it (`sandboxes/DESIGN.md`). So every input the snapshot is composed from is part of that
   image: a harness's twin carries its bundle's label, and the sandbox agent
   image the platform layer's, though nothing reads them off it. A manifest
   edit then moves `ImageDigest`, which seeding compares and

@@ -33,7 +33,7 @@ FailureActionExitStatus=1
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/discobox-sandbox-agent wire
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent wire
 StandardOutput=journal+console
 StandardError=journal+console
 

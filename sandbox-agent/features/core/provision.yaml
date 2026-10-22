@@ -1,8 +1,12 @@
 # Core (ADR 26-10-16-423 §4): not a feature, never off, and blocking. What
 # makes a box a discobox: the agent and the personalities it ships at its own
-# version, discobox-access, the units that wire the box and bridge it to the
-# pool's proxy, the trust store the egress CA joins, the shell and prompt
-# helpers every harness relies on, and the skills that teach an agent the box.
+# version, discobox-access, the trust store the egress CA joins, the shell
+# and prompt helpers every harness relies on, and the skills that teach an agent the box.
+#
+# Not the agent's own units, which boot a box before any feature is
+# provisioned: those are agentlayer's (pkg/agentlayer/units), laid by the pool
+# with the agent before a container starts, or by `discobox-sandbox-agent
+# install` on a machine.
 #
 # The build puts what is not this directory's beside it: the agent and
 # discobox-access binaries, discobox-prompt-answer from harness/, and the
@@ -19,29 +23,6 @@ steps:
     run: link-agent.sh
   - name: dirs
     run: make-dirs.sh
-
-  - name: unit-agent
-    file: {path: /etc/systemd/system/discobox-sandbox-agent.service, source: systemd/discobox-sandbox-agent.service}
-  - name: unit-agent-path
-    file: {path: /etc/systemd/system/discobox-sandbox-agent.path, source: systemd/discobox-sandbox-agent.path}
-  - name: unit-wire
-    file: {path: /etc/systemd/system/discobox-wire.service, source: systemd/discobox-wire.service}
-  - name: unit-proxy-bridge
-    file: {path: /etc/systemd/system/discobox-proxy-bridge.service, source: systemd/discobox-proxy-bridge.service}
-  - name: unit-trust-ca
-    file: {path: /etc/systemd/system/discobox-trust-ca.service, source: systemd/discobox-trust-ca.service}
-  - name: unit-render-proxy-env
-    file: {path: /etc/systemd/system/discobox-render-proxy-env.service, source: systemd/discobox-render-proxy-env.service}
-  - name: units
-    systemd:
-      enable:
-        - discobox-wire.service
-        - discobox-sandbox-agent.path
-        - discobox-proxy-bridge.service
-        - discobox-trust-ca.service
-        - discobox-render-proxy-env.service
-  - name: journald
-    file: {path: /etc/systemd/journald.conf.d/discobox-console.conf, source: systemd/journald-console.conf}
 
   # The whole PATH and the tools' env for a login shell, which /etc/profile
   # would otherwise overwrite; image.json's PATH is what a non-login exec gets.

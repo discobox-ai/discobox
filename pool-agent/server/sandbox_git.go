@@ -40,13 +40,6 @@ func (s *sandboxService) sandboxWorktreeHandler() http.Handler {
 			http.Error(w, err.Error(), statusCodeForGitError(err))
 			return
 		}
-		// An agent from before the route answers it with its router's bare
-		// 404, which git reports as no such repository; say what is true
-		// instead, and what to do about it.
-		if err := s.runtime.SandboxServesWorktree(r.Context(), chi.URLParam(r, "sandboxId")); err != nil {
-			http.Error(w, err.Error(), statusCodeForGitError(err))
-			return
-		}
 		s.forwardToSandboxAgent(w, r)
 	})
 }
@@ -126,9 +119,6 @@ func statusCodeForGitError(err error) int {
 	}
 	if errors.Is(err, sandboxruntime.ErrNotFound) || errors.Is(err, sandboxruntime.ErrRepositoryNotFound) {
 		return http.StatusNotFound
-	}
-	if errors.Is(err, sandboxruntime.ErrWorktreeUnsupported) {
-		return http.StatusConflict
 	}
 	if errors.Is(err, context.Canceled) {
 		return 499

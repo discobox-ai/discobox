@@ -1,0 +1,8 @@
+# The stub harness's own feature (ADR 26-10-16-423 §4): the configure command
+# image.json declares, and nothing else. A harness's features block
+# readiness, so a configure sandbox has it before its primary terminal runs.
+apiVersion: discobox.ai/provision/v1
+requires: [core]
+steps:
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-stub, source: configure.sh, mode: "0755"}

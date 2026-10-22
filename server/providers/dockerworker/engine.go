@@ -69,12 +69,13 @@ type Config struct {
 	ControlPlaneURL string
 	// Image is the pool-agent container image.
 	Image string
-	// SandboxBaseImage is the sandbox base image the sandbox images are built
-	// FROM (ADR 26-10-16-423 §10). The pool host loads it with the images its
-	// sandboxes name when this machine has it staged. It does not shape the
-	// pool-agent container, so it is left out of configRevision: changing it
-	// must not recreate every pool.
-	SandboxBaseImage string `json:"-"`
+	// SandboxBaseImage is the sandbox base image (ADR 26-10-16-423 §10): what
+	// every sandbox delivered its platform runs, which the pool agent is told
+	// in its environment (sandboxruntime.EnvSandboxBaseImage). The pool host
+	// loads it with the images its sandboxes name when this machine has it
+	// staged. It shapes the pool-agent container, so it is in configRevision:
+	// a pool runs the base image its server names.
+	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
 	// Network is an optional additional Docker network for pool-agent containers.
 	Network string
 	// AgentPort is the container port the pool agent listens on.

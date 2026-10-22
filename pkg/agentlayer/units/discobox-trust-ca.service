@@ -23,7 +23,7 @@ RemainAfterExit=yes
 # ahead of the sandbox agent, so every sandbox would pay it before its terminal
 # could exist. The image ships the finished system store at
 # -prebuilt; only the anchors are added here.
-ExecStart=/usr/local/bin/discobox-ca-anchor -store /etc/ssl/certs /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates
+ExecStart=@/opt/discobox/current/features/core/discobox-sandbox-agent discobox-ca-anchor -store /etc/ssl/certs /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates
 # Stage the same augmented bundle under the trust-store path convention of
 # other distro families, for sandbox-agent's runc wrapper (docs/adr/0020) to
 # bind-mount into nested Docker containers built from a non-Debian base. This

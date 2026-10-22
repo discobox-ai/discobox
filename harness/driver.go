@@ -24,26 +24,6 @@ const (
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 
-	// TreeExportLabel says the image's sandbox agent has the export mode:
-	// `discobox-sandbox-agent export`, which reads a stopped sandbox's tree
-	// (ADR 0129 §1). It is set by the sandbox-agent Dockerfile and inherited
-	// like ReclaimLabel. The pool agent checks it before starting an export,
-	// because an older agent reads an unknown argument as an ordinary start and
-	// cannot be probed. TreeExportLabelValue names the archive the mode writes;
-	// a different archive would be a different value.
-	TreeExportLabel      = "io.discobox.tree-export.v1"
-	TreeExportLabelValue = "tar"
-
-	// WorktreeGitLabel says the image's sandbox agent serves the sandbox's own
-	// repository over Git smart HTTP, which the pool's worktree route forwards
-	// to (ADR 0126 §4). It is set by the sandbox-agent Dockerfile and inherited
-	// like ReclaimLabel. The pool agent checks it before forwarding, because an
-	// older agent answers the route with its router's bare 404, which git
-	// reports as a repository that does not exist; a sandbox pinned to such an
-	// image is told to upgrade instead.
-	WorktreeGitLabel      = "io.discobox.worktree-git.v1"
-	WorktreeGitLabelValue = "smart-http"
-
 	// ConfigureDir is the one directory the configure flow exchanges files in.
 	// It is **not** /run/discobox itself: that holds the resolved secrets file
 	// (ADR 0012 §3), the proxy's CA bundles and rendered trust env (ADR 0020),

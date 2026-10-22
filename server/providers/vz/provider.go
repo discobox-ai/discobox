@@ -357,7 +357,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
 			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
 			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},

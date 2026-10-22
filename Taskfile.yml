@@ -1937,6 +1937,7 @@ tasks:
           IMAGE: platform
           DOCKERFILE: sandbox-agent/Dockerfile
           TARGET: platform
+          BUNDLE: "yes"
           BUILD_ARGS: --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
       # Strictly after sandbox-agent, and not alongside it: every harness's
       # runnable image is built FROM the sandbox agent image this release just
@@ -1987,9 +1988,10 @@ tasks:
           CONTEXT: harness/{{.HARNESS_DIR}}
           TARGET: bundle
           SINGLE_MANIFEST: "yes"
+          BUNDLE: "yes"
           BUILD_ARGS: --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
       # Its runnable twin, discobox-harness-<name>-image, which a pool runs
-      # until the agent applies bundles itself: the same build arguments
+      # only for a sandbox delivered no platform: the same build arguments
       # build:harness-image passes, with the base image pointing at this
       # release rather than the local tag.
       - task: release:image
@@ -2014,6 +2016,12 @@ tasks:
       # single platform's manifest in an index.
       PLATFORMS: '{{if .SINGLE_MANIFEST}}linux/amd64{{else}}linux/amd64,linux/arm64{{end}}'
       ATTEST_ARGS: '{{if .SINGLE_MANIFEST}}--provenance=false --sbom=false{{end}}'
+      # A bundle (BUNDLE=yes) is pushed with every file's time clamped to one
+      # epoch, harness.BundleSourceDateEpoch (the image watcher's tests hold
+      # this spelling of it to that constant): a box fetches only the layers its
+      # store lacks (ADR 26-10-16-423 §7), and a fresh checkout's file times
+      # would otherwise make every layer of every release a new one.
+      PUSH_ARGS: '{{if .BUNDLE}}--output type=image,push=true,rewrite-timestamp=true --build-arg SOURCE_DATE_EPOCH=315532800{{else}}--push{{end}}'
       # The two agent images sit at <name>/Dockerfile and build from the
       # repository root. A harness image overrides all three.
       DOCKERFILE: '{{.DOCKERFILE | default (printf "%s/Dockerfile" .IMAGE)}}'
@@ -2053,7 +2061,7 @@ tasks:
         # depot builds each architecture on a native machine, so there is no
         # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
         if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
+          depot build --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags {{.PUSH_ARGS}} {{.CONTEXT}}
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
@@ -2064,7 +2072,7 @@ tasks:
           docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
           go tool task buildx:builder
           docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} \
-            -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
+            -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags {{.PUSH_ARGS}} {{.CONTEXT}}
         fi
 
   vm:build:

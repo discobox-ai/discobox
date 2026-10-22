@@ -206,7 +206,7 @@ func Definition() sandbox.ProviderDefinition {
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image the pool preloads beside its sandboxes' images (ADR 26-10-16-423 §10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().MemoryMiB), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},

@@ -294,7 +294,7 @@ func (r *Runner) begin(ctx context.Context, features []provisionspec.Feature, op
 	}
 	plans, err := r.plan(ctx, features, opts)
 	if err != nil {
-		r.status.fail(err)
+		r.status.Fail(err)
 		return nil, err
 	}
 	r.status.start(plans)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -570,7 +571,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	}
 	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
 	opts.Bundles = sandboxBundlePins(sb)
-	opts.SpecFingerprint = sb.Fingerprint()
 	opts.PoolID = sb.PoolID
 	opts.Platform = sb.Platform
 	opts.Name = sb.Name
@@ -639,7 +639,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 		}
 	}
-	opts.SpecFingerprint = sourceDataFingerprint(opts.SpecFingerprint, opts.SourceDataKey, opts.SourceCodeReferenceDataKeys)
 	opts.UserName = sb.UserName
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
@@ -676,7 +675,18 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 		}
 	}
+	opts.SpecFingerprint = sourceDataFingerprint(specFingerprint(sb, opts.Bundles), opts.SourceDataKey, opts.SourceCodeReferenceDataKeys)
 	return opts, nil
+}
+
+// specFingerprint is what the pool compares a sandbox's container against
+// (ADR 0017 §5): the delivered fingerprint of a sandbox its pool delivers the
+// platform to, and its manifest's otherwise (SandboxManifest).
+func specFingerprint(sb *model.Sandbox, bundles []BundlePin) string {
+	if slices.ContainsFunc(bundles, func(pin BundlePin) bool { return pin.Kind == BundlePlatform }) {
+		return sb.DeliveredFingerprint()
+	}
+	return sb.Fingerprint()
 }
 
 // sourceDataFingerprint makes the source-scoped mounts part of the runtime
@@ -723,18 +733,28 @@ func sandboxHasNeverRun(state string) bool {
 }
 
 // sandboxBundlePins is what the sandbox is pinned to as its pool addresses
-// it, the platform first. A pin with no content digest — a build-mode
-// development image, its own reference until a pool builds it — has nothing
-// to fetch and is left out, as the asset API leaves it out of scope.
+// it. A pin with no content digest — a build-mode development image, its own
+// reference until a pool builds it — has nothing to fetch, and a box can be
+// delivered only what it can fetch: a sandbox with such a pin is sent none,
+// and runs its image as a sandbox from before bundles does, rather than a
+// platform with no harness (ADR 26-10-16-423 §7).
 func sandboxBundlePins(sb *model.Sandbox) []BundlePin {
 	var pins []BundlePin
-	for _, pin := range []services.BundlePin{
-		{Reference: sb.PlatformBundle, Digest: sb.PlatformBundleDigest},
-		{Reference: sb.Bundle, Digest: sb.BundleDigest},
+	for _, pin := range []struct {
+		kind BundleKind
+		pin  services.BundlePin
+	}{
+		{BundlePlatform, services.BundlePin{Reference: sb.PlatformBundle, Digest: sb.PlatformBundleDigest}},
+		{BundleHarness, services.BundlePin{Reference: sb.Bundle, Digest: sb.BundleDigest}},
 	} {
-		if name := pin.Name(); name != "" && imagecache.IsDigest(pin.Digest) {
-			pins = append(pins, BundlePin{Name: name, Digest: pin.Digest})
+		name := pin.pin.Name()
+		if name == "" {
+			continue
 		}
+		if !imagecache.IsDigest(pin.pin.Digest) {
+			return nil
+		}
+		pins = append(pins, BundlePin{Kind: pin.kind, Name: name, Digest: pin.pin.Digest})
 	}
 	return pins
 }

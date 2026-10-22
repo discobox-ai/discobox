@@ -89,7 +89,6 @@ func TestExportTreeTakesTheImageFromTheRequest(t *testing.T) {
 		status int
 	}{
 		"an image with the export mode": {nil, http.StatusOK},
-		"an image without it":           {sandboxruntime.ErrExportUnsupported, http.StatusConflict},
 		"an image that is gone":         {sandboxruntime.ErrImageUnavailable, http.StatusUnprocessableEntity},
 	} {
 		t.Run(name, func(t *testing.T) {

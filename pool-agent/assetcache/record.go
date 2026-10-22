@@ -21,11 +21,35 @@ import (
 // ever reaches it.
 const RecordFileName = "bundles.json"
 
-// Pin is a bundle a sandbox is pinned to: the name the asset API addresses it
-// by, and the manifest or index digest it is pinned to.
+// Pin is a bundle a sandbox is pinned to: which of its bundles it is, the
+// name the asset API addresses it by, and the manifest or index digest it is
+// pinned to.
 type Pin struct {
+	Kind   Kind   `json:"kind,omitempty"`
 	Name   string `json:"name"`
 	Digest string `json:"digest"`
+}
+
+// Kind is which of a sandbox's bundles a pin is.
+type Kind string
+
+const (
+	// KindPlatform is the platform bundle, whose agent layer the pool places
+	// in the box (ADR 26-10-16-423 §7).
+	KindPlatform Kind = "platform"
+	// KindHarness is the harness bundle.
+	KindHarness Kind = "harness"
+)
+
+// Platform is the platform pin among pins, and false when there is none: a
+// sandbox its pool delivers no platform to.
+func Platform(pins []Pin) (Pin, bool) {
+	for _, pin := range pins {
+		if pin.Kind == KindPlatform {
+			return pin, true
+		}
+	}
+	return Pin{}, false
 }
 
 // validName is a bundle name as one path segment: the last component of a
@@ -33,6 +57,11 @@ type Pin struct {
 var validName = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 
 func (p Pin) validate() error {
+	switch p.Kind {
+	case KindPlatform, KindHarness:
+	default:
+		return fmt.Errorf("bundle %s: kind %q is neither %s nor %s", p.Name, p.Kind, KindPlatform, KindHarness)
+	}
 	if !validName.MatchString(p.Name) {
 		return fmt.Errorf("bundle name %q is not a repository name component", p.Name)
 	}

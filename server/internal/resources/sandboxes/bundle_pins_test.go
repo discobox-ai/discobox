@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -34,7 +35,7 @@ func (f *fakePlatform) LatestPlatform() services.BundlePin { return f.pin }
 
 // A create pins the harness config's bundle beside its image and the platform
 // the release resolves to (ADR 26-10-16-423 §7), and the pins reach the pool
-// as what the box may fetch, platform first. A platform the server names and
+// as what the box may fetch, each by kind. A platform the server names and
 // cannot resolve fails the create rather than leave the box pinned to none.
 func TestCreatePinsTheBundles(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
@@ -62,7 +63,7 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	if sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 || sb.PlatformBundle != platformRef || sb.PlatformBundleDigest != platformOld {
 		t.Fatalf("pins = %q@%q, %q@%q", sb.Bundle, sb.BundleDigest, sb.PlatformBundle, sb.PlatformBundleDigest)
 	}
-	want := []BundlePin{{Name: "discobox-platform", Digest: platformOld}, {Name: "discobox-harness-codex", Digest: codexBundleV1}}
+	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
 	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
 		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
 	}
@@ -83,11 +84,12 @@ func TestCreatePinsTheBundles(t *testing.T) {
 }
 
 // A pin with no content digest, a build-mode development image's, has nothing
-// to fetch and is not sent.
+// to fetch, and a box is delivered nothing it cannot fetch: no pin is sent,
+// rather than a platform with no harness.
 func TestOnlyContentDigestsAreSentToThePool(t *testing.T) {
 	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Bundle: codexBundle, BundleDigest: "discobox-harness-codex:local", PlatformBundle: platformRef, PlatformBundleDigest: platformOld}}
-	if got := sandboxBundlePins(sb); !slices.Equal(got, []BundlePin{{Name: "discobox-platform", Digest: platformOld}}) {
-		t.Fatalf("pins = %+v, want the platform alone", got)
+	if got := sandboxBundlePins(sb); got != nil {
+		t.Fatalf("pins = %+v, want none", got)
 	}
 }
 
@@ -225,5 +227,38 @@ func TestAPlatformOnlyRepinAdoptsNoConfig(t *testing.T) {
 	if stored.PlatformBundleDigest != platformNew || stored.ImageDigest != "sha256:old" || stored.HarnessConfigID != nil {
 		t.Fatalf("platform %q image %q config %v, want the platform moved, the image kept and no config adopted",
 			stored.PlatformBundleDigest, stored.ImageDigest, stored.HarnessConfigID)
+	}
+}
+
+// A sandbox delivered its platform is not rebuilt by a moved image or
+// platform pin: its box applies its platform at every start, and runs the
+// sandbox base image. A moved harness bundle pin still rebuilds it, since the
+// harness's manifest is what its container is built with. A sandbox with no
+// platform pin keeps the fingerprint it had (ADR 26-10-16-423 §7).
+func TestADeliveredSandboxIsNotRebuiltByAMovedPlatform(t *testing.T) {
+	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{
+		Image: "discobox-harness-codex-image:v1", ImageDigest: "sha256:image-v1",
+		Bundle: codexBundle, BundleDigest: codexBundleV1,
+		PlatformBundle: platformRef, PlatformBundleDigest: platformOld,
+	}}
+	before := specFingerprint(sb, sandboxBundlePins(sb))
+	if before == sb.Fingerprint() {
+		t.Fatal("a delivered sandbox has its manifest's fingerprint")
+	}
+
+	moved := *sb
+	moved.Image, moved.ImageDigest = "discobox-harness-codex-image:v2", "sha256:image-v2"
+	moved.PlatformBundleDigest = "sha256:" + strings.Repeat("5", 64)
+	if got := specFingerprint(&moved, sandboxBundlePins(&moved)); got != before {
+		t.Fatal("a moved platform or image pin changed a delivered sandbox's fingerprint")
+	}
+	moved.BundleDigest = "sha256:" + strings.Repeat("4", 64)
+	if got := specFingerprint(&moved, sandboxBundlePins(&moved)); got == before {
+		t.Fatal("a moved harness bundle left a delivered sandbox's fingerprint as it was")
+	}
+
+	legacy := &model.Sandbox{SandboxManifest: model.SandboxManifest{Image: "discobox-harness-codex-image:v1", ImageDigest: "sha256:image-v1"}}
+	if got := specFingerprint(legacy, sandboxBundlePins(legacy)); got != legacy.Fingerprint() {
+		t.Fatal("a sandbox delivered no platform lost the fingerprint it had")
 	}
 }

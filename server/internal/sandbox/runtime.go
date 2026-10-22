@@ -178,7 +178,9 @@ type StateEvent struct {
 // CreateOptions configures sandbox creation.
 type CreateOptions struct {
 	Image ImageRef
-	// SpecFingerprint is the digest of the sandbox's whole manifest. The
+	// SpecFingerprint is the digest of the sandbox's manifest — without the
+	// image and platform pins for a sandbox delivered its platform
+	// (SandboxManifest.DeliveredFingerprint). The
 	// runtime records it on the container it builds and rebuilds any container
 	// whose recorded fingerprint no longer matches, which is how every spec
 	// change — image, resources, sources, whatever is added later — converges
@@ -255,15 +257,25 @@ type CreateOptions struct {
 	// Platform is the sandbox's, which a pool-backed provider places by: a
 	// pool that hosts another platform refuses the sandbox (ADR 0145 §1).
 	Platform platform.Platform
-	// Bundles are the bundles the sandbox is pinned to, the platform's first
-	// and then its harness's (ADR 26-10-16-423 §§7, 13). A pool records them
-	// as what the box may fetch from assets.discobox.internal.
+	// Bundles are the bundles the sandbox is pinned to (ADR 26-10-16-423
+	// §§7, 13). A pool records them as what the box may fetch from
+	// assets.discobox.internal, and places the platform's agent layer in the
+	// box before each start.
 	Bundles []BundlePin
 }
 
+// BundleKind is which of a sandbox's bundles a pin is.
+type BundleKind string
+
+const (
+	BundlePlatform BundleKind = "platform"
+	BundleHarness  BundleKind = "harness"
+)
+
 // BundlePin is a bundle as the asset API addresses it: its name and the
-// manifest digest a sandbox is pinned to.
+// manifest digest a sandbox is pinned to, and which of its bundles it is.
 type BundlePin struct {
+	Kind   BundleKind
 	Name   string
 	Digest string
 }

@@ -764,7 +764,7 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if len(opts.Bundles) > 0 {
 		bundles := make([]poolapimodel.BundlePin, 0, len(opts.Bundles))
 		for _, pin := range opts.Bundles {
-			bundles = append(bundles, poolapimodel.BundlePin{Name: pin.Name, Digest: pin.Digest})
+			bundles = append(bundles, poolapimodel.BundlePin{Kind: poolclient.BundlePinKind(pin.Kind), Name: pin.Name, Digest: pin.Digest})
 		}
 		out.Bundles = poolclient.NewOptNilBundlePinArray(bundles)
 	}

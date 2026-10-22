@@ -956,6 +956,32 @@ func (m SandboxManifest) Fingerprint() string {
 	return hex.EncodeToString(sum[:])
 }
 
+// DeliveredFingerprint is the spec digest of a sandbox its pool delivers the
+// platform to (ADR 26-10-16-423 §7, as amended): Fingerprint without the
+// pins such a container is not built from. It runs the provider's sandbox
+// base image, not its image pin, and applies its platform at every start, so
+// a moved image or platform pin restarts it rather than rebuilding it, and
+// it keeps its content store and what it provisioned. Its harness bundle pin
+// stays: the harness's manifest — the env, files and volumes a container is
+// built with — is resolved from the config that pin was taken with, so a
+// moved one rebuilds the container as a moved image pin did.
+//
+// These two pairs are the only fields it leaves out. A field added to
+// SandboxManifest is in it, as in Fingerprint, unless it is another pin a box
+// applies at its start.
+func (m SandboxManifest) DeliveredFingerprint() string {
+	m.Image, m.ImageDigest = "", ""
+	m.PlatformBundle, m.PlatformBundleDigest = "", ""
+	encoded, err := json.Marshal(struct {
+		Delivered SandboxManifest `json:"delivered"`
+	}{m})
+	if err != nil {
+		return "unfingerprintable"
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
 	ID              string `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`

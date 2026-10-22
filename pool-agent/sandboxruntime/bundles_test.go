@@ -32,6 +32,10 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"Id":"ctr_built","Labels":{}}]`))
 		case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/ctr_built/json"):
 			_, _ = w.Write([]byte(`{"Id":"ctr_built","Image":"sha256:same","State":{"Status":"exited"},"Config":{"Labels":{"` + sandboxLabelSpec + `":"spec-1"}}}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(path, "/images/discobox-sandbox-base:test/json"):
+			// The base image the container already runs: the pins moved, and
+			// nothing the container is built from did.
+			_, _ = w.Write([]byte(`{"Id":"sha256:same"}`))
 		case strings.Contains(path, "/images/"):
 			t.Errorf("the container is current, but the create reached for its image: %s %s", r.Method, path)
 			http.NotFound(w, r)
@@ -44,7 +48,7 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1"}
+	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
 
 	platform := "sha256:" + strings.Repeat("a", 64)
 	harness := "sha256:" + strings.Repeat("b", 64)
@@ -66,9 +70,9 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 		}
 	}
 
-	create([]workerapimodel.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-shell", Digest: harness}})
+	create([]workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: platform}, {Kind: workerclient.BundlePinKindHarness, Name: "discobox-harness-shell", Digest: harness}})
 	got, err := assetcache.ReadRecord(r.sandboxRoot("sbx_1"))
-	want := []assetcache.Pin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-shell", Digest: harness}}
+	want := []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: platform}, {Kind: assetcache.KindHarness, Name: "discobox-harness-shell", Digest: harness}}
 	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("record = %v, %v; want %v", got, err, want)
 	}
@@ -76,5 +80,25 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	create(nil)
 	if got, err := assetcache.ReadRecord(r.sandboxRoot("sbx_1")); err != nil || got != nil {
 		t.Fatalf("record after a create pinning nothing = %v, %v; want none", got, err)
+	}
+}
+
+// A sandbox delivered its platform runs the provider's sandbox base image,
+// unpinned, whatever image it is pinned to; any other runs its pin (ADR
+// 26-10-16-423 §§7, 10).
+func TestADeliveredSandboxRunsTheSandboxBaseImage(t *testing.T) {
+	r := &DockerSandboxRuntime{sandboxBaseImage: "discobox-sandbox-base:test"}
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			Image:       workerclient.NewOptString("discobox/harness:v1"),
+			ImageDigest: workerclient.NewOptString("sha256:pinned"),
+		},
+	}
+	if image, digest := r.sandboxImage(req); image != "discobox/harness:v1" || digest != "sha256:pinned" {
+		t.Fatalf("undelivered sandbox runs %q pinned to %q; want its own image and pin", image, digest)
+	}
+	req.Bundles = workerclient.NewOptNilBundlePinArray([]workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}})
+	if image, digest := r.sandboxImage(req); image != "discobox-sandbox-base:test" || digest != "" {
+		t.Fatalf("delivered sandbox runs %q pinned to %q; want the base image, unpinned", image, digest)
 	}
 }

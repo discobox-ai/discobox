@@ -63,13 +63,16 @@ harness unconfigured), add `STUB_CONFIGURE_EXIT` with a non-zero value to
 ## Notes
 
 - `Dockerfile` has two stages, as every harness's does. `bundle` is `FROM
-  scratch` and carries only the label, from `image.json` (the required
-  `HARNESS_METADATA` build arg) — it holds no feature, because nothing reads a
-  file from it. `image`, the runnable twin, is `FROM` the sandbox agent image
-  and installs `configure.sh` as `/usr/local/libexec/discobox/configure-stub`,
-  the config-mode command `image.json` declares. It labels `image.json` too
-  (the same required argument), which nothing reads: it is there so the
-  digest a sandbox pins moves with every manifest edit.
+  scratch` and holds the stub's feature, `/features/stub/`, whose
+  `provision.yaml` installs `configure.sh` as
+  `/usr/local/libexec/discobox/configure-stub`, the config-mode command
+  `image.json` declares; its label is `image.json` (the required
+  `HARNESS_METADATA` build arg). A box gets the feature from the bundle
+  (ADR 26-10-16-423 §7). `image`, the runnable twin, provisions the same
+  feature onto the sandbox agent image, which a pool runs only for a
+  sandbox delivered no platform, and it labels
+  `image.json` too only so the digest a sandbox pins moves with every
+  manifest edit.
   `create` takes the slug `stub` from the harness id.
 - The runnable image must be rebuilt when the sandbox-agent base changes; the
   build task resolves the base from `.env` (`DISCOBOX_DEFAULT_SANDBOX_IMAGE`)

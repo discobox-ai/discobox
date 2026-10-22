@@ -75,7 +75,7 @@ func BootPlan(root string, features map[string]sandboxconfig.Feature) ([]provisi
 func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features map[string]sandboxconfig.Feature, wireOnly bool) error {
 	loaded, opts, err := BootPlan("/", features)
 	if err != nil {
-		tracker.fail(err)
+		tracker.Fail(err)
 		return err
 	}
 	runner := &Runner{
@@ -91,7 +91,7 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features m
 	}
 	if len(loaded) > 0 {
 		if runner.Platform, err = DetectPlatform("/"); err != nil {
-			tracker.fail(err)
+			tracker.Fail(err)
 			return err
 		}
 	}

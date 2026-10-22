@@ -199,7 +199,7 @@ type Config struct {
 
 	// DockerSandboxBaseImage overrides the Docker driver's sandbox base image
 	// (ADR 26-10-16-423 §10).
-	DockerSandboxBaseImage string `yaml:"dockerSandboxBaseImage" env:"DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE" doc:"The Docker driver's Debian sandbox base image, which the sandbox images are built FROM and a pool preloads beside them, for a provider whose own sandboxBaseImage setting names none. Defaults to the released image for this build." example:"ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0"`
+	DockerSandboxBaseImage string `yaml:"dockerSandboxBaseImage" env:"DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE" doc:"The Docker driver's Debian sandbox base image, which every sandbox delivered its platform runs and the sandbox images are built FROM, preloaded by a pool, for a provider whose own sandboxBaseImage setting names none. Defaults to the released image for this build." example:"ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0"`
 
 	// ImageCacheDir is the image store (ADR 0113): an OCI layout a CLI stages a
 	// release's images into before it starts this server, which a provider

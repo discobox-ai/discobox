@@ -79,6 +79,34 @@ func Provision(logger *slog.Logger, path string) error {
 	return newBooter().provisionOnce(logger, path)
 }
 
+// JoinFeatureGroups wires the features of the box's bundle trees and joins
+// the sandbox user to the groups its bootstrap names that they made. A box
+// delivered its platform has no trees when Wire or Provision runs at its
+// first boot — the agent fetches them after (ADR 26-10-16-423 §7) — so the
+// groups only a feature creates (`brew`'s) were not there for the account to
+// join. The agent calls this once its trees are in place and before
+// readiness, which every session waits for, so the account has them before
+// any session starts (§5).
+func JoinFeatureGroups(logger *slog.Logger, path string) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	bootstrap, err := loadEffectiveConfig(path)
+	if err != nil {
+		return err
+	}
+	id, err := bootstrapIdentity(bootstrap)
+	if err != nil {
+		return err
+	}
+	b := newBooter()
+	b.wireFeatures(logger, bootstrap.Features)
+	return b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
+}
+
 // provisionOnce is Provision past its two guards.
 //
 // It runs once per sandbox, not on every start. The agent's start is not a

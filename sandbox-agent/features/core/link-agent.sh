@@ -6,8 +6,9 @@
 #
 # Then core's personalities of the agent, each a link it dispatches on by
 # argv[0] (see cmd/discobox-sandbox-agent): `discobox-power` (keepalive, sleep
-# and wake, ADR 0108 §4), `discobox-ca-anchor` (discobox-trust-ca.service),
-# `discobox-hook-publish` (the harnesses' hooks) and `discobox-provision` (a
+# and wake, ADR 0108 §4), `discobox-ca-anchor` (discobox-trust-ca.service
+# runs it from /opt/discobox/current under that name, since it starts before
+# core is provisioned), `discobox-hook-publish` (the harnesses' hooks) and `discobox-provision` (a
 # feature's placeholders, and waiting on one). The docker feature lays its own.
 set -eu
 

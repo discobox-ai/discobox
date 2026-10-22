@@ -115,7 +115,6 @@ func statusCodeForTreeError(err error) int {
 	case errors.Is(err, sandboxruntime.ErrTreeExists),
 		errors.Is(err, sandboxruntime.ErrSandboxRunning),
 		errors.Is(err, sandboxruntime.ErrArchived),
-		errors.Is(err, sandboxruntime.ErrExportUnsupported),
 		errors.Is(err, sandboxruntime.ErrExportInProgress):
 		return http.StatusConflict
 	case errors.Is(err, sandboxruntime.ErrImageUnavailable):

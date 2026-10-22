@@ -17,7 +17,7 @@ RemainAfterExit=yes
 # env any other way.
 # Run as a unit of its own, rather than folded into discobox-wire.service, so it
 # can be re-run (`systemctl restart`) without restarting the sandbox.
-ExecStart=/usr/local/bin/discobox-sandbox-agent render-proxy-env
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent render-proxy-env
 
 [Install]
 WantedBy=sysinit.target

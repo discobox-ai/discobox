@@ -96,6 +96,10 @@ func run(name string, args []string) int {
 		}
 		return 0
 	}
+	// A machine's first-boot command (ADR 26-10-16-423 §7).
+	if len(args) > 0 && args[0] == "install" {
+		return runInstall(args[1:])
+	}
 	// Applies the features of bundle trees to this box (ADR 26-10-16-423 §3).
 	if len(args) > 0 && args[0] == "provision" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -140,6 +144,15 @@ func run(name string, args []string) int {
 		slog.Error("load config", "error", err)
 		return 1
 	}
+	// The pool's proxy is a box's only way out (ADR 0126 §6), and what the
+	// agent provisions reaches the network through it: apt, a download, a
+	// feature's script. systemd hands the agent none of the container's
+	// environment, so it takes the bootstrap's proxy-trust env itself.
+	if runtime.GOOS == "linux" {
+		if err := exportProxyEnv(configPath); err != nil {
+			slog.Warn("take the sandbox's proxy environment", "error", err)
+		}
+	}
 	// Before anything is served: the intake puts back the files its kept
 	// document implies, which a restart may have lost (/run is a tmpfs), so
 	// nothing reads a file the pool already replaced (ADR 0126 §3). It is
@@ -172,7 +185,7 @@ func run(name string, args []string) int {
 	}
 	tracker := provision.NewTracker(statusPath)
 	go func() {
-		if err := provision.Boot(ctx, slog.Default(), tracker, cfg.Features, false); err != nil && !errors.Is(err, context.Canceled) {
+		if err := provisionBox(ctx, tracker, runtimeConfig, configPath, cfg.Features); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("provision", "error", err)
 		}
 	}()

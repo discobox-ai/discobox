@@ -86,6 +86,45 @@ func (m Manifest) Lists(digest string) bool {
 	return false
 }
 
+// ForPlatform is an index's image manifest for platform. Entries that are
+// not images — the attestation manifests buildx publishes beside every
+// platform, whose platform is unknown/unknown — never match.
+func (m Manifest) ForPlatform(platform Platform) (Descriptor, bool) {
+	for _, entry := range m.Manifests {
+		if isManifest(entry.MediaType) && platform.matches(entry.Platform) {
+			return entry, true
+		}
+	}
+	return Descriptor{}, false
+}
+
+// ImageManifest resolves a pin to the image manifest it names for platform:
+// the manifest at digest when it is one, or its index's entry for platform,
+// each read with read. It returns that manifest and its digest. The pool's
+// cache and a box's store resolve a platform bundle's pin this way, so the
+// two cannot place and fetch different manifests.
+func ImageManifest(digest string, platform Platform, read func(digest string) (Manifest, error)) (Manifest, string, error) {
+	top, err := read(digest)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	if top.Config != nil {
+		return top, digest, nil
+	}
+	child, ok := top.ForPlatform(platform)
+	if !ok {
+		return Manifest{}, "", fmt.Errorf("%s lists no %s image manifest", digest, platform)
+	}
+	read2, err := read(child.Digest)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	if read2.Config == nil {
+		return Manifest{}, "", fmt.Errorf("%s's %s entry %s is not an image manifest", digest, platform, child.Digest)
+	}
+	return read2, child.Digest, nil
+}
+
 // ErrDamaged is a blob in a layout whose bytes are not its digest's.
 var ErrDamaged = errors.New("damaged in the store")
 

@@ -118,11 +118,6 @@ var (
 	// that this slug names no source on it.
 	ErrRepositoryNotFound = errors.New("sandbox git repository not found")
 	ErrAlreadyExists      = errors.New("sandbox already exists")
-	// ErrWorktreeUnsupported is a sandbox whose image's agent predates serving
-	// the sandbox's own repository. Its work is still in it; an upgrade, which
-	// keeps the workspace, is what makes it reachable again; SandboxServesWorktree
-	// wraps it with the command that does that for the sandbox it names.
-	ErrWorktreeUnsupported = errors.New("the sandbox's image predates serving its own repository")
 	// ErrImageUnavailable is the pool being unable to obtain the image a
 	// sandbox is pinned to. It is not transient: the pin names an image this
 	// pool does not have and cannot get, so the way forward is an upgrade that
@@ -313,10 +308,6 @@ type Runtime interface {
 	// GitCache is this pool's cache of Git, which clients deliver sources
 	// into (ADR 26-10-10-545 §2).
 	GitCache() *gitcache.Store
-	// SandboxServesWorktree is nil when the sandbox's agent serves its own
-	// repository, which the worktree route forwards to (ADR 0126 §4), and
-	// ErrWorktreeUnsupported when the sandbox runs an agent from before it did.
-	SandboxServesWorktree(ctx context.Context, sandboxID string) error
 	// SandboxDialer resolves how to reach port inside the sandbox — its agent
 	// on SandboxAgentPort, or a port something in it listens on — and returns
 	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
@@ -411,6 +402,13 @@ type DockerSandboxRuntime struct {
 	// runtimeConfigLocks serializes deciding and delivering each sandbox's
 	// runtime-config document (see runtimeconfig.go).
 	runtimeConfigLocks sync.Map
+	// sandboxBaseImage is the provider's sandbox base image, which every
+	// sandbox delivered its platform runs (ADR 26-10-16-423 §10).
+	sandboxBaseImage string
+	// agentLayers is where the agent layer a delivered sandbox is placed
+	// with comes from, and agents its extractions (see agentlayer.go).
+	agentLayers AgentLayers
+	agents      agentExtract
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -436,6 +434,12 @@ type DockerSandboxRuntimeConfig struct {
 	// runs is (ADR 0145 §1), and so the one every path inside them is judged
 	// by.
 	Platform platform.Platform
+	// SandboxBaseImage is the provider's sandbox base image
+	// (EnvSandboxBaseImage), which a sandbox delivered its platform runs.
+	SandboxBaseImage string
+	// AgentLayers is the pool's asset cache, which a delivered sandbox's
+	// agent layer is read from.
+	AgentLayers AgentLayers
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
@@ -455,6 +459,8 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		root:                  cfg.Root,
 		gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
 		hostStateRoot:         cfg.HostStateRoot,
+		sandboxBaseImage:      strings.TrimSpace(cfg.SandboxBaseImage),
+		agentLayers:           cfg.AgentLayers,
 	}, nil
 }
 
@@ -543,6 +549,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := validateCreateRequest(sandboxID, req); err != nil {
 		return nil, err
 	}
+	if delivered(bundlePins(req)) && r.sandboxBaseImage == "" {
+		return nil, fmt.Errorf("sandbox %s is pinned to a platform, and this pool names no sandbox base image to run it on (%s)", sandboxID, EnvSandboxBaseImage)
+	}
 	// A create can start a container, so it waits out a cache clear and holds
 	// one off until it is done (see clearcache.go).
 	leave, err := r.starts.enter(ctx)
@@ -596,9 +605,34 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			if err != nil {
 				return nil, err
 			}
+			// A delivered box applies its pins at every start, so pins that
+			// moved while nothing its container is built from did restart it
+			// rather than rebuild it (ADR 26-10-16-423 §7, as amended).
+			moved, err := r.deliveredMoved(ctx, existing, req)
+			if err != nil {
+				return nil, err
+			}
 			switch {
 			case rebuild:
 				reason = "the project configuration its delivered source declares"
+			case moved == movedBase:
+				// The sandbox base image moved with them, which only a new
+				// container takes.
+				reason = "its pins and the sandbox base image moved"
+			case moved == movedPins && existing.Status == StatusRunning:
+				// Restarted into them, keeping its store and what it
+				// provisioned. An upgrade restarts a running sandbox and
+				// leaves a stopped one stopped (ADR 0021 §3): a stopped one
+				// boots on them next, and a suspended one when it is next
+				// stopped and started.
+				slog.InfoContext(ctx, "restarting sandbox into its moved bundles", "sandboxId", sandboxID)
+				if err := r.stopLocked(ctx, sandboxID); err != nil {
+					return nil, err
+				}
+				if err := r.startLocked(ctx, sandboxID); err != nil {
+					return nil, err
+				}
+				return r.observedSandbox(ctx, sandboxID)
 			case createStarts(req) && existing.Status == StatusCreated:
 				// A create asked to start that finds the container built and
 				// never started is finishing one whose request was lost in
@@ -671,8 +705,8 @@ func createStarts(req *workerapimodel.PoolSandboxCreateRequest) bool {
 func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, replaced *Sandbox, replacedRunning bool) (*Sandbox, bool, error) {
 	normalizeSandboxConfig(r.paths, &req.Config)
 	config := req.Config
-	imageName := strings.TrimSpace(optString(config.Image))
-	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
+	imageName, pinnedDigest := r.sandboxImage(req)
+	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, pinnedDigest)
 	if err != nil {
 		return nil, false, err
 	}
@@ -776,6 +810,13 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		AttachStderr: true,
 		Tty:          true,
 	}
+	if delivered(bundlePins(req)) {
+		// systemd is PID 1 on every sandbox (ADR 26-10-10-767 §1). A runnable
+		// image says so itself; the sandbox base image is the provider's, like
+		// any machine image, and is told (ADR 26-10-16-423 §§7, 10).
+		cfg.Entrypoint = []string{"/sbin/init"}
+		cfg.Cmd = []string{}
+	}
 	hostCfg := &container.HostConfig{
 		Mounts:     mounts,
 		Privileged: true,
@@ -822,6 +863,9 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
 	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
+	if err := r.placeAgent(ctx, sandboxID, created.ID); err != nil {
+		return nil, false, err
+	}
 	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		r.endBoot(sandboxID, boot, err)
@@ -849,6 +893,18 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	sb, err = r.observedSandbox(ctx, sandboxID)
 	return sb, false, err
+}
+
+// sandboxImage is the image a create's container is built from, and the
+// digest it is pinned to. A sandbox delivered its platform runs the
+// provider's sandbox base image, unpinned: what it runs is its bundles,
+// applied at every start, and its image pin names an image no pool runs any
+// more (ADR 26-10-16-423 §§7, 10). Any other runs the image it is pinned to.
+func (r *DockerSandboxRuntime) sandboxImage(req *workerapimodel.PoolSandboxCreateRequest) (string, string) {
+	if delivered(bundlePins(req)) {
+		return r.sandboxBaseImage, ""
+	}
+	return strings.TrimSpace(optString(req.Config.Image)), strings.TrimSpace(optString(req.Config.ImageDigest))
 }
 
 // observedSandbox reads the sandbox back and reports what it sees before
@@ -2002,6 +2058,15 @@ func (r *DockerSandboxRuntime) reclaimImages(ctx context.Context, logger *slog.L
 	if _, err := imagereap.Reclaim(ctx, r.client, imagereap.Options{Retention: retention, Logger: logger}); err != nil {
 		logger.Warn("reclaim unused Discobox images", "error", err)
 	}
+	// The agents extracted for delivered sandboxes go on the same pace, once
+	// no sandbox's platform reaches their layer.
+	ids, err := r.StoredSandboxIDs(ctx)
+	if err == nil {
+		err = r.sweepAgents(ctx, ids)
+	}
+	if err != nil {
+		logger.Warn("remove unused sandbox agents", "error", err)
+	}
 }
 
 // SyncKnownPools reaps whole orphaned pools on this shared host daemon: any pool
@@ -2326,23 +2391,6 @@ func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID stri
 		return nil, err
 	}
 	return containerDialer(sandboxID, inspect.Container, port)
-}
-
-// SandboxServesWorktree reads the label the sandbox's image carries: the
-// container's labels are its image's, so an image too old to have the label
-// runs an agent too old to serve the route (harness.WorktreeGitLabel).
-func (r *DockerSandboxRuntime) SandboxServesWorktree(ctx context.Context, sandboxID string) error {
-	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
-	if err != nil {
-		return err
-	}
-	if len(containers.Items) == 0 {
-		return ErrNotFound
-	}
-	if containers.Items[0].Labels[harness.WorktreeGitLabel] != harness.WorktreeGitLabelValue {
-		return fmt.Errorf("%w; run `discobox admin box upgrade %s`, then try again", ErrWorktreeUnsupported, sandboxID)
-	}
-	return nil
 }
 
 // containerDialer reaches a port in a sandbox container at its address on the
@@ -2914,17 +2962,6 @@ func (r *MemorySandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slu
 		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
 	}
 	return GitRepositoryLocation{Path: origins[slug], UID: -1, GID: -1}, nil
-}
-
-// SandboxServesWorktree answers for any sandbox it holds: a memory sandbox has
-// no image to be too old.
-func (r *MemorySandboxRuntime) SandboxServesWorktree(_ context.Context, sandboxID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.sandboxes[sandboxID] == nil {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // ConvergeRuntimeConfig records what the poll reported: a memory sandbox has no
@@ -3835,13 +3872,12 @@ func cloneSandbox(sb *Sandbox) *Sandbox {
 	return &clone
 }
 
-// bundlePins is the bundles a create pins the sandbox to, in the order the
-// request names them: the platform's, then its harness's.
+// bundlePins is the bundles a create pins the sandbox to.
 func bundlePins(req *workerapimodel.PoolSandboxCreateRequest) []assetcache.Pin {
 	bundles, _ := req.Bundles.Get()
 	pins := make([]assetcache.Pin, 0, len(bundles))
 	for _, bundle := range bundles {
-		pins = append(pins, assetcache.Pin{Name: bundle.Name, Digest: bundle.Digest})
+		pins = append(pins, assetcache.Pin{Kind: assetcache.Kind(bundle.Kind), Name: bundle.Name, Digest: bundle.Digest})
 	}
 	return pins
 }

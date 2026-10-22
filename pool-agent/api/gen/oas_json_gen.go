@@ -23,6 +23,10 @@ func (s *BundlePin) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *BundlePin) encodeFields(e *jx.Encoder) {
 	{
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -32,9 +36,10 @@ func (s *BundlePin) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfBundlePin = [2]string{
-	0: "name",
-	1: "digest",
+var jsonFieldsNameOfBundlePin = [3]string{
+	0: "kind",
+	1: "name",
+	2: "digest",
 }
 
 // Decode decodes BundlePin from json.
@@ -46,8 +51,18 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "name":
+		case "kind":
 			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "name":
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -59,7 +74,7 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "digest":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Digest = string(v)
@@ -80,7 +95,7 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000011,
+		0b00000111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -122,6 +137,46 @@ func (s *BundlePin) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *BundlePin) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes BundlePinKind as json.
+func (s BundlePinKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes BundlePinKind from json.
+func (s *BundlePinKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode BundlePinKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch BundlePinKind(v) {
+	case BundlePinKindPlatform:
+		*s = BundlePinKindPlatform
+	case BundlePinKindHarness:
+		*s = BundlePinKindHarness
+	default:
+		*s = BundlePinKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s BundlePinKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *BundlePinKind) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

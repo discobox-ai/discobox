@@ -69,6 +69,28 @@ const DefaultOutputPath = "/run/discobox/proxy/proxy.env"
 // proxy configured) or sandboxJSONPath does not exist, so callers can treat a
 // nil result as "no file to write" rather than an error.
 func Render(sandboxJSONPath string) ([]byte, error) {
+	vars, err := Vars(sandboxJSONPath)
+	if err != nil || len(vars) == 0 {
+		return nil, err
+	}
+	names := make([]string, 0, len(vars))
+	for name := range vars {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(vars[name]))
+	}
+	return []byte(b.String()), nil
+}
+
+// Vars is sandboxJSONPath's proxy-trust env, the keys named in ProxyEnvs
+// that Env sets, with sandboxconfig.LocalSubnetsToken resolved: what Render
+// writes, and what the agent takes into its own environment so that what it
+// provisions reaches the network through the pool. It is empty when the
+// sandbox declares none or sandboxJSONPath does not exist.
+func Vars(sandboxJSONPath string) (map[string]string, error) {
 	data, err := os.ReadFile(sandboxJSONPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -83,23 +105,14 @@ func Render(sandboxJSONPath string) ([]byte, error) {
 	if len(manifest.ProxyEnvs) == 0 {
 		return nil, nil
 	}
-
 	subnets := nestedbridge.LocalSubnets()
-	names := append([]string{}, manifest.ProxyEnvs...)
-	sort.Strings(names)
-	var b strings.Builder
-	for _, name := range names {
-		value, ok := manifest.Env[name]
-		if !ok {
-			continue
+	vars := map[string]string{}
+	for _, name := range manifest.ProxyEnvs {
+		if value, ok := manifest.Env[name]; ok {
+			vars[name] = sandboxconfig.ResolveLocalSubnetsToken(value, subnets)
 		}
-		value = sandboxconfig.ResolveLocalSubnetsToken(value, subnets)
-		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(value))
 	}
-	if b.Len() == 0 {
-		return nil, nil
-	}
-	return []byte(b.String()), nil
+	return vars, nil
 }
 
 // WriteFile renders sandboxJSONPath's proxy-trust env to outPath. When Render

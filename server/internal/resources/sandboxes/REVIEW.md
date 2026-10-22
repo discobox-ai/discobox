@@ -52,3 +52,18 @@
   after the commit is lost for good, since the delivery reconcilers have no
   scan to re-find it. This is the second time an observation was marked as
   intent (power-down, above).
+
+## The spec fingerprint
+
+- **Feed the fingerprint only what the sandbox itself pinned, never a shared
+  row read at reconcile.** A harness config is every sandbox's on it, and is
+  re-seeded whenever its bundle moves: an input read from it changes the
+  fingerprint of every sandbox at once, and the pool rebuilds and restarts
+  them all with no upgrade recorded, even under a manual upgrade policy (ADR
+  0016, 0021 §2). A first cut of the delivered fingerprint hashed the live
+  config; it is `SandboxManifest.DeliveredFingerprint` now, over the manifest
+  alone.
+- **A field added to `SandboxManifest` is judged for `DeliveredFingerprint`
+  too.** It leaves out the pins a delivered box applies at its start (image,
+  platform) and covers everything else; another such pin belongs in its
+  list, and anything a container is built from must not.

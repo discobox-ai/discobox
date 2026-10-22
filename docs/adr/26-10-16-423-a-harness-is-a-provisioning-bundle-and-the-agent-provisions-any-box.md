@@ -31,7 +31,10 @@
   §§1–2, whose image no longer has the agent installed and whose backend
   places the agent layer and runs one command (§7); and
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)
-  §4, whose image kind becomes the provider's (§2). It settles that ADR's
+  §4, whose image kind becomes the provider's (§2); and
+  [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §§5
+  and 11, whose fingerprint leaves out a delivered sandbox's image and
+  platform pins (§7, as amended). It settles that ADR's
   deferred ids for a Linux machine sandbox's account (§14).
 - **Date**: 2026-10-16
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
@@ -358,6 +361,21 @@ pin always has.
   removes layers no kept tree uses.
 - **Run.** The agent runs from its layer through a stable
   `/opt/discobox/current`.
+
+*Amended 2026-10-22, before anything shipped against it:* what the pool
+places, and what a moved pin does to a container, are spelled out. The pool
+places the agent layer, the agent's units and the box's **pins** — the
+platform and harness bundles it applies at this start — before each start, as
+it places `sandbox.json`; the box never writes what the pool reads back, which
+keeps its own record of what it placed. A container the platform is
+delivered to is the provider's sandbox base image, so neither its image pin
+nor its platform pin is what it is built from: a moved one **restarts** it
+into the new pins and keeps its store and what it provisioned, which narrows
+[0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §§5 and
+11 — the fingerprint covers the manifest without those two pins. Its harness
+bundle pin stays in the fingerprint, since the harness's manifest is what the
+container is built with. A sandbox with any pin that is not a content digest
+is delivered nothing and runs its runnable image as before.
 
 Server–agent version skew narrows to what a pin holds back: a box stopped
 when its server's release moves follows it, one running then once it is

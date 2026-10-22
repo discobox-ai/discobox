@@ -1,0 +1,9 @@
+# The terminal-latency harness's own feature (ADR 26-10-16-423 §4): the
+# configure command and the probe image.json declares.
+apiVersion: discobox.ai/provision/v1
+requires: [core]
+steps:
+  - name: configure
+    file: {path: /usr/local/libexec/discobox/configure-terminal-latency, source: configure.sh, mode: "0755"}
+  - name: probe
+    file: {path: /usr/local/libexec/discobox/terminal-latency-probe, source: probe.py, mode: "0755"}

@@ -387,6 +387,13 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	// once the container is up, and waitForSandboxAgent can take a while after
 	// that, so without this nobody could ever observe `starting`.
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
+	// Every start of a delivered sandbox begins with its agent, units and
+	// pins in place (ADR 26-10-16-423 §7): a pin moved while it was down is
+	// what it boots on.
+	if err := r.placeAgent(ctx, sandboxID, sb.ID); err != nil {
+		r.publishSandboxState(ctx, sandboxID, StateStopped)
+		return err
+	}
 	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
 		r.publishSandboxState(ctx, sandboxID, StateStopped)
