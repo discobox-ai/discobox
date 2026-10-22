@@ -15,7 +15,7 @@ func TestDebugPrintsEachCallAndItsAnswer(t *testing.T) {
 
 	stdout, stderr, code := capture(t, "", func() int {
 		return Run([]string{"--debug", "request", "--name", "github", "--env-var", "GITHUB_TOKEN",
-			"--hosts", "api.github.com", "--why", "open a PR", "--use", "Open a PR against the current repo"})
+			"--hosts", "api.github.com", "--why", "open a PR", "--use", "Open a PR against the current repo", "--statement", "allow read on anything in repository $primary.repo", "--define", "repository=a GitHub repository"})
 	})
 	if code != exitOK {
 		t.Fatalf("exit = %d, stderr %q", code, stderr)

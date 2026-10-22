@@ -112,6 +112,13 @@ POST /v1/credentials/requests
   "hosts": ["api.github.com"],
   "justification": "The task asks me to open a PR with the fix.",
   "uses": [{ "description": "Open a pull request against the current repository" }],
+  "policy": {
+    "statements": [
+      { "effect": "allow", "actions": ["create"], "resourceType": "pull request",
+        "scope": { "type": "repository", "name": "$primary.repo" } }
+    ],
+    "definitions": { "pull request": "a GitHub pull request", "repository": "a GitHub repository" }
+  },
   "grantTTLSeconds": 14400
 }
 ```
@@ -136,8 +143,8 @@ lands back near zero, which reads as forever.
 `purpose` is optional: `use`, the default, asks to use the credential; `delegate`
 asks to hand it on to other sandboxes instead. One or the other, never both, so
 a person approving it agrees to one thing. Discobox mints a delegation grant for
-an approved ask to delegate: its uses say what the credential may be delegated
-for, and it authorizes nothing the asking sandbox sends itself, so `list` does
+an approved ask to delegate: its policy bounds every policy the asking sandbox
+may hand on, and it authorizes nothing the asking sandbox sends itself, so `list` does
 not report it and `use` does not take a value under it. Any other value is
 `invalid`. The answer, and every poll of it, carries the `purpose` the
 implementation recorded; one that predates purposes reports none, and has
@@ -154,8 +161,9 @@ replaces. A body that still names a destination as `host` is `invalid`,
 rather than read without it; an empty `host`, which such a client sends when
 it named none, is no destination.
 A destination is required by the Discobox implementation, which refuses to mint
-a host-unscoped approval through this flow. Discobox also requires `name`, a valid `envVar`, and at least one use
-with a description, and answers `invalid` without them. A second ask for the
+a host-unscoped approval through this flow. Discobox also requires `name`, a valid `envVar`, at least one use
+with a description, and answers `invalid` without them; every
+implementation requires a `policy` (below). A second ask for the
 same `id`, `envVar`, hosts (in any order), and `purpose` while one is still pending returns
 that pending request rather than a new one.
 
@@ -174,19 +182,28 @@ be asked for at `githubcopilot.com` by naming it. Discobox's registry is the roo
 {
   "id": "com.github.api",
   "justification": "The task asks me to open a PR with the fix.",
-  "uses": [{ "description": "Open a pull request against the current repository" }]
+  "uses": [{ "description": "Open a pull request against the current repository" }],
+  "policy": {
+    "statements": [
+      { "effect": "allow", "actions": ["create"], "resourceType": "pull request",
+        "scope": { "type": "repository", "name": "$primary.repo" } }
+    ],
+    "definitions": { "pull request": "a GitHub pull request", "repository": "a GitHub repository" }
+  }
 }
 ```
 
-An ask may also carry a `policy` beside its `uses`: statements of actions on
+An ask carries a `policy` beside its `uses`: statements of actions on
 resources in scopes, with a definition for every word that is not a default
 ([ADR 26-10-20-782](adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
 §1; the shape is the root `policy` package). An implementation refuses one
-that does not validate as `invalid`. The granted status and `list` carry the
-approved policy, with `resolved` holding what each variable — `$this`,
-`$primary.repo` and the rest — resolved to for the calling sandbox. `uses` are
-still what `get` takes; where Discobox judges what a use is spent on, a grant
-that carries a policy is judged against the policy, whichever use was named.
+that does not validate as `invalid`, and an ask without one the same way,
+saying what a policy is (`agentcreds.NoPolicyAsked`): every ask carries a
+policy, since it is what the grant enforces (#312). The granted status and `list` carry the approved policy, with
+`resolved` holding what each variable — `$this`, `$primary.repo` and the
+rest — resolved to for the calling sandbox. `uses` name the job, in the
+agent's own words, and are still what `get` takes; where Discobox judges what
+a use is spent on, it judges it against the policy, whichever use was named.
 The wire carries the policy's structure only. A client lets its caller write
 statements as sentences and shows them back as sentences — the `policy`
 package's `ParseStatements` and `FormatStatements`, whose grammar is
@@ -218,8 +235,7 @@ it answers a discobox whose primary source is one of them — or for every
 discobox in the project, and what it may approve is a policy: a request is
 covered when the `policy` it asks for falls within the rule's, compared by
 code, with the judge reading only conditions code cannot compare. A rule
-answers only a request that carries a `policy`; one of `uses` alone always
-waits for a person. A rule only ever approves, so a request none covers stays
+only ever approves, so a request none covers stays
 `pending` for a person, and a client cannot tell — and need not know — which
 of the two answered.
 
@@ -234,8 +250,8 @@ GET /v1/credentials/requests/{requestId}
 `status` is one of `pending`, `granted`, `denied`. `uses` is present once
 granted — the approver may have edited the descriptions, so the granted uses
 are authoritative, not the requested ones. For `purpose` `use` they carry the
-ids `get` accepts; for `delegate` they say what the credential may be delegated
-for, and `get` accepts none of them. Each granted use's `expiresAt` is when the
+ids `get` accepts; for `delegate` they name the job the credential is
+delegated for, and `get` accepts none of them. Each granted use's `expiresAt` is when the
 approval lapses, as `list` reports it: the lifetime the approver chose, which
 need not be the one asked for, and absent when it does not expire on its own.
 Discobox reports an approval whose grant has since been revoked as `denied`,
@@ -481,6 +497,8 @@ discobox-access request --json <<'EOF'
   "hosts": ["api.github.com"],
   "justification": "the user's task asks me to open a PR",
   "uses": [{"description": "Open a PR against the current repo"}],
+  "statements": ["allow create on pull request in repository $primary.repo"],
+  "definitions": {"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
   "wait": true
 }
 EOF
