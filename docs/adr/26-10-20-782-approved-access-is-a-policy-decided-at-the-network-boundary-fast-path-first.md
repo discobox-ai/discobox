@@ -1,6 +1,6 @@
 # 26-10-20-782 — Approved access is a policy, decided at the network boundary by a generated fast path before any judge
 
-- **Status**: Accepted (Deferred "approval rules over policies" settled by [26-10-22-689](26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md); §11 amended in issue #317)
+- **Status**: Accepted (Deferred "approval rules over policies" settled by [26-10-22-689](26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md); §11 amended in issues #317 and #312; Deferred "requiring a policy on every grant" settled in issue #312)
 - **Date**: 2026-10-20
 - **Supersedes**:
   - [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
@@ -12,7 +12,11 @@
     reasonable association survives only inside the fallback judge (§8).
   - [26-10-02-054](26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md)
     §§1–3 for commands: `judgeCommands` goes. Its delegation judging stays,
-    beside a policy's (§11).
+    for the conditions of a policy handed on (§11).
+  - [26-09-30-782](26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
+    §3 in part: the uses a discobox hands on are no longer judged against its
+    delegation's; the policy handed on is held to the delegation's (§11, as
+    amended in issue #312).
   - [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
     §3's request job: one "within" noul becomes a question per statement and
     per condition, combined in code (§8).
@@ -321,20 +325,23 @@ code, on each side's statements as resolved for its own discobox (§4):
   by code. Otherwise the judge is asked whether the conditions handed on are
   within the delegated ones, as it is asked about uses today; no answer, no
   hand-off.
-- **Uses are still judged as uses** (ADR 26-09-30-782 §3). A policy rides
-  beside them, so a delegation with a policy hands on both: a request with a
-  policy needs a delegation whose policy covers it and whose uses the judge
-  finds hold its uses; a request with uses alone is judged against the uses as
-  before. A delegation without a policy hands on no policy.
-- **Uses alone are still handed on, and are not bound by the delegation's
-  policy.** A hand-off of uses alone is judged by its uses, so it may be wider
-  than the policy the delegation carries (Deferred).
+- **The policy alone bounds a hand-off.** Every grant an agent takes, and
+  every delegation, carries a policy, so every hand-off is one, held to the
+  delegation's as above. Its uses ride along as the job's name, in the
+  agent's words, and are not judged against the delegation's (superseding
+  ADR 26-09-30-782 §3 for a hand-off): the policy is what the grant
+  enforces. Of the delegations whose policy covers it, the hand-off is made
+  under the longest-lived, and the grant handed on records which one, so it
+  is traced to the delegation that allowed it when code settled it and no
+  judge was asked (26-09-30-782 §3's record stands).
 
 Nothing a discobox hands on is shown to a person, so the check is the
 approval; there is no shown value to hold it to. (Amended in issue #298,
 before anything delegated a policy; its deny and dropped-condition tests
 amended in issue #317, still before, with ADR 26-10-22-689, which holds an
-approval rule to the same comparison.)
+approval rule to the same comparison; its uses taken out of the hand-off,
+and a hand-off of uses alone with them, in issue #312, before any release
+carried §11.)
 
 ## Measurements
 
@@ -423,11 +430,12 @@ Use writing and judging are measured by `go tool task eval:uses` and
 
 ## Deferred
 
-- **Requiring a policy on every grant, a hand-off's included.** Until then a
-  discobox may hand on uses alone, unbound by its delegation's policy (§11).
-  It must be closed before any request is decided by a grant's policy
-  (§§7–8): from then a hand-off of uses alone could be wider than what was
-  delegated. Revisit when an agent can write a policy.
+- **Requiring a policy on every grant, a hand-off's included.** Settled in
+  issue #312: a request, a grant with uses (a person's included) and a
+  delegation carry one, and a hand-off is bound by its delegation's alone
+  (§11). An agent grant or pending request without one is deleted on
+  upgrade; a standing grant with no uses carries none, since its sentinel's
+  value goes to any request and no policy narrows it.
 - **Approval rules over policies.** Testing a rule is still judged by
   comparing uses (ADR 26-10-12-330). A policy makes most of that a structural
   comparison, as §11 makes it for a delegation. Revisit once policies are
@@ -442,9 +450,9 @@ Use writing and judging are measured by `go tool task eval:uses` and
 
 ## Consequences
 
-- A grant carries a policy, and the approval surfaces render it. Existing
-  grants with sentence uses keep being judged as today until they lapse;
-  nothing converts them.
+- A grant carries a policy, and the approval surfaces render it. An agent
+  grant approved with sentence uses alone is deleted on upgrade (#312), and
+  the agent asks again with a policy; nothing converts one.
 - `discobox-access run` no longer waits on a judge, and a project with no
   model can run credentialed commands. Its requests are decided at the
   boundary, statically where a target entry covers them.
