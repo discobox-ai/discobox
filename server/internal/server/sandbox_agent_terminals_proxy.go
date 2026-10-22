@@ -33,11 +33,13 @@ import (
 //     service. It starts nothing either, and waits out a boot something else
 //     began: a client that has just created or started a sandbox reads it
 //     next.
-//   - read: the reads with no last value — logs, events, resource samples.
-//     They start a stopped sandbox and repair nothing.
+//   - read: the reads with no last value — logs, events, resource samples,
+//     and a file's stat, a directory's listing and a file's content
+//     (ADR 26-10-22-499 §3). They start a stopped sandbox and repair nothing.
 //   - action: everything that changes something or acts in the sandbox —
-//     creating, starting, attaching to, typing into or deleting an exec, and
-//     starting, stopping or restarting a service.
+//     creating, starting, attaching to, typing into or deleting an exec,
+//     starting, stopping or restarting a service, and writing, creating,
+//     removing, moving or copying a file.
 //
 // The inspects and the screen are the reads a sandbox's last inventory
 // answers while it is not running (sandboxInventoryRead, ADR 26-10-11-657 §4).
@@ -77,6 +79,14 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 		{http.MethodPost, "/services/{serviceId}/start", action("service start")},
 		{http.MethodPost, "/services/{serviceId}/stop", action("service stop")},
 		{http.MethodPost, "/services/{serviceId}/restart", action("service restart")},
+		{http.MethodGet, "/files/stat", read},
+		{http.MethodGet, "/files/list", read},
+		{http.MethodGet, "/files/content", read},
+		{http.MethodPut, "/files/content", action("file write")},
+		{http.MethodPost, "/files/mkdir", action("file mkdir")},
+		{http.MethodPost, "/files/remove", action("file remove")},
+		{http.MethodPost, "/files/move", action("file move")},
+		{http.MethodPost, "/files/copy", action("file copy")},
 	} {
 		router.Method(route.method, base+route.path, sandboxAgentTerminalProxyHandler(service, route.use, route.use == createExec))
 	}
@@ -222,6 +232,16 @@ func writeSandboxAgentProxyError(w http.ResponseWriter, status int, message stri
 }
 
 func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
+	// The files API, told by the route chi matched rather than by a part of
+	// the path: an exec or a service named "files" is not one. Its scopes are
+	// its own, so a role may read a discobox's files and run nothing in it
+	// (ADR 26-10-22-499 §3).
+	if pattern := chi.RouteContext(r.Context()).RoutePattern(); strings.Contains(pattern, "/sandboxes/{sandboxId}/files/") {
+		if r.Method == http.MethodGet {
+			return []string{poolagentauth.ScopeFilesRead}
+		}
+		return []string{poolagentauth.ScopeFilesWrite}
+	}
 	// The events of every exec, read across them: the exec event trail.
 	if strings.HasSuffix(r.URL.Path, "/exec-events") {
 		if r.Method == http.MethodGet {

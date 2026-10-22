@@ -11,8 +11,8 @@ const (
 	// stopped sandbox, and repairs, once, a failed one with no container.
 	UseAction Use = "action"
 	// UseRead reads what only a running sandbox can answer and has no last
-	// value: a transcript, an event stream, resource samples. It starts a
-	// stopped sandbox and never repairs one.
+	// value: a transcript, an event stream, resource samples, a file. It
+	// starts a stopped sandbox and never repairs one.
 	UseRead Use = "read"
 	// UseInspect reads what a running sandbox holds that its last inventory
 	// also answers: its execs, services and tools (ADR 26-10-11-657 §4). It

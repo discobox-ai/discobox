@@ -21,6 +21,12 @@ const (
 	ScopeTerminalWrite = "terminal:write"
 	ScopeExecRead      = "exec:read"
 	ScopeExecWrite     = "exec:write"
+	// ScopeFilesRead and ScopeFilesWrite gate the files API (ADR 26-10-22-499
+	// §3): stat, list and read, and everything else. They are granted with the
+	// exec scopes, and apart from them, so a token may see a discobox's files
+	// without running commands in it.
+	ScopeFilesRead  = "files:read"
+	ScopeFilesWrite = "files:write"
 	// ScopeStatusRead authorizes only the sandbox-agent status route. Tokens
 	// carrying it are minted server-side with this scope hardcoded, never
 	// derived from a caller's request (see server's MintSandboxAgentStatusTokens).
@@ -89,6 +95,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "exec:*":
 			if strings.HasPrefix(scope, "exec:") {
+				return true
+			}
+		case "files:*":
+			if strings.HasPrefix(scope, "files:") {
 				return true
 			}
 		case "tcp:*":
@@ -278,6 +288,27 @@ func autostopPoolRoute(path string) bool {
 		(segments[6] == "confirm" || segments[6] == "resumed")
 }
 
+// filesRoute reports the operation of a files API route, told by its whole
+// route like the inventory: an exec or a service named "files" is not one.
+func filesRoute(path string) (string, bool) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) != 7 || segments[0] != "api" || segments[1] != "projects" || segments[3] != "sandboxes" || segments[5] != "files" {
+		return "", false
+	}
+	return segments[6], true
+}
+
+// filesScope is the scope a files API operation needs: stat, list and a read
+// of content read, and everything else writes (ADR 26-10-22-499 §3), a route
+// the API does not have included: no route under files is reached with no
+// scope at all.
+func filesScope(method, op string) string {
+	if method == http.MethodGet && (op == "stat" || op == "list" || op == "content") {
+		return ScopeFilesRead
+	}
+	return ScopeFilesWrite
+}
+
 func routeIdentity(path string) (string, string, bool) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) < 5 || segments[0] != "api" || segments[1] != "projects" || segments[3] != "sandboxes" {
@@ -305,6 +336,9 @@ func requiredRequestScope(r *http.Request) string {
 	// the tests below look for — a source named "execs" is not an exec.
 	if sourcesRoute(r.URL.EscapedPath()) {
 		return ScopeRuntimeConfig
+	}
+	if op, ok := filesRoute(r.URL.EscapedPath()); ok {
+		return filesScope(r.Method, op)
 	}
 	if r.Method == http.MethodPost && autostopPoolRoute(r.URL.EscapedPath()) {
 		return ScopeAutostopConfirm

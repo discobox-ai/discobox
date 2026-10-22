@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
@@ -57,6 +58,9 @@ type handler struct {
 	sourceConverger *sourceconverge.Converger
 	// provision is the box's provisioning this boot; nil reports none.
 	provision *provision.Tracker
+	// files is the files API (ADR 26-10-22-499), nil when its helper cannot
+	// be found.
+	files *files.Service
 	// runtimeConfigMu makes applying a delivered document and setting the
 	// idle timeout it carries one step (PutSandboxRuntimeConfig).
 	runtimeConfigMu sync.Mutex

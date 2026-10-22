@@ -54,6 +54,17 @@ func (UnimplementedHandler) ConfirmSandboxAutostop(ctx context.Context, req *San
 	return r, ht.ErrNotImplemented
 }
 
+// CopySandboxFile implements copy-sandbox-file operation.
+//
+// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
+//
+//	404 for a source that does not exist, 409 for a destination that does unless replace is set.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+func (UnimplementedHandler) CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (r *SandboxFileStat, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandboxExec implements create-sandbox-exec operation.
 //
 // Create an exec runtime in a sandbox.
@@ -238,6 +249,16 @@ func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSan
 	return r, ht.ErrNotImplemented
 }
 
+// ListSandboxFiles implements list-sandbox-files operation.
+//
+// Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
+// is not a directory.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+func (UnimplementedHandler) ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (r *SandboxFileList, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListSandboxServiceLogs implements list-sandbox-service-logs operation.
 //
 // Returns the transcript of the service's current or last run. A service that has never run has an
@@ -269,6 +290,26 @@ func (UnimplementedHandler) ListSandboxTools(ctx context.Context, params ListSan
 	return r, ht.ErrNotImplemented
 }
 
+// MakeSandboxDirectory implements make-sandbox-directory operation.
+//
+// Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+func (UnimplementedHandler) MakeSandboxDirectory(ctx context.Context, req *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (r *SandboxFileStat, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// MoveSandboxFile implements move-sandbox-file operation.
+//
+// Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a
+// destination that does unless replace is set, which replaces whatever is there, a directory
+// included.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+func (UnimplementedHandler) MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (r *SandboxFileStat, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ProposeSandboxRule implements propose-sandbox-rule operation.
 //
 // Has this discobox's harness write the policy a person starts an approval rule from (ADR
@@ -294,6 +335,26 @@ func (UnimplementedHandler) ProposeSandboxRule(ctx context.Context, req *JudgePr
 // PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
 func (UnimplementedHandler) PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (r *SandboxRuntimeConfig, _ error) {
 	return r, ht.ErrNotImplemented
+}
+
+// ReadSandboxFile implements read-sandbox-file operation.
+//
+// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
+// directory.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+func (UnimplementedHandler) ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (r ReadSandboxFileOK, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// RemoveSandboxFile implements remove-sandbox-file operation.
+//
+// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
+// that is not empty unless recursive is set.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+func (UnimplementedHandler) RemoveSandboxFile(ctx context.Context, req *SandboxFileRemoveRequest, params RemoveSandboxFileParams) error {
+	return ht.ErrNotImplemented
 }
 
 // RestartSandboxService implements restart-sandbox-service operation.
@@ -348,6 +409,16 @@ func (UnimplementedHandler) StartSandboxService(ctx context.Context, params Star
 	return r, ht.ErrNotImplemented
 }
 
+// StatSandboxFile implements stat-sandbox-file operation.
+//
+// Reports one path as the discobox's default user sees it. Every files operation acts as that user,
+// with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+func (UnimplementedHandler) StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (r *SandboxFileStat, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // StopSandboxService implements stop-sandbox-service operation.
 //
 // Ends the service's run and keeps its record, so its output is still readable and starting it again
@@ -388,6 +459,18 @@ func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *Upd
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
 func (UnimplementedHandler) WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (r *SandboxExecWaitResult, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// WriteSandboxFile implements write-sandbox-file operation.
+//
+// Writes the request body to a file, replacing what is there. The content lands whole or not at all,
+// and a link is written through to what it points to. A replaced file keeps its permissions. 412
+// when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
+// is a directory, 404 when ifMissing refuses.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+func (UnimplementedHandler) WriteSandboxFile(ctx context.Context, req WriteSandboxFileReq, params WriteSandboxFileParams) (r *SandboxFileStat, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

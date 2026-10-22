@@ -28,6 +28,10 @@ const (
 	ScopeTerminalWrite = "terminal:write"
 	ScopeExecRead      = "exec:read"
 	ScopeExecWrite     = "exec:write"
+	// ScopeFilesRead and ScopeFilesWrite gate the files API the sandbox agent
+	// serves (ADR 26-10-22-499 §3), checked here as the exec scopes are.
+	ScopeFilesRead  = "files:read"
+	ScopeFilesWrite = "files:write"
 	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3):
 	// dialing an arbitrary host:port from inside the sandbox's own network
 	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.
@@ -91,6 +95,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "exec:*":
 			if strings.HasPrefix(scope, "exec:") {
+				return true
+			}
+		case "files:*":
+			if strings.HasPrefix(scope, "files:") {
 				return true
 			}
 		case "tcp:*":

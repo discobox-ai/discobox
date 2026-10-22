@@ -49,6 +49,10 @@ type ConfirmSandboxAutostopRes interface {
 	confirmSandboxAutostopRes()
 }
 
+type CopySandboxFileRes interface {
+	copySandboxFileRes()
+}
+
 type CreateApprovalRuleRes interface {
 	createApprovalRuleRes()
 }
@@ -401,6 +405,10 @@ type ListSandboxExecsRes interface {
 	listSandboxExecsRes()
 }
 
+type ListSandboxFilesRes interface {
+	listSandboxFilesRes()
+}
+
 type ListSandboxHostTrustsRes interface {
 	listSandboxHostTrustsRes()
 }
@@ -453,8 +461,16 @@ type ListTrustRequestsRes interface {
 	listTrustRequestsRes()
 }
 
+type MakeSandboxDirectoryRes interface {
+	makeSandboxDirectoryRes()
+}
+
 type MintSandboxAgentStatusTokensRes interface {
 	mintSandboxAgentStatusTokensRes()
+}
+
+type MoveSandboxFileRes interface {
+	moveSandboxFileRes()
 }
 
 type ProposeApprovalRuleFromGrantRes interface {
@@ -481,6 +497,10 @@ type PutSandboxRuntimeConfigRes interface {
 	putSandboxRuntimeConfigRes()
 }
 
+type ReadSandboxFileRes interface {
+	readSandboxFileRes()
+}
+
 type ReconcilePoolRes interface {
 	reconcilePoolRes()
 }
@@ -499,6 +519,10 @@ type RefreshSecretRes interface {
 
 type RegisterPoolRes interface {
 	registerPoolRes()
+}
+
+type RemoveSandboxFileRes interface {
+	removeSandboxFileRes()
 }
 
 type RepairSandboxRes interface {
@@ -585,6 +609,10 @@ type StartSandboxServiceRes interface {
 	startSandboxServiceRes()
 }
 
+type StatSandboxFileRes interface {
+	statSandboxFileRes()
+}
+
 type StopSandboxRes interface {
 	stopSandboxRes()
 }
@@ -659,4 +687,8 @@ type UpgradeSandboxRes interface {
 
 type WaitSandboxExecRes interface {
 	waitSandboxExecRes()
+}
+
+type WriteSandboxFileRes interface {
+	writeSandboxFileRes()
 }

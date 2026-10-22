@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/dnsstub"
 	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
@@ -69,6 +70,11 @@ func run(name string, args []string) int {
 	}
 	if len(args) > 0 && args[0] == "exec-shim" {
 		return runExecShim(args[1:])
+	}
+	// One files API operation, as the user the agent started it as (ADR
+	// 26-10-22-499 §2).
+	if len(args) > 0 && args[0] == files.HelperCommand {
+		return files.RunHelper(os.Stdin, os.Stdout)
 	}
 	if len(args) > 0 && args[0] == "proxy-bridge" {
 		return runProxyBridge(args[1:])

@@ -79,7 +79,7 @@ surface:
   client/server transport code into `pool-agent/api/gen` and stable schema
   aliases into `pool-agent/api/model`; `pool-agent/server` adapts the
   generated server scaffold to local runtime operations.
-- Sandbox-agent routes (execs, harness hooks, services, status) are canonical
+- Sandbox-agent routes (execs, files, harness hooks, services, status) are canonical
   in `api/openapi/server.yaml` and marked `x-sandbox-agent` for subset
   generation. `api/openapi/sandbox.yaml` is generated from that server contract
   by `api/internal/gensandboxopenapi` and must not be edited directly.

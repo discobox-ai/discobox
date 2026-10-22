@@ -111,6 +111,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
 	ConfirmSandboxAutostop(ctx context.Context, req *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error)
+	// CopySandboxFile implements copy-sandbox-file operation.
+	//
+	// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
+	//  404 for a source that does not exist, 409 for a destination that does unless replace is set.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+	CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
 	// CreateApprovalRule implements create-approval-rule operation.
 	//
 	// Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every
@@ -691,6 +698,13 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
+	// ListSandboxFiles implements list-sandbox-files operation.
+	//
+	// Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
+	// is not a directory.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+	ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (ListSandboxFilesRes, error)
 	// ListSandboxHostTrusts implements list-sandbox-host-trusts operation.
 	//
 	// List the hosts a sandbox trusts.
@@ -776,12 +790,26 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/trust-requests
 	ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error)
+	// MakeSandboxDirectory implements make-sandbox-directory operation.
+	//
+	// Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+	MakeSandboxDirectory(ctx context.Context, req *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (MakeSandboxDirectoryRes, error)
 	// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 	//
 	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
 	MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
+	// MoveSandboxFile implements move-sandbox-file operation.
+	//
+	// Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a
+	// destination that does unless replace is set, which replaces whatever is there, a directory
+	// included.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error)
 	// ProposeApprovalRuleFromGrant implements propose-approval-rule-from-grant operation.
 	//
 	// Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same
@@ -840,6 +868,13 @@ type Handler interface {
 	//
 	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
 	PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (PutSandboxRuntimeConfigRes, error)
+	// ReadSandboxFile implements read-sandbox-file operation.
+	//
+	// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
+	// directory.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileRes, error)
 	// ReconcilePool implements reconcile-pool operation.
 	//
 	// Reconcile a pool.
@@ -876,6 +911,13 @@ type Handler interface {
 	//
 	// POST /api/pools/register
 	RegisterPool(ctx context.Context, req *RegisterPoolBody) (RegisterPoolRes, error)
+	// RemoveSandboxFile implements remove-sandbox-file operation.
+	//
+	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
+	// that is not empty unless recursive is set.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+	RemoveSandboxFile(ctx context.Context, req *SandboxFileRemoveRequest, params RemoveSandboxFileParams) (RemoveSandboxFileRes, error)
 	// RepairSandbox implements repair-sandbox operation.
 	//
 	// Rebuild the sandbox in place, on its harness config's current image, and start it. The container
@@ -1023,6 +1065,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
 	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (StartSandboxServiceRes, error)
+	// StatSandboxFile implements stat-sandbox-file operation.
+	//
+	// Reports one path as the discobox's default user sees it. Every files operation acts as that user,
+	// with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+	StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (StatSandboxFileRes, error)
 	// StopSandbox implements stop-sandbox operation.
 	//
 	// Stop a sandbox.
@@ -1152,6 +1201,15 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
 	WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error)
+	// WriteSandboxFile implements write-sandbox-file operation.
+	//
+	// Writes the request body to a file, replacing what is there. The content lands whole or not at all,
+	// and a link is written through to what it points to. A replaced file keeps its permissions. 412
+	// when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
+	// is a directory, 404 when ifMissing refuses.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	WriteSandboxFile(ctx context.Context, req WriteSandboxFileReq, params WriteSandboxFileParams) (WriteSandboxFileRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

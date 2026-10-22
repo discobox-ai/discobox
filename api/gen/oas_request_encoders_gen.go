@@ -104,6 +104,20 @@ func encodeConfirmSandboxAutostopRequest(
 	return nil
 }
 
+func encodeCopySandboxFileRequest(
+	req *SandboxFileTransferRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateApprovalRuleRequest(
 	req *CreateApprovalRuleBody,
 	r *http.Request,
@@ -356,8 +370,36 @@ func encodeJudgeSandboxRequest(
 	return nil
 }
 
+func encodeMakeSandboxDirectoryRequest(
+	req *SandboxFileMkdirRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeMintSandboxAgentStatusTokensRequest(
 	req *MintSandboxAgentStatusTokensBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeMoveSandboxFileRequest(
+	req *SandboxFileTransferRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -428,6 +470,20 @@ func encodeRefreshSecretRequest(
 
 func encodeRegisterPoolRequest(
 	req *RegisterPoolBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeRemoveSandboxFileRequest(
+	req *SandboxFileRemoveRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -787,5 +843,15 @@ func encodeWaitSandboxExecRequest(
 	}
 	encoded := e.Bytes()
 	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeWriteSandboxFileRequest(
+	req WriteSandboxFileReq,
+	r *http.Request,
+) error {
+	const contentType = "application/octet-stream"
+	body := req
+	ht.SetBody(r, body, contentType)
 	return nil
 }

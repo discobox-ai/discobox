@@ -31,6 +31,11 @@ const (
 	ScopeTerminalWrite   = "terminal:write"
 	ScopeExecRead        = "exec:read"
 	ScopeExecWrite       = "exec:write"
+	// ScopeFilesRead and ScopeFilesWrite gate the files API (ADR 26-10-22-499
+	// §3): stat, list and read, and every write. They are granted with the
+	// exec scopes and apart from them.
+	ScopeFilesRead  = "files:read"
+	ScopeFilesWrite = "files:write"
 	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3):
 	// dialing an arbitrary host:port from inside the sandbox's own network
 	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.

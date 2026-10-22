@@ -156,7 +156,7 @@ func SandboxAction(trigger string) SandboxUse {
 
 var (
 	// SandboxRead reads what only a running sandbox can answer: logs, events,
-	// resource samples. It starts a stopped sandbox, answers at once, and
+	// resource samples, files. It starts a stopped sandbox, answers at once, and
 	// repairs nothing.
 	SandboxRead = SandboxUse{Kind: sandbox.UseRead}
 	// SandboxInspect reads what the sandbox's last inventory also answers:
