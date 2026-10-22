@@ -371,14 +371,10 @@ func remove(path string, recursive bool) error {
 		return os.RemoveAll(path)
 	}
 	err := os.Remove(path)
-	if err != nil && isNotEmpty(err) {
+	if err != nil && notEmpty(err) {
 		return errorf(KindConflict, "%s is a directory that is not empty", path)
 	}
 	return err
-}
-
-func isNotEmpty(err error) bool {
-	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST)
 }
 
 // checkDestination refuses a destination that exists unless replace was
@@ -429,13 +425,6 @@ func move(from, to string, replace bool) (*Stat, error) {
 		return nil, err
 	}
 	return lstat(to)
-}
-
-// inTheWay reports whether a rename failed because of what is at its
-// destination.
-func inTheWay(err error) bool {
-	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST) ||
-		errors.Is(err, syscall.EISDIR) || errors.Is(err, syscall.ENOTDIR)
 }
 
 func copyPath(from, to string, replace bool) (*Stat, error) {

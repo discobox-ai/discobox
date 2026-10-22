@@ -14,7 +14,7 @@ import (
 func version(info fs.FileInfo) string {
 	tag := strconv.FormatInt(info.ModTime().UnixNano(), 36) + "-" + strconv.FormatInt(info.Size(), 36)
 	if sys, ok := info.Sys().(*syscall.Stat_t); ok {
-		tag += "-" + strconv.FormatUint(uint64(sys.Ino), 36)
+		tag += "-" + strconv.FormatUint(sys.Ino, 36)
 	}
 	return tag
 }

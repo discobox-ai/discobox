@@ -103,10 +103,12 @@ func (f *fakeFilesAPI) serve(w http.ResponseWriter, r *http.Request) {
 		path = "/home/agent/" + path
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(fakeFileStat{
+	if err := json.NewEncoder(w).Encode(fakeFileStat{
 		Path: path, Name: path[strings.LastIndex(path, "/")+1:], Type: "file",
 		Mode: 0o644, ModifiedAt: time.Now().UTC(), Version: "v1",
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // A pasted image is written whole through the files API, as the request's

@@ -94,11 +94,13 @@ func TestWriteCreatesReplacesAndKeepsPermissions(t *testing.T) {
 	}
 	mode := uint32(0o750)
 	created := mustDo(t, Request{Op: OpWrite, Path: path, Parents: true, Mode: &mode}, strings.NewReader("one"))
-	if created.Stat.Type != TypeFile || created.Stat.Size != 3 || created.Stat.Mode != 0o750 || created.Stat.Path != path {
+	// Windows keeps no POSIX permission bits, only whether a file is read-only.
+	posix := runtime.GOOS != "windows"
+	if created.Stat.Type != TypeFile || created.Stat.Size != 3 || (posix && created.Stat.Mode != 0o750) || created.Stat.Path != path {
 		t.Fatalf("created = %+v", created.Stat)
 	}
 	replaced := mustDo(t, Request{Op: OpWrite, Path: path}, strings.NewReader("second"))
-	if replaced.Stat.Mode != 0o750 {
+	if posix && replaced.Stat.Mode != 0o750 {
 		t.Fatalf("replaced mode = %o, want the file's own kept", replaced.Stat.Mode)
 	}
 	if replaced.Stat.Version == created.Stat.Version {
@@ -238,7 +240,8 @@ func TestListMkdirAndRemove(t *testing.T) {
 		t.Fatalf("mkdir without parents = %v, want not found", err)
 	}
 	mode := uint32(0o700)
-	if made := mustDo(t, Request{Op: OpMkdir, Path: sub, Parents: true, Mode: &mode}); made.Stat.Type != TypeDirectory || made.Stat.Mode != 0o700 {
+	// Windows keeps no POSIX permission bits.
+	if made := mustDo(t, Request{Op: OpMkdir, Path: sub, Parents: true, Mode: &mode}); made.Stat.Type != TypeDirectory || (runtime.GOOS != "windows" && made.Stat.Mode != 0o700) {
 		t.Fatalf("made = %+v", made.Stat)
 	}
 	mustDo(t, Request{Op: OpMkdir, Path: sub, Parents: true})

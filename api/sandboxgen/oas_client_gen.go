@@ -233,7 +233,7 @@ type Invoker interface {
 	//
 	// Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a
 	// destination that does unless replace is set, which replaces whatever is there, a directory
-	// included.
+	// included. A Windows discobox replaces a file only.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
 	MoveSandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params MoveSandboxFileParams) (*SandboxFileStat, error)
@@ -4097,7 +4097,7 @@ func (c *Client) sendMakeSandboxDirectory(ctx context.Context, request *SandboxF
 //
 // Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a
 // destination that does unless replace is set, which replaces whatever is there, a directory
-// included.
+// included. A Windows discobox replaces a file only.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
 func (c *Client) MoveSandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params MoveSandboxFileParams) (*SandboxFileStat, error) {
