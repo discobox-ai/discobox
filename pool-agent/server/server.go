@@ -48,6 +48,13 @@ type Config struct {
 	// is loopback, and serves the git-origins route alone, to the sandbox
 	// token alone, for the sandbox the proxy says is asking.
 	OriginListener net.Listener
+	// AssetListener, when set, serves Assets: the sandboxes' fetches of
+	// their bundles, which reach it through the pool proxy as origins do
+	// (ADR 26-10-16-423 §13). Assets decides on the sandbox the proxy names
+	// alone, so the listener is a socket no box can name, never a loopback
+	// port (layout.ProxyAssetsSocket).
+	AssetListener net.Listener
+	Assets        http.Handler
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -105,7 +112,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 // NewOriginRouter serves the git-origins route to sandboxes, as the pool proxy
 // forwards their fetches: only for a request whose token is one this pool
 // issued, and whose path names the sandbox the proxy authenticated by its
-// client certificate (proxy.OriginClientHeader). The control plane's tokens
+// client certificate (proxy.PoolClientHeader). The control plane's tokens
 // are not taken here; it reaches the same route on the agent's own listener.
 func NewOriginRouter(cfg Config) (*chi.Mux, error) {
 	if cfg.SandboxTokenKey == nil {
@@ -150,7 +157,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		// websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
 	}
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	var originServer *http.Server
 	if cfg.OriginListener != nil {
 		originRouter, err := NewOriginRouter(cfg)
@@ -163,6 +170,15 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		go func() {
 			logger.Info("pool agent serving sandbox origins", "addr", cfg.OriginListener.Addr())
 			errCh <- originServer.Serve(cfg.OriginListener)
+		}()
+	}
+	var assetServer *http.Server
+	if cfg.AssetListener != nil && cfg.Assets != nil {
+		// Long-lived like the origins': a layer can be large.
+		assetServer = &http.Server{Handler: cfg.Assets, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+		go func() {
+			logger.Info("pool agent serving sandbox assets", "addr", cfg.AssetListener.Addr())
+			errCh <- assetServer.Serve(cfg.AssetListener)
 		}()
 	}
 	go func() {
@@ -182,6 +198,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 		if originServer != nil {
 			_ = originServer.Shutdown(shutdownCtx)
+		}
+		if assetServer != nil {
+			_ = assetServer.Shutdown(shutdownCtx)
 		}
 		return ctx.Err()
 	case err := <-errCh:

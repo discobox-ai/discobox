@@ -25,10 +25,11 @@ type Config struct {
 	Allowlist     AllowlistConfig
 	Gateways      GatewaysConfig
 	Secrets       SecretsConfig
-	// Origins is the host the pool serves its sandboxes' Git origins at,
-	// which the proxy answers by forwarding to the pool rather than sending to
-	// the internet. Fixed for the life of the proxy: ApplyConfig leaves it.
-	Origins OriginsConfig
+	// PoolHosts are the hosts the pool serves its sandboxes itself — its Git
+	// origins and its bundle assets — which the proxy answers by forwarding to
+	// the pool rather than sending to the internet. Fixed for the life of the
+	// proxy: ApplyConfig leaves them.
+	PoolHosts []PoolHostConfig
 	// Trusts are the host pins in force, each one client's (ADR 0149). They
 	// are runtime policy: ApplyConfig replaces them whole.
 	Trusts []HostTrust

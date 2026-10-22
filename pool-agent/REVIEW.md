@@ -208,3 +208,17 @@ durable state asks the same question.
   `updateSandboxProxyPolicy`**: under the lock, and nothing for a sandbox with
   no container. An entry written after a delete has no material record naming
   it, and the reaper finds sandboxes only through those.
+
+## A listener the proxy forwards to
+
+- **A listener that takes `proxy.PoolClientHeader` as its only word on who is
+  asking is on a socket, never a loopback port.** The proxy strips and sets
+  the header only on the pool-host path; it sends a sandbox's ordinary egress
+  from the pool's network namespace, so a box can reach a loopback port
+  through its proxy with a header of its own and be answered as another
+  sandbox. The asset cache is on `layout.ProxyAssetsSocket` for this reason
+  (#265's review). The origins listener may stay on loopback only because it
+  also requires the pool's sandbox token for the sandbox it names.
+- **The pool cache and the server's asset store read a bundle the same way.**
+  Manifest parsing, a pin's reach and the damaged-blob rule live in
+  `imagecache`; a change to one store's reading belongs there, not in a copy.

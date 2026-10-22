@@ -9,15 +9,22 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/discobox-ai/discobox/wire"
 )
 
-const testOriginsHost = "git.discobox.internal"
+const (
+	testOriginsHost = "git.discobox.internal"
+	testAssetsHost  = "assets.discobox.internal"
+)
 
-// The origins host is answered by the pool's origin listener, never the
-// internet: whatever the allowlist says, a request for it is forwarded with its
-// path and query, its own credential, and the sandbox the client certificate
-// names in place of anything the sandbox claimed.
-func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
+// A pool host is answered by the pool's listener for it, never the internet:
+// whatever the allowlist says, a request for it is forwarded with its path and
+// query, its own credential, and the sandbox the client certificate names in
+// place of anything the sandbox claimed. A read-only one refuses a write at the
+// proxy, before the listener sees it.
+func TestHTTPProxyPoolHostsAreForwardedAsTheCertificatesSandbox(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -28,24 +35,34 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 		mu       sync.Mutex
 		requests []seen
 	)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	listener := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		requests = append(requests, seen{
 			method:             r.Method,
 			uri:                r.RequestURI,
-			client:             r.Header.Get(OriginClientHeader),
+			client:             r.Header.Get(PoolClientHeader),
 			authorization:      r.Header.Get("Authorization"),
 			proxyAuthorization: r.Header.Get("Proxy-Authorization"),
 			body:               string(body),
 		})
 		mu.Unlock()
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = io.WriteString(w, "origin for "+r.Header.Get(OriginClientHeader))
-	}))
+		_, _ = io.WriteString(w, "origin for "+r.Header.Get(PoolClientHeader))
+	})
+	upstream := httptest.NewServer(listener)
 	defer upstream.Close()
-
+	// The assets listener on a Unix socket, as the pool serves it.
 	dir := t.TempDir()
+	socket := filepath.Join(dir, "assets.sock")
+	assetsListener, err := wire.Listen(wire.UnixURL(socket))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetsServer := &http.Server{Handler: listener, ReadHeaderTimeout: time.Second}
+	go func() { _ = assetsServer.Serve(assetsListener) }()
+	defer assetsServer.Close()
+
 	prepared, err := PrepareCertificates(PrepareOptions{
 		Dir:         filepath.Join(dir, "certs"),
 		ProxyURL:    "https://127.0.0.1:0",
@@ -63,7 +80,10 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 		// An allowlist that admits nothing but an unrelated host: the origins
 		// host is not the allowlist's to refuse.
 		Allowlist: AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
-		Origins:   OriginsConfig{Host: testOriginsHost, Upstream: upstream.URL + "/base/"},
+		PoolHosts: []PoolHostConfig{
+			{Host: testOriginsHost, Upstream: upstream.URL + "/base/"},
+			{Host: testAssetsHost, Upstream: wire.UnixURL(socket), ReadOnly: true},
+		},
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -81,7 +101,7 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 	}
 	req.Header.Set("Authorization", "Bearer origin-token")
 	// What a sandbox says about itself is not what the pool is told.
-	req.Header.Set(OriginClientHeader, "sandbox-2")
+	req.Header.Set(PoolClientHeader, "sandbox-2")
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("client.Do() error = %v", err)
@@ -105,6 +125,39 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 		t.Fatalf("origin listener saw %+v, want one request %+v", got, want)
 	}
 
+	// The assets host is forwarded the same way, to its own upstream.
+	assets, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+testAssetsHost+"/blobs/sha256:00", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = client.Do(assets)
+	if err != nil {
+		t.Fatalf("assets GET error = %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != "origin for sandbox-1" {
+		t.Fatalf("assets GET = %d %q, want the listener's answer for sandbox-1", resp.StatusCode, body)
+	}
+	// And a write to it is refused by the proxy itself.
+	write, err := http.NewRequestWithContext(ctx, http.MethodPut, "https://"+testAssetsHost+"/blobs/sha256:00", strings.NewReader("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = client.Do(write)
+	if err != nil {
+		t.Fatalf("assets PUT error = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("assets PUT = %d, want 405", resp.StatusCode)
+	}
+	mu.Lock()
+	if len(requests) != 2 || requests[1].method != http.MethodGet || requests[1].uri != "/blobs/sha256:00" || requests[1].client != "sandbox-1" {
+		t.Fatalf("listener saw %+v, want the origins request and the assets GET alone", requests)
+	}
+	mu.Unlock()
+
 	// Any other host is still the allowlist's.
 	other, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://git.example.com/", nil)
 	if err != nil {
@@ -118,8 +171,8 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 		}
 	}
 	mu.Lock()
-	if len(requests) != 1 {
-		t.Fatalf("origin listener saw %d requests, want the origins host's alone", len(requests))
+	if len(requests) != 2 {
+		t.Fatalf("listener saw %d requests, want the pool hosts' alone", len(requests))
 	}
 	mu.Unlock()
 
@@ -129,17 +182,24 @@ func TestHTTPProxyOriginsHostIsForwardedAsTheCertificatesSandbox(t *testing.T) {
 	<-errCh
 }
 
-func TestOriginsConfigRefusesAnUpstreamThatIsNotHTTP(t *testing.T) {
-	for _, upstream := range []string{"", "unix:///run/origins.sock", "127.0.0.1:17086"} {
-		if _, err := newOriginForwarder(OriginsConfig{Host: testOriginsHost, Upstream: upstream}); err == nil {
+func TestPoolHostsRefuseAnUpstreamThatIsNoTransport(t *testing.T) {
+	for _, upstream := range []string{"", "ftp://127.0.0.1/", "http://", "unix://", "127.0.0.1:17086"} {
+		if _, err := newPoolHosts([]PoolHostConfig{{Host: testOriginsHost, Upstream: upstream}}); err == nil {
 			t.Errorf("upstream %q accepted, want refused", upstream)
 		}
 	}
-	forwarder, err := newOriginForwarder(OriginsConfig{})
-	if err != nil || forwarder != nil {
-		t.Fatalf("no origins host = %v, %v; want no forwarder", forwarder, err)
+	if _, err := newPoolHosts([]PoolHostConfig{{Upstream: "http://127.0.0.1:1"}}); err == nil {
+		t.Error("a pool host naming no host was accepted")
 	}
-	if forwarder.answers(testOriginsHost) {
-		t.Fatal("a nil forwarder answered a host")
+	twice := PoolHostConfig{Host: testOriginsHost, Upstream: "http://127.0.0.1:1"}
+	if _, err := newPoolHosts([]PoolHostConfig{twice, twice}); err == nil {
+		t.Error("a host named twice was accepted")
+	}
+	hosts, err := newPoolHosts(nil)
+	if err != nil || hosts != nil {
+		t.Fatalf("no pool hosts = %v, %v; want none", hosts, err)
+	}
+	if hosts.answering(testOriginsHost) != nil {
+		t.Fatal("no pool hosts answered a host")
 	}
 }

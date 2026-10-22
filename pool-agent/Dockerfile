@@ -18,6 +18,8 @@ COPY fsdurable ./fsdurable
 COPY gitbackend ./gitbackend
 COPY harness ./harness
 COPY hostscope ./hostscope
+COPY imagecache ./imagecache
+COPY internal/filelock ./internal/filelock
 COPY judge ./judge
 COPY layout ./layout
 COPY platform ./platform

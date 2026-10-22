@@ -97,7 +97,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		closed:      make(chan struct{}),
 	}
 	s.http = newHTTPProxy(certs, s.filter, buildGatewayTables(cfg.Gateways), resolver, swapper, c, recorder)
-	if s.http.origins, err = newOriginForwarder(cfg.Origins); err != nil {
+	if s.http.poolHosts, err = newPoolHosts(cfg.PoolHosts); err != nil {
 		return nil, err
 	}
 	upstream, err := upstreamProxyURL(cfg)

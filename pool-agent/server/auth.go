@@ -242,7 +242,7 @@ func (a *SignedTokenAuthenticator) SandboxOriginMiddleware(sandboxTokens *sandbo
 				SandboxID: sandbox.SandboxID,
 				Scopes:    sandbox.Scopes,
 			}
-			if client := r.Header.Get(proxy.OriginClientHeader); client != claims.SandboxID {
+			if client := r.Header.Get(proxy.PoolClientHeader); client != claims.SandboxID {
 				a.reject(r, w, http.StatusForbidden, reasonForbidden, fmt.Errorf("the proxy names sandbox %q, the token %q", client, claims.SandboxID))
 				return
 			}
