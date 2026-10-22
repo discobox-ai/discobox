@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
 ---
 
 # Verifying the console
@@ -477,6 +477,28 @@ docker exec discobox-vm-$P find /var/lib/discobox/identity -name agent.key   # .
   is an index of its platform and an attestation, so read its child manifest
   for layers.
 - An OCI layout tar from the daemon: `docker save <ref> | tar -t | grep blobs/`.
+
+# Verifying `assets.discobox.internal` (the pool's bundle cache)
+
+A pool-agent change reaches the dev pool only once the watcher records the new
+`discobox-pool-agent:dev-*` tag in `.tmp/discobox-dev-images.json` and the pool
+container is recreated on it (minutes after the build); check the running
+image before driving anything.
+
+```bash
+d new -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
+docker exec <pool> cat /var/lib/discobox/projects/*/pools/*/sandboxes/<sbx>/bundles.json
+d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
+```
+
+- Pins on the server: `curl 127.0.0.1:8080/projects/<p>/sandboxes/<sbx>`
+  (`config.bundleDigest`, `config.platformBundleDigest`, `runtime.upgrade`).
+- The pool's store is `/var/lib/discobox/cache/projects/*/pools/*/build/assets/
+  blobs/sha256/` in the pool container; `rm` or `dd conv=notrunc` a blob there
+  to exercise refetch and the digest check (a damaged one is cut short, never
+  whole). The socket is `/var/lib/discobox/proxy/projects/*/pools/*/assets.sock`.
+- A dev shell bundle has no layers; walk the platform index's amd64 child for
+  blobs. Clean up with `d rm` then `d admin box purge`.
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
