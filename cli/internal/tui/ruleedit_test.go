@@ -34,6 +34,15 @@ func mustBeOn(t *testing.T, m *Model, title string) {
 	}
 }
 
+// newRulePolicy is a policy typed into a new rule, a line at a time.
+var newRulePolicy = []string{
+	`allow read, comment on issue in repository "org/repo"`,
+	"deny delete on anything in anywhere",
+	"comment = add a comment to it",
+	"issue = a GitHub issue",
+	"repository = a GitHub repository",
+}
+
 // typeLines answers a list step a line at a time, and finishes it.
 func typeLines(t *testing.T, m *Model, lines ...string) {
 	t.Helper()
@@ -69,7 +78,7 @@ func TestANewRuleIsMadeAStepAtATime(t *testing.T) {
 	if card := cardWords(m); !strings.Contains(card, "for github.com/org/repo, github.com/org/tools, git@github.com:org/docs.git") {
 		t.Fatalf("card = %q, want the rule so far above the question", card)
 	}
-	typeLines(t, m, "Read any issue in org/repo", "Comment on any issue in org/repo; never close one")
+	typeLines(t, m, newRulePolicy...)
 
 	mustBeOn(t, m, "New rule: longest grant")
 	if at := m.dialog.items[m.dialog.cursor]; at.key != "3600" {
@@ -86,7 +95,9 @@ func TestANewRuleIsMadeAStepAtATime(t *testing.T) {
 	mustBeOn(t, m, "New rule: the rule")
 	card := cardWords(m)
 	for _, want := range []string{"credential com.github.api", "answered with gh", "github.com", "at most 2 hours", "expires never",
-		"discoboxes of github.com/org/repo", "discoboxes of github.com/org/tools", "Comment on any issue in org/repo; never close one",
+		"discoboxes of github.com/org/repo", "discoboxes of github.com/org/tools",
+		`in repository (a GitHub repository) "org/repo"`, "allow read, comment (add a comment to it) on issue (a GitHub issue)",
+		"global", "deny delete on anything",
 		"make this rule?"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
@@ -109,7 +120,7 @@ func TestANewRuleIsMadeAStepAtATime(t *testing.T) {
 	got := ds.madeRules[0]
 	if got.WellKnownID != "com.github.api" || got.SecretID != "" || got.EveryDiscobox ||
 		!slices.Equal(got.Repositories, []string{"github.com/org/repo", "github.com/org/tools", "git@github.com:org/docs.git"}) ||
-		len(got.Uses) != 2 || got.MaxGrantTTL != 2*time.Hour || !got.Expires.IsZero() {
+		!slices.Equal(policyText(got.Policy), []string{newRulePolicy[0], newRulePolicy[1], newRulePolicy[2], newRulePolicy[3], newRulePolicy[4]}) || got.MaxGrantTTL != 2*time.Hour || !got.Expires.IsZero() {
 		t.Fatalf("made = %+v, want what was chosen and nothing else", got)
 	}
 	if m.dialog != nil || len(m.rules.all) != 4 {
@@ -134,7 +145,7 @@ func TestANewRuleIsForEveryDiscoboxOnlyByChoosingIt(t *testing.T) {
 	send(t, m, keyPress("esc"))
 	mustBeOn(t, m, "New rule: which discoboxes")
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
-	typeLines(t, m, "Read any issue in org/repo")
+	typeLines(t, m, newRulePolicy...)
 	drain(t, m, m.dialog.action("3600"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	if card := cardWords(m); !strings.Contains(card, "every discobox in this project") || !strings.Contains(card, everyDiscobox) {
@@ -148,8 +159,8 @@ func TestANewRuleIsForEveryDiscoboxOnlyByChoosingIt(t *testing.T) {
 }
 
 // An edit opens each step on the rule as it is, and sends only what changed.
-// The last card says what changes, before and after, with the uses it
-// approved before listed whole.
+// The last card says what changes, before and after, with the policy it
+// approved before drawn whole.
 func TestAnEditSendsOnlyWhatChanged(t *testing.T) {
 	t.Parallel()
 	m, ds := newRuleFixture(t)
@@ -164,13 +175,21 @@ func TestAnEditSendsOnlyWhatChanged(t *testing.T) {
 	drain(t, m, m.dialog.action(""), 0)
 
 	mustBeOn(t, m, "Edit rule: what it approves")
-	// ↑ puts the last use in the field, and Enter puts it back as edited, in
-	// its place; Enter on the new line, empty, finishes.
-	send(t, m, keyPress("up"))
-	if m.dialog.typed() != "Read any issue in org/repo" {
-		t.Fatalf("field = %q, want the last use to edit", m.dialog.typed())
+	// The list opens on the rule's policy, a statement or a definition a
+	// line, as it is written.
+	if card := cardWords(m); !strings.Contains(card, readStatement) || !strings.Contains(card, "pull request = a GitHub pull request") {
+		t.Fatalf("card = %q, want the rule's policy to edit", card)
 	}
-	typeLines(t, m, "Read and label any issue in org/repo")
+	// ↑ walks up to the short statement, and Enter puts it back as edited,
+	// in its place; Enter on the new line, empty, finishes.
+	for range 5 {
+		send(t, m, keyPress("up"))
+	}
+	if m.dialog.typed() != readStatement {
+		t.Fatalf("field = %q, want the short statement to edit", m.dialog.typed())
+	}
+	edited := `allow read, update on issue in repository "org/repo"`
+	typeLines(t, m, edited)
 	// The longest grant and the expiry open on the rule's own, and are kept.
 	if at := m.dialog.items[m.dialog.cursor]; at.key != "28800" {
 		t.Fatalf("cursor on %q, want the rule's eight hours", at.key)
@@ -180,8 +199,8 @@ func TestAnEditSendsOnlyWhatChanged(t *testing.T) {
 
 	mustBeOn(t, m, "Edit rule: the rule")
 	card := cardWords(m)
-	for _, want := range []string{"what changes", "approves 2 uses → 2 uses", "what it approved before", "Read any issue in org/repo",
-		"Read and label any issue in org/repo", "change this rule?"} {
+	for _, want := range []string{"what changes", "approves 2 statements, 4 definitions → 2 statements, 4 definitions", "what it approved before",
+		`in repository "org/repo" allow read on issue (a GitHub issue)`, "allow read, update on issue (a GitHub issue)", "change this rule?"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card = %q, want it to carry %q", card, want)
 		}
@@ -195,8 +214,8 @@ func TestAnEditSendsOnlyWhatChanged(t *testing.T) {
 	}
 	c := ds.changedRules[0]
 	if c.Repositories != nil || c.EveryDiscobox || c.MaxGrantTTL != nil || c.Expires != nil || c.NeverExpires ||
-		!slices.Equal(c.Uses, []string{longUse, "Read and label any issue in org/repo"}) {
-		t.Fatalf("change = %+v, want the uses alone", c)
+		!slices.Equal(policyText(c.Policy), append([]string{longStatement, edited}, rulePolicyText[2:]...)) {
+		t.Fatalf("change = %+v, want the policy alone", c)
 	}
 }
 
@@ -227,7 +246,7 @@ func TestAnEditThatChangesNothingSendsNothing(t *testing.T) {
 
 	walk(ruleForEvery)
 	send(t, m, keyPress("y"))
-	if len(ds.changedRules) != 1 || !ds.changedRules[0].EveryDiscobox || ds.changedRules[0].Repositories != nil || ds.changedRules[0].Uses != nil {
+	if len(ds.changedRules) != 1 || !ds.changedRules[0].EveryDiscobox || ds.changedRules[0].Repositories != nil || ds.changedRules[0].Policy != nil {
 		t.Fatalf("changes = %+v, want every discobox alone", ds.changedRules)
 	}
 }
@@ -242,7 +261,7 @@ func TestAServerRefusalLeadsBackToItsStep(t *testing.T) {
 		back    string
 	}{
 		{`"org/repo" names no host: say which, as in github.com/org/repo`, "New rule: which discoboxes"},
-		{"each of a rule's uses is one sentence of at most 2048 bytes, on one line", "New rule: what it approves"},
+		{`policy: statement 1: "issue" is not a default word and has no definition`, "New rule: what it approves"},
 		{"a rule's expiry is in the future; leave it out for a rule that does not lapse", "New rule: when it lapses"},
 		{"the server is unavailable", "New rule: the rule"},
 	} {
@@ -256,7 +275,7 @@ func TestAServerRefusalLeadsBackToItsStep(t *testing.T) {
 			drain(t, m, m.dialog.action("wk:sec_gh"), 0)
 			drain(t, m, m.dialog.action(ruleForTyped), 0)
 			typeLines(t, m, "org/repo")
-			typeLines(t, m, "Read any issue in org/repo")
+			typeLines(t, m, newRulePolicy...)
 			drain(t, m, m.dialog.action("3600"), 0)
 			drain(t, m, m.dialog.action("0"), 0)
 			send(t, m, keyPress("y"))
@@ -270,8 +289,8 @@ func TestAServerRefusalLeadsBackToItsStep(t *testing.T) {
 			if tc.back == "New rule: which discoboxes" && !strings.Contains(m.dialog.items[m.dialog.cursor].detail, "now org/repo") {
 				t.Fatalf("cursor on %+v, want the repositories typed", m.dialog.items[m.dialog.cursor])
 			}
-			if tc.back == "New rule: what it approves" && !strings.Contains(wholeCard(m), "Read any issue in org/repo") {
-				t.Fatalf("card = %q, want the uses written", wholeCard(m))
+			if tc.back == "New rule: what it approves" && !strings.Contains(cardWords(m), newRulePolicy[0]) {
+				t.Fatalf("card = %q, want the policy written", wholeCard(m))
 			}
 		})
 	}
@@ -283,7 +302,8 @@ func TestARefusalIsReadForItsStep(t *testing.T) {
 	t.Parallel()
 	for said, want := range map[string]ruleStep{
 		"a rule is for the repositories it names or for every discobox in the project, not both": stepDiscoboxes,
-		"a rule says what may be approved: at least one use":                                     stepUses,
+		"a rule says what may be approved: a policy":                                             stepPolicy,
+		"a rule approves what its allows allow, and this policy has none":                        stepPolicy,
 		"a rule's lifetime cap is a number of seconds; 0 leaves it to the secret's own limit":    stepGrantCap,
 		"secret not found": stepCredential,
 		"because it broke": stepRead,
@@ -332,9 +352,10 @@ func TestTheLinesAreEditedInPlace(t *testing.T) {
 	drain(t, m, m.dialog.action("wk:sec_gh"), 0)
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
 	mustBeOn(t, m, "New rule: what it approves")
-	drain(t, m, m.dialog.action("one"), 0)
-	drain(t, m, m.dialog.action("two"), 0)
-	drain(t, m, m.dialog.action("three"), 0)
+	one, two, three := `allow read on issue in repository "org/one"`, `allow read on issue in repository "org/two"`, `allow read on issue in repository "org/three"`
+	drain(t, m, m.dialog.action(one), 0)
+	drain(t, m, m.dialog.action(two), 0)
+	drain(t, m, m.dialog.action(three), 0)
 	setField(m, "four, half")
 
 	frame := plainFrame(m)
@@ -342,22 +363,23 @@ func TestTheLinesAreEditedInPlace(t *testing.T) {
 		t.Fatalf("key line on the new line:\n%s", frame)
 	}
 	send(t, m, keyPress("up"), keyPress("up"))
-	if m.dialog.typed() != "two" || m.dialog.editAt != 1 || !strings.Contains(cardWords(m), "1. one ❯ 2. two") ||
-		strings.Count(cardWords(m), "two") != 1 || m.dialog.answerLabel != "what it approves" {
+	if m.dialog.typed() != two || m.dialog.editAt != 1 || !strings.Contains(cardWords(m), `"org/one" ❯ 2. allow read`) ||
+		strings.Count(cardWords(m), "org/two") != 1 || m.dialog.answerLabel != "its policy" {
 		t.Fatalf("field = %q, card = %q; want line 2 up for editing", m.dialog.typed(), wholeCard(m))
 	}
 	if frame := plainFrame(m); !strings.Contains(frame, "Enter keeps; emptied, removes") || !strings.Contains(frame, "Esc back, kept") {
 		t.Fatalf("key line on a line:\n%s", frame)
 	}
 	// Edited, and left unconfirmed by Esc: kept, field and all.
-	setField(m, "TWO")
+	edited := `allow update on issue in repository "org/two"`
+	setField(m, edited)
 	send(t, m, keyPress("esc"))
 	mustBeOn(t, m, "New rule: which discoboxes")
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
-	if m.dialog.typed() != "TWO" || m.dialog.editAt != 1 {
+	if m.dialog.typed() != edited || m.dialog.editAt != 1 {
 		t.Fatalf("field = %q at %q, want the unconfirmed edit kept", m.dialog.typed(), m.dialog.answerLabel)
 	}
-	drain(t, m, m.dialog.action("TWO"), 0)
+	drain(t, m, m.dialog.action(edited), 0)
 	// Back on the new line, with what was half-typed there.
 	if m.dialog.typed() != "four, half" {
 		t.Fatalf("field = %q, want the new line as it was left", m.dialog.typed())
@@ -367,32 +389,35 @@ func TestTheLinesAreEditedInPlace(t *testing.T) {
 	send(t, m, keyPress("up"))
 	setField(m, "")
 	send(t, m, keyPress("down"))
-	if !strings.Contains(wholeCard(m), "three") {
+	if !strings.Contains(wholeCard(m), "org/three") {
 		t.Fatalf("card = %q, want a line moved off kept", wholeCard(m))
 	}
 	send(t, m, keyPress("up"), keyPress("up"), keyPress("up"))
 	drain(t, m, m.dialog.action(""), 0)
 	setField(m, "")
-	drain(t, m, m.dialog.action(""), 0)
+	typeLines(t, m, "issue = a GitHub issue", "repository = a GitHub repository")
 	mustBeOn(t, m, "New rule: longest grant")
 	drain(t, m, m.dialog.action("3600"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	send(t, m, keyPress("y"))
-	if made := m.ds.(*fakeSource).madeRules; len(made) != 1 || !slices.Equal(made[0].Uses, []string{"TWO", "three"}) {
+	if made := m.ds.(*fakeSource).madeRules; len(made) != 1 ||
+		!slices.Equal(policyText(made[0].Policy), []string{edited, three, "issue = a GitHub issue", "repository = a GitHub repository"}) {
 		t.Fatalf("made = %+v, want one removed, one edited in place", made)
 	}
 }
 
-// A use the server holds in text that had to be made safe to draw is sent
+// A policy the server holds in text that had to be made safe to draw is sent
 // back in the server's own text when an edit leaves it alone: only a line the
 // person changed is new text.
 func TestAnEditSendsTheServersTextForLinesLeftAlone(t *testing.T) {
 	t.Parallel()
 	m, ds := newRuleFixture(t)
-	const stored, shown = "Read issues\u202e in org/repo", `Read issues\u202e in org/repo`
+	const stored, shown = "a GitHub issue\u202e", `a GitHub issue\u202e`
 	ds.mu.Lock()
-	ds.rules[0].Uses = []string{shown, "Read any issue in org/repo"}
-	ds.rules[0].Stored = ApprovalRule{Repositories: []string{"github.com/org/repo", "github.com/org/tools"}, Uses: []string{stored, "Read any issue in org/repo"}}
+	ds.rules[0].Policy.Definitions["issue"] = shown
+	held := rulePolicy()
+	held.Definitions["issue"] = stored
+	ds.rules[0].Stored = ApprovalRule{Repositories: []string{"github.com/org/repo", "github.com/org/tools"}, Policy: held}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 	onRule(t, m, "rule_1")
@@ -400,14 +425,15 @@ func TestAnEditSendsTheServersTextForLinesLeftAlone(t *testing.T) {
 	drain(t, m, m.dialog.action(ruleForTyped), 0)
 	drain(t, m, m.dialog.action(""), 0)
 	send(t, m, keyPress("up"))
-	drain(t, m, m.dialog.action("Read and label any issue in org/repo"), 0)
+	drain(t, m, m.dialog.action("repository = a GitHub repository, or a fork of one"), 0)
 	drain(t, m, m.dialog.action(""), 0)
 	drain(t, m, m.dialog.action("28800"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	send(t, m, keyPress("y"))
-	if len(ds.changedRules) != 1 || ds.changedRules[0].Repositories != nil ||
-		!slices.Equal(ds.changedRules[0].Uses, []string{stored, "Read and label any issue in org/repo"}) {
-		t.Fatalf("changes = %+v, want the untouched use in the server's text and the repositories unsent", ds.changedRules)
+	if len(ds.changedRules) != 1 || ds.changedRules[0].Repositories != nil || ds.changedRules[0].Policy == nil ||
+		ds.changedRules[0].Policy.Definitions["issue"] != stored ||
+		ds.changedRules[0].Policy.Definitions["repository"] != "a GitHub repository, or a fork of one" {
+		t.Fatalf("changes = %+v, want the untouched definition in the server's text and the repositories unsent", ds.changedRules)
 	}
 }
 
@@ -419,7 +445,7 @@ func TestANewRuleSendsTheHostsItsCardReads(t *testing.T) {
 	send(t, m, keyPress(ruleNewKey))
 	drain(t, m, m.dialog.action("wk:sec_gh"), 0)
 	drain(t, m, m.dialog.action(ruleForEvery), 0)
-	typeLines(t, m, "Read any issue in org/repo")
+	typeLines(t, m, newRulePolicy...)
 	drain(t, m, m.dialog.action("3600"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	var read string
@@ -529,7 +555,7 @@ func TestTheRepositoriesStepOffersWhatItKnows(t *testing.T) {
 		t.Fatalf("card = %q, want the known one once and the new one written", card)
 	}
 	drain(t, m, m.dialog.action(""), 0)
-	typeLines(t, m, "Read any issue")
+	typeLines(t, m, newRulePolicy...)
 	drain(t, m, m.dialog.action("3600"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	send(t, m, keyPress("y"))
@@ -579,40 +605,40 @@ func TestAnEditOpensOnTheRulesRepositoriesChosen(t *testing.T) {
 	drain(t, m, m.dialog.action("28800"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	send(t, m, keyPress("y"))
-	if len(ds.changedRules) != 1 || !slices.Equal(ds.changedRules[0].Repositories, []string{"github.com/org/repo"}) || ds.changedRules[0].Uses != nil {
+	if len(ds.changedRules) != 1 || !slices.Equal(ds.changedRules[0].Repositories, []string{"github.com/org/repo"}) || ds.changedRules[0].Policy != nil {
 		t.Fatalf("changes = %+v, want the one repository left, and nothing else", ds.changedRules)
 	}
 }
 
-// Auto approve's uses ride every step back and forward: Esc to which
-// discoboxes, Esc again to the secrets, forward again, and the uses open as
-// they were left, half-typed line included — and the same back from the
+// Auto approve's policy rides every step back and forward: Esc to which
+// discoboxes, Esc again to the secrets, forward again, and the policy opens
+// as it was left, half-typed line included — and the same back from the
 // lifetime.
-func TestAutoApprovesUsesSurviveStepsBack(t *testing.T) {
+func TestAutoApprovesPolicySurvivesStepsBack(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithProposals(t)
 	toRuleDiscoboxes(t, m)
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	drain(t, m, m.dialog.action("Never push to main"), 0)
-	setField(m, "Comment on th")
+	drain(t, m, m.dialog.action("deny delete on anything in anywhere"), 0)
+	setField(m, "deny update on reposi")
 	send(t, m, keyPress("esc"))
 	if !onRuleStep(m, "which discoboxes") {
 		t.Fatalf("dialog = %s, want which discoboxes", describe(m.dialog))
 	}
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	if card := cardWords(m); !strings.Contains(card, "from any discobox/<slug> branch") || !strings.Contains(card, "Never push to main") ||
-		m.dialog.typed() != "Comment on th" {
+	if card := cardWords(m); !strings.Contains(card, writtenStatement) || !strings.Contains(card, "deny delete on anything in anywhere") ||
+		m.dialog.typed() != "deny update on reposi" {
 		t.Fatalf("card = %q, field = %q; want every line and the half-typed one", card, m.dialog.typed())
 	}
-	drain(t, m, m.dialog.action("Comment on the issue"), 0)
+	drain(t, m, m.dialog.action("deny update on repository in anywhere"), 0)
 	drain(t, m, m.dialog.action(""), 0)
 	send(t, m, keyPress("esc"), keyPress("esc"))
 	if !onRuleStep(m, "which discoboxes") {
 		t.Fatalf("dialog = %s, want which discoboxes", describe(m.dialog))
 	}
 	drain(t, m, m.dialog.action(ruleForRepository), 0)
-	if card := cardWords(m); !strings.Contains(card, "Comment on the issue") {
-		t.Fatalf("card = %q, want the uses finished before kept", card)
+	if card := cardWords(m); !strings.Contains(card, "deny update on repository in anywhere") {
+		t.Fatalf("card = %q, want the policy finished before kept", card)
 	}
 }
 
@@ -738,7 +764,7 @@ func TestADiscoboxsRepositoryIsDrawnSafe(t *testing.T) {
 	}
 	send(t, m, keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down"))
 	drain(t, m, m.dialog.action(""), 0)
-	typeLines(t, m, "Read issues")
+	typeLines(t, m, newRulePolicy...)
 	drain(t, m, m.dialog.action("3600"), 0)
 	drain(t, m, m.dialog.action("0"), 0)
 	send(t, m, keyPress("y"))
@@ -757,10 +783,10 @@ func setField(m *Model, value string) {
 	m.dialog.input.SetValue(value)
 }
 
-// The uses are a numbered list, right-aligned past nine, the new line the
-// next number; the line being edited is its own editor in place, wrapped
-// whole with its start in view, and drawn once.
-func TestTheUsesAreNumberedAndEditedInPlace(t *testing.T) {
+// The policy's lines are a numbered list, right-aligned past nine, the new
+// line the next number; the line being edited is its own editor in place,
+// wrapped whole with its start in view, and drawn once.
+func TestThePolicyLinesAreNumberedAndEditedInPlace(t *testing.T) {
 	t.Parallel()
 	m, _ := newRuleFixture(t)
 	send(t, m, keyPress(ruleNewKey))
@@ -783,7 +809,7 @@ func TestTheUsesAreNumberedAndEditedInPlace(t *testing.T) {
 		send(t, m, keyPress("up"))
 	}
 	if m.dialog.editAt != 0 || m.dialog.typed() != long {
-		t.Fatalf("editing %d %q, want the first use", m.dialog.editAt, m.dialog.typed())
+		t.Fatalf("editing %d %q, want the first line", m.dialog.editAt, m.dialog.typed())
 	}
 	words := cardWords(m)
 	if !strings.Contains(words, "❯ 1. Open, update, comment") || !strings.Contains(words, "repository's settings") || strings.Count(words, "Open, update") != 1 {
@@ -794,7 +820,7 @@ func TestTheUsesAreNumberedAndEditedInPlace(t *testing.T) {
 // A grant read on its card is made into a rule the way auto approve would
 // have made one from the request it answered: the server proposes it from the
 // grant, the new rule's steps open on that — its credential the grant's and
-// not asked, the asking discobox's repository ticked, the judge's uses, each
+// not asked, the asking discobox's repository ticked, the judge's policy, each
 // grant as long as this one — and Esc on the first step is the grant again.
 func TestAGrantIsMadeIntoARule(t *testing.T) {
 	t.Parallel()
@@ -804,7 +830,7 @@ func TestAGrantIsMadeIntoARule(t *testing.T) {
 	ds.proposals = RuleProposals{
 		Credential: "gh", Hosts: []string{"api.github.com"},
 		Repository: "github.com/org/repo", RepositoryStored: "github.com/org/repo",
-		Written: &WrittenUses{Uses: []string{"Open a PR against org/repo"}, Stored: []string{"Open a PR against org/repo"},
+		Written: &WrittenPolicy{Policy: writtenPolicy().Policy, Stored: writtenPolicy().Stored,
 			Covers: true, Reason: "opening this one is within it"},
 	}
 	ds.mu.Unlock()
@@ -828,9 +854,9 @@ func TestAGrantIsMadeIntoARule(t *testing.T) {
 	drain(t, m, m.dialog.action(ruleForTyped), 0)
 	typeLines(t, m)
 	mustBeOn(t, m, "New rule: what it approves")
-	for _, want := range []string{"Open a PR against org/repo", "the judge found they cover the request this grant answered"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("uses step = %q, want %q", dialogText(m), want)
+	for _, want := range []string{writtenStatement, "it covers the policy this grant approved: opening this one is within it"} {
+		if !strings.Contains(cardWords(m), want) {
+			t.Fatalf("policy step = %q, want %q", cardWords(m), want)
 		}
 	}
 	typeLines(t, m)
@@ -842,22 +868,42 @@ func TestAGrantIsMadeIntoARule(t *testing.T) {
 	}
 	made := ds.madeRules[0]
 	if made.SecretID != "sec_gh" || !slices.Equal(made.Hosts, []string{"api.github.com"}) || made.Delegate ||
-		!slices.Equal(made.Repositories, []string{"github.com/org/repo"}) || !slices.Equal(made.Uses, []string{"Open a PR against org/repo"}) ||
+		!slices.Equal(made.Repositories, []string{"github.com/org/repo"}) || !samePolicy(made.Policy, writtenPolicy().Stored) ||
 		made.MaxGrantTTL != 2*time.Hour {
-		t.Fatalf("made = %+v, want the grant's credential and hosts, its discobox's repository, the judge's uses, and its lifetime", made)
+		t.Fatalf("made = %+v, want the grant's credential and hosts, its discobox's repository, the judge's policy, and its lifetime", made)
 	}
 }
 
-// A grant that names no uses has nothing a rule could approve, and its card
-// says so rather than offering it.
-func TestAGrantWithNoUsesIsNotMadeIntoARule(t *testing.T) {
+// A grant that carries no policy has nothing a rule could approve, and its
+// card says so rather than offering it.
+func TestAGrantWithNoPolicyIsNotMadeIntoARule(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	send(t, m, keyPress("enter"))
 	drain(t, m, m.dialog.action("grant_2"), 0)
 	mustBeOn(t, m, "Grant")
-	if row := m.dialog.items[0]; row.enabled || !strings.Contains(row.why, "names none") {
-		t.Fatalf("row = %+v, want it refused for a grant with no uses", row)
+	if row := m.dialog.items[0]; row.enabled || !strings.Contains(row.why, "carries none") {
+		t.Fatalf("row = %+v, want it refused for a grant with no policy", row)
+	}
+	send(t, m, keyPress(ruleNewKey))
+	if len(ds.grantProposed) != 0 {
+		t.Fatalf("proposed from %q, want nothing asked", ds.grantProposed)
+	}
+}
+
+// A delegation grant is offered no rule: none approves a delegation yet.
+func TestADelegationGrantIsNotMadeIntoARule(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+	ds.mu.Lock()
+	ds.projectGrants[0].Delegate = true
+	ds.mu.Unlock()
+	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
+	send(t, m, keyPress("enter"))
+	drain(t, m, m.dialog.action("grant_1"), 0)
+	mustBeOn(t, m, "Grant")
+	if row := m.dialog.items[0]; row.enabled || !strings.Contains(row.why, "delegat") {
+		t.Fatalf("row = %+v, want it refused for a grant that delegates", row)
 	}
 	send(t, m, keyPress(ruleNewKey))
 	if len(ds.grantProposed) != 0 {
@@ -880,7 +926,7 @@ func grantRuleFixture(t *testing.T, mark bool) (*Model, *fakeSource) {
 	asked := "com.github.api"
 	ds.proposals = RuleProposals{
 		Credential: asked, WellKnownID: asked, Hosts: []string{"api.github.com"},
-		Written: &WrittenUses{Uses: []string{"Open a PR against org/repo"}, Stored: []string{"Open a PR against org/repo"}, Covers: true},
+		Written: writtenPolicy(),
 	}
 	ds.mu.Unlock()
 	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
@@ -959,7 +1005,7 @@ func TestALineWrapsTheSameEditedOrNot(t *testing.T) {
 		plain := lineRows(t, m, width)
 		send(t, m, keyPress("up"))
 		if m.dialog.editAt != 0 {
-			t.Fatalf("editing %d, want the long use", m.dialog.editAt)
+			t.Fatalf("editing %d, want the long line", m.dialog.editAt)
 		}
 		edited := lineRows(t, m, width)
 		if !slices.Equal(plain, edited) {

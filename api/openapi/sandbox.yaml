@@ -183,7 +183,7 @@ components:
                     description: The host the use was approved for.
                     type: string
                 kind:
-                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether what a discobox asked for is within an approval rule''s uses.'
+                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether the conditions of an allow a discobox asked for are within an approval rule''s.'
                     enum:
                         - command
                         - request
@@ -194,7 +194,7 @@ components:
                     description: The approved use, in the words it was approved in, for a command or request job.
                     type: string
                 purposes:
-                    description: What a job is judged against in place of purpose, one entry each — for a delegation or rule job the uses the discobox was delegated, or the rule's uses; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
+                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the uses the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
                     items:
                         type: string
                     type: array
@@ -209,7 +209,7 @@ components:
                 stdin:
                     $ref: '#/components/schemas/JudgeInput'
                 uses:
-                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it asked for, judged against purposes.
+                    description: For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
                     items:
                         type: string
                     type: array
@@ -233,35 +233,40 @@ components:
             type: object
         JudgeProposal:
             additionalProperties: false
-            description: The uses a model wrote for an approval rule from the uses a request asked for, as the same work on any target of its kind. They authorize nothing; they are judged, and read and edited by a person, before they become a rule.
+            description: The statements a model wrote for an approval rule from the policy a request asked for, as the same work on any target of its kind, each as its sentence. They authorize nothing; the server parses and checks them, and a person reads and edits them, before they become a rule.
             properties:
-                usesAnyTarget:
-                    description: The same work on any target of its kind.
+                statementsAnyTarget:
+                    description: The same work on any target of its kind, one statement's sentence each.
                     items:
                         type: string
                     type: array
             required:
-                - usesAnyTarget
+                - statementsAnyTarget
             type: object
         JudgeProposalJob:
             additionalProperties: false
-            description: What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox asked for, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
+            description: What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The policy a discobox asked for, as its statements' sentences and the definitions of their words, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
             properties:
                 credential:
                     description: The credential asked for, in the words a person reads, never its value.
                     type: string
+                definitions:
+                    additionalProperties:
+                        type: string
+                    description: What each word of the statements that is not a default means, as the request defined it.
+                    type: object
                 hosts:
                     description: The hosts the request asked to send the credential to.
                     items:
                         type: string
                     type: array
-                uses:
-                    description: The uses the request asked for, verbatim.
+                statements:
+                    description: The statements the request asked for, each as its sentence, verbatim.
                     items:
                         type: string
                     type: array
             required:
-                - uses
+                - statements
             type: object
         JudgeRecognition:
             additionalProperties: false
@@ -2715,7 +2720,7 @@ paths:
                 - Sandbox Judge
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
         post:
-            description: Has this discobox's harness write the uses a person starts an approval rule from (ADR 26-10-12-330) — the uses a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the uses a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
+            description: Has this discobox's harness write the policy a person starts an approval rule from (ADR 26-10-12-330) — the policy a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the statements a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
             operationId: propose-sandbox-rule
             parameters:
                 - description: Project that owns the sandbox.

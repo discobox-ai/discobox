@@ -39,9 +39,10 @@ type RuleRequests struct {
 func (s *Service) RuleRequests() *RuleRequests { return &RuleRequests{secrets: s} }
 
 // Reconcile tests the project's rules against one request, one at a time and
-// each on its own — never several rules' uses together — in the order of what
-// each step costs: the facts, the repository the discobox is of among them,
-// then the content. The first rule
+// each on its own — never several rules' policies together — in the order of
+// what each step costs: the facts, the repository the discobox is of among
+// them, then the policy, compared by code, with the judge asked only about
+// conditions code cannot compare. The first rule
 // that covers the request approves it and ends the run. A request no rule
 // covers stays pending, for a person, exactly as it would with no rules.
 //
@@ -79,17 +80,17 @@ func (r *RuleRequests) Reconcile(ctx context.Context, requestID string) (reconci
 		if reason != "" {
 			continue
 		}
-		covered, _, err := s.ruleUsesCover(ctx, rule, req)
+		coverage, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, false)
 		if err != nil {
 			if unanswered == nil {
 				unanswered = err
 			}
 			continue
 		}
-		if !covered {
+		if !coverage.covered {
 			continue
 		}
-		switch err := s.approveUnderRule(ctx, req, rule, secret); {
+		switch err := s.approveUnderRule(ctx, req, rule, secret, coverage.values); {
 		case err == nil:
 			slog.InfoContext(ctx, "an approval rule approved a credential request",
 				"projectId", req.ProjectID, "requestId", req.ID, "grantId", req.GrantID,
@@ -100,9 +101,10 @@ func (r *RuleRequests) Reconcile(ctx context.Context, requestID string) (reconci
 			return reconcile.Result{}, nil
 		default:
 			// The rule covers the request and the approval was refused all the
-			// same — a variable another grant still delivers, a rule edited
-			// under the judge. It is said and the next rule is tried; the
-			// request waits for a person if none goes through.
+			// same — a variable another grant still delivers, a variable that
+			// resolves otherwise since it was compared, a rule edited under the
+			// judge. It is said and the next rule is tried; the request waits
+			// for a person if none goes through.
 			slog.WarnContext(ctx, "an approval rule covers a request it could not approve",
 				"projectId", req.ProjectID, "requestId", req.ID, "ruleId", rule.ID, "error", err)
 		}
@@ -118,15 +120,17 @@ var errRequestAnswered = errors.New("the request was answered concurrently")
 var errPolicyResolvedOtherwise = apperrors.NewStatusError(http.StatusConflict,
 	"the policy's variables do not resolve to the values this approval was shown; read the request again and approve what it shows now")
 
-// errRuleChanged is an approval whose rule no longer says what the judge read.
+// errRuleChanged is an approval whose rule no longer says what was read of it.
 var errRuleChanged = apperrors.NewStatusError(http.StatusConflict,
-	"the approval rule was disabled, lapsed, deleted or edited since the judge read it")
+	"the approval rule was disabled, lapsed, deleted or edited since it was read")
 
 // approveUnderRule approves a request a rule covers, through the write a
 // person's approval takes (commitApproval). The grant is what a person's
-// approval would mint — sandbox-scoped, the uses as asked, so each discobox
-// holds its own branch and not the class — and records the rule (§4).
-func (s *Service) approveUnderRule(ctx context.Context, req *model.SecretRequest, rule *model.ApprovalRule, secret *model.Secret) error {
+// approval would mint — sandbox-scoped, the uses and the policy as asked, so
+// each discobox holds its own branch and not the class — and records the rule
+// (§4). values are what the policy's variables resolved to when it was held
+// to the rule, and the grant's must resolve the same.
+func (s *Service) approveUnderRule(ctx context.Context, req *model.SecretRequest, rule *model.ApprovalRule, secret *model.Secret, values map[string]string) error {
 	uses, err := mintUseIDs(req.Uses)
 	if err != nil {
 		return err
@@ -142,6 +146,8 @@ func (s *Service) approveUnderRule(ctx context.Context, req *model.SecretRequest
 		scopeKey: req.SandboxID,
 		hosts:    req.Hosts,
 		uses:     uses,
+		policy:   req.Policy,
+		shown:    values,
 		purpose:  purpose,
 		rule:     rule,
 	})

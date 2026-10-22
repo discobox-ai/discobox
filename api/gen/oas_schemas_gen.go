@@ -523,8 +523,10 @@ type ApprovalRule struct {
 	SecretId OptString `json:"secretId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// What may be approved, as sentences the judge reads the uses a request asks for against.
-	Uses []string `json:"uses"`
+	// What may be approved. A request is covered when every allow of its policy falls within an allow of
+	// this one and it carries every deny of this one. Its variables bind to the discobox that asked; it
+	// carries no resolved values.
+	Policy AccessPolicy `json:"policy"`
 	// The well-known credential the rule approves, when it names one by ID.
 	WellKnownId OptString `json:"wellKnownId"`
 }
@@ -594,9 +596,9 @@ func (s *ApprovalRule) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
-// GetUses returns the value of Uses.
-func (s *ApprovalRule) GetUses() []string {
-	return s.Uses
+// GetPolicy returns the value of Policy.
+func (s *ApprovalRule) GetPolicy() AccessPolicy {
+	return s.Policy
 }
 
 // GetWellKnownId returns the value of WellKnownId.
@@ -669,9 +671,9 @@ func (s *ApprovalRule) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-// SetUses sets the value of Uses.
-func (s *ApprovalRule) SetUses(val []string) {
-	s.Uses = val
+// SetPolicy sets the value of Policy.
+func (s *ApprovalRule) SetPolicy(val AccessPolicy) {
+	s.Policy = val
 }
 
 // SetWellKnownId sets the value of WellKnownId.
@@ -978,9 +980,10 @@ func (s *ApproveTrustRequestBody) SetUses(val OptNilSecretUseArray) {
 // purpose are the request's, copied by the server and never taken from here. Which discoboxes it is
 // for is a list of repositories, or every discobox in the project, which is said and never defaulted.
 //
-//	Its uses are what a person chose or wrote, and are held to the judge's word before anything is
+//	Its policy is what a person chose or wrote, and is held to covering the request's before anything
 //
-// made, so a rule that would not cover this request is refused. Only a person approves this way.
+// is made -- by code, and by the judge for conditions code cannot compare -- so a rule that would
+// not cover this request is refused. Only a person approves this way.
 // Ref: #/components/schemas/ApproveWithRule
 type ApproveWithRule struct {
 	// When the rule stops approving. Left out, it does not lapse.
@@ -997,9 +1000,10 @@ type ApproveWithRule struct {
 	// request; one with no repository (a local source with no remote) is answered only by a rule for
 	// every discobox, which everyDiscobox says.
 	Repositories []string `json:"repositories"`
-	// What the rule approves, as sentences the judge reads the uses a request asks for against. Left out,
-	//  the request's uses as asked.
-	Uses []string `json:"uses"`
+	// What the rule approves, as a policy a request's policy must fall within. Its variables bind to
+	// whichever discobox asks. Left out, the request's policy as asked. Any resolved values sent are
+	// dropped.
+	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetExpiresAt returns the value of ExpiresAt.
@@ -1022,9 +1026,9 @@ func (s *ApproveWithRule) GetRepositories() []string {
 	return s.Repositories
 }
 
-// GetUses returns the value of Uses.
-func (s *ApproveWithRule) GetUses() []string {
-	return s.Uses
+// GetPolicy returns the value of Policy.
+func (s *ApproveWithRule) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // SetExpiresAt sets the value of ExpiresAt.
@@ -1047,9 +1051,9 @@ func (s *ApproveWithRule) SetRepositories(val []string) {
 	s.Repositories = val
 }
 
-// SetUses sets the value of Uses.
-func (s *ApproveWithRule) SetUses(val []string) {
-	s.Uses = val
+// SetPolicy sets the value of Policy.
+func (s *ApproveWithRule) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // Ref: #/components/schemas/AssignSandboxHarnessSecretsBody
@@ -1378,8 +1382,9 @@ type CreateApprovalRuleBody struct {
 	Repositories []string `json:"repositories"`
 	// The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
 	SecretId OptString `json:"secretId"`
-	// What may be approved, as sentences. At least one.
-	Uses []string `json:"uses"`
+	// What may be approved, as a policy with at least one allow. Its variables bind to whichever
+	// discobox asks. Any resolved values sent are dropped.
+	Policy AccessPolicy `json:"policy"`
 	// The well-known credential the rule approves, by its ID.
 	WellKnownId OptString `json:"wellKnownId"`
 }
@@ -1429,9 +1434,9 @@ func (s *CreateApprovalRuleBody) GetSecretId() OptString {
 	return s.SecretId
 }
 
-// GetUses returns the value of Uses.
-func (s *CreateApprovalRuleBody) GetUses() []string {
-	return s.Uses
+// GetPolicy returns the value of Policy.
+func (s *CreateApprovalRuleBody) GetPolicy() AccessPolicy {
+	return s.Policy
 }
 
 // GetWellKnownId returns the value of WellKnownId.
@@ -1484,9 +1489,9 @@ func (s *CreateApprovalRuleBody) SetSecretId(val OptString) {
 	s.SecretId = val
 }
 
-// SetUses sets the value of Uses.
-func (s *CreateApprovalRuleBody) SetUses(val []string) {
-	s.Uses = val
+// SetPolicy sets the value of Policy.
+func (s *CreateApprovalRuleBody) SetPolicy(val AccessPolicy) {
+	s.Policy = val
 }
 
 // SetWellKnownId sets the value of WellKnownId.
@@ -3163,9 +3168,9 @@ type CredentialVerdict struct {
 	// The project's judge that answered, on a request verdict. It may no longer exist.
 	JudgeSandboxId OptString `json:"judgeSandboxId"`
 	// What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
-	// credential on by approving another's request, or an approval rule's uses being read against what a
-	// request asked for (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and
-	// every verdict it has is a command verdict.
+	// credential on by approving another's request, or the conditions of an allow a request asked for
+	// being read against an approval rule's (ADR 26-10-12-330). A server that predates request verdicts
+	// leaves it out, and every verdict it has is a command verdict.
 	Kind OptCredentialVerdictKind `json:"kind"`
 	// On a rule verdict, the approval rule tested. Absent on one recorded while the rule was still a
 	// proposal, which names its request instead.
@@ -3566,9 +3571,9 @@ func (s *CredentialVerdict) SetVolunteered(val bool) {
 }
 
 // What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
-// credential on by approving another's request, or an approval rule's uses being read against what a
-// request asked for (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and
-// every verdict it has is a command verdict.
+// credential on by approving another's request, or the conditions of an allow a request asked for
+// being read against an approval rule's (ADR 26-10-12-330). A server that predates request verdicts
+// leaves it out, and every verdict it has is a command verdict.
 type CredentialVerdictKind string
 
 const (
@@ -7947,14 +7952,15 @@ type JudgeJob struct {
 	// The host the use was approved for.
 	Host string `json:"host"`
 	// What is being judged: a command about to run, a request the proxy observed, a discobox about to
-	// hand a credential on by approving another's request, or whether what a discobox asked for is
-	// within an approval rule's uses.
+	// hand a credential on by approving another's request, or whether the conditions of an allow a
+	// discobox asked for are within an approval rule's.
 	Kind JudgeJobKind `json:"kind"`
 	// The approved use, in the words it was approved in, for a command or request job.
 	Purpose OptString `json:"purpose"`
-	// What a job is judged against in place of purpose, one entry each — for a delegation or rule job
-	// the uses the discobox was delegated, or the rule's uses; for a command or request job under a
-	// grant that carries a policy, its statements as sentences, bound to the discobox asking.
+	// What a job is judged against in place of purpose, one entry each — for a delegation job the uses
+	// the discobox was delegated; for a rule job the one allow of the rule, as its sentence; for a
+	// command or request job under a grant that carries a policy, its statements as sentences, bound to
+	// the discobox asking.
 	Purposes []string                `json:"purposes"`
 	Reported OptJudgeReported        `json:"reported"`
 	Request  OptJudgeRequestEvidence `json:"request"`
@@ -7962,8 +7968,8 @@ type JudgeJob struct {
 	// body.
 	Round int64         `json:"round"`
 	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the uses it
-	// asked for, judged against purposes.
+	// For a delegation job, the uses the discobox is about to hand on, and for a rule job the one allow
+	// it asked for, as its sentence, judged against purposes.
 	Uses []string `json:"uses"`
 }
 
@@ -8121,8 +8127,8 @@ func (s *JudgeJobDefinitions) init() JudgeJobDefinitions {
 }
 
 // What is being judged: a command about to run, a request the proxy observed, a discobox about to
-// hand a credential on by approving another's request, or whether what a discobox asked for is
-// within an approval rule's uses.
+// hand a credential on by approving another's request, or whether the conditions of an allow a
+// discobox asked for are within an approval rule's.
 type JudgeJobKind string
 
 const (
@@ -8207,38 +8213,41 @@ func (s *JudgeNeed) SetBytes(val OptInt64) {
 	s.Bytes = val
 }
 
-// The uses a model wrote for an approval rule from the uses a request asked for, as the same work on
-// any target of its kind. They authorize nothing; they are judged, and read and edited by a person,
-// before they become a rule.
+// The statements a model wrote for an approval rule from the policy a request asked for, as the same
+// work on any target of its kind, each as its sentence. They authorize nothing; the server parses
+// and checks them, and a person reads and edits them, before they become a rule.
 // Ref: #/components/schemas/JudgeProposal
 type JudgeProposal struct {
-	// The same work on any target of its kind.
-	UsesAnyTarget []string `json:"usesAnyTarget"`
+	// The same work on any target of its kind, one statement's sentence each.
+	StatementsAnyTarget []string `json:"statementsAnyTarget"`
 }
 
-// GetUsesAnyTarget returns the value of UsesAnyTarget.
-func (s *JudgeProposal) GetUsesAnyTarget() []string {
-	return s.UsesAnyTarget
+// GetStatementsAnyTarget returns the value of StatementsAnyTarget.
+func (s *JudgeProposal) GetStatementsAnyTarget() []string {
+	return s.StatementsAnyTarget
 }
 
-// SetUsesAnyTarget sets the value of UsesAnyTarget.
-func (s *JudgeProposal) SetUsesAnyTarget(val []string) {
-	s.UsesAnyTarget = val
+// SetStatementsAnyTarget sets the value of StatementsAnyTarget.
+func (s *JudgeProposal) SetStatementsAnyTarget(val []string) {
+	s.StatementsAnyTarget = val
 }
 
 func (*JudgeProposal) proposeSandboxRuleRes() {}
 
-// What the wording of an approval rule is proposed from (ADR 26-10-12-330). The uses a discobox
-// asked for, which are data. The system prompt, the schema and the tools restriction are the judge
-// runtime's own.
+// What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The
+// policy a discobox asked for, as its statements' sentences and the definitions of their words,
+// which are data. The system prompt, the schema and the tools restriction are the judge runtime's
+// own.
 // Ref: #/components/schemas/JudgeProposalJob
 type JudgeProposalJob struct {
 	// The credential asked for, in the words a person reads, never its value.
 	Credential OptString `json:"credential"`
+	// What each word of the statements that is not a default means, as the request defined it.
+	Definitions OptJudgeProposalJobDefinitions `json:"definitions"`
 	// The hosts the request asked to send the credential to.
 	Hosts []string `json:"hosts"`
-	// The uses the request asked for, verbatim.
-	Uses []string `json:"uses"`
+	// The statements the request asked for, each as its sentence, verbatim.
+	Statements []string `json:"statements"`
 }
 
 // GetCredential returns the value of Credential.
@@ -8246,14 +8255,19 @@ func (s *JudgeProposalJob) GetCredential() OptString {
 	return s.Credential
 }
 
+// GetDefinitions returns the value of Definitions.
+func (s *JudgeProposalJob) GetDefinitions() OptJudgeProposalJobDefinitions {
+	return s.Definitions
+}
+
 // GetHosts returns the value of Hosts.
 func (s *JudgeProposalJob) GetHosts() []string {
 	return s.Hosts
 }
 
-// GetUses returns the value of Uses.
-func (s *JudgeProposalJob) GetUses() []string {
-	return s.Uses
+// GetStatements returns the value of Statements.
+func (s *JudgeProposalJob) GetStatements() []string {
+	return s.Statements
 }
 
 // SetCredential sets the value of Credential.
@@ -8261,14 +8275,31 @@ func (s *JudgeProposalJob) SetCredential(val OptString) {
 	s.Credential = val
 }
 
+// SetDefinitions sets the value of Definitions.
+func (s *JudgeProposalJob) SetDefinitions(val OptJudgeProposalJobDefinitions) {
+	s.Definitions = val
+}
+
 // SetHosts sets the value of Hosts.
 func (s *JudgeProposalJob) SetHosts(val []string) {
 	s.Hosts = val
 }
 
-// SetUses sets the value of Uses.
-func (s *JudgeProposalJob) SetUses(val []string) {
-	s.Uses = val
+// SetStatements sets the value of Statements.
+func (s *JudgeProposalJob) SetStatements(val []string) {
+	s.Statements = val
+}
+
+// What each word of the statements that is not a default means, as the request defined it.
+type JudgeProposalJobDefinitions map[string]string
+
+func (s *JudgeProposalJobDefinitions) init() JudgeProposalJobDefinitions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // What trusted code recognized a request, or its body, as, and the version of that code (ADR
@@ -11908,6 +11939,52 @@ func (o OptJudgeNeed) Or(d JudgeNeed) JudgeNeed {
 	return d
 }
 
+// NewOptJudgeProposalJobDefinitions returns new OptJudgeProposalJobDefinitions with value set to v.
+func NewOptJudgeProposalJobDefinitions(v JudgeProposalJobDefinitions) OptJudgeProposalJobDefinitions {
+	return OptJudgeProposalJobDefinitions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeProposalJobDefinitions is optional JudgeProposalJobDefinitions.
+type OptJudgeProposalJobDefinitions struct {
+	Value JudgeProposalJobDefinitions
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeProposalJobDefinitions was set.
+func (o OptJudgeProposalJobDefinitions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeProposalJobDefinitions) Reset() {
+	var v JudgeProposalJobDefinitions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeProposalJobDefinitions) SetTo(v JudgeProposalJobDefinitions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeProposalJobDefinitions) Get() (v JudgeProposalJobDefinitions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeProposalJobDefinitions) Or(d JudgeProposalJobDefinitions) JudgeProposalJobDefinitions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptJudgeRecognition returns new OptJudgeRecognition with value set to v.
 func NewOptJudgeRecognition(v JudgeRecognition) OptJudgeRecognition {
 	return OptJudgeRecognition{
@@ -14691,6 +14768,52 @@ func (o OptProjectSandboxUpgradePolicy) Or(d ProjectSandboxUpgradePolicy) Projec
 	return d
 }
 
+// NewOptRulePolicyProposal returns new OptRulePolicyProposal with value set to v.
+func NewOptRulePolicyProposal(v RulePolicyProposal) OptRulePolicyProposal {
+	return OptRulePolicyProposal{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRulePolicyProposal is optional RulePolicyProposal.
+type OptRulePolicyProposal struct {
+	Value RulePolicyProposal
+	Set   bool
+}
+
+// IsSet returns true if OptRulePolicyProposal was set.
+func (o OptRulePolicyProposal) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRulePolicyProposal) Reset() {
+	var v RulePolicyProposal
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRulePolicyProposal) SetTo(v RulePolicyProposal) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRulePolicyProposal) Get() (v RulePolicyProposal, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRulePolicyProposal) Or(d RulePolicyProposal) RulePolicyProposal {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRuleTestStage returns new OptRuleTestStage with value set to v.
 func NewOptRuleTestStage(v RuleTestStage) OptRuleTestStage {
 	return OptRuleTestStage{
@@ -14731,52 +14854,6 @@ func (o OptRuleTestStage) Get() (v RuleTestStage, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRuleTestStage) Or(d RuleTestStage) RuleTestStage {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptRuleUsesProposal returns new OptRuleUsesProposal with value set to v.
-func NewOptRuleUsesProposal(v RuleUsesProposal) OptRuleUsesProposal {
-	return OptRuleUsesProposal{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptRuleUsesProposal is optional RuleUsesProposal.
-type OptRuleUsesProposal struct {
-	Value RuleUsesProposal
-	Set   bool
-}
-
-// IsSet returns true if OptRuleUsesProposal was set.
-func (o OptRuleUsesProposal) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptRuleUsesProposal) Reset() {
-	var v RuleUsesProposal
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptRuleUsesProposal) SetTo(v RuleUsesProposal) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptRuleUsesProposal) Get() (v RuleUsesProposal, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptRuleUsesProposal) Or(d RuleUsesProposal) RuleUsesProposal {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -21992,6 +22069,77 @@ type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 
+// The policy the project's judge wrote for an approval rule from the policy a request asked for --
+// the same work on any target of its kind -- already held to covering this request, as the rule
+// would later be. A person reads and may edit it before it becomes a rule; edited, it is held to
+// covering the request again on the approve.
+// Ref: #/components/schemas/RulePolicyProposal
+type RulePolicyProposal struct {
+	// Whether the request's policy falls within this one. False when it was not compared.
+	Covers bool `json:"covers"`
+	// The policy written. Absent when what was written is not a policy a rule may have, and refused says
+	// why.
+	Policy OptAccessPolicy `json:"policy"`
+	// Why it does or does not cover the request, as code or the judge found. Absent when it was not
+	// compared.
+	Reason OptString `json:"reason"`
+	// Why what was written could not be a rule's policy -- a statement that does not parse, a word with
+	// no definition -- so it was not compared. Absent when it was.
+	Refused OptString `json:"refused"`
+	// The statements as written, each its sentence, when they were refused.
+	Statements []string `json:"statements"`
+}
+
+// GetCovers returns the value of Covers.
+func (s *RulePolicyProposal) GetCovers() bool {
+	return s.Covers
+}
+
+// GetPolicy returns the value of Policy.
+func (s *RulePolicyProposal) GetPolicy() OptAccessPolicy {
+	return s.Policy
+}
+
+// GetReason returns the value of Reason.
+func (s *RulePolicyProposal) GetReason() OptString {
+	return s.Reason
+}
+
+// GetRefused returns the value of Refused.
+func (s *RulePolicyProposal) GetRefused() OptString {
+	return s.Refused
+}
+
+// GetStatements returns the value of Statements.
+func (s *RulePolicyProposal) GetStatements() []string {
+	return s.Statements
+}
+
+// SetCovers sets the value of Covers.
+func (s *RulePolicyProposal) SetCovers(val bool) {
+	s.Covers = val
+}
+
+// SetPolicy sets the value of Policy.
+func (s *RulePolicyProposal) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RulePolicyProposal) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetRefused sets the value of Refused.
+func (s *RulePolicyProposal) SetRefused(val OptString) {
+	s.Refused = val
+}
+
+// SetStatements sets the value of Statements.
+func (s *RulePolicyProposal) SetStatements(val []string) {
+	s.Statements = val
+}
+
 // Ref: #/components/schemas/RuleProposalsBody
 type RuleProposalsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -22000,7 +22148,7 @@ type RuleProposalsBody struct {
 	Credential OptString `json:"credential"`
 	// The hosts a rule made from this request would name, copied from the request.
 	Hosts []string `json:"hosts"`
-	// Why there are no uses written, when no model could write them.
+	// Why there is no policy written, when no model could write one.
 	Note OptString `json:"note"`
 	// What a rule made from this request would approve the credential for, copied from the request.
 	Purpose RuleProposalsBodyPurpose `json:"purpose"`
@@ -22009,10 +22157,10 @@ type RuleProposalsBody struct {
 	// for every discobox answers it.
 	Repository OptString `json:"repository"`
 	// The well-known credential the request asked for by ID, when it named one. A rule made from this
-	// proposal is for that ID, and is answered with the secret marked for it; the uses were judged as a
-	// rule for it.
-	WellKnownId OptString           `json:"wellKnownId"`
-	Uses        OptRuleUsesProposal `json:"uses"`
+	// proposal is for that ID, and is answered with the secret marked for it; the policy was held to the
+	// request as a rule for it.
+	WellKnownId OptString             `json:"wellKnownId"`
+	Policy      OptRulePolicyProposal `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -22050,9 +22198,9 @@ func (s *RuleProposalsBody) GetWellKnownId() OptString {
 	return s.WellKnownId
 }
 
-// GetUses returns the value of Uses.
-func (s *RuleProposalsBody) GetUses() OptRuleUsesProposal {
-	return s.Uses
+// GetPolicy returns the value of Policy.
+func (s *RuleProposalsBody) GetPolicy() OptRulePolicyProposal {
+	return s.Policy
 }
 
 // SetSchema sets the value of Schema.
@@ -22090,9 +22238,9 @@ func (s *RuleProposalsBody) SetWellKnownId(val OptString) {
 	s.WellKnownId = val
 }
 
-// SetUses sets the value of Uses.
-func (s *RuleProposalsBody) SetUses(val OptRuleUsesProposal) {
-	s.Uses = val
+// SetPolicy sets the value of Policy.
+func (s *RuleProposalsBody) SetPolicy(val OptRulePolicyProposal) {
+	s.Policy = val
 }
 
 func (*RuleProposalsBody) proposeApprovalRuleFromGrantRes() {}
@@ -22153,7 +22301,8 @@ type RuleTest struct {
 	// The rule tested.
 	RuleId string `json:"ruleId"`
 	// The stage that decided: facts the server checked, the rule's repositories among them, or its
-	// content, which the judge read.
+	// content -- its policy against the request's, compared by code, with the judge reading conditions
+	// code cannot compare.
 	Stage OptRuleTestStage `json:"stage"`
 }
 
@@ -22208,7 +22357,8 @@ func (s *RuleTest) SetStage(val OptRuleTestStage) {
 }
 
 // The stage that decided: facts the server checked, the rule's repositories among them, or its
-// content, which the judge read.
+// content -- its policy against the request's, compared by code, with the judge reading conditions
+// code cannot compare.
 type RuleTestStage string
 
 const (
@@ -22248,64 +22398,6 @@ func (s *RuleTestStage) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// The uses the project's judge wrote for an approval rule from the uses a request asked for — the
-// same work on any target of its kind — already put to the judge as the question the rule would
-// later ask about this request. A person reads and may edit them before they become a rule; edited,
-// they are judged again on the approve.
-// Ref: #/components/schemas/RuleUsesProposal
-type RuleUsesProposal struct {
-	// Whether the judge found every use the request asked for within these. False when the judge was not
-	// asked.
-	Covers bool `json:"covers"`
-	// What the judge said. Absent when it was not asked.
-	Reason OptString `json:"reason"`
-	// Why the uses as written could not be a rule's — a use on two lines, too long, too many — so
-	// the judge was not asked. Absent when it was.
-	Refused OptString `json:"refused"`
-	// The uses written, each one sentence.
-	Uses []string `json:"uses"`
-}
-
-// GetCovers returns the value of Covers.
-func (s *RuleUsesProposal) GetCovers() bool {
-	return s.Covers
-}
-
-// GetReason returns the value of Reason.
-func (s *RuleUsesProposal) GetReason() OptString {
-	return s.Reason
-}
-
-// GetRefused returns the value of Refused.
-func (s *RuleUsesProposal) GetRefused() OptString {
-	return s.Refused
-}
-
-// GetUses returns the value of Uses.
-func (s *RuleUsesProposal) GetUses() []string {
-	return s.Uses
-}
-
-// SetCovers sets the value of Covers.
-func (s *RuleUsesProposal) SetCovers(val bool) {
-	s.Covers = val
-}
-
-// SetReason sets the value of Reason.
-func (s *RuleUsesProposal) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetRefused sets the value of Refused.
-func (s *RuleUsesProposal) SetRefused(val OptString) {
-	s.Refused = val
-}
-
-// SetUses sets the value of Uses.
-func (s *RuleUsesProposal) SetUses(val []string) {
-	s.Uses = val
 }
 
 // What an SSH client needs to verify this server. There is no address to discover; SSH reaches the
@@ -33056,8 +33148,8 @@ type UpdateApprovalRuleBody struct {
 	// rule for every discobox is said with everyDiscobox, never by naming nothing. Left out, they stay
 	// as they are. An edited rule is tested afresh against what is pending.
 	Repositories []string `json:"repositories"`
-	// What may be approved. An edited rule is tested afresh against what is pending.
-	Uses []string `json:"uses"`
+	// Replaces what may be approved. An edited rule is tested afresh against what is pending.
+	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -33100,9 +33192,9 @@ func (s *UpdateApprovalRuleBody) GetRepositories() []string {
 	return s.Repositories
 }
 
-// GetUses returns the value of Uses.
-func (s *UpdateApprovalRuleBody) GetUses() []string {
-	return s.Uses
+// GetPolicy returns the value of Policy.
+func (s *UpdateApprovalRuleBody) GetPolicy() OptAccessPolicy {
+	return s.Policy
 }
 
 // SetSchema sets the value of Schema.
@@ -33145,9 +33237,9 @@ func (s *UpdateApprovalRuleBody) SetRepositories(val []string) {
 	s.Repositories = val
 }
 
-// SetUses sets the value of Uses.
-func (s *UpdateApprovalRuleBody) SetUses(val []string) {
-	s.Uses = val
+// SetPolicy sets the value of Policy.
+func (s *UpdateApprovalRuleBody) SetPolicy(val OptAccessPolicy) {
+	s.Policy = val
 }
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody

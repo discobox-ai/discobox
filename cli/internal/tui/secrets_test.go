@@ -36,7 +36,8 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 	}
 	ds.projectGrants = []Grant{
 		{ID: "grant_1", SecretID: "sec_gh", Scope: "sandbox", ScopeKey: "sbx_one", Host: "api.github.com",
-			Uses: []GrantUse{{ID: "use_7f3c", Description: "Open a PR"}}, Granted: time.Now().Add(-time.Minute)},
+			Uses: []GrantUse{{ID: "use_7f3c", Description: "Open a PR"}}, Granted: time.Now().Add(-time.Minute),
+			Approved: askedPolicy(), ApprovedShown: askedPolicy()},
 		{ID: "grant_2", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "github.com"},
 	}
 	m := newTestModel(t, ds)

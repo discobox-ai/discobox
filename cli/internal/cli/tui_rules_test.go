@@ -12,13 +12,14 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/policy"
 )
 
-// A stored rule's uses may be a model's sentences written from an agent's ask,
-// and its repositories are whatever the server holds, and the console draws
-// them on the card a person manages the
-// rule from: they arrive with an escape sequence shown rather than obeyed,
-// and with the rest of the rule as the server holds it.
+// A stored rule's policy may be a model's, written from an agent's ask, and
+// its repositories are whatever the server holds, and the console draws them
+// on the card a person manages the rule from: they arrive with an escape
+// sequence shown rather than obeyed, and with the rest of the rule as the
+// server holds it.
 func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -29,7 +30,8 @@ func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"approvalRules":[{"id":"rule_1","projectId":"project-1","wellKnownId":"com.github.api","secretId":"secret-1",` +
 			`"repositories":["github.com/org/repo\u001b[2J","github.com/org/other"],"hosts":["github.com"],"purpose":"delegate",` +
-			`"uses":["read any issue in org/repo\u001b]0;approved\u0007","comment on it"],"maxGrantTTLSeconds":3600,` +
+			`"policy":` + policyJSON(map[string]string{"issue": "a GitHub issue\u001b]0;approved\u0007", "repository": "a GitHub repository"},
+			`allow read on issue in repository $primary.repo`, `allow read on issue in repository "org/other"`) + `,"maxGrantTTLSeconds":3600,` +
 			`"expiresAt":"2026-11-01T00:00:00Z","createdBy":"user:darren","enabled":false,` +
 			`"createdAt":"2026-10-12T00:00:00Z","updatedAt":"2026-10-12T00:00:01Z"}]}`))
 	}))
@@ -47,17 +49,21 @@ func TestStoredRulesReachTheConsoleSafeToDraw(t *testing.T) {
 		t.Fatalf("rules = %+v, want the one the server holds", rules)
 	}
 	rule := rules[0]
-	for _, text := range append(slices.Clone(rule.Repositories), rule.Uses...) {
+	if rule.Policy == nil || rule.Stored.Policy == nil {
+		t.Fatalf("rule = %+v, want its policy", rule)
+	}
+	for _, text := range append(slices.Clone(rule.Repositories), rule.Policy.Definitions["issue"]) {
 		if strings.ContainsAny(text, "\x1b\x07") {
 			t.Fatalf("%q reached the console with a control character in it", text)
 		}
 	}
-	if len(rule.Repositories) != 2 || !strings.HasPrefix(rule.Repositories[0], "github.com/org/repo") || len(rule.Uses) != 2 || !strings.HasPrefix(rule.Uses[0], "read any issue in org/repo") {
-		t.Fatalf("repositories = %q, uses = %q; want both kept, with what was escaped shown", rule.Repositories, rule.Uses)
+	if len(rule.Repositories) != 2 || !strings.HasPrefix(rule.Repositories[0], "github.com/org/repo") || len(rule.Policy.Statements) != 2 ||
+		!strings.HasPrefix(rule.Policy.Definitions["issue"], "a GitHub issue") {
+		t.Fatalf("repositories = %q, policy = %+v; want both kept, with what was escaped shown", rule.Repositories, rule.Policy)
 	}
 	// The server's own text is kept beside the drawn, for an edit to send
 	// back for the lines it leaves alone.
-	if len(rule.Stored.Uses) != 2 || !strings.Contains(rule.Stored.Uses[0], "\x1b]0;approved\x07") ||
+	if !strings.Contains(rule.Stored.Policy.Definitions["issue"], "\x1b]0;approved\x07") ||
 		!strings.Contains(rule.Stored.Repositories[0], "\x1b[2J") {
 		t.Fatalf("stored = %+v, want the server's text as it holds it", rule.Stored)
 	}
@@ -107,7 +113,8 @@ func TestTheConsoleChangesARuleByItsIDAndSendsOnlyWhatChanges(t *testing.T) {
 // Every discobox reaches the server only as that answer: a rule that names no
 // repository and did not say it is sent saying neither, which the server
 // answers with the asking discobox's repository or a refusal, never with the
-// wider rule.
+// wider rule. A rule's policy is sent only when the person changed it: left
+// out, it is the request's as asked.
 func TestTheConsoleSaysEveryDiscoboxOnlyWhenThePersonDid(t *testing.T) {
 	for name, tc := range map[string]struct {
 		rule tui.ApprovalRule
@@ -116,6 +123,11 @@ func TestTheConsoleSaysEveryDiscoboxOnlyWhenThePersonDid(t *testing.T) {
 		"a repository":   {tui.ApprovalRule{Repositories: []string{"github.com/org/repo"}}, map[string]any{"repositories": []any{"github.com/org/repo"}}},
 		"every discobox": {tui.ApprovalRule{EveryDiscobox: true}, map[string]any{"everyDiscobox": true}},
 		"neither said":   {tui.ApprovalRule{}, map[string]any{}},
+		"a policy": {tui.ApprovalRule{Policy: &tuiPolicy}, map[string]any{"policy": map[string]any{
+			"statements": []any{map[string]any{"effect": "allow", "actions": []any{"read"}, "resourceType": "issue", "name": nil,
+				"scope": map[string]any{"type": "repository", "name": "$primary.repo"}, "when": nil, "unless": nil}},
+			"definitions": map[string]any{"issue": "a GitHub issue", "repository": "a GitHub repository"},
+		}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			sent := map[string]map[string]any{}
@@ -137,6 +149,15 @@ func TestTheConsoleSaysEveryDiscoboxOnlyWhenThePersonDid(t *testing.T) {
 	}
 }
 
+// tuiPolicy is a policy the console sends with a rule.
+var tuiPolicy = func() policy.Policy {
+	statements, err := policy.ParseStatements([]string{"allow read on issue in repository $primary.repo"})
+	if err != nil {
+		panic(err)
+	}
+	return policy.Policy{Statements: statements, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}}
+}()
+
 // A rule made from the console is sent as it was chosen: a well-known ID
 // alone, the cap always (zero is the secret's own limit), and every discobox
 // only in so many words. An edit sends what changed and nothing else.
@@ -152,7 +173,7 @@ func TestTheConsoleMakesAndEditsARuleWithWhatWasChosen(t *testing.T) {
 	lapses := time.Now().Add(72 * time.Hour)
 	made, err := ds.CreateRule(context.Background(), "", tui.NewRule{
 		WellKnownID: "com.github.api", Hosts: []string{"github.com", "githubcopilot.com"},
-		ApprovalRule: tui.ApprovalRule{Repositories: []string{"github.com/org/repo"}, Uses: []string{"read issues"}},
+		ApprovalRule: tui.ApprovalRule{Repositories: []string{"github.com/org/repo"}, Policy: &tuiPolicy},
 		Expires:      lapses,
 	})
 	if err != nil || made.ID != "rule_1" {
@@ -162,12 +183,12 @@ func TestTheConsoleMakesAndEditsARuleWithWhatWasChosen(t *testing.T) {
 	if hosts, _ := body["hosts"].([]any); len(hosts) != 2 || hosts[1] != "githubcopilot.com" {
 		t.Fatalf("create body = %#v, want the hosts the card read", body)
 	}
-	if body["wellKnownId"] != "com.github.api" || body["secretId"] != nil || body["everyDiscobox"] != nil ||
+	if body["wellKnownId"] != "com.github.api" || body["secretId"] != nil || body["everyDiscobox"] != nil || len(sentPolicy(t, body).Statements) != 1 ||
 		body["maxGrantTTLSeconds"] != float64(0) || body["expiresAt"] == nil {
 		t.Fatalf("create body = %#v", body)
 	}
 	if _, err := ds.CreateRule(context.Background(), "", tui.NewRule{
-		SecretID: "secret-1", ApprovalRule: tui.ApprovalRule{EveryDiscobox: true, Uses: []string{"read issues"}}, MaxGrantTTL: time.Hour,
+		SecretID: "secret-1", ApprovalRule: tui.ApprovalRule{EveryDiscobox: true, Policy: &tuiPolicy}, MaxGrantTTL: time.Hour,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -177,12 +198,12 @@ func TestTheConsoleMakesAndEditsARuleWithWhatWasChosen(t *testing.T) {
 	}
 
 	capped := 2 * time.Hour
-	if err := ds.UpdateRule(context.Background(), "", "rule_1", tui.RuleChange{Uses: []string{"read issues"}, MaxGrantTTL: &capped, NeverExpires: true}); err != nil {
+	if err := ds.UpdateRule(context.Background(), "", "rule_1", tui.RuleChange{Policy: &tuiPolicy, MaxGrantTTL: &capped, NeverExpires: true}); err != nil {
 		t.Fatal(err)
 	}
 	edit := sent["PATCH /projects/project-1/approval-rules/rule_1"]
-	if len(edit) != 3 || edit["maxGrantTTLSeconds"] != float64(7200) || edit["neverExpires"] != true || edit["uses"] == nil {
-		t.Fatalf("edit body = %#v, want the uses, the cap and the expiry cleared, and nothing else", edit)
+	if len(edit) != 3 || edit["maxGrantTTLSeconds"] != float64(7200) || edit["neverExpires"] != true || edit["policy"] == nil {
+		t.Fatalf("edit body = %#v, want the policy, the cap and the expiry cleared, and nothing else", edit)
 	}
 	if err := ds.UpdateRule(context.Background(), "", "rule_1", tui.RuleChange{EveryDiscobox: true}); err != nil {
 		t.Fatal(err)

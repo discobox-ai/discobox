@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -13,6 +15,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -29,8 +32,13 @@ func (a *App) newSecretRuleCommand() *cobra.Command {
 these repositories, is approved without asking. Its repositories, credential,
 hosts and purpose are facts the server checks: a rule answers a discobox whose
 primary source is one of its repositories, compared exactly, or every discobox
-in the project when it names none. Its uses are sentences the judge reads
-against the uses the request asks for.
+in the project when it names none. Its policy is what it approves: a request
+is covered when the policy it asks for falls within the rule's, compared by
+code, with the judge reading only conditions code cannot compare. The rule's
+variables, such as $primary.repo, bind to whichever discobox asks.
+
+A rule answers only a request that asks for a policy; one that asks with uses
+alone waits for a person each time.
 
 A rule approves or says nothing. A request no rule covers waits for a person,
 as it does with no rules, and "discobox secret request get" says why each rule
@@ -97,10 +105,11 @@ func (a *App) newSecretRuleGetCommand() *cobra.Command {
 
 func (a *App) newSecretRuleCreateCommand() *cobra.Command {
 	var wellKnown, secretRef, maxTTL, expiresIn string
-	var uses, hosts, repositories []string
-	var delegate, disabled, everyDiscobox bool
+	var statements, hosts, repositories []string
+	definitions := policy.Definitions{}
+	var disabled, everyDiscobox bool
 	cmd := &cobra.Command{
-		Use:   "create (--well-known ID | --secret SECRET) (--repo REPOSITORY... | --every-discobox) --use SENTENCE...",
+		Use:   "create (--well-known ID | --secret SECRET) (--repo REPOSITORY... | --every-discobox) --statement SENTENCE... [--define WORD=DEFINITION...]",
 		Short: "Create an approval rule",
 		Long: `Creates an approval rule directly, as "discobox secret grant create" makes a
 pre-approval. The rule is then tested against every request pending in the
@@ -112,7 +121,18 @@ primary source is that repository, however its remote is spelled. A discobox
 started from a local directory is of the remote its checkout tracks, and of
 none when it tracks none. --every-discobox makes the rule for every discobox
 in the project instead: it approves for discoboxes that do not exist yet,
-including ones a discobox creates, and is never the default.`,
+including ones a discobox creates, and is never the default.
+
+What it approves is a policy, written as discobox-access writes one: a
+--statement for each sentence, and a --define for each word a statement uses
+that is not a default (read, create, update, delete, manage, anything,
+anywhere):
+
+  --statement 'allow read on issue in repository $primary.repo' \
+  --define 'issue=a GitHub issue' --define 'repository=a GitHub repository'
+
+A variable such as $primary.repo is bound to whichever discobox asks. The
+policy is parsed and checked before it is sent.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := a.apiClient()
@@ -123,10 +143,14 @@ including ones a discobox creates, and is never the default.`,
 			if err != nil {
 				return err
 			}
-			body := &apimodel.CreateApprovalRuleBody{Uses: ruleSentences(uses), Hosts: grantHosts(hosts)}
-			if len(body.Uses) == 0 {
-				return errors.New("a rule says what may be approved: give at least one --use")
+			written, err := writtenPolicy(statements, definitions, "--statement", "--define")
+			if err != nil {
+				return err
 			}
+			if written == nil {
+				return errors.New("a rule says what may be approved: give its policy, at least one --statement")
+			}
+			body := &apimodel.CreateApprovalRuleBody{Policy: *written, Hosts: grantHosts(hosts)}
 			if body.Repositories, err = ruleRepositories(repositories, everyDiscobox, "--repo", "--every-discobox"); err != nil {
 				return err
 			}
@@ -149,9 +173,6 @@ including ones a discobox creates, and is never the default.`,
 					return err
 				}
 				body.SetSecretId(apiclientgen.NewOptString(secretID))
-			}
-			if delegate {
-				body.SetPurpose(apiclientgen.NewOptCreateApprovalRuleBodyPurpose(apiclientgen.CreateApprovalRuleBodyPurposeDelegate))
 			}
 			seconds, given, err := grantLifetime(cmd.Flags(), "max-grant-ttl", maxTTL)
 			if err != nil {
@@ -185,9 +206,9 @@ including ones a discobox creates, and is never the default.`,
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The project secret the rule approves, by name or ID; it answers an ask that names no well-known credential by the host it is bound to")
 	cmd.Flags().StringSliceVar(&repositories, "repo", nil, "A repository the rule is for, as a URL or host/path (github.com/org/repo), comma-separated or repeated: it answers a discobox whose primary source is one of them")
 	cmd.Flags().BoolVar(&everyDiscobox, "every-discobox", false, "The rule is for every discobox in the project. It approves for discoboxes that do not exist yet, including ones a discobox creates")
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "What may be approved, as a sentence the judge reads the uses a request asks for against (repeatable)")
+	cmd.Flags().StringArrayVar(&statements, "statement", nil, "A statement of the policy the rule approves, as a sentence (repeatable): a request is covered when its policy falls within this one")
+	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word a statement uses that is not a default (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts a grant minted under the rule may name, comma-separated or repeated; defaults to the well-known credential's host, or the host the secret is bound to")
-	cmd.Flags().BoolVar(&delegate, "delegate", false, "Approve asks to delegate the credential to other discoboxes, rather than asks to use it")
 	cmd.Flags().StringVar(&maxTTL, "max-grant-ttl", "", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit (default 1h)")
 	cmd.Flags().StringVar(&expiresIn, "expires-in", "", "How long the rule itself approves for: 1h, 3d, 2w, 1mo (default: it does not lapse)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "Create the rule switched off")
@@ -196,14 +217,19 @@ including ones a discobox creates, and is never the default.`,
 
 func (a *App) newSecretRuleUpdateCommand() *cobra.Command {
 	var maxTTL, expiresIn string
-	var uses, hosts, repositories []string
+	var statements, hosts, repositories []string
+	definitions := policy.Definitions{}
 	var enable, disable, neverExpires, everyDiscobox bool
 	cmd := &cobra.Command{
 		Use:   "update RULE_ID",
 		Short: "Edit, enable or disable an approval rule",
 		Long: `Edits an approval rule. Only what is given changes. A rule whose
-repositories or uses changed is tested afresh against what is pending; the
+repositories or policy changed is tested afresh against what is pending; the
 grants it already minted are untouched, and disabling it revokes nothing.
+
+--statement replaces the rule's whole policy, so every statement it keeps is
+given again, with a --define for each word that is not a default:
+"discobox secret rule get" prints them in the words they are written in.
 
 --repo replaces the repositories the rule is for. --every-discobox removes
 them all, which makes it a rule for every discobox in the project, including
@@ -243,10 +269,12 @@ another rule.`,
 					return errors.New("--repo names a repository; to make this a rule for every discobox say --every-discobox")
 				}
 			}
-			if flags.Changed("use") {
-				if body.Uses = ruleSentences(uses); len(body.Uses) == 0 {
-					return errors.New("a rule says what may be approved: give at least one --use")
-				}
+			written, err := writtenPolicy(statements, definitions, "--statement", "--define")
+			switch {
+			case err != nil:
+				return err
+			case written != nil:
+				body.SetPolicy(apiclientgen.NewOptAccessPolicy(*written))
 			}
 			if flags.Changed("hosts") {
 				if body.Hosts = grantHosts(hosts); len(body.Hosts) == 0 {
@@ -287,7 +315,8 @@ another rule.`,
 	}
 	cmd.Flags().StringSliceVar(&repositories, "repo", nil, "Replace the repositories the rule is for with these, each a URL or host/path (github.com/org/repo), comma-separated or repeated")
 	cmd.Flags().BoolVar(&everyDiscobox, "every-discobox", false, "Make this a rule for every discobox in the project, removing its repositories")
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace what may be approved with these sentences (repeatable)")
+	cmd.Flags().StringArrayVar(&statements, "statement", nil, "Replace the rule's policy with these statements, each a sentence (repeatable)")
+	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word the new statements use that is not a default (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Replace the hosts a grant minted under the rule may name")
 	cmd.Flags().StringVar(&maxTTL, "max-grant-ttl", "", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit")
 	cmd.Flags().StringVar(&expiresIn, "expires-in", "", "How long from now the rule approves for: 1h, 3d, 2w, 1mo")
@@ -330,21 +359,23 @@ func (a *App) newSecretRuleDeleteCommand() *cobra.Command {
 }
 
 // newSecretRequestProposeCommand shows what "auto approve" would offer for a
-// request: the repository its rule would be for, and three lists of uses, each
-// already put to the judge.
+// request: the repository its rule would be for, and a policy the project's
+// judge wrote from the request's, already held to covering it.
 func (a *App) newSecretRequestProposeCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "propose REQUEST_ID",
-		Short: "Propose approval rules for a request, each already judged against it",
-		Long: `Proposes approval rules for a pending agent credential request: the
-repository of the discobox that asked, which the rule would be for, and three
-lists of uses, narrowest first. The uses as asked need no model. The wider
-ones are written by the project's judge, and each is then put to the judge as
-the question a rule would later ask, so a proposal that does not cover this
-request is shown as failed, with why.
+		Short: "Propose an approval rule for a request, already held to covering it",
+		Long: `Proposes an approval rule for a pending agent credential request that asks
+for a policy: the repository of the discobox that asked, which the rule would
+be for, and a policy the project's judge wrote from the request's — the same
+work on any target of its kind. The policy is then held to covering this
+request, as the rule later would be: by code, with the judge reading only
+conditions code cannot compare. One that does not cover it is shown as
+failed, with why. The policy as asked needs no model, and is what the rule
+approves when you give it no statements.
 
-This can take a minute or two. Nothing is made: pass the sentences you choose
-to "discobox secret request approve --auto".`,
+This can take a minute or two. Nothing is made: pass the statements you
+choose to "discobox secret request approve --auto".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := a.apiClient()
@@ -377,28 +408,32 @@ type autoApproval struct {
 	auto          bool
 	repositories  []string
 	everyDiscobox bool
-	uses          []string
+	statements    []string
+	definitions   policy.Definitions
 }
 
 func (o *autoApproval) addFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&o.auto, "auto", false, "Auto approve: make an approval rule from this request and approve the request under it. Without --rule-repo or --rule-every-discobox the rule is for the repository of the discobox that asked; without --rule-use it approves the uses as asked")
+	o.definitions = policy.Definitions{}
+	cmd.Flags().BoolVar(&o.auto, "auto", false, "Auto approve: make an approval rule from this request's policy and approve the request, its policy as asked, under it. Without --rule-repo or --rule-every-discobox the rule is for the repository of the discobox that asked; without --rule-statement it approves the policy as asked")
 	cmd.Flags().StringSliceVar(&o.repositories, "rule-repo", nil, "With --auto: a repository the rule is for, as a URL or host/path (github.com/org/repo), comma-separated or repeated; the discobox that asked must be of one of them")
 	cmd.Flags().BoolVar(&o.everyDiscobox, "rule-every-discobox", false, "With --auto: the rule is for every discobox in the project. It approves for discoboxes that do not exist yet, including ones a discobox creates")
-	cmd.Flags().StringArrayVar(&o.uses, "rule-use", nil, "With --auto: what the rule approves, as a sentence the judge reads (repeatable); omit for the uses as asked")
+	cmd.Flags().StringArrayVar(&o.statements, "rule-statement", nil, "With --auto: a statement of the policy the rule approves, as a sentence (repeatable); omit for the policy as asked")
+	cmd.Flags().Var(o.definitions, "rule-define", "With --auto: WORD=DEFINITION for a word a --rule-statement uses that is not a default (repeatable)")
 }
 
 // rule is the rule the flags ask for, or nothing without --auto. The server
 // copies the rule's credential, hosts and purpose from the request, names the
-// asking discobox's repository when none is given here, and holds the uses to
-// the judge before it makes anything. A rule for every discobox is only ever
+// asking discobox's repository when none is given here, takes the request's
+// policy as asked when no statement is, and holds the policy to covering the
+// request before it makes anything. A rule for every discobox is only ever
 // asked for by its flag: the server refuses to assume one.
 func (o *autoApproval) rule(cmd *cobra.Command) (apiclientgen.OptApproveWithRule, error) {
 	flags := cmd.Flags()
 	none := apiclientgen.OptApproveWithRule{}
-	given := flags.Changed("rule-repo") || o.everyDiscobox || flags.Changed("rule-use")
+	given := flags.Changed("rule-repo") || o.everyDiscobox || flags.Changed("rule-statement") || flags.Changed("rule-define")
 	if !o.auto {
 		if given {
-			return none, errors.New("--rule-repo, --rule-every-discobox and --rule-use say what an auto approval's rule is: add --auto")
+			return none, errors.New("--rule-repo, --rule-every-discobox, --rule-statement and --rule-define say what an auto approval's rule is: add --auto")
 		}
 		return none, nil
 	}
@@ -406,12 +441,17 @@ func (o *autoApproval) rule(cmd *cobra.Command) (apiclientgen.OptApproveWithRule
 	if err != nil {
 		return none, err
 	}
-	rule := apiclientgen.ApproveWithRule{Uses: ruleSentences(o.uses), Repositories: repositories}
+	written, err := writtenPolicy(o.statements, o.definitions, "--rule-statement", "--rule-define")
+	if err != nil {
+		return none, err
+	}
+	rule := apiclientgen.ApproveWithRule{Repositories: repositories}
+	if written != nil {
+		rule.SetPolicy(apiclientgen.NewOptAccessPolicy(*written))
+	}
 	switch {
 	case flags.Changed("rule-repo") && len(repositories) == 0:
 		return none, errors.New("--rule-repo names a repository; for a rule for every discobox say --rule-every-discobox")
-	case flags.Changed("rule-use") && len(rule.Uses) == 0:
-		return none, errors.New("--rule-use is a sentence; omit it to approve the uses as asked")
 	case o.everyDiscobox:
 		rule.SetEveryDiscobox(apiclientgen.NewOptBool(true))
 	}
@@ -423,23 +463,16 @@ func (o *autoApproval) rule(cmd *cobra.Command) (apiclientgen.OptApproveWithRule
 // host/path. Naming repositories and asking for every discobox are two
 // answers to one question, so both at once is refused.
 func ruleRepositories(values []string, everyDiscobox bool, repoFlag, everyFlag string) ([]string, error) {
-	repositories := ruleSentences(values)
+	var repositories []string
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			repositories = append(repositories, value)
+		}
+	}
 	if everyDiscobox && len(repositories) > 0 {
 		return nil, fmt.Errorf("%s and %s cannot be used together: a rule is for the repositories it names, or for every discobox", repoFlag, everyFlag)
 	}
 	return repositories, nil
-}
-
-// ruleSentences are --use values as a rule takes them: trimmed, with empty
-// ones dropped.
-func ruleSentences(values []string) []string {
-	var out []string
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
 }
 
 // ruleExpiry reads --expires-in as the instant a rule stops approving. A rule
@@ -569,14 +602,15 @@ func (a *App) writeApprovalRule(cmd *cobra.Command, rule *apimodel.ApprovalRule)
 	fmt.Fprintf(tw, "HOSTS\t%s\n", strings.Join(rule.Hosts, ", "))
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", rulePurposeText(rule.Purpose))
 	fmt.Fprintf(tw, "FOR\t%s\n", ruleRepositoriesText(rule))
-	// The rule's sentences are what is approved; a person wrote or chose
-	// them, and every word is shown, broken up as the console breaks them.
-	for i, use := range rule.Uses {
-		label := "USES"
-		if i > 0 {
-			label = ""
-		}
-		useRows(tw, label, use, "")
+	// The rule's policy is what is approved; a person wrote or chose it, and
+	// every statement is shown whole, in the words --statement writes it in.
+	approves, err := policyFromAPI(rule.Policy)
+	if err != nil {
+		return err
+	}
+	policySentenceRows(tw, "POLICY", approves)
+	if variables := approves.Variables(); len(variables) > 0 {
+		fmt.Fprintf(tw, "VARIABLES\t%s, bound to whichever discobox asks\n", terminalSafe(strings.Join(variables, ", ")))
 	}
 	fmt.Fprintf(tw, "GRANTS LIVE AT MOST\t%s\n", ruleCapText(rule.MaxGrantTTLSeconds))
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", ruleExpiryText(rule))
@@ -597,12 +631,20 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"approvalRules": rules})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSTATE\tCREDENTIAL\tHOSTS\tPURPOSE\tFOR\tUSES\tEXPIRES")
+	fmt.Fprintln(tw, "ID\tSTATE\tCREDENTIAL\tHOSTS\tPURPOSE\tFOR\tPOLICY\tEXPIRES")
 	for i := range rules {
 		rule := &rules[i]
-		uses := terminalSafe(rule.Uses[0])
-		if more := len(rule.Uses) - 1; more > 0 {
-			uses = fmt.Sprintf("%s (+%d more)", uses, more)
+		approves, err := policyFromAPI(rule.Policy)
+		if err != nil {
+			return err
+		}
+		// The first statement, and how many more: "get" reads them all.
+		var statements string
+		if sentences := policy.FormatStatements(approves.Statements); len(sentences) > 0 {
+			statements = terminalSafe(sentences[0])
+			if more := len(sentences) - 1; more > 0 {
+				statements = fmt.Sprintf("%s (+%d more)", statements, more)
+			}
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			rule.ID,
@@ -611,16 +653,17 @@ func (a *App) writeApprovalRules(cmd *cobra.Command, rules []apimodel.ApprovalRu
 			strings.Join(rule.Hosts, ","),
 			rule.Purpose,
 			ruleRepositoriesColumn(rule),
-			uses,
+			statements,
 			ruleExpiryText(rule),
 		)
 	}
 	return tw.Flush()
 }
 
-// writeRuleProposals prints what auto approve offers. A proposal is a
-// sentence a model wrote from an agent's ask, so every one is shown whole,
-// escaped, with what the judge made of it: the text is what would be approved.
+// writeRuleProposals prints what auto approve offers. A proposal is a policy
+// a model wrote from an agent's ask, so it is shown whole, escaped, with what
+// holding it to the request found: its statements are what would be
+// approved. Each is printed as the flag that sends it, quoted for the shell.
 func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals *apimodel.RuleProposalsBody) error {
 	if proposals == nil {
 		return nil
@@ -631,8 +674,8 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "A rule made from %s approves %s at %s, to %s.\n", requestID,
 		terminalSafe(proposals.Credential.Or("the credential it asks for")), terminalSafe(strings.Join(proposals.Hosts, ", ")), proposals.Purpose)
-	// What only a person otherwise approves, said before the sentences: a
-	// rule for a gate or a delegation hands it to every discobox it covers.
+	// What only a person otherwise approves, said before the policy: a rule
+	// for a gate or a delegation hands it to every discobox it covers.
 	if known, ok := wellknown.Lookup(proposals.Credential.Or("")); ok && known.Gate {
 		fmt.Fprintf(out, "It hands on %s: a discobox it covers may create discoboxes, and hand them credentials, but only within what you separately delegate to it.\n", terminalSafe(known.Description))
 	}
@@ -650,28 +693,42 @@ func (a *App) writeRuleProposals(cmd *cobra.Command, requestID string, proposals
 		fmt.Fprintln(out, "  the discobox that asked has no repository a rule could name: its source is a local one with no remote")
 	}
 	fmt.Fprintf(out, "  every discobox in the project, including ones that do not exist yet and ones a discobox creates\n     --rule-every-discobox\n")
-	fmt.Fprintln(out, "\nUSES — what the rule approves")
-	if written, ok := proposals.Uses.Get(); ok {
+	fmt.Fprintln(out, "\nPOLICY — what the rule approves")
+	if written, ok := proposals.Policy.Get(); ok {
 		fmt.Fprintln(out, "  written by the project's judge: the same work on any target of its kind")
-		for _, use := range written.Uses {
-			fmt.Fprintf(out, "     --rule-use %q\n", terminalSafe(use))
+		if proposed, ok := written.Policy.Get(); ok {
+			read, err := policyFromAPI(proposed)
+			if err != nil {
+				return err
+			}
+			for _, sentence := range policy.FormatStatements(read.Statements) {
+				fmt.Fprintf(out, "     --rule-statement %s\n", shellQuote(terminalSafe(sentence), false))
+			}
+			for _, word := range slices.Sorted(maps.Keys(read.Definitions)) {
+				fmt.Fprintf(out, "     --rule-define %s\n", shellQuote(terminalSafe(word+"="+read.Definitions[word]), false))
+			}
+		} else {
+			// What did not parse is no flag to pass: it is shown as written.
+			for _, statement := range written.Statements {
+				fmt.Fprintf(out, "     %s\n", terminalSafe(statement))
+			}
 		}
-		said := "the judge found these cover this request"
+		said := "it covers this request"
 		switch refused := terminalSafe(written.Refused.Or("")); {
 		case refused != "":
-			said = "FAILED: these could not be a rule's, so the judge was not asked — " + refused
+			said = "FAILED: this could not be a rule's policy, so it was not held to the request — " + refused
 		case !written.Covers:
-			said = "FAILED: the judge found these do not cover this request; a rule with them as written would be refused"
+			said = "FAILED: it does not cover this request; a rule with it as written would be refused"
 		}
 		if reason := terminalSafe(written.Reason.Or("")); reason != "" {
 			said += " — " + reason
 		}
 		fmt.Fprintf(out, "     %s\n", said)
 	} else {
-		fmt.Fprintln(out, "  no model wrote any")
+		fmt.Fprintln(out, "  no model wrote one")
 	}
-	fmt.Fprintln(out, "  with no --rule-use, the rule approves the uses as asked; edited uses are judged when the rule is made")
-	fmt.Fprintf(out, "\nTo make a rule: discobox secret request approve %s --auto [--rule-repo ... | --rule-every-discobox] [--rule-use ...]\n", requestID)
+	fmt.Fprintln(out, "  with no --rule-statement, the rule approves the policy as asked; an edited policy is held to covering the request when the rule is made")
+	fmt.Fprintf(out, "\nTo make a rule: discobox secret request approve %s --auto [--rule-repo ... | --rule-every-discobox] [--rule-statement ... --rule-define ...]\n", requestID)
 	return nil
 }
 
@@ -681,9 +738,9 @@ func ruleTestText(test apimodel.RuleTest) string {
 	stage := string(test.Stage.Or(""))
 	switch {
 	case test.Covered:
-		// The judge's yes is not the approval: the write can still be
-		// refused, and the request then waits here.
-		return fmt.Sprintf("%s: the judge found it covers this, and it has not approved it yet", test.RuleId)
+		// Covering is not the approval: the write can still be refused,
+		// and the request then waits here.
+		return fmt.Sprintf("%s: it covers this, and has not approved it yet", test.RuleId)
 	case test.Pending.Or(false):
 		return fmt.Sprintf("%s: its %s is still being judged", test.RuleId, stage)
 	}

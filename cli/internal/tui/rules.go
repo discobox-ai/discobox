@@ -17,17 +17,17 @@ import (
 // answers it, and requests like it from now on, without asking
 // (ADR 26-10-12-330 §§7–9).
 //
-// A rule replaces the person who reads a card, so its text is the
-// authorization — and most of its uses are written by a model from the agent's
-// own ask. What keeps a generated sentence from becoming authority nobody read
-// is the shape of this flow: one set of uses is chosen from proposals shown
-// whole, a proposal the judge did not find to cover this very request cannot
-// be chosen, and the last card before the write is the rule in full. Which
+// A rule replaces the person who reads a card, so its policy is the
+// authorization — and most of it is written by a model from the agent's own
+// ask. What keeps a generated statement from becoming authority nobody read
+// is the shape of this flow: the policy is shown whole and edited a line at a
+// time, a proposal not found to cover this very request is not what the list
+// opens on, and the last card before the write is the rule in full. Which
 // discoboxes the rule is for is no sentence at all: the repository of the
 // discobox that asked, which the server compares, or every discobox.
 //
 // The steps run: request → what answers it, and its binding question, as for
-// any approval → the proposals are fetched → which discoboxes → which uses →
+// any approval → the proposals are fetched → which discoboxes → its policy →
 // how long → the limit question, if the lifetime raises one → the rule, read
 // whole → approve. Each goes back to the one before it, like every other step
 // of an approval, and the answers travel in the same approval value.
@@ -152,14 +152,14 @@ func (m *Model) ruleSecretStored(msg ruleSecretStoredMsg) tea.Cmd {
 	return tea.Batch(m.loadSecrets(), m.chooseSecret(next, stored.ID))
 }
 
-// proposeRules asks the server what rules could answer the request, and waits
-// where it can be seen: a model writes the wider ones and the judge reads each
-// against this request, which takes a minute or two. Esc stops the asking as
-// well as the watching, and goes back.
+// proposeRules asks the server what rule could answer the request, and waits
+// where it can be seen: a model writes its policy, which is then held to
+// covering this request, and that takes a minute or two. Esc stops the asking
+// as well as the watching, and goes back.
 func (m *Model) proposeRules(a approval, back func() tea.Cmd) tea.Cmd {
 	ctx, stop := context.WithCancel(m.ctx)
-	wait := statusDialog("Auto approve", "asking the judge which rules would cover this request…")
-	wait.footer = "a model writes the wider ones and the judge reads each against this request; it can take a minute or two"
+	wait := statusDialog("Auto approve", "asking the judge to write a rule that covers this request…")
+	wait.footer = "a model writes its policy from the request's, and it is held to covering this request; it can take a minute or two"
 	wait.onCancel = func() tea.Cmd {
 		stop()
 		return back()
@@ -314,7 +314,7 @@ func splitRepositories(typed string) []string {
 //
 // Each step after the proposals hands the step before it the approval as it
 // now stands, and that step reopens from it: what was written on a later step
-// — the uses, half-typed included — rides every step back and forward, as a
+// — the policy, half-typed included — rides every step back and forward, as a
 // rule's draft does (ruleStep).
 func (m *Model) askAutoDiscoboxes(a approval, back func(approval) tea.Cmd) tea.Cmd {
 	again := func(now approval) tea.Cmd { return m.askAutoDiscoboxes(now, back) }
@@ -355,111 +355,125 @@ func (m *Model) askAutoDiscoboxes(a approval, back func(approval) tea.Cmd) tea.C
 	})
 }
 
-// askRuleContent is the rule's second half: the uses it approves, as a list
-// written a line at a time (askLines). It opens on the uses the project's
-// judge wrote — the same work on any target of its kind — when the judge
-// found them to cover this request, and otherwise on the uses as asked, so
-// there is always something to edit; the card says which, and why. Each
-// sentence is the person's to change, and one changed is no longer what the
-// judge's verdict was about: the server judges the rule's uses again when it
-// is made.
+// askRuleContent is the rule's second half: the policy it approves, as a
+// list written a line at a time (askLines), a statement or a definition on
+// each. It opens on the policy the project's judge wrote — the same work on
+// any target of its kind — when it was found to cover this request, and
+// otherwise on the policy as asked, so there is always something to edit; the
+// card says which, and why. Each line is the person's to change, and a policy
+// changed is no longer what was held to the request: the server holds it
+// again when the rule is made. What keeps the lines from being a policy is
+// said under them as they are written, and a list that is not one is not
+// taken. A policy left as asked is not sent, which is the server's own
+// default.
 func (m *Model) askRuleContent(a approval, back func(approval) tea.Cmd) tea.Cmd {
 	written := a.proposals.Written
-	list := a.heldUses
+	list := a.heldPolicy
 	if !list.held {
 		switch {
-		case written != nil && written.Covers:
-			list = newLineList(storedLines(written.Uses, written.Stored))
+		case written != nil && written.Covers && written.Policy != nil:
+			list = newLineList(policyEditLines(written.Policy, written.Stored))
 		default:
-			list = newLineList(typedLines(a.req.Uses))
+			list = newLineList(policyEditLines(a.req.PolicyShown, a.req.Policy))
 		}
 	}
 	ask := linesAsk{
 		title:       "Auto approve: what it approves",
 		sections:    []section{grantSection(a), ruleDiscoboxesSection(a.asRule().ApprovalRule)},
-		answerLabel: "another use, one sentence",
-		placeholder: "e.g. Comment on any issue in org/repo",
-		written:     "uses",
-		footer:      "keep every \"never …\" the request stated",
+		answerLabel: "another line: a statement, or word = what it means",
+		placeholder: "e.g. allow read on issue in repository $primary.repo",
+		written:     "its policy",
+		footer:      "keep every deny the request stated",
 		numbered:    true,
-		required:    "a rule says what it approves: write at least one use",
-		sectionsFor: func(now lineList) []section { return usesSections(a.proposals, requestOrigin, now) },
+		required:    "a rule says what it approves: write at least one statement",
+		sectionsFor: func(now lineList) []section {
+			return append(policySections(a.proposals, requestOrigin, now), policyProblemsSection(now)...)
+		},
 	}
-	done := func(uses lineList) tea.Cmd {
+	keep := func(held lineList) tea.Cmd {
+		kept := a
+		kept.heldPolicy = held
+		return back(kept)
+	}
+	var done func(lineList) tea.Cmd
+	done = func(list lineList) tea.Cmd {
+		sent, shown, problems := listPolicy(list)
+		if len(problems) > 0 {
+			return m.askLines(ask, list, notAPolicyYet, done, keep)
+		}
 		next := a
-		next.heldUses = uses
-		next.rule.Uses = uses.values()
+		next.heldPolicy, next.policyShown, next.rule.Policy = list, shown, sent
+		if samePolicy(sent, a.req.Policy) {
+			next.rule.Policy = nil
+		}
 		return m.askLifetime(next, func() tea.Cmd { return m.askRuleContent(next, back) })
 	}
-	return m.askLines(ask, list, "", done, func(held lineList) tea.Cmd {
-		kept := a
-		kept.heldUses = held
-		return back(kept)
-	})
+	return m.askLines(ask, list, "", done, keep)
 }
 
-// usesOrigin is what a proposal's uses were written from and judged against,
-// as usesSections says it.
-type usesOrigin struct {
-	// from is what the judge wrote them from, and asked what the list
-	// starts from when they are not used.
+// policyOrigin is what a proposal's policy was written from and held to, as
+// policySections says it.
+type policyOrigin struct {
+	// from is what the judge wrote it from, and asked what the list starts
+	// from when it is not used.
 	from, asked string
-	// against is what the judge read them against.
+	// against is what it was held to covering.
 	against string
-	// judged is when uses nobody has judged yet will be.
-	judged string
+	// held is when a policy nobody has held to anything yet will be.
+	held string
 }
 
 // requestOrigin is auto approve's proposal: written from a pending request's
-// uses, and judged against it again when the rule approves it.
-var requestOrigin = usesOrigin{
-	from: "the request's uses", asked: "the uses as asked", against: "this request",
-	judged: "the server judges these when the rule is made",
+// policy, and held to covering it again when the rule approves it.
+var requestOrigin = policyOrigin{
+	from: "the request's policy", asked: "the policy as asked", against: "this request",
+	held: "the server holds it to covering this request when the rule is made",
 }
 
-// grantOrigin is a proposal made from a grant: written from the uses it
-// approved, judged against the request it answered, and once made tested on
+// grantOrigin is a proposal made from a grant: written from the policy it
+// approved, held to covering that policy, and once made held against
 // requests to come.
-var grantOrigin = usesOrigin{
-	from: "the uses this grant approved", asked: "the uses this grant approved", against: "the request this grant answered",
-	judged: "the judge reads them against each request the rule is tested on",
+var grantOrigin = policyOrigin{
+	from: "the policy this grant approved", asked: "the policy this grant approved", against: "the policy this grant approved",
+	held: "each request the rule is tested on is held to it",
 }
 
-// usesSections say where the uses on the card came from and what the judge
-// made of them: the model's, found to cover what they were judged against —
-// until a line is changed, when the verdict is no longer about the text — or
-// the uses they were written from, because the model's did not cover it or
-// no model wrote any.
-func usesSections(proposals RuleProposals, origin usesOrigin, now lineList) []section {
+// policySections say where the policy on the card came from and what holding
+// it to the request found: the model's, found to cover what it was held to —
+// until a line is changed, when the finding is no longer about the text — or
+// the policy it was written from, because the model's did not cover it,
+// could not be a rule's, or no model wrote one.
+func policySections(proposals RuleProposals, origin policyOrigin, now lineList) []section {
 	written := proposals.Written
-	sec := section{label: "where these come from"}
+	sec := section{label: "where this comes from"}
 	switch {
-	case written != nil && written.Covers && slices.Equal(now.values(), written.Stored):
+	case written != nil && written.Covers && written.Policy != nil && slices.Equal(now.values(), policyText(written.Stored)):
 		sec.lines = []line{
 			{text: "written by the project's judge from " + origin.from + ": the same work on any target of its kind"},
-			{text: "the judge found they cover " + origin.against + ": " + reasonOr(written.Reason, "no reason given"), tone: toneOK},
+			{text: "it covers " + origin.against + ": " + reasonOr(written.Reason, "no reason given"), tone: toneOK},
 		}
-	case written != nil && written.Covers:
+	case written != nil && written.Covers && written.Policy != nil:
 		sec.lines = []line{
-			{text: "started from the uses the project's judge wrote, and changed"},
-			{text: "the judge's verdict was on the uses as written, not these: " + origin.judged, tone: toneAlert},
+			{text: "started from the policy the project's judge wrote, and changed"},
+			{text: "it was found to cover " + origin.against + " as written, not as it now is: " + origin.held, tone: toneAlert},
 		}
 	case written != nil && written.Refused != "":
 		sec.lines = []line{
-			{text: "started from " + origin.asked + ": the model's uses could not be a rule's — " + written.Refused + " — so the judge was not asked", tone: toneAlert},
+			{text: "started from " + origin.asked + ": what the project's judge wrote could not be a rule's policy — " + written.Refused + " — so it was not held to anything", tone: toneAlert},
+		}
+		for _, statement := range written.Statements {
+			sec.lines = append(sec.lines, line{text: statement, bullet: true, tone: toneDim})
 		}
 	case written != nil:
 		sec.lines = []line{
-			{text: "started from " + origin.asked + ": the project's judge wrote these, and the judge found they do not cover " + origin.against + " — " + reasonOr(written.Reason, "no reason given"), tone: toneAlert},
+			{text: "started from " + origin.asked + ": the project's judge wrote this, and it does not cover " + origin.against + " — " + reasonOr(written.Reason, "no reason given"), tone: toneAlert},
 		}
-		for _, use := range written.Uses {
-			sec.lines = append(sec.lines, useLines(use, toneDim)...)
-		}
-		sec.lines = append(sec.lines, line{text: origin.judged, tone: toneDim})
+		sec.lines = append(sec.lines, rulePolicyLines(written.Policy, toneDim)...)
+		sec.lines = append(sec.lines, line{text: origin.held, tone: toneDim})
 	default:
 		sec.lines = []line{
-			{text: "started from " + origin.asked + ": " + reasonOr(proposals.Note, "no model wrote any"), tone: toneAlert},
-			{text: origin.judged, tone: toneDim},
+			{text: "started from " + origin.asked + ": " + reasonOr(proposals.Note, "no model wrote one"), tone: toneAlert},
+			{text: origin.held, tone: toneDim},
 		}
 	}
 	return []section{sec}
@@ -497,7 +511,7 @@ func (m *Model) reviewRule(a approval, back func() tea.Cmd) tea.Cmd {
 }
 
 // asRule is the rule this approval would make, as far as it has been chosen:
-// the repository and uses picked, around what the server copies from the
+// the repository and policy picked, around what the server copies from the
 // request.
 // It is the value the review card and a stored rule's card are both drawn
 // from, so a rule reads the same before it is made and after.
@@ -510,6 +524,11 @@ func (a approval) asRule() Rule {
 	if a.repositoriesShown != nil {
 		// Drawn as made safe; the rule sent names them in the server's text.
 		rule.Repositories = a.repositoriesShown
+	}
+	if a.policyShown != nil {
+		// The same for the policy, which is sent only when it is not the
+		// request's as asked.
+		rule.Policy = a.policyShown
 	}
 	return Rule{
 		ApprovalRule: rule,
@@ -556,8 +575,8 @@ func ruleFactsSection(rule Rule, credential, answered, lasts string) section {
 
 // ruleText is a rule's whole text, as every card that shows one draws it — the
 // one before it is made, the one before it is changed, and a stored rule's:
-// facts, then which discoboxes and every use, then what it hands out when
-// that is more than a credential to use.
+// facts, then which discoboxes and its whole policy, then what it hands out
+// when that is more than a credential to use.
 func ruleText(rule Rule, facts section) []section {
 	out := append([]section{facts}, ruleSections(rule)...)
 	if gives, ok := ruleHandsOut(rule); ok {
@@ -567,16 +586,17 @@ func ruleText(rule Rule, facts section) []section {
 }
 
 // ruleSections is the half that was chosen, as far as it has been: which
-// discoboxes, and every use.
+// discoboxes, and its policy, every statement and definition of it.
 func ruleSections(rule Rule) []section {
-	uses := section{label: "what it approves"}
+	approves := section{label: "what it approves"}
 	if rule.Delegate {
-		uses.label = "uses it would delegate"
+		approves.label = "what it would delegate"
 	}
-	for _, use := range rule.Uses {
-		uses.lines = append(uses.lines, useLines(use, tonePlain)...)
+	approves.lines = rulePolicyLines(rule.Policy, tonePlain)
+	if rule.Policy != nil && len(rule.Policy.Variables()) > 0 {
+		approves.lines = append(approves.lines, line{text: "each variable is bound to whichever discobox asks", tone: toneDim})
 	}
-	return []section{ruleDiscoboxesSection(rule.ApprovalRule), uses}
+	return []section{ruleDiscoboxesSection(rule.ApprovalRule), approves}
 }
 
 // ruleDiscoboxesSection says which discoboxes a rule is for: those of the
@@ -639,8 +659,8 @@ func ruleTestsSection(req CredentialRequest) section {
 		case test.Pending:
 			said = "still being judged"
 		case test.Covered:
-			// The judge's yes is not the approval, which can still be refused.
-			said = "the judge found it covers this, and it has not approved it yet"
+			// Covering is not the approval, which can still be refused.
+			said = "it covers this, and has not approved it yet"
 		case test.Stage != "":
 			said = test.Stage + " · " + said
 		}

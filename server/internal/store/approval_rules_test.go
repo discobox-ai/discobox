@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -13,7 +14,11 @@ import (
 func rule(projectID string) *model.ApprovalRule {
 	return &model.ApprovalRule{
 		ProjectID: projectID, WellKnownID: "com.github.api", Hosts: []string{"github.com"},
-		Purpose: model.SecretGrantPurposeUse, Uses: []string{"read any issue in org/repo"}, MaxGrantTTL: 3600, Enabled: true,
+		Purpose: model.SecretGrantPurposeUse, MaxGrantTTL: 3600, Enabled: true,
+		Policy: &policy.Policy{Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}}, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}},
 	}
 }
 

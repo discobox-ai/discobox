@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -21,8 +22,10 @@ const idPrefixApprovalRule = "rule"
 // edits, or reads one.
 //
 // Its repositories, credential, hosts, purpose and lifetime cap are facts the
-// server checks a request against. Its uses are sentences the judge reads
-// against the uses the request asked for.
+// server checks a request against. Its policy is what a request's policy must
+// fall within (ADR 26-10-22-689),
+// compared by code, with the judge asked only about conditions code cannot
+// compare.
 type ApprovalRule struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable approval rule ID"`
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
@@ -42,10 +45,12 @@ type ApprovalRule struct {
 	// Purpose is the one thing the rule approves a credential for, as a grant
 	// has one: using it, or delegating it.
 	Purpose string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose" doc:"What the rule approves a credential for: to use it, or to delegate it to other discoboxes" enum:"use,delegate"`
-	// Uses are sentences saying what may be approved. They usually name a
-	// class — any issue in a repository, a branch discobox/<slug> — and the
-	// judge decides whether every use a request asks for is within them.
-	Uses []string `gorm:"column:uses;type:text;serializer:json" json:"uses" doc:"What may be approved, as sentences the judge reads the uses a request asks for against"`
+	// Policy says what may be approved. Its statements usually name a class
+	// — any issue in $primary.repo, a branch "discobox/*" — and a request is
+	// covered when every allow it asks for falls within one of them and it
+	// carries every deny. Its variables bind to the discobox that asked, at
+	// each test, so it records no resolved values of its own.
+	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy" doc:"What may be approved: a request is covered when its policy falls within this one"`
 	// MaxGrantTTL caps the lifetime of every grant the rule mints, in seconds.
 	// Zero is no cap of the rule's own; the secret's limit holds either way.
 	MaxGrantTTL int64 `gorm:"column:max_grant_ttl_seconds;not null;default:0" json:"maxGrantTTLSeconds" doc:"Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit"`

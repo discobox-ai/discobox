@@ -1493,9 +1493,12 @@ type CredentialRequest struct {
 	// asked with uses alone. An approval sends it back as read: what is
 	// approved is the policy, not its lines. PolicyLines is it rendered for
 	// the person approving it (policyview), its variables as they resolve
-	// for this discobox, made safe to draw by the data source.
+	// for this discobox, made safe to draw by the data source. PolicyShown is
+	// the policy itself made safe to draw, which a rule made from the request
+	// starts from: what is sent for a line left as it was is Policy's.
 	Policy      *policy.Policy
 	PolicyLines []policyview.Line
+	PolicyShown *policy.Policy
 	// Raw is the request as the server sent it, as indented JSON.
 	Raw string
 	// GrantTTL is how long the agent asked to keep the credential, and the
@@ -1556,18 +1559,20 @@ type ApprovalRule struct {
 	// from Repositories being empty: a rule with neither has not been said
 	// to be for anything, and a data source sends it as that.
 	EveryDiscobox bool
-	// Uses are sentences saying what the rule approves.
-	Uses []string
+	// Policy is what the rule approves: a request is covered when the policy
+	// it asks for falls within this one. Its variables bind to whichever
+	// discobox asks, so it carries no resolved values.
+	Policy *policy.Policy
 }
 
 // Rule is an approval rule a project holds: what a person chose, and around
 // it what the server copied from the request it was made from or was told
-// when it was made (ADR 26-10-12-330 §1). Its sentences may have been written
-// by a model from an agent's ask, so a data source makes them safe to draw.
+// when it was made (ADR 26-10-12-330 §1). Its policy may have been written by
+// a model from an agent's ask, so a data source makes it safe to draw.
 type Rule struct {
 	ID string
 	ApprovalRule
-	// Stored is the rule's repositories and uses in the server's own text.
+	// Stored is the rule's repositories and policy in the server's own text.
 	// ApprovalRule's are made safe to draw, and can differ; an edit sends
 	// these for every line the person did not change, so it never rewrites
 	// one they did not touch.
@@ -1624,8 +1629,8 @@ type RuleChange struct {
 	// discobox is never what an empty Repositories means.
 	Repositories  []string
 	EveryDiscobox bool
-	// Uses, when set, replace what it approves.
-	Uses []string
+	// Policy, when set, replaces what it approves.
+	Policy *policy.Policy
 	// MaxGrantTTL, when set, is the new cap; zero is the secret's own limit.
 	MaxGrantTTL *time.Duration
 	// Expires, when set, is when it now lapses; NeverExpires clears that.
@@ -1635,13 +1640,13 @@ type RuleChange struct {
 
 // Empty reports whether the change changes nothing.
 func (c RuleChange) Empty() bool {
-	return c.Repositories == nil && !c.EveryDiscobox && c.Uses == nil && c.MaxGrantTTL == nil && c.Expires == nil && !c.NeverExpires
+	return c.Repositories == nil && !c.EveryDiscobox && c.Policy == nil && c.MaxGrantTTL == nil && c.Expires == nil && !c.NeverExpires
 }
 
 // RuleProposals is what a person who chose "auto approve" starts a rule from:
-// the repository of the discobox that asked, and the uses the project's
-// judge wrote from the request's, already put to the judge as the question
-// the rule would later ask about this request (ADR 26-10-12-330 §§7–8).
+// the repository of the discobox that asked, and the policy the project's
+// judge wrote from the request's, already held to covering this request as
+// the rule later would be (ADR 26-10-12-330 §§7–8).
 type RuleProposals struct {
 	// Repository is the asking discobox's, as host/path, made safe to draw:
 	// what a rule for "discoboxes of this repository" names. Empty when it
@@ -1649,8 +1654,8 @@ type RuleProposals struct {
 	// every discobox, or for repositories named, answers it. RepositoryStored
 	// is it in the server's own text, which is what is sent.
 	Repository, RepositoryStored string
-	// Written is the uses written, nil when no model wrote any.
-	Written *WrittenUses
+	// Written is the policy written, nil when no model wrote one.
+	Written *WrittenPolicy
 	// Credential, Hosts and Delegate are what a rule made from the request
 	// will say, as the server copies them from it.
 	Credential string
@@ -1659,23 +1664,28 @@ type RuleProposals struct {
 	// WellKnownID is the well-known credential the request asked for by ID,
 	// empty when it named none. A rule made from the proposal is for it —
 	// answered with the secret marked for it — because that is the rule the
-	// uses were judged as.
+	// policy was held to the request as.
 	WellKnownID string
-	// Note says why there are no uses written, when no model could write
-	// them.
+	// Note says why there is no policy written, when no model could write
+	// one.
 	Note string
 }
 
-// WrittenUses are the uses the project's judge wrote from a request's — the
-// same work on any target of its kind — with the judge's verdict on them.
-type WrittenUses struct {
-	// Uses are drawn, made safe; Stored are the server's own text, sent for
-	// every line the person leaves as written.
-	Uses, Stored []string
-	// Covers is the judge finding every use the request asked for within
-	// these, and Reason what it said. Refused is the server's reason the uses
-	// could not be a rule's — two lines, too long, too many — in which case
-	// the judge was not asked, and said nothing.
+// WrittenPolicy is the policy the project's judge wrote from a request's —
+// the same work on any target of its kind — with what holding it to the
+// request found.
+type WrittenPolicy struct {
+	// Policy is drawn, made safe; Stored is it in the server's own text, sent
+	// for every line the person leaves as written. Both are nil when what was
+	// written is not a policy a rule may have, and Statements are then the
+	// sentences as written, made safe, for reading only.
+	Policy, Stored *policy.Policy
+	Statements     []string
+	// Covers is the request's policy found to fall within this one — by
+	// code, or by the judge for conditions code cannot compare — and Reason
+	// why it does or does not. Refused is the server's reason what was
+	// written could not be a rule's policy — a statement that does not
+	// parse, a word with no definition — in which case it was not compared.
 	Covers          bool
 	Reason, Refused string
 }
@@ -1756,14 +1766,13 @@ type TrustApproval struct {
 func (r CredentialRequest) FromAgent() bool { return len(r.Uses) > 0 }
 
 // Ruleable reports whether a request can be answered with a rule: an agent's
-// own ask for a credential, naming its uses. A rule's content is uses read
-// against uses, so a request the proxy opened, a refresh, and a trust stay a
-// person's to answer each time (ADR 26-10-12-330 §4). So does an ask that
-// carries a policy: a rule never answers one, and the server refuses to make
-// one from it (ADR 26-10-20-782, Deferred). The server's ruleProposable says
-// the same; the two change together.
+// own ask to use a credential, carrying a policy. A rule's content is a policy
+// the request's is held to, so a request the proxy opened, a refresh, a
+// trust, and an ask of uses alone stay a person's to answer each time, and so
+// does an ask to delegate, which no rule approves yet (ADR 26-10-22-689). The
+// server's ruleProposable says the same; the two change together.
 func (r CredentialRequest) Ruleable() bool {
-	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil && r.Policy == nil
+	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil && r.Policy != nil && !r.Delegate
 }
 
 // Secret is a project secret as the window needs it: enough to choose between
@@ -1871,8 +1880,12 @@ type Grant struct {
 	Uses []GrantUse
 	// Policy is what the grant authorizes, as approved, rendered with the
 	// value each of its variables resolved to (policyview) and made safe to
-	// draw; empty on a grant that carries none.
-	Policy []policyview.Line
+	// draw; empty on a grant that carries none. Approved is that policy in
+	// the server's own text, and ApprovedShown it made safe to draw: what a
+	// rule made from the grant starts from when the judge's does not cover
+	// it. Both are nil on a grant that carries none.
+	Policy                  []policyview.Line
+	Approved, ApprovedShown *policy.Policy
 	// Delegate is a delegation grant: its discobox may hand the credential to
 	// other discoboxes and may not use it. A grant is one or the other, so
 	// false is a grant its discobox uses.
@@ -2662,15 +2675,15 @@ type DataSource interface {
 	// the request itself.
 	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
 
-	// RuleProposals asks a request's server which approval rules could answer
-	// it and requests like it. It is slow — a model writes the wider ones and
-	// the judge reads every one — so it is asked only when a person chooses
-	// "auto approve".
+	// RuleProposals asks a request's server which approval rule could answer
+	// it and requests like it. It is slow — a model writes the policy, and the
+	// judge may be asked about its conditions — so it is asked only when a
+	// person chooses "auto approve".
 	RuleProposals(ctx context.Context, server, requestID string) (RuleProposals, error)
 	// GrantRuleProposals is the same proposal from a grant a request was
 	// approved with: the rule that request's auto approve would have made,
-	// written from the uses the grant approved. A grant naming no uses, or
-	// whose request is no longer on record, has none.
+	// written from the policy the grant approved. A grant carrying no
+	// policy, or whose request is no longer on record, has none.
 	GrantRuleProposals(ctx context.Context, server, grantID string) (RuleProposals, error)
 
 	// Rules lists the approval rules the server holds for the project, newest
@@ -2679,7 +2692,7 @@ type DataSource interface {
 
 	// CreateRule makes an approval rule, and returns it as the server holds
 	// it. The server refuses one it could not make — a repository that names
-	// no host, a use on two lines — and says why.
+	// no host, a policy with no allow — and says why.
 	CreateRule(ctx context.Context, server string, rule NewRule) (Rule, error)
 
 	// UpdateRule changes what the change sets and nothing else.

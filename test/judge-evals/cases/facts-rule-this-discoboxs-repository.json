@@ -1,21 +1,50 @@
 {
   "name": "facts-rule-this-discoboxs-repository",
-  "why": "A rule that says \"this discobox's repository\", read against what the asking discobox was created with (ADR 26-10-14-691).",
+  "why": "A rule that says $primary.repo, resolved against what the asking discobox was created with (ADR 26-10-14-691): an ask naming that repository outright is within it.",
   "expect": "allow",
-  "job": {
-    "kind": "rule",
-    "purposes": [
-      "create issues in this discobox's repository with gh issue create"
-    ],
-    "host": "api.github.com",
+  "rule": {
+    "policy": {
+      "statements": [
+        "allow create on issue in repository $primary.repo"
+      ],
+      "definitions": {
+        "issue": "a GitHub issue",
+        "repository": "a GitHub repository"
+      }
+    },
+    "request": {
+      "statements": [
+        "allow create on issue in repository \"acme/web\""
+      ],
+      "definitions": {
+        "issue": "a GitHub issue",
+        "repository": "a GitHub repository"
+      }
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_6t1n8c3vqk2m9x4w",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "web",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "acme/web",
+            "url": "https://github.com/acme/web"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    },
     "credential": "com.github.api",
-    "round": 1,
-    "uses": [
-      "gh issue create -R acme/web to file the flaky TestPoolDrain failure I found"
-    ],
-    "facts": [
-      "The discobox asking is sbx_6t1n8c3vqk2m9x4w.",
-      "The primary source sbx_6t1n8c3vqk2m9x4w was created with is the Git repository github.com/acme/web, checked out from the branch main."
+    "hosts": [
+      "github.com"
     ]
   }
 }

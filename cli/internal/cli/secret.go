@@ -654,7 +654,10 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		// request's own, as `discobox secret request get` renders it: a
 		// request never changes what it asks, so it is the policy that was
 		// read. Only then is it read first; otherwise approving is one call.
-		if policyAsAsked {
+		// An auto approval approves the policy as asked too: its rule is made
+		// from that policy and held to covering it, and only a request that
+		// asks for one can have a rule (ADR 26-10-12-330).
+		if policyAsAsked || auto.auto {
 			read, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 			if err != nil {
 				return err
@@ -664,7 +667,10 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 				return err
 			}
 			asked, ok := pending.Policy.Get()
-			if !ok {
+			switch {
+			case !ok && auto.auto:
+				return fmt.Errorf("request %s asks for uses alone, and an approval rule answers a request's policy; approve it without --auto", requestID)
+			case !ok:
 				return fmt.Errorf("request %s asks for no policy; approve it without --policy-as-asked", requestID)
 			}
 			body.SetPolicy(apiclientgen.NewOptAccessPolicy(asked))
@@ -693,7 +699,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts the grant is limited to, comma-separated or repeated; defaults to the hosts the request named")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLApproveFlagUsage)
-	cmd.Flags().BoolVar(&policyAsAsked, "policy-as-asked", false, "Approve the policy the request asks for, as 'discobox secret request get' shows it; required for a request that asks for one")
+	cmd.Flags().BoolVar(&policyAsAsked, "policy-as-asked", false, "Approve the policy the request asks for, as 'discobox secret request get' shows it; required for a request that asks for one, and implied by --auto")
 	auto.addFlags(cmd)
 	return cmd
 }

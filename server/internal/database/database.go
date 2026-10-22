@@ -163,58 +163,46 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := denyOrphanedSecretRequests(write); err != nil {
 		return err
 	}
-	if err := retireApprovalRuleScopes(write); err != nil {
+	if err := retireApprovalRuleUses(write); err != nil {
 		return err
 	}
 	return rekeySandboxOrigins(write)
 }
 
-// retireApprovalRuleScopes takes an approval rule's scope sentence and its
-// pinned discobox out of the schema (ADR 26-10-12-330 §2): which discoboxes a
-// rule is for is now a list of repositories, or every discobox when a person
-// said so.
+// retireApprovalRuleUses takes the approval rules no code can read out of the
+// database (ADR 26-10-22-689 §5): a rule now carries a policy a request's
+// policy is held to, and no code reads a sentence as one. Every rule with no
+// policy is deleted, as DeleteApprovalRule deletes one: the grants it minted
+// stand, and they and its verdicts go on naming it by ID. Each is logged with
+// what it said, which is the only record left of it; people make the ones
+// they want again as policies. A rule with a policy is never touched, so an
+// older server that adds a uses column back — a rollback, a rolling deploy —
+// costs no rule made since, and a rule it writes with no policy is deleted by
+// the next start of this one.
 //
-// Neither old column says a repository, so neither can be carried over, and a
-// rule that had one would read, with the column gone, as a rule for every
-// discobox — wider than anybody made it. Switched off it would be one
-// keypress from that, with nothing left on it to say it was ever narrower. So
-// a rule that had a scope or a pin is deleted, as DeleteApprovalRule deletes
-// one: the grants it minted stand, and they and its verdicts go on naming it
-// by ID. Each is logged with what it said, which is the only record left of
-// it. A rule that had neither was already for every discobox, and is kept.
-// The columns never reached a release; databases built from the branch that
-// had them are what this is for.
+// The rules' older columns go once their rules have: the uses, and the scope
+// sentence and pinned discobox (ADR 26-10-12-330 §2) from a branch that never
+// reached a release, with the scope verdicts, which read the scope sentences
+// and are of a kind the API no longer names.
 //
-// The scope verdicts go with the sentences they read: no rule asks that
-// question any more, and a kind the API's enum no longer names would fail
-// every listing it is in.
-//
-// All of it runs only while one of the columns is still there, which is what
-// says the database is from before. A step interrupted before the drops and
-// run again finds the same rows gone and finishes; once both columns are gone
-// it does nothing, and issues no statement.
-func retireApprovalRuleScopes(db *gorm.DB) error {
+// A step interrupted before the drops and run again finds the same rows gone
+// and finishes. Once there is nothing to delete and no column to drop, it
+// does one read.
+func retireApprovalRuleUses(db *gorm.DB) error {
 	migrator := db.Migrator()
 	if !migrator.HasTable(&model.ApprovalRule{}) {
 		return nil
 	}
 	var retired []string
-	for _, column := range []string{"scope", "sandbox_id"} {
+	for _, column := range []string{"uses", "scope", "sandbox_id"} {
 		if migrator.HasColumn(&model.ApprovalRule{}, column) {
 			retired = append(retired, column)
 		}
 	}
-	if len(retired) == 0 {
-		return nil
-	}
-	narrowed := make([]string, 0, len(retired))
-	for _, column := range retired {
-		narrowed = append(narrowed, fmt.Sprintf("%q <> ''", column))
-	}
 	var rules []map[string]any
 	if err := db.Table("approval_rules").
 		Select(append([]string{"id", "project_id", "well_known_id", "secret_id"}, retired...)).
-		Where(strings.Join(narrowed, " OR ")).Order("id").Find(&rules).Error; err != nil {
+		Where("policy IS NULL OR policy = '' OR policy = 'null'").Order("id").Find(&rules).Error; err != nil {
 		return err
 	}
 	for _, rule := range rules {
@@ -222,12 +210,19 @@ func retireApprovalRuleScopes(db *gorm.DB) error {
 		if credential == "" {
 			credential = "secret " + columnText(rule["secret_id"])
 		}
-		// %q throughout: a scope is a sentence a person or a model wrote.
-		log.Printf("deleted approval rule %s of project %s for %s (scope %q, pinned to discobox %q): a rule is now for repositories or for every discobox, and neither says one; its grants stand, and a rule for its repositories is made anew",
-			columnText(rule["id"]), columnText(rule["project_id"]), credential, columnText(rule["scope"]), columnText(rule["sandbox_id"]))
+		said := make([]string, 0, len(retired))
+		for _, column := range retired {
+			// %q: each is what a person or a model wrote.
+			said = append(said, fmt.Sprintf("%s %q", column, columnText(rule[column])))
+		}
+		log.Printf("deleted approval rule %s of project %s for %s (%s): a rule now carries a policy, and is made anew as one; its grants stand",
+			columnText(rule["id"]), columnText(rule["project_id"]), credential, strings.Join(said, ", "))
 		if err := db.Exec("DELETE FROM approval_rules WHERE id = ?", rule["id"]).Error; err != nil {
 			return err
 		}
+	}
+	if len(retired) == 0 {
+		return nil
 	}
 	// Before the columns go: they are what says this step has work left, so
 	// a start interrupted after them would leave the verdicts for good.

@@ -16,6 +16,7 @@ import (
 
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
@@ -1977,13 +1978,14 @@ func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
 	}
 }
 
-// A rule made while a rule had a scope sentence or a pinned discobox must not
-// come out of the upgrade as a rule for every discobox, nor one keypress from
-// it: neither column says a repository, so the rule is deleted with its
-// columns, and said to have been. A rule that had neither was already for
-// every discobox and is kept. The grants a deleted rule minted stand, as they
-// do when a person deletes one, and the scope verdicts go.
-func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
+// A rule written as sentence uses comes out of the upgrade deleted, and said
+// to have been: a rule now carries a policy, and no code reads a sentence as
+// one. So does a rule from the branch that had a scope sentence or a pinned
+// discobox, whose columns go too. A rule with a policy is kept whatever
+// columns are there, so an older server that adds them back costs nothing
+// made since. The grants a deleted rule minted stand, as they do when a
+// person deletes one; its rule verdicts stay, and the scope verdicts go.
+func TestMigrateDeletesRulesWrittenAsUses(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -2014,23 +2016,40 @@ func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
 			t.Fatalf("seed %s: %v", id, err)
 		}
 	}
-	// A database that never had the columns is not touched: a verdict of a
-	// kind nothing writes is left where it is, since nothing says to look.
+	// A database that never had the columns is not touched: a rule with a
+	// policy stays, and a verdict of a kind nothing writes is left where it
+	// is, since nothing says to look.
+	kept := &model.ApprovalRule{
+		ProjectID: "project-1", Repositories: []string{"github.com/org/repo"}, WellKnownID: "com.github.api",
+		Hosts: []string{"github.com"}, Purpose: model.SecretGrantPurposeUse, Enabled: true,
+		Policy: &policy.Policy{Statements: []policy.Statement{{
+			Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
+			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
+		}}, Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"}},
+	}
+	if err := write.Create(kept).Error; err != nil {
+		t.Fatalf("seed a rule with a policy: %v", err)
+	}
 	verdict("cv_untouched", "scope")
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate with no old columns: %v", err)
 	}
-	var untouched int64
+	var untouched, policies int64
 	if err := write.Model(&model.CredentialVerdict{}).Where("id = ?", "cv_untouched").Count(&untouched).Error; err != nil || untouched != 1 {
 		t.Fatalf("verdicts = %d, %v, want nothing deleted from a database with no old columns", untouched, err)
+	}
+	if err := write.Model(&model.ApprovalRule{}).Count(&policies).Error; err != nil || policies != 1 {
+		t.Fatalf("rules = %d, %v, want the rule with a policy kept", policies, err)
 	}
 	if err := write.Exec("DELETE FROM credential_verdicts").Error; err != nil {
 		t.Fatal(err)
 	}
 
-	// The columns as a database built from the branch that had them has them,
-	// the pin with its index.
+	// The columns as a database from before policies has them: the uses, and
+	// on one built from the branch that had them, the scope and the pin with
+	// its index.
 	for _, statement := range []string{
+		"ALTER TABLE approval_rules ADD COLUMN uses text",
 		"ALTER TABLE approval_rules ADD COLUMN scope text NOT NULL DEFAULT ''",
 		"ALTER TABLE approval_rules ADD COLUMN sandbox_id text NOT NULL DEFAULT ''",
 		"CREATE INDEX idx_approval_rules_sandbox_id ON approval_rules(sandbox_id)",
@@ -2042,7 +2061,6 @@ func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
 	for _, rule := range []struct{ id, scope, pin string }{
 		{"rule_scoped", "discoboxes started to deliver an issue in org/repo", ""},
 		{"rule_pinned", "", "sbx_1"},
-		{"rule_both", "any discobox a person started", "sbx_1"},
 		{"rule_every", "", ""},
 	} {
 		if err := write.Exec(
@@ -2069,17 +2087,14 @@ func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
 		if err := db.Migrate(ctx); err != nil {
 			t.Fatalf("upgrade migrate %d: %v", run, err)
 		}
-		for _, column := range []string{"scope", "sandbox_id"} {
+		for _, column := range []string{"uses", "scope", "sandbox_id"} {
 			if db.Write.Migrator().HasColumn("approval_rules", column) {
 				t.Fatalf("run %d: approval_rules.%s survived the migration", run, column)
 			}
 		}
 		var rules []model.ApprovalRule
-		if err := write.Order("id").Find(&rules).Error; err != nil {
-			t.Fatalf("run %d: read rules: %v", run, err)
-		}
-		if len(rules) != 1 || rules[0].ID != "rule_every" || !rules[0].Enabled || len(rules[0].Repositories) != 0 || len(rules[0].Uses) != 1 {
-			t.Fatalf("run %d: rules = %+v, want only the rule that was already for every discobox, as it was", run, rules)
+		if err := write.Find(&rules).Error; err != nil || len(rules) != 1 || rules[0].ID != kept.ID || rules[0].Policy == nil {
+			t.Fatalf("run %d: rules = %+v, %v, want every rule written as uses deleted, and the one with a policy kept", run, rules, err)
 		}
 		var grant model.SecretGrant
 		if err := write.First(&grant, "id = ?", "grant_minted").Error; err != nil || grant.RuleID != "rule_scoped" {
@@ -2093,18 +2108,18 @@ func TestMigrateDeletesRulesThatHadAScopeOrAPin(t *testing.T) {
 			t.Errorf("run %d: verdict kinds = %q, want the rule verdict alone", run, kinds)
 		}
 	}
-	// One line a rule, said once, with what it was for.
+	// One line a rule, said once, with what it said.
 	said := logged.String()
 	for _, want := range []string{
-		"rule_scoped", "rule_pinned", "rule_both", "project-1", "com.github.api",
-		`"discoboxes started to deliver an issue in org/repo"`, `pinned to discobox "sbx_1"`,
+		"rule_scoped", "rule_pinned", "rule_every", "project-1", "com.github.api",
+		`uses "[\"read any issue in org/repo\"]"`, `scope "discoboxes started to deliver an issue in org/repo"`, `sandbox_id "sbx_1"`,
 	} {
 		if !strings.Contains(said, want) {
 			t.Errorf("log = %q, want it to say %q", said, want)
 		}
 	}
-	if strings.Contains(said, "rule_every") || strings.Count(said, "deleted approval rule") != 3 {
-		t.Errorf("log = %q, want one line for each of the three deleted rules and none for the one kept", said)
+	if strings.Count(said, "deleted approval rule") != 3 {
+		t.Errorf("log = %q, want one line for each of the three deleted rules", said)
 	}
 }
 

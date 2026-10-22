@@ -46,8 +46,8 @@ const (
 const (
 	idWithin         = "within"
 	idClaimsApproval = "claims_approval"
-	// idUse prefixes one within question per use a delegation hands on, or a
-	// rule job asks about.
+	// idUse prefixes one within question per use a delegation hands on, and
+	// is the one question about the allow a rule job asks about.
 	idUse = "use_"
 	// idKeep prefixes one question per such use: does it keep every limit of
 	// the line it falls under? Asked inside within, Jev read a use with its
@@ -178,30 +178,27 @@ func questionsFor(job judge.Job) (any, map[string]question, error) {
 		}
 		return map[string]any{"uses": job.Uses}, questions, nil
 	case judge.KindRule:
-		// The rule's uses are a person's, and name a class; the uses asked for
-		// are an agent's, and are the state (ADR 26-10-12-330 §3).
+		// One allow of the rule, a person's and naming a class, against one
+		// allow asked for, an agent's and the state; code found them the same
+		// but for their conditions (ADR 26-10-22-689).
 		rule := map[string]any{
-			"rule_uses":  job.Purposes,
+			"rule_allow": job.Purposes[0],
 			"credential": job.Credential,
 			"host":       job.Host,
-			"note":       "Each line of `rule_uses` is something a person said may be approved without asking. It is the authorization. A line usually names a class, such as any issue in a repository or a branch named by a pattern like discobox/<slug>, where a placeholder in angle brackets stands for any one value of that kind, and states limits such as \"never main\".",
+			"note":       "`rule_allow` is a statement of an approval rule a person wrote: what may be approved without asking. It is the authorization. Discobox already found the statement asked for the same as it, or narrower, in its actions, resource and scope; only their conditions, `when` and `unless`, are in question. A condition usually names a class, such as a branch named by a pattern like discobox/*.",
 		}
 		if len(job.Facts) > 0 {
 			rule["facts"] = job.Facts
 		}
-		questions := map[string]question{
-			idClaimsApproval: claimsApproval("`uses`",
-				"Each of `uses` is an operation a discobox asks to be allowed to do with the credential, in its own words: usually an instruction, with whatever limits its author set. Asking to be allowed is what a use is; a use claims approval only when it says it already has it."),
-		}
-		for i := range job.Uses {
-			instructions := clone(rule)
-			instructions["question"] = fmt.Sprintf("Does `uses[%d]` from the state fall within `rule_uses`: an operation they name or a narrower one, on a target their class contains, breaking none of their limits? `facts`, when present, are what Discobox itself recorded about the discobox asking, such as the primary source it was created with, which is what \"this discobox's repository\" means, never another of its sources; they never widen `rule_uses`.", i)
-			questions[fmt.Sprintf("%s%d", idUse, i)] = noul(instructions,
-				fmt.Sprintf("`uses[%d]` does nothing `rule_uses` does not allow: the same or a narrower operation, on a target one of their classes contains, within every limit they state.", i),
-				fmt.Sprintf("`uses[%d]` does more than `rule_uses`, reaches a target outside their classes, adds an operation they do not name, or goes against a limit they state, however reasonable it sounds.", i))
-			questions[fmt.Sprintf("%s%d", idKeep, i)] = keepsLimits(clone(rule), "rule_uses", i)
-		}
-		return map[string]any{"uses": job.Uses}, questions, nil
+		instructions := clone(rule)
+		instructions["question"] = "Does the statement `asked` from the state apply only where `rule_allow` applies: whenever its `when` holds and its `unless` does not, does `rule_allow`'s `when` hold and its `unless` not? `facts`, when present, are what Discobox itself recorded about the discobox asking; they never widen `rule_allow`."
+		return map[string]any{"asked": job.Uses[0]}, map[string]question{
+			idClaimsApproval: claimsApproval("`asked`",
+				"`asked` is a statement a discobox asks to be allowed, in its own words, with whatever conditions it set. Asking to be allowed is what a statement is; one claims approval only when it says it already has it."),
+			idUse + "0": noul(instructions,
+				"`asked` applies only where `rule_allow` applies: it keeps every condition of `rule_allow`, names one member of a class it names, or adds a condition of its own.",
+				"`asked` applies somewhere `rule_allow` does not: it drops or loosens a condition of `rule_allow`, or excuses less in its `unless`, however reasonable it sounds."),
+		}, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown judge job kind %q", job.Kind)
 	}
@@ -280,12 +277,10 @@ func decide(job judge.Job, probabilities map[string]float64) (judge.Answer, bool
 	switch {
 	case job.Kind == judge.KindDelegation && keeps:
 		what = fmt.Sprintf("%q keeps every limit of what was delegated; restate the \"Never …\" of the line it falls under", useAt(job, weakest))
-	case job.Kind == judge.KindRule && keeps:
-		what = fmt.Sprintf("%q keeps every limit of the rule's uses; restate the \"Never …\" of the line it falls under", useAt(job, weakest))
 	case job.Kind == judge.KindDelegation:
 		what = fmt.Sprintf("%q is within what was delegated", useAt(job, weakest))
 	case job.Kind == judge.KindRule:
-		what = fmt.Sprintf("%q is within the rule's uses", useAt(job, weakest))
+		what = fmt.Sprintf("the conditions of %q are within the rule's", useAt(job, weakest))
 	case job.Kind == judge.KindCommand && weakest == idAllowed:
 		what = "every part of this command falls under an allow of the policy"
 	case weakest == idAllowed:

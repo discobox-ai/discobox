@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/policy"
 	"github.com/discobox-ai/discobox/wellknown"
 )
 
@@ -18,9 +19,26 @@ import (
 // answer, each read whole with the grants it minted, and turned off, deleted,
 // or undone a grant at a time.
 
-// longUse is a use too long for one row of any card, which is the kind a
-// model writes.
-const longUse = "Open, update, comment on and close pull requests against org/repo from any branch named discobox/<slug>, and never push to main, delete a branch or change the repository's settings"
+// longStatement is a statement too long for one row of any card, which is the
+// kind a model writes, and readStatement a short one.
+const (
+	longStatement = `allow create, update, comment on pull request created by $this in repository $primary.repo when "its head branch is named discobox/<slug>, and it never pushes to main, deletes a branch or changes the repository's settings"`
+	readStatement = `allow read on issue in repository "org/repo"`
+)
+
+// longCondition is longStatement's condition, as a card draws it whole.
+const longCondition = `when "its head branch is named discobox/<slug>, and it never pushes to main, deletes a branch or changes the repository's settings"`
+
+// rulePolicy is the first fixture rule's policy: the long statement and the
+// short one, with the definitions of their words.
+func rulePolicy() *policy.Policy {
+	return mustPolicy(longStatement, readStatement, "comment = add a comment to it", "issue = a GitHub issue",
+		"pull request = a GitHub pull request", "repository = a GitHub repository")
+}
+
+// rulePolicyText is rulePolicy as the list an edit opens on.
+var rulePolicyText = []string{longStatement, readStatement, "comment = add a comment to it", "issue = a GitHub issue",
+	"pull request = a GitHub pull request", "repository = a GitHub repository"}
 
 // rulesFixture is the secrets screen over a project with three rules: one
 // answering, one switched off, and one for every discobox whose own expiry has
@@ -32,18 +50,18 @@ func rulesFixture(t *testing.T) (*Model, *fakeSource) {
 	ds.rules = []Rule{
 		{
 			ID:           "rule_1",
-			ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo", "github.com/org/tools"}, Uses: []string{longUse, "Read any issue in org/repo"}},
+			ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo", "github.com/org/tools"}, Policy: rulePolicy()},
 			WellKnownID:  "com.github.api", SecretID: "sec_gh", Hosts: []string{"github.com", "api.github.com"},
 			MaxGrantTTL: 8 * time.Hour, CreatedBy: "user:darren", Created: now.Add(-3 * time.Hour), Enabled: true,
 		},
 		{
 			ID:           "rule_2",
-			ApprovalRule: ApprovalRule{Repositories: []string{"gitlab.example.com/team/models"}, Uses: []string{"Call the OpenAI API"}},
+			ApprovalRule: ApprovalRule{Repositories: []string{"gitlab.example.com/team/models"}, Policy: mustPolicy(`allow create on completion in service "openai"`, "completion = a model completion", "service = an API service")},
 			SecretID:     "sec_loose", Hosts: []string{"api.openai.com"}, Created: now.Add(-time.Hour),
 		},
 		{
 			ID:           "rule_3",
-			ApprovalRule: ApprovalRule{EveryDiscobox: true, Uses: []string{"Read any issue in org/repo"}},
+			ApprovalRule: ApprovalRule{EveryDiscobox: true, Policy: mustPolicy(readStatement, "issue = a GitHub issue", "repository = a GitHub repository")},
 			WellKnownID:  "com.github.api", Hosts: []string{"github.com"},
 			Expires: now.Add(-time.Hour), Created: now.Add(-48 * time.Hour), Enabled: true,
 		},
@@ -132,12 +150,12 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 		t.Fatalf("title = %q, want it to count the rules", rows[rules])
 	}
 	for i, want := range [][]string{
-		// Repositories longer than their column are cut; the uses take the
-		// rest of the row, as much of them as fits.
-		{"com.github.api", "enabled", "github.com/org/repo, github.com/o…", "Open, update, comment on", "no expiry"},
+		// Repositories longer than their column are cut; the policy takes
+		// the rest of the row, as much of it as fits.
+		{"com.github.api", "enabled", "github.com/org/repo, github.com/o…", "allow create, update, comment on", "no expiry"},
 		// A rule for a project secret is named by the secret, not its ID.
-		{"OpenAI key", "disabled", "gitlab.example.com/team/models", "Call the OpenAI API"},
-		{"com.github.api", "lapsed", "every discobox", "Read any issue in org/repo", "lapsed 1h ago"},
+		{"OpenAI key", "disabled", "gitlab.example.com/team/models", "allow create on completion"},
+		{"com.github.api", "lapsed", "every discobox", "allow read on issue in", "lapsed 1h ago"},
 	} {
 		row := rows[rules+1+i]
 		for _, word := range want {
@@ -154,7 +172,7 @@ func TestTheRulesAreAThirdTableUnderTheRequests(t *testing.T) {
 }
 
 // A narrow window gives up the columns that say least, from the right, and
-// shares what is left between the repositories and the uses, cutting both.
+// shares what is left between the repositories and the policy, cutting both.
 // The credential and whether the rule is answering are what the row is for,
 // and stay.
 func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
@@ -164,7 +182,7 @@ func TestARuleRowKeepsItsCredentialAndStateInANarrowWindow(t *testing.T) {
 
 	rows := plainRows(m)
 	row := rows[titleRow(rows, "Rules")+1]
-	for _, want := range []string{"com.github.api", "enabled", "github.com/or", "Open, update"} {
+	for _, want := range []string{"com.github.api", "enabled", "github.com/or", "allow create"} {
 		if !strings.Contains(row, want) {
 			t.Fatalf("row = %q, want it to keep %q", row, want)
 		}
@@ -393,8 +411,8 @@ func TestAShortWindowShowsTheTableWithTheKeys(t *testing.T) {
 	}
 }
 
-// A rule's text is the authorization, so its card is the whole of it: every
-// use to its last word, what the server holds around them, and the grants it
+// A rule's text is the authorization, so its card is the whole of it: its
+// policy to its last word, what the server holds around it, and the grants it
 // has minted that still authorize something — each by the discobox it is for.
 func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 	t.Parallel()
@@ -407,7 +425,10 @@ func TestARulesCardIsTheRuleWholeWithTheGrantsItMinted(t *testing.T) {
 		"github.com, api.github.com", "purpose use", "at most 8 hours",
 		"expires never", "made by user:darren", "3h ago",
 		"discoboxes of github.com/org/repo", "discoboxes of github.com/org/tools",
-		longUse, "Read any issue in org/repo",
+		"in repository (a GitHub repository) $primary.repo",
+		"allow create, update, comment (add a comment to it) on pull request (a GitHub pull request) created by $this",
+		longCondition, `in repository "org/repo"`, "allow read on issue (a GitHub issue)",
+		"each variable is bound to whichever discobox asks",
 		"1 grant it minted still stands",
 		"fix flaky pool reaper tests · sandbox sbx_one api.github.com · expires in",
 		// An edit is offered, and what happens to one.
@@ -576,7 +597,7 @@ func TestAStoredRuleSaysWhatItHandsOut(t *testing.T) {
 	}
 	m, ds := rulesFixture(t)
 	ds.rules = []Rule{{ID: "rule_gate", WellKnownID: gate.ID, Delegate: true, Enabled: true,
-		ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo"}, Uses: []string{"Create discoboxes to deliver issues"}}}}
+		ApprovalRule: ApprovalRule{Repositories: []string{"github.com/org/repo"}, Policy: mustPolicy(`allow create on discobox in repository $primary.repo`, "discobox = a discobox delivering an issue", "repository = a GitHub repository")}}}
 	send(t, m, keyPress("r"))
 	// Its row says it delegates: a rule to use the same credential is another.
 	if !strings.Contains(frameText(m), "delegates · github.com/org/repo") {
@@ -585,7 +606,7 @@ func TestAStoredRuleSaysWhatItHandsOut(t *testing.T) {
 	openRule(t, m, "rule_gate")
 
 	card := cardWords(m)
-	for _, want := range []string{gateAnswers, "it may create discoboxes, and hand them credentials", delegationPurpose, "uses it would delegate"} {
+	for _, want := range []string{gateAnswers, "it may create discoboxes, and hand them credentials", delegationPurpose, "what it would delegate"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card does not carry %q:\n%s", want, wholeCard(m))
 		}

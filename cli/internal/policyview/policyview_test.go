@@ -108,6 +108,24 @@ func TestLinesSayAVariableThatDidNotResolve(t *testing.T) {
 	}
 }
 
+// A rule's policy binds its variables to whichever discobox asks, so it is
+// drawn with each variable bare: none is said not to resolve, and no value
+// recorded beside it is shown as the one a later request is held to.
+func TestUnboundDrawsVariablesBare(t *testing.T) {
+	p := policy.Policy{
+		Statements:  statements(t, `allow push on branch $primary.branch in repository $primary.upstream`),
+		Definitions: map[string]string{"push": "send commits", "branch": "a branch", "repository": "a repository"},
+		Resolved:    map[string]string{"$primary.branch": "main"},
+	}
+	lines := Unbound(p)
+	if lines[0].Kind != Heading || lines[0].Text != "in repository (a repository) $primary.upstream" {
+		t.Fatalf("heading = %+v", lines[0])
+	}
+	if lines[1].Text != "allow push (send commits) on branch (a branch) $primary.branch" {
+		t.Fatalf("statement = %q", lines[1].Text)
+	}
+}
+
 // A scope of a parent scope keeps its parents in its heading, and two
 // statements in the same scope written alike share one group.
 func TestLinesGroupNestedScopes(t *testing.T) {

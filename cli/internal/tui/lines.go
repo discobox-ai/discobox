@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// A list typed a line at a time — a rule's uses, its repositories. The card's
+// A list typed a line at a time — a rule's policy, its repositories. The card's
 // field is one line and each entry is one, so the list is built above the
 // field rather than typed into it. ↑ and ↓ walk the field through the lines
 // written, editing each in place; Enter keeps the edit, and on a line edited
@@ -231,8 +231,8 @@ type linesAsk struct {
 	sectionsFor func(lineList) []section
 	// required is said when the list is finished empty; empty lets it be.
 	required string
-	// numbered heads each line with its number: a rule's uses, read as a
-	// list of what it approves.
+	// numbered heads each line with its number: a list read as entries in
+	// order.
 	numbered bool
 }
 

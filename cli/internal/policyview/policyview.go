@@ -64,7 +64,15 @@ const unresolved = "does not resolve, so it matches nothing"
 // global denies after them; statements keep their order within a group.
 // p.Resolved is taken as what each variable resolved to: one used and absent
 // from it did not resolve.
-func Lines(p policy.Policy) []Line {
+func Lines(p policy.Policy) []Line { return renderPolicy(p, false) }
+
+// Unbound renders p as Lines does, for a policy whose variables are bound
+// later rather than resolved: an approval rule's, which binds them to
+// whichever discobox asks (ADR 26-10-12-330). A variable is drawn bare, since
+// no value it could be shown with is the one a later request is held to.
+func Unbound(p policy.Policy) []Line { return renderPolicy(p, true) }
+
+func renderPolicy(p policy.Policy, unbound bool) []Line {
 	type group struct {
 		scope      policy.Scope
 		statements []policy.Statement
@@ -87,7 +95,7 @@ func Lines(p policy.Policy) []Line {
 		g.statements = append(g.statements, s)
 	}
 
-	r := renderer{policy: p, defined: map[string]bool{}}
+	r := renderer{policy: p, unbound: unbound, defined: map[string]bool{}}
 	var out []Line
 	for _, g := range groups {
 		heading := r.line(append([]policy.Token{{Kind: policy.TokenKeyword, Text: "in"}}, policy.ScopeTokens(g.scope)...), 0, Heading)
@@ -109,7 +117,9 @@ func Lines(p policy.Policy) []Line {
 // renderer notes tokens as the rendering reaches them, so a word is defined
 // where it is first used.
 type renderer struct {
-	policy  policy.Policy
+	policy policy.Policy
+	// unbound notes no variable: it has no value yet.
+	unbound bool
 	defined map[string]bool
 }
 
@@ -152,6 +162,9 @@ func (r *renderer) line(tokens []policy.Token, indent int, kind Kind) Line {
 func (r *renderer) note(t policy.Token) string {
 	switch t.Kind {
 	case policy.TokenVariable:
+		if r.unbound {
+			return ""
+		}
 		if value, ok := r.policy.Resolved[t.Text]; ok {
 			return value
 		}

@@ -1054,13 +1054,16 @@ type approval struct {
 	auto      bool
 	proposals RuleProposals
 	rule      ApprovalRule
-	// heldUses and heldRepositories are the uses and the repositories as
-	// they were left — half typed included — for when those steps open
-	// again. repositoriesShown is the rule's repositories made safe to draw,
-	// beside the server's text in rule.Repositories, which is what is sent.
-	heldUses, heldRepositories lineList
-	repositoriesShown          []string
-	ttl                        time.Duration
+	// heldPolicy and heldRepositories are the policy's lines and the
+	// repositories as they were left — half typed included — for when those
+	// steps open again. repositoriesShown and policyShown are the rule's
+	// repositories and policy made safe to draw, beside the server's text in
+	// rule, which is what is sent; rule.Policy is nil for the policy as
+	// asked, which is sent by leaving it out.
+	heldPolicy, heldRepositories lineList
+	repositoriesShown            []string
+	policyShown                  *policy.Policy
+	ttl                          time.Duration
 	// stored is the name of a secret this approval stored on its way — auto
 	// approve's new credential — which stays whatever comes of the rule, and
 	// is said whenever the flow is left without one.

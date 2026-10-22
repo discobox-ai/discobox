@@ -1,17 +1,92 @@
 {
   "name": "rule-control-auto-merge-across",
-  "why": "Control: auto-merge under the class-level rule, which keeps the limit.",
+  "why": "Control: auto-merge on the run's own pull request under the class-level rule, which allows no auto-merge.",
   "expect": "refuse",
-  "job": {
-    "kind": "rule",
-    "purposes": [
-      "Deliver pull requests into main of discobox-ai/discobox, each from its own branch discobox/<slug>. Read anything in the repository; push that run's branch (with --force-with-lease after a rebase), open and update its pull request, comment on it and reply to its reviews, and re-run its failed CI. Never push main or another run's branch, delete a branch, merge or close a pull request, delete a comment, or start any other workflow."
-    ],
-    "host": "github.com",
+  "rule": {
+    "policy": {
+      "statements": [
+        "allow read on anything in repository $primary.repo",
+        "allow push on branch \"discobox/*\" in repository $primary.repo",
+        "allow create, update on pull request in repository $primary.repo when \"its head is discobox/* and its base is main\"",
+        "allow create on comment within pull request in repository $primary.repo",
+        "allow rerun on workflow run in repository $primary.repo when \"it failed\"",
+        "deny push on branch \"main\" in repository $primary.repo",
+        "deny force-push, delete on branch in anywhere",
+        "deny merge, close on pull request in anywhere",
+        "deny delete on comment in anywhere",
+        "deny cancel, delete on workflow run in anywhere",
+        "deny dispatch on workflow in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "branch": "a git branch in a repository",
+        "cancel": "stop a run that is in progress",
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "dispatch": "start a workflow run by hand",
+        "force-push": "move a branch with --force and no lease",
+        "merge": "merge a pull request into its base",
+        "pull request": "a GitHub pull request",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "rerun": "re-run a run's failed jobs",
+        "secret": "an Actions, Dependabot or environment secret",
+        "workflow": "a GitHub Actions workflow",
+        "workflow run": "a GitHub Actions run"
+      }
+    },
+    "request": {
+      "statements": [
+        "allow auto-merge on pull request in repository $primary.repo when \"its head is discobox/issue-46 and its base is main\"",
+        "deny push on branch \"main\" in repository $primary.repo",
+        "deny force-push, delete on branch in anywhere",
+        "deny merge, close on pull request in anywhere",
+        "deny delete on comment in anywhere",
+        "deny cancel, delete on workflow run in anywhere",
+        "deny dispatch on workflow in anywhere",
+        "deny read on secret in anywhere"
+      ],
+      "definitions": {
+        "auto-merge": "turn on auto-merge for a pull request, so GitHub merges it once its checks pass",
+        "branch": "a git branch in a repository",
+        "cancel": "stop a run that is in progress",
+        "close": "close a pull request or issue without merging it",
+        "comment": "a comment or review reply on a pull request or issue",
+        "dispatch": "start a workflow run by hand",
+        "force-push": "move a branch with --force and no lease",
+        "merge": "merge a pull request into its base",
+        "pull request": "a GitHub pull request",
+        "push": "add commits to a branch, or move it with --force-with-lease",
+        "repository": "a GitHub repository",
+        "secret": "an Actions, Dependabot or environment secret",
+        "workflow": "a GitHub Actions workflow",
+        "workflow run": "a GitHub Actions run"
+      }
+    },
+    "facts": {
+      "discobox": {
+        "id": "sbx_6t1n8c3vqk2m9x4w",
+        "project": "default"
+      },
+      "sources": [
+        {
+          "slug": "discobox",
+          "primary": true,
+          "remote": {
+            "host": "github.com",
+            "repo": "discobox-ai/discobox",
+            "url": "https://github.com/discobox-ai/discobox"
+          },
+          "ref": {
+            "type": "branch",
+            "name": "main"
+          }
+        }
+      ]
+    },
     "credential": "com.github.api",
-    "round": 1,
-    "uses": [
-      "Enable auto-merge on my pull request in discobox-ai/discobox, squashing it once its checks pass."
+    "hosts": [
+      "github.com"
     ]
   }
 }

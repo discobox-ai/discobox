@@ -1951,7 +1951,7 @@ type CredentialVerdict struct {
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	// Kind and Origin default to what every row written before request
 	// verdicts existed was, so adding the columns is the whole upgrade.
-	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command, request, delegation, or an approval rule's uses" enum:"command,request,delegation,rule"`
+	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command, request, delegation, or an approval rule's conditions against a request's" enum:"command,request,delegation,rule"`
 	Origin    string `gorm:"column:origin;not null;type:text;default:'sandbox'" json:"origin" doc:"Who judged: sandbox, for a discobox's own judge, or judge, for the project's" enum:"sandbox,judge"`
 	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in, or the request came from"`
 	// GrantID is resolved from UseID against the sandbox's live grants at

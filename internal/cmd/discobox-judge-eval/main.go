@@ -12,6 +12,12 @@
 //
 //	discobox-judge-eval [-wrapper CMD] [-model ROLE] [-runs N] [-parallel N] [-case GLOB] [-json FILE] [-logs DIR] CASES_DIR
 //
+// A rule case (ADR 26-10-12-330, ADR 26-10-22-689) is an approval
+// rule's policy and the policy a request asked for, held to it as the server
+// holds it: code first (policy.Within), and only the conditions code cannot
+// compare are put to the judge, one rule job each. A case code decides asks
+// nothing, and is scored from code's answer.
+//
 // A command or request case may carry its approval as a policy too
 // (ADR 26-10-20-782 §1), and is then also asked as <name>@policy, judged
 // against the policy's statements bound to the discobox asking as the
@@ -83,18 +89,26 @@ const (
 
 // Case is one recorded job and what a correct judge does with it.
 //
-// A proposer case has a proposal job in place of a judge job (ADR 26-10-12-330
-// §8): the wrapper writes an approval rule's uses from one request, and the same judge then scores what it wrote, as the control plane
-// puts every candidate to the judge before a person may choose it.
+// A rule case has a rule in place of a judge job: the policy of an approval
+// rule and the policy a request asked for, which code holds to it before any
+// judge is asked. A proposer case has a proposal (ADR 26-10-12-330 §8): the
+// wrapper writes an approval rule's policy from one request, and it is held
+// to covering that request, and none of the controls, the way a rule case
+// is, as the control plane holds every proposal before a person may choose
+// it.
 type Case struct {
 	Name   string      `json:"name"`
 	Why    string      `json:"why"`
 	Expect Expectation `json:"expect"`
 	Job    judge.Job   `json:"job"`
-	// Proposal is the request a proposer case's rule is written from.
-	Proposal *judge.ProposalJob `json:"proposal,omitempty"`
-	// Controls are what a proposer case's rule may not cover.
-	Controls *Controls `json:"controls,omitempty"`
+	// Rule is a rule case's rule and the request held to it.
+	Rule *RuleCase `json:"rule,omitempty"`
+	// Proposal is the request a proposer case's rule is written from: a
+	// RuleCase with no rule policy, since the wrapper writes it.
+	Proposal *RuleCase `json:"proposal,omitempty"`
+	// Controls are requests a proposer case's rule may not cover: a push to
+	// main, a merge, another repository.
+	Controls []WrittenPolicy `json:"controls,omitempty"`
 	// Policy is the same approval as a grant's policy (ADR 26-10-20-782 §1):
 	// a command or request case with one is also judged against it, as the
 	// case named with policySuffix, so the two forms score side by side.
@@ -106,6 +120,8 @@ type Case struct {
 	// variables are bound: the server refuses it without asking, and so does
 	// this runner.
 	allowsNothing bool
+	// held is what code found holding a rule case's request to its rule.
+	held judge.RuleHold
 }
 
 // CasePolicy is a case's approval written as a policy, as a person would have
@@ -168,12 +184,115 @@ func (c Case) underPolicy() (Case, error) {
 	return derived, err
 }
 
-// Controls are what a proposed rule must not cover: asks that are not the
-// request's kind of work.
-type Controls struct {
-	// Uses are asks, each a list of uses, none of which any level of the
-	// proposed uses may cover: a push to main, a merge, another repository.
-	Uses [][]string `json:"uses,omitempty"`
+// RuleCase is an approval rule's reading: the rule's policy, the policy a
+// request asked for, and the record of the discobox that asked, which both
+// resolve their variables against — a rule's variables bind to whichever
+// discobox asks.
+type RuleCase struct {
+	// Policy is the rule's, a person's: absent in a proposal, whose rule the
+	// wrapper writes.
+	Policy *WrittenPolicy `json:"policy,omitempty"`
+	// Request is the policy the discobox asked for.
+	Request WrittenPolicy `json:"request"`
+	// Facts are the control plane's record of the discobox that asked. A
+	// request is always filed by a discobox, so a case always has one.
+	Facts policy.Facts `json:"facts"`
+	// Credential names what the rule approves, and Hosts where it may go.
+	Credential string   `json:"credential"`
+	Hosts      []string `json:"hosts"`
+}
+
+// WrittenPolicy is a policy as an agent or a person writes it: statements as
+// sentences (policy.Parse) and the definitions of their words.
+type WrittenPolicy struct {
+	Statements  []string          `json:"statements"`
+	Definitions map[string]string `json:"definitions,omitempty"`
+}
+
+// parse is w as a policy a person could approve.
+func (w WrittenPolicy) parse() (policy.Policy, error) {
+	statements, err := policy.ParseStatements(w.Statements)
+	if err != nil {
+		return policy.Policy{}, err
+	}
+	p := policy.Policy{Statements: statements, Definitions: w.Definitions}
+	return p, p.Validate()
+}
+
+// settled is coverage as decided: by code, or by code and then the judge
+// asked each question, the way the server asks — one allow asked for at a
+// time, against each rule allow in turn until one is allowed; an allow none
+// is allowed against is not within, and nothing further is asked.
+type settled struct {
+	covered bool
+	// code is coverage code decided without asking a judge.
+	code    bool
+	reason  string
+	answers []string
+	err     string
+	elapsed time.Duration
+	unsure  bool
+	input   json.RawMessage
+}
+
+func settle(ctx context.Context, judging judgeFunc, held judge.RuleHold, timeout time.Duration, log string) settled {
+	if len(held.Questions) == 0 {
+		return settled{covered: held.Covered(), code: true, reason: held.Reason}
+	}
+	var out settled
+	asked := 0
+	for _, jobs := range held.Questions {
+		within, unsure := false, false
+		for _, job := range jobs {
+			questionLog := ""
+			if log != "" {
+				questionLog = fmt.Sprintf("%s.question%d", log, asked)
+			}
+			asked++
+			v := judging(ctx, job, timeout, questionLog)
+			out.elapsed += v.elapsed
+			out.input = v.input
+			if v.answer != "" {
+				out.answers = append(out.answers, v.answer)
+			}
+			if v.err != "" {
+				out.err = fmt.Sprintf("%s against %s: %s", job.Uses[0], job.Purposes[0], v.err)
+				return out
+			}
+			if v.outcome == OutcomeAllow {
+				within = true
+				break
+			}
+			unsure = unsure || v.unsure
+		}
+		if !within {
+			out.unsure = unsure
+			out.reason = jobs[0].Uses[0] + ": the judge did not find its conditions within the rule's"
+			return out
+		}
+	}
+	out.covered = true
+	out.reason = "code found every allow asked for within an allow of the rule but for conditions, and the judge found the conditions within"
+	return out
+}
+
+// judgeFunc asks one judge about one job, as -jev or the wrapper says.
+type judgeFunc func(context.Context, judge.Job, time.Duration, string) verdict
+
+// judgeRule scores a rule case from its coverage: an allow when the request
+// is covered, a refuse when it is not, decided by code or, for its
+// conditions, by the judge.
+func judgeRule(ctx context.Context, judging judgeFunc, c Case, timeout time.Duration, log string) Run {
+	s := settle(ctx, judging, c.held, timeout, log)
+	run := Run{Case: c.Name, Outcome: OutcomeRefuse, Code: s.code, Elapsed: s.elapsed, Unsure: s.unsure, Input: s.input, Error: s.err}
+	if s.err != "" {
+		run.Outcome = OutcomeInvalid
+	} else if s.covered {
+		run.Outcome, run.Unsure = OutcomeAllow, false
+	}
+	run.Answer = strings.Join(append([]string{s.reason}, s.answers...), "\n")
+	run.Pass = run.Error == "" && c.Expect.accepts(run.Outcome)
+	return run
 }
 
 // Run is one answer to one case.
@@ -188,6 +307,8 @@ type Run struct {
 	// what a server with jevUnsure: harness puts to its judge discobox. A
 	// refusal without it is one Jev decided, which nothing reads again.
 	Unsure bool `json:"unsure,omitempty"`
+	// Code is a rule case code decided alone: no judge was asked.
+	Code bool `json:"code,omitempty"`
 	// Input is the body of the request a -jev run sent Jev
 	// (jev.Verdict.Input), as a server records it on a verdict: what to read
 	// when a question is answered wrongly.
@@ -231,11 +352,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%v: set %s\n", err, jevKeyEnv)
 			os.Exit(2)
 		}
-		judging := func(ctx context.Context, job judge.Job, timeout time.Duration, _ string) verdict {
+		judging := judgeFunc(func(ctx context.Context, job judge.Job, timeout time.Duration, _ string) verdict {
 			return judgeWithJev(ctx, client, job, timeout)
-		}
+		})
 		asker = func(ctx context.Context, c Case, timeout time.Duration, log string) Run {
-			if c.Proposal != nil {
+			switch {
+			case c.Rule != nil:
+				return judgeRule(ctx, judging, c, timeout, log)
+			case c.Proposal != nil:
 				if len(command) == 0 {
 					return Run{Case: c.Name, Outcome: OutcomeInvalid, Error: "a proposer case needs -wrapper to write the proposal Jev scores"}
 				}
@@ -249,11 +373,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-wrapper names no command")
 			os.Exit(2)
 		}
-		judging := func(ctx context.Context, job judge.Job, timeout time.Duration, log string) verdict {
+		judging := judgeFunc(func(ctx context.Context, job judge.Job, timeout time.Duration, log string) verdict {
 			return judgeWithWrapper(ctx, command, *model, job, timeout, log)
-		}
+		})
 		asker = func(ctx context.Context, c Case, timeout time.Duration, log string) Run {
-			if c.Proposal != nil {
+			switch {
+			case c.Rule != nil:
+				return judgeRule(ctx, judging, c, timeout, log)
+			case c.Proposal != nil:
 				return propose(ctx, command, *model, judging, c, timeout, log)
 			}
 			return scored(c, judging(ctx, c.Job, timeout, log))
@@ -318,13 +445,8 @@ func loadCases(dir, glob string) ([]Case, error) {
 		if c.Job.Guidance != nil {
 			return nil, fmt.Errorf("%s: a case names what its request was recognized as, not guidance", path)
 		}
-		if c.Proposal != nil {
-			// A proposer case passes when every check on what was written
-			// holds, which is an allow and nothing else.
-			if c.Expect != ExpectAllow || c.Job.Kind != "" {
-				return nil, fmt.Errorf("%s: a proposer case has a proposal in place of a job, and expects allow", path)
-			}
-			if _, err := judge.ProposalPrompt(*c.Proposal); err != nil {
+		if c.Rule != nil || c.Proposal != nil {
+			if err := c.loadRule(); err != nil {
 				return nil, fmt.Errorf("%s: %w", path, err)
 			}
 			cases = append(cases, c)
@@ -364,6 +486,69 @@ func loadCases(dir, glob string) ([]Case, error) {
 	}
 	sort.Slice(cases, func(i, j int) bool { return cases[i].Name < cases[j].Name })
 	return cases, nil
+}
+
+// loadRule checks a rule or proposer case the way the server checks a rule
+// and a request before it compares them, and has code hold a rule case's
+// request to its rule, so a run asks only what code left open.
+func (c *Case) loadRule() error {
+	switch {
+	case c.Job.Kind != "" || c.Policy != nil:
+		return errors.New("a rule or proposer case has a rule or a proposal in place of a job")
+	case c.Rule != nil && c.Proposal != nil:
+		return errors.New("a case is a rule case or a proposer case, not both")
+	case c.Rule != nil && (c.Rule.Policy == nil || c.Controls != nil):
+		return errors.New("a rule case has the rule's policy, and no controls")
+	case c.Rule != nil && c.Expect != ExpectAllow && c.Expect != ExpectRefuse:
+		// Nothing more can be shown to a rule's judge.
+		return errors.New("a rule case expects allow or refuse")
+	case c.Proposal != nil && (c.Proposal.Policy != nil || c.Expect != ExpectAllow):
+		// A proposer case passes when every check on what was written
+		// holds, which is an allow and nothing else.
+		return errors.New("a proposer case has no rule policy, since the wrapper writes it, and expects allow")
+	}
+	rc := c.Rule
+	if rc == nil {
+		rc = c.Proposal
+	}
+	if rc.Facts.Discobox.ID == "" {
+		return errors.New("a request is filed by a discobox: give its facts")
+	}
+	request, err := rc.Request.parse()
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	if c.Proposal != nil {
+		if _, err := judge.ProposalPrompt(proposalJob(*c.Proposal, request)); err != nil {
+			return err
+		}
+		for i, control := range c.Controls {
+			if _, err := control.parse(); err != nil {
+				return fmt.Errorf("control %d: %w", i, err)
+			}
+		}
+		return nil
+	}
+	rule, err := rc.Policy.parse()
+	if err == nil {
+		err = judge.RuleProblem(rule)
+	}
+	if err != nil {
+		return fmt.Errorf("rule: %w", err)
+	}
+	c.held, err = judge.HoldToRule(request, rule, rc.Facts, rc.Credential, rc.Hosts)
+	return err
+}
+
+// proposalJob is what the server writes a proposal from: the request's
+// statements as their sentences, its definitions, credential and hosts.
+func proposalJob(rc RuleCase, request policy.Policy) judge.ProposalJob {
+	return judge.ProposalJob{
+		Statements:  policy.FormatStatements(request.Statements),
+		Definitions: request.Definitions,
+		Credential:  rc.Credential,
+		Hosts:       rc.Hosts,
+	}
 }
 
 func matches(glob, name string) bool {
@@ -509,21 +694,30 @@ func judgeWithJev(ctx context.Context, client *jev.Client, job judge.Job, timeou
 	return v
 }
 
-// propose has the wrapper write a rule's uses from a proposer case's request —
-// the same work on any target of its kind — and then scores what it wrote with
-// the judge, as the control plane does before a person reads it
-// (ADR 26-10-12-330 §8):
+// propose has the wrapper write a rule's policy from a proposer case's
+// request — the same work on any target of its kind — and holds what it wrote
+// the way the control plane does before a person reads it
+// (ADR 26-10-12-330 §8): parsed, given the request's definitions of the
+// words it uses, and checked as a rule's policy (writtenPolicy), then
 //
-//   - the uses cover the request: they, and the uses as asked, hold the uses
-//     asked for;
-//   - they cover no control: neither holds a control ask.
+//   - it covers the request, as a rule case is covered: by code, and by the
+//     judge for the conditions code leaves open;
+//   - it keeps every deny asked for, as ProposalSystem says: a rule that
+//     drops one still covers the request, since a request need carry only
+//     the rule's denies, but approves later asks without it;
+//   - it covers no control.
 //
 // The run allows when every check held, refuses when one did not, and is
 // invalid when the wrapper did not write a proposal at all. Its answer is the
 // proposal, and its error names each check that failed.
-func propose(ctx context.Context, command []string, model string, judging func(context.Context, judge.Job, time.Duration, string) verdict, c Case, timeout time.Duration, log string) Run {
+func propose(ctx context.Context, command []string, model string, judging judgeFunc, c Case, timeout time.Duration, log string) Run {
 	run := Run{Case: c.Name}
-	prompt, err := judge.ProposalPrompt(*c.Proposal)
+	request, err := c.Proposal.Request.parse()
+	if err != nil {
+		run.Outcome, run.Error = OutcomeInvalid, err.Error()
+		return run
+	}
+	prompt, err := judge.ProposalPrompt(proposalJob(*c.Proposal, request))
 	if err != nil {
 		run.Outcome, run.Error = OutcomeInvalid, err.Error()
 		return run
@@ -539,49 +733,58 @@ func propose(ctx context.Context, command []string, model string, judging func(c
 		run.Outcome, run.Error = OutcomeInvalid, "not a proposal: "+err.Error()
 		return run
 	}
+	written, err := judge.WrittenPolicy(proposal.StatementsAnyTarget, request.Definitions)
+	if err != nil {
+		// Written, and refused as the server refuses it: shown to nobody.
+		run.Outcome, run.Error = OutcomeRefuse, "the policy written is not one a rule may have: "+err.Error()
+		return run
+	}
 
 	type check struct {
-		what string
-		job  judge.Job
-		want Outcome
+		what  string
+		given policy.Policy
+		want  bool
 	}
-	var checks []check
-	ruleJob := func(rule, uses []string) judge.Job {
-		return judge.Job{
-			Kind: judge.KindRule, Purposes: rule, Host: strings.Join(c.Proposal.Hosts, ", "),
-			Credential: c.Proposal.Credential, Round: 1, Uses: uses,
+	checks := []check{{"the policy written covers the request", request, true}}
+	for i, control := range c.Controls {
+		given, err := control.parse()
+		if err != nil {
+			run.Outcome, run.Error = OutcomeInvalid, fmt.Sprintf("control %d: %v", i, err)
+			return run
 		}
-	}
-	var controls Controls
-	if c.Controls != nil {
-		controls = *c.Controls
-	}
-	levels := []struct {
-		level string
-		uses  []string
-	}{{"as asked", c.Proposal.Uses}, {"usesAnyTarget", proposal.UsesAnyTarget}}
-	for _, level := range levels {
-		checks = append(checks, check{level.level + " covers the request", ruleJob(level.uses, c.Proposal.Uses), OutcomeAllow})
-		for i, control := range controls.Uses {
-			checks = append(checks, check{fmt.Sprintf("%s does not cover control ask %d", level.level, i), ruleJob(level.uses, control), OutcomeRefuse})
-		}
+		checks = append(checks, check{fmt.Sprintf("the policy written does not cover control %d", i), given, false})
 	}
 
+	var failed []string
+	// As the server holds a proposal: covering the request is not enough, a
+	// rule must keep every deny asked for.
+	facts := c.Proposal.Facts
+	if err := policy.CarriesDenies(written, written.Resolve(facts).Resolved, request, request.Resolve(facts).Resolved); err != nil {
+		failed = append(failed, "the policy written drops a deny the request asked for: "+err.Error())
+	}
 	// One wrapper run already holds this worker; the checks run one after
 	// another inside it, so -parallel bounds the models asked at once.
-	var failed []string
 	for i, check := range checks {
 		checkLog := ""
 		if log != "" {
 			checkLog = fmt.Sprintf("%s.check%d", log, i)
 		}
-		v := judging(ctx, check.job, timeout, checkLog)
-		run.Elapsed += v.elapsed
+		held, err := judge.HoldToRule(check.given, written, c.Proposal.Facts, c.Proposal.Credential, c.Proposal.Hosts)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", check.what, err))
+			continue
+		}
+		s := settle(ctx, judging, held, timeout, checkLog)
+		run.Elapsed += s.elapsed
+		decidedBy := "the judge"
+		if s.code {
+			decidedBy = "code"
+		}
 		switch {
-		case v.err != "":
-			failed = append(failed, fmt.Sprintf("%s: %s", check.what, v.err))
-		case v.outcome != check.want:
-			failed = append(failed, fmt.Sprintf("%s: the judge answered %s", check.what, v.outcome))
+		case s.err != "":
+			failed = append(failed, fmt.Sprintf("%s: %s", check.what, s.err))
+		case s.covered != check.want:
+			failed = append(failed, fmt.Sprintf("%s: %s found otherwise (%s)", check.what, decidedBy, s.reason))
 		}
 	}
 	run.Outcome, run.Pass = OutcomeAllow, true
@@ -649,9 +852,10 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 			counts[r.Outcome]++
 			if r.Unsure {
 				caseUnsure++
-			} else if c.Proposal == nil && r.Outcome == OutcomeRefuse && !c.Expect.accepts(OutcomeRefuse) {
-				// A proposer run's refuse is a check that failed, not one
-				// answer of Jev's.
+			} else if c.Proposal == nil && !r.Code && r.Outcome == OutcomeRefuse && !c.Expect.accepts(OutcomeRefuse) {
+				// A proposer run's refuse is a check that failed, and a
+				// refuse code decided is code's: neither is one answer of
+				// Jev's.
 				wronglyDecided++
 			}
 			elapsed = append(elapsed, r.Elapsed)
@@ -681,6 +885,7 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 		fmt.Fprintln(os.Stderr, err)
 	}
 	fmt.Fprintf(w, "\n%d of %d runs failed their case (prompt version %s)\n", failed, total, version)
+	reportRuleCases(w, cases, byCase)
 	comparePolicies(w, cases, byCase)
 	if jevAsked {
 		// The two numbers ADR 26-10-12-669 is held to: how much goes on to a
@@ -695,6 +900,30 @@ func summarize(w *os.File, cases []Case, results []Run, version string, jevAsked
 		}
 	}
 	return failed > 0
+}
+
+// reportRuleCases prints how many rule cases code decided alone, asking no
+// judge, and which: those measure policy.Within, not the judge.
+func reportRuleCases(w *os.File, cases []Case, byCase map[string][]Run) {
+	var rules int
+	var code []string
+	for _, c := range cases {
+		if c.Rule == nil {
+			continue
+		}
+		rules++
+		if runs := byCase[c.Name]; len(runs) > 0 && runs[0].Code {
+			code = append(code, c.Name)
+		}
+	}
+	if rules == 0 {
+		return
+	}
+	fmt.Fprintf(w, "%d of %d rule cases were decided by code, asking no judge", len(code), rules)
+	if len(code) > 0 {
+		fmt.Fprintf(w, ": %s", strings.Join(code, ", "))
+	}
+	fmt.Fprintln(w)
 }
 
 // comparePolicies prints, over the cases asked both ways, how the same
