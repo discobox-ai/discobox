@@ -11,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
 	"github.com/discobox-ai/discobox/pkg/execstream/resume"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
@@ -269,12 +270,17 @@ func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) e
 	return d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, execID)
 }
 
+// PutImage writes a pasted image into the discobox's directory of them,
+// through the files API as the discobox's user (ADR 26-10-22-499 §4). The
+// name is the console's own — a timestamp and a base name already stripped to
+// a safe alphabet — and the path the write answers with is the path a program
+// in the discobox opens.
 func (d *apiDataSource) PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error) {
 	d = d.at(sandboxID)
 	stat, err := d.app.writeSandboxFile(ctx, apiclientgen.WriteSandboxFileParams{
 		ProjectId: d.projectID,
 		SandboxId: sandboxID,
-		Path:      pastedImageDir + "/" + name,
+		Path:      sandboxpath.PastedImageDir + "/" + name,
 		Parents:   apiclientgen.NewOptBool(true),
 	}, bytes.NewReader(data))
 	if err != nil {
@@ -294,13 +300,6 @@ func (d *apiDataSource) SendInput(ctx context.Context, sandboxID, execID, text s
 	})
 	return err
 }
-
-// pastedImageDir is the directory of pasted images in the discobox, where
-// PutImage writes each through the files API as the discobox's user (ADR
-// 26-10-22-499 §4). The name is the console's own — a timestamp and a base
-// name already stripped to a safe alphabet — and the path the write answers
-// with is the path a program in the discobox opens.
-const pastedImageDir = "/tmp/discobox-paste"
 
 // newSandboxSession is what all of them are: create the exec, attach to it,
 // and only then start it.

@@ -4,6 +4,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -38,6 +39,12 @@ type Box struct {
 	// that is a repository URL rather than a directory.
 	Source       string
 	SourceRemote bool
+	// Workdir is the discobox's working tree inside it: the session's folder,
+	// whose files the host serves. Empty when the discobox does not say.
+	Workdir string
+	// Platform is the discobox's own, by which its paths are spelled
+	// (sandboxpath); the zero value is a POSIX discobox.
+	Platform platform.Platform
 	// DiffBase is the commit the discobox's changes are measured from, which
 	// a host in the discobox offers its branch changeset against; empty when
 	// there is none.

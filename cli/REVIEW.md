@@ -119,3 +119,13 @@
   past the call**, to be drawn by the next poll: list under a context that
   outlives the call, or every slow server drops out. `ahpBoxes` and the AHP
   host's notes ([pkg/ahphost/REVIEW.md](../pkg/ahphost/REVIEW.md)) cover the attaches.
+
+## The files API
+
+- **Read every files API answer with `sandboxFileAnswer`** (`sandbox_files.go`).
+  A 409 is also every refusal on the way to the discobox — its pool
+  unreachable, the discobox archived — so it is the path's own only when
+  `sandboxFileThere` finds the path; a 412 is the write's own condition; and
+  the discobox's message is escaped before anything prints it. A second
+  reader drifted from the first on each of those.
+

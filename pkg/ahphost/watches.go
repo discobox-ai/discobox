@@ -18,8 +18,14 @@ type watch struct {
 	stop  func()
 }
 
-func (h *Host) createResourceWatch(c *conn, p ahptypes.CreateResourceWatchParams) (any, error) {
-	root, err := localPath(p.Uri)
+// createResourceWatch is a Workspace's: the CLI's host has no way to watch a
+// discobox's files (ADR 26-10-22-499, Deferred), and does not serve it.
+func (h *Host) createResourceWatch(c *conn, params json.RawMessage) (any, error) {
+	var p ahptypes.CreateResourceWatchParams
+	if err := decode(params, &p); err != nil {
+		return nil, err
+	}
+	_, root, err := h.filePath(p.Uri)
 	if err != nil {
 		return nil, err
 	}

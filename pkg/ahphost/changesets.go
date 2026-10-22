@@ -47,10 +47,10 @@ func (cs *changeset) base() string {
 }
 
 // changesetCatalogLocked is the changesets a session offers: none from the
-// CLI, which has no working tree to read, nor for a discobox cut from a
-// repository URL with no folder. h.mu must be held.
+// CLI, which has no working tree to read, nor for a discobox that does not
+// say where its working tree is. h.mu must be held.
 func (h *Host) changesetCatalogLocked(s *session) []ahptypes.Changeset {
-	if h.cfg.Workspace == nil || !s.hasBox || s.box.Source == "" || s.box.SourceRemote {
+	if h.cfg.Workspace == nil || !s.hasBox || s.box.Workdir == "" {
 		return nil
 	}
 	var out []ahptypes.Changeset
@@ -106,7 +106,7 @@ func (h *Host) computeChangesetLocked(cs *changeset) {
 		// Its first subscriber is being sent the snapshot this is in.
 		cs.state.Status = ahptypes.ChangesetStatusComputing
 	}
-	dir, base := cs.s.box.Source, cs.base()
+	dir, base := cs.s.box.Workdir, cs.base()
 	go func() {
 		ctx, cancel := context.WithTimeout(h.ctx, listTimeout)
 		defer cancel()
@@ -136,7 +136,7 @@ func (h *Host) computeChangesetLocked(cs *changeset) {
 func changesetFiles(changes []Changed, base string) []ahptypes.ChangesetFile {
 	files := make([]ahptypes.ChangesetFile, 0, len(changes))
 	for _, change := range changes {
-		uri := fileURI(change.Path)
+		uri := (&url.URL{Scheme: "file", Path: change.Path}).String()
 		edit := ahptypes.FileEdit{}
 		if change.Before {
 			edit.Before = &ahptypes.FileEditSide{Uri: uri, Content: ahptypes.ContentRef{Uri: baseContentURI(change.Path, base)}}

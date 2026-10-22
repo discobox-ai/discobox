@@ -56,9 +56,9 @@ agent, each checking its token), under
 
 Content is a request or response body, never JSON and never argv, so there is
 no size cap beyond what the discobox holds. The operations are what VS Code's
-`resource*` commands and the in-box host's `Workspace` already need
-(`ahphost/workspace.go`), so that interface is implemented over this API
-unchanged.
+`resource*` commands need, so the AHP hosts' file operations
+(`ahphost.Boxes`, keyed by discobox) are these, unchanged: over this API from
+the CLI, and in-process in a discobox, whose host already is its user.
 
 ### 2. Every operation acts as the discobox's user
 
@@ -89,8 +89,9 @@ not running.
 
 ### 4. What moves onto it
 
-- The CLI's AHP host serves `resource*` for every discobox it lists, through a
-  `Workspace` over this API.
+- The CLI's AHP host serves `resource*` for every discobox it lists, through
+  its `Boxes` over this API. Watches and changesets stay the in-box host's
+  `Workspace`: this API has no watch (Deferred) and no git.
 - A pasted image (ADR 26-10-16-535 §2, whose bytes then leave the exec input
   log), a tool's files and a host-side tool script are written through it,
   and harness configure seeds and reads its configuration through it, instead

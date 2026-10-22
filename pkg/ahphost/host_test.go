@@ -3,9 +3,12 @@ package ahphost
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +34,10 @@ type fakeBoxes struct {
 	streams []*fakeStream
 	// listingCut is a listing whose context ended as soon as List returned.
 	listingCut bool
+	// files is each discobox's files, by "<sandbox>:<path>"; a directory is
+	// a path with nil content. links is its symlinks' targets, by the same key.
+	files map[string][]byte
+	links map[string]string
 }
 
 func (f *fakeBoxes) List(ctx context.Context) (Listing, error) {
@@ -113,6 +120,167 @@ func (f *fakeBoxes) PutImage(context.Context, string, string, []byte) (string, e
 	return "/tmp/img.png", nil
 }
 
+// The fake's files are a map: a version is the content's length and text, a
+// directory is a nil entry, and a directory's entries are the keys one level
+// below it.
+
+func (f *fakeBoxes) setFile(box, p string, data []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.files == nil {
+		f.files = map[string][]byte{}
+	}
+	f.files[box+":"+p] = data
+}
+
+func (f *fakeBoxes) setLink(box, p, target string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.links == nil {
+		f.links = map[string]string{}
+	}
+	if f.files == nil {
+		f.files = map[string][]byte{}
+	}
+	f.links[box+":"+p] = target
+	f.files[box+":"+p] = []byte(target)
+}
+
+// fakeSplit is a fake path's directory and name, by either separator, so the
+// fake holds a Windows discobox's files as it does a Linux one's.
+func fakeSplit(p string) (string, string) {
+	i := strings.LastIndexAny(p, `/\`)
+	if i < 0 {
+		return "", p
+	}
+	dir := p[:i]
+	switch {
+	case dir == "":
+		dir = "/"
+	case strings.HasSuffix(dir, ":"):
+		dir += `\`
+	}
+	return dir, p[i+1:]
+}
+
+func (f *fakeBoxes) fileLocked(box, p string) (FileInfo, bool) {
+	if target, ok := f.links[box+":"+p]; ok {
+		_, name := fakeSplit(p)
+		return FileInfo{Path: p, Name: name, Type: FileTypeSymlink, LinkTarget: target, Version: "link"}, true
+	}
+	data, ok := f.files[box+":"+p]
+	if !ok {
+		return FileInfo{}, false
+	}
+	_, name := fakeSplit(p)
+	info := FileInfo{Path: p, Name: name, Type: FileTypeFile, Size: int64(len(data)), ModTime: time.Unix(0, 0), Version: fmt.Sprintf("%d:%s", len(data), data)}
+	if data == nil {
+		info.Type = FileTypeDirectory
+	}
+	return info, true
+}
+
+func (f *fakeBoxes) StatFile(_ context.Context, box, p string) (FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	info, ok := f.fileLocked(box, p)
+	if !ok {
+		return FileInfo{}, fs.ErrNotExist
+	}
+	return info, nil
+}
+
+func (f *fakeBoxes) ListFiles(_ context.Context, box, dir string) ([]FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if info, ok := f.fileLocked(box, dir); !ok || info.Type != FileTypeDirectory {
+		return nil, fs.ErrNotExist
+	}
+	var out []FileInfo
+	for key := range f.files {
+		if p, ok := strings.CutPrefix(key, box+":"); ok && p != dir {
+			if parent, _ := fakeSplit(p); parent != dir {
+				continue
+			}
+			info, _ := f.fileLocked(box, p)
+			out = append(out, info)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (f *fakeBoxes) ReadFile(_ context.Context, box, p string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.files[box+":"+p]
+	if !ok || data == nil {
+		return nil, fs.ErrNotExist
+	}
+	return data, nil
+}
+
+func (f *fakeBoxes) WriteFile(_ context.Context, box, p string, write FileWrite) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	info, exists := f.fileLocked(box, p)
+	switch {
+	case exists && write.CreateOnly:
+		return fs.ErrExist
+	case write.IfVersion != "" && (!exists || info.Version != write.IfVersion):
+		return ErrChanged
+	}
+	if f.files == nil {
+		f.files = map[string][]byte{}
+	}
+	f.files[box+":"+p] = append([]byte{}, write.Data...)
+	return nil
+}
+
+func (f *fakeBoxes) MakeDirectory(_ context.Context, box, p string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.files == nil {
+		f.files = map[string][]byte{}
+	}
+	f.files[box+":"+p] = nil
+	return nil
+}
+
+func (f *fakeBoxes) RemoveFile(_ context.Context, box, p string, _ bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.files[box+":"+p]; !ok {
+		return fs.ErrNotExist
+	}
+	delete(f.files, box+":"+p)
+	return nil
+}
+
+func (f *fakeBoxes) MoveFile(ctx context.Context, box, from, to string, replace bool) error {
+	if err := f.CopyFile(ctx, box, from, to, replace); err != nil {
+		return err
+	}
+	return f.RemoveFile(ctx, box, from, false)
+}
+
+func (f *fakeBoxes) CopyFile(_ context.Context, box, from, to string, replace bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.files[box+":"+from]
+	if !ok {
+		return fs.ErrNotExist
+	}
+	if strings.HasPrefix(to+"/", from+"/") {
+		return fs.ErrInvalid
+	}
+	if _, exists := f.files[box+":"+to]; exists && !replace {
+		return fs.ErrExist
+	}
+	f.files[box+":"+to] = data
+	return nil
+}
+
 func (f *fakeBoxes) snapshot() (opened, inputs, verbs []string, runs []CreateRequest, shells []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -179,7 +347,7 @@ const testToken = "secret"
 func runningBox() Box {
 	return Box{
 		ID: "sbx_1", Name: "fix-tests", State: BoxRunning, Harness: "claude", HarnessName: "Claude Code",
-		Source: "/home/me/src/app", Created: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		Source: "/home/me/src/app", Workdir: "/work", Created: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		Agent: programstatus.Status{State: programstatus.Working, Msg: "running the tests", ReportedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)},
 	}
 }
@@ -325,7 +493,7 @@ func TestADiscoboxIsASession(t *testing.T) {
 	if sum.DefaultChat == nil || *sum.DefaultChat != "ahp-chat:/sbx_1/primary" {
 		t.Fatalf("default chat %v", sum.DefaultChat)
 	}
-	if len(sum.WorkingDirectories) != 1 || sum.WorkingDirectories[0] != "file://sbx_1/home/me/src/app" {
+	if len(sum.WorkingDirectories) != 1 || sum.WorkingDirectories[0] != "file://sbx_1/work" {
 		t.Fatalf("working directories %v", sum.WorkingDirectories)
 	}
 }
@@ -502,7 +670,7 @@ func TestATerminalInASessionsDirectoryIsAShellInItsDiscobox(t *testing.T) {
 	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
 	srv, ctx := startHost(t, boxes)
 	client, _ := connect(ctx, t, srv)
-	cwd := "file://sbx_1/home/me/src/app"
+	cwd := "file://sbx_1/work"
 	err := client.Request(ctx, "createTerminal", ahptypes.CreateTerminalParams{
 		Channel: "agenthost-terminal:/t1", Cwd: &cwd,
 		Claim: ahptypes.TerminalClaim{Value: &ahptypes.TerminalClientClaim{Kind: ahptypes.TerminalClaimKindClient, ClientId: "client-1"}},
@@ -707,7 +875,7 @@ func TestAShellWhoseExecIsGoneIsExitedNotRetried(t *testing.T) {
 	srv := httptest.NewServer(host)
 	t.Cleanup(srv.Close)
 	client, _ := connect(ctx, t, srv)
-	cwd := "file://sbx_1/home/me/src/app"
+	cwd := "file://sbx_1/work"
 	if err := client.Request(ctx, "createTerminal", ahptypes.CreateTerminalParams{
 		Channel: "agenthost-terminal:/t1", Cwd: &cwd,
 		Claim: ahptypes.TerminalClaim{Value: &ahptypes.TerminalClientClaim{Kind: ahptypes.TerminalClaimKindClient, ClientId: "client-1"}},

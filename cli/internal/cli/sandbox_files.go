@@ -5,18 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/ahphost"
 )
 
 // The discobox's files API (ADR 26-10-22-499): what the CLI puts into a
-// discobox it writes there as the discobox's default user, with the content
-// as the request body, rather than through an exec of sh and cat.
+// discobox, and what the AHP host reads and writes there, it does as the
+// discobox's default user, with the content as the request body, rather than
+// through an exec of sh and cat.
 
-// errSandboxFileExists is a write that must create, or a mkdir, refused
-// because the path is already there.
-var errSandboxFileExists = errors.New("already exists in the discobox")
+// errSandboxFileExists is a write that must create, a mkdir, or a move or
+// copy not to replace, refused because the path is already there.
+var errSandboxFileExists = fmt.Errorf("already exists in the discobox: %w", fs.ErrExist)
+
+// errSandboxFileChanged is a write that named a version the file is no
+// longer at.
+var errSandboxFileChanged = fmt.Errorf("changed in the discobox since it was read: %w", ahphost.ErrChanged)
 
 // errNoFilesAPI is a discobox, or the server or pool on the way to it, older
 // than the files API: the route answers with net/http's own plain-text 404.
@@ -34,12 +41,18 @@ func (a *App) writeSandboxFile(ctx context.Context, params apiclientgen.WriteSan
 	if err != nil {
 		return nil, sandboxFileCallError(err)
 	}
-	// A write told to fail where a file is answers 412, as an If-None-Match
+	// A write's own condition refusing it answers 412, as an If-None-Match
 	// does: a 409 is also every refusal on the way to the discobox.
-	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok && problem.StatusCode == http.StatusPreconditionFailed && params.IfExists.Or("") == apiclientgen.WriteSandboxFileIfExistsFail {
-		return nil, fmt.Errorf("%w: %s", errSandboxFileExists, terminalSafe(problem.Response.Error))
+	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok && problem.StatusCode == http.StatusPreconditionFailed {
+		switch {
+		case params.IfExists.Or("") == apiclientgen.WriteSandboxFileIfExistsFail:
+			return nil, fmt.Errorf("%w: %s", errSandboxFileExists, terminalSafe(problem.Response.Error))
+		case params.IfVersion.IsSet():
+			return nil, fmt.Errorf("%w: %s", errSandboxFileChanged, terminalSafe(problem.Response.Error))
+		}
 	}
-	return sandboxFileResponse(res)
+	// 409 is a directory where the file would be.
+	return sandboxFileAnswer[apiclientgen.SandboxFileStat](res, params.Path, fs.ErrInvalid, a.sandboxFileThere(ctx, client, params.ProjectId, params.SandboxId, params.Path))
 }
 
 // makeSandboxDirectory creates a directory in the discobox.
@@ -52,27 +65,54 @@ func (a *App) makeSandboxDirectory(ctx context.Context, projectID, sandboxID str
 	if err != nil {
 		return nil, sandboxFileCallError(err)
 	}
-	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok && problem.StatusCode == http.StatusConflict {
-		// A 409 is also every refusal on the way to the discobox, so the
-		// path's being there is asked rather than read off the status.
-		if stat, statErr := client.StatSandboxFile(ctx, apiclientgen.StatSandboxFileParams{ProjectId: projectID, SandboxId: sandboxID, Path: body.Path}); statErr == nil {
-			if _, exists := stat.(*apiclientgen.SandboxFileStat); exists {
-				return nil, fmt.Errorf("%w: %s", errSandboxFileExists, terminalSafe(problem.Response.Error))
-			}
-		}
-	}
-	return sandboxFileResponse(res)
+	return sandboxFileAnswer[apiclientgen.SandboxFileStat](res, body.Path, errSandboxFileExists, a.sandboxFileThere(ctx, client, projectID, sandboxID, body.Path))
 }
 
-// sandboxFileResponse is the stat a files API call answered, or its error.
-// The error's text is the discobox's own, so it is escaped before anything
-// can print it (cli/REVIEW.md).
-func sandboxFileResponse(res any) (*apiclientgen.SandboxFileStat, error) {
-	stat, err := expectResponse[apiclientgen.SandboxFileStat](res)
-	if err != nil {
-		return nil, errors.New(terminalSafe(err.Error()))
+// sandboxFileAnswer is a files API answer: the value, or an error wrapping
+// what its status means — fs.ErrInvalid, fs.ErrNotExist, fs.ErrPermission,
+// or for a 409 whatever conflict the operation says it is. A 409 is also
+// every refusal on the way to the discobox — its pool unreachable, the
+// discobox archived — so it is the path's own only when there says the path
+// is there to be in the way. The discobox's message is escaped, since
+// anything may print it (cli/REVIEW.md).
+func sandboxFileAnswer[T any](res any, path string, conflict error, there func() bool) (*T, error) {
+	if out, ok := res.(*T); ok {
+		return out, nil
 	}
-	return stat, nil
+	problem, ok := res.(*apiclientgen.ErrorResponseStatusCode)
+	if !ok {
+		return nil, fmt.Errorf("%s: unexpected answer %T", terminalSafe(path), res)
+	}
+	message := terminalSafe(problem.Response.Error)
+	var kind error
+	switch problem.StatusCode {
+	case http.StatusBadRequest:
+		kind = fs.ErrInvalid
+	case http.StatusNotFound:
+		kind = fs.ErrNotExist
+	case http.StatusForbidden:
+		kind = fs.ErrPermission
+	case http.StatusConflict:
+		if there == nil || !there() {
+			return nil, errors.New(message)
+		}
+		kind = conflict
+	default:
+		return nil, fmt.Errorf("%d: %s", problem.StatusCode, message)
+	}
+	return nil, fmt.Errorf("%w: %s", kind, message)
+}
+
+// sandboxFileThere asks the discobox whether a path is there.
+func (a *App) sandboxFileThere(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, path string) func() bool {
+	return func() bool {
+		res, err := client.StatSandboxFile(ctx, apiclientgen.StatSandboxFileParams{ProjectId: projectID, SandboxId: sandboxID, Path: path})
+		if err != nil {
+			return false
+		}
+		_, there := res.(*apiclientgen.SandboxFileStat)
+		return there
+	}
 }
 
 // sandboxFileCallError is a files API call that got no answer the contract

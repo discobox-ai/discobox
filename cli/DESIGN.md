@@ -705,6 +705,10 @@ flowchart LR
   `ahphost.Boxes` over `apiDataSource`, the host's own types at the boundary,
   so routing across servers, attach, shells, create and archive are the
   console's code. The host speaks only the public API.
+- **A session's files are the files API's** (ADR 26-10-22-499 §4,
+  `ahp_files.go`): VS Code's folder picker, explorer and editors read and write
+  a discobox's files as its default user, on the server the discobox is on.
+  There are no watches or changesets here; those are the in-box host's.
 - **One port and one token, run to run**, so VS Code's entry is pasted once:
   `127.0.0.1:7591`, which every forward Discobox makes of a discobox's ports
   passes over (`reservedLocalPorts`, `portforward.Options.Reserved`) so a box

@@ -231,3 +231,10 @@ func isDriveLetter(c byte) bool {
 }
 
 func isWindowsSeparator(c byte) bool { return c == '\\' || c == '/' }
+
+// PastedImageDir is where an image pasted into a discobox's terminal is
+// written, by the console and by the in-box AHP host alike, so a harness finds
+// it at the same place whichever wrote it (ADR 26-10-22-499 §4: `/tmp`, not
+// `${TMPDIR:-/tmp}`, since a files API write names its path and TMPDIR is the
+// user's shell's). A POSIX path: a Windows discobox has no `/tmp`.
+const PastedImageDir = "/tmp/discobox-paste"

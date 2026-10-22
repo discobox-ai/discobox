@@ -13,64 +13,18 @@ import (
 
 	"github.com/microsoft/agent-host-protocol/clients/go/ahp"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
+
+	"github.com/discobox-ai/discobox/pkg/platform"
 )
 
-// fakeWorkspace is a discobox's filesystem as a map, and its changes as the
-// test sets them.
+// fakeWorkspace is a discobox's watches and git, as the test sets them.
 type fakeWorkspace struct {
 	mu        sync.Mutex
-	files     map[string][]byte
 	revisions map[string][]byte // rev:path
 	changes   []Changed
 	report    func([]ahptypes.ResourceChange)
 	stopped   bool
 }
-
-func (f *fakeWorkspace) ReadFile(path string) ([]byte, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	data, ok := f.files[path]
-	if !ok {
-		return nil, fs.ErrNotExist
-	}
-	return data, nil
-}
-
-func (f *fakeWorkspace) WriteFile(path string, write FileWrite) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if write.IfMatch != "" && write.IfMatch != "v1" {
-		return ErrChanged
-	}
-	if _, ok := f.files[path]; ok && write.CreateOnly {
-		return fs.ErrExist
-	}
-	f.files[path] = write.Data
-	return nil
-}
-
-func (f *fakeWorkspace) ReadDir(string) ([]DirEntry, error) {
-	return []DirEntry{{Name: "src", Dir: true}, {Name: "go.mod"}}, nil
-}
-
-func (f *fakeWorkspace) Stat(path string, _ bool) (FileInfo, error) {
-	if _, err := f.ReadFile(path); err != nil {
-		return FileInfo{}, err
-	}
-	return FileInfo{Path: path, Type: ahptypes.ResourceTypeFile, Size: 3, ModTime: time.Unix(0, 0), Etag: "v1"}, nil
-}
-
-func (f *fakeWorkspace) Mkdir(string) error        { return nil }
-func (f *fakeWorkspace) Remove(string, bool) error { return nil }
-
-func (f *fakeWorkspace) Copy(_, _ string, replace bool) error {
-	if !replace {
-		return fs.ErrExist
-	}
-	return nil
-}
-
-func (f *fakeWorkspace) Move(string, string, bool) error { return fs.ErrInvalid }
 
 func (f *fakeWorkspace) Watch(_ string, _ bool, _, _ []string, report func([]ahptypes.ResourceChange)) (func(), error) {
 	f.mu.Lock()
@@ -97,10 +51,6 @@ func (f *fakeWorkspace) ReadRevision(_ context.Context, path, rev string) ([]byt
 	return data, nil
 }
 
-func newFakeWorkspace() *fakeWorkspace {
-	return &fakeWorkspace{files: map[string][]byte{"/work/go.mod": []byte("mod")}, revisions: map[string][]byte{}}
-}
-
 // startLocalHost is a host in the discobox it serves, whose working tree is
 // /work.
 func startLocalHost(t *testing.T, ws *fakeWorkspace, diffBase string) (*httptest.Server, context.Context, *fakeBoxes) {
@@ -108,6 +58,8 @@ func startLocalHost(t *testing.T, ws *fakeWorkspace, diffBase string) (*httptest
 	box := runningBox()
 	box.Source, box.DiffBase = "/work", diffBase
 	boxes := &fakeBoxes{boxes: []Box{box}}
+	boxes.setFile("sbx_1", "/work", nil)
+	boxes.setFile("sbx_1", "/work/go.mod", []byte("mod"))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	host := New(Config{Boxes: boxes, Token: testToken, Version: "test", Poll: 20 * time.Millisecond, Workspace: ws, Logf: t.Logf})
@@ -115,6 +67,10 @@ func startLocalHost(t *testing.T, ws *fakeWorkspace, diffBase string) (*httptest
 	srv := httptest.NewServer(host)
 	t.Cleanup(srv.Close)
 	return srv, ctx, boxes
+}
+
+func newFakeWorkspace() *fakeWorkspace {
+	return &fakeWorkspace{revisions: map[string][]byte{}}
 }
 
 // subscribeRaw subscribes and decodes the snapshot's state into state: the
@@ -176,67 +132,193 @@ func TestALocalHostRefusesNewSessions(t *testing.T) {
 	}
 }
 
-func TestALocalHostServesItsWorkspacesFiles(t *testing.T) {
-	ws := newFakeWorkspace()
-	srv, ctx, _ := startLocalHost(t, ws, "")
-	client, _ := connect(ctx, t, srv)
+// exerciseFiles drives the resource* commands at a discobox's /work through
+// uri, which names files the way the host does.
+func exerciseFiles(ctx context.Context, t *testing.T, client *ahp.Client, boxes *fakeBoxes, uri func(string) string) {
+	t.Helper()
 	session := "ahp-session:/sbx_1"
-
 	data := base64.StdEncoding.EncodeToString([]byte("hello\n"))
-	if err := client.Request(ctx, "resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: "file:///work/f.txt", Data: data, Encoding: ahptypes.ContentEncodingBase64}, nil); err != nil {
+	if err := client.Request(ctx, "resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: uri("/work/f.txt"), Data: data, Encoding: ahptypes.ContentEncodingBase64}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// An append keeps what is there: it is spliced and written whole.
+	appendMode := ahptypes.ResourceWriteModeAppend
+	if err := client.Request(ctx, "resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: uri("/work/f.txt"), Data: "world\n", Encoding: ahptypes.ContentEncodingUtf8, Mode: &appendMode}, nil); err != nil {
 		t.Fatal(err)
 	}
 	utf8 := ahptypes.ContentEncodingUtf8
 	var read ahptypes.ResourceReadResult
-	if err := client.Request(ctx, "resourceRead", ahptypes.ResourceReadParams{Channel: session, Uri: "file:///work/f.txt", Encoding: &utf8}, &read); err != nil {
+	if err := client.Request(ctx, "resourceRead", ahptypes.ResourceReadParams{Channel: session, Uri: uri("/work/f.txt"), Encoding: &utf8}, &read); err != nil {
 		t.Fatal(err)
 	}
-	if read.Data != "hello\n" || read.Encoding != ahptypes.ContentEncodingUtf8 || *read.ContentType != "text/plain; charset=utf-8" {
+	if read.Data != "hello\nworld\n" || read.Encoding != ahptypes.ContentEncodingUtf8 || *read.ContentType != "text/plain; charset=utf-8" {
 		t.Fatalf("read %q (%s, %s)", read.Data, read.Encoding, *read.ContentType)
 	}
-	var list ahptypes.ResourceListResult
-	if err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: session, Uri: "file:///work"}, &list); err != nil {
+	if err := client.Request(ctx, "resourceMkdir", ahptypes.ResourceMkdirParams{Channel: session, Uri: uri("/work/src")}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Entries) != 2 || list.Entries[0].Type != "directory" || list.Entries[1].Type != "file" {
+	// A link lists as what it points at: a linked folder is a folder.
+	boxes.setLink("sbx_1", "/work/lib", "src")
+	var list ahptypes.ResourceListResult
+	if err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: session, Uri: uri("/work")}, &list); err != nil {
+		t.Fatal(err)
+	}
+	want := []ahptypes.DirectoryEntry{{Name: "f.txt", Type: "file"}, {Name: "go.mod", Type: "file"}, {Name: "lib", Type: "directory"}, {Name: "src", Type: "directory"}}
+	if len(list.Entries) != len(want) {
 		t.Fatalf("list = %+v", list.Entries)
 	}
+	for i := range want {
+		if list.Entries[i] != want[i] {
+			t.Fatalf("list = %+v, want %+v", list.Entries, want)
+		}
+	}
 	var resolved ahptypes.ResourceResolveResult
-	if err := client.Request(ctx, "resourceResolve", ahptypes.ResourceResolveParams{Channel: session, Uri: "file:///work/go.mod"}, &resolved); err != nil {
+	if err := client.Request(ctx, "resourceResolve", ahptypes.ResourceResolveParams{Channel: session, Uri: uri("/work/go.mod")}, &resolved); err != nil {
 		t.Fatal(err)
 	}
-	if resolved.Type != ahptypes.ResourceTypeFile || *resolved.Size != 3 || *resolved.Etag != "v1" {
+	if resolved.Type != ahptypes.ResourceTypeFile || *resolved.Size != 3 || *resolved.Etag != "3:mod" || resolved.Uri != uri("/work/go.mod") {
 		t.Fatalf("resolve = %+v", resolved)
 	}
+	if err := client.Request(ctx, "resourceMove", ahptypes.ResourceMoveParams{Channel: session, Source: uri("/work/f.txt"), Destination: uri("/work/g.txt")}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boxes.StatFile(ctx, "sbx_1", "/work/g.txt"); err != nil {
+		t.Fatalf("the move did not land: %v", err)
+	}
 
-	// The workspace's errors are the protocol's.
-	stale, yes := "v0", true
+	// The discobox's errors are the protocol's.
+	stale, yes := "0:", true
 	for name, tc := range map[string]struct {
 		method string
 		params any
 		want   int32
 	}{
-		"a missing file":         {"resourceResolve", ahptypes.ResourceResolveParams{Channel: session, Uri: "file:///work/nope"}, ahptypes.ErrorCodeNotFound},
-		"another machine's file": {"resourceRead", ahptypes.ResourceReadParams{Channel: session, Uri: "file://elsewhere/work/go.mod"}, ahptypes.ErrorCodeNotFound},
-		"create-only over one":   {"resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: "file:///work/go.mod", Data: "x", Encoding: utf8, CreateOnly: &yes}, ahptypes.ErrorCodeAlreadyExists},
-		"a stale version":        {"resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: "file:///work/go.mod", Data: "x", Encoding: utf8, IfMatch: &stale}, ahptypes.ErrorCodeInvalidRequest},
-		"a copy not to replace":  {"resourceCopy", ahptypes.ResourceCopyParams{Channel: session, Source: "file:///work/a", Destination: "file:///work/b", FailIfExists: &yes}, ahptypes.ErrorCodeAlreadyExists},
-		"a move into itself":     {"resourceMove", ahptypes.ResourceMoveParams{Channel: session, Source: "file:///work/a", Destination: "file:///work/a/b"}, ahptypes.ErrorCodeInvalidParams},
+		"a missing file":        {"resourceResolve", ahptypes.ResourceResolveParams{Channel: session, Uri: uri("/work/nope")}, ahptypes.ErrorCodeNotFound},
+		"create-only over one":  {"resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: uri("/work/go.mod"), Data: "x", Encoding: utf8, CreateOnly: &yes}, ahptypes.ErrorCodeAlreadyExists},
+		"a stale version":       {"resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: uri("/work/go.mod"), Data: "x", Encoding: utf8, IfMatch: &stale}, ahptypes.ErrorCodeInvalidRequest},
+		"an append, stale":      {"resourceWrite", ahptypes.ResourceWriteParams{Channel: session, Uri: uri("/work/go.mod"), Data: "x", Encoding: utf8, IfMatch: &stale, Mode: &appendMode}, ahptypes.ErrorCodeInvalidRequest},
+		"a copy not to replace": {"resourceCopy", ahptypes.ResourceCopyParams{Channel: session, Source: uri("/work/g.txt"), Destination: uri("/work/go.mod"), FailIfExists: &yes}, ahptypes.ErrorCodeAlreadyExists},
+		"a copy into itself":    {"resourceCopy", ahptypes.ResourceCopyParams{Channel: session, Source: uri("/work/src"), Destination: uri("/work/src/b")}, ahptypes.ErrorCodeInvalidParams},
 	} {
 		if err := client.Request(ctx, tc.method, tc.params, nil); rpcCode(err) != tc.want {
 			t.Errorf("%s: %v, want %d", name, err, tc.want)
 		}
 	}
+	if data, _ := boxes.ReadFile(ctx, "sbx_1", "/work/go.mod"); string(data) != "mod" {
+		t.Fatalf("a refused write changed the file: %q", data)
+	}
 }
 
-// The CLI's host has no discobox's files to serve.
-func TestTheCLIHostServesNoFiles(t *testing.T) {
+func TestALocalHostServesItsDiscoboxsFiles(t *testing.T) {
+	srv, ctx, boxes := startLocalHost(t, newFakeWorkspace(), "")
+	client, _ := connect(ctx, t, srv)
+	exerciseFiles(ctx, t, client, boxes, func(p string) string { return "file://" + p })
+	var read ahptypes.ResourceReadResult
+	err := client.Request(ctx, "resourceRead", ahptypes.ResourceReadParams{Channel: "ahp-session:/sbx_1", Uri: "file://elsewhere/work/go.mod"}, &read)
+	if rpcCode(err) != ahptypes.ErrorCodeNotFound {
+		t.Fatalf("reading a file that names another machine: %v, want NotFound", err)
+	}
+}
+
+// The CLI's host serves every discobox's files, each named by the URI's
+// authority as its session's folder is (ADR 26-10-22-499 §4).
+func TestTheCLIHostServesEachDiscoboxsFiles(t *testing.T) {
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
+	boxes.setFile("sbx_1", "/work", nil)
+	boxes.setFile("sbx_1", "/work/go.mod", []byte("mod"))
+	srv, ctx := startHost(t, boxes)
+	client, _ := connect(ctx, t, srv)
+	exerciseFiles(ctx, t, client, boxes, func(p string) string { return "file://sbx_1" + p })
+	// The folder a session advertises is the discobox's working tree, not
+	// the client directory it was cut from: listing it lists the discobox.
+	res, _, err := client.Subscribe(ctx, "ahp-session:/sbx_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := res.Snapshot.State.Session.WorkingDirectories[0]
+	var list ahptypes.ResourceListResult
+	if err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: "ahp-session:/sbx_1", Uri: folder}, &list); err != nil || len(list.Entries) == 0 {
+		t.Fatalf("listing the session's folder %s: %+v, %v", folder, list.Entries, err)
+	}
+	var read ahptypes.ResourceReadResult
+	err = client.Request(ctx, "resourceRead", ahptypes.ResourceReadParams{Channel: "ahp-session:/sbx_1", Uri: "file:///work/go.mod"}, &read)
+	if rpcCode(err) != ahptypes.ErrorCodeNotFound {
+		t.Fatalf("a file URI naming no discobox: %v, want NotFound", err)
+	}
+}
+
+// A Windows discobox's folder has a drive: its URI is `/C:/…`, and the
+// discobox is asked for `C:\…`, by its platform's own rules — a drive's root
+// too, which VS Code spells `/c%3A/`.
+func TestAWindowsDiscoboxsFilesAreReachedByTheirDrive(t *testing.T) {
+	box := runningBox()
+	box.Workdir, box.Platform = `C:\workspace`, platform.Platform{OS: "windows", Arch: "amd64"}
+	boxes := &fakeBoxes{boxes: []Box{box}}
+	boxes.setFile("sbx_1", `C:\workspace`, nil)
+	boxes.setFile("sbx_1", `C:\workspace\go.mod`, []byte("mod"))
+	boxes.setFile("sbx_1", `c:\`, nil)
+	boxes.setFile("sbx_1", `c:\workspace`, nil)
+	srv, ctx := startHost(t, boxes)
+	client, _ := connect(ctx, t, srv)
+	res, _, err := client.Subscribe(ctx, "ahp-session:/sbx_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := res.Snapshot.State.Session.WorkingDirectories[0]
+	if folder != "file://sbx_1/C:/workspace" {
+		t.Fatalf("folder = %s, want file://sbx_1/C:/workspace", folder)
+	}
+	var list ahptypes.ResourceListResult
+	if err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: "ahp-session:/sbx_1", Uri: folder}, &list); err != nil || len(list.Entries) != 1 || list.Entries[0].Name != "go.mod" {
+		t.Fatalf("listing %s: %+v, %v", folder, list.Entries, err)
+	}
+	var resolved ahptypes.ResourceResolveResult
+	if err := client.Request(ctx, "resourceResolve", ahptypes.ResourceResolveParams{Channel: "ahp-session:/sbx_1", Uri: folder + "/go.mod"}, &resolved); err != nil || resolved.Uri != folder+"/go.mod" {
+		t.Fatalf("resolving %s/go.mod: %+v, %v", folder, resolved, err)
+	}
+	if err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: "ahp-session:/sbx_1", Uri: "file://sbx_1/c%3A/"}, &list); err != nil || len(list.Entries) != 1 || list.Entries[0].Name != "workspace" {
+		t.Fatalf("listing the drive's root: %+v, %v", list.Entries, err)
+	}
+}
+
+// On a Linux discobox a path that looks like a drive is a path like any
+// other: `/C:/work` is a directory named `C:`.
+func TestALinuxPathThatLooksLikeADriveIsAPath(t *testing.T) {
+	boxes := &fakeBoxes{boxes: []Box{runningBox()}}
+	boxes.setFile("sbx_1", "/C:/work", []byte("x"))
+	srv, ctx := startHost(t, boxes)
+	client, _ := connect(ctx, t, srv)
+	var resolved ahptypes.ResourceResolveResult
+	if err := client.Request(ctx, "resourceResolve", ahptypes.ResourceResolveParams{Channel: "ahp-session:/sbx_1", Uri: "file://sbx_1/C:/work"}, &resolved); err != nil || *resolved.Size != 1 {
+		t.Fatalf("resolving /C:/work on Linux: %+v, %v", resolved, err)
+	}
+}
+
+// Looking at a stopped discobox's files does not start it.
+func TestAStoppedDiscoboxsFilesAreNotWoken(t *testing.T) {
+	box := runningBox()
+	box.State = BoxStopped
+	boxes := &fakeBoxes{boxes: []Box{box}}
+	boxes.setFile("sbx_1", "/work", nil)
+	srv, ctx := startHost(t, boxes)
+	client, _ := connect(ctx, t, srv)
+	var list ahptypes.ResourceListResult
+	err := client.Request(ctx, "resourceList", ahptypes.ResourceListParams{Channel: "ahp-session:/sbx_1", Uri: "file://sbx_1/work"}, &list)
+	if rpcCode(err) != ahptypes.ErrorCodeInvalidRequest {
+		t.Fatalf("listing a stopped discobox: %v, want InvalidRequest", err)
+	}
+	if _, _, verbs, _, _ := boxes.snapshot(); len(verbs) != 0 {
+		t.Fatalf("the discobox was acted on: %v", verbs)
+	}
+}
+
+// Only a host in the discobox can watch its files.
+func TestTheCLIHostServesNoWatches(t *testing.T) {
 	srv, ctx := startHost(t, &fakeBoxes{boxes: []Box{runningBox()}})
 	client, _ := connect(ctx, t, srv)
-	var read ahptypes.ResourceReadResult
-	err := client.Request(ctx, "resourceRead", ahptypes.ResourceReadParams{Channel: "ahp-session:/sbx_1", Uri: "file:///etc/hostname"}, &read)
+	err := client.Request(ctx, "createResourceWatch", ahptypes.CreateResourceWatchParams{Channel: "ahp-session:/sbx_1", Uri: "file://sbx_1/work"}, nil)
 	if rpcCode(err) != ahptypes.ErrorCodeMethodNotFound {
-		t.Fatalf("resourceRead from the CLI host: %v, want MethodNotFound", err)
+		t.Fatalf("createResourceWatch from the CLI host: %v, want MethodNotFound", err)
 	}
 }
 
