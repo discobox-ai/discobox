@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
@@ -207,6 +208,12 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
+	// Validated by config.Load already; asked again for the routes.
+	defaultGateways, projectGateways, err := cfg.GatewayRoutes()
+	if err != nil {
+		return err
+	}
+
 	startup.setPhase("starting services")
 	var imageCache *imagecache.Layout
 	if dir := strings.TrimSpace(cfg.ImageCacheDir); dir != "" {
@@ -235,6 +242,7 @@ func Run(ctx context.Context) error {
 		Judging:                        judges.Judging{Commands: cfg.JudgeCommands, Requests: cfg.JudgeCredentials},
 		JudgeJev:                       judgeJev,
 		JudgeJevFallback:               cfg.JevUnsure == config.JevUnsureHarness,
+		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		ServerDefaults: dockerworker.ServerDefaults{
 			PoolImage:        cfg.DockerPoolImage,
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,

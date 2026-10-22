@@ -31,9 +31,27 @@ transaction (`MarkProxyPolicyChangedTx`), which is how a change reaches running
 ones. And `ResolveGatewayHeaders` answers a pool's proxy
 (`/api/pools/{poolId}/resolve-gateway-headers`, the `secret:resolve` scope)
 with the values of `DISCOBOX_GATEWAY_*` variables of the server's environment:
-only for a sandbox on that pool, and only the variables the sandbox's project's
-gateway names as it now stands. Nothing else of the environment is reachable,
+only for a sandbox on that pool, only for a gateway the configuration file
+keeps, and only the variables the sandbox's project's gateway names as it now
+stands. Nothing else of the environment is reachable,
 and the values are never stored.
+
+The server configuration file names gateways too (ADR 26-10-17-271), and
+`ApplyConfiguredGatewaysTx` keeps them, in its caller's transaction: the
+`default` entry and each project ID resolve to a project — one naming none is
+skipped with a warning, and `default` is skipped for a project the file also
+names by ID — and that project's config-managed gateways become exactly the
+file's, taking over the API's of the same name and deleting the API's with the
+same match; a project no entry names any more loses the ones it kept. It is
+idempotent, run at startup (`InitializeDefaults`) and in the transaction that
+moves the default project, so what `default` names is read where it is
+written, and marks a project's discoboxes only when something changed. The API
+reads a config-managed gateway and refuses to put or delete it, or to put
+another with its match (`409`); the store decides both under the project's row
+lock, so a put and an apply take turns. Only a config-managed gateway takes a
+header from the server's environment: a put with `valueFrom` is refused,
+`ResolveGatewayHeaders` answers for no other gateway, and an apply deletes an
+API-made one that names a variable, from before that rule, with a warning.
 
 `judges` has no API of its own: nothing a client calls creates, lists or deletes
 a judge. It converges one per project against what the project says — a pool for

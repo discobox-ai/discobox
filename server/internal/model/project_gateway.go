@@ -26,12 +26,22 @@ type ProjectGateway struct {
 	Match          string                 `gorm:"column:match_url;not null;type:text;uniqueIndex:idx_project_gateway_match,priority:2"`
 	Target         string                 `gorm:"column:target_url;not null;type:text"`
 	RequestHeaders gateway.HeaderModifier `gorm:"column:request_headers;type:text;serializer:json"`
-	CreatedBy      string                 `gorm:"column:created_by;not null;type:text;default:''"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// ManagedBy is GatewayManagedByConfig for a gateway the server
+	// configuration file names, which the API may read and not change (ADR
+	// 26-10-17-271 §3), and GatewayManagedByAPI for one the API made.
+	ManagedBy string `gorm:"column:managed_by;not null;type:text;default:'api'" json:"managedBy" enum:"api,config"`
+	CreatedBy string `gorm:"column:created_by;not null;type:text;default:''"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 
 	Project *Project `gorm:"foreignKey:ProjectID"`
 }
+
+// What keeps a gateway: the API, or the server configuration file.
+const (
+	GatewayManagedByAPI    = "api"
+	GatewayManagedByConfig = "config"
+)
 
 func (ProjectGateway) TableName() string { return "project_gateways" }
 

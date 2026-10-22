@@ -329,6 +329,176 @@
       "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",
       "type": "integer"
     },
+    "projects": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "gateways": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "match": {
+                  "description": "The requests it routes, as an http(s) URL of an origin and a path prefix, matched on whole path segments; the longest match wins.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "requestHeaders": {
+                  "additionalProperties": false,
+                  "description": "Headers removed, then set (replacing any value), then added (appending) on the way.",
+                  "properties": {
+                    "add": {
+                      "description": "Headers added, appending to any value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "description": "The header's name.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "value": {
+                            "description": "The header's value.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "valueFrom": {
+                            "additionalProperties": false,
+                            "description": "Where the header's value is read from when a request needs it.",
+                            "properties": {
+                              "env": {
+                                "description": "A variable of the server's environment, named DISCOBOX_GATEWAY_\u003cNAME\u003e, resolved when a request needs it and never stored. Only a gateway this file keeps may take a value from the environment.",
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "remove": {
+                      "description": "Header names removed.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "set": {
+                      "description": "Headers set, replacing any value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "description": "The header's name.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "value": {
+                            "description": "The header's value.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "valueFrom": {
+                            "additionalProperties": false,
+                            "description": "Where the header's value is read from when a request needs it.",
+                            "properties": {
+                              "env": {
+                                "description": "A variable of the server's environment, named DISCOBOX_GATEWAY_\u003cNAME\u003e, resolved when a request needs it and never stored. Only a gateway this file keeps may take a value from the environment.",
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "target": {
+                  "description": "Where they go, as an http(s) URL of an origin and a path that replaces match's.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "description": "Gateways the server keeps on the project, by name: a DNS label, unique in the project. Each is a PUT /projects/{id}/gateways/{name} body. The server creates or replaces each one at startup and refuses API changes to it; a gateway of the project the file does not name is left to the API.",
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "description": "What the server keeps on its projects, keyed by default (the default user's default project) or a project ID. A project that does not exist is skipped with a warning. When default is a project also named by its ID, the entry under its ID applies.",
+      "examples": [
+        {
+          "default": {
+            "gateways": {
+              "anthropic": {
+                "match": "https://api.anthropic.com/v1",
+                "requestHeaders": {
+                  "set": [
+                    {
+                      "name": "cf-aig-authorization",
+                      "valueFrom": {
+                        "env": "DISCOBOX_GATEWAY_CF_TOKEN"
+                      }
+                    }
+                  ]
+                },
+                "target": "https://gateway.example.com/anthropic/v1"
+              }
+            }
+          }
+        }
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "releaseManifest": {
       "description": "Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization. Environment: DISCOBOX_RELEASE_MANIFEST (takes precedence over this file).",
       "examples": [

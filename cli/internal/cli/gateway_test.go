@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// `admin gateway set` sends the gateway whole, a header from the server's
-// environment by its variable; get shows the variable's name, ls the
-// gateways, and rm takes one away.
+// `admin gateway set` sends the gateway whole; get shows a header from the
+// server's environment by its variable's name, ls the gateways, and rm takes
+// one away.
 func TestGatewayCommands(t *testing.T) {
 	var stored map[string]any
 	deleted := ""
@@ -24,7 +24,7 @@ func TestGatewayCommands(t *testing.T) {
 			}
 			stored = map[string]any{
 				"name": "anthropic", "projectId": "project-1", "match": body["match"], "target": body["target"],
-				"requestHeaders": body["requestHeaders"], "createdAt": "2026-10-16T00:00:00Z", "updatedAt": "2026-10-16T00:00:00Z",
+				"requestHeaders": body["requestHeaders"], "managedBy": "api", "createdAt": "2026-10-16T00:00:00Z", "updatedAt": "2026-10-16T00:00:00Z",
 			}
 			_ = json.NewEncoder(w).Encode(stored)
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/gateways/anthropic":
@@ -44,7 +44,6 @@ func TestGatewayCommands(t *testing.T) {
 		"--match", "https://api.anthropic.com/v1",
 		"--target", "https://gateway.example.com/anthropic/v1",
 		"--remove-header", "x-api-key",
-		"--set-header-env", "cf-aig-authorization=DISCOBOX_GATEWAY_CF_TOKEN",
 		"--set-header", "x-team=platform",
 		"--add-header", "x-tag=a=b",
 	)
@@ -53,18 +52,22 @@ func TestGatewayCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"add":[{"name":"x-tag","value":"a=b"}],"remove":["x-api-key"],"set":[{"name":"x-team","value":"platform"},{"name":"cf-aig-authorization","valueFrom":{"env":"DISCOBOX_GATEWAY_CF_TOKEN"}}]}`
+	want := `{"add":[{"name":"x-tag","value":"a=b"}],"remove":["x-api-key"],"set":[{"name":"x-team","value":"platform"}]}`
 	if string(sent) != want {
 		t.Fatalf("sent headers %s\nwant %s", sent, want)
 	}
 
+	// What get and ls show of one the server configuration file keeps,
+	// which alone takes a header from the server's environment.
+	stored["managedBy"] = "config"
+	headers["set"] = append(headers["set"].([]any), map[string]any{"name": "cf-aig-authorization", "valueFrom": map[string]any{"env": "DISCOBOX_GATEWAY_CF_TOKEN"}})
 	got := runCLI(t, server.URL, "admin", "gateway", "get", "anthropic")
-	for _, line := range []string{"https://gateway.example.com/anthropic/v1", "cf-aig-authorization: env:DISCOBOX_GATEWAY_CF_TOKEN", "x-team: platform", "x-api-key"} {
+	for _, line := range []string{"https://gateway.example.com/anthropic/v1", "cf-aig-authorization: env:DISCOBOX_GATEWAY_CF_TOKEN", "x-team: platform", "x-api-key", "MANAGED BY  config"} {
 		if !strings.Contains(got, line) {
 			t.Fatalf("get is missing %q:\n%s", line, got)
 		}
 	}
-	if listed := runCLI(t, server.URL, "admin", "gateway", "ls"); !strings.Contains(listed, "anthropic") || !strings.Contains(listed, "https://api.anthropic.com/v1") {
+	if listed := runCLI(t, server.URL, "admin", "gateway", "ls"); !strings.Contains(listed, "anthropic") || !strings.Contains(listed, "https://api.anthropic.com/v1") || !strings.Contains(listed, "config") {
 		t.Fatalf("ls:\n%s", listed)
 	}
 	runCLI(t, server.URL, "admin", "gateway", "rm", "anthropic")
@@ -74,10 +77,10 @@ func TestGatewayCommands(t *testing.T) {
 }
 
 func TestGatewaySetRefusesAHeaderWithoutAName(t *testing.T) {
-	if _, err := gatewayHeaderFlags([]string{"=value"}, nil); err == nil {
+	if _, err := gatewayHeaderFlags([]string{"=value"}); err == nil {
 		t.Fatal("accepted a header with no name")
 	}
-	if _, err := gatewayHeaderFlags(nil, []string{"x-key"}); err == nil {
+	if _, err := gatewayHeaderFlags([]string{"x-key"}); err == nil {
 		t.Fatal("accepted a header with no =")
 	}
 }

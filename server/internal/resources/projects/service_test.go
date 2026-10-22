@@ -77,14 +77,24 @@ func (s stubSandboxes) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Stor
 	return nil
 }
 
+// stubGateways counts how often the configuration file's gateways were
+// applied again.
+type stubGateways struct{ applied *int }
+
+func (s stubGateways) ApplyConfiguredGatewaysTx(context.Context, *store.Store, *gorm.DB) error {
+	*s.applied++
+	return nil
+}
+
 func newService(t *testing.T) (*projects.Service, *store.Store, context.Context) {
 	t.Helper()
-	return newServiceMarking(t, new([]string))
+	return newServiceMarking(t, new([]string), new(int))
 }
 
 // newServiceMarking is newService recording into marked which scopes an
-// egress change was converged for.
-func newServiceMarking(t *testing.T, marked *[]string) (*projects.Service, *store.Store, context.Context) {
+// egress change was converged for, and counting into applied how often the
+// configuration file's gateways were applied again.
+func newServiceMarking(t *testing.T, marked *[]string, applied *int) (*projects.Service, *store.Store, context.Context) {
 	t.Helper()
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeUser, UserID: testUserID})
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -96,7 +106,7 @@ func newServiceMarking(t *testing.T, marked *[]string) (*projects.Service, *stor
 		t.Fatalf("migrate db: %v", err)
 	}
 	st := store.New(db.Write, db.Read)
-	svc := projects.NewService(st, stubProviders{st}, stubPools{st}, stubHarnesses{st}, stubSandboxes{marked})
+	svc := projects.NewService(st, stubProviders{st}, stubPools{st}, stubHarnesses{st}, stubSandboxes{marked}, stubGateways{applied})
 	return svc, st, ctx
 }
 
@@ -418,8 +428,11 @@ func TestADiscobotAssertedPersonListsEveryProjectAndCopiesOnlyFromTheirs(t *test
 	}
 }
 
+// Moving the flag moves the project the configuration file's default handle
+// names, so its gateways are applied again (ADR 26-10-17-271 §4).
 func TestSetDefaultProjectMovesTheFlag(t *testing.T) {
-	svc, st, ctx := newService(t)
+	applied := 0
+	svc, st, ctx := newServiceMarking(t, new([]string), &applied)
 	source := seedSourceProject(ctx, t, st)
 	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Next"})
 	if err != nil {
@@ -446,6 +459,9 @@ func TestSetDefaultProjectMovesTheFlag(t *testing.T) {
 	}
 	if resolved.ID != project.ID {
 		t.Fatalf("default project = %q, want %q", resolved.ID, project.ID)
+	}
+	if applied != 1 {
+		t.Fatalf("configured gateways applied %d times, want once", applied)
 	}
 }
 
@@ -603,7 +619,7 @@ func TestUpdateProjectSetsTheSandboxUpgradePolicy(t *testing.T) {
 // the project, and refuses an entry the proxy could not enforce.
 func TestUpdateProjectSetsTheEgressLevel(t *testing.T) {
 	var marked []string
-	svc, _, ctx := newServiceMarking(t, &marked)
+	svc, _, ctx := newServiceMarking(t, &marked, new(int))
 	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Fresh"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)

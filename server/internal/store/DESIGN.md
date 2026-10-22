@@ -186,7 +186,7 @@ Keep files split by resource area:
 | `egress.go` | A sandbox's effective egress policy, merged from its four levels (`EffectiveSandboxEgress`), and the setters that alone write a level (ADR 26-10-01-032). |
 | `credential_verdicts.go` | Recorded credential verdicts of every kind: written per decision, read per project through `CredentialVerdictFilter`; the judge reads its standing allows (`StandingVerdicts`) and a round's asks for a body (`BodyAsks`, from the primary: a read-after-write that decides who answers the next round) directly. |
 | `project_skills_sources.go` | A project's skills sources, in the order added (`position`, one past the last, not the creation time, which a coarse clock shares between two adds); an add holds the project's row for update and refuses a repeat or a second ref of one repository in the same transaction (ADR 26-10-14-894). |
-| `project_gateways.go` | A project's gateways, by name; a put replaces one in place and holds the project's row for update while it refuses a second gateway with the same match (ADR 26-10-16-470). |
+| `project_gateways.go` | A project's gateways, by name; a put replaces one in place and holds the project's row for update while it refuses a second gateway with the same match (ADR 26-10-16-470), or a change to one the configuration file keeps; `ConvergeConfiguredGateways` makes a project's config-managed gateways the file's under the same lock (ADR 26-10-17-271). |
 | `ssh_keys.go` | Project SSH keys. |
 | `peers.go` | Enrolled peers, looked up by ID or validated prefix. |
 | `server_state.go` | Server-wide key/value markers (e.g. one-time seeding). |

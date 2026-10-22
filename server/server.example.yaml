@@ -293,3 +293,10 @@
 # environment variable sets this too, in milliseconds, as the
 # OpenTelemetry specification defines it.
 #otelMetricExportInterval: 1s
+
+# What the server keeps on its projects, keyed by default (the default
+# user's default project) or a project ID. A project that does not exist
+# is skipped with a warning. When default is a project also named by its
+# ID, the entry under its ID applies.
+# Example: projects: {default: {gateways: {anthropic: {match: 'https://api.anthropic.com/v1', target: 'https://gateway.example.com/anthropic/v1', requestHeaders: {set: [{name: cf-aig-authorization, valueFrom: {env: DISCOBOX_GATEWAY_CF_TOKEN}}]}}}}}
+#projects:

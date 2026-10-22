@@ -43,16 +43,24 @@ type Sandboxes interface {
 	MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
 }
 
+// Gateways keeps the server configuration file's gateways on the project its
+// default entry names, which moves with the default project, in the
+// transaction that moves it (ADR 26-10-17-271 §4).
+type Gateways interface {
+	ApplyConfiguredGatewaysTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB) error
+}
+
 type Service struct {
 	store     *store.Store
 	providers ProviderInstances
 	pools     Pools
 	harnesses HarnessConfigs
 	sandboxes Sandboxes
+	gateways  Gateways
 }
 
-func NewService(store *store.Store, providers ProviderInstances, pools Pools, harnesses HarnessConfigs, sandboxes Sandboxes) *Service {
-	return &Service{store: store, providers: providers, pools: pools, harnesses: harnesses, sandboxes: sandboxes}
+func NewService(store *store.Store, providers ProviderInstances, pools Pools, harnesses HarnessConfigs, sandboxes Sandboxes, gateways Gateways) *Service {
+	return &Service{store: store, providers: providers, pools: pools, harnesses: harnesses, sandboxes: sandboxes, gateways: gateways}
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
@@ -246,9 +254,16 @@ func (s *Service) SetDefaultProject(ctx context.Context, projectID string) (*mod
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	project, err := s.store.SetDefaultProjectForUser(ctx, userID, projectID)
+	var project *model.Project
+	err = s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		var err error
+		if project, err = txStore.SetDefaultProjectForUser(ctx, userID, projectID); err != nil {
+			return apperrors.NotFound(err, "project not found")
+		}
+		return s.gateways.ApplyConfiguredGatewaysTx(ctx, txStore, txDB)
+	})
 	if err != nil {
-		return nil, apperrors.NotFound(err, "project not found")
+		return nil, err
 	}
 	return project, nil
 }

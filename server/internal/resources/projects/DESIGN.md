@@ -39,7 +39,9 @@ flag the `default` alias resolves.
   harness config.
 - `SetDefaultProject` moves the flag; there is no unset, since `default` is the
   CLI's `--project` default and must always resolve. The move is one
-  transaction in `store.SetDefaultProjectForUser`.
+  transaction, and in it the gateways service (`Gateways`) applies the server
+  configuration file's gateways again, since its `default` entry follows the
+  flag (ADR 26-10-17-271 §4): a move whose apply fails does not happen.
 - `DeleteProject` refuses the default project and any project still holding
   sandboxes or pools; those own runtime that has to drain through its own
   reconcilers. Once empty, `store.DeleteProject` removes the project's own

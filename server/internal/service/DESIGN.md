@@ -119,6 +119,10 @@ application policy, not engine behavior.
 - Upserts the local user and resolves the user's default project by membership
   and the `Default` flag, creating it with a generated ID on first boot.
 - Seeds the built-in harness configs (`harnessconfigs.Service.SeedBuiltIns`).
+- Applies the server configuration file's gateways
+  (`gateways.Service.ApplyConfiguredGatewaysTx`, ADR 26-10-17-271), in one
+  transaction, now that the project its `default` entry names exists. It is
+  idempotent; a failure stops startup.
 - Installs a default sandbox provider instance and a `Default` pool (set as the
   project's `DefaultPoolID`) exactly once, gated on the
   `defaults.default_sandbox_provider.installed` `server_state` row rather than on

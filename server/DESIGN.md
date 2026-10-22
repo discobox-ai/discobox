@@ -419,6 +419,14 @@ because a field set to its zero value and a field left out mean different
 things — `archiveRetention: 0s` is a window that purges on sight, and no key at
 all means the package default stands.
 
+`projects` is the one setting that is resource state rather than process
+configuration (ADR 26-10-17-271): gateways the server keeps on a project, keyed
+by `default` or a project ID. No environment variable spells it.
+`Config.GatewayRoutes` validates them with `proxy/gateway` at load, so a
+gateway the API would refuse stops the server, and hands the `default` entry
+over apart from the ones named by ID. Applying them is the gateways service's
+(see [resources](internal/resources/DESIGN.md)).
+
 Two OpenTelemetry variables are read by hand rather than bound: `OTEL_METRICS_EXPORTER`
 names an exporter and `OTEL_METRIC_EXPORT_INTERVAL` counts milliseconds, both
 fixed by that specification. The file spells them as a boolean and a duration.

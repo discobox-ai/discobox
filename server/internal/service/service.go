@@ -64,6 +64,7 @@ type Service struct {
 	harnessConfigs   *harnessconfigs.Service
 	judges           *judges.Service
 	assets           *assets.Service
+	gateways         *gateways.Service
 	// ruleRequests tests approval rules against pending credential requests.
 	ruleRequests *secrets.RuleRequests
 }
@@ -116,6 +117,9 @@ type Options struct {
 	// JudgeJev, when set, is what judges instead of a judge discobox per
 	// project (ADR 26-10-01-324).
 	JudgeJev *jev.Client
+	// ConfiguredGateways is the server configuration file's gateways
+	// (ADR 26-10-17-271).
+	ConfiguredGateways gateways.Configured
 	// JudgeJevFallback puts every job Jev is unsure of to the project's judge
 	// discobox, which every project then keeps and which decides it, rather than
 	// refusing it. A refusal Jev is sure of stands either way.
@@ -198,8 +202,11 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 			slog.WarnContext(ctx, "platform bundle moved but stopped sandboxes were not upgraded", "error", err)
 		}
 	})
+	// The server configuration file's gateways (ADR 26-10-17-271), which
+	// follow the default project when it moves.
+	gatewayService := gateways.NewService(store, sandboxService, options.ConfiguredGateways, DefaultUserID)
 	return &Service{
-		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService, sandboxService),
+		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService, sandboxService, gatewayService),
 		HarnessConfigService:           harnessConfigService,
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
@@ -209,7 +216,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		HostTrustService:               secretService,
 		SSHKeyService:                  sshkeys.NewService(store),
 		SkillsSourceService:            skillssources.NewService(store),
-		GatewayService:                 gateways.NewService(store, sandboxService),
+		GatewayService:                 gatewayService,
 		PeerService:                    peers.NewService(store),
 
 		jobs:            jobsService,
@@ -222,6 +229,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		harnessConfigs:   harnessConfigService,
 		judges:           judgeService,
 		assets:           assetService,
+		gateways:         gatewayService,
 		ruleRequests:     secretService.RuleRequests(),
 	}
 }
