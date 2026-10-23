@@ -5740,6 +5740,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ProvisionEgress.Set {
+			e.FieldStart("provisionEgress")
+			s.ProvisionEgress.Encode(e)
+		}
+	}
+	{
 		if s.Gateways.Set {
 			e.FieldStart("gateways")
 			s.Gateways.Encode(e)
@@ -5775,17 +5781,18 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [10]string{
-	0: "$schema",
-	1: "bundles",
-	2: "config",
-	3: "egress",
-	4: "gateways",
-	5: "resolvedHarnessConfig",
-	6: "sandboxId",
-	7: "sentinels",
-	8: "sentinelRoutes",
-	9: "secretEnv",
+var jsonFieldsNameOfPoolSandboxCreateRequest = [11]string{
+	0:  "$schema",
+	1:  "bundles",
+	2:  "config",
+	3:  "egress",
+	4:  "provisionEgress",
+	5:  "gateways",
+	6:  "resolvedHarnessConfig",
+	7:  "sandboxId",
+	8:  "sentinels",
+	9:  "sentinelRoutes",
+	10: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -5837,6 +5844,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"egress\"")
 			}
+		case "provisionEgress":
+			if err := func() error {
+				s.ProvisionEgress.Reset()
+				if err := s.ProvisionEgress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"provisionEgress\"")
+			}
 		case "gateways":
 			if err := func() error {
 				s.Gateways.Reset()
@@ -5858,7 +5875,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -5909,7 +5926,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b01000100,
+		0b10000100,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

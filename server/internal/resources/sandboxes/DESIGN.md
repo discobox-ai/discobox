@@ -651,6 +651,13 @@ declares), and its own `Sandbox.Egress` — by the rule in
   push, for the creator check, and in the sandbox role's authorizer, which
   holds a discobox's writes to another to discoboxes within its policy
   ([auth](../../auth/DESIGN.md)). No copy exists to go stale.
+- **A create also carries the provisioning policy.** `store.ProvisionEgress`
+  is the same merge without the sandbox's own level, sent as
+  `CreateOptions.ProvisionEgress`: what a pool provisions a sandbox's platform
+  and harness under on no sandbox's behalf, as it builds a snapshot of them
+  ([ADR 26-10-16-423](../../../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+  §8). It rides the create alone; the next create of the plan carries a
+  changed one, and a snapshot is keyed by it.
 - **A create carries it; a push delivers every change.** A level change —
   project, pool, harness config, or a sandbox's own — or a change to the
   project's gateways marks the `sandboxProxyPolicy` resource of every sandbox

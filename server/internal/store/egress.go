@@ -23,25 +23,50 @@ import (
 // which bounds what a discobox may act on by it. A harness config that is gone
 // contributes nothing.
 func (s *Store) EffectiveSandboxEgress(ctx context.Context, sb *model.Sandbox) (egress.Policy, error) {
+	levels, err := s.machineEgressLevels(ctx, sb)
+	if err != nil {
+		return egress.Policy{}, err
+	}
+	return egress.Merge(append(levels, sb.Egress)...), nil
+}
+
+// ProvisionEgress is the egress policy for provisioning a sandbox's
+// machine-scoped layers on no sandbox's behalf (ADR 26-10-16-423 §§1, 8):
+// EffectiveSandboxEgress without the sandbox's own level, so the project's,
+// the pool's and the harness config's (with the hosts its image declares).
+// It names nothing of the sandbox, so what is provisioned under it is the
+// same for every sandbox of the plan.
+func (s *Store) ProvisionEgress(ctx context.Context, sb *model.Sandbox) (egress.Policy, error) {
+	levels, err := s.machineEgressLevels(ctx, sb)
+	if err != nil {
+		return egress.Policy{}, err
+	}
+	return egress.Merge(levels...), nil
+}
+
+// machineEgressLevels is every egress level of sb but its own: its
+// project's, its pool's, and its harness config's with the hosts its image
+// declares.
+func (s *Store) machineEgressLevels(ctx context.Context, sb *model.Sandbox) ([]egress.Policy, error) {
 	project, err := s.GetProject(ctx, sb.ProjectID)
 	if err != nil {
-		return egress.Policy{}, fmt.Errorf("read project egress: %w", err)
+		return nil, fmt.Errorf("read project egress: %w", err)
 	}
 	pool, err := s.GetPool(ctx, sb.ProjectID, sb.PoolID)
 	if err != nil {
-		return egress.Policy{}, fmt.Errorf("read pool egress: %w", err)
+		return nil, fmt.Errorf("read pool egress: %w", err)
 	}
-	levels := []egress.Policy{project.Egress, pool.Egress, sb.Egress}
+	levels := []egress.Policy{project.Egress, pool.Egress}
 	if sb.HarnessConfigID != nil && strings.TrimSpace(*sb.HarnessConfigID) != "" {
 		harnessConfig, err := s.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
 		switch {
 		case err == nil:
 			levels = append(levels, harnessConfig.Egress, egress.Policy{Allow: harnessConfig.ImageEgressHosts})
 		case !errors.Is(err, ErrNotFound):
-			return egress.Policy{}, fmt.Errorf("read harness config egress: %w", err)
+			return nil, fmt.Errorf("read harness config egress: %w", err)
 		}
 	}
-	return egress.Merge(levels...), nil
+	return levels, nil
 }
 
 // egressColumn is the egress level of a project, a harness config, or a

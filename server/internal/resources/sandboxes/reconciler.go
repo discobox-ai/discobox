@@ -621,6 +621,9 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			return CreateOptions{}, err
 		}
 		opts.Egress = policy
+		if opts.ProvisionEgress, err = r.store.ProvisionEgress(ctx, sb); err != nil {
+			return CreateOptions{}, err
+		}
 		// Its project's gateways, for the same reason (ADR 26-10-16-470 §5).
 		if opts.Gateways, err = sandboxGateways(ctx, r.store, sb.ProjectID); err != nil {
 			return CreateOptions{}, err
