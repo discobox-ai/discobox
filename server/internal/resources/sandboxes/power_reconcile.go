@@ -135,7 +135,13 @@ func (r *sandboxPowerReconciler) wake(ctx context.Context, sb *model.Sandbox) er
 		slog.Default().Warn("wake sandbox", "sandboxId", sb.ID, "error", err)
 		return nil
 	}
-	slog.Default().Info("waking sandbox at the time it asked for", "sandboxId", sb.ID, "wakeAt", sb.WakeAt)
+	// loggercheck refuses a *time.Time, whose String method dereferences it,
+	// so the wake time is logged by value, and only when there is one.
+	attrs := []any{"sandboxId", sb.ID}
+	if sb.WakeAt != nil {
+		attrs = append(attrs, "wakeAt", *sb.WakeAt)
+	}
+	slog.Default().Info("waking sandbox at the time it asked for", attrs...)
 	if err := instructSandbox(ctx, r.store, provider, sb, sandboxStart); err != nil {
 		slog.Default().Warn("wake sandbox", "sandboxId", sb.ID, "error", err)
 	}
