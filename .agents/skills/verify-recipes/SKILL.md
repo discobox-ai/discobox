@@ -489,6 +489,22 @@ lead; and run `discobox-access run --use <id> -- discobox …` there.
   isolated server's `data/discobox.db` (`secret_grants.expires_at`); the API
   prints whole seconds.
 
+# Verifying the iroh transport (`pkg/endpoint`: admission, peer certificates)
+
+The isolated server above exits with `project … has no harness to run` when
+no harness image is in the box's Docker (no dev loop has built them) and ghcr
+is unreachable. The transport does not need it: a probe `main` placed inside
+the tree (`<copy>/probe/main.go`, so it builds in the root module) drives
+`endpoint.NewIrohEndpoint` as a server (`Listen` + an `http.Server`,
+`Authorize` admitting one ID) and as a client the way
+`cli/internal/cli/peer_identity.go` configures it, with `DisableRelay`,
+`DisableDiscovery`, `BindAddrs` 127.0.0.1:0 and `Locate` returning the
+server's `DirectAddrs()`. Restarting the server endpoint with the same key and
+pointing `Locate` at its new addresses forces the client's redial. For a
+before/after, build it in `git archive HEAD | tar -x -C $S/old` and in a copy
+of the working tree. Shorten a time constant in the copies (never in the
+checkout) to reach an expiry in seconds.
+
 # Verifying a pool route as the dev pool (the asset API, any `/api/pools/{poolId}/…`)
 
 A pool route answers only the pool's own signed assertion, so `curl` it with
