@@ -337,7 +337,7 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 - Everything after `--` is your command, run exactly as written.
 - What your command reads on stdin — a here-document, a file, a pipe — is shown
   to the checker with it, up to 8 KiB, and your command still reads every
-  byte. A command that takes its request on stdin (`discobox new --json`,
+  byte. A command that takes its request on stdin (`discobox run --json`,
   `gh api --input -`) is judged by that request, so keep it to what was
   approved; past 8 KiB the checker is told it was not shown the rest.
 
@@ -417,7 +417,7 @@ pointed at the API; run it under an approved use, as with any credential.
 **Launch workers with no credentials, and give them only what they ask for.**
 A worker starts with none. When it needs one it asks with `discobox-access`,
 as you do, and you approve or deny that request. Do not pass `--grant` or
-`"grants"` to `discobox new`: a create is judged against your policy, and
+`"grants"` to `discobox run`: a create is judged against your policy, and
 credentials folded into it are judged there as if handing them on were part
 of the prompt. Answering a request is where handing a credential on is
 decided.
@@ -503,7 +503,7 @@ your purpose.
 ### Create a worker
 
 ```bash
-discobox-access run --use <id> -- discobox new -d --include-dirty=false \
+discobox-access run --use <id> -- discobox run -d . \
   -p "Implement issue #43 in org/repo. Follow CLAUDE.md, make the tests pass, and commit locally on main. Do not push or open a pull request."
 ```
 
@@ -511,9 +511,9 @@ discobox-access run --use <id> -- discobox new -d --include-dirty=false \
   to get credentials or which to ask for, and do not name skills: its own
   skills say how, and credentials named in a prompt are read as credentials
   you are handing out. It asks for what it needs when it knows.
-- It is cut from the directory you run it in, at its current commit.
-  `--include-dirty=false` hands over only what is committed; leave it out to
-  carry your uncommitted work too. `--no-source` gives it nothing checked out;
+- It is cut from SOURCE, here `.`, the directory you run it in, at its
+  current commit. Only what is committed is handed over; `--include-dirty`
+  carries your uncommitted work too. `--no-source` gives it nothing checked out;
   `-i ../other` brings in another source beside it.
 - It runs the project's default harness, as your user, with your Git identity.
   Leave `-H` out unless the person asked for a particular harness.

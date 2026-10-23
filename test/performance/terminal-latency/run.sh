@@ -132,7 +132,7 @@ cleanup() {
 	fi
 
 	if [ -n "$sandbox_id" ]; then
-		"${cli[@]}" admin box delete "$sandbox_id" >/dev/null 2>&1 || true
+		"${cli[@]}" admin box rm "$sandbox_id" >/dev/null 2>&1 || true
 		if ! wait_for_sandbox_deletion "$sandbox_id"; then
 			echo "terminal latency: sandbox $sandbox_id is still deleting; harness cleanup may need a retry" >&2
 		fi
@@ -140,7 +140,7 @@ cleanup() {
 	if [ -n "$harness_id" ]; then
 		configure_sandbox_id="$("${cli[@]}" admin harness get "$harness_id" 2>/dev/null | jq -r '.configureSandboxId // empty' || true)"
 		if [ -n "$configure_sandbox_id" ] && [ "$configure_sandbox_id" != "$sandbox_id" ]; then
-			"${cli[@]}" admin box delete "$configure_sandbox_id" >/dev/null 2>&1 || true
+			"${cli[@]}" admin box rm "$configure_sandbox_id" >/dev/null 2>&1 || true
 			wait_for_sandbox_deletion "$configure_sandbox_id" || true
 		fi
 		"${cli[@]}" admin harness deconfigure "$harness_id" >/dev/null 2>&1 || true
@@ -162,7 +162,7 @@ delete_probe_sandbox() {
 		container_id=""
 		return 0
 	fi
-	"${cli[@]}" admin box delete "$id" >/dev/null
+	"${cli[@]}" admin box rm "$id" >/dev/null
 	if ! wait_for_sandbox_deletion "$id"; then
 		echo "terminal latency: sandbox $id did not finish deleting" >&2
 		return 1

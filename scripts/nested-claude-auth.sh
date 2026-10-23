@@ -160,7 +160,7 @@ OUTPUT=$(jq -nc \
 
 # --- Drive the configure flow -----------------------------------------------
 
-HARNESS_ID=$(discobox admin harnesses ls -o json | jq -er --arg slug "$HARNESS" '.harnessConfigs[] | select(.slug == $slug) | .id') ||
+HARNESS_ID=$(discobox admin harness ls -o json | jq -er --arg slug "$HARNESS" '.harnessConfigs[] | select(.slug == $slug) | .id') ||
 	die "the server has no $HARNESS harness"
 
 # A flow left in flight by an earlier, interrupted run holds the harness; a new

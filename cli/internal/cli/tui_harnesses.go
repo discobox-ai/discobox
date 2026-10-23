@@ -19,7 +19,7 @@ import (
 
 // The launcher's harnesses screen, on this side of the seam. What the window
 // calls a harness is the control plane's harness config, and everything here is
-// the same API and the same flows the `admin harnesses` subcommands run, so what
+// the same API and the same flows the `admin harness` subcommands run, so what
 // the screen does is reproducible from a shell.
 
 // Harnesses is one server's harness configs, oldest first, which is the order
@@ -40,7 +40,7 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	if err != nil {
 		return nil, err
 	}
-	// So is what the project's pools host and run, which decides what `new`
+	// So is what the project's pools host and run, which decides what `run`
 	// offers.
 	placements, err := d.app.listPoolPlacements(ctx, d.client, d.projectID)
 	if err != nil {

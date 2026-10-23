@@ -88,7 +88,7 @@ func TestRunPlacesTheSourceByThePoolPlatform(t *testing.T) {
 			var out, errOut bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&errOut)
-			args := append([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "--include-dirty=false"}, tc.args...)
+			args := append([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "."}, tc.args...)
 			cmd.SetArgs(append(args, "-p", "fix it"))
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("execute new: %v\n%s", err, errOut.String())
@@ -130,7 +130,7 @@ func TestRunRefusesAPoolItCannotRead(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "--no-source", "--pool", "win", "-p", "fix it"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--no-source", "--pool", "win", "-p", "fix it"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--pool win") {
 		t.Fatalf("execute new = %v, want the named pool refused", err)

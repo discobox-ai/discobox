@@ -53,7 +53,7 @@ func (a *App) newProjectListCommand() *cobra.Command {
 }
 
 func (a *App) newProjectGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get PROJECT_ID", Short: "Get a project", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get PROJECT", Short: "Get a project", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -125,7 +125,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var upgradePolicy string
 	var welcomed bool
 	var egressOpts egressFlags
-	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
+	cmd := &cobra.Command{Use: "update PROJECT", Short: "Update a project", Long: `Update a project.
 
 --archive-retention sets how long this project's archived discoboxes are kept
 before they are purged. Deleting a discobox archives it, so this is how long a
@@ -220,7 +220,7 @@ every discobox in the project converges onto, running ones included.
 }
 
 func (a *App) newProjectSetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "set-default PROJECT_ID", Short: "Set your default project", Long: `Set your default project.
+	return &cobra.Command{Use: "set-default PROJECT", Short: "Set your default project", Long: `Set your default project.
 
 Commands run against the default project unless --project names another one,
 so this is what "default" resolves to everywhere. There is no unset: setting a
@@ -250,7 +250,7 @@ default moves the flag off whichever project holds it.`, Args: cobra.ExactArgs(1
 }
 
 func (a *App) newProjectDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete PROJECT_ID...", Short: "Delete projects", Long: `Delete projects.
+	return &cobra.Command{Use: "rm PROJECT...", Aliases: []string{"delete", "remove"}, Short: "Delete projects", Long: `Delete projects.
 
 A project with discoboxes or pools is refused: those own runtime hosts and
 containers that have to be torn down through their own commands first. The

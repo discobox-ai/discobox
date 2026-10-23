@@ -14,12 +14,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// runJSONRequest is `discobox new --json`: the command's request as one JSON
+// runJSONRequest is `discobox run --json`: the command's request as one JSON
 // object on stdin, for a caller — an agent, above all — that would otherwise
 // have to quote a prompt and each use's sentence through a shell (ADR 26-09-24-630 §4).
 // Its fields are the run flags', and mean what they mean; -d and --raw have
 // none, because a JSON run creates, prints, and returns.
 type runJSONRequest struct {
+	// Source is SOURCE, required unless NoSource is set.
+	Source  string         `json:"source"`
 	Prompt  string         `json:"prompt"`
 	Harness string         `json:"harness"`
 	Grants  []runJSONGrant `json:"grants"`
@@ -35,8 +37,8 @@ type runJSONRequest struct {
 	// Pool is --pool.
 	Pool string `json:"pool"`
 	// NoSource, IncludeDirty and DeclaredSources are --no-source,
-	// --include-dirty and --declared-sources. IncludeDirty left out is auto,
-	// which with nobody to ask carries the uncommitted work.
+	// --include-dirty and --declared-sources. IncludeDirty left out leaves
+	// the uncommitted work behind, as the flag left out does.
 	NoSource        bool  `json:"noSource"`
 	IncludeDirty    *bool `json:"includeDirty"`
 	DeclaredSources *bool `json:"declaredSources"`
@@ -75,7 +77,7 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 		return fmt.Errorf("--json reads the whole request from stdin; put %s in it instead", strings.Join(given, ", "))
 	}
 	if len(args) > 0 {
-		return errors.New("--json reads the prompt from stdin; put it in the request's \"prompt\"")
+		return errors.New("--json reads the request from stdin; put SOURCE in its \"source\" and the prompt in its \"prompt\"")
 	}
 	var req runJSONRequest
 	decoder := json.NewDecoder(cmd.InOrStdin())
@@ -105,11 +107,19 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	opts.noProjectSkills = req.NoProjectSkills
 	opts.pool = req.Pool
 	opts.noSource = req.NoSource
-	if req.IncludeDirty != nil {
-		opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyNever
-		if *req.IncludeDirty {
-			opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyAlways
+	if req.Source != "" {
+		if req.NoSource {
+			return errors.New("--json: \"source\" and \"noSource\" say opposite things; give one")
 		}
+		source, err := runSourceArgument(req.Source)
+		if err != nil {
+			return err
+		}
+		opts.source = source
+	}
+	opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyNever
+	if req.IncludeDirty != nil && *req.IncludeDirty {
+		opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyAlways
 	}
 	if req.DeclaredSources != nil {
 		opts.declaredSources = *req.DeclaredSources

@@ -11,7 +11,7 @@ import (
 
 // The inline source question offers what the create card offers: what the
 // project's discoboxes were cut from, newest first, each once, spelled the way
-// -C takes it.
+// SOURCE takes it.
 func TestProjectSourcesAreWhatTheProjectWasCutFrom(t *testing.T) {
 	box := func(id, created, source string) string {
 		return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","displayName":"` + id + `",` +
@@ -51,7 +51,7 @@ func TestProjectSourcesAreWhatTheProjectWasCutFrom(t *testing.T) {
 	}
 }
 
-// A source is titled by what tells it apart at a glance, its -C value riding
+// A source is titled by what tells it apart at a glance, its SOURCE value riding
 // in the column beside it.
 func TestSourceTitles(t *testing.T) {
 	for _, tc := range []struct {

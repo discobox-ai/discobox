@@ -498,7 +498,7 @@ func TestConfigureKeepsSignInsWhenTheJudgeFails(t *testing.T) {
 				"The judge did not answer.",
 				"reasoning is mandatory for this model",
 				tc.says,
-				"discobox admin harnesses edit omp " + settingsPath,
+				"discobox admin harness edit omp " + settingsPath,
 			} {
 				if !strings.Contains(out.Printed, want) {
 					t.Errorf("the judge's failure did not say %q:\n%s", want, out.Printed)

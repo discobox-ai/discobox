@@ -66,9 +66,9 @@ func (f folder) holds(s Sandbox, session Session) bool {
 // source are in it.
 func (s Session) folder() folder {
 	if s.RepositoryKey != "" {
-		return folder{key: s.RepositoryKey, label: repositoryLabel(s.RepositoryKey), source: s.source(), local: true}
+		return folder{key: s.RepositoryKey, label: repositoryLabel(s.RepositoryKey), source: s.Directory, local: true}
 	}
-	return folder{key: s.OriginKey, label: s.sourceLabel(), source: s.source(), local: true}
+	return folder{key: s.OriginKey, label: s.sourceLabel(), source: s.Directory, local: true}
 }
 
 // repositoryLabel is how a GitHub repository's folder reads, from its key

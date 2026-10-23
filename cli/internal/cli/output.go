@@ -929,7 +929,7 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 
 // formatConfigured renders whether a harness has completed its configure flow.
 // Only a configured harness can be run, so this is the column that explains why
-// `discobox new -H <slug>` is refused. A failed attempt shows its reason.
+// `discobox run -H <slug>` is refused. A failed attempt shows its reason.
 func formatConfigured(harness *apimodel.HarnessConfig) string {
 	if harness.Configured {
 		return "yes"
@@ -949,16 +949,27 @@ func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apim
 		boundByEnv[b.EnvName] = b.SecretId
 	}
 	// Show every declared env var, then any binding for an env the definition
-	// didn't declare (e.g. a custom secret the user added).
+	// didn't declare (e.g. a custom secret the user added). -q prints the env
+	// names alone, which is what bind and unbind take.
 	seen := map[string]struct{}{}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ENV\tREQUIRED\tONE-OF GROUP\tBOUND SECRET")
+	if !a.quiet {
+		fmt.Fprintln(tw, "ENV\tREQUIRED\tONE-OF GROUP\tBOUND SECRET")
+	}
 	for _, decl := range declarations {
 		seen[decl.Name] = struct{}{}
+		if a.quiet {
+			fmt.Fprintln(tw, decl.Name)
+			continue
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", decl.Name, formatRequired(decl.Required.Or(false)), formatOneOfGroup(decl.OneOfGroup.Or("")), formatBoundSecret(boundByEnv[decl.Name]))
 	}
 	for _, b := range bindings {
 		if _, ok := seen[b.EnvName]; ok {
+			continue
+		}
+		if a.quiet {
+			fmt.Fprintln(tw, b.EnvName)
 			continue
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.EnvName, "-", "-", formatBoundSecret(b.SecretId))

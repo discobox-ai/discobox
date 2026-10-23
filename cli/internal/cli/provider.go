@@ -69,7 +69,7 @@ func (a *App) newProviderListCommand() *cobra.Command {
 }
 
 func (a *App) newProviderGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get PROVIDER_ID", Short: "Get a provider instance", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get PROVIDER", Short: "Get a provider instance", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -97,7 +97,7 @@ func (a *App) newProviderGetCommand() *cobra.Command {
 func (a *App) newProviderCreateCommand() *cobra.Command {
 	helpFlag := &providerCreateHelpFlag{}
 	cmd := &cobra.Command{
-		Use:   "create --type PROVIDER",
+		Use:   "create --type TYPE",
 		Short: "Create a provider instance",
 		Long: `Create a provider instance. Pools bind to it to get runtime capacity.
 
@@ -132,7 +132,7 @@ Examples:
 func (a *App) newProviderUpdateCommand() *cobra.Command {
 	helpFlag := &providerCreateHelpFlag{}
 	cmd := &cobra.Command{
-		Use:   "update PROVIDER_ID",
+		Use:   "update PROVIDER",
 		Short: "Update a provider instance",
 		Long: `Update a provider instance.
 
@@ -167,7 +167,7 @@ Examples:
 }
 
 func (a *App) newProviderDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete PROVIDER_ID...", Short: "Delete provider instances", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm PROVIDER...", Aliases: []string{"delete", "remove"}, Short: "Delete provider instances", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

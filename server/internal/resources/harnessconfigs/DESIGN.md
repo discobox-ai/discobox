@@ -308,7 +308,7 @@ copy of the rule that could drift from it.
 A secret that no longer exists produces no `PREV_` variable at all: deleting it
 cascades its binding, and the seed walks bindings. The narrow case is a secret
 that still exists whose grant was explicitly revoked (`discobox secret grant
-revoke`); configure-created grants set no expiry, so they do not lapse on their
+rm`); configure-created grants set no expiry, so they do not lapse on their
 own. Then the sentinel does not resolve, the configure command's verification
 fails, and a pending `SecretRequest` is raised like any other unresolved
 sentinel.
@@ -427,7 +427,7 @@ hand-bound secret survives, its binding does not — clears `ConfiguredFiles` an
 `ConfigureError`, and sets `Configured=false`, leaving the bundle baseline intact
 so the harness can simply be configured again.
 `UpdateHarnessConfig` can replace either file set (`files`, `configuredFiles`),
-which is how the CLI's file editing (`harnesses edit`, and `f` on the console's
+which is how the CLI's file editing (`harness edit`, and `f` on the console's
 harnesses screen) applies hand edits without a reconfigure; edited configured
 files remain owned by the configure lifecycle and are still cleared on
 deconfigure.

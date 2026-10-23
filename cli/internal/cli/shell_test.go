@@ -632,7 +632,7 @@ func TestResolveShellTargetLeavesATitleToTheCommand(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	app := &App{serverURL: server.URL, projectID: "project-1", source: "."}
+	app := &App{serverURL: server.URL, projectID: "project-1"}
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
 	_, _, gotID, _, cmdArgs, err := app.resolveShellTarget(cmd, []string{"vim"})

@@ -49,11 +49,11 @@ transport helpers where OpenAPI does not model the stream.
   is the child's *controlling* terminal, so anything reading its keys from
   `/dev/tty` reads them from the pane rather than from the real terminal, out
   from under the window drawing it. The child inherits this invocation's
-  `--server`, `--project` and `--clone` (and an explicit `--auto-start-server`,
+  `--server` and `--project` (and an explicit `--auto-start-server`,
   `App.globalFlags`); the token goes through the environment rather than the
   argument list, which every process on the machine can read. A harness's
   configure flow is drawn the same way: the harnesses screen's
-  `OpenHarnessConfigure` spawns `discobox admin harnesses configure <id>` in a
+  `OpenHarnessConfigure` spawns `discobox admin harness configure <id>` in a
   pane (`openLocalHarnessConfigure`).
 - Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
   pane needs of one: read, write, resize, close, and `io.EOF` when the command
@@ -85,34 +85,28 @@ transport helpers where OpenAPI does not model the stream.
   command output; the private copy lets the console's success dialog name every
   destination and local commit without parsing terminal text or reimplementing
   apply. The local terminal owns and removes that file when the pane closes.
-- **The command that makes a discobox is `new`, and nothing prints any other
-  name for it.** It was `run` first, so `run` is registered a second time,
-  hidden (`newRunCommand` takes the spelling), and every script, shell alias
-  and habit written against it keeps working. Do not turn the two registrations
-  back into one command with an alias: cobra prints a command's aliases in its
-  help with no way to keep one out, and the old spelling is kept working
-  without being taught. The two share their flags (`addRunFlags`), their body
-  (`runPrompt`) and their help text, so the hidden one cannot drift into a
-  second, older command. Go identifiers keep the run vocabulary — a run is what
-  the command starts — as [ADR 0119](../docs/adr/0119-registered-servers-are-admin-remote.md)
-  kept `serverRegistry` for `admin remote`. See
-  [ADR 0133](../docs/adr/0133-the-command-that-makes-a-discobox-is-new.md),
-  which supersedes [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)
-  §§3–4's and [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
-  spelling of the command those two decide about — §4 being the rule these
-  examples and the preview answer to: no example may spell a form that is gone.
-- **Only `new` makes a discobox.** The root registers none of its flags, so
+- **The command that makes a discobox is `run`, and `new`, `create`, `r` and
+  `n` are its aliases.** It is one registration (`newRunCommand`), and help
+  lists every spelling: each is what somebody reaching for "make a discobox"
+  types, and none is going away. Only `run` is taught — help, examples, hints,
+  the console's preview, the skills and the commit messages a create writes —
+  so an in-box skill reads the same on every client, including ones from when
+  the command was called `new`. `client.yaml`'s section is still `new:`,
+  because it is persisted configuration. See [ADR 26-10-23-600](../docs/adr/26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md), which reverses
+  [ADR 0133](../docs/adr/0133-the-command-that-makes-a-discobox-is-new.md)'s `new`.
+- **Only `run` makes a discobox.** The root registers none of its flags, so
   `discobox -p '...'` or `discobox -d` is an unknown flag, and `Execute`
-  (`withNewFlagHint`) adds a line pointing a flag `new` takes at `discobox new`.
-  `new`'s prompt is the words after it, or `-p`/`--prompt` for one argument;
-  examples lead with `discobox new '...'`, and no example may spell a form that
+  (`withRunFlagHint`) adds a line pointing a flag `run` takes at `discobox run`.
+  `run`'s prompt is the words after it, or `-p`/`--prompt` for one argument;
+  examples lead with `discobox run . '...'`, and no example may spell a form that
   is gone. `-p` is therefore not `--project`'s shorthand: `--project` is
-  persistent and would reach `new`, so it has a long form only. See
-  [ADR 26-09-25-027](../docs/adr/26-09-25-027-only-new-makes-a-discobox.md).
+  persistent and would reach `run`, so it has a long form only. See
+  [ADR 26-09-25-027](../docs/adr/26-09-25-027-only-new-makes-a-discobox.md),
+  written when the command was `new`.
 - **The interactive window is `console`.** It was `tui` first, so `tui` is
-  registered a second time, hidden (`newConsoleCommand` takes the spelling),
-  for the same reason and on the same terms as `run` above: not an alias, since
-  cobra prints aliases in help. `internal/tui` keeps its package name.
+  registered a second time, hidden (`newConsoleCommand` takes the spelling):
+  not an alias, since cobra prints aliases in help and `tui` is not taught.
+  `internal/tui` keeps its package name.
 - Bare `discobox` runs the console when stdin and stdout are both
   terminals, and prints its help when they are not (`App.runConsole`, also reached
   from `discobox console`). Typing a program's name is how you ask for it, and the
@@ -123,15 +117,15 @@ transport helpers where OpenAPI does not model the stream.
   one that means nothing to it.
 - **Words after the bare command are subcommands, not a prompt.** A prompt is
   words and a misspelling is a word, so nothing can tell the two apart once
-  they share a spelling — a prompt goes after `new`, and the words at the root
+  they share a spelling — a prompt goes after `run`, and the words at the root
   name commands. The root's `Args` is `rootArgs` (`internal/cli/root.go`):
   `discobox lst` reports `unknown command "lst"` and suggests `ls`, and a word
-  past a `--` is refused naming `discobox new` with the words. Cobra's own
+  past a `--` is refused naming `discobox run` with the words. Cobra's own
   check does not run under `TraverseChildren`; see
   [Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed). See
   [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
-  trade on that point; `new` keeps its trailing prompt, where the name in front
+  trade on that point; `run` keeps its trailing prompt, where the name in front
   of the words says what they are.
 - `discobox version` is an ordinary hidden subcommand (`newVersionCommand`,
   `printVersion`), because anything driving the CLI without reading its help
@@ -154,30 +148,37 @@ transport helpers where OpenAPI does not model the stream.
 - `discobox configure` is the same console opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.
-- `discobox new` and `discobox attach` are the same console, opened on one run
+- `discobox run` and `discobox attach` are the same console, opened on one run
   (`tui.WithRun`) and on one discobox (`tui.WithAttach`), not a terminal stream
   on the caller's screen. What run creates is a machine with terminals,
   services and ports on it, and the workspace screen is where all of that
   already is; a second, poorer view of the same session is the thing to avoid.
-- **`discobox new` hands the window its request and the window makes the
+- **`discobox run` hands the window its request and the window makes the
   discobox** (`App.runWindowRequest` → `tui.WithRun` → `Model.runRequest`). It
-  takes the path Enter in the prompt takes, so the question about uncommitted
-  work is the window's own dialog and the wait is the window's own screen —
+  takes the path Enter in the prompt takes, so a question still open — where
+  to cut from, or whether to copy a directory in no repository — is the
+  window's own dialog and the wait is the window's own screen —
   which is the point: one flow, asked and drawn one way, however the run was
   started. The flags are still parsed on this side first
   (`sandboxcreate.ParsePromptOptions`): a flag that contradicts itself is the
   command's error to report, on the terminal, before a window opens over it.
-- **A `new` that names no source is asked one** (`tui.WithRun`'s `askSource`:
-  no `-C`, no `--no-source`). The window opens on the create card rather than
-  cutting from the directory the command ran in, holding every flag given;
-  turning it down ends the command with an error, since nothing was made.
-- **`new` asks wherever a person is, and nowhere else** (`canAskInline`, which
+- **`run SOURCE [PROMPT...]`: SOURCE is the first argument, and only a run
+  with none is asked one** (`tui.WithRun`'s `askSource`: no arguments, no
+  `--no-source`). Which argument is SOURCE is decided by position and
+  `--no-source` alone, never by what an argument looks like; one that names
+  no directory is refused with the reminder that SOURCE comes first
+  (`runSourceArgument`). The window opens on the create card, holding every
+  flag given; turning it down ends the command with an error, since nothing
+  was made. With nobody to ask, SOURCE is required (`errRunNeedsSource`), and
+  a `--json` request names it as `"source"`.
+- **`run` asks wherever a person is, and nowhere else** (`canAskInline`, which
   is `canOpenWindow` plus a terminal stderr for the picker to draw on). One
-  test decides it for every question — the source, uncommitted work, copying a
-  directory — so a run either asks all of them or none: in the window, or
+  test decides it for both questions — the source, and copying a directory in
+  no repository — so a run either asks both or neither: in the window, or
   inline for `-d` and `--raw` (`askRunSource`, offering what the card offers,
-  via `projectSources`). `new | cat` asks nothing, however much of a terminal
-  its stdin and stderr are.
+  via `projectSources`). `run | cat` asks nothing, however much of a terminal
+  its stdin and stderr are. Uncommitted work is never a question for `run`:
+  `--include-dirty` is off unless given (see "Uncommitted Work at Create").
 - Such a window *is* the attach on what it opened or made, so leaving it leaves
   the window: the leader's `d`, and the primary session ending, close it
   (`Model.exit`) rather than falling back to a list nobody asked for, and an
@@ -407,7 +408,7 @@ path the variable names: that location is the user's own.
 - **A setting is a flag's default.** `newSkills` resolves `--skills` and
   `--user-skills` against `new.skills` and `new.userSkills`: a flag given (or a
   `--json` field present) replaces its setting whole, and one not given — nil
-  — takes it. `discobox new` resolves before a window opens, so a file that
+  — takes it. `discobox run` resolves before a window opens, so a file that
   does not parse is reported on the terminal; `RunRequest` carries the flags
   as given and the console's create resolves again, which is how the create
   card's skill rows, left alone, get the configured ones (its User skills row
@@ -435,7 +436,7 @@ path the variable names: that location is the user's own.
 A project's skills sources are skills repositories on its server that every
 discobox of the project gets. The server keeps the list and never adds it to a
 create: the client pins and delivers every source, so the client copies them
-in. `projectSkills` reads the list on every create — `discobox new`, the
+in. `projectSkills` reads the list on every create — `discobox run`, the
 console's, `admin box create`, and a discobox creating discoboxes, whose
 sandbox role reads it — and `sandboxcreate.PromptOptions.ProjectSkills` puts
 them ahead of the `--skills` (or `new.skills`) repositories, so a person's own
@@ -769,7 +770,7 @@ directory under the user's own state root against the user.
 Two things bound a download besides its size. A stall watchdog rides the
 progress ticker and cancels a body that has stopped arriving, because the CLI's
 root context is never canceled and the launch deadline is taken *after* staging
-runs — without it a dead connection leaves a first `discobox new` on one status
+runs — without it a dead connection leaves a first `discobox run` on one status
 line indefinitely. And each staging sweeps `*.staging-*`/`*.replaced-*`
 leftovers older than an hour, at both levels — beside the destination, where a
 temporary is created, and directly under the root, where the alphas created one.
@@ -918,7 +919,7 @@ migrates what the old directories held.
 
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
-`terminal`, `exec`, `services`, `provider`, `pool`, `job`, `harnesses`,
+`terminal`, `exec`, `service`, `provider`, `pool`, `job`, `harness`,
 `hooks`, `server`, `remote`, `peer`, `gateway`, `ssh-key`, `ssh-config`,
 `ssh-proxy` and `uninstall` are not root commands.
 
@@ -950,7 +951,7 @@ is no unset. `create --from` copies an existing project's configuration
 with `--copy` selecting what comes across and `--copy none` taking nothing.
 
 `discobox rm DISCOBOX...` (`internal/cli/rm.go`) is the everyday archive, with
-`delete` as an alias, and `admin box delete` stays the raw form. Both post the
+`delete` and `remove` as aliases, and `admin box rm` stays the raw form. Both post the
 same DELETE — which archives rather than destroys
 ([ADR 0022](../docs/adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md) §2)
 — and both report each argument independently through `runActionMany`, so one
@@ -977,7 +978,7 @@ command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: the name the discobox was given when it has one
 (`discobox rename`), else the primary terminal's window title once something
 has set one, and the configured name only until then — and the configured name is
-generated (`randomname.Generate`; `new` has no `--name`), so it is a string the
+generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
 listing has usually stopped printing.
 
 - `configuredName` matches `Config.Name` alone. It is for an argument that
@@ -1028,10 +1029,10 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`discobox shell [DISCOBOX_ID] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
+`discobox shell [DISCOBOX] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
 and the command as one positional list rather than a `--discobox-id` flag, since
 which sandbox to run in is picked as often by ID as left to the picker. Cobra
-sees one flat `[]string` and cannot tell DISCOBOX_ID from CMD apart, so
+sees one flat `[]string` and cannot tell DISCOBOX from CMD apart, so
 `resolveShellTarget` decides: `args[0]` is tried against the sandboxes
 `discobox ls` shows (`matchSandboxArg`) —
 
@@ -1042,7 +1043,7 @@ sees one flat `[]string` and cannot tell DISCOBOX_ID from CMD apart, so
   what the listing shows and what people type, and a partial one would compete
   with short-ID matching for the same argument.
 - A short ID is matched against that candidate list exactly like an explicit
-  DISCOBOX_ID argument elsewhere. Zero matches is not an error — it just means
+  DISCOBOX argument elsewhere. Zero matches is not an error — it just means
   `args[0]` was never a sandbox reference — but more than one is reported as
   ambiguous, since its shape said it was meant as an ID.
 
@@ -1051,9 +1052,9 @@ hostname spells it; `id.Canonical` reads it back as `sbx_…` (a short one only
 after the name match), here and wherever else a discobox ID is resolved
 (`resolveSandboxID`).
 
-A match consumes `args[0]` as DISCOBOX_ID and leaves the rest as CMD. No
+A match consumes `args[0]` as DISCOBOX and leaves the rest as CMD. No
 match — including no arguments at all — means every argument is CMD, and the
-sandbox falls back to the same picker `discobox apply` uses when DISCOBOX_ID is
+sandbox falls back to the same picker `discobox apply` uses when DISCOBOX is
 omitted.
 
 `discobox shell` with no command runs a shell. The CLI never names the run
@@ -1246,10 +1247,39 @@ flowchart LR
   re-resolves the catalog by id on every run and discards host-tool output,
   reporting only the error.
 
+## Command Naming
+
+One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md) §1);
+`command_conventions_test.go` walks it and enforces what it can.
+
+- **Removing is `rm`**, with `delete` and `remove` as aliases, on every group.
+  `revoke` is an extra alias where it is the word for it (`trust rm`,
+  `secret grant rm`). What `rm` does is the group's: `admin box rm` archives,
+  and `purge` is the verb that destroys.
+- **Listing is `ls`**, with `list` as an alias, and every `ls` takes `-q`. That
+  prints one line per entry, and the line is what the group's other verbs take:
+  an ID, a remote's name, a harness secret's env name, a skills entry as `rm`
+  takes it. `admin audit ls` is a timeline rather than resources, and has no
+  `-q`.
+- **Aliases are shown.** Help lists every spelling a command answers to, as
+  `run`'s does (`new`, `create`, `r`, `n`). A spelling kept working but not
+  taught is a hidden second registration instead (`tui`).
+- **A group is named in the singular** (`harness`, `service`, `pool`), and the
+  plural is an alias. `tools` is still plural.
+- **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
+  `HARNESS`, `SECRET` or `PROVIDER` where a name resolves as well as an ID
+  (`resolvePoolID`, `resolveListedSandbox`, …). It is `X_ID` where only an ID
+  or a short ID does: the raw `admin box` forms, requests, rules, grants,
+  jobs, execs, terminals, keys, peers and audit records. Arguments are written
+  `UPPER`, never `<lower>`.
+- **Short help is a sentence** starting with a capital letter. A declared
+  tool's description is a lowercase fragment, written for the console's menu,
+  so `newToolRunCommand` capitalizes it for help.
+
 ## Where a Global Flag Is Parsed
 
 The root's persistent flags — `--server`, `--iroh-relay`, `--iroh-log`,
-`--project`, `--clone`, `--token`, `--output`, `--debug` and
+`--project`, `--token`, `--output`, `--debug` and
 `--auto-start-server` — are parsed by the command they are written in front of
 (`TraverseChildren` on the root). Cobra's default is the other way round: it
 finds the command first and hands it every flag, wherever it stood. The
@@ -1284,16 +1314,15 @@ themselves (`consumeProviderCreateGlobalFlags`), wherever those stand. That is
 safe there because nothing downstream of it is another program's flag table.
 The set it consumes is its own — `--server`, `--project`, `--token`,
 `--output`/`-o` and `--debug`, the ones a script points at another server with
-— and not the nine above: written after those two commands, the rest are
+— and not the eight above: written after those two commands, the rest are
 passed through to the catalog.
 
-`-c` is deliberately not a shorthand for anything. `--clone` keeps `-C` because
-that is the letter this flag has always had and the one every ADR that shows it
-spells (0077, 0096, 0100, 0111) — not because git's `-C` is precedent, which it is
-not: git's really is a chdir ("run as if git was started in `<path>`") and this
-one changes no directory at all.
+`-c` and `-C` are deliberately not shorthands for anything. `-C` was
+`--clone`, the source every command acted on, until the source became `run`'s
+first argument and the console stopped taking one; ADRs before that (0077,
+0096, 0100, 0111) still spell it.
 
-`-c` is the letter left unclaimed. `shell` (`shell.go:83`) and the `tools`
+`-c` is left unclaimed on purpose. `shell` (`shell.go:83`) and the `tools`
 commands (`tools.go:70`, `122`, `216`) set `SetInterspersed(false)` rather than
 disabling flag parsing, so a shorthand written before their positionals is this
 CLI's, and `discobox shell -c 'go test ./...'` is a plausible thing to type. A
@@ -1359,7 +1388,7 @@ one, which cannot be started to take the write.
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
 as `--discobox-id` (`admin exec`, `admin terminal`), an optional positional
-`DISCOBOX_ID` (`apply`, `attach`, `admin box get`), or a leading
+`DISCOBOX` (`apply`, `attach`, `push`, `proxy`), or a leading
 positional argument shared with the command itself (`shell`, resolved by
 `resolveShellTarget` rather than `selectSandbox`) — and fall back to
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
@@ -1466,7 +1495,7 @@ session, `pkg/execstream/client`.
   rejected the attach with a definitive status (`404`, `409`) its own message is
   reported verbatim instead: it knows why, and the client's inference would only
   repeat or contradict it.
-- Nothing polls for readiness before attaching, on either path. `discobox new`
+- Nothing polls for readiness before attaching, on either path. `discobox run`
   creates, delivers the source if it must be pushed, and attaches — in the
   window or as a stream; the attach itself waits, at
   each tier for what only that tier can see — the control plane for the sandbox
@@ -1667,7 +1696,7 @@ instead (below).
 
 ## Resource Views
 
-`discobox admin pool resources [POOL_ID]` and `discobox admin box resources
+`discobox admin pool resources [POOL]` and `discobox admin box resources
 DISCOBOX_ID` read the accounting the pool agent reports (ADR 0071). Both are
 plain reads of `pool.resources` and `discobox.runtime.resources` — the CLI
 computes no rates of its own, because the figures are only comparable when one
@@ -1701,7 +1730,7 @@ would reflect over the optionals instead and fail on every unset one.
 
 ## Pool Host Console
 
-`discobox admin pool console [POOL_ID]` attaches this terminal to a root shell on
+`discobox admin pool console [POOL]` attaches this terminal to a root shell on
 the machine hosting a pool's runtime — a WSL guest, a libkrun microVM, a
 droplet, the local Docker host — for debugging that backend
 ([ADR 0051](../docs/adr/0051-the-pool-console-attaches-through-the-driver.md)).
@@ -1721,7 +1750,7 @@ repainted.
 
 ## Pool Host Logs
 
-`discobox admin pool logs [POOL_ID]` prints what that pool's backend recorded
+`discobox admin pool logs [POOL]` prints what that pool's backend recorded
 about its host — a guest's serial console, a Docker daemon's journal, whatever a
 scripted backend prints — with `--tail` and `--follow`. It is the console's
 companion for a host with no shell to attach to: the console needs the host's
@@ -2034,7 +2063,7 @@ level or layering on the attach transports above.
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
 - A successful prompt sandbox create refreshes these files after its source has
-  been delivered, from both `discobox new` and the console. This is the same
+  been delivered, from both `discobox run` and the console. This is the same
   operation as `admin ssh-config --write`, including key enrollment and WSL's
   two targets, so a newly created sandbox is immediately available to OpenSSH
   clients without a separate command.
@@ -2142,7 +2171,7 @@ level or layering on the attach transports above.
   every one of those is worth a line — but who is listening differs by caller
   and none of it may pick a screen for itself. `admin ssh-config`, a host tool
   run from `discobox tools`, `tools ssh` and `cp` pass `printedNotes(stderr)`;
-  `discobox new` passes its status line, so the lines are gone before the attach; the console
+  `discobox run` passes its status line, so the lines are gone before the attach; the console
   passes its busy line, so nothing reaches the terminal it has drawn a window
   on. Everything below `writeProjectSSHConfig` therefore takes a `context.Context`
   and a sink rather than the `*cobra.Command`, which is what makes writing to
@@ -2153,7 +2182,7 @@ level or layering on the attach transports above.
 Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
-- **Raw mode (any TTY attach: `new`, `admin terminal attach`, `configure`,
+- **Raw mode (any TTY attach: `run`, `admin terminal attach`, `configure`,
   `shell`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
@@ -2195,8 +2224,8 @@ a discobox with no source. The server derives it at create.
 `sandboxFilter`), and narrows by `--on` a server, `--source` the SOURCE column's
 text matched exactly, and `--tag` a tag selector, repeated. `--source` is
 matched here against what the column prints (`sandboxSource`), so it reads the
-same on every machine and takes no origin key. `-C` is not a filter there: the
-console passes it to every command it spawns.
+same on every machine and takes no origin key. The directory `ls` runs in is
+not a filter there either.
 
 The commands that take a discobox by name or offer a pick — the pickers
 behind `attach`, `apply`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
@@ -2260,7 +2289,7 @@ client-side ref names.
 `CreatePromptSandbox` and `DeliverSource` both take a `sandboxcreate.Report` and
 call it as they enter each step. These steps are this process's own work, so
 nothing else can say which one is underway; the words live in `sandboxcreate`
-so `discobox new` and the console cannot describe the same stage differently,
+so `discobox run` and the console cannot describe the same stage differently,
 while where the line is drawn and when it is cleared stays each frontend's.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md),
@@ -2544,30 +2573,31 @@ ready".
 
 ## Uncommitted Work at Create
 
+See [ADR 26-10-23-600](../docs/adr/26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md) §4.
+
 A dirty local workspace becomes a snapshot commit on top of the checked-out
 commit, kept under `refs/discobox/run/`, and reaches the sandbox as uncommitted
-changes on that same commit. `discobox new --include-dirty` decides whether that
-happens:
+changes on that same commit. Whether that happens is `sandboxcreate.IncludeDirty`:
 
-- `auto` (default) asks, and only when the workspace is actually dirty. Where
-  it asks depends on who is creating: `discobox new` creates in the window, so
-  the question is the window's own dialog (`Model.workspaceChecked`) — one
-  question, whose answer is then carried to the create as `true` or `false` for
-  every source it cuts from. `--raw`, `-d` and a run with no terminal create on
-  this side and ask with the standard picker, per source, with "start from the
-  last commit" leading so the default answer carries nothing extra. The picker
-  draws on the stream the create is narrating on, so it suspends the status
-  line for as long as it is up (see "Saying What a Wait Is For").
-- `true` / `false` answer ahead of time; bare `--include-dirty` means `true`.
-- Frontends express the question through `sandboxcreate.ConfirmIncludeDirtyFunc`
-  rather than prompting themselves. A nil func means there is nobody to ask — no
-  terminal — and the work is included: dropping a user's edits silently is worse
-  than carrying them. The console does not use it: it owns the screen, so it
-  asks in its own confirmation dialog and settles `IncludeDirty` to `true` or
-  `false` before it calls the shared create at all. It asks about the primary
-  source, which is the one it can see a working tree for; the answer stands for
-  every source that create cuts from, and an extra `-i` source whose tree is
-  dirty when the primary's is clean is carried in under the nil-func default.
+- **`discobox run` carries it only when asked.** `--include-dirty` is a plain
+  bool, off by default, and the request goes in as `true` or `false`, so
+  nothing in a run asks about it — inline or in the window. Off, the work left
+  behind is said (`warnLeftOut`, through `Warn`): a forgotten flag is a warning
+  naming how many changes stayed behind, not a silent loss. A `--json`
+  request's `includeDirty` left out is off too.
+- **The console still asks.** Its create card's row is `auto` (the default),
+  `include` or `exclude`; `auto` is the window's own dialog
+  (`Model.workspaceChecked`), asked only when the workspace is actually dirty,
+  with "start from the last commit" leading. It asks about the primary source,
+  the one it can see a working tree for, and the answer stands for every source
+  that create cuts from.
+- The shared create never asks: both frontends settle `IncludeDirty` before
+  calling it. `auto` reaching it includes the work, which is what an `-i`
+  source dirty while the console's primary is clean still gets.
+- **A source with no commits is not this flag's to decide.** A directory in no
+  repository is the copy question below, and a repository with no commits yet
+  carries its files whatever the flag says ("A Repository With No Commits"):
+  in both there is no committed history to start from instead.
 - `true` is rejected for a local source with an explicit `@REF`, because a
   snapshot only ever sits on top of HEAD of a local working tree. A remote URL —
   primary, `-i`, or declared — ignores the flag: it has no working tree, so it
@@ -2580,7 +2610,7 @@ happens:
 
 ## Extra Sources
 
-`discobox new -i DIR` brings more sources into the same sandbox, repeated for more
+`discobox run -i DIR` brings more sources into the same sandbox, repeated for more
 than one. They become the create request's `sourceCodeReferences`, and the
 mechanism they use is the primary source's, not a second one:
 
@@ -2617,7 +2647,7 @@ A repository can name the others it is worked on with, in the `sources` of
 {"sources": {"foo": "https://github.com/acme/foo"}}
 ```
 
-`discobox new` and the console both bring them in, as source code references
+`discobox run` and the console both bring them in, as source code references
 resolved exactly like `--include`:
 
 - **A local checkout wins.** `foo` is looked for at the sibling of the primary
@@ -2643,7 +2673,7 @@ resolved exactly like `--include`:
   source's own declarations do nothing.
 - For a local primary source the file is read from the working tree, not the
   checked-out commit. With
-  `--include-dirty=false` the sandbox runs committed code from a source list the
+  `--include-dirty` left off the sandbox runs committed code from a source list the
   caller can see on disk, which is the less surprising of the two.
 - A remote primary source declares sources too. Its file is read from the
   remote at the commit the source is pinned to, by fetching that commit alone
@@ -2675,7 +2705,7 @@ resolved exactly like `--include`:
 
 `sandboxcreate` resolves them and reports through
 `PromptOptions.ReportDeclaredSource`, and warns through `PromptOptions.Warn`;
-`discobox new` prints one note per source, and the warning, on stderr, and the
+`discobox run` prints one note per source, and the warning, on stderr, and the
 console narrates the same lines on its busy line. See
 [ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
 
@@ -2696,15 +2726,18 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
   user's directory — never the temporary repository, which is one create's
   implementation detail. That flag is what makes the server choose `push`: there
   is nothing at that path to clone however reachable it is.
-- The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`, and
-  not copying leads: `discobox new` in a home directory must not carry the home
-  directory. Declining is an answer, not a cancel — it resolves to no source at
-  all, the request "No Source At All" below describes, and nothing is built over
-  the directory to reach it. `--include-dirty` answers ahead of time, `false`
-  meaning the same. What declining does *not* produce is a checkout of nothing at
-  the directory's own path: that put an empty repository over
-  whatever lives at that path inside the discobox, which is `$HOME` in the case
-  the question exists to catch.
+- The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`,
+  and copying leads: there is no commit to start from instead, so the content
+  is what running against the directory asks for, and the size on the question
+  is the reason to ask — a home directory run in by accident. Declining is an
+  answer, not a cancel — it resolves to no source at all, the request "No
+  Source At All" below describes, and nothing is built over the directory to
+  reach it. `--include-dirty` does not answer it: that flag is about work on
+  top of a commit. The console's dialog answers it as `RunRequest.CopyDirectory`,
+  which reaches the create as `PromptOptions.CopyDirectory`. What declining
+  does *not* produce is a checkout of nothing at the directory's own path: that
+  put an empty repository over whatever lives at that path inside the discobox,
+  which is `$HOME` in the case the question exists to catch.
 - The question is asked before `gitutil.InitOverWorkTree`, because indexing the
   directory is the cost it exists to avoid. It carries a running size —
   `sandboxcreate.MeasureDirectory` walks the directory in the background and the
@@ -2756,13 +2789,13 @@ touched, so HEAD stays unborn and their first commit stays theirs.
   repository's real index — which may already hold paths staged for that first
   commit — is untouched. Apply reads the same function to check nothing has
   changed since ("Applying Into a Repository With No Commits" below).
-- Nobody is asked. The directory question exists because a directory in no
-  repository may be a home directory somebody ran in by accident, and `git init`
-  is the user saying it is not; the dirty-workspace question has no alternative
-  to offer, because there is no last commit. `--include-dirty=false` still
-  answers ahead of time, and its answer is the empty base commit at the
-  repository's own path — not "no source", because a repository is a project
-  whose path the user established.
+- Nobody is asked, and `--include-dirty` does not decide it: the files are
+  carried in either way. The directory question exists because a directory in
+  no repository may be a home directory somebody ran in by accident, and `git
+  init` is the user saying it is not; the dirty-workspace question has no
+  alternative to offer, because there is no last commit, and leaving the work
+  out would cut a discobox from nothing. The console's `Workspace` reports an
+  unborn repository as carrying nothing to ask about, for the same reason.
 - An explicit `@REF` is rejected with a message naming the repository and its
   missing history, rather than git's "Needed a single revision".
 
@@ -2786,7 +2819,7 @@ See [ADR 0093](../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
 
 ## No Source At All
 
-`discobox new --no-source` (`PromptOptions.NoSource`) creates a discobox with
+`discobox run --no-source` (`PromptOptions.NoSource`) creates a discobox with
 nothing materialized in it — the shape the harness configure sandbox already
 had, reached deliberately. It is not "a source that resolved to nothing": no
 `config.source` is sent at all, and the create request carries no local source
@@ -2797,8 +2830,10 @@ directory in no repository (above): resolution itself answers "no source", and
 everything below applies to it identically. An `--include` that answers the same
 way is left out of the discobox rather than brought in empty.
 
-`-C` still applies, for the Git authorship the discobox commits under, read
-from the client's disk. It does not file the discobox: with no source there is
+`--no-source` takes SOURCE's place, so every positional argument is the
+prompt. The directory `run` runs in still applies, for the Git authorship the
+discobox commits under, read from the client's disk. It does not file the
+discobox: with no source there is
 no place it came from, so it is filed under this machine alone (ADR 0111). Only what would have been
 checked out is left out. `-i` is unaffected:
 `--no-source -i ../foo` is a discobox holding `foo` and nothing else.
@@ -2812,7 +2847,7 @@ own; see the console design doc.
 
 ## Grants and a Request as JSON (ADR 26-09-24-630)
 
-`discobox new --grant` gives the new discobox uses of credentials in
+`discobox run --grant` gives the new discobox uses of credentials in
 `admin box create --grant`'s form. Every grant carries a policy (#312):
 `--grant-statement CREDENTIAL=SENTENCE` and `--grant-define
 CREDENTIAL=WORD=DEFINITION`, CREDENTIAL being what the `--grant` names before
@@ -3157,7 +3192,7 @@ it.
   The escape needs a base commit to measure the tip against: a source created
   from a URL and a *branch name* alone (`sandbox create --source-url --source-ref
   main`, which records `checkout.refName` and no `checkout.commit`, unlike
-  `discobox new`, which resolves the SHA itself) has none, and still fails until
+  `discobox run`, which resolves the SHA itself) has none, and still fails until
   it is given `--dir` — the report says that is why rather than only that a
   directory is missing.
 - A merge base that does not exist means the target repository shares no
@@ -3197,7 +3232,7 @@ the round trip back. See
 - While the local repository still has no commits, `gitapply.AttemptRoot` lands
   them instead of `Attempt`. It cherry-picks onto an unborn HEAD of its own — a
   scratch worktree detached at the empty base, then `git checkout --orphan` — so
-  the discobox's `discobox new empty base` is replayed away and the first
+  the discobox's `discobox run empty base` is replayed away and the first
   sandbox commit becomes the repository's root, authored by whoever wrote it.
   The branch HEAD already names is then created at the applied tip and
   `git reset --hard` fills the index and working tree.
@@ -3228,7 +3263,7 @@ the round trip back. See
 
 ## Harness Configure Step
 
-`discobox admin harnesses configure` (`internal/cli/harness.go`) drives a harness's
+`discobox admin harness configure` (`internal/cli/harness.go`) drives a harness's
 interactive configure flow. The server owns applying the result; the CLI only
 sequences the calls and hands the user the terminal in between:
 

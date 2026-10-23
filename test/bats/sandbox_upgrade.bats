@@ -122,7 +122,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
   local pool_id
   for pool_id in $pool_ids; do
-    cli admin pool delete "$pool_id" >/dev/null 2>&1 || true
+    cli admin pool rm "$pool_id" >/dev/null 2>&1 || true
   done
   for _ in {1..30}; do
     local pending=0

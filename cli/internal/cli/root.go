@@ -20,12 +20,10 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
-	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/health"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/serverstage"
-	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
 const defaultProjectAlias = "default"
@@ -39,7 +37,6 @@ type App struct {
 	irohRelayURLs string
 	irohLogLevel  string
 	projectID     string
-	source        string
 	token         string
 	output        string
 	quiet         bool
@@ -133,13 +130,13 @@ func newRootCommand() (*cobra.Command, *App) {
 		Short: "Discobox command line client",
 		Long: fmt.Sprintf(`Discobox runs coding agents in isolated sandboxes on this machine.
 
-Make a discobox with "%[1]s new":
+Make a discobox with "%[1]s run":
 
-  %[1]s new 'fix the failing tests'
-  %[1]s new -H codex -d 'fix the failing tests'
+  %[1]s run . 'fix the failing tests'
+  %[1]s run -H codex -d . 'fix the failing tests'
 
 With no command at all it opens the console, where the same thing is one prompt
-and an Enter. See "%[1]s new --help" for everything new takes.`, name),
+and an Enter. See "%[1]s run --help" for everything run takes.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -181,7 +178,7 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 		// The words a bare `discobox` is given are refused, so nothing below
 		// has any to consider.
 		Args: rootArgs,
-		// Bare `discobox` is never a run: that is `discobox new` and nothing
+		// Bare `discobox` is never a run: that is `discobox run` and nothing
 		// else, so the only way to make a discobox is to name the command that
 		// does (ADR 26-09-25-027).
 		//
@@ -216,8 +213,8 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	// server status` answers the same question after the fact; this one answers
 	// it for the command that is failing.
 	cmd.PersistentFlags().StringVar(&app.irohLogLevel, "iroh-log", envOrDefault(endpoint.IrohLogEnv, ""), "Log the iroh transport as it connects: off, error, warn, info, debug, or trace")
-	// Long form only: -p is new's prompt, and a persistent -p here would be
-	// new's too.
+	// Long form only: -p is run's prompt, and a persistent -p here would be
+	// run's too.
 	cmd.PersistentFlags().StringVar(&app.projectID, "project", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	// Advanced: everything a project is for lives under `discobox admin`, and a
 	// user with one project — which is everyone until they make a second —
@@ -225,21 +222,6 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	// the scripts and the launcher that pass it; it just stops being offered.
 	_ = cmd.PersistentFlags().MarkHidden("project")
 	// Not a chdir: nothing about this invocation's working directory changes.
-	// It names the source this command acts on — what new puts in the discobox,
-	// and what every other command reads the current one from — and the default
-	// is the directory the command was run in.
-	//
-	// `clone` is what the discobox ends up holding, not GitSource.delivery's
-	// `clone` | `push`, which is only how the history gets there: a local
-	// directory is push-delivered and still arrives as a Git clone of this
-	// source, which is what `apply` and `push` then work against.
-	//
-	// The old spelling, --chdir, is gone rather than deprecated: it was beta and
-	// hidden from help in 0f5737ce, no document ever spelled the long form, and
-	// the -C every ADR does spell is unchanged, so nothing copied out of one
-	// breaks. --project above is the other answer to the same question — it
-	// stays because the launcher and scripts pass it.
-	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source to act on, DIR, URL or GitHub OWNER/REPO, then optionally @REF and //PATH: what new cuts a discobox from, and the directory inside it the harness starts in")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
@@ -252,10 +234,7 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the client and server versions")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
-	cmd.AddCommand(app.newRunCommand("new", "n", false))
-	// The same command under the name it had first, hidden so that nothing
-	// lists or teaches it. See newRunCommand.
-	cmd.AddCommand(app.newRunCommand("run", "r", true))
+	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newRemoveCommand())
 	for _, action := range sandboxLifecycles {
@@ -296,14 +275,14 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 // superseded by ADR 0100) makes every subcommand name one typo away from a
 // sandbox: `discobox lst` would create a discobox prompted "lst" rather than
 // saying what was misspelled. Nothing can tell a typo from the first word of a
-// prompt — a prompt is words — so a prompt goes after `new`, where the name in
+// prompt — a prompt is words — so a prompt goes after `run`, where the name in
 // front of it says what the words are (ADR 26-09-25-027).
 //
 // The word that named no command is reported here rather than by cobra, whose
 // own check runs from Find and so not at all under TraverseChildren. Two kinds
 // of word arrive, and they are told different things. A word past a `--` is a
-// prompt written the way new's help teaches with the name left out, and is
-// answered with `new`. Anything else is a command that does not exist, and is
+// prompt written the way run's help teaches with the name left out, and is
+// answered with `run`. Anything else is a command that does not exist, and is
 // answered with the ones it was near.
 func rootArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
@@ -320,7 +299,7 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 }
 
 func wordsAreNotAPrompt(cmd *cobra.Command, words []string) error {
-	return fmt.Errorf("%s takes no arguments; a prompt goes to new: %s new %q", cmd.CommandPath(), cmd.Root().Name(), strings.Join(words, " "))
+	return fmt.Errorf("%s takes no arguments; a prompt goes after run's SOURCE: %s run . %q", cmd.CommandPath(), cmd.Root().Name(), strings.Join(words, " "))
 }
 
 // commandWords is the command's name as it was typed, for putting back into a
@@ -391,12 +370,6 @@ func (a *App) validate() error {
 		return fmt.Errorf("%s: %w", keys.LeaderEnv, err)
 	}
 	a.leaderKey = leaderKey
-	// Once, here, so every command that reads the source — run, ls, the
-	// launcher — takes `-C owner/repo` for the same repository. A directory
-	// is left as written; it is settled where it is cut from.
-	if source, err := sandboxcreate.ParseSource(a.source); err == nil && source.Kind == sourceref.Git {
-		a.source = source.String()
-	}
 	return nil
 }
 

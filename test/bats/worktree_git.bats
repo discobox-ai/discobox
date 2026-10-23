@@ -10,7 +10,7 @@
 # Like docker_cli.bats it drives the development stack that is already running
 # (`task dev`) and owns only what it creates: one discobox, purged by its
 # recorded ID. It skips when the stack is not up. The CLI runs with a HOME of
-# its own, so `discobox new` enrolls its SSH key and writes its state there
+# its own, so `discobox run` enrolls its SSH key and writes its state there
 # rather than into the home of whoever runs the suite.
 
 setup_file() {
@@ -47,7 +47,7 @@ setup_file() {
   commit_in "$DISCOBOX_BATS_LOCAL" one
 
   local created
-  created="$(cd "$DISCOBOX_BATS_LOCAL" && cli new -H shell -d --include-dirty=false -o json)" ||
+  created="$(cd "$DISCOBOX_BATS_LOCAL" && cli run -H shell -d -o json .)" ||
     { echo "$created" >&2; return 1; }
   DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$created" | jq -r .id)"
   export DISCOBOX_BATS_SANDBOX_ID

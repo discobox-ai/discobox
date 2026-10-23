@@ -21,7 +21,7 @@
 # This file is generated from the tags on clientconfig.Config by
 # `go tool task generate`. Edit the struct, not this.
 
-# What discobox new, and the console's New Discobox panel, take when the
+# What discobox run, and the console's New Discobox panel, take when the
 # command line does not say.
 #new:
   # Skills to install in every new discobox, as --skills reads them: a

@@ -1,6 +1,6 @@
 // Package services runs the sandbox's declared services: the scripts under
 // `.discobox/services` that the sandbox starts for you at boot and that
-// `discobox admin services` and the workspace act on afterwards.
+// `discobox admin service` and the workspace act on afterwards.
 //
 // They come from two places, and the format is the same in both. The
 // repository declares its own under `.discobox/services`, and the image

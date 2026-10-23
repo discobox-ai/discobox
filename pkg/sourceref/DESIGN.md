@@ -28,6 +28,6 @@ How a source is named, and when two names are one source
   `//` reads back as itself only through `Resolve`; a reader that only parses
   takes such a directory from the one that resolved it. `on github` is the
   console's folder header's word, not this package's.
-- What each entry point accepts of the grammar (`-C`, `-i`, `--skills`,
+- What each entry point accepts of the grammar (`run`'s SOURCE, `-i`, `--skills`,
   a `settings.json` source) is the caller's to say; see
   [`cli/internal/sandboxcreate/DESIGN.md`](../../cli/internal/sandboxcreate/DESIGN.md).

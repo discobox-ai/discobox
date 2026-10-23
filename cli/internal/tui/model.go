@@ -214,15 +214,15 @@ type Model struct {
 	// can say so. It is cleared when the card opens; see openTools.
 	copied string
 
-	// pendingRun is the run this window was opened to make — `discobox new`'s
+	// pendingRun is the run this window was opened to make — `discobox run`'s
 	// own request — held until the harness listing lands. It is started from
 	// there rather than from Init because the questions the window asks ahead
 	// of a create (a project with no default harness, a harness that has never
 	// been set up) are asked off that listing, and a run started before it
 	// arrived would meet the server's refusal instead of the question.
 	pendingRun *RunRequest
-	// askSource is whether that run left its source unsaid (`discobox new`
-	// with no -C), so the create card asks it before anything is made. The
+	// askSource is whether that run left its source unsaid (`discobox run`
+	// with no SOURCE), so the create card asks it before anything is made. The
 	// card waits for the session as well as the harnesses: it is the session
 	// that says what there is to cut from.
 	askSource bool
@@ -236,7 +236,7 @@ type Model struct {
 	oneRun bool
 
 	// attach is the discobox this window was opened as an attach on, and nil
-	// for the launcher proper. `discobox new` and `discobox attach` open the
+	// for the launcher proper. `discobox run` and `discobox attach` open the
 	// window on that discobox's workspace rather than drawing a terminal of
 	// their own, so the window is that attach: leaving the workspace —
 	// detaching, or the session ending — leaves the window, because there is
@@ -462,7 +462,7 @@ func WithHarnesses() Option {
 }
 
 // WithAttach opens the window on one discobox's workspace, which is what
-// `discobox new` and `discobox attach` are: the window is that attach rather
+// `discobox run` and `discobox attach` are: the window is that attach rather
 // than a launcher that happens to have one open. Leaving the workspace closes the window
 // instead of falling back to a list nobody asked for. The introduction never
 // stands in front of it, project unwelcomed or not — see New — because there
@@ -471,7 +471,7 @@ func WithAttach(sandbox Sandbox) Option {
 	return func(m *Model) { m.attach = &sandbox }
 }
 
-// WithRun opens the window on one run: `discobox new` builds its request from
+// WithRun opens the window on one run: `discobox run` builds its request from
 // its flags and hands it over rather than creating the discobox itself, so the
 // question about uncommitted work is the window's own dialog, the wait is the
 // window's own screen, and what it lands on is the workspace. The window is
@@ -561,7 +561,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		// `discobox attach` opens directly on the discobox it names, and
 		// dismissing the introduction here would only uncover that exact
 		// workspace again — there is nothing behind it the introduction is
-		// standing in front of. `discobox new` is left welcoming: it opens on
+		// standing in front of. `discobox run` is left welcoming: it opens on
 		// a discobox that does not exist yet, and the introduction stands in
 		// front of the wait for it exactly as it stands in front of the list
 		// on every other first run. See WithRun.
@@ -571,7 +571,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	return m
 }
 
-// oneShot reports whether this window is one command's own — `discobox new` or
+// oneShot reports whether this window is one command's own — `discobox run` or
 // `discobox attach` — rather than the launcher. Such a window opens on the
 // discobox it is about, never shows the prompt or the list, and goes when the
 // workspace does.
@@ -838,7 +838,7 @@ type statusMsg struct {
 	err  bool
 }
 
-// workspaceCheckedMsg answers --include-dirty=auto: what the source directory
+// workspaceCheckedMsg answers what the source directory
 // would carry into the discobox, and so what there is to ask about.
 type workspaceCheckedMsg struct {
 	req       RunRequest
@@ -2608,7 +2608,7 @@ func (m *Model) run() tea.Cmd {
 // rows, and stay as they are left.
 //
 // A window whose session has not landed yet has no directory or sources to
-// offer. It is left to `discobox new`'s own resolution, the way a prompt
+// offer. It is left to `discobox run`'s own resolution, the way a prompt
 // submitted before the harnesses land is.
 func (m *Model) askHowToCreate() bool {
 	if m.session.Directory == "" {
@@ -2779,7 +2779,7 @@ func (m *Model) startPendingRun() tea.Cmd {
 	return m.runRequest(req)
 }
 
-// errNothingCreated is how `discobox new` ends when its create card is turned
+// errNothingCreated is how `discobox run` ends when its create card is turned
 // down: an error, because a command that made nothing should not say it
 // succeeded.
 var errNothingCreated = errors.New("no discobox was created")
@@ -2790,12 +2790,13 @@ var errNothingCreated = errors.New("no discobox was created")
 // caught up yet would ask the same one twice.
 func (m *Model) startRun(req RunRequest) tea.Cmd {
 	// A discobox with no source has no working tree to carry anything out of,
-	// so there is nothing the question could be about.
-	if req.IncludeDirty != "" || req.NoSource {
+	// so there is nothing either question could be about; and both answered
+	// leaves nothing to ask.
+	if req.NoSource || (req.IncludeDirty != "" && req.CopyDirectory != "") {
 		return m.create(req)
 	}
-	// --include-dirty=auto means ask, and there is only something to ask about
-	// when the working tree has something in it.
+	// There is only something to ask about when the working tree has something
+	// in it, and which question depends on whether it is a repository's.
 	m.setSubmitting(true)
 	m.waiting("checking the working tree")
 	return func() tea.Msg {
@@ -2828,7 +2829,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 	}
 	candidates := m.defaultCandidates()
 	if len(candidates) == 0 {
-		return m.report(true, "this project has no harness to run; register one with `discobox admin harnesses create`"), true
+		return m.report(true, "this project has no harness to run; register one with `discobox admin harness create`"), true
 	}
 
 	items := make([]action, 0, len(candidates))
@@ -2945,9 +2946,15 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 		return m.create(msg.req)
 	}
 	if !msg.workspace.Repository {
+		if msg.req.CopyDirectory != "" {
+			return m.create(msg.req)
+		}
 		return m.askToCopyDirectory(msg.req, msg.workspace.Directory)
 	}
-	// Excluding leads, the way it does in `discobox new`: the default answer is
+	if msg.req.IncludeDirty != "" {
+		return m.create(msg.req)
+	}
+	// Excluding leads, the way it does in `discobox run`: the default answer is
 	// the one that changes nothing about what the sandbox sees. The repository
 	// named is the one the run is cut from, which is not the window's own
 	// directory when the source option names another.
@@ -2999,18 +3006,29 @@ func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 
 // includeDirtyDialog is the two-answer question about what local content
 // reaches the discobox. It uses the same two descriptive rows as the standalone
-// run prompt, with the excluding answer first so Enter means no. Both answers
-// are answers — the discobox is created either way — so cancel is heard as no.
-// The directory is the dialog's subject, on a row of its own above the body.
+// run prompt. Both answers are answers — the discobox is created either way —
+// so cancel is heard as no.
+//
+// The two questions differ in what they decide and which answer leads. About
+// a repository's uncommitted work, excluding leads, so Enter means the
+// discobox sees the committed history; the answer is IncludeDirty. About a
+// directory in no repository there is no commit to start from instead, so
+// copying leads — the size on the dialog is the reason to ask — and the answer
+// is CopyDirectory. The directory is the dialog's subject, on a row of its own
+// above the body.
 func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req RunRequest) *dialog {
-	answer := func(includeDirty string) tea.Cmd {
+	answer := func(yes string) tea.Cmd {
 		req := req
-		req.IncludeDirty = includeDirty
+		if repository {
+			req.IncludeDirty = yes
+		} else {
+			req.CopyDirectory = yes
+		}
 		return func() tea.Msg { return createMsg{req: req} }
 	}
 	items := []action{
-		{key: "false", press: "n", label: "Do not copy the directory", detail: "Create the discobox with nothing checked out in it", enabled: true},
 		{key: "true", press: "y", label: "Copy the directory in", detail: "Everything in it arrives as uncommitted changes", enabled: true},
+		{key: "false", press: "n", label: "Do not copy the directory", detail: "Create the discobox with nothing checked out in it", enabled: true},
 	}
 	if repository {
 		items = []action{
@@ -3970,7 +3988,7 @@ const hintSep = " · "
 
 // detachDescription is what the leader's d does, which depends on what the
 // window is: the launcher goes back to its list, and a window that is one
-// command's own — `discobox new`, `discobox attach` — has no list behind it and
+// command's own — `discobox run`, `discobox attach` — has no list behind it and
 // goes. Neither stops anything: what follows this in the key list is "leaving
 // every session running", which is true of both.
 func (m *Model) detachDescription() string {
@@ -4405,8 +4423,8 @@ func (m *Model) helpText() string {
 		"",
 		"  The filters are remembered on this machine: the next window opens",
 		"  where the last one left them, wherever it is opened, or on every",
-		"  server, folder and tag when nothing was narrowed. --server and -C,",
-		"  when given, open on the server and folder they name instead.",
+		"  server, folder and tag when nothing was narrowed. --server, when",
+		"  given, opens on the server it names instead.",
 		"",
 		"    ↑              reach it, from the top of the discobox list",
 		"    Enter          open it: every server, folder and tag, with how",
@@ -4632,7 +4650,7 @@ func (m *Model) helpText() string {
 		"  overrides that.",
 		"",
 		"  The strip below the prompt always shows what is set. The panel",
-		"  shows the equivalent `discobox new` command, live.",
+		"  shows the equivalent `discobox run` command, live.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The mouse",

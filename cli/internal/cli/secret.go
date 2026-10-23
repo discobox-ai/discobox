@@ -139,7 +139,7 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	var uses, hosts, statements []string
 	definitions := policy.Definitions{}
 	var delegate bool
-	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", Long: `Creates a grant directly, without a request to approve.
+	cmd := &cobra.Command{Use: "create --secret SECRET --scope SCOPE", Short: "Create a standing grant (pre-approval)", Long: `Creates a grant directly, without a request to approve.
 
 With no --use, it is a standing grant: it authorizes the sentinel the
 discobox, harness config or project is already provisioned with.
@@ -240,7 +240,7 @@ variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *
 }
 
 func (a *App) newSecretGrantRevokeCommand() *cobra.Command {
-	return &cobra.Command{Use: "revoke GRANT_ID...", Short: "Revoke secret grants", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm GRANT_ID...", Aliases: []string{"revoke", "delete", "remove"}, Short: "Revoke secret grants", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -300,7 +300,7 @@ func (a *App) newSecretListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get SECRET_ID", Short: "Get a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get SECRET", Short: "Get a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -455,7 +455,7 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	var name, host, ttl, format string
 	var value secretValueOptions
 	var renewal secretRenewalOptions
-	cmd := &cobra.Command{Use: "update SECRET_ID", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "update SECRET", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -505,7 +505,7 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 }
 
 func (a *App) newSecretDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete SECRET_ID...", Short: "Delete secrets", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm SECRET...", Aliases: []string{"delete", "remove"}, Short: "Delete secrets", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -633,7 +633,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var uses, hosts []string
 	var policyAsAsked bool
 	var auto autoApproval
-	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET_ID] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err

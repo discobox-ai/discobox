@@ -15,7 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/auditid"
 )
 
-// dnsAuditQuery is what `audit dns` and `audit list` ask the DNS trail.
+// dnsAuditQuery is what `audit dns` and `audit ls` ask the DNS trail.
 type dnsAuditQuery struct {
 	projectID string
 	params    apiclientgen.ListDNSAuditParams
@@ -215,7 +215,7 @@ func dnsAuditAnswers(q apimodel.DNSAuditQuery) string {
 	return terminalSafe(strings.Join(q.Answers, ","))
 }
 
-// dnsAuditRecord is a lookup on the audit list's timeline.
+// dnsAuditRecord is a lookup on the audit ls timeline.
 func dnsAuditRecord(q apimodel.DNSAuditQuery) auditRecord {
 	summary := fmt.Sprintf("%s %s %s", terminalSafe(q.Type), terminalSafe(q.Name), dnsAuditResult(q))
 	if answers := dnsAuditAnswers(q); answers != "" {

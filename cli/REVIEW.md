@@ -3,7 +3,7 @@
 ## Writing to the screen
 
 - **Work that runs under a full-screen program may not choose a stream.** A
-  create runs inside the console's window, and `discobox new` runs one step
+  create runs inside the console's window, and `discobox run` runs one step
   ahead of the terminal it is about to attach. Anything either of them calls
   that has something to say takes a `noteFunc` (`statusline.go`) and reports
   through it; it never takes a `*cobra.Command` in order to reach
@@ -57,6 +57,46 @@
   (`--body ID`), so a command quoted that way makes a boolean flag look as if
   it took one: `--policy-as-asked discobox secret request get`. Quote a
   command in usage text with plain quotes.
+
+## Command names and arguments
+
+The rules are DESIGN.md's "Command Naming", and `command_conventions_test.go`
+enforces the ones a tree walk can see. These are the ones it cannot:
+
+- **A placeholder is checked against the resolver behind it.** `Use` saying
+  `DISCOBOX` promises a name works. `trust ls DISCOBOX` called
+  `resolveSandboxID`, which takes IDs only, and nothing caught it. Read which
+  `resolve*` the command calls before accepting its `Use`.
+- **A root command takes a discobox through `resolveListedSandbox`** (or
+  `resolveSandboxReference` over a listing): the NAME `discobox ls` prints, an
+  ID or a short ID, with a full ID skipping the listing. `resolveSandboxID` is
+  the raw `admin box` forms' rule.
+- **Which positional is which is decided by position and flags, never by
+  what an argument looks like.** `run`'s first argument is SOURCE unless
+  `--no-source` is given; a SOURCE that does not resolve is an error naming
+  the form that works, not a guess that it was a prompt. Only zero arguments
+  open a picker. (`shell` and `tools ssh` still guess; that is C14 in
+  `docs/cli-ux-cleanup.md`.)
+- **`-q` prints what the group's other verbs take back,** not necessarily an
+  ID: a remote's name, a harness secret's env name, a skills entry the way
+  `skills rm` takes it.
+- **A rename keeps the old spelling as an alias, and teaches only the new
+  one.** Skills (`.agents/skills`, `sandbox-agent/features/*/skills`,
+  `access/skills`), bats tests, harness hints (`harness/*/image.json`,
+  `configure.sh`), design docs and the argv the console builds
+  (`tui_local.go`, `tui/options.go`) move with it. The `run` rename also
+  missed, on a first pass:
+  - format strings (`"%[1]s new"`, `"%s new %q"`);
+  - the bare word in help prose ("By default new opens…");
+  - the credential judge's prompt (`pkg/judge/recognized.go`), which describes
+    the CLI's commands. It names every spelling, because approved purposes are
+    worded in the old one.
+
+  Leave what records history: ADRs, the recorded judge-eval cases
+  (`test/judge-evals`), and audit argv in tests. Leave persisted
+  configuration keys (`client.yaml`'s `new:`) too. Tests drive the canonical
+  name, but a blind replace of a quoted word also hits dialog actions and
+  fixtures, so read the diff.
 
 ## Handing the sandbox's paths to host tools
 

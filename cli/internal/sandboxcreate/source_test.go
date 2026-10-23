@@ -301,65 +301,6 @@ func TestResolveRunSourceIncludeDirtyNeverKeepsDirtyWorkspaceOutOfTheSandbox(t *
 	}
 }
 
-func TestResolveRunSourceIncludeDirtyAutoAsksAndHonorsTheAnswer(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		include  bool
-		wantMode string
-	}{
-		{name: "declined", include: false, wantMode: runWorkspaceModeClean},
-		{name: "accepted", include: true, wantMode: runWorkspaceModeDirty},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := newRunSourceTestRepo(t)
-			if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("dirty\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			var asked []DirtyWorkspace
-			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox,
-				IncludeDirty: IncludeDirtyAuto,
-				Confirm: func(_ context.Context, workspace DirtyWorkspace) (bool, error) {
-					asked = append(asked, workspace)
-					return tc.include, nil
-				},
-			})
-			if err != nil {
-				t.Fatalf("resolveRunSource: %v", err)
-			}
-			if len(asked) != 1 {
-				t.Fatalf("confirm called %d times, want once", len(asked))
-			}
-			if asked[0].RepoRoot != repo || len(asked[0].Changes) != 2 {
-				t.Fatalf("confirmed workspace = %#v, want %s with both changed paths", asked[0], repo)
-			}
-			if source.Workspace.Mode != tc.wantMode {
-				t.Fatalf("workspace = %#v, want mode %s", source.Workspace, tc.wantMode)
-			}
-		})
-	}
-}
-
-func TestResolveRunSourceIncludeDirtyAutoDoesNotAskWhenWorkspaceIsClean(t *testing.T) {
-	repo := newRunSourceTestRepo(t)
-
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox,
-		IncludeDirty: IncludeDirtyAuto,
-		Confirm: func(context.Context, DirtyWorkspace) (bool, error) {
-			t.Fatal("confirm called for a clean workspace")
-			return false, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("resolveRunSource: %v", err)
-	}
-	if source.Workspace.Mode != runWorkspaceModeClean {
-		t.Fatalf("workspace = %#v, want clean", source.Workspace)
-	}
-}
-
 func TestResolveRunSourceIncludeDirtyAlwaysRejectsAnExplicitRef(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
@@ -745,19 +686,20 @@ func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedResolvesToNoSource(t
 	}
 }
 
-// --include-dirty=false is the same answer given ahead of time, and answering
-// it that way asks nobody anything.
-func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverResolvesToNoSource(t *testing.T) {
+// CopyDirectory=false is the same answer given ahead of time, and answering it
+// that way asks nobody anything.
+func TestResolveRunSourceDirectoryWithoutRepositoryCopyDirectoryFalseResolvesToNoSource(t *testing.T) {
 	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	confirm := func(context.Context, DirectoryCopy) (bool, error) {
-		t.Fatal("--include-dirty=false asked a question it had already answered")
+		t.Fatal("a copy answered ahead of time asked again")
 		return false, nil
 	}
+	no := false
 
-	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever, ConfirmCopy: confirm})
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever, CopyDirectory: &no, ConfirmCopy: confirm})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -785,6 +727,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCopiesWhenItIsMeantTo(t *test
 		return false, nil
 	}
 	accept := func(context.Context, DirectoryCopy) (bool, error) { return true, nil }
+	yes := true
 
 	for _, tc := range []struct {
 		name     string
@@ -793,8 +736,11 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCopiesWhenItIsMeantTo(t *test
 		snapshot bool
 	}{
 		{name: "answered yes", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, ConfirmCopy: accept}, snapshot: true},
-		{name: "include-dirty=true", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAlways, ConfirmCopy: refuse}, snapshot: true},
+		{name: "answered ahead of time", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, CopyDirectory: &yes, ConfirmCopy: refuse}, snapshot: true},
 		{name: "nobody to ask", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto}, snapshot: true},
+		// --include-dirty is about work on top of a commit; a directory with
+		// no repository has none, so leaving dirty work out still copies it.
+		{name: "include-dirty=false", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever}, snapshot: true},
 		{name: "empty directory", dir: testWorkspace, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, ConfirmCopy: refuse}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -990,7 +936,10 @@ func TestResolveRunSourceEmptyUnbornRepositoryStartsFromTheEmptyCommit(t *testin
 	}
 }
 
-func TestResolveRunSourceUnbornRepositoryWithoutDirtyStartsFromTheEmptyCommit(t *testing.T) {
+// A repository with no commits has no committed history to start from, so
+// leaving --include-dirty off does not cut it from nothing: its files are
+// carried in, as with the flag.
+func TestResolveRunSourceUnbornRepositoryCarriesItsFilesWithoutTheFlag(t *testing.T) {
 	repo := newUnbornRunSourceTestRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1000,14 +949,13 @@ func TestResolveRunSourceUnbornRepositoryWithoutDirtyStartsFromTheEmptyCommit(t 
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
+	defer testLocalSources(source).Close()
 
-	// The flag answers ahead of time, and its answer keeps the repository's own
-	// path rather than dropping the source: a repository is a project.
 	if source.Kind != runSourceKindGit || source.LocalDirectory != repo {
 		t.Fatalf("source = %#v, want the repository kept at %s", source, repo)
 	}
-	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
-		t.Fatalf("workspace = %#v, want the empty base with none of the working tree", source.Workspace)
+	if source.Workspace.Mode != runWorkspaceModeDirty || source.Workspace.SnapshotRef == "" {
+		t.Fatalf("workspace = %#v, want the working tree carried in", source.Workspace)
 	}
 }
 
@@ -1219,5 +1167,38 @@ func TestSourceGitHubRepository(t *testing.T) {
 	git("remote", "set-url", "origin", "https://gitlab.com/example/project.git")
 	if got := SourceGitHubRepository(ctx, repoRoot); got != "" {
 		t.Fatalf("a clone of a repository somewhere else = %q, want none", got)
+	}
+}
+
+// Leaving uncommitted work out is the default, so it is said: a person who
+// forgot --include-dirty hears that their edits are not in the discobox. A
+// clean working tree says nothing.
+func TestResolveRunSourceWarnsAboutWorkLeftOut(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	var warnings []string
+	opts := runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever, Warn: func(w string) { warnings = append(warnings, w) }}
+
+	source, err := resolveRunSource(context.Background(), repo, opts)
+	if err != nil {
+		t.Fatalf("resolveRunSource (clean): %v", err)
+	}
+	testLocalSources(source).Close()
+	if len(warnings) != 0 {
+		t.Fatalf("a clean tree warned: %q", warnings)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, err = resolveRunSource(context.Background(), repo, opts)
+	if err != nil {
+		t.Fatalf("resolveRunSource (dirty): %v", err)
+	}
+	defer testLocalSources(source).Close()
+	if source.Workspace.Mode == runWorkspaceModeDirty {
+		t.Fatal("the work was carried in although --include-dirty was not given")
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "1 uncommitted change left out (--include-dirty carries them)") {
+		t.Fatalf("warnings = %q", warnings)
 	}
 }

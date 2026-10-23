@@ -64,9 +64,9 @@ You can start a bug fix, a feature, and an experiment you may throw away, each i
 its own box, and keep working in your own checkout while they run.
 
 ```bash
-discobox new -d 'fix the flaky retry test'
-discobox new -d 'add pagination to the users endpoint'
-discobox new -d 'try replacing the ORM with sqlc'
+discobox run -d . 'fix the flaky retry test'
+discobox run -d . 'add pagination to the users endpoint'
+discobox run -d . 'try replacing the ORM with sqlc'
 discobox ls
 ```
 
@@ -87,9 +87,10 @@ flowchart LR
   c -- "git push" --> host["Your Git host: a branch or pull request"]
 ```
 
-**Where a box clones from.** Your local repository, at the commit you have
-checked out. If your working tree has uncommitted changes, Discobox asks whether
-to bring them along; they arrive as uncommitted changes on that same commit. In
+**Where a box clones from.** The source you name first, `.` for the
+repository you are in, at the commit you have checked out. Only committed work
+goes in: uncommitted changes stay behind unless you pass `--include-dirty`, and
+then they arrive as uncommitted changes on that same commit. In
 the box, `origin` is your repository, read-only: the agent can fetch from it but
 cannot push to it, and nothing it does touches your files. `-i` brings more
 sources into the same box, either another local checkout or a remote URL, whose

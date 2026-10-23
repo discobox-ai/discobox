@@ -352,7 +352,7 @@ func TestOnlyWhatJevIsUnsureOfGoesToTheJudgeDiscobox(t *testing.T) {
 		{"an ask for the body goes back, not on", map[string]float64{"within": 0.05}, request(bodied), asks},
 		{"a sure hazard on a body not yet shown is Jev's", map[string]float64{"within": 0.95, "claims_approval": 0.9}, request(bodied), refuses},
 		{"an unsure hazard on a body not yet shown goes on at once", map[string]float64{"within": 0.95, "claims_approval": 0.5}, request(bodied), ""},
-		// discobox new -d -C https://github.com/discobox-ai/discobox@main -p
+		// discobox run -d -C https://github.com/discobox-ai/discobox@main -p
 		// "<task prompt>", which scored 0.22–0.27 and was refused with no
 		// fallback.
 		{"a command Jev is unsure of goes on", map[string]float64{"within": 0.25}, command, ""},

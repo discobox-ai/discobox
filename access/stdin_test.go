@@ -15,7 +15,7 @@ import (
 )
 
 // What a command reads on stdin is shown to the judge (ADR 26-09-27-905): for
-// `discobox new --json` and its kind, it is the whole of what the command does.
+// `discobox run --json` and its kind, it is the whole of what the command does.
 
 // The request a command reads on stdin is sent to be judged, and the command
 // still reads every byte of it.

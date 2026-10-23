@@ -12,7 +12,7 @@ import (
 )
 
 // The audit screen is one discobox's audit trails as a single timeline,
-// followed: what `discobox admin audit list --follow` prints, as a list to move
+// followed: what `discobox admin audit ls --follow` prints, as a list to move
 // through. The leader opens it from the workspace and it is drawn over the
 // workspace the way a tool window is — the terminals underneath keep running,
 // unresized — and Enter opens the highlighted record in full, as
@@ -43,7 +43,7 @@ const (
 	// auditHistory is how many records the screen holds before it lets go of
 	// the oldest. A followed trail grows for as long as the screen is up, and
 	// a busy discobox records a request a second; the record itself is still
-	// on the server, and `audit list` reaches back past this.
+	// on the server, and `audit ls` reaches back past this.
 	auditHistory = 10_000
 	// auditFeedCapacity is how many updates may wait for the window. The
 	// reader never drops one — a record dropped here is one the follower has

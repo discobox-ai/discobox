@@ -94,14 +94,14 @@ an `UPGRADE` column when a box is behind.
 The `shell` harness needs no credentials and starts in seconds:
 
 ```bash
-id=$(d new -H shell -d --no-source -o json | jq -r .id)   # returns while still starting
+id=$(d run -H shell -d --no-source -o json | jq -r .id)   # returns while still starting
 d admin box get "$id" -o json | jq -r .runtime.state   # pending → ready
 d shell "$id" -- sh -c 'id; pwd; systemctl is-system-running'
 ```
 
-- `-C <dir>` cuts the box from a source directory instead of `--no-source`;
-  `--include-dirty=false` keeps it from asking about uncommitted work.
-- `-H claude-code` / `-H codex` need a configured harness (`d admin harnesses
+- `d run -H shell -d <dir>` cuts the box from a source directory instead of
+  `--no-source`; only its commits go in unless `--include-dirty` is given.
+- `-H claude-code` / `-H codex` need a configured harness (`d admin harness
   ls`, CONFIGURED column); unconfigured, that is **blocked**, not failed.
 - `docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}' | grep "$id"` finds
   the container; it is named `discobox-sandbox-<pool>-<sandbox-id>`.
@@ -139,6 +139,6 @@ against the base commit before calling a failure new.
 ## Cleanup
 
 `d admin box purge <id>` destroys a box and waits until its data is gone;
-`d rm` / `d admin box delete` only archive. Purge every box you created, by
+`d rm` / `d admin box rm` only archive. Purge every box you created, by
 the ID you recorded — never by filter or name pattern, which would reap boxes
 someone else made.

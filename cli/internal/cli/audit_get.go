@@ -22,9 +22,9 @@ import (
 func (a *App) newAuditGetCommand() *cobra.Command {
 	var poolID string
 	cmd := &cobra.Command{
-		Use:   "get <discobox-id> <record-id>",
+		Use:   "get DISCOBOX_ID RECORD_ID",
 		Short: "Print one audit record in full",
-		Long: `Print everything recorded about one audit record, by the ID "audit list"
+		Long: `Print everything recorded about one audit record, by the ID "audit ls"
 reports for it.
 
 The ID says which trail to read: http_<row> is an exchange the pool's proxy

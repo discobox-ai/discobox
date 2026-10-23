@@ -28,9 +28,9 @@ func TestRunCopiesInTheProjectsSkillsSources(t *testing.T) {
 		wantAsked int
 		wantErr   string
 	}{
-		{name: "by default", args: []string{"new", "-d", "--no-source", "-p", "go"}, wantAsked: 1, wantErr: "the project's skills source " + tools},
-		{name: "--no-project-skills", args: []string{"new", "-d", "--no-source", "--no-project-skills", "-p", "go"}},
-		{name: "json noProjectSkills", args: []string{"new", "--json"}, json: map[string]any{"noSource": true, "noProjectSkills": true}},
+		{name: "by default", args: []string{"run", "-d", "--no-source", "-p", "go"}, wantAsked: 1, wantErr: "the project's skills source " + tools},
+		{name: "--no-project-skills", args: []string{"run", "-d", "--no-source", "--no-project-skills", "-p", "go"}},
+		{name: "json noProjectSkills", args: []string{"run", "--json"}, json: map[string]any{"noSource": true, "noProjectSkills": true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setHome(t, t.TempDir())
@@ -170,6 +170,11 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 	// Each is listed in the spelling it is typed back in.
 	if want := []string{"project acme/tools@v2//agents/skills skills_abc", "client.yaml " + filepath.Join("~", "team-skills")}; strings.Join(rows, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("ls = %q, want %q", rows, want)
+	}
+
+	// -q prints each the way rm takes it back.
+	if got, want := run("ls", "-q"), "skills_abc\n"+dir+"\n"; got != want {
+		t.Fatalf("ls -q = %q, want %q", got, want)
 	}
 
 	// Any spelling of the repository names the entry.

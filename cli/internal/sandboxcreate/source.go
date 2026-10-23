@@ -43,8 +43,8 @@ const (
 	wslDriveRoot = "/mnt"
 	// maxRunSourceSlugLen is the API's slug limit.
 	maxRunSourceSlugLen      = 63
-	runSnapshotCommitMessage = "discobox new workspace snapshot\n"
-	runEmptyBaseMessage      = "discobox new empty base\n"
+	runSnapshotCommitMessage = "discobox run workspace snapshot\n"
+	runEmptyBaseMessage      = "discobox run empty base\n"
 )
 
 // IncludeDirty decides whether uncommitted local work is carried into the
@@ -53,7 +53,8 @@ const (
 type IncludeDirty string
 
 const (
-	// IncludeDirtyAuto asks the user when the local workspace is dirty.
+	// IncludeDirtyAuto is the question not yet answered, which a frontend
+	// answers before the create; one that reaches the create includes the work.
 	IncludeDirtyAuto IncludeDirty = "auto"
 	// IncludeDirtyAlways always snapshots a dirty local workspace.
 	IncludeDirtyAlways IncludeDirty = "true"
@@ -82,19 +83,6 @@ func (m *IncludeDirty) Set(value string) error {
 	return nil
 }
 
-// DirtyWorkspace describes the uncommitted work found in a local source repo,
-// so a frontend can show it while asking whether to include it.
-type DirtyWorkspace struct {
-	RepoRoot   string
-	BaseCommit string
-	Changes    []gitutil.StatusChange
-}
-
-// ConfirmIncludeDirtyFunc asks the user whether to carry a dirty workspace into
-// the sandbox. A nil func means nobody can be asked, and the uncommitted work is
-// included rather than silently dropped.
-type ConfirmIncludeDirtyFunc func(context.Context, DirtyWorkspace) (bool, error)
-
 // DirectoryCopy describes a source directory that is in no Git repository, so a
 // frontend can ask whether to copy it into the sandbox. Everything in such a
 // directory is uncommitted work, so the whole of it is what the answer decides
@@ -118,10 +106,13 @@ type ConfirmCopyDirectoryFunc func(context.Context, DirectoryCopy) (bool, error)
 type runSourceOptions struct {
 	// Platform is the sandbox's, which every path placed in it is judged by
 	// (ADR 0145 §6).
-	Platform     platform.Platform
-	IncludeDirty IncludeDirty
-	Confirm      ConfirmIncludeDirtyFunc
-	ConfirmCopy  ConfirmCopyDirectoryFunc
+	Platform      platform.Platform
+	IncludeDirty  IncludeDirty
+	ConfirmCopy   ConfirmCopyDirectoryFunc
+	CopyDirectory *bool
+	// Warn is told about uncommitted work left out, which would otherwise
+	// vanish without a word. Nil says nothing.
+	Warn func(string)
 }
 
 type resolvedRunSource struct {
@@ -470,7 +461,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	resolved.Checkout = localRunCheckout(ctx, repoRoot, "", baseCommit)
 	resolved.UpstreamURL = localRemoteURL(ctx, repoRoot, resolved.Checkout)
 	if opts.IncludeDirty == IncludeDirtyNever {
-		return resolved, nil
+		return resolved, warnLeftOut(ctx, repoRoot, opts)
 	}
 	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {
@@ -478,13 +469,6 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	}
 	defer cleanup()
 	if !workspaceTree.Dirty {
-		return resolved, nil
-	}
-	include, err := includeDirtyWorkspace(ctx, repoRoot, workspaceTree.BaseCommit, opts)
-	if err != nil {
-		return resolvedRunSource{}, err
-	}
-	if !include {
 		return resolved, nil
 	}
 	workspace, err := snapshotWorkspace(ctx, repoRoot, workspaceTree)
@@ -573,12 +557,12 @@ func snapshotWorkspace(ctx context.Context, repoRoot string, tree gitutil.Worksp
 // first commit stays theirs; the objects stay reachable, so a later
 // `discobox push` can still deliver this source (ADR 0083 §2).
 //
-// Nobody is asked. The question a directory in no repository gets exists
-// because it may be a home directory somebody ran in by accident, and `git
-// init` here is the user saying it is not. The dirty-workspace question has
-// nothing to offer either: its alternative is the last commit, and there is
-// none. `--include-dirty=false` still answers ahead of time, and its answer is
-// the empty base commit at the repository's own path.
+// Nobody is asked, and --include-dirty does not decide it. The question a
+// directory in no repository gets exists because it may be a home directory
+// somebody ran in by accident, and `git init` here is the user saying it is
+// not. The dirty-workspace question has nothing to offer either: its
+// alternative is the last commit, and there is none, so leaving the work out
+// would cut a discobox from nothing.
 func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
 	if explicitRef {
 		return resolvedRunSource{}, fmt.Errorf("%s has no commits yet, so it has no ref %q to check out", repoRoot, ref)
@@ -619,9 +603,6 @@ func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(opts.Platform, repoRoot, absSource),
 	}
-	if opts.IncludeDirty == IncludeDirtyNever {
-		return resolved, nil
-	}
 	tree, cleanup, err := gitunborn.WorkspaceTree(ctx, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
@@ -659,7 +640,7 @@ func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string
 //
 // The user is asked first, because the answer is not obvious the way it is for
 // a repository: a directory in no repository is as likely to be a home
-// directory somebody ran `discobox new` in as it is to be a project, and the
+// directory somebody ran `discobox run` in as it is to be a project, and the
 // whole of it is what would be carried.
 //
 // Declining is not a cancel: it resolves to no source at all, the request
@@ -695,25 +676,25 @@ func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef
 // copyDirectoryContent decides whether the content of a directory in no Git
 // repository is carried into the sandbox.
 //
-// --include-dirty answers it outright, because the directory's content is
-// uncommitted work — all of it — and that flag is what says whether uncommitted
-// work travels. Otherwise it is the frontend's question, asked against a
-// measurement of the directory that is still running while it is on screen. It
-// is asked before the repository is built over the directory: indexing a home
-// directory takes long enough that doing it first would answer the question by
-// making it too late.
+// It is not --include-dirty's to decide. That flag is about work on top of a
+// commit, and here there is no commit to start from instead: the choice is the
+// directory's content or no source at all, and the content is what running
+// against a directory asks for. CopyDirectory answers it ahead of time;
+// otherwise it is the frontend's question, with copying as the answer it leads
+// with, asked against a measurement of the directory that is still running
+// while it is on screen — the size is the reason to ask. It is asked before the
+// repository is built over the directory: indexing a home directory takes long
+// enough that doing it first would answer the question by making it too late.
 //
-// With nobody to ask, the content is copied: that is what a source directory
-// has always meant, and a sandbox that silently came up empty is the worse
-// surprise. An empty directory is not worth asking about either, and answers
-// yes: there is nothing in it to carry, and the sandbox that results is a
-// workspace at that directory's own path — which is what standing in an empty
-// directory and running asks for (ADR 0077 §3).
+// With nobody to ask, the content is copied. An empty directory is not worth
+// asking about either, and answers yes: there is nothing in it to carry, and
+// the sandbox that results is a workspace at that directory's own path — which
+// is what standing in an empty directory and running asks for (ADR 0077 §3).
 func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions) (bool, error) {
-	if opts.IncludeDirty == IncludeDirtyNever {
-		return false, nil
+	if opts.CopyDirectory != nil {
+		return *opts.CopyDirectory, nil
 	}
-	if opts.IncludeDirty != IncludeDirtyAuto || opts.ConfirmCopy == nil {
+	if opts.ConfirmCopy == nil {
 		return true, nil
 	}
 	entries, err := os.ReadDir(dir)
@@ -726,6 +707,29 @@ func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	return opts.ConfirmCopy(ctx, DirectoryCopy{Dir: dir, Size: MeasureDirectory(ctx, dir)})
+}
+
+// warnLeftOut tells opts.Warn about the uncommitted work in repoRoot that
+// leaving --include-dirty off is leaving behind.
+// Leaving it out is the default, and a person who forgot the flag should hear
+// that their edits are not in there before an agent works without them.
+func warnLeftOut(ctx context.Context, repoRoot string, opts runSourceOptions) error {
+	if opts.Warn == nil {
+		return nil
+	}
+	changes, err := gitutil.StatusChanges(ctx, repoRoot)
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	noun := "changes"
+	if len(changes) == 1 {
+		noun = "change"
+	}
+	opts.Warn(fmt.Sprintf("%s: %d uncommitted %s left out (--include-dirty carries them); the discobox starts from the last commit", repoRoot, len(changes), noun))
+	return nil
 }
 
 // directoryRunSource fills in the source that repoRoot, a fresh repository over
@@ -780,21 +784,6 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string, sandbox platf
 	}
 	resolved.Workspace = workspace
 	return resolved, nil
-}
-
-// includeDirtyWorkspace decides whether the dirty workspace at repoRoot becomes
-// a snapshot. Only "auto" asks, and only when there is someone to ask: with no
-// confirmation func the uncommitted work is included, because dropping a user's
-// edits is the more surprising of the two answers.
-func includeDirtyWorkspace(ctx context.Context, repoRoot, baseCommit string, opts runSourceOptions) (bool, error) {
-	if opts.IncludeDirty != IncludeDirtyAuto || opts.Confirm == nil {
-		return true, nil
-	}
-	changes, err := gitutil.StatusChanges(ctx, repoRoot)
-	if err != nil {
-		return false, err
-	}
-	return opts.Confirm(ctx, DirtyWorkspace{RepoRoot: repoRoot, BaseCommit: baseCommit, Changes: changes})
 }
 
 func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool, sandbox platform.Platform) (resolvedRunSource, error) {

@@ -15,6 +15,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
@@ -47,7 +48,7 @@ shell, y applies, x archives. Esc moves to the prompt, which is where the
 window opens when there are no discoboxes yet: type what the discobox
 should do and press Enter to run it in a new one, or press Enter on an empty
 prompt to create one with nothing given to the harness. Shift-Tab there opens
-"discobox new"'s options.
+"discobox run"'s options.
 
 Attaching or opening a shell draws the discobox's terminal in the window itself.
 Every key then goes to the discobox, Ctrl-C included: it is the program's, so
@@ -79,7 +80,7 @@ discobox terminal is up.`,
 
 // runConsole starts the console. It is reached five ways — `discobox console`,
 // `discobox` with nothing to do, `discobox configure`, which is the console
-// opened on its harnesses screen, `discobox new`, which is it opened on one run
+// opened on its harnesses screen, `discobox run`, which is it opened on one run
 // (`tui.WithRun`), and `discobox attach`, which is it opened on one discobox
 // (`tui.WithAttach`) — so it lives here rather than inside any one's RunE.
 //
@@ -109,7 +110,6 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 	// What the command line named, which a folder with no saved filters opens
 	// narrowed to (tui.Session.ServerChosen).
 	ds.serverChosen = cmd.Flags().Changed("server")
-	ds.sourceChosen = cmd.Flags().Changed("clone")
 	options = append([]tui.Option{tui.WithLeader(leaderKey)}, options...)
 	// Whether to introduce Discobox is settled before the window opens rather
 	// than when the session load comes back: a welcome that arrives a moment
@@ -118,7 +118,7 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 	// it is actually shown from here is the window's own call — see
 	// tui.WithAttach and tui.WithRun — since a window opened on one discobox
 	// (`discobox attach`) has no screen behind the introduction to hand over
-	// to, while one opened on one run (`discobox new`) does.
+	// to, while one opened on one run (`discobox run`) does.
 	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 }
 
 // canOpenWindow reports whether this invocation can put a full-screen window
-// on the terminal it was run from, which is what `discobox new` and `discobox
+// on the terminal it was run from, which is what `discobox run` and `discobox
 // attach` do unless --raw says otherwise. It is the rule bare `discobox`
 // already uses: a pipe, a script, or CI has no terminal to draw one on, and
 // there the attach is the byte stream it always was.
@@ -153,7 +153,7 @@ func canOpenWindow(cmd *cobra.Command) bool {
 	return isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout())
 }
 
-// canAskInline reports whether `discobox new` may ask its questions on the
+// canAskInline reports whether `discobox run` may ask its questions on the
 // terminal without a window: where to cut from, whether to carry uncommitted
 // work, whether to copy a directory that is no repository. It is the window's
 // own test, so a run either has a person to ask or has not — `new | cat` is
@@ -184,8 +184,8 @@ type apiDataSource struct {
 	client    *apiclientgen.Client
 	projectID string
 
-	// serverChosen and sourceChosen are whether --server and -C were given.
-	serverChosen, sourceChosen bool
+	// serverChosen is whether --server was given.
+	serverChosen bool
 
 	// servers is every server the window lists, the primary first, when there
 	// is more than one (ADR 0116 §4). Nil with one, and on the data source
@@ -395,7 +395,7 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	if err != nil {
 		return session, err
 	}
-	dir, err := sandboxcreate.LocalProjectDirectory(ctx, d.app.source)
+	dir, err := sandboxcreate.LocalProjectDirectory(ctx, ".")
 	if err != nil {
 		return session, err
 	}
@@ -412,23 +412,12 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	// Where the window's own source files its discoboxes, and where this
 	// machine files the ones with no source: the window's own folder when
 	// its checkout is not on GitHub (ADR 0111, 26-10-14-585).
-	if session.OriginKey, session.HostKey, err = sandboxcreate.OriginKeys(ctx, d.app.source); err != nil {
+	if session.OriginKey, session.HostKey, err = sandboxcreate.OriginKeys(ctx, "."); err != nil {
 		return session, err
 	}
 	// The GitHub repository the window's own source belongs to, which is the
 	// folder its discoboxes are in whichever clone or URL they were cut from.
-	session.RepositoryKey = sourceref.GitHubKey(sandboxcreate.SourceGitHubRepository(ctx, d.app.source))
-	// A window opened on a repository URL cuts from that URL by default, and
-	// its header names it: the directory it happens to run in is only where
-	// its draft is kept.
-	//
-	// It is `-C` as it was written, ref and all, because that is what the
-	// window cuts from — not SourceRoot, which drops the ref on purpose: every
-	// ref of one repository is one place to file a discobox under (ADR 0111
-	// §1), and one of them is not the thing to hand back to a create.
-	if source, err := sandboxcreate.ParseSource(d.app.source); err == nil && source.Kind == sourceref.Git {
-		session.Remote = source.String()
-	}
+	session.RepositoryKey = sourceref.GitHubKey(sandboxcreate.SourceGitHubRepository(ctx, "."))
 	if branch, ok := gitutil.CurrentBranch(ctx, dir); ok {
 		session.Branch = branch
 	}
@@ -438,7 +427,7 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	// directory's either. See consolestate.go.
 	state := loadConsoleState()
 	session.Draft, session.View, session.LastSource = state.Draft, state.View.listView(), state.LastSource
-	session.ServerChosen, session.SourceChosen = d.serverChosen, d.sourceChosen
+	session.ServerChosen = d.serverChosen
 	// The harnesses are not here: they are read on their own by Harnesses,
 	// which is what both the run options and the harnesses screen are drawn
 	// from. See tui_harnesses.go.
@@ -916,7 +905,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	row.Usage = toTUIUsage(sb)
 	if source, ok := sb.Config.Source.Get(); ok {
 		// What the run options offer to cut a new discobox from, spelled the
-		// way `-C` takes it. A remote source is the URL the discobox clones; a
+		// way SOURCE takes it. A remote source is the URL the discobox clones; a
 		// local one is the client directory it was cut from, which is a path on
 		// the machine that created it.
 		if url, ok := source.URL.Get(); ok {
@@ -1015,11 +1004,11 @@ func shortCommit(commit string) string {
 	return commit
 }
 
-// Dirty reports whether the source directory has uncommitted work, which is the
-// question --include-dirty=auto exists to ask.
+// Workspace reports what the source directory would carry into a discobox
+// beyond its committed history, which is what the window's questions are about.
 func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.SourceWorkspace, error) {
 	if strings.TrimSpace(source) == "" {
-		source = d.app.source
+		source = "."
 	}
 	parsed, err := sandboxcreate.ParseSource(source)
 	if err != nil {
@@ -1042,6 +1031,12 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 		}
 		return tui.SourceWorkspace{Directory: dir, Carries: len(entries) > 0}, nil
 	}
+	// A repository with no commits carries its files whatever is answered —
+	// there is no last commit to start from instead — so there is nothing to
+	// ask about it.
+	if gitunborn.HeadIsUnborn(ctx, root) {
+		return tui.SourceWorkspace{Directory: root, Repository: true}, nil
+	}
 	changes, err := gitutil.StatusChanges(ctx, root)
 	if err != nil {
 		return tui.SourceWorkspace{}, err
@@ -1062,7 +1057,7 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 // so what the window says it is cutting from is the directory it will actually
 // cut from rather than whatever relative fragment was quickest to type.
 //
-// The refusal is the point of it. `-C` on a directory that is not there fails
+// The refusal is the point of it. A SOURCE that is not there fails
 // the create a few seconds later, by which time the field it was typed into is
 // gone and the path has to be remembered rather than corrected.
 func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.Source, error) {
@@ -1091,12 +1086,12 @@ func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.S
 }
 
 // resolveSourceValue is ResolveSource's check of the value itself, read as
-// -C reads it (ADR 26-10-15-664): GitHub shorthand expanded, ~ expanded, a
+// SOURCE reads it (ADR 26-10-15-664): GitHub shorthand expanded, ~ expanded, a
 // directory made absolute and required to be there — with its //PATH, which
 // is where the harness starts — and a ref carried through untouched.
 func resolveSourceValue(source string) (sourceref.Ref, error) {
 	if strings.TrimSpace(source) == "" {
-		return sourceref.Ref{}, fmt.Errorf("name a directory, a repository URL, or owner/repo, with @REF and //PATH as -C takes them")
+		return sourceref.Ref{}, fmt.Errorf("name a directory, a repository URL, or owner/repo, with @REF and //PATH as SOURCE takes them")
 	}
 	parsed, err := sandboxcreate.ParseSource(source)
 	if err != nil {
@@ -1138,7 +1133,7 @@ func gitRoot(ctx context.Context, dir string) (string, bool) {
 }
 
 // Run creates the sandbox Enter asked for and delivers its source, which is
-// exactly what `discobox new` does before it attaches — including saying which of
+// exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
 func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
 	if d.servers == nil {
@@ -1188,14 +1183,14 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		Harness:  strings.TrimSpace(req.Harness),
 		Env:      req.Env,
 		Secret:   req.Secret,
-		// Both only ever come from `discobox new`'s own request, which the
+		// Both only ever come from `discobox run`'s own request, which the
 		// window is opened on: the panel offers no way to name an extra source
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
 	}
 	// A Skills or User skills row left alone is nil, so what client.yaml says
-	// stands; one that was set, or `discobox new`'s own flags, replace it.
+	// stands; one that was set, or `discobox run`'s own flags, replace it.
 	var err error
 	if opts.SkillDirs, opts.UserSkills, err = newSkills(req.SkillDirs, req.UserSkills); err != nil {
 		return tui.Sandbox{}, err
@@ -1209,19 +1204,22 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		}
 		opts.Warn = func(warning string) { report(warningLine(warning)) }
 	}
-	// With no source there is no directory to cut from, and -C says only where
-	// the create came from — which for the window is where it is running, the
-	// same as an unset source.
+	// An unset source is where the window is running, and with no source that
+	// is still where the create came from.
 	if opts.Source == "" {
-		opts.Source = d.app.source
+		opts.Source = "."
 	}
-	// The window settles auto before it gets here, so the create never has to
-	// ask a question there is nobody to answer.
+	// The window settles both questions before it gets here, so the create
+	// never has to ask one there is nobody to answer.
 	switch req.IncludeDirty {
 	case "true":
 		opts.IncludeDirty = sandboxcreate.IncludeDirtyAlways
 	case "false":
 		opts.IncludeDirty = sandboxcreate.IncludeDirtyNever
+	}
+	if req.CopyDirectory != "" {
+		copyDirectory := req.CopyDirectory == "true"
+		opts.CopyDirectory = &copyDirectory
 	}
 	// The prompt goes in as the positional arguments, which is where the shared
 	// parse takes it from.
@@ -1292,7 +1290,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 }
 
 // WatchProvisioning says what a discobox that is not usable yet is being made
-// to do, on the same reading of the same record `discobox new` narrates from.
+// to do, on the same reading of the same record `discobox run` narrates from.
 func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
 	d = d.at(sandboxID)
 	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)

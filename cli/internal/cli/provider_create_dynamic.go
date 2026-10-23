@@ -594,7 +594,7 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
 	}
-	fmt.Fprintf(w, "Usage:\n  discobox admin provider update PROVIDER_ID [provider flags]\n\n")
+	fmt.Fprintf(w, "Usage:\n  discobox admin provider update PROVIDER [provider flags]\n\n")
 	fmt.Fprintln(w, "Common Flags:")
 	fmt.Fprintln(w, "      --name string       Provider instance name")
 	fmt.Fprintln(w, "      --disabled          Disable or enable the provider instance")

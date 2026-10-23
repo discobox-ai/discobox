@@ -74,7 +74,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 		return nil, "", "", nil, err
 	}
 	target, sandboxID, err := a.pickServerSandbox(cmd, set, candidates, unreachable,
-		"there are no discoboxes; start one with `discobox new`",
+		"there are no discoboxes; start one with `discobox run`",
 		"there is more than one discobox; pass --discobox-id")
 	if err != nil {
 		return nil, "", "", nil, err

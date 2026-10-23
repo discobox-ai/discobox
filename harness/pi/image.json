@@ -17,7 +17,7 @@
       },
       {
         "path": ".config/discobox/pi-harness.json",
-        "content": "{\n  \"about\": \"Discobox's settings for the pi harness. Edit with: discobox admin harnesses edit pi .config/discobox/pi-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
+        "content": "{\n  \"about\": \"Discobox's settings for the pi harness. Edit with: discobox admin harness edit pi .config/discobox/pi-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
       }
     ],
     "config": {

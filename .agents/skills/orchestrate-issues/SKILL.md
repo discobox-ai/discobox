@@ -217,15 +217,15 @@ and keep its request ID (do not filter the `progress` line out), so
 ## 3. Launch
 
 ```bash
-discobox-access run --use <create-use> -- discobox new -d \
-  -C https://github.com/discobox-ai/discobox@main \
+discobox-access run --use <create-use> -- discobox run -d \
+  https://github.com/discobox-ai/discobox@main \
   -p "Deliver issue #<N> in discobox-ai/discobox." </dev/null
 ```
 
 The prompt states the task and nothing else: no credentials, no skill names
 (the in-box guidance says not to, and `deliver-issue` is chosen from its own
-description), no claims of what is allowed. Clone from GitHub (`-C`), not
-from this checkout, so workers start from `main`. Record each worker:
+description), no claims of what is allowed. Cut from GitHub (the URL as SOURCE),
+not from this checkout, so workers start from `main`. Record each worker:
 `printf '<N>\t<id>\t-\n' >> ~/.local/state/orchestrate/workers.tsv`, and fill
 in the PR number when it opens.
 

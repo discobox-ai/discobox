@@ -30,7 +30,7 @@ const (
 	YesAt = 0.8
 	// NoBelow is where Jev's no starts: as sure of no as YesAt is of yes. A
 	// no trusted at less than that refused real work: a legitimate
-	// `discobox new` scored 0.22–0.27 on "within". Every request a correct
+	// `discobox run` scored 0.22–0.27 on "within". Every request a correct
 	// judge refuses in test/judge-evals scored 0.19 or below against
 	// jev-1.13.0.
 	NoBelow = 0.2

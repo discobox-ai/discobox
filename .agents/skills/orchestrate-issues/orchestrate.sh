@@ -282,7 +282,7 @@ cmd_triage() { # triage <issue>: launch a new box for this one issue, when a slo
 	up=$(up_count) || { echo "$up"; return 1; }
 	[ "$up" -lt "$MAX" ] || { echo "no free slot: $up of $MAX boxes are up; #$n not launched"; return 1; }
 	u=$(use ai.discobox.sandbox "$CREATE"); need "$u" "creating boxes" || return 1
-	out=$(discobox-access run --use "$u" -- discobox new -d -C "https://github.com/$REPO@main" -p "Triage issue #$n in $REPO." </dev/null 2>&1)
+	out=$(discobox-access run --use "$u" -- discobox run -d "https://github.com/$REPO@main" -p "Triage issue #$n in $REPO." </dev/null 2>&1)
 	id=$(echo "$out" | grep -o 'sbx_[a-z0-9]*' | head -1)
 	[ -n "$id" ] || { echo "#$n not launched: $(echo "$out" | tail -1)"; return 1; }
 	triage_set "$id" "$n" triaging

@@ -148,6 +148,23 @@ func (a *App) resolveSandboxReference(ctx context.Context, client *apiclientgen.
 	return sandboxID, nil
 }
 
+// resolveListedSandbox resolves one reference by the root commands' rule: the
+// NAME `discobox ls` prints, an ID, or a short ID, over the whole listing,
+// archived discoboxes included. A full ID is taken as it stands without listing
+// anything, so a discobox acting on one it created makes only the call its use
+// names (ADR 26-10-08-447).
+func (a *App) resolveListedSandbox(ctx context.Context, client *apiclientgen.Client, projectID, reference string) (string, error) {
+	var sandboxes []apimodel.Sandbox
+	if !allFullSandboxIDs([]string{reference}) {
+		var err error
+		sandboxes, err = a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{})
+		if err != nil {
+			return "", err
+		}
+	}
+	return a.resolveSandboxReference(ctx, client, projectID, reference, sandboxes, listedName)
+}
+
 // unmatchedSandboxName is a reference that is no ID and names none of the
 // candidates, which are every discobox the caller listed: there is nowhere
 // wider to look.
@@ -200,9 +217,12 @@ func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.C
 	return resolveShortID(id, "harness config ID", ids)
 }
 
+// resolveProviderID accepts a provider instance's name, its ID, or a short ID.
+// Nothing keeps two instances from sharing a name, so a shared one is refused
+// as ambiguous rather than answered with one of them.
 func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "provider ID")
-	if err != nil || !isResolvableShortID(id) {
+	if err != nil || idpkg.IsGenerated(id) {
 		return id, err
 	}
 	res, err := client.ListSandboxProviderInstances(ctx, apiclientgen.ListSandboxProviderInstancesParams{ProjectId: projectID})
@@ -213,8 +233,25 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 	if err != nil {
 		return "", err
 	}
-	ids := make([]string, 0, len(body.GetProviders()))
-	for _, provider := range body.GetProviders() {
+	providers := body.GetProviders()
+	var named []string
+	for _, provider := range providers {
+		if provider.Name == value {
+			named = append(named, provider.ID)
+		}
+	}
+	switch len(named) {
+	case 1:
+		return named[0], nil
+	case 0:
+	default:
+		return "", fmt.Errorf("more than one provider is named %q (%s); give its ID", value, strings.Join(named, ", "))
+	}
+	if !isResolvableShortID(id) {
+		return id, nil
+	}
+	ids := make([]string, 0, len(providers))
+	for _, provider := range providers {
 		ids = append(ids, provider.ID)
 	}
 	return resolveShortID(id, "provider ID", ids)

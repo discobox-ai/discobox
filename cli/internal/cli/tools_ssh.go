@@ -10,7 +10,7 @@ import (
 
 func (a *App) newToolsSSHCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ssh [DISCOBOX_ID] [SSH_ARG...]",
+		Use:   "ssh [DISCOBOX] [SSH_ARG...]",
 		Short: "Open an SSH session to a discobox",
 		Long: `Open an SSH session to a discobox, over the connection this CLI already has.
 

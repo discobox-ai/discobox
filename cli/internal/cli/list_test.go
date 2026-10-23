@@ -86,14 +86,14 @@ func TestLocalProjectDirectoryForARemoteSourceIsTheWorkingDirectory(t *testing.T
 }
 
 // ls lists every discobox in the project, whatever it was cut from: no origin
-// key is sent, and -C — which every command the console spawns carries — does
-// not narrow it (ADR 26-10-10-954). The commands that take a discobox by name
+// key is sent, and the directory it runs in does not narrow it (ADR
+// 26-10-10-954). The commands that take a discobox by name
 // list the same way, so a name is matched against everything ls shows.
 func TestListingsAreNotScopedToADirectory(t *testing.T) {
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(newRunSourceTestRepo(t))
 
-	for _, args := range [][]string{{"ls"}, {"-C", ".", "ls"}, {"ls", "--tag", "wip"}, {"rm", "no-such-name"}, {"stop", "no-such-name"}, {"tag", "no-such-name", "wip"}, {"rename", "no-such-name", "other"}} {
+	for _, args := range [][]string{{"ls"}, {"ls", "--tag", "wip"}, {"rm", "no-such-name"}, {"stop", "no-such-name"}, {"tag", "no-such-name", "wip"}, {"rename", "no-such-name", "other"}} {
 		if got := listedOriginKeys(t, args...); len(got) != 0 {
 			t.Fatalf("%v: originKey query = %q, want none", args, got)
 		}

@@ -144,7 +144,6 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", endpoint.DefaultEndpoint()),
 		projectID: envOrDefault("DISCOBOX_PANE_E2E_PROJECT", defaultProjectAlias),
 		token:     os.Getenv("DISCOBOX_TOKEN"),
-		source:    ".",
 		autoStart: autoStartServerFalse,
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)

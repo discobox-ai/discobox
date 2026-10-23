@@ -15,7 +15,7 @@ import (
 
 const runJSONSandboxID = "sbx_9qk5n25t2hh2rv00"
 
-// runJSONServer answers a `discobox new` the way the discobox API answers a
+// runJSONServer answers a `discobox run` the way the discobox API answers a
 // discobox making another: the create, a secret to resolve by name, and the
 // SSH sync refused by the sandbox role in plain text.
 func runJSONServer(t *testing.T, posted *map[string]any) *httptest.Server {
@@ -89,7 +89,7 @@ func TestRunGivesItsGrants(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "--no-source",
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--no-source",
 		"--grant", "com.github.api=push a branch to org/repo",
 		"--grant", "npm@registry.npmjs.org:NPM_TOKEN=publish @org/pkg",
 		"--grant-statement", `com.github.api=allow push on branch "fix-42" in repository "org/repo"`,
@@ -155,7 +155,7 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 			 "definitions": {"publish": "upload a new version of a package", "package": "an npm package", "registry": "an npm registry"}}
 		]
 	}`))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "--json"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute new --json: %v", err)
 	}
@@ -200,13 +200,13 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 		stdin string
 		want  string
 	}{
-		"a run flag beside it": {[]string{"new", "--json", "-p", "x"}, `{}`, "put --prompt in it"},
-		"a word beside it":     {[]string{"new", "--json", "fix"}, `{}`, `"prompt"`},
-		"an unknown field":     {[]string{"new", "--json"}, `{"promt": "x"}`, `unknown field "promt"`},
-		"two requests":         {[]string{"new", "--json"}, `{} {}`, "more than one request"},
-		"a grant with no use":  {[]string{"new", "--json"}, `{"grants": [{"id": "com.github.api"}]}`, "at least one use"},
-		"a grant naming both":  {[]string{"new", "--json"}, `{"grants": [{"id": "com.github.api", "secret": "gh", "envVar": "GH_TOKEN", "uses": [{"description": "x"}]}]}`, "not both"},
-		"a secret with no var": {[]string{"new", "--json"}, `{"grants": [{"secret": "gh", "uses": [{"description": "x"}]}]}`, `"envVar"`},
+		"a run flag beside it": {[]string{"run", "--json", "-p", "x"}, `{}`, "put --prompt in it"},
+		"a word beside it":     {[]string{"run", "--json", "fix"}, `{}`, `"prompt"`},
+		"an unknown field":     {[]string{"run", "--json"}, `{"promt": "x"}`, `unknown field "promt"`},
+		"two requests":         {[]string{"run", "--json"}, `{} {}`, "more than one request"},
+		"a grant with no use":  {[]string{"run", "--json"}, `{"grants": [{"id": "com.github.api"}]}`, "at least one use"},
+		"a grant naming both":  {[]string{"run", "--json"}, `{"grants": [{"id": "com.github.api", "secret": "gh", "envVar": "GH_TOKEN", "uses": [{"description": "x"}]}]}`, "not both"},
+		"a secret with no var": {[]string{"run", "--json"}, `{"grants": [{"secret": "gh", "uses": [{"description": "x"}]}]}`, `"envVar"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()
@@ -248,8 +248,8 @@ func TestRunCarriesItsSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, args := range map[string][]string{
-		"flags": {"new", "-d", "--no-source", "--skills", skillsDir, "-p", "go"},
-		"json":  {"new", "--json"},
+		"flags": {"run", "-d", "--no-source", "--skills", skillsDir, "-p", "go"},
+		"json":  {"run", "--json"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			setHome(t, t.TempDir())
@@ -289,7 +289,7 @@ func TestRunCarriesItsSkills(t *testing.T) {
 	}
 }
 
-// client.yaml's new section is what `new` takes when its command line says
+// client.yaml's new section is what `run` takes when its command line says
 // nothing about skills, and a flag or a --json field given replaces it rather
 // than adding to it (ADR 26-10-09-389).
 func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
@@ -308,11 +308,11 @@ func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 		json map[string]any
 		want []string
 	}{
-		{name: "nothing given", args: []string{"new", "-d", "--no-source", "-p", "go"}, want: []string{"configured", "mine"}},
-		{name: "--skills given", args: []string{"new", "-d", "--no-source", "--skills", "OTHER", "-p", "go"}, want: []string{"mine", "other"}},
-		{name: "--user-skills=false", args: []string{"new", "-d", "--no-source", "--user-skills=false", "-p", "go"}, want: []string{"configured"}},
-		{name: "json leaves both out", args: []string{"new", "--json"}, json: map[string]any{"noSource": true}, want: []string{"configured", "mine"}},
-		{name: "json says none", args: []string{"new", "--json"}, json: map[string]any{"noSource": true, "skills": []string{}, "userSkills": false}},
+		{name: "nothing given", args: []string{"run", "-d", "--no-source", "-p", "go"}, want: []string{"configured", "mine"}},
+		{name: "--skills given", args: []string{"run", "-d", "--no-source", "--skills", "OTHER", "-p", "go"}, want: []string{"mine", "other"}},
+		{name: "--user-skills=false", args: []string{"run", "-d", "--no-source", "--user-skills=false", "-p", "go"}, want: []string{"configured"}},
+		{name: "json leaves both out", args: []string{"run", "--json"}, json: map[string]any{"noSource": true}, want: []string{"configured", "mine"}},
+		{name: "json says none", args: []string{"run", "--json"}, json: map[string]any{"noSource": true, "skills": []string{}, "userSkills": false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -360,7 +360,7 @@ func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 	}
 }
 
-// A client.yaml that names a key nothing defines stops `new` with the key
+// A client.yaml that names a key nothing defines stops `run` with the key
 // named, before anything is created.
 func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 	setHome(t, t.TempDir())
@@ -372,7 +372,7 @@ func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "new", "-d", "--no-source", "-p", "go"})
+	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "run", "-d", "--no-source", "-p", "go"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "skils") || !strings.Contains(err.Error(), configFile) {
 		t.Fatalf("execute error = %v, want one naming skils and %s", err, configFile)

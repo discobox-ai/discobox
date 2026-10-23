@@ -64,7 +64,7 @@ func (a *App) newPoolListCommand() *cobra.Command {
 }
 
 func (a *App) newPoolGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get POOL_ID", Short: "Get a pool", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get POOL", Short: "Get a pool", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -129,7 +129,7 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		}
 		return a.writePool(cmd, pool)
 	}}
-	cmd.Flags().StringVar(&opts.provider, "provider", "", "Backing provider instance ID (required)")
+	cmd.Flags().StringVar(&opts.provider, "provider", "", "Backing provider instance, by name or ID (required)")
 	_ = cmd.MarkFlagRequired("provider")
 	_ = cmd.RegisterFlagCompletionFunc("provider", a.completeProviders)
 	addPoolAttributeFlags(cmd, &opts)
@@ -139,7 +139,7 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 func (a *App) newPoolUpdateCommand() *cobra.Command {
 	var opts poolOptions
 	var egressOpts egressFlags
-	cmd := &cobra.Command{Use: "update POOL_ID", Short: "Update a pool", Long: `Update a pool.
+	cmd := &cobra.Command{Use: "update POOL", Short: "Update a pool", Long: `Update a pool.
 
 --egress-allow and --egress-deny-by-default set the pool's egress level, which
 every discobox in the pool converges onto, running ones included. A build's own
@@ -205,7 +205,7 @@ base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
 }
 
 func (a *App) newPoolSetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "set-default POOL_ID", Short: "Set the project default pool", Long: `Set the project default pool.
+	return &cobra.Command{Use: "set-default POOL", Short: "Set the project default pool", Long: `Set the project default pool.
 
 New discoboxes created without an explicit --pool are scheduled into the
 project's default pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,10 +238,10 @@ project's default pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.complet
 }
 
 func (a *App) newPoolUnsetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "unset-default POOL_ID", Short: "Clear the project default pool", Long: `Clear the project default pool.
+	return &cobra.Command{Use: "unset-default POOL", Short: "Clear the project default pool", Long: `Clear the project default pool.
 
 Leaves the project with no default pool, so new discoboxes must name a pool
-explicitly with --pool. POOL_ID must be the current default; this is also how
+explicitly with --pool. POOL must be the current default; this is also how
 you release the default before deleting that pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
@@ -288,7 +288,7 @@ func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete POOL_ID...", Short: "Delete pools", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm POOL...", Aliases: []string{"delete", "remove"}, Short: "Delete pools", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -315,7 +315,7 @@ func (a *App) newPoolDeleteCommand() *cobra.Command {
 }
 
 func (a *App) newPoolClearCacheCommand() *cobra.Command {
-	return &cobra.Command{Use: "clear-cache POOL_ID", Short: "Stop a pool's discoboxes and empty its caches", Long: `Stop a pool's discoboxes and empty its caches.
+	return &cobra.Command{Use: "clear-cache POOL", Short: "Stop a pool's discoboxes and empty its caches", Long: `Stop a pool's discoboxes and empty its caches.
 
 Every running discobox on the pool is stopped, because the caches serve all of
 them, and then the pool empties:

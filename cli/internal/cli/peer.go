@@ -155,7 +155,7 @@ func (a *App) newPeerAddCommand() *cobra.Command {
 func (a *App) newPeerRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm PEER_ID...",
-		Aliases: []string{"delete"},
+		Aliases: []string{"delete", "remove"},
 		Short:   "Revoke enrolled peers",
 		Long: "Revoke enrolled peers, by full peer ID or by an unambiguous prefix.\n\n" +
 			"A revoked ID is refused on its next connection; connections it already has\n" +

@@ -30,7 +30,7 @@ func (a *App) newApplyCommand() *cobra.Command {
 	var dirOverrides []string
 	var allowDirty bool
 	cmd := &cobra.Command{
-		Use:   "apply [DISCOBOX_ID] [flags]",
+		Use:   "apply [DISCOBOX] [flags]",
 		Short: "Apply a discobox's committed source changes onto a local working tree",
 		Long: `Fetch a discobox's source commits and cherry-pick them onto the local working
 tree they started from, per docs/adr/0014.
@@ -38,7 +38,7 @@ tree they started from, per docs/adr/0014.
 "local" is this machine — the repository you ran discobox from; "discobox" is the
 copy of it the discobox works in. Commits only ever move discobox -> local.
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+Without DISCOBOX the discobox is taken from the ones "discobox ls" shows: the
 only one when there is one, otherwise you are asked to pick.
 
 Every source on the discobox is applied by default (the primary source plus any

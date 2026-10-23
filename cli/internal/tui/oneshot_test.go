@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The windows that are one command's own: `discobox new`, which is the window
+// The windows that are one command's own: `discobox run`, which is the window
 // opened on one run request, and `discobox attach`, which is it opened on one
 // discobox. Both open on the discobox they are about rather than on the list,
 // and both close when that is left.
@@ -128,7 +128,7 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 	}
 }
 
-// openRun is the window `discobox new` opens: the launcher, opened on the
+// openRun is the window `discobox run` opens: the launcher, opened on the
 // request the command built from its flags rather than on a prompt somebody
 // types.
 func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
@@ -149,7 +149,7 @@ func openRunWith(t *testing.T, ds *fakeSource, req RunRequest, askSource bool) (
 }
 
 // The question about uncommitted work is the window's own dialog, the one Enter
-// in the prompt puts up: `discobox new` hands its request over and the window
+// in the prompt puts up: `discobox run` hands its request over and the window
 // makes the discobox, rather than the command asking on the terminal first.
 func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 	t.Parallel()
@@ -189,6 +189,33 @@ func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
 	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 	if got := ds.runs[0].IncludeDirty; got != "false" {
 		t.Fatalf("includeDirty = %q, want the default answer to carry nothing extra", got)
+	}
+}
+
+// `discobox run` has already answered --include-dirty, so a dirty repository
+// is not asked about again; a directory in no repository still is, because
+// that question is the copy's, and Enter copies it.
+func TestARunWindowAsksOnlyTheQuestionTheCommandLeftOpen(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+	if got := ds.runs[0].IncludeDirty; got != "false" {
+		t.Fatalf("includeDirty = %q, want the command's answer", got)
+	}
+
+	ds = newFakeSource(testSandboxes()...)
+	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	d, m = openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the copy question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+	if m.dialog.subject != "/home/ada/notes" {
+		t.Fatalf("dialog subject = %q, want the directory", m.dialog.subject)
+	}
+	d.key("enter")
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+	if got := ds.runs[0].CopyDirectory; got != "true" {
+		t.Fatalf("copyDirectory = %q, want Enter to copy", got)
 	}
 }
 
@@ -351,7 +378,7 @@ func TestAnAttachNeverShowsTheIntroduction(t *testing.T) {
 	}
 }
 
-// `discobox new` with no -C asks where to cut from rather than taking the
+// `discobox run` with no SOURCE asks where to cut from rather than taking the
 // directory it ran in: the window opens on the create card, holding every flag
 // the command was given, and creating from it carries the ones the card has no
 // row for as well.
@@ -439,7 +466,7 @@ func TestARunsCreateCardEndsTheCommandHoweverItIsLeft(t *testing.T) {
 	}
 }
 
-// `discobox new` without -C used to be the directory it ran in, and Enter on
+// `discobox run` with no SOURCE used to be the directory it ran in, and Enter on
 // its card still is, whatever folder the last window here was left on.
 func TestARunsCreateCardOpensOnTheDirectoryItRanIn(t *testing.T) {
 	t.Parallel()
@@ -449,7 +476,7 @@ func TestARunsCreateCardOpensOnTheDirectoryItRanIn(t *testing.T) {
 	d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
 	d.key("enter")
 	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
-	// The directory the window runs in goes as no -C at all, as it always has.
+	// The directory the window runs in goes as an empty source, which is ".".
 	if got := ds.runRequests()[0].Source; got != "" {
 		t.Fatalf("source = %q, want the directory the command ran in", got)
 	}

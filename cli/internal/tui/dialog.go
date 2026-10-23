@@ -534,7 +534,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case dlgCreate:
 		// q closes it as it closes the other cards, and closing is turning it
-		// down: `discobox new`'s card ends the command on it (createDialog).
+		// down: `discobox run`'s card ends the command on it (createDialog).
 		if keyName(msg) == "q" {
 			return d.cancel(), true
 		}

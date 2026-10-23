@@ -414,7 +414,7 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 // than one and nobody to ask: the way out of the second is a reference before
 // the colon.
 const (
-	cpPickEmpty     = "there are no discoboxes; start one with `discobox new`"
+	cpPickEmpty     = "there are no discoboxes; start one with `discobox run`"
 	cpPickAmbiguous = "there is more than one discobox; name one before the colon"
 )
 

@@ -166,7 +166,7 @@ func TestCreatedFromTreeIsTheSnapshotTheDiscoboxCarried(t *testing.T) {
 	// The empty base and snapshot as create writes them, with the branch left
 	// unborn.
 	emptyTree := git("hash-object", "-t", "tree", "-w", "--stdin")
-	base := git("commit-tree", emptyTree, "-m", "discobox new empty base")
+	base := git("commit-tree", emptyTree, "-m", "discobox run empty base")
 	snapshotTree, cleanup, err := gitunborn.WorkspaceTree(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +292,7 @@ func TestFirstApplyIntoADirectoryWithNoRepositoryMakesOne(t *testing.T) {
 	sandboxGit := gitIn(sandboxRepo)
 	sandboxGit("init", "--initial-branch=trunk")
 	emptyTree := sandboxGit("hash-object", "-t", "tree", "-w", "--stdin")
-	base := sandboxGit("commit-tree", emptyTree, "-m", "discobox new empty base")
+	base := sandboxGit("commit-tree", emptyTree, "-m", "discobox run empty base")
 	sandboxGit("update-ref", "refs/heads/trunk", base)
 	sandboxGit("reset", "--hard")
 	if err := os.WriteFile(filepath.Join(sandboxRepo, "main.go"), []byte("package main\n"), 0o644); err != nil {

@@ -16,7 +16,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
-// The trails `audit list` merges, and who attests each record in them (ADR 0130
+// The trails `audit ls` merges, and who attests each record in them (ADR 0130
 // §2).
 const (
 	auditSourceHTTP    = "http"
@@ -37,7 +37,7 @@ const (
 
 var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceCreds, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
 
-// auditDefaultSources are the trails `audit list` reads when --source names
+// auditDefaultSources are the trails `audit ls` reads when --source names
 // none. DNS is left out: a discobox looks up an A and an AAAA for every name its
 // tools touch, and on the timeline they would crowd out everything else. It is
 // read when --source names it.
@@ -82,7 +82,7 @@ func (u auditUnavailable) sentence() string {
 	return fmt.Sprintf("%s could not be read, so its records are missing: %s", source, terminalSafe(u.Reason))
 }
 
-// auditListResult is `audit list -o json`: the merged records, and what is
+// auditListResult is `audit ls -o json`: the merged records, and what is
 // missing from them.
 type auditListResult struct {
 	Records     []auditRecord      `json:"records"`
@@ -95,8 +95,9 @@ func (a *App) newAuditListCommand() *cobra.Command {
 	var follow bool
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List one discobox's audit trails as a single timeline",
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List one discobox's audit trails as a single timeline",
 		Long: `List everything recorded about one discobox as one timeline, newest first.
 With --follow, print the last --limit oldest first and keep printing records as
 they are recorded.
@@ -124,8 +125,8 @@ The hooks and execs trails are kept inside the discobox, where anything running
 in it can rewrite them, and can be read only while it runs. A trail that could
 not be read is named on stderr (and under unavailable with -o json); its records
 are missing from the timeline.`,
-		Example: `  discobox admin audit list --discobox-id sbx_1 --since 1h
-  discobox admin audit list --discobox-id sbx_1 --source http,creds --follow`,
+		Example: `  discobox admin audit ls --discobox-id sbx_1 --since 1h
+  discobox admin audit ls --discobox-id sbx_1 --source http,creds --follow`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(sources) == 0 {
@@ -220,7 +221,7 @@ are missing from the timeline.`,
 	return cmd
 }
 
-// auditTimelineTrails is the trails `audit list` merges for one discobox, those
+// auditTimelineTrails is the trails `audit ls` merges for one discobox, those
 // wantSource names, each labeled for the timeline. missing is told about a pool
 // a pool-recorded trail could not read; a whole trail that cannot be read is
 // the reader's to report (auditReadOptions.unavailable).

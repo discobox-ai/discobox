@@ -320,7 +320,8 @@ type Sandbox struct {
 	OriginHostID string
 	OriginHost   string
 
-	// Source is what the discobox was cut from, spelled the way `-C` takes it:
+	// Source is what the discobox was cut from, spelled the way `run`'s SOURCE
+	// takes it:
 	// the client directory holding the repository, or the repository URL when
 	// there was no local one. Empty for a discobox created with no source at
 	// all. It is what the run options offer as sources to cut a new one from,
@@ -423,20 +424,12 @@ type Session struct {
 	// whole.
 	Home string
 
-	// Directory is the directory the window is running in — `-C`'s repository
-	// root, or the working directory's when -C names a repository URL — and
-	// Branch is what is checked out in it. It is where the window's prompt
-	// draft is kept, and what `discobox new` cuts a sandbox from by default
-	// unless the window was opened on a URL.
+	// Directory is the directory the window is running in — its repository
+	// root when it is in one — and Branch is what is checked out in it. It is
+	// where the window's prompt draft is kept, and what the window cuts a
+	// sandbox from by default.
 	Directory string
 	Branch    string
-
-	// Remote is the repository URL the window was opened on with -C, as it was
-	// written and including any @REF: a new discobox is cut from it by default,
-	// and the header names it. Empty for a window opened on a directory. Where
-	// such a discobox is filed is OriginKey, which is ref-less — the ref says
-	// which commit to cut, not which place the discobox belongs to.
-	Remote string
 
 	// OriginKey is where a discobox cut from the window's own source is filed,
 	// and HostKey is this machine's own key, which files its discoboxes with no
@@ -478,12 +471,10 @@ type Session struct {
 	// DataSource.SaveLastSource.
 	LastSource string
 
-	// ServerChosen and SourceChosen are whether the command line named the
-	// server (--server, which makes it the primary) and the source (-C, which
-	// makes it the window's own folder). What was named outranks what was
-	// saved: naming one is saying which you mean.
+	// ServerChosen is whether the command line named the server (--server,
+	// which makes it the primary). What was named outranks what was saved:
+	// naming one is saying which you mean.
 	ServerChosen bool
-	SourceChosen bool
 
 	// Servers are the servers a discobox can be created on, by the names the
 	// window lists them under, the primary first (ADR 0116 §5). Nil when there
@@ -644,7 +635,7 @@ type Harness struct {
 	// Unhosted that no pool in the project can run the harness: none hosts
 	// one of them and runs the kind of box it runs on (ADR 0145 §1, ADR
 	// 26-10-09-106 §4). A discobox is created only on a harness some pool can run, so the
-	// `new` picker leaves an unhosted one out; this screen lists every one.
+	// `run` picker leaves an unhosted one out; this screen lists every one.
 	Platforms string
 	Unhosted  bool
 
@@ -769,7 +760,7 @@ func (h Harness) displayName() string {
 	return h.ID
 }
 
-// flagName is what `discobox new --harness` takes for this harness.
+// flagName is what `discobox run --harness` takes for this harness.
 func (h Harness) flagName() string {
 	if slug := strings.TrimSpace(h.Slug); slug != "" {
 		return slug
@@ -1173,13 +1164,13 @@ type Listing struct {
 	Listed map[string]time.Time
 }
 
-// RunRequest is what Enter in the prompt asks for: `discobox new`'s arguments, and
+// RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
 	// Prompt is what the harness is given to do, as the create takes it: the
 	// arguments. The composer holds one piece of text and sends it as one
 	// argument — splitting it would be inventing tokens nobody typed — while
-	// `discobox new fix the tests` sends the three words the shell split.
+	// `discobox run . fix the tests` sends the three words the shell split.
 	Prompt  []string
 	Harness string // empty is the project default
 
@@ -1187,12 +1178,18 @@ type RunRequest struct {
 	// which asks — and nothing in a full-screen window can ask, so the launcher
 	// resolves it before the sandbox is created.
 	IncludeDirty string
+	// CopyDirectory answers the other question, for a source directory in no
+	// Git repository: "true" copies it in, "false" leaves the discobox with no
+	// source, and empty asks — with copying the answer it leads with. It has
+	// no flag: `discobox run` asks it too, and copies with nobody to ask.
+	CopyDirectory string
 
 	Detach bool
 	Env    []string
 	Secret []string
 
-	// Source is `-C DIR@REF`, the directory and ref the sandbox is cut from.
+	// Source is `run`'s SOURCE, DIR@REF, the directory and ref the sandbox is
+	// cut from; empty is the window's own directory.
 	Source string
 
 	// NoSource is `--no-source`: create the discobox with nothing checked out
@@ -1202,12 +1199,12 @@ type RunRequest struct {
 
 	// Include is `-i`: the extra sources brought into the same discobox beside
 	// the primary one, from the run options' Additional sources row or
-	// `discobox new`'s own request (WithRun).
+	// `discobox run`'s own request (WithRun).
 	Include []string
 
 	// Grant is `--grant`, as given: the uses of credentials the new discobox
 	// is given. The window offers no way to name one; it carries them because
-	// `discobox new` opens the window on its own request and that request is
+	// `discobox run` opens the window on its own request and that request is
 	// the whole command (WithRun). GrantStatement and GrantDefine are
 	// `--grant-statement` and `--grant-define`, the policy each carries.
 	Grant          []string
@@ -1215,9 +1212,9 @@ type RunRequest struct {
 	GrantDefine    []string
 
 	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
-	// options' rows of those names or `discobox new`'s own request; nil for
+	// options' rows of those names or `discobox run`'s own request; nil for
 	// one not given, which the create takes from the client's configuration
-	// as `discobox new` would.
+	// as `discobox run` would.
 	SkillDirs  []string
 	UserSkills *bool
 
@@ -1418,7 +1415,7 @@ type Forward interface {
 }
 
 // AuditRecord is one record of a discobox's audit timeline, as `discobox admin
-// audit list` prints it: when, which trail, and what it says. Everything else
+// audit ls` prints it: when, which trail, and what it says. Everything else
 // about it is AuditDetail's to say.
 type AuditRecord struct {
 	// ID is what AuditDetail is asked for, and the ID `audit get` takes.
@@ -2504,7 +2501,7 @@ type DataSource interface {
 	Services(ctx context.Context, sandboxID string) ([]Service, error)
 
 	// FollowAudit reads one discobox's audit trails as one timeline, the way
-	// `discobox admin audit list --follow` reads them: the newest records,
+	// `discobox admin audit ls --follow` reads them: the newest records,
 	// delivered oldest first, and then each record as it is recorded, until
 	// ctx ends. It blocks, and report is called from the goroutine running it.
 	// A trail that cannot be read is named in an update rather than failing

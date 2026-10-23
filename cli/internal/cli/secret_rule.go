@@ -329,9 +329,10 @@ another rule.`,
 
 func (a *App) newSecretRuleDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete RULE_ID...",
-		Short: "Delete approval rules; the grants they minted stay",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "rm RULE_ID...",
+		Aliases: []string{"delete", "remove"},
+		Short:   "Delete approval rules; the grants they minted stay",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := a.apiClient()
 			if err != nil {

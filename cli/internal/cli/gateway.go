@@ -170,7 +170,7 @@ func splitHeaderFlag(flag string) (string, string, error) {
 }
 
 func (a *App) newGatewayDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm NAME...", Aliases: []string{"delete"}, Short: "Remove gateways", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm NAME...", Aliases: []string{"delete", "remove"}, Short: "Remove gateways", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err

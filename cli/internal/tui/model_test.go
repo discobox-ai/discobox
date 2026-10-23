@@ -278,9 +278,10 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 	}
 }
 
-// A source directory in no Git repository is the same question with more at
-// stake — the whole directory is what would be carried — so it is asked before
-// anything is copied, and "no" still creates the discobox.
+// A source directory in no Git repository is asked about before anything is
+// copied, with the size it would carry, and "no" still creates the discobox.
+// There is no commit to start from instead, so copying is what Enter means; the
+// answer is the copy's, not --include-dirty's.
 func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -289,9 +290,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 	}{
 		{"y", "true"},
 		{"n", "false"},
-		// Enter is no: copying a home directory into a discobox is not
-		// something to do by pressing Enter twice.
-		{"enter", "false"},
+		{"enter", "true"},
 	} {
 		ds := newFakeSource()
 		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
@@ -313,8 +312,8 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		if len(ds.runs) != 1 {
 			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
 		}
-		if ds.runs[0].IncludeDirty != tc.want {
-			t.Fatalf("%s: includeDirty = %q, want %q", tc.answer, ds.runs[0].IncludeDirty, tc.want)
+		if ds.runs[0].CopyDirectory != tc.want || ds.runs[0].IncludeDirty != "" {
+			t.Fatalf("%s: copyDirectory = %q, includeDirty = %q, want %q and the other left alone", tc.answer, ds.runs[0].CopyDirectory, ds.runs[0].IncludeDirty, tc.want)
 		}
 		// The answer is in; nothing should still be reading the disk for it.
 		send(t, m, directorySizeMsg{})
@@ -954,7 +953,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	// On the window's own directory, the run names no source at all: that is
-	// already what `discobox new` would use, and passing it would only repeat it.
+	// already what `discobox run` would use, and passing it would only repeat it.
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "" {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}
@@ -966,7 +965,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
 	}
-	if !strings.Contains(m.opts.command(""), "-C /src/obot") {
+	if !strings.Contains(m.opts.command(""), "discobox run /src/obot") {
 		t.Fatalf("command should carry the folder: %q", m.opts.command(""))
 	}
 

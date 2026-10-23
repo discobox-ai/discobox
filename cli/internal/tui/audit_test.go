@@ -53,7 +53,7 @@ func auditRecords(summaries ...string) []AuditRecord {
 // The screen is the discobox's own timeline, followed: it is opened from the
 // workspace on the box on screen, it says it is reading before anything has
 // arrived, and it rides the newest record as records arrive — the equivalent
-// of `audit list --follow`.
+// of `audit ls --follow`.
 func TestTheAuditScreenFollowsTheBoxOnScreen(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)

@@ -18,22 +18,17 @@ import (
 // nothing on the list would list nothing.
 //
 // What the command line named outranks what was saved: --server is the
-// primary, and -C is the window's own folder. That is where the window opens,
-// not a choice made in it, so the store is taken to have it — it is saved only
-// once the filters move off it, and a window opened without the flags goes back
-// to what was saved before.
+// primary. That is where the window opens, not a choice made in it, so the
+// store is taken to have it — it is saved only once the filters move off it,
+// and a window opened without the flag goes back to what was saved before.
 func (m *Model) restoreView(view ListView) {
-	if m.session.SourceChosen {
-		own := m.session.folder()
-		view.FolderKey, view.FolderLabel, view.FolderSource, view.FolderLocal = own.key, own.label, own.source, own.local
-	}
 	if m.session.ServerChosen && len(m.session.Servers) > 0 {
 		view.Server = m.session.Servers[0]
 	}
 	m.savedView = view
 	// The window's own folder is the session's, not the copy saved: its label
-	// carries the branch checked out now, and its source the ref -C names now,
-	// neither of which is part of the key the view was saved under.
+	// carries the branch checked out now, which is not part of the key the
+	// view was saved under.
 	switch view.FolderKey {
 	case "":
 		m.list.folder = everyFolder
@@ -101,7 +96,7 @@ func (m *Model) saveViewNow() {
 // is marked saved before it lands, as a draft is, so a failing write is
 // reported once rather than on every tick.
 func (m *Model) viewToSave() (view ListView, ok bool) {
-	// A `discobox new` or `discobox attach` window never shows the list, so
+	// A `discobox run` or `discobox attach` window never shows the list, so
 	// nothing it holds is a choice somebody made; and before the session lands
 	// the window does not have the view it opened on.
 	if m.oneShot() || m.session.Directory == "" {

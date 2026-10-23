@@ -26,7 +26,7 @@ import (
 func (a *App) newPoolResourcesCommand() *cobra.Command {
 	var showProcesses bool
 	cmd := &cobra.Command{
-		Use:     "resources [POOL_ID]",
+		Use:     "resources [POOL]",
 		Aliases: []string{"top"},
 		Short:   "Show what a pool and its discoboxes are consuming",
 		Long: `Show what a pool and its discoboxes are consuming.
@@ -48,7 +48,7 @@ hold, summed, which double-counts shared pages and routinely exceeds CHARGED.
 Disk is walked fresh on every report. The cache is shared by every discobox in
 the pool, so it is counted once here and never per discobox.
 
-Without POOL_ID the project's default pool is used.`,
+Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool resources
   discobox admin pool resources pool_01hq
   discobox admin pool resources --processes`,
@@ -73,7 +73,7 @@ Without POOL_ID the project's default pool is used.`,
 				return err
 			}
 			if strings.TrimSpace(poolID) == "" {
-				return fmt.Errorf("no pool given and this project has no default pool; pass a POOL_ID")
+				return fmt.Errorf("no pool given and this project has no default pool; pass a POOL")
 			}
 			poolRes, err := client.GetPool(cmd.Context(), apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
 			if err != nil {
