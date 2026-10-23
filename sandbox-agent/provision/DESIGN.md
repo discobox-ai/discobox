@@ -11,7 +11,8 @@ package is what is done with them.
 A feature's steps are the runner's typed kinds: `file` (with `merge: json`, an
 RFC 7396 merge patch over the file the box already has, which is refused
 rather than replaced when it is not a JSON object, so a provider's
-`daemon.json` keeps what ours does not set), `systemd` (enable, mask, drop-in,
+`daemon.json` keeps what ours does not set; its `restart` names the units that
+read the file only as they start), `systemd` (enable, mask, drop-in,
 through `systemctl`), `group` (asked of `runuser`, then `groupadd`), `env` (a
 `/etc/profile.d/zz-discobox-<feature>--<step>.sh` script, named to sort after
 the box's own profile scripts so one that sets PATH outright does not drop it,
@@ -27,7 +28,14 @@ land outside it, and a zip whose entries carry no Unix modes), `packages`
 than asking; a list per distribution, the box's own os-release `ID`'s, else the
 first `ID_LIKE`'s that has one, and a box no list names fails the step), and `run` (whose `inputs` name the files and directories its script reads
 beside itself, so the digest covers them), each selected by `os`, `arch` and os-release
-`ID`/`ID_LIKE`. Each step is keyed by a digest of its definition and every
+`ID`/`ID_LIKE`. On a booted box (`Runner.Booted`, systemd running: a box's
+boot and a snapshot's, never an image's build) an enabled unit is started, and
+a unit a step places a drop-in for, or a file names in `restart`, is restarted
+if it is running (`systemctl try-restart`), once, after the feature's steps,
+all in one call so systemd orders them (`Step.Restarts`): it read them as it started, and the
+box may have started it before the feature was provisioned — containerd and a
+socket-activated dockerd are up before the `docker` feature lays their drop-ins
+— so it would otherwise run without them until the next boot. Each step is keyed by a digest of its definition and every
 file it names, recorded under `/opt/discobox/provision/steps/` on the root
 filesystem, never a declared volume; a step whose record matches is skipped
 unless its `check` exits non-zero (drift), so a second run changes nothing. A

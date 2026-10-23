@@ -76,6 +76,11 @@ type Runner struct {
 	// Self is the sandbox agent's own executable: a command resolving to it
 	// is one of its personalities, never a copy a feature can adopt.
 	Self string
+	// Booted is a box systemd is running: units a step enables are started,
+	// and the running units a step places a drop-in or a file for are
+	// restarted onto it. Unset, as for a tree or an image's build, steps
+	// only lay files.
+	Booted bool
 	// Tracker is told what happens, and writes provision.json; nil tells
 	// nobody.
 	Tracker *Tracker
@@ -382,10 +387,24 @@ func (r *Runner) finish(plan *featurePlan) {
 }
 
 // runSteps applies the feature's steps that want selects, in order, stopping
-// at the first that fails.
-func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int, provisionspec.Step) bool) ([]Outcome, error) {
+// at the first that fails. The running units the steps it applied configure
+// are restarted once, when its steps end (restartRunning).
+func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int, provisionspec.Step) bool) (outcomes []Outcome, err error) {
 	feature := plan.feature
-	var outcomes []Outcome
+	var restart []string
+	defer func() {
+		if len(restart) == 0 {
+			return
+		}
+		out, outErr := r.output(plan)
+		if outErr == nil {
+			outErr = r.restartRunning(ctx, out, restart...)
+		}
+		if outErr != nil {
+			plan.failed = errors.Join(plan.failed, fmt.Errorf("feature %q: restart %s: %w", feature.Name, strings.Join(restart, ", "), outErr))
+			err = plan.failed
+		}
+	}()
 	for i, step := range feature.Spec.Steps {
 		if !want(i, step) {
 			continue
@@ -412,6 +431,11 @@ func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int,
 		}
 		if result == Applied || result == Reapplied {
 			plan.changed = true
+			for _, unit := range step.Restarts() {
+				if !slices.Contains(restart, unit) {
+					restart = append(restart, unit)
+				}
+			}
 		}
 		r.logger().Info("provision", "feature", feature.Name, "step", step.Name, "kind", step.Kind(), "result", result)
 		outcomes = append(outcomes, Outcome{Feature: feature.Name, Step: step.Name, Result: result})

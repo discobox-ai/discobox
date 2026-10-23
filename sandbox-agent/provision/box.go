@@ -85,6 +85,7 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features m
 		Placeholders: PlaceholderDir,
 		Tracker:      tracker,
 		Logger:       logger,
+		Booted:       booted(),
 	}
 	if self, err := os.Executable(); err == nil {
 		runner.Self = self
@@ -120,6 +121,7 @@ func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, featur
 		LogDir:  LogDir,
 		Tracker: tracker,
 		Logger:  logger,
+		Booted:  booted(),
 	}
 	if self, err := os.Executable(); err == nil {
 		runner.Self = self
@@ -131,6 +133,10 @@ func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, featur
 	_, err = runner.Provision(ctx, loaded, opts)
 	return err
 }
+
+// booted reports whether systemd is running this box: a box's boot, never
+// an image's build.
+func booted() bool { return dirExists("/run/systemd/system") }
 
 // Trees provisions every feature of the bundle trees onto this box,
 // recording each step under records, with every step blocking and none
