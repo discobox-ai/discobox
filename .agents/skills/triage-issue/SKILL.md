@@ -249,7 +249,7 @@ Propose additions by editing this file.
 | | `area/proxy` | Egress proxy, MITM, and audit |
 | | `area/secrets` | Secrets, credential requests, agentcreds, discobox-access |
 | | `area/harness` | Coding-agent harnesses and their configuration |
-| | `area/images` | sandbox base image (`server/providers/dockerworker/sandbox-image`), vm-image, kernel, harness image builds |
+| | `area/images` | sandbox base image (`server/providers/dockerworker/sandbox-image`), vm-image, kernel, platform and harness bundle builds |
 | | `area/build` | Taskfile, CI, release, installers, the dev loop |
 | | `area/hooks` | `.discobox/hooks` background checks |
 | | `area/docs` | Docs not owned by one component (ADR index, READMEs) |

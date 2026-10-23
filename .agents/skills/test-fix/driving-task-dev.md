@@ -35,7 +35,9 @@ switch` — so checking out a commit *is* building it:
 
 - `build/discobox` and `build/discobox-server` are rebuilt; the server is
   restarted on `http://127.0.0.1:8080` with its data under `.tmp/discobox`.
-- The pool, sandbox, and harness images are rebuilt by the image watcher.
+- The pool and sandbox base images, and the platform and harness bundles, are
+  rebuilt by the image watcher; a box takes a rebuilt bundle once it is
+  re-pinned to it, at its next start.
 - **Always pass `--server http://127.0.0.1:8080`.** The box sets
   `DISCOBOX_SERVER=https://api.discobox.internal`. The flake's dev shell unsets
   it, but a shell that has not loaded the dev shell (an agent's tool shell,
