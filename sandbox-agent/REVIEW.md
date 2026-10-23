@@ -32,6 +32,30 @@
   boxd's Ubuntu 24.04 machines take. `task build:ubuntu-platform` builds the
   platform on an Ubuntu 24.04 base; see those steps apply there.
 
+- **A step that must be each box's own says `snapshot: false`.** A snapshot
+  is shared by every box of its plan (ADR 26-10-16-423 §8), so a step that
+  writes something keyed to one machine — a host key, an ID, a generated
+  secret — or that must run fresh on every box is kept out of it, on the step
+  or its whole feature; everything after it, and every feature requiring it,
+  is left out with it. The snapshot command also empties `machine-id`,
+  removes SSH host keys, and untrusts the build's proxy CA itself
+  (`cleanMachine`); anything else a package generates per machine is the
+  feature's to keep out.
+
+- **A snapshot provisions with none of a sandbox's mounts.** No primary
+  volume, no pool cache, no declared volume is bound in a build, as none was
+  in an image build: a step that writes under a declared `cache` path, which
+  a plain bind hides at each box's boot, ships its content aside instead (as
+  `nix` seeds its store), and one under a `data` path relies on the wiring's
+  overlay. A step that needs a box's mounts in place says `snapshot: false`.
+
+- **A snapshot is anonymous.** `discobox-sandbox-agent snapshot` runs from an
+  `agentlayer.SnapshotPlan`, whose `Validate` refuses a credentials endpoint,
+  secrets and sources. Nothing it reads may come from a sandbox's bootstrap,
+  and nothing it writes outside the provisioned features may land on the root
+  filesystem: its intake's record is `agentlayer.SnapshotStateFile`, under the
+  directory its taker removes.
+
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has
   and the source does not name, which is what keeps a provider's settings; it

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
 
@@ -218,6 +219,13 @@ func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, contai
 		return err
 	}
 	placed := record.Container == containerID && record.Layer == agent.Digest
+	if !placed {
+		// A snapshot holds the layer it was built with.
+		placed, err = r.imageHoldsAgent(ctx, containerID, agent.Digest)
+		if err != nil {
+			return err
+		}
+	}
 	reader, writer := io.Pipe()
 	go func() {
 		writer.CloseWithError(agentlayer.Archive(writer, agent, placed, pins))
@@ -366,10 +374,18 @@ func (r *DockerSandboxRuntime) deliveredMoved(ctx context.Context, existing *San
 		slog.WarnContext(ctx, "inspect the sandbox base image", "image", r.sandboxBaseImage, "error", err)
 		return movedPins, nil
 	}
-	if inspect.Container.Image != base.ID {
-		return movedBase, nil
+	if inspect.Container.Image == base.ID {
+		return movedPins, nil
 	}
-	return movedPins, nil
+	// A container started from a snapshot runs the base it was built from.
+	snapshotBase, _, err := r.snapshotOf(ctx, inspect.Container.Image)
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return movedNothing, err
+	}
+	if snapshotBase == base.ID {
+		return movedPins, nil
+	}
+	return movedBase, nil
 }
 
 func samePins(a, b agentlayer.Pins) bool {

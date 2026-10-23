@@ -1,0 +1,27 @@
+# Provisions a snapshot (ADR 26-10-16-423 §8): a box booted with a snapshot
+# plan in place of a sandbox's bootstrap. It provisions the platform and
+# harness its pins name with every step blocking, cleans the box of what is
+# any one machine's, writes its result beside the plan, and powers the box off
+# for whatever takes the snapshot. A sandbox's box never has a plan, and skips
+# this unit.
+#
+# Type=exec, not oneshot: the boot finishes while it provisions, so a step
+# that waits for the system to be up is not waiting on this unit. Should the
+# agent die before it powers the box off, FailureAction does, and the taker
+# finds no result.
+[Unit]
+Description=Discobox Provision a Snapshot
+Documentation=https://github.com/discobox-ai/discobox
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/discobox/snapshot.json
+FailureAction=poweroff
+
+[Service]
+Type=exec
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent snapshot
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -231,3 +231,34 @@ durable state asks the same question.
 - **The pool cache and the server's asset store read a bundle the same way.**
   Manifest parsing, a pin's reach and the damaged-blob rule live in
   `imagecache`; a change to one store's reading belongs there, not in a copy.
+
+## Snapshots
+
+- **Nothing of a sandbox reaches a snapshot build.** A build's plan, egress
+  and identity come from the create's plan alone (`snapshotPlan`): the
+  sandbox's own egress level, secrets, sentinels, gateways, sources and
+  account stay out, and `agentlayer.SnapshotPlan.Validate` refuses a plan
+  that carries them. A new input to a build that differs between sandboxes of
+  one plan either goes into the key or stays out of the build.
+- **A build container has no labels of its own.** A container inherits its
+  image's labels, so anything put on a build reaches every sandbox started
+  from its snapshot. It carries the project and pool labels every container
+  of the pool carries, and is found by its name with them.
+- **A container the pool starts that is no sandbox's still enters the start
+  gate.** A snapshot build starts a box and fetches through the caches a clear
+  empties, so it holds the gate for its whole length, and a clear cancels it
+  only once the gate is shut (`cancelSnapshotBuilds`, passed to
+  `startGate.close`): cancelled before, a build asked for in between enters
+  the open gate and holds the clear's drain for up to a whole build. A new
+  kind of container the runtime starts does the same, or a clear runs under
+  it.
+- **A snapshot build's proxy record goes only with its container.** The
+  proxy reads an identity with no egress entry as unrestricted, and a build
+  outlives an agent that restarted under it, so the material reaper skips
+  `layout.IsSnapshotID` identities, and a build is removed in one order
+  (`removeSnapshotBuild`): its container, then its policy and material, then
+  its tree, each only once what goes before it is gone — the tree last,
+  since it is what the next sweep finds the build by to try again.
+- **A build's box is described by `boxConfig`, as a sandbox's is.** A host or
+  network setting added to one and not the other makes a snapshot a box of
+  another kind than the ones started from it.

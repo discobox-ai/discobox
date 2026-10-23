@@ -70,8 +70,16 @@ const DefaultOutputPath = "/run/discobox/proxy/proxy.env"
 // nil result as "no file to write" rather than an error.
 func Render(sandboxJSONPath string) ([]byte, error) {
 	vars, err := Vars(sandboxJSONPath)
-	if err != nil || len(vars) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	return render(vars), nil
+}
+
+// render is vars as an EnvironmentFile, nil when there are none.
+func render(vars map[string]string) []byte {
+	if len(vars) == 0 {
+		return nil
 	}
 	names := make([]string, 0, len(vars))
 	for name := range vars {
@@ -82,7 +90,7 @@ func Render(sandboxJSONPath string) ([]byte, error) {
 	for _, name := range names {
 		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(vars[name]))
 	}
-	return []byte(b.String()), nil
+	return []byte(b.String())
 }
 
 // Vars is sandboxJSONPath's proxy-trust env, the keys named in ProxyEnvs
@@ -102,17 +110,24 @@ func Vars(sandboxJSONPath string) (map[string]string, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("parse sandbox config %s: %w", sandboxJSONPath, err)
 	}
-	if len(manifest.ProxyEnvs) == 0 {
-		return nil, nil
+	return Resolve(manifest.Env, manifest.ProxyEnvs), nil
+}
+
+// Resolve is the variables of env that names names, with
+// sandboxconfig.LocalSubnetsToken resolved against this box's own
+// directly-connected networks; nil when names is empty.
+func Resolve(env map[string]string, names []string) map[string]string {
+	if len(names) == 0 {
+		return nil
 	}
 	subnets := nestedbridge.LocalSubnets()
 	vars := map[string]string{}
-	for _, name := range manifest.ProxyEnvs {
-		if value, ok := manifest.Env[name]; ok {
+	for _, name := range names {
+		if value, ok := env[name]; ok {
 			vars[name] = sandboxconfig.ResolveLocalSubnetsToken(value, subnets)
 		}
 	}
-	return vars, nil
+	return vars
 }
 
 // WriteFile renders sandboxJSONPath's proxy-trust env to outPath. When Render
@@ -126,6 +141,17 @@ func WriteFile(sandboxJSONPath, outPath string) error {
 	if err != nil {
 		return err
 	}
+	return write(content, outPath)
+}
+
+// WriteVars writes vars, already resolved (Resolve), to outPath as WriteFile
+// does: no vars removes the file. A snapshot's build, which has no
+// sandbox.json, renders its plan's env with it.
+func WriteVars(vars map[string]string, outPath string) error {
+	return write(render(vars), outPath)
+}
+
+func write(content []byte, outPath string) error {
 	if content == nil {
 		if err := os.Remove(outPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove stale %s: %w", outPath, err)

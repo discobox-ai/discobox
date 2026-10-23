@@ -32,6 +32,10 @@ type Config struct {
 	// Sandboxes is the parent of every sandbox's tree, where each one's
 	// record (RecordFileName) is.
 	Sandboxes string
+	// Snapshots is the parent of every snapshot build's tree, where each
+	// one's record is, under its layout.SnapshotIDPrefix ID: a build is no
+	// sandbox, so its tree is not among theirs.
+	Snapshots string
 	// Fetch is where a blob the cache lacks comes from: the control plane's
 	// asset routes.
 	Fetch Fetch
@@ -41,6 +45,7 @@ type Config struct {
 type Cache struct {
 	blobs     *imagecache.Layout
 	sandboxes string
+	snapshots string
 	fetch     Fetch
 
 	// fetches shares one fetch of a digest among every read wanting it.
@@ -60,6 +65,7 @@ func New(cfg Config) *Cache {
 	return &Cache{
 		blobs:     imagecache.Open(cfg.Dir),
 		sandboxes: cfg.Sandboxes,
+		snapshots: cfg.Snapshots,
 		fetch:     cfg.Fetch,
 		now:       time.Now,
 	}
@@ -72,7 +78,7 @@ var errNotFound = errors.New("not pinned by this sandbox")
 // pinnedManifest finds the sandbox's pin under which a manifest of name is in
 // its scope: the pin's own digest, or one its index lists.
 func (c *Cache) pinnedManifest(ctx context.Context, sandboxID, name, digest string) (Pin, error) {
-	pins, err := sandboxPins(c.sandboxes, sandboxID)
+	pins, err := c.pins(sandboxID)
 	if err != nil {
 		return Pin{}, err
 	}
@@ -99,7 +105,7 @@ func (c *Cache) pinnedManifest(ctx context.Context, sandboxID, name, digest stri
 // the pin's own, or under an index each manifest it lists — names digest as
 // its config or a layer.
 func (c *Cache) pinnedBlob(ctx context.Context, sandboxID, digest string) error {
-	pins, err := sandboxPins(c.sandboxes, sandboxID)
+	pins, err := c.pins(sandboxID)
 	if err != nil {
 		return err
 	}
@@ -203,7 +209,7 @@ var ErrNoAgentLayer = errors.New("the platform bundle has no agent layer for thi
 // (agentlayer.AgentLayer says why it is the last). False is a sandbox pinned
 // to no platform.
 func (c *Cache) AgentLayer(ctx context.Context, sandboxID string) (string, bool, error) {
-	pins, err := sandboxPins(c.sandboxes, sandboxID)
+	pins, err := c.pins(sandboxID)
 	if err != nil {
 		return "", false, err
 	}

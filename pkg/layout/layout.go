@@ -275,6 +275,30 @@ func (r Root) PoolBuild(projectID, poolID string) string {
 	return r.join(r.ProjectCachePools(projectID), poolID, "build")
 }
 
+// SnapshotIDPrefix begins the identity of every snapshot build (ADR
+// 26-10-16-423 §8): a box provisioned for no sandbox, whose proxy client
+// certificate names it as a sandbox's names that sandbox. No sandbox ID
+// begins with it, so what is a build's is told from what is a sandbox's by
+// its ID alone.
+const SnapshotIDPrefix = "snapshot_"
+
+// IsSnapshotID reports whether id is a snapshot build's.
+func IsSnapshotID(id string) bool { return strings.HasPrefix(id, SnapshotIDPrefix) }
+
+// PoolSnapshots is the parent of every snapshot build's tree for one pool:
+// beside the sandboxes' trees, since a build's is bound into its box as a
+// sandbox's config is, and never in PoolBuild, which no box may reach (ADR
+// 0050); and not among PoolSandboxes, which the control plane is told of and
+// the volume reaper scans, since a build is no sandbox.
+func (r Root) PoolSnapshots(projectID, poolID string) string {
+	return r.join(r.PoolData(projectID, poolID), "snapshots")
+}
+
+// Snapshot is one snapshot build's tree.
+func (r Root) Snapshot(projectID, poolID, buildID string) string {
+	return r.join(r.PoolSnapshots(projectID, poolID), buildID)
+}
+
 // --- proxy material --------------------------------------------------------
 
 // ProxyCerts holds one pool's proxy CA bundle and server certificate.

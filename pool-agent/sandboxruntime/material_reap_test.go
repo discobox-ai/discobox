@@ -115,6 +115,20 @@ func TestMaterialReaperSparesASandboxWhoseCreateHoldsItsLock(t *testing.T) {
 	}
 }
 
+// A snapshot build has no sandbox container to be found by, and its material
+// outlives an agent that restarted under it, so the reaper leaves it to the
+// snapshot sweep: dropped while its container runs, its egress would be
+// unrestricted.
+func TestMaterialReaperLeavesASnapshotBuildToTheSweep(t *testing.T) {
+	r := materialDaemon(t, "sbx_1", 1<<62)
+	id := snapshotBuildID(strings.Repeat("a", 64))
+	stageAgedMaterial(t, r, id)
+	r.reconcileSandboxMaterial(t.Context(), slog.New(slog.DiscardHandler))
+	if _, err := os.Stat(filepath.Join(proxyagent.PoolSandboxMaterialRoot(r.root, r.projectID, r.poolID), id)); err != nil {
+		t.Fatalf("the reaper removed a build's material: %v", err)
+	}
+}
+
 // The listing the scan starts from can predate a create that finished before
 // the reaper took the lock. The look taken under the lock is what decides.
 func TestMaterialReaperSparesASandboxWhoseContainerAppearedAfterTheScan(t *testing.T) {

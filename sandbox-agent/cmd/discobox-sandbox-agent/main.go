@@ -106,6 +106,10 @@ func run(name string, args []string) int {
 	if len(args) > 0 && args[0] == "install" {
 		return runInstall(args[1:])
 	}
+	// discobox-snapshot.service: provisions a snapshot (ADR 26-10-16-423 §8).
+	if len(args) > 0 && args[0] == "snapshot" {
+		return runSnapshot(args[1:])
+	}
 	// Applies the features of bundle trees to this box (ADR 26-10-16-423 §3).
 	if len(args) > 0 && args[0] == "provision" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
