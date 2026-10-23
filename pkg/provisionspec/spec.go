@@ -161,6 +161,11 @@ type FileStep struct {
 	// replacing it, so a file the box came with keeps what it says that
 	// Source does not (ADR 26-10-16-423 §9). Its only value is MergeJSON.
 	Merge string `yaml:"merge,omitempty"`
+	// Restart names the units that read the file only as they start: on a
+	// booted box, each one running is restarted once the feature's steps
+	// are applied, so it runs on what the step put there. A unit not running
+	// reads it when it next starts.
+	Restart []string `yaml:"restart,omitempty" json:",omitempty"`
 }
 
 // MergeJSON merges a JSON object as an RFC 7396 merge patch: objects merge
@@ -179,7 +184,11 @@ type SystemdStep struct {
 }
 
 // SystemdDrop is a drop-in for Unit, from a file of the feature's, written as
-// /etc/systemd/system/<Unit>.d/<Name>.
+// /etc/systemd/system/<Unit>.d/<Name>. On a booted box Unit is restarted, if
+// it is running, once the feature's steps are applied (Step.Restarts), since
+// a running unit keeps the environment and settings it started with: a
+// daemon the box started before the drop-in was placed would otherwise run
+// without it until the box's next boot.
 type SystemdDrop struct {
 	Unit   string `yaml:"unit"`
 	Name   string `yaml:"name"`
@@ -260,6 +269,20 @@ func (p PackagesStep) For(id string, idLike []string) ([]string, bool) {
 		}
 	}
 	return nil, false
+}
+
+// Restarts is the units the step configures that read it only as they
+// start: a drop-in's unit, and the units a file names in Restart. On a
+// booted box the runner restarts those running once the feature's steps are
+// applied.
+func (s Step) Restarts() []string {
+	switch {
+	case s.File != nil:
+		return s.File.Restart
+	case s.Systemd != nil && s.Systemd.DropIn != nil:
+		return []string{s.Systemd.DropIn.Unit}
+	}
+	return nil
 }
 
 // Wiring reports whether the step is the cheap wiring every feature that is
@@ -596,6 +619,11 @@ func (f *FileStep) validate() error {
 	}
 	if f.Merge != "" && f.Merge != MergeJSON {
 		return fmt.Errorf("file: merge %q is not %q", f.Merge, MergeJSON)
+	}
+	for _, unit := range f.Restart {
+		if !unitPattern.MatchString(unit) {
+			return fmt.Errorf("file: restart: %q is not a unit name", unit)
+		}
 	}
 	return validMode("file", f.Mode)
 }

@@ -40,6 +40,20 @@ func (r *Runner) applyFile(feature provisionspec.Feature, step *provisionspec.Fi
 	return writeFileAtomic(target, data, fileMode(step.Mode))
 }
 
+// restartRunning restarts each of units that is running, on a booted box,
+// so it runs on what steps just placed for it: a running unit read its
+// drop-ins and files as it started. One not running is left to read them
+// when it starts. Unless the box is Booted, nothing runs to be restarted.
+// They go in one call, so systemd orders them by their dependencies —
+// containerd before the dockerd that needs it — and each restarts once
+// however many steps configured it.
+func (r *Runner) restartRunning(ctx context.Context, out io.Writer, units ...string) error {
+	if len(units) == 0 || !r.Booted {
+		return nil
+	}
+	return r.systemctl(ctx, out, append([]string{"try-restart"}, units...)...)
+}
+
 // mergeJSONFile is the file at path with patch merged into it
 // (provisionspec.MergeJSON). A file there that is not a JSON object is
 // refused rather than replaced: it is the box's, and what it says would be
@@ -127,15 +141,15 @@ func (r *Runner) applySystemd(ctx context.Context, out io.Writer, feature provis
 			return err
 		}
 	}
-	running := r.root() == "/" && dirExists("/run/systemd/system")
-	if running && (step.DropIn != nil || len(step.Enable) > 0) {
+	if r.Booted && (step.DropIn != nil || len(step.Enable) > 0) {
 		if err := r.systemctl(ctx, out, "daemon-reload"); err != nil {
 			return err
 		}
 	}
+
 	if len(step.Enable) > 0 {
 		args := []string{"enable"}
-		if running {
+		if r.Booted {
 			args = append(args, "--now")
 		}
 		if err := r.systemctl(ctx, out, append(args, step.Enable...)...); err != nil {

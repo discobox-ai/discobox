@@ -13,9 +13,10 @@ steps:
     run: link-personalities.sh
 
   # Merged over the box's own, so what a provider set that ours does not
-  # stays (ADR 26-10-16-423 §9).
+  # stays (ADR 26-10-16-423 §9). dockerd reads it only as it starts, and the
+  # box may have started it already.
   - name: daemon-json
-    file: {path: /etc/docker/daemon.json, source: daemon.json, merge: json}
+    file: {path: /etc/docker/daemon.json, source: daemon.json, merge: json, restart: [docker.service]}
   - name: containerd-runc-ca
     systemd:
       dropIn: {unit: containerd.service, name: runc-ca.conf, source: systemd/containerd.service.d/runc-ca.conf}

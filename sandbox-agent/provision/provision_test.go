@@ -846,3 +846,73 @@ func TestSnapshotIsNotPartOfAStepsDigest(t *testing.T) {
 		t.Fatalf("digests %s and %s (%v), want the same", a, b, err)
 	}
 }
+
+// On a booted box, a unit a step places a drop-in for, or names among the
+// units a placed file restarts, is restarted if it is running, once, after the
+// feature's steps: it read its
+// drop-ins and files as it started, and a daemon the box started before the
+// feature was provisioned would otherwise run without them until the next
+// boot. On a tree nothing is started or restarted.
+func TestABootedBoxRestartsTheUnitsAStepConfigures(t *testing.T) {
+	b := newBox(t)
+	b.feature("docker", map[string]string{
+		provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: daemon-json
+    file: {path: /etc/docker/daemon.json, source: daemon.json, restart: [docker.service]}
+  - name: proxy
+    systemd:
+      dropIn: {unit: containerd.service, name: proxy.conf, source: proxy.conf}
+  - name: units
+    systemd:
+      enable: [discobox-bridge.service]
+`,
+		"daemon.json": "{}",
+		"proxy.conf":  "[Service]\n",
+	})
+	b.mustApply()
+	if slices.ContainsFunc(b.tools, func(tool string) bool { return strings.Contains(tool, "restart") || strings.Contains(tool, "--now") }) {
+		t.Fatalf("a tree's provisioning started or restarted units: %v", b.tools)
+	}
+
+	b = newBox(t)
+	b.feature("docker", map[string]string{
+		provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: daemon-json
+    file: {path: /etc/docker/daemon.json, source: daemon.json, restart: [docker.service]}
+  - name: proxy
+    systemd:
+      dropIn: {unit: containerd.service, name: proxy.conf, source: proxy.conf}
+  - name: units
+    systemd:
+      enable: [discobox-bridge.service]
+`,
+		"daemon.json": "{}",
+		"proxy.conf":  "[Service]\n",
+	})
+	b.runner.Booted = true
+	b.mustApply()
+	for _, want := range []string{
+		"systemctl --root=" + b.root + " daemon-reload",
+		"systemctl --root=" + b.root + " enable --now discobox-bridge.service",
+		// Once, after the feature's steps, every unit they configured in
+		// one call, so systemd orders them and none restarts twice.
+		"systemctl --root=" + b.root + " try-restart docker.service containerd.service",
+	} {
+		if !slices.Contains(b.tools, want) {
+			t.Errorf("a booted box's provisioning did not run %q: %v", want, b.tools)
+		}
+	}
+	if restarts := slices.DeleteFunc(slices.Clone(b.tools), func(tool string) bool { return !strings.Contains(tool, "try-restart") }); len(restarts) != 1 {
+		t.Errorf("restarts = %v, want one", restarts)
+	}
+	if last := b.tools[len(b.tools)-1]; !strings.Contains(last, "try-restart") {
+		t.Errorf("the restart was not last: %v", b.tools)
+	}
+	// Applied already: nothing is restarted again.
+	b.mustApply()
+	if slices.ContainsFunc(b.tools, func(tool string) bool { return strings.Contains(tool, "try-restart") }) {
+		t.Errorf("a step already applied restarted its unit again: %v", b.tools)
+	}
+}

@@ -32,6 +32,13 @@
   boxd's Ubuntu 24.04 machines take. `task build:ubuntu-platform` builds the
   platform on an Ubuntu 24.04 base; see those steps apply there.
 
+- **A file a running daemon reads only as it starts names it in `restart`.**
+  A booted box may have started the daemon before its feature was provisioned
+  — containerd and a socket-activated dockerd were up before the `docker`
+  feature laid their proxy and runc drop-ins, and nested containers had no
+  way out until the next boot. A drop-in restarts its own unit; a plain
+  `file` step (`daemon.json`) has to say which units read it.
+
 - **A step that must be each box's own says `snapshot: false`.** A snapshot
   is shared by every box of its plan (ADR 26-10-16-423 §8), so a step that
   writes something keyed to one machine — a host key, an ID, a generated
