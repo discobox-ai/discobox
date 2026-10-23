@@ -25,7 +25,7 @@ import (
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
-var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder for local OCI bundle exports")
+var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder for local OCI bundle exports when the host daemon's own cannot export them")
 
 // bundleLayoutDir is where the watcher exports each bundle, as the OCI image
 // layout tar <name>/<hex>.tar named by the digest of the manifest it holds,
@@ -117,19 +117,20 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	specs, err := dockerImageSpecs(ctx, repoRoot)
+	// Only local builds need host Docker. macOS and Windows default to
+	// describing builds for the pool, and Linux can opt into that mode too.
+	builder := ""
+	if !buildModeEnabled() {
+		if builder, err = localBundleBuilder(ctx, repoRoot); err != nil {
+			return err
+		}
+	}
+	specs, err := dockerImageSpecs(ctx, repoRoot, builder)
 	if err != nil {
 		return err
 	}
 	if len(specs) == 0 {
 		return errors.New("no Docker images configured")
-	}
-	// Only local builds need host Docker. macOS and Windows default to
-	// describing builds for the pool, and Linux can opt into that mode too.
-	if !buildModeEnabled() {
-		if err := runCommand(ctx, repoRoot, "go", "tool", "task", "buildx:builder", "BUILDX_BUILDER="+*bundleBuilder); err != nil {
-			return fmt.Errorf("prepare bundle builder: %w", err)
-		}
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -142,7 +143,7 @@ func run(ctx context.Context) error {
 	// is not on it until the list is discovered again.
 	discovery := time.NewTicker(inputDiscoveryInterval)
 	defer discovery.Stop()
-	rediscover := func(ctx context.Context) ([]imageSpec, error) { return dockerImageSpecs(ctx, repoRoot) }
+	rediscover := func(ctx context.Context) ([]imageSpec, error) { return dockerImageSpecs(ctx, repoRoot, builder) }
 	return watchImages(ctx, repoRoot, specs, ticker.C, presence.C, discovery.C, rediscover)
 }
 
@@ -382,7 +383,53 @@ func findRepoRoot() (string, error) {
 	}
 }
 
-func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error) {
+// localBundleBuilder is the buildx builder local OCI bundle exports use: the
+// host daemon's own when it keeps images in containerd's store, which is what
+// lets its builder export an OCI layout; otherwise the docker-container
+// builder -bundle-builder names, prepared here. The host's own is preferred
+// because it runs a build's steps through the daemon's runtime, which inside
+// a discobox is what carries the proxy and its CA into them (ADR 0020); a
+// docker-container builder runs them with its own. It is named, never left to
+// buildx, which would take whichever builder is selected (BUILDX_BUILDER, the
+// last `docker buildx use`): the daemon's own is the builder named after its
+// Docker context.
+func localBundleBuilder(ctx context.Context, repoRoot string) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "info", "--format", "{{json .DriverStatus}}").Output()
+	if err != nil {
+		return "", fmt.Errorf("read the host daemon's image store: %w", err)
+	}
+	if containerdImageStore(out) {
+		context, err := exec.CommandContext(ctx, "docker", "context", "show").Output()
+		if err != nil {
+			return "", fmt.Errorf("read the host daemon's Docker context: %w", err)
+		}
+		return strings.TrimSpace(string(context)), nil
+	}
+	if err := runCommand(ctx, repoRoot, "go", "tool", "task", "buildx:builder", "BUILDX_BUILDER="+*bundleBuilder); err != nil {
+		return "", fmt.Errorf("prepare bundle builder: %w", err)
+	}
+	return *bundleBuilder, nil
+}
+
+// containerdImageStore reports whether `docker info`'s DriverStatus, as JSON,
+// is the containerd image store's.
+func containerdImageStore(driverStatus []byte) bool {
+	var status [][]string
+	if err := json.Unmarshal(driverStatus, &status); err != nil {
+		return false
+	}
+	for _, pair := range status {
+		if len(pair) == 2 && pair[0] == "driver-type" && pair[1] == "io.containerd.snapshotter.v1" {
+			return true
+		}
+	}
+	return false
+}
+
+// dockerImageSpecs lists every image the watcher builds. builder is the
+// buildx builder bundles are exported with (localBundleBuilder); empty, in
+// build mode, where nothing is built here, names none.
+func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpec, error) {
 	// The sandbox base image both agent images build FROM. Its inputs are
 	// folded into theirs below, so a base edit rebuilds them and changes their
 	// content tags rather than leaving them on a base that no longer exists.
@@ -524,7 +571,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			devPrefix:   "discobox-platform:dev-",
 			envImageKey: platformBundleEnvKey,
 			buildDir:    repoRoot,
-			buildArgs: bundleBuildArgs(bundleLayoutDirOf(repoRoot, "discobox-platform"), "-f", "sandbox-agent/Dockerfile", "--target", "platform",
+			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, "discobox-platform"), "-f", "sandbox-agent/Dockerfile", "--target", "platform",
 				"--build-arg", harness.LayerMetadataBuildArg+"=", "."),
 			contextDir: repoRoot,
 			dockerfile: "sandbox-agent/Dockerfile",
@@ -564,7 +611,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			envImageKey: harnessBundleEnvKey(harnessImage.name),
 			// The metadata argument is filled in from image.json by buildImage
 			// at build time; the placeholder marks where it lands.
-			buildArgs: bundleBuildArgs(bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
+			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
 				"--build-arg", harness.MetadataBuildArg+"=", harnessDir),
 			metadataFile: metadataFile,
 			metadataArg:  harness.MetadataBuildArg,
@@ -632,12 +679,15 @@ func digestLayout(layoutDir, digest string) string {
 // layoutDir, an OCI image layout tar, by way of partialLayout. No image store
 // is involved: a bundle is applied by the sandbox agent, never run (ADR
 // 26-10-16-423 §13). Neither provenance nor an SBOM is attached, so the
-// layout's index lists the one manifest the bundle is pinned by. The OCI
-// exporter uses the docker-container builder prepared at watcher startup,
-// independently of the host daemon's image store and runnable-image builds.
-func bundleBuildArgs(layoutDir string, args ...string) []string {
-	return append([]string{"buildx", "build", "--builder", *bundleBuilder, "--provenance=false", "--sbom=false",
-		"--output", "type=oci,dest=" + partialLayout(layoutDir)}, args...)
+// layout's index lists the one manifest the bundle is pinned by. builder is
+// the one localBundleBuilder chose; empty, in build mode, names none.
+func bundleBuildArgs(builder, layoutDir string, args ...string) []string {
+	argv := []string{"buildx", "build"}
+	if builder != "" {
+		argv = append(argv, "--builder", builder)
+	}
+	return append(append(argv, "--provenance=false", "--sbom=false",
+		"--output", "type=oci,dest="+partialLayout(layoutDir)), args...)
 }
 
 // harnessImageEnvKey and harnessBundleEnvKey return the .env keys the server

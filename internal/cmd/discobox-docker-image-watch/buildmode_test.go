@@ -23,7 +23,7 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 	if err != nil {
 		t.Skipf("repository root not found: %v", err)
 	}
-	specs, err := dockerImageSpecs(context.Background(), repoRoot)
+	specs, err := dockerImageSpecs(context.Background(), repoRoot, "discobox")
 	if err != nil {
 		t.Fatalf("dockerImageSpecs: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestStampBuildModeImagesIsStableForUnchangedInputs(t *testing.T) {
 	if err != nil {
 		t.Skipf("repository root not found: %v", err)
 	}
-	specs, err := dockerImageSpecs(context.Background(), repoRoot)
+	specs, err := dockerImageSpecs(context.Background(), repoRoot, "discobox")
 	if err != nil {
 		t.Fatalf("dockerImageSpecs: %v", err)
 	}
