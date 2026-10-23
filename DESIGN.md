@@ -427,9 +427,15 @@ Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.
 
-In local-build mode (the Linux default), the watcher prepares `buildx:builder`
-and selects it explicitly for OCI bundle exports. Runnable images retain the
-host Docker builder and its local parent images. macOS and Windows default to
+In local-build mode (the Linux default), the watcher exports OCI bundles with
+the host daemon's own builder when the daemon keeps images in containerd's
+store, which is what lets that builder export a layout; only on the classic
+store does it prepare `buildx:builder`, a docker-container builder, and select
+it for them. The host's own is preferred because it runs each step through the
+daemon's runtime, which in a discobox carries the proxy and its CA into the
+step (ADR 0020); a docker-container builder runs steps with its own and has no
+way out of the box. Runnable images retain the host Docker builder and its
+local parent images. macOS and Windows default to
 describing builds for the pool and do not initialize or require host Docker;
 `DISCOBOX_DEV_DOCKER_IMAGE_BUILD` overrides the platform's mode.
 

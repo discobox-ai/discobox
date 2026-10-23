@@ -23,7 +23,7 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, err := dockerImageSpecs(context.Background(), repoRoot)
+	specs, err := dockerImageSpecs(context.Background(), repoRoot, "discobox")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	gotNames := make([]string, 0, len(specs))
 	gotEnvKeys := map[string]bool{}
 	for _, spec := range specs {
-		if spec.bundle && !strings.Contains(strings.Join(spec.buildArgs, " "), "--builder "+*bundleBuilder+" ") {
+		if spec.bundle && !strings.Contains(strings.Join(spec.buildArgs, " "), "--builder discobox ") {
 			t.Errorf("%s does not select the OCI bundle builder: %v", spec.name, spec.buildArgs)
 		}
 		if !spec.bundle && contains(spec.buildArgs, "--builder") {
@@ -614,5 +614,33 @@ func TestReleaseImageClampsBundlesToTheWatchersEpoch(t *testing.T) {
 	want := "--build-arg SOURCE_DATE_EPOCH=" + harness.BundleSourceDateEpoch + "{{else}}"
 	if !strings.Contains(string(taskfile), want) {
 		t.Fatalf("Taskfile.yml's release:image does not build bundles with %q; it must match harness.BundleSourceDateEpoch", want)
+	}
+}
+
+// A host daemon on containerd's image store exports bundles itself, through
+// its own runtime, and one on the classic store needs the docker-container
+// builder: only the first is read as containerd's.
+func TestContainerdImageStoreReadsTheDriverStatus(t *testing.T) {
+	for status, want := range map[string]bool{
+		`[["driver-type","io.containerd.snapshotter.v1"]]`:                                true,
+		`[["Backing Filesystem","extfs"],["driver-type","io.containerd.snapshotter.v1"]]`: true,
+		`[["Backing Filesystem","extfs"],["Supports d_type","true"]]`:                     false,
+		`null`:     false,
+		`not json`: false,
+	} {
+		if got := containerdImageStore([]byte(status)); got != want {
+			t.Errorf("containerdImageStore(%s) = %v, want %v", status, got, want)
+		}
+	}
+}
+
+// A bundle's export names the builder it was given, the host daemon's own by
+// its context's name included: left unnamed, buildx would take whichever is
+// selected.
+func TestBundleBuildArgsNameTheirBuilder(t *testing.T) {
+	for _, builder := range []string{"default", "discobox"} {
+		if args := strings.Join(bundleBuildArgs(builder, "build/assets/x", "."), " "); !strings.Contains(args, "--builder "+builder+" ") {
+			t.Errorf("bundleBuildArgs(%q) = %v", builder, args)
+		}
 	}
 }
