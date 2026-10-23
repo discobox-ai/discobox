@@ -33,7 +33,7 @@ type createCard struct {
 	// prompt is what the composer held when the card opened, for the command
 	// the card previews. Nothing can type into the composer under a dialog.
 	prompt string
-	// base is the request `discobox new` opened the window on, when the card
+	// base is the request `discobox run` opened the window on, when the card
 	// is asking where that run is cut from (WithRun). What the card has no row
 	// for — the prompt's own tokens, --grant, --pool, --declared-sources — is
 	// taken from it as given. Nil for a card the composer opened.
@@ -71,10 +71,10 @@ func (o *optionSet) newCreateCard(prompt string, base *RunRequest) *createCard {
 	source := o.opts[optSource]
 	c.cursor = source.idx
 	if base != nil {
-		// `discobox new` without -C was the directory it ran in before it
+		// `discobox run` with no SOURCE was the directory it ran in before it
 		// asked, and that stays the first answer whatever the last window was
 		// left cutting from.
-		if i := slices.Index(source.values, o.session.source()); i >= 0 {
+		if i := slices.Index(source.values, o.session.Directory); i >= 0 {
 			c.cursor = i
 		}
 	}
@@ -289,9 +289,9 @@ func (c *createCard) hint() string {
 		return opt.hint
 	}
 	if _, ok := c.source(); !ok {
-		return "-C · a path, URL or owner/repo, with @REF and //PATH, the listing has never seen"
+		return "SOURCE · a path, URL or owner/repo, with @REF and //PATH, the listing has never seen"
 	}
-	return "-C · where the discobox is cut from"
+	return "SOURCE · where the discobox is cut from"
 }
 
 // request is the create the card would make from the source under its cursor.
@@ -306,7 +306,7 @@ func (c *createCard) request() RunRequest {
 }
 
 // requestFrom is the create the card makes from one source: the run options
-// as they stand, and from `discobox new`'s own request what the card has no
+// as they stand, and from `discobox run`'s own request what the card has no
 // row for.
 func (c *createCard) requestFrom(source string) RunRequest {
 	req := c.opts.request(c.prompt, source)
@@ -462,7 +462,7 @@ func (c *createCard) view(st *styles, z *zones, top, inner, height int) string {
 }
 
 // createDialog is the card as the dialog the window draws. A card that is
-// `discobox new`'s question (base) is the window's whole purpose, so turning it
+// `discobox run`'s question (base) is the window's whole purpose, so turning it
 // down is the command ending with nothing made, however often the card has
 // been rebuilt on the way back from a field it opened.
 func (m *Model) createDialog(card *createCard) *dialog {

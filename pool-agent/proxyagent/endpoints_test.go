@@ -181,7 +181,7 @@ func apiCall(method, path, body string) proxy.SecretAuthorizeRequest {
 	return req
 }
 
-// What `discobox new` sends after a create to finish making the discobox is
+// What `discobox run` sends after a create to finish making the discobox is
 // each named, so the judge is told it is that and not something else under
 // the same use. The reads carry nothing in their bodies and may stand, so a
 // poll once a second is not a judge once a second; the push and the report

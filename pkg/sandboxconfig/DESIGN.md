@@ -175,7 +175,7 @@ destinations it asks for from it.
 An exec that names no directory starts at the primary source's
 `WorkingDirectory`, else its `Target`, else the working root (ADR
 26-10-15-664 §3). `WorkingDirectory` is the directory the create named inside
-the source, `-C DIR/SUB` or `-C SOURCE//PATH`. Only the primary source has
+the source, `run DIR/SUB` or `run SOURCE//PATH`. Only the primary source has
 one, and absent means `Target`. Pool-agent writes it only when the request's
 `destination.workingDirectory` is a clean absolute path strictly inside
 `Target` (`sourceStartDirectory`), and sandbox-agent takes it as written, as it

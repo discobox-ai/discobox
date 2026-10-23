@@ -42,7 +42,7 @@ const SchemaID = "https://raw.githubusercontent.com/discobox-ai/discobox/main/cl
 // `doc` the description, `default` the literal default and `example` a sample
 // value. A command-line flag always wins over the setting it defaults.
 type Config struct {
-	New New `yaml:"new" doc:"What discobox new, and the console's New Discobox panel, take when the command line does not say."`
+	New New `yaml:"new" doc:"What discobox run, and the console's New Discobox panel, take when the command line does not say."`
 
 	// Path is the file read, or empty when FileVar says read none. Read is
 	// whether one was there to read.

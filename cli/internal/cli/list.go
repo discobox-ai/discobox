@@ -36,7 +36,7 @@ func (a *App) newListCommand() *cobra.Command {
 	var filter sandboxFilter
 	cmd := &cobra.Command{
 		Use:     "ls",
-		Aliases: []string{"ps"},
+		Aliases: []string{"list", "ps"},
 		Short:   "List discoboxes",
 		Long: `List every discobox in the project, whichever directory and machine it was
 created from, with what each was cut from in the SOURCE column.

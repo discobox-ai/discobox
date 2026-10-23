@@ -21,7 +21,7 @@ func (a *App) newSecretRefreshCommand() *cobra.Command {
 	var value string
 	var run bool
 	cmd := &cobra.Command{
-		Use:   "refresh SECRET_ID (--run | --value VALUE|-)",
+		Use:   "refresh SECRET (--run | --value VALUE|-)",
 		Short: "Write a new value for a token, answering its refresh request",
 		Long: `Write a new value for a token, answering its open refresh request.
 

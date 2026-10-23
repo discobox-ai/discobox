@@ -31,7 +31,7 @@ type harnessUpdateOptions struct {
 }
 
 func (a *App) newHarnessCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "harnesses", Aliases: []string{"harness"}, Short: "Manage harness configs"}
+	cmd := &cobra.Command{Use: "harness", Aliases: []string{"harnesses"}, Short: "Manage harness configs"}
 	cmd.AddCommand(a.newHarnessListCommand())
 	cmd.AddCommand(a.newHarnessGetCommand())
 	cmd.AddCommand(a.newHarnessCreateCommand())
@@ -48,7 +48,7 @@ func (a *App) newHarnessCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessSecretsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "secrets", Aliases: []string{"secret"}, Short: "Manage a harness config's secret bindings"}
+	cmd := &cobra.Command{Use: "secret", Aliases: []string{"secrets"}, Short: "Manage a harness config's secret bindings"}
 	cmd.AddCommand(a.newHarnessSecretsListCommand())
 	cmd.AddCommand(a.newHarnessSecretsBindCommand())
 	cmd.AddCommand(a.newHarnessSecretsUnbindCommand())
@@ -56,7 +56,7 @@ func (a *App) newHarnessSecretsCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessSecretsListCommand() *cobra.Command {
-	return &cobra.Command{Use: "ls HARNESS_CONFIG_ID", Aliases: []string{"list"}, Short: "List a harness config's declared secrets and their bindings", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "ls HARNESS", Aliases: []string{"list"}, Short: "List a harness config's declared secrets and their bindings", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -75,10 +75,12 @@ func (a *App) newHarnessSecretsListCommand() *cobra.Command {
 		}
 		return a.writeHarnessSecretBindings(cmd, harness.Secrets.Or(nil), bindings)
 	}}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newHarnessSecretsBindCommand() *cobra.Command {
-	return &cobra.Command{Use: "bind HARNESS_CONFIG_ID ENV_NAME SECRET_ID", Short: "Bind a harness config environment variable to a secret", Args: cobra.ExactArgs(3), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "bind HARNESS ENV_NAME SECRET", Short: "Bind a harness config environment variable to a secret", Args: cobra.ExactArgs(3), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -105,7 +107,7 @@ func (a *App) newHarnessSecretsBindCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessSecretsUnbindCommand() *cobra.Command {
-	return &cobra.Command{Use: "unbind HARNESS_CONFIG_ID ENV_NAME", Short: "Remove a harness config secret binding", Args: cobra.ExactArgs(2), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "unbind HARNESS ENV_NAME", Short: "Remove a harness config secret binding", Args: cobra.ExactArgs(2), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -188,7 +190,7 @@ func (a *App) newHarnessListCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get HARNESS_CONFIG_ID", Short: "Get a harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get HARNESS", Short: "Get a harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -280,7 +282,7 @@ func (a *App) newHarnessConfigureCommand() *cobra.Command {
 
 // runHarnessConfigure drives the configure sequence to completion on the
 // streams it is given. The launcher does not call it directly: it runs
-// `discobox admin harnesses configure <id>` in a pane of its own
+// `discobox admin harness configure <id>` in a pane of its own
 // (OpenHarnessConfigure), which reaches this through the command above.
 func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string,
 	stdin io.Reader, stdout, stderr io.Writer,
@@ -432,7 +434,7 @@ func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 func (a *App) newHarnessUpdateCommand() *cobra.Command {
 	var opts harnessUpdateOptions
 	var egressOpts egressFlags
-	cmd := &cobra.Command{Use: "update HARNESS_CONFIG_ID", Short: "Update a harness config", Long: `Update a harness config.
+	cmd := &cobra.Command{Use: "update HARNESS", Short: "Update a harness config", Long: `Update a harness config.
 
 --egress-allow and --egress-deny-by-default set the harness's egress level, which
 every discobox on the harness converges onto, running ones included. The hosts
@@ -484,7 +486,7 @@ and need not be listed.
 }
 
 func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "set-default HARNESS_CONFIG_ID", Short: "Set the project default harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "set-default HARNESS", Short: "Set the project default harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -506,10 +508,10 @@ func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessUnsetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "unset-default HARNESS_CONFIG_ID", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
+	return &cobra.Command{Use: "unset-default HARNESS", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
 
 Leaves the project with no default, so new discoboxes created without an explicit
-harness run agent-less. HARNESS_CONFIG_ID must be the current default; this is
+harness run agent-less. HARNESS must be the current default; this is
 also how you release the default before disabling that harness.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
@@ -532,7 +534,7 @@ also how you release the default before disabling that harness.`, Args: cobra.Ex
 }
 
 func (a *App) newHarnessDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete HARNESS_CONFIG_ID...", Short: "Delete harness configs", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm HARNESS...", Aliases: []string{"delete", "remove"}, Short: "Delete harness configs", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

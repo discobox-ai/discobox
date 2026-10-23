@@ -72,18 +72,25 @@ type PromptOptions struct {
 	// credential by its own. ParseGrants reads them from --grant.
 	Grants  []apimodel.SandboxGrant
 	Harness string
-	// IncludeDirty decides what happens to uncommitted work in a local source.
-	// The zero value is "auto": ask through ConfirmIncludeDirty when there is
-	// one, and otherwise include it.
+	// IncludeDirty decides what happens to uncommitted work on top of a
+	// local source's checked-out commit. Asking is the frontend's, before it
+	// gets here: `discobox run` settles it from --include-dirty, and the
+	// console from its dialog. The zero value is "auto", which includes the
+	// work — what a source the console's one question did not cover, an -i
+	// dirty while the primary is clean, has always meant.
 	IncludeDirty IncludeDirty
-	// ConfirmIncludeDirty answers the "auto" question for the frontend. Leave it
-	// nil when the frontend cannot ask.
-	ConfirmIncludeDirty ConfirmIncludeDirtyFunc
 	// ConfirmCopyDirectory answers the same "auto" question for a source
 	// directory that is in no Git repository, where what is being decided is
 	// whether the whole directory is copied in. Leave it nil when the frontend
 	// cannot ask.
 	ConfirmCopyDirectory ConfirmCopyDirectoryFunc
+	// CopyDirectory answers that question ahead of time: true copies the
+	// directory in, false leaves the discobox with no source. Nil asks through
+	// ConfirmCopyDirectory, and with nobody to ask the directory is copied. It
+	// is an answer of its own rather than IncludeDirty's, because a directory
+	// in no repository has no commit to start from instead: the only real
+	// choices are its content or nothing.
+	CopyDirectory *bool
 }
 
 // ParsePromptOptions adds positional prompt arguments and normalizes the source.
@@ -172,10 +179,11 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	sourceArg := opts.Source
 	sourceOptions := runSourceOptions{
-		Platform:     opts.Platform,
-		IncludeDirty: opts.IncludeDirty,
-		Confirm:      opts.ConfirmIncludeDirty,
-		ConfirmCopy:  opts.ConfirmCopyDirectory,
+		Platform:      opts.Platform,
+		IncludeDirty:  opts.IncludeDirty,
+		ConfirmCopy:   opts.ConfirmCopyDirectory,
+		CopyDirectory: opts.CopyDirectory,
+		Warn:          opts.Warn,
 	}
 	local := &LocalSources{}
 	// A sandbox with no source has no primary source to resolve, and the zero

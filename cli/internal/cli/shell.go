@@ -16,18 +16,18 @@ import (
 // newShellCommand implements `discobox shell`: the everyday counterpart to the
 // raw, fully configurable `discobox admin exec create`, matching `discobox exec`'s
 // old behavior but with the sandbox and command sharing one positional list
-// instead of a --discobox-id flag. Cobra alone cannot tell DISCOBOX_ID and CMD
+// instead of a --discobox-id flag. Cobra alone cannot tell DISCOBOX and CMD
 // apart, so RunE resolves it: see resolveShellTarget.
 func (a *App) newShellCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [DISCOBOX_ID] [--] [CMD...]",
+		Use:   "shell [DISCOBOX] [--] [CMD...]",
 		Short: "Run a command in a discobox, or its login shell",
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
 
 When the first argument names one of the discoboxes "discobox ls" shows — its ID, a short prefix of it, or a name unique
 among them — that discobox is used and every argument after it is the command.
-Otherwise there is no DISCOBOX_ID: every argument is the command, and the
+Otherwise there is no DISCOBOX: every argument is the command, and the
 discobox is taken from "discobox ls" instead — the only one when there is one,
 otherwise you are asked to pick.
 
@@ -126,9 +126,9 @@ func trimCommandSeparator(args []string) []string {
 // the command, since Cobra sees one flat list and cannot tell them apart on
 // its own. args[0] is tried against the sandboxes `discobox ls` shows
 // (matchSandboxArg); a match consumes it as
-// DISCOBOX_ID and leaves the rest as the command. No match — including no
+// DISCOBOX and leaves the rest as the command. No match — including no
 // args at all — means every argument is the command, and the sandbox falls
-// back to the same picker `discobox apply` uses when DISCOBOX_ID is omitted.
+// back to the same picker `discobox apply` uses when DISCOBOX is omitted.
 // With more than one server known, the candidates and the picker are every
 // server's (resolveShellTargetOnEveryServer).
 //
@@ -201,7 +201,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, p
 		return nil, "", "", nil, nil, err
 	}
 	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, localHostID), pickerOptions{
-		empty:     "there are no discoboxes; start one with `discobox new`",
+		empty:     "there are no discoboxes; start one with `discobox run`",
 		ambiguous: "there is more than one discobox; name the discobox as the first argument",
 		recentKey: "sandbox:" + projectID,
 	})
@@ -243,7 +243,7 @@ func (a *App) resolveShellTargetOnEveryServer(cmd *cobra.Command, set []*server,
 	}
 	if target == nil {
 		target, sandboxID, err = a.pickServerSandbox(cmd, set, candidates, unreachable,
-			"there are no discoboxes; start one with `discobox new`",
+			"there are no discoboxes; start one with `discobox run`",
 			"there is more than one discobox; name the discobox as the first argument")
 		if err != nil {
 			return nil, "", "", nil, nil, err
@@ -284,7 +284,7 @@ const (
 // ID. A full generated ID (id.IsGenerated) is trusted outright: its shape — a
 // resource prefix plus 16 random characters — is unique enough that no shell
 // command word could collide with it by accident. A short ID is matched against
-// these candidates exactly like a bare DISCOBOX_ID argument would be elsewhere;
+// these candidates exactly like a bare DISCOBOX argument would be elsewhere;
 // matching none of them is not an error; it just means arg is not a sandbox
 // reference, so the caller treats it as the start of a command instead.
 // Matching several is reported as ambiguous, the same as any other short-ID

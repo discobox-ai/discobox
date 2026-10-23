@@ -15,10 +15,10 @@ func Execute(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	return withNewFlagHint(cmd, withUnreachableServerHint(cmd, err))
+	return withRunFlagHint(cmd, withUnreachableServerHint(cmd, err))
 }
 
-// withNewFlagHint points a flag of new's that was written without new at the
+// withRunFlagHint points a flag of run's that was written without run at the
 // command it belongs to. The bare command took them once (ADR 0089) and no
 // longer does (ADR 26-09-25-027), so `discobox -p '...'` is in scripts and in
 // fingers, and cobra's own answer — an unknown flag — says nothing about where
@@ -30,7 +30,7 @@ func Execute(ctx context.Context) error {
 // returned is not enough. What tells them apart is that Traverse parses a
 // command's flags before it descends into one of its children: a failure below
 // the root has always parsed a child of it first.
-func withNewFlagHint(cmd *cobra.Command, err error) error {
+func withRunFlagHint(cmd *cobra.Command, err error) error {
 	var unknown *pflag.NotExistError
 	if cmd == nil || cmd != cmd.Root() || !errors.As(err, &unknown) {
 		return err
@@ -40,7 +40,7 @@ func withNewFlagHint(cmd *cobra.Command, err error) error {
 			return err
 		}
 	}
-	create, _, findErr := cmd.Find([]string{"new"})
+	create, _, findErr := cmd.Find([]string{"run"})
 	if findErr != nil || create == cmd {
 		return err
 	}
@@ -54,7 +54,7 @@ func withNewFlagHint(cmd *cobra.Command, err error) error {
 	if flag == nil {
 		return err
 	}
-	return fmt.Errorf("%w\n%s is new's flag, and only new makes a discobox: %s new %s", err, spelled, cmd.Name(), spelled)
+	return fmt.Errorf("%w\n%s is run's flag, and only run makes a discobox: %s run %s", err, spelled, cmd.Name(), spelled)
 }
 
 // withUnreachableServerHint names the command that says where a connection

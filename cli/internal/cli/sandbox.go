@@ -282,8 +282,9 @@ which it converges onto while running.
 
 func (a *App) newSandboxDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete DISCOBOX_ID...",
-		Short: "Archive a discobox",
+		Use:     "rm DISCOBOX_ID...",
+		Aliases: []string{"delete", "remove"},
+		Short:   "Archive a discobox",
 		Long: `Archive discoboxes.
 
 The container and its runtime resources are removed; the discobox's workspace,
@@ -633,7 +634,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the discobox: 0 (root) or 1000-60000, and required with --user-name or --home-directory")
 	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the discobox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
-	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")
+	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox run`, this command infers nothing from the local environment")
 	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
 	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one")
 	cmd.Flags().BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
@@ -645,7 +646,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 // resolveGrantSecrets turns the secrets grants name by name into their IDs, in
 // place, which is what the server takes. A grant naming a well-known ID is left
 // alone: the server knows which secret answers it. Every create that gives
-// grants resolves them here — `admin box create`, and both frontends of `new`.
+// grants resolves them here — `admin box create`, and both frontends of `run`.
 func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Client, projectID string, grants []apimodel.SandboxGrant) error {
 	for i := range grants {
 		ref, named := grants[i].SecretId.Get()
@@ -731,7 +732,7 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 }
 
 // sandboxGitFromCreateOptions builds the git authorship from explicit flags
-// only. This command is the flag-driven path, so unlike `discobox new` it reads
+// only. This command is the flag-driven path, so unlike `discobox run` it reads
 // nothing from the local git config: what it creates is what was asked for.
 func sandboxGitFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxGitIdentity, bool) {
 	git := apimodel.SandboxGitIdentity{}

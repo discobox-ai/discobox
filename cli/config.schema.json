@@ -6,7 +6,7 @@
   "properties": {
     "new": {
       "additionalProperties": false,
-      "description": "What discobox new, and the console's New Discobox panel, take when the command line does not say.",
+      "description": "What discobox run, and the console's New Discobox panel, take when the command line does not say.",
       "properties": {
         "skills": {
           "description": "Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it. The project's skills repositories (discobox skills) are added ahead of these either way. discobox skills add DIR and rm DIR edit this list in place.",

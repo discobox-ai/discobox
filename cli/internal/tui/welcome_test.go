@@ -121,7 +121,7 @@ func TestWithWelcomeOpensOverTheScreenItWasGiven(t *testing.T) {
 
 // The three commands are the point of the screen: someone who reads only them
 // has the whole loop, in order, so each one is on the screen and none of them
-// is `discobox new`, which does the same work without teaching the shape.
+// is `discobox run`, which does the same work without teaching the shape.
 func TestWelcomeShowsTheThreeCommandsInOrder(t *testing.T) {
 	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
@@ -138,7 +138,7 @@ func TestWelcomeShowsTheThreeCommandsInOrder(t *testing.T) {
 		}
 		at = i
 	}
-	if strings.Contains(content, "discobox new") {
+	if strings.Contains(content, "discobox run") {
 		t.Fatalf("the screen sends people down the one-shot path:\n%s", content)
 	}
 }

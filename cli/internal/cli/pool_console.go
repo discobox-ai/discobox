@@ -23,7 +23,7 @@ import (
 // host's Docker daemon, so it answers even when the pool agent never came up.
 func (a *App) newPoolConsoleCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "console [POOL_ID]",
+		Use:   "console [POOL]",
 		Short: "Open an admin console on a pool's host",
 		Long: `Open an administrative console on the machine hosting a pool's runtime.
 
@@ -41,7 +41,7 @@ One console container is kept per pool host and reattached, so a capture or a
 trace started in it survives a detach. The shell exits when you type exit, and
 the next console starts a fresh one.
 
-Without POOL_ID the project's default pool is used.`,
+Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool console
   discobox admin pool console pool_01hq`,
 		Args:              cobra.MaximumNArgs(1),

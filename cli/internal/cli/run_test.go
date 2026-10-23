@@ -64,7 +64,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", "-C", repo + "@HEAD", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", repo + "@HEAD", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -120,7 +120,8 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	}
 }
 
-func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
+// "." is this directory, the SOURCE nearly every run gives.
+func TestRunCommandTakesDotForTheCurrentDirectory(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(repo)
@@ -143,7 +144,7 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", ".", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -188,7 +189,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "new", "-d", "-C", repo + "@HEAD", "--", "hello", "--flag-like", "prompt"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", repo + "@HEAD", "--", "hello", "--flag-like", "prompt"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -315,7 +316,7 @@ func runAttachesVirtualPrimaryTerminal(t *testing.T, flags []string) {
 	cmd.SetOut(&bytes.Buffer{})
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
-	args := []string{"--server", server.URL, "--project", "project-1", "new", "-C", repo + "@HEAD"}
+	args := []string{"--server", server.URL, "--project", "project-1", "run", repo + "@HEAD"}
 	args = append(args, flags...)
 	cmd.SetArgs(append(args, "fix", "tests"))
 
@@ -394,8 +395,8 @@ func wantSourceDirectory(t *testing.T, repoRoot string) string {
 // in the shape the launcher's own Enter produces. What is not there is what a
 // window means — -d never reaches one, and --raw is the choice not to open one.
 func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
-	app := &App{source: "../foo@HEAD"}
-	opts := runCommandOptions{declaredSources: false}
+	app := &App{}
+	opts := runCommandOptions{declaredSources: false, source: "../foo@HEAD"}
 	opts.prompt.Harness = "codex"
 	opts.prompt.Env = []string{"MODE=test"}
 	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
@@ -408,7 +409,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 		t.Fatalf("prompt = %q, want the words the shell split", req.Prompt)
 	}
 	if req.Source != "../foo@HEAD" {
-		t.Fatalf("source = %q, want -C as it was given, ref and all", req.Source)
+		t.Fatalf("source = %q, want SOURCE as it was given, ref and all", req.Source)
 	}
 	if req.Harness != "codex" || !slices.Equal(req.Env, []string{"MODE=test"}) ||
 		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) ||
@@ -420,33 +421,37 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	}
 }
 
-// --include-dirty is the one flag the window reads as a question rather than a
-// value: auto is empty, which is what makes the window ask, and an answer given
-// on the command line is carried straight through to the create.
-func TestRunWindowRequestLeavesAutoForTheWindowToAsk(t *testing.T) {
-	app := &App{source: "."}
+// --include-dirty is an answer the window does not ask again, either way: the
+// work goes in only when the flag says so. What the window still asks is the
+// copy question, which the request leaves open.
+func TestRunWindowRequestAnswersIncludeDirty(t *testing.T) {
+	app := &App{}
 	for _, tc := range []struct {
-		flag sandboxcreate.IncludeDirty
+		flag bool
 		want string
 	}{
-		{flag: "", want: ""},
-		{flag: sandboxcreate.IncludeDirtyAuto, want: ""},
-		{flag: sandboxcreate.IncludeDirtyAlways, want: "true"},
-		{flag: sandboxcreate.IncludeDirtyNever, want: "false"},
+		{flag: false, want: "false"},
+		{flag: true, want: "true"},
 	} {
-		opts := runCommandOptions{}
-		opts.prompt.IncludeDirty = tc.flag
-		if got := app.runWindowRequest(&opts, nil).IncludeDirty; got != tc.want {
-			t.Fatalf("--include-dirty=%q reached the window as %q, want %q", tc.flag, got, tc.want)
+		opts := runCommandOptions{includeDirty: tc.flag}
+		req := app.runWindowRequest(&opts, nil)
+		if req.IncludeDirty != tc.want || req.CopyDirectory != "" {
+			t.Fatalf("--include-dirty=%v reached the window as %q (copy %q), want %q and the copy left to ask", tc.flag, req.IncludeDirty, req.CopyDirectory, tc.want)
 		}
 	}
 }
 
-// The name the command had first still makes a discobox. It is hidden rather
-// than listed (see newRunCommand), so nothing but a test and an old habit ever
-// reaches it — which is exactly why it needs a test: a spelling nothing prints
-// is a spelling nothing else would catch the loss of.
-func TestTheOldNameStillCreatesADiscobox(t *testing.T) {
+// Every spelling of run makes a discobox: `new` was the command's name for a
+// while and scripts say it, and `create` is what someone reaching for "make a
+// discobox" types. The tests that drive a create say run; this keeps the
+// aliases from being lost unnoticed.
+func TestEveryAliasOfRunCreatesADiscobox(t *testing.T) {
+	for _, name := range []string{"new", "create"} {
+		t.Run(name, func(t *testing.T) { testAliasCreatesADiscobox(t, name) })
+	}
+}
+
+func testAliasCreatesADiscobox(t *testing.T, name string) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(repo)
@@ -470,15 +475,15 @@ func TestTheOldNameStillCreatesADiscobox(t *testing.T) {
 
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", name, "-d", ".", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute the old name: %v", err)
+		t.Fatalf("execute %s: %v", name, err)
 	}
 	if posted == nil {
-		t.Fatal("the old name posted no create")
+		t.Fatalf("%s posted no create", name)
 	}
-	// The same prompt the new name would send: one command, two spellings.
+	// The same prompt run would send: one command, several spellings.
 	config := posted["config"].(map[string]any)
 	prompt, ok := config["prompt"].([]any)
 	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {

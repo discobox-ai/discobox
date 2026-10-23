@@ -41,7 +41,7 @@ func (a *App) newAuditCommand() *cobra.Command {
 	return cmd
 }
 
-// httpAuditQuery is what `audit http` and `audit list` ask the pool trail.
+// httpAuditQuery is what `audit http` and `audit ls` ask the pool trail.
 type httpAuditQuery struct {
 	projectID string
 	params    apiclientgen.ListHTTPAuditParams
@@ -244,7 +244,7 @@ with non-printing characters escaped.`,
 	cmd.Flags().StringVar(&since, "since", "", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of requests to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing requests as they are recorded")
-	cmd.Flags().StringVar(&body, "body", "", "Print what was recorded beside the request with this `ID`, as audit list or audit http reports it")
+	cmd.Flags().StringVar(&body, "body", "", "Print what was recorded beside the request with this `ID`, as audit ls or audit http reports it")
 	cmd.Flags().StringVar(&part, "part", httpAuditPartResponse, "With --body, which recording: response, request or stream")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)

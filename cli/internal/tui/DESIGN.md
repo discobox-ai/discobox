@@ -49,7 +49,7 @@ flowchart LR
 ```
 
 Harness configuration is a local PTY-backed overlay pane running the same
-`discobox admin harnesses configure` command available from a shell. Its border
+`discobox admin harness configure` command available from a shell. Its border
 names the flow as harness configuration, while the header outside the terminal
 shows the harness bundle's optional configuration reminder. This keeps prompts
 drawn by the harness visually inside a setup flow rather than presenting them
@@ -1108,7 +1108,7 @@ pane, not a second viewer, and everything below holds for it. What it adds:
 ## The audit screen
 
 `leader A` in the workspace draws one discobox's audit trails over it as a
-single followed timeline — what `discobox admin audit list --follow` prints —
+single followed timeline — what `discobox admin audit ls --follow` prints —
 and Enter opens a record on the scrolling card, as `audit get` prints it. It is
 drawn in the box a tool window would have and takes the keys and the mouse
 (`onScreen` is empty under it); the panes keep running, unresized.
@@ -1657,7 +1657,7 @@ into the comparison, since a pane described by id and age alone would sort as
 though it were a terminal. Services are then ordered among themselves by
 `Exec.ServiceOrder`, their position in the repository's declaration order, so
 the strip reads the way `.discobox/services` does — and the way `discobox admin
-services ls` does — and holds still across a restart, which is also what `S1`
+service ls` does — and holds still across a restart, which is also what `S1`
 and `S2` have to mean.
 
 Two things follow from a service running on pipes rather than a PTY: the pane
@@ -1747,7 +1747,7 @@ than resurrecting a screen that was left. The primary session ending ends the
 workspace too: it is above all a view onto that session.
 
 **A window can be one command's own** (`Model.oneShot`): `discobox attach`
-opens it on one discobox (`WithAttach`, `Model.attach`) and `discobox new` opens
+opens it on one discobox (`WithAttach`, `Model.attach`) and `discobox run` opens
 it on one run request (`WithRun`, `Model.pendingRun`), instead of either command
 streaming a terminal of its own.
 
@@ -1780,7 +1780,7 @@ streaming a terminal of its own.
   the leader's `d` and the primary session ending both go through `Model.exit`,
   and an attach that never came up exits carrying its own failure, which `Run`
   hands back as the command's error. A run's window also hands back the
-  discobox it made (`Model.made`), and `discobox new` names it on stderr once
+  discobox it made (`Model.made`), and `discobox run` names it on stderr once
   the window is gone, since the screen that named it went with the window; a
   window left before the create came back has none to name. The key still
   reads `detach`, because that is what it does to the discobox — nothing
@@ -2434,13 +2434,16 @@ press that uses them. Both columns are marked on every stepping row, lit or
 not: a target that only exists once the pointer has stopped is one the first
 click misses.
 
-**The panel shows the command it describes, spelled `discobox new -p '...'`**
+**The panel shows the command it describes, spelled `discobox run SOURCE -p '...'`**
 (`optionSet.command`). What is on screen has to be reproducible from a shell —
 a panel offering something the command cannot is the thing to avoid — and
-`new` is the only command that makes a discobox
+`run` is the only command that makes a discobox
 ([ADR 26-09-25-027](../../../docs/adr/26-09-25-027-only-new-makes-a-discobox.md)).
-Global flags (`--server`, `--project`, `-C`) go in front of `new`, its own
-after it. The prompt is `-p` rather than trailing words because the composer
+Global flags (`--server`, `--project`) go in front of `run`, its own after
+it, SOURCE first — `.` for the window's own directory, or `--no-source` in its
+place — and `--include-dirty` only when the row says include, since leaving it
+out is `run`'s default and the window's question has no flag. The prompt is
+`-p` rather than trailing words because the composer
 holds one piece of text and sends it as one argument, which is exactly what
 `-p` is.
 
@@ -2696,7 +2699,7 @@ slowest load there is, and a welcome that arrived late would arrive over a
 prompt already being typed into. It takes every key — only Enter does anything —
 so a press aimed at the introduction cannot reach a screen the user has not seen.
 
-It stands in front of `discobox new`'s window too, when the project has not
+It stands in front of `discobox run`'s window too, when the project has not
 been welcomed: the run this window was opened to make proceeds behind it the
 same way every other load does, and Enter uncovers whatever it has gotten to —
 still waiting, or already the workspace. `discobox attach` is the one window it
@@ -2755,9 +2758,9 @@ console has no independent prepull subscription or reserved setup row.
 `Session.View`: the server, folder and tags the last window on this machine was
 left on, whatever directory it is opened in — or, with nothing saved, every
 server, every folder and every tag, the zero `ListView`. What the command line
-named outranks it (`Session.ServerChosen`, `SourceChosen`): `--server` opens on
-the primary it made, and `-C` on the window's own folder — already the absolute
-project root, so `-C ../foo` is `/home/…/foo`. That narrowing is taken as what
+named outranks it (`Session.ServerChosen`): `--server` opens on the primary it
+made. The console takes no source from the command line; its own folder is the
+directory it runs in. That narrowing is taken as what
 the store has, so it is saved only once the filters move off it. They are
 written through `DataSource.SaveView` exactly when a draft is, on the listing's
 tick when they have moved and from `closeWindow` on the way out, and never by a
@@ -3091,7 +3094,7 @@ Source row on the last create's source (`Session.LastSource`) whatever folder th
 header opens on, and each create leaves the row on its answer without moving the
 header (ADR 26-10-20-596), so the next create opens there. `request()` leaves
 `Source` empty when it is the session's own directory, since that is already
-what `discobox new` resolves to, and the chip strip shows the source only when
+what `discobox run` resolves to, and the chip strip shows the source only when
 it differs from what the header says — a strip repeating the header is one you
 stop reading.
 
@@ -3100,7 +3103,7 @@ It offers what the project has actually been cut from — `sandboxList.sources()
 off the same listing the filter's folders are built from — plus `no source`.
 Left and right cycle in place and Enter opens the whole list, whose last row is
 the one entry that is not a source but the input field for a source the
-listing has never seen, written as `-C` takes it (`LOCATION[@REF][//PATH]`,
+listing has never seen, written as `run`'s SOURCE takes it (`LOCATION[@REF][//PATH]`,
 ADR 26-10-15-664).
 
 **One source is one choice.** Discoboxes cut from one repository may have
@@ -3166,7 +3169,7 @@ the card.
   create is done. It is the last answer (`lastCut`): it leads the Source row,
   the row is set to it (`optionSet.cutFrom`), and `DataSource.SaveLastSource`
   keeps it for the next window, which opens its row on `Session.LastSource`
-  unless `-C` named a source (ADR 26-10-20-596). The card opens on the row's
+  (ADR 26-10-20-596). The card opens on the row's
   choice, so the next create is one Enter from the same place until the header
   or the row is moved to name another. With nothing ever answered, the card
   opens on the folder the header is on, or the window's own directory on "all
@@ -3182,7 +3185,7 @@ the card.
   `option.checked` → `DataSource.ResolveSource`). A skills directory is not:
   nothing on the data seam reads one before the create does.
 - A window whose session has not landed yet has no directory or sources to
-  offer, so it is left to `discobox new`'s own resolution, the way a prompt
+  offer, so it is left to `discobox run`'s own resolution, the way a prompt
   submitted before the harnesses land is. The run a window was opened on
   (`WithRun`) is a whole command already and skips the card — unless it left
   its source unsaid (`askSource`), when the card is put up once both the
@@ -3190,7 +3193,7 @@ the card.
   rows prefilled from the command's flags (`optionSet.prefill`) and what the
   card has no row for (`--grant`, `--pool`, the prompt's own tokens) carried
   from the request (`createCard.base`). Its cursor opens on the directory the
-  command ran in, which is what no `-C` meant before it asked. Leaving that
+  command ran in, which is what no SOURCE meant before it asked. Leaving that
   card any way — Esc or q, from it or from a field it opened, or Ctrl-C —
   ends the window with `errNothingCreated` (`Model.createDialog`), and
   answering it puts the wait screen back for the run (`cutFrom`).
@@ -3275,9 +3278,16 @@ naming a few of the paths; a directory that is not a repository asks whether to
 copy it in at all (`askToCopyDirectory`), with the size counted while the
 question is up (`DataSource.MeasureDirectory`) rather than before it, because
 walking a home directory takes long enough that waiting for the number would be
-the thing the question exists to avoid. Both are `includeDirtyDialog`: the
-excluding answer leads and Esc means no, since the discobox is created either
-way.
+the thing the question exists to avoid. Both are `includeDirtyDialog`, and Esc
+means no, since the discobox is created either way. They answer different
+fields and lead differently. The dirty question's answer is `IncludeDirty`,
+with excluding first, so Enter keeps the committed history. The copy
+question's is `CopyDirectory`, with copying first: there is no commit to start
+from instead, and the size is the reason to ask. A run `discobox run` opened
+has already answered `IncludeDirty`, so only the copy question is still asked
+(`startRun`). A repository with no commits yet is asked neither — its files go
+in whatever is answered — and `Workspace` reports it as carrying nothing to ask
+about.
 
 **Focus is a ladder, and its ends stop.** Prompt, discoboxes, filter, bottom
 to top, and the arrows climb it one rung at a time: Up off the top of the list
@@ -3407,7 +3417,7 @@ the newest one where the busy line goes.
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
-| `options.go` | `discobox new`'s flags as a panel, the chip strip, the command preview |
+| `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
 | `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
 | `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |

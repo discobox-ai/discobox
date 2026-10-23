@@ -65,14 +65,17 @@ With no subcommand, this lists the servers.`,
 }
 
 func (a *App) newServersListCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "ls",
-		Short: "List the primary server and the registered ones",
-		Args:  cobra.NoArgs,
+	cmd := &cobra.Command{
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List the primary server and the registered ones",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.listServers(cmd)
 		},
 	}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 // serverRow is one server as `discobox admin remote` prints it.
@@ -109,6 +112,10 @@ func (a *App) listServers(cmd *cobra.Command) error {
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"servers": rows})
+	}
+	// A server is named, not numbered, by every other verb here.
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), rows, func(row serverRow) string { return row.Name })
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tADDRESS\tPRIMARY\tID")
@@ -259,7 +266,7 @@ func (a *App) newServersRenameCommand() *cobra.Command {
 func (a *App) newServersRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:               "rm NAME...",
-		Aliases:           []string{"remove"},
+		Aliases:           []string{"delete", "remove"},
 		Short:             "Stop listing a registered server's discoboxes; the server is not touched",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeServerNames(-1),

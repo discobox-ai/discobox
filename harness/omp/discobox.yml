@@ -4,7 +4,7 @@
 # it, so it holds scalars only.
 startup:
   # The first-run wizard waits for keys, which an unattended launch never
-  # sends; omp is configured once, by `discobox admin harnesses configure omp`.
+  # sends; omp is configured once, by `discobox admin harness configure omp`.
   setupWizard: false
   # The version a sandbox runs comes from the pool-cached store (ADR 0114), so
   # "run omp update" is never the advice to give here.

@@ -119,7 +119,7 @@ setup_file() {
 teardown_file() {
   cd "$REPO_ROOT"
   if [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ]; then
-    cli admin box delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
+    cli admin box rm "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
   fi
 
   local pool_ids=""
@@ -132,7 +132,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
   local pool_id
   for pool_id in $pool_ids; do
-    cli admin pool delete "$pool_id" >/dev/null 2>&1 || true
+    cli admin pool rm "$pool_id" >/dev/null 2>&1 || true
   done
   for _ in {1..30}; do
     local pending=0

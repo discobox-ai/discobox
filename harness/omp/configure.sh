@@ -632,7 +632,7 @@ while :; do
 			echo "The judge runs on the default model, with thinking off and without"
 			echo "models.yml. Save, then give it a model of its own that answers so:"
 		fi
-		echo "  discobox admin harnesses edit omp $SETTINGS_PATH"
+		echo "  discobox admin harness edit omp $SETTINGS_PATH"
 		echo "Or start omp again to sign in with /login or pick another default with"
 		echo "/model. Your sign-ins are kept."
 	else

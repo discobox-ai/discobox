@@ -70,7 +70,7 @@ var endpoints = []*endpoint{
 		liftValues("organization", "name", "default_branch_only")),
 	mustEndpoint(judge.EndpointDiscoboxSandboxCreate, 4, GateHost(), "POST /projects/{project}/sandboxes", jsonParser,
 		describeSandboxCreate),
-	// What `discobox new` sends after a create to finish making the
+	// What `discobox run` sends after a create to finish making the
 	// discobox: it polls it, pushes its source into its origin, and reports
 	// the push done. Each is judged on its own, so each is named.
 	mustEndpoint(judge.EndpointDiscoboxSandboxGet, 1, GateHost(), "GET /projects/{project}/sandboxes/{sandbox}", nil, nil),

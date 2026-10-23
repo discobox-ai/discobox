@@ -406,7 +406,6 @@ func (a *App) forServer(address string) *App {
 		irohRelayURLs: a.irohRelayURLs,
 		irohLogLevel:  a.irohLogLevel,
 		projectID:     defaultProjectAlias,
-		source:        a.source,
 		output:        a.output,
 		quiet:         a.quiet,
 		debug:         a.debug,

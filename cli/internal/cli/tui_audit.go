@@ -16,7 +16,7 @@ import (
 )
 
 // FollowAudit follows one discobox's audit timeline for the console's audit
-// screen: the trails `audit list` reads when --source names none, read the way
+// screen: the trails `audit ls` reads when --source names none, read the way
 // its --follow reads them. Unpaced — the screen is a list to move through, not
 // a stream to watch arrive — and each read reports what it could not reach,
 // so the screen can say when a trail stops answering and when it is back.

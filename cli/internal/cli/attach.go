@@ -19,11 +19,11 @@ import (
 func (a *App) newAttachCommand() *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
-		Use:   "attach [DISCOBOX_ID]",
+		Use:   "attach [DISCOBOX]",
 		Short: "Open a discobox: its terminal and what runs beside it",
 		Long: `Open a discobox: its primary terminal, and everything running beside it.
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+Without DISCOBOX the discobox is taken from the ones "discobox ls" shows: the
 only one when there is one, otherwise you are asked to pick.
 
 The primary terminal is the discobox's default session: the configured harness,

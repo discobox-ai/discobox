@@ -417,7 +417,7 @@ func (m *Model) applyFilter(server string, f folder, tags []string) tea.Cmd {
 	m.list.server, m.list.folder, m.list.tags = server, f, tags
 	// Where the window is listing from is where it creates from. Every server
 	// at once is no answer to which server, so a create from there falls back
-	// to the primary, which is where `discobox new` puts it with no --server
+	// to the primary, which is where `discobox run` puts it with no --server
 	// at all (ADR 0116 §5).
 	if folderMoved {
 		m.opts.setFolder(f.source)

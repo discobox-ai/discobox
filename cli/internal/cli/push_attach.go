@@ -27,7 +27,7 @@ import (
 //
 // Parked is not enough on its own. A discobox stays in awaiting_source after
 // its delivery is reported, until the reconciler acts on the report — which is
-// exactly the discobox `discobox new --raw` attaches to the moment its own
+// exactly the discobox `discobox run --raw` attaches to the moment its own
 // delivery returns. A discobox created elsewhere is left to its own machine,
 // which may be delivering it right now and is the only one its recorded
 // directories describe.

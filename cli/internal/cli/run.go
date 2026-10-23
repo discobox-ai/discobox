@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -12,20 +15,27 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
-	// promptFlag is -p: the prompt as one argument. The words after `new` are
+	// promptFlag is -p: the prompt as one argument. The words after `run` are
 	// the same prompt as the shell split it.
 	promptFlag []string
 	detach     bool
-	// noSource creates the discobox with nothing materialized in it. -C still
-	// says where the create came from, so the discobox is filed under this
-	// directory and listed here; it just is not cut from it.
+	// source is SOURCE, the first positional argument, or the --json
+	// request's "source": what the discobox is cut from. Empty asks.
+	source string
+	// noSource creates the discobox with nothing materialized in it. It is
+	// still filed under the directory run ran in and listed there; it just is
+	// not cut from it. With it every positional argument is the prompt.
 	noSource bool
+	// includeDirty is --include-dirty: carry uncommitted work on top of the
+	// checked-out commit. Off, only the committed history goes in.
+	includeDirty bool
 	// declaredSources is the flag's positive form: the option it settles is
 	// "skip them", because bringing them in is what declaring them asks for.
 	declaredSources bool
@@ -59,26 +69,15 @@ type runCommandOptions struct {
 	flags *pflag.FlagSet
 }
 
-// newRunCommand builds the command that makes a discobox, under one of its two
-// spellings. `new` is the command; `run`, which it was called first, is the
-// same command registered a second time and hidden, so every script, shell
-// alias and habit that says `run` keeps working while nothing teaches it: it is
-// absent from the command list, and `new` carries no alias line naming it.
-//
-// Two registrations rather than one with an alias, because cobra prints a
-// command's aliases in its help and there is no way to keep one out. They share
-// everything that could drift — the flags through addRunFlags, the body through
-// runPrompt, the help text through these two constants — so the hidden spelling
-// cannot become a second, older command.
-//
-// short is the short form of each: `n` for the name, `r` for the old one, which
-// predates this and stays for the same reason.
-func (a *App) newRunCommand(name, short string, hidden bool) *cobra.Command {
+// newRunCommand builds `run`, the command that makes a discobox. `new` and
+// `create` are aliases, and so are `r` and `n`, the short forms `run` and
+// `new` have always had. Help lists every spelling: someone reaching for
+// "make a discobox" types any of them, and none is going away.
+func (a *App) newRunCommand() *cobra.Command {
 	var opts runCommandOptions
 	cmd := &cobra.Command{
-		Use:     name + " [flags] [PROMPT...]",
-		Aliases: []string{short},
-		Hidden:  hidden,
+		Use:     "run [flags] [SOURCE [PROMPT...]]",
+		Aliases: []string{"new", "create", "r", "n"},
 		Short:   runCommandShort,
 		Long:    runCommandLong,
 		Example: runCommandExample,
@@ -94,14 +93,16 @@ func (a *App) newRunCommand(name, short string, hidden bool) *cobra.Command {
 
 const runCommandShort = "Launch prompt in new discobox"
 
-const runCommandLong = `Launch a prompt in a new discobox against the current directory.
+const runCommandLong = `Launch a prompt in a new discobox cut from SOURCE.
 
-The prompt is the words after this command, or -p to give it as one argument.
-Use -- when the words need to be separated from command flags explicitly. This is
-the only command that makes a discobox: the bare "discobox" takes no prompt and
-none of these flags.
+SOURCE is the first argument: a directory (. for this one), a repository URL, or
+GitHub OWNER/REPO, then optionally @REF and //PATH, the directory inside it the
+harness starts in. The prompt is the words after it, or -p to give it as one
+argument. Use -- when the words need to be separated from command flags
+explicitly. This is the only command that makes a discobox: the bare "discobox"
+takes no prompt and none of these flags.
 
-By default new opens the console's window and makes the discobox there: the
+By default run opens the console's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
 what it lands on is the discobox itself — its default terminal (the configured
 harness, or a shell when it has none), the shells and services running beside
@@ -116,26 +117,21 @@ terminal you would rather keep as it is. The questions are asked on this
 terminal, one per source. Ctrl-A d detaches there too. If an interrupt stops
 getting through — the discobox or the server has gone quiet — Ctrl-C again says
 so, and one more quits, leaving the terminal running like a detach. Without a
-terminal to draw a window on, new is raw whether or not the flag was given.
+terminal to draw a window on, run is raw whether or not the flag was given.
 
 Pass -d to create the discobox and print it without attaching at all; there is
 no window in that either.
 
-Without -C (or --no-source), new first asks where to cut the discobox from. In
-the window that is the same card Enter in the console opens, with every other
-flag given already filled in; with -d or --raw it is an inline picker. This
-directory is the first choice either way, and Esc creates nothing.
+With no arguments at all (and no --no-source), run asks where to cut the
+discobox from. In the window that is the same card Enter in the console opens,
+with every other flag given already filled in; with -d or --raw it is an inline
+picker. This directory is the first choice either way, and Esc creates nothing.
+Without a terminal there is nobody to ask, and SOURCE is required.
 
-new asks only when there is a person to answer: stdin and stdout both a
-terminal, and stderr too for an inline question. Piped or scripted, it asks
-nothing at all: the discobox is cut from this directory, and its uncommitted
-changes (or the whole directory, outside a repository) are carried in unless
---include-dirty=false says otherwise.
-
-Uncommitted changes in the source directory are carried into the discobox as a
-snapshot on top of the checked-out commit. By default new asks before doing that
-when there is a person to ask (above); --include-dirty=true|false answers ahead of
-time.
+Only committed history goes in by default: the discobox starts from the commit
+checked out in SOURCE, and uncommitted changes there are left behind, with a
+warning naming how many. --include-dirty carries them in as a snapshot on top of
+that commit.
 
 The source keeps its own path inside the discobox, so /home/you/src/app is
 /home/you/src/app in there too. That holds for a directory under /home, /Users,
@@ -147,21 +143,23 @@ placed that way too.
 
 A source directory that is not in a Git repository works too: everything in it
 is carried into the discobox as uncommitted changes on an empty first commit,
-and nothing is written to the directory itself. Because that is the whole
-directory, new asks first — with the size it would copy, counted while the
-question is on screen — and not copying is the default answer: the discobox is
-still created, with nothing checked out in it, exactly as --no-source does.
---include-dirty=true|false answers this one ahead of time too.
+and nothing is written to the directory itself. There is no commit to start
+from instead, so --include-dirty does not decide this one: at a terminal run
+asks first, with the size it would copy counted while the question is on screen,
+and copying is the default answer. Declining still creates the discobox, with
+nothing checked out in it, exactly as --no-source does. Without a terminal the
+directory is copied.
 
 --no-source creates a discobox with nothing checked out in it, for work that
-starts from an empty machine rather than from a repository. The directory you
-run in is still what the discobox is filed under, so it is listed here like any
-other, and the Git authorship it commits under is still read from here; only the
-source is left out. -i still brings sources in, so --no-source -i ../foo is a
-discobox holding foo and nothing else.
+starts from an empty machine rather than from a repository. It takes SOURCE's
+place, so every argument is the prompt. The directory you run in is still what
+the discobox is filed under, so it is listed here like any other, and the Git
+authorship it commits under is still read from here; only the source is left
+out. -i still brings sources in, so --no-source -i ../foo is a discobox holding
+foo and nothing else.
 
 -i brings extra sources into the same discobox, repeat it for more than one. Each
-is resolved exactly like the source directory is, uncommitted changes included,
+is resolved exactly like SOURCE is, --include-dirty included,
 and a local one keeps its own absolute path inside the discobox, so ../foo shows
 up at the path readlink -f ../foo prints, under the same rule the source
 directory follows above; one from anywhere else is placed under /workspace,
@@ -214,10 +212,12 @@ sends a GitHub token: com.github.api@api.github.com,githubcopilot.com=USE. In
 --json reads the whole request from stdin as one JSON object instead, creates
 the discobox without attaching, and prints it as JSON. It is for a caller that
 would rather not quote a prompt and each use's sentence through a shell — an
-agent in a discobox making another, above all. Every field is optional; each
-means what its flag does, and no other run flag may be given beside it:
+agent in a discobox making another, above all. "source" is SOURCE, required
+unless "noSource" is set; every other field is optional, and each means what
+its flag does. No argument or other run flag may be given beside it:
 
   {
+    "source": "https://github.com/org/repo",
     "prompt": "fix the failing tests in pkg/foo",
     "harness": "codex",
     "grants": [
@@ -235,28 +235,31 @@ means what its flag does, and no other run flag may be given beside it:
     "declaredSources": true
   }`
 
-const runCommandExample = `  discobox new 'fix the failing tests'
-  discobox new -H codex -d 'fix the failing tests'
-  discobox new -p 'fix the failing tests'
-  discobox new --include-dirty=false -p 'fix the failing tests'
-  discobox new -i ../foo -i ../bar -p 'make them share one client'
-  discobox new --user-skills --skills ./team-skills -p 'fix the failing tests'
-  discobox new --no-source -p 'draft a proposal for the new pricing page'
-  discobox new -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
-  discobox new -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
-  discobox new -d -p 'fix the failing tests'
-  discobox new --pool mac-mini -p 'fix the failing tests'
-  discobox new -d --grant 'com.github.api=push a branch to org/repo' -p 'fix issue 42'
-  echo '{"prompt": "fix the failing tests"}' | discobox new --json
-  discobox new --raw -p 'fix the failing tests'
-  discobox new fix the failing tests
-  discobox new -- prompt starting with --flag-like text`
+const runCommandExample = `  discobox run . 'fix the failing tests'
+  discobox run -H codex -d . 'fix the failing tests'
+  discobox run ../api -p 'fix the failing tests'
+  discobox run org/repo@main 'fix the failing tests'
+  discobox run --include-dirty . 'finish what I started'
+  discobox run . -i ../foo -i ../bar 'make them share one client'
+  discobox run --user-skills --skills ./team-skills . 'fix the failing tests'
+  discobox run --no-source 'draft a proposal for the new pricing page'
+  discobox run -e GITHUB_TOKEN -e MODE=test . 'fix the failing tests'
+  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> . 'fix the failing tests'
+  discobox run --pool mac-mini . 'fix the failing tests'
+  discobox run -d --grant 'com.github.api=push a branch to org/repo' . 'fix issue 42'
+  echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --json
+  discobox run --raw . 'fix the failing tests'
+  discobox run . fix the failing tests
+  discobox run . -- prompt starting with --flag-like text
+  discobox run`
 
-// runPrompt creates the discobox a run describes. It is the body of `discobox
-// new`, under both of its registrations.
+// runPrompt creates the discobox a run describes.
 //
-// args is the prompt as the shell split it, after -p, which is the same prompt
-// given as one argument.
+// args are the positional arguments: SOURCE and then the prompt as the shell
+// split it, after -p, which is the same prompt given as one argument. With
+// --no-source there is no SOURCE, and every one is the prompt. Which is which
+// is decided by position and the flag alone, never by what an argument looks
+// like.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
 	if opts.json {
 		if err := opts.readJSONRequest(cmd, args); err != nil {
@@ -264,6 +267,17 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		}
 		args = nil
 	} else {
+		if !opts.noSource && len(args) > 0 {
+			source, err := runSourceArgument(args[0])
+			if err != nil {
+				return err
+			}
+			opts.source, args = source, args[1:]
+		}
+		opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyNever
+		if opts.includeDirty {
+			opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyAlways
+		}
 		grants, err := sandboxcreate.ParseGrants(opts.grant, opts.grantStatement, opts.grantDefine)
 		if err != nil {
 			return err
@@ -301,16 +315,28 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if opts.detach {
 		notes = status.print
 	}
-	// -p and the words after `new` are the same prompt, so a caller can use
+	// -p and the words after `run` are the same prompt, so a caller can use
 	// whichever the shell makes easier and both arrive as argv tokens. The flag
 	// leads because it is the one that had to be quoted.
 	prompt := append(append([]string(nil), opts.promptFlag...), args...)
-	opts.prompt.Source = a.source
+	// A run that named no source is asked one wherever there is somebody to
+	// ask: on the window's create card, or — for -d and --raw at a terminal —
+	// inline. Without anybody, SOURCE was required.
+	askSource := opts.source == "" && !opts.noSource
+	window := !opts.detach && !opts.raw && canOpenWindow(cmd)
+	if askSource && (opts.json || !window && !canAskInline(cmd)) {
+		return errRunNeedsSource
+	}
+	// Until it is asked, the flags are checked against this directory: the
+	// answer the question leads with.
+	opts.prompt.Source = opts.source
+	if askSource {
+		opts.prompt.Source = "."
+	}
 	opts.prompt.NoSource = opts.noSource
-	// A JSON request came in on stdin, so there is nobody on it to ask: the
-	// request answers --include-dirty, or leaves it to include the work.
+	// A JSON request came in on stdin, so there is nobody on it to ask: a
+	// directory in no repository is copied.
 	if !opts.json {
-		opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
 		opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
 	}
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
@@ -331,13 +357,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// -d has nothing to open a window for: it prints the discobox and
 	// returns, and printing is stdout, which the window would be
 	// sitting on.
-	//
-	// A run that named no source is asked one wherever there is somebody
-	// to ask: on the window's create card, or — for -d and --raw at a
-	// terminal — inline. Without a person (canAskInline) it is cut from
-	// the directory it ran in, as it always was.
-	askSource := !opts.json && !cmd.Flags().Changed("clone") && !opts.noSource
-	if !opts.detach && !opts.raw && canOpenWindow(cmd) {
+	if window {
 		return a.runConsole(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt), askSource))
 	}
 	projectID, err := a.projectIDValue()
@@ -348,7 +368,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if err != nil {
 		return err
 	}
-	if askSource && canAskInline(cmd) {
+	if askSource {
 		source, noSource, err := askRunSource(cmd, client, projectID, status)
 		if err != nil {
 			return err
@@ -412,11 +432,10 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 }
 
 // addRunFlags gives cmd everything a run takes, and keeps the set in opts for
-// --json to check against. Both registrations of `new` take their flags from
-// here, so the two cannot drift into taking different ones.
+// --json to check against.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
-	flags := pflag.NewFlagSet("new", pflag.ContinueOnError)
-	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"new\"")
+	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
+	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after SOURCE")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
@@ -427,10 +446,9 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
-	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
+	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
-	flags.Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
-	flags.Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
+	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
 	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it")
 	flags.StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
 	flags.StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
@@ -439,54 +457,40 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	opts.flags = flags
 }
 
-// confirmIncludeDirty asks whether uncommitted local work should be carried
-// into the sandbox. It is only ever called for --include-dirty=auto against a
-// dirty workspace. Without a terminal there is nobody to ask, so the work is
-// included: that is what run has always done, and dropping edits silently is
-// worse than carrying them.
-func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.ConfirmIncludeDirtyFunc {
-	return func(_ context.Context, workspace sandboxcreate.DirtyWorkspace) (bool, error) {
-		if !canAskInline(cmd) {
-			return true, nil
-		}
-		// The question draws its own screen on the stream the wait is being
-		// narrated on, so the narration gives the row up for as long as it is
-		// on and comes back after it.
-		defer status.suspend()()
-		// Excluding leads, so the default answer is the one that changes nothing
-		// about what the sandbox sees: the committed history.
-		choice, err := pickOne(cmd, dirtyWorkspacePrompt(workspace), []pickerItem{
-			{
-				id:     "exclude",
-				title:  "Start from the last commit",
-				detail: "Leave the uncommitted changes here",
-			},
-			{
-				id:     "include",
-				title:  "Include uncommitted changes",
-				detail: "Start the discobox from a snapshot of the working tree",
-			},
-		}, pickerOptions{
-			empty:     "no choice to make",
-			ambiguous: "pass --include-dirty=true or --include-dirty=false",
-		})
-		if err != nil {
-			return false, err
-		}
-		return choice == "include", nil
+// errRunNeedsSource is a run with no SOURCE and nobody to ask for one.
+var errRunNeedsSource = errors.New("run needs SOURCE, what to cut the discobox from: a directory (. for this one), a repository URL or OWNER/REPO; or --no-source")
+
+// runSourceArgument checks SOURCE before anything else reads it, and spells a
+// GitHub OWNER/REPO the way every later step expects. A directory that does
+// not exist is refused here, with the reminder that SOURCE comes first: it is
+// what `discobox run 'fix the tests'`, written the way run used to take a
+// prompt, turns into.
+func runSourceArgument(arg string) (string, error) {
+	source, err := sandboxcreate.ParseSource(arg)
+	if err != nil {
+		return "", err
 	}
+	if source.Kind == sourceref.Git {
+		return source.String(), nil
+	}
+	dir := sandboxcreate.SourceDirectory(source)
+	if _, err := os.Stat(dir); err != nil {
+		return "", fmt.Errorf("SOURCE %q: %w\nSOURCE comes first, before the prompt: discobox run . %s", arg, err, shellQuote(arg, runtime.GOOS == "windows"))
+	}
+	return arg, nil
 }
 
 // noSourceChoice is the source picker's id for --no-source. A picker's id is
 // the column it draws beside the title, and each id there is what the command
-// line would say instead — the -C value, or this flag — which no path or URL
-// can collide with.
+// line would say instead — SOURCE, or this flag — which no path or URL can
+// collide with.
 const noSourceChoice = "--no-source"
 
-// askRunSource is the create card's question asked inline, for a `new` that
+// askRunSource is the create card's question asked inline, for a `run` that
 // named no source and has no window to put the card in (-d, --raw): this
 // directory, every other source the project has been cut from, or none. A
-// place the project has never been cut from is -C's, which the prompt says.
+// place the project has never been cut from is given as SOURCE, which the
+// prompt says.
 func askRunSource(cmd *cobra.Command, client *apiclientgen.Client, projectID string, status *statusLine) (string, bool, error) {
 	here, err := filepath.Abs(".")
 	if err != nil {
@@ -509,9 +513,9 @@ func askRunSource(cmd *cobra.Command, client *apiclientgen.Client, projectID str
 	}
 	items = append(items, pickerItem{id: noSourceChoice, title: "no source", detail: "nothing checked out — an empty discobox"})
 	defer status.suspend()()
-	choice, err := pickOne(cmd, "Where should this discobox be cut from? (-C names another)", items, pickerOptions{
+	choice, err := pickOne(cmd, "Where should this discobox be cut from? (pass SOURCE to name another)", items, pickerOptions{
 		empty:     "no choice to make",
-		ambiguous: "pass -C or --no-source",
+		ambiguous: "pass SOURCE or --no-source",
 	})
 	if err != nil {
 		return "", false, err
@@ -522,7 +526,7 @@ func askRunSource(cmd *cobra.Command, client *apiclientgen.Client, projectID str
 	return choice, false, nil
 }
 
-// sourceTitle is what a source is called on the picker, its -C value being in
+// sourceTitle is what a source is called on the picker, its SOURCE value being in
 // the column beside it: a directory's last element, or a repository URL's
 // owner and name.
 func sourceTitle(source runSource) string {
@@ -543,7 +547,7 @@ type runSource struct {
 	remote bool
 }
 
-// projectSources is what the project's discoboxes were cut from, newest first, each once, spelled the way -C takes it: the URL a
+// projectSources is what the project's discoboxes were cut from, newest first, each once, spelled the way SOURCE takes it: the URL a
 // remote source clones, or the client directory a local one was cut from. It
 // is the list the create card offers, read the same way (toTUISandbox).
 func projectSources(ctx context.Context, client *apiclientgen.Client, projectID string) ([]runSource, error) {
@@ -579,7 +583,7 @@ func projectSources(ctx context.Context, client *apiclientgen.Client, projectID 
 // confirmCopyDirectory asks whether a source directory that is in no Git
 // repository is copied into the sandbox. Everything in such a directory is
 // uncommitted work, so the question is the whole directory — which is why it is
-// asked at all, and why not copying leads: `discobox new` in a home directory
+// asked at all, and why not copying leads: `discobox run` in a home directory
 // should not carry the home directory. Declining creates the discobox with
 // nothing checked out in it, the way --no-source does (ADR 0077 §1).
 //
@@ -600,20 +604,23 @@ func confirmCopyDirectory(cmd *cobra.Command, status *statusLine) sandboxcreate.
 			return directoryCopyPrompt(directory.Dir, total), total.Done
 		}
 		prompt, _ := live()
+		// Copying leads: there is no commit to start from instead, so the
+		// directory's content is what running against it asks for, and the
+		// size above is the reason to ask at all.
 		choice, err := pickOne(cmd, prompt, []pickerItem{
-			{
-				id:     "exclude",
-				title:  "Do not copy the directory",
-				detail: "Create the discobox with nothing checked out in it",
-			},
 			{
 				id:     "copy",
 				title:  "Copy the directory in",
 				detail: "Everything in it arrives as uncommitted changes",
 			},
+			{
+				id:     "exclude",
+				title:  "Do not copy the directory",
+				detail: "Create the discobox with nothing checked out in it",
+			},
 		}, pickerOptions{
 			empty:     "no choice to make",
-			ambiguous: "pass --include-dirty=true or --include-dirty=false",
+			ambiguous: "pass --no-source to leave it out",
 			live:      live,
 		})
 		if err != nil {
@@ -690,22 +697,7 @@ func warningLine(warning string) string {
 	return "warning: " + terminalSafe(warning)
 }
 
-// dirtyWorkspacePrompt names what the choice is about: how many paths differ
-// from the checked-out commit, and enough of them to recognize the change.
-func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
-	const shown = 3
-	paths := make([]string, 0, len(workspace.Changes))
-	for _, change := range workspace.Changes {
-		paths = append(paths, change.Path)
-	}
-	summary := strings.Join(paths[:min(shown, len(paths))], ", ")
-	if len(paths) > shown {
-		summary = fmt.Sprintf("%s and %d more", summary, len(paths)-shown)
-	}
-	return fmt.Sprintf("%s has %d uncommitted %s (%s)", workspace.RepoRoot, len(paths), pluralize("change", len(paths)), summary)
-}
-
-// runWindowRequest is this command as the window takes it: `discobox new`'s
+// runWindowRequest is this command as the window takes it: `discobox run`'s
 // flags in the shape the launcher's own Enter produces, so what the window
 // creates is what this command describes.
 //
@@ -717,7 +709,7 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.RunRequest {
 	req := tui.RunRequest{
 		Prompt:              prompt,
-		Source:              a.source,
+		Source:              opts.source,
 		NoSource:            opts.noSource,
 		Harness:             opts.prompt.Harness,
 		Env:                 opts.prompt.Env,
@@ -732,14 +724,12 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		SkipDeclaredSources: !opts.declaredSources,
 		Pool:                opts.pool,
 	}
-	// auto is the window's empty: the question it puts up. The other two are
-	// answers already given, and the window hands them to the create for every
-	// source it cuts from, as this command does.
-	switch opts.prompt.IncludeDirty {
-	case sandboxcreate.IncludeDirtyAlways:
+	// The flag is an answer already given, either way, so the window does not
+	// ask about uncommitted work and hands it to the create for every source
+	// it cuts from, as this command does. The copy question it still asks.
+	req.IncludeDirty = "false"
+	if opts.includeDirty {
 		req.IncludeDirty = "true"
-	case sandboxcreate.IncludeDirtyNever:
-		req.IncludeDirty = "false"
 	}
 	return req
 }

@@ -35,7 +35,7 @@ func (a *App) newPoolGuestImageCommand() *cobra.Command {
 	var source string
 	var restart bool
 	cmd := &cobra.Command{
-		Use:     "build-guest [POOL_ID]",
+		Use:     "build-guest [POOL]",
 		Short:   "Rebuild the VM image a pool's backend boots, on that pool's own host",
 		Aliases: []string{"build-vm-image"},
 		Long: `Rebuild the guest VM image from a local checkout, using the pool's own Docker.
@@ -52,7 +52,7 @@ pass --restart to stop the pool's host once the build lands, and its reconcile
 starts it again on the new image. That keeps the pool's disks — its images,
 volumes and containers — and stops whatever was running on it.
 
-Without POOL_ID the project's default pool is used.`,
+Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool build-guest
   discobox admin pool build-guest --restart
   discobox admin pool build-guest pool_01hq --source ~/src/discobox`,

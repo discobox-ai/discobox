@@ -95,65 +95,41 @@ func TestChangingAFilterIsSaved(t *testing.T) {
 	}
 }
 
-// What the command line named is what the window opens narrowed to: -C is the
-// window's own folder and --server the primary. That is where it opens rather
-// than a change made in it, so nothing is saved for it.
+// What the command line named is what the window opens narrowed to: --server
+// is the primary. That is where it opens rather than a change made in it, so
+// nothing is saved for it, and the folder and tags are left as they were.
 func TestTheCommandLineNarrowsTheView(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.session.ServerChosen, ds.session.SourceChosen = true, true
+	ds.session.ServerChosen = true
 	ds.nothingSaved = true
 	m := newTestModel(t, ds)
 
 	if m.list.server != "alpha" {
 		t.Fatalf("server = %q, want the one --server named", m.list.server)
 	}
-	if m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the one -C named", m.list.folder.label)
-	}
-	if len(m.list.tags) != 0 {
-		t.Fatalf("tags = %q, want every tag", m.list.tags)
+	if m.list.folder.key != "" || len(m.list.tags) != 0 {
+		t.Fatalf("view = %+v, want every folder and tag", m.currentView())
 	}
 	send(t, m, tickMsg{})
 	if len(ds.views) != 0 {
 		t.Fatalf("the window saved where the command line opened it: %+v", ds.views)
 	}
-
-	// Moving off it is a change, and back to everything is saved as the
-	// default the store drops.
-	filterTo(t, m, allFolders)
-	send(t, m, tickMsg{})
-	if len(ds.views) != 1 || ds.views[0].FolderKey != "" || ds.views[0].Server != "alpha" {
-		t.Fatalf("views = %+v, want every folder on alpha saved", ds.views)
-	}
-}
-
-// Each flag narrows only its own filter.
-func TestOnlyTheNamedFilterIsNarrowed(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(onServer("alpha", testSandboxes())...)
-	ds.session.Servers = []string{"alpha", "beta"}
-	ds.session.SourceChosen = true
-	ds.nothingSaved = true
-	m := newTestModel(t, ds)
-	if m.list.server != "" || m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("view = %+v, want every server in the -C folder", m.currentView())
-	}
 }
 
 // The view is one for the whole machine, so what the command line named
-// outranks it: -C and --server are saying which you mean this time. What was
-// saved is not written over unless the filters move.
+// outranks it: --server is saying which you mean this time. What was saved is
+// not written over unless the filters move.
 func TestTheCommandLineOutranksASavedView(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.session.ServerChosen, ds.session.SourceChosen = true, true
+	ds.session.ServerChosen = true
 	ds.session.View = ListView{Server: "beta", Tags: []string{"wip"}}
 	m := newTestModel(t, ds)
-	if m.list.server != "alpha" || m.list.folder.key != testKey("/src/disco2") || !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("view = %+v, want the named server and folder with the saved tags", m.currentView())
+	if m.list.server != "alpha" || !slices.Equal(m.list.tags, []string{"wip"}) {
+		t.Fatalf("view = %+v, want the named server with the saved tags", m.currentView())
 	}
 	send(t, m, tickMsg{})
 	if len(ds.views) != 0 {

@@ -7,7 +7,7 @@ import (
 )
 
 // newRemoveCommand implements `discobox rm`: the everyday counterpart to
-// `admin box delete`, which stays the raw form taking IDs. Both post the same
+// `admin box rm`, which stays the raw form taking IDs. Both post the same
 // DELETE, which archives rather than destroys (ADR 0022 §2), and both report
 // each argument independently through runActionMany.
 //
@@ -15,7 +15,7 @@ import (
 // command follows (resolveSandboxReference), at its widest setting: an argument
 // is the NAME `discobox ls` prints, or an ID. listedName rather than configuredName because
 // the name a running discobox shows is its terminal's window title, and the
-// configured name it otherwise falls back to is generated — `new` has no
+// configured name it otherwise falls back to is generated — `run` has no
 // --name — so matching only that would mean matching a string the listing had
 // stopped printing. Every argument here is a discobox, so there is no command
 // word for a free-form title to be mistaken for.
@@ -32,7 +32,7 @@ import (
 func (a *App) newRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm DISCOBOX...",
-		Aliases: []string{"delete"},
+		Aliases: []string{"delete", "remove"},
 		Short:   "Archive discoboxes",
 		Long: `Archive discoboxes.
 

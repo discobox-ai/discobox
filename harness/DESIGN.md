@@ -143,8 +143,8 @@ launchers, and configure scripts.
   it. See ADR 0086 §3 and ADR 26-10-16-423 §4.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
-  `discobox new fix the failing tests` reaches `discobox-harness-run` as four
-  arguments, not one. A prompt given as one argument — `discobox new 'fix the
+  `discobox run . fix the failing tests` reaches `discobox-harness-run` as four
+  arguments, not one. A prompt given as one argument — `discobox run . 'fix the
   failing tests'`, and everything the console creates — arrives as one, which
   the same joining leaves alone. Every wrapper joins everything after the flags with
   single spaces and hands its agent that single string — an agent CLI takes its
@@ -1006,7 +1006,7 @@ that declares none. See
 - **Discobox's own settings for the harness** live in
   `.config/discobox/opencode-harness.json`, a plain harness file the image
   declares and configure returns: `judgeModel` and `webSearch`. It is edited
-  with `discobox admin harnesses edit opencode .config/discobox/opencode-harness.json`,
+  with `discobox admin harness edit opencode .config/discobox/opencode-harness.json`,
   and a reconfigure keeps whatever was edited into it.
 - **Web search is asked during configure.** opencode 2 searches with every
   provider by default, through a keyless search service. The launcher reads

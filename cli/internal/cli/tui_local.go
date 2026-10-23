@@ -80,7 +80,7 @@ func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID
 	if err != nil {
 		return nil, fmt.Errorf("find this program: %w", err)
 	}
-	args := append(d.app.globalFlags(), "admin", "harnesses", "configure", harnessID)
+	args := append(d.app.globalFlags(), "admin", "harness", "configure", harnessID)
 	pty, err := localpty.Start(ctx, localpty.Command{Path: self, Args: args, Env: append(os.Environ(), "DISCOBOX_TOKEN="+d.app.token)}, cols, rows)
 	if err != nil {
 		return nil, fmt.Errorf("start harness configure: %w", err)
@@ -89,12 +89,9 @@ func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID
 }
 
 // globalFlags are the flags this invocation was given, to hand to a child so it
-// talks to the same server, project and directory.
+// talks to the same server and project.
 func (a *App) globalFlags() []string {
 	args := []string{"--server", a.serverURL, "--project", a.projectID}
-	if a.source != "" {
-		args = append(args, "--clone", a.source)
-	}
 	if a.autoStart != autoStartServerAuto {
 		args = append(args, "--auto-start-server="+string(a.autoStart))
 	}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"text/tabwriter"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -104,8 +106,13 @@ func (a *App) newToolRunCommand(sandboxID *string, id, short string) *cobra.Comm
 	if short == "" {
 		short = "Run the " + id + " tool"
 	}
+	// A tool's description is a fragment the console shows beside its key, and
+	// a repository writes it however it likes; help reads it as a sentence.
+	if r, size := utf8.DecodeRuneInString(short); r != utf8.RuneError {
+		short = string(unicode.ToUpper(r)) + short[size:]
+	}
 	cmd := &cobra.Command{
-		Use:   id + " [DISCOBOX_ID] [flags] [--] [ARG...]",
+		Use:   id + " [DISCOBOX] [flags] [--] [ARG...]",
 		Short: short,
 		Long: short + `.
 
@@ -176,8 +183,8 @@ func (a *App) runTool(cmd *cobra.Command, id, sandboxArg, source, program string
 // newToolsListCommand is `discobox tools ls`: every tool a discobox offers,
 // where each was declared, and why any of them cannot run.
 func (a *App) newToolsListCommand(sandboxID *string) *cobra.Command {
-	return &cobra.Command{
-		Use:     "ls [DISCOBOX_ID]",
+	cmd := &cobra.Command{
+		Use:     "ls [DISCOBOX]",
 		Aliases: []string{"list"},
 		Short:   "List the tools a discobox can be worked on with",
 		Args:    cobra.MaximumNArgs(1),
@@ -191,6 +198,9 @@ func (a *App) newToolsListCommand(sandboxID *string) *cobra.Command {
 				return err
 			}
 			defer noteStoredAnswer(cmd, observedAt)
+			if a.quiet {
+				return writeResourceIDs(cmd.OutOrStdout(), catalog, func(def tools.Definition) string { return def.ID })
+			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "TOOL\tNAME\tKEY\tRUNS\tFROM\tDESCRIPTION")
 			for _, def := range catalog {
@@ -203,6 +213,8 @@ func (a *App) newToolsListCommand(sandboxID *string) *cobra.Command {
 			return w.Flush()
 		},
 	}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newToolsGitCommand(sandboxID *string) *cobra.Command {

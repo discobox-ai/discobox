@@ -32,12 +32,12 @@ type proxyOptions struct {
 func (a *App) newProxyCommand() *cobra.Command {
 	var opts proxyOptions
 	cmd := &cobra.Command{
-		Use:   "proxy [DISCOBOX_ID]",
+		Use:   "proxy [DISCOBOX]",
 		Short: "Forward a discobox's listening ports to local ports",
 		Long: `Forward every port a discobox is listening on to a local port — its TCP
 ports, and the UDP ports its processes have bound.
 
-Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows: the
+Without DISCOBOX the discobox is taken from the ones "discobox ls" shows: the
 only one when there is one, otherwise you are asked to pick.
 
 The discobox reports what its own processes are serving, and each port is bound

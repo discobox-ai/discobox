@@ -204,7 +204,6 @@ func TestDeclinedIncludeIsLeftOut(t *testing.T) {
 		Include:              []string{dir},
 		IncludeDirty:         IncludeDirtyAuto,
 		ConfirmCopyDirectory: decline,
-		ConfirmIncludeDirty:  func(context.Context, DirtyWorkspace) (bool, error) { return false, nil },
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)

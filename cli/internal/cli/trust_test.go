@@ -10,6 +10,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 const trustRequestJSON = `{"id":"treq_0123456789abcdef","projectId":"project-1","sandboxId":"sbx_1","requestedBy":"agent:sbx_1","host":"34.70.64.109:443","status":"%s",` +
@@ -103,5 +104,45 @@ func TestATrustItemBecomesAnInboxRequestWithItsDefaultPin(t *testing.T) {
 	}
 	if names := req.Trust.Chain[0].Names; len(names) != 1 || names[0] != "34.70.64.109" {
 		t.Fatalf("leaf names = %v", names)
+	}
+}
+
+// trust ls and rm name their discobox the way the root commands do: by the
+// NAME `discobox ls` prints, not only by ID.
+func TestTrustTakesTheListedName(t *testing.T) {
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	var calls []string
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
+			_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON(rmDocsID, "docs", "Fixing the flaky test", "present") + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes/"+rmDocsID+"/host-trusts":
+			_, _ = w.Write([]byte(`{"hostTrusts":[]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/sandboxes/"+rmDocsID+"/host-trusts/htr_1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	if _, errOut, err := runRM(t, server.URL, "trust", "ls", "Fixing the flaky test"); err != nil {
+		t.Fatalf("trust ls: %v\n%s", err, errOut)
+	}
+	if _, errOut, err := runRM(t, server.URL, "trust", "rm", "Fixing the flaky test", "htr_1"); err != nil {
+		t.Fatalf("trust rm: %v\n%s", err, errOut)
+	}
+	want := []string{
+		"GET /projects/project-1/sandboxes",
+		"GET /projects/project-1/sandboxes/" + rmDocsID + "/host-trusts",
+		"GET /projects/project-1/sandboxes",
+		"DELETE /projects/project-1/sandboxes/" + rmDocsID + "/host-trusts/htr_1",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("calls =\n%s\nwant\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
 	}
 }

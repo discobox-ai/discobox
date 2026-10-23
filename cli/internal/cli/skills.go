@@ -94,6 +94,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return a.listSkills(cmd) },
 	}
+	a.addQuietFlag(list)
 	add := &cobra.Command{
 		Use:   "add URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|DIR...",
 		Short: "Add a skills repository to the project, or a directory to client.yaml",
@@ -106,7 +107,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 	}
 	remove := &cobra.Command{
 		Use:     "rm URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|ID|DIR...",
-		Aliases: []string{"remove", "delete"},
+		Aliases: []string{"delete", "remove"},
 		Short:   "Remove a skills repository from the project, or a directory from client.yaml",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -158,6 +159,16 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), listing)
+	}
+	// What `skills rm` takes: a repository's ID, and client.yaml's entry as it
+	// is written there.
+	if a.quiet {
+		for _, source := range project {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), source.ID); err != nil {
+				return err
+			}
+		}
+		return writeResourceIDs(cmd.OutOrStdout(), cfg.New.Skills, func(skill string) string { return skill })
 	}
 	home, _ := os.UserHomeDir()
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)

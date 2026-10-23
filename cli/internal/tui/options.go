@@ -10,7 +10,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
-// runOptions is every flag `discobox new` takes, laid out as one editable list.
+// runOptions is every flag `discobox run` takes, laid out as one editable list.
 //
 // The panel is a picker, not a form: left and right change a value in place,
 // so the common case — swap the harness, turn dirty-carry off, cut from the
@@ -158,7 +158,8 @@ type optionSet struct {
 // Source is one place the project's discoboxes have been cut from, as the
 // Source row offers it.
 type Source struct {
-	// Value is what `-C` takes: the client directory, or the repository URL.
+	// Value is what `run`'s SOURCE takes: the client directory, or the
+	// repository URL.
 	Value string
 	// Remote marks a repository URL rather than a directory on a client.
 	Remote bool
@@ -196,8 +197,8 @@ const enterSourceChoice = "enter a directory, URL, or owner/repo, with @REF and 
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
 //
-// These are `discobox new`'s flags and nothing else: --harness, --include-dirty,
-// --detach, -e and -s, -C, the source the sandbox is cut from, and what is
+// These are `discobox run`'s flags and nothing else: --harness, --include-dirty,
+// --detach, -e and -s, SOURCE, the source the sandbox is cut from, and what is
 // brought in beside it — --user-skills, --skills and -i. A launcher that offers
 // options the command does not have is a launcher you cannot reproduce from a
 // shell.
@@ -275,7 +276,7 @@ func newOptions(session Session) *optionSet {
 		},
 		optUserSkills: {
 			// Left alone it is client.yaml's new.userSkills, which is what
-			// `discobox new` gives a create that names neither way.
+			// `discobox run` gives a create that names neither way.
 			label: "User skills", kind: optChoice,
 			choices: []string{userSkillsConfigured, "on", "off"},
 			hint:    "--user-skills · install your own ~/.claude/skills and ~/.agents/skills in the discobox",
@@ -342,7 +343,7 @@ func (o *optionSet) setServer(name string) {
 }
 
 // prefill sets the rows to what a request already says, for the card
-// `discobox new` asks its source on: a flag given on the command line is an
+// `discobox run` asks its source on: a flag given on the command line is an
 // answer, and the card opens holding it rather than asking it again. A harness
 // the listing does not offer is added to the row rather than dropped, so the
 // create meets the server's answer about it rather than a different harness.
@@ -379,7 +380,7 @@ func (o *optionSet) prefill(req RunRequest) {
 
 // sourceHint is what the Source row says: what it sets, and the one thing about
 // it that left and right cannot do.
-const sourceHint = "-C · where the discobox is cut from · Enter opens the whole list, and a path of your own"
+const sourceHint = "SOURCE · where the discobox is cut from · Enter opens the whole list, and a path of your own"
 
 // optionsKey opens the run options panel and closes it. It is a window key
 // rather than each screen's own — see updateKey — so the panel is one press
@@ -517,7 +518,7 @@ func (o *optionSet) rebuildSources() {
 	// since, or one whose discoboxes have all gone, and it is still where the
 	// next create opens.
 	add(o.lastCut)
-	add(o.session.source())
+	add(o.session.Directory)
 	for _, source := range o.known {
 		add(source.Value)
 	}
@@ -545,7 +546,7 @@ func (o *optionSet) rebuildSources() {
 // window is running in wears its branch, the way the header spells it; nothing
 // else has a branch that means anything here.
 func (o *optionSet) sourceChoiceLabel(value string) string {
-	if sameSource(value, o.session.source()) {
+	if sameSource(value, o.session.Directory) {
 		return o.session.sourceLabel()
 	}
 	return sourceref.Display(value, o.session.Home)
@@ -560,10 +561,9 @@ func (o *optionSet) cutFrom(source string) {
 }
 
 // openOnLastCut sets the row to where the last window's last create was cut
-// from (Session.LastSource), unless the command line named a source: -C is
-// saying which you mean.
+// from (Session.LastSource).
 func (o *optionSet) openOnLastCut(source string) {
-	if source == "" || o.session.SourceChosen {
+	if source == "" {
 		o.lastCut = source
 		o.rebuildSources()
 		return
@@ -600,7 +600,7 @@ func (o *optionSet) chooseSource(value string) {
 // anywhere.
 func (o *optionSet) sourceFolder() (folder, bool) {
 	value := o.opts[optSource].selected()
-	if value == sourceNone || sameSource(value, o.session.source()) {
+	if value == sourceNone || sameSource(value, o.session.Directory) {
 		return o.session.folder(), true
 	}
 	of := func(source Source) (folder, bool) {
@@ -781,7 +781,7 @@ func sameSource(a, b string) bool {
 // window's own source when the header is on every folder at once.
 func (o *optionSet) sourceDir() string {
 	if o.folder == "" {
-		return o.session.source()
+		return o.session.Directory
 	}
 	return o.folder
 }
@@ -790,32 +790,16 @@ func (o *optionSet) sourceDir() string {
 // only where the branch means something — the directory this window is actually
 // running in.
 func (o *optionSet) sourceLabel() string {
-	if sameSource(o.sourceDir(), o.session.source()) {
+	if sameSource(o.sourceDir(), o.session.Directory) {
 		return o.session.sourceLabel()
 	}
 	return sourceref.Display(o.sourceDir(), o.session.Home)
 }
 
-// source is what the window itself cuts from: the repository URL it was opened
-// on, ref and all, or the directory it is running in. It is what the panel
-// means by "the window's own", and the one value that needs no -C of its own —
-// unless it is a URL, which the CLI only resolves to because -C named it, and
-// whose ref nothing else would carry.
-func (s Session) source() string {
-	if s.Remote != "" {
-		return s.Remote
-	}
-	return s.Directory
-}
-
 // sourceLabel is what a sandbox is cut from by default, in the spelling the
-// header uses: the repository URL the window was opened on, or its directory
-// and the branch checked out there.
+// header uses: the window's directory and the branch checked out there.
 func (s Session) sourceLabel() string {
-	switch {
-	case s.Remote != "":
-		return sourceref.Display(s.Remote, s.Home)
-	case s.Branch == "":
+	if s.Branch == "" {
 		return sourceref.Display(s.Directory, s.Home)
 	}
 	return sourceref.Display(s.Directory, s.Home) + " @ " + s.Branch
@@ -833,7 +817,7 @@ func (o *optionSet) moveTo(i int) {
 	o.cursor = min(max(i, 0), len(o.opts)-1)
 }
 
-// request is what Enter actually asks for: the options as `discobox new`'s
+// request is what Enter actually asks for: the options as `discobox run`'s
 // arguments, with the prompt from the composer. The source is passed rather
 // than read off the row, because the answer to a create's own question is cut
 // from without moving the row (askHowToCreate); everything else passes what
@@ -849,17 +833,12 @@ func (o *optionSet) request(prompt, source string) RunRequest {
 	if text := strings.TrimSpace(prompt); text != "" {
 		req.Prompt = []string{text}
 	}
-	// The folder the header is on is what the source row leads with, and naming
-	// the window's own directory would only repeat the CLI's default — so that
-	// one case emits no -C and `discobox new` resolves it the way it always does.
-	//
-	// A window opened on a repository URL has no such default to lean on: -C is
-	// a flag, not something the shell is holding, so a command previewed without
-	// it would cut from the directory rather than from the URL Enter uses.
+	// The window's own directory is left empty: the create cuts from where the
+	// window runs, and the preview writes it as ".".
 	switch {
 	case source == sourceNone:
 		req.NoSource = true
-	case source != o.session.Directory || o.session.Remote != "":
+	case source != o.session.Directory:
 		req.Source = source
 	}
 	if h := o.opts[optHarness]; h.changed() {
@@ -994,7 +973,7 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 // panel's own documentation: what is on screen is reproducible from a shell,
 // and if it is not, the panel is offering something the command cannot.
 //
-// It spells the run as `discobox new`, the only command that makes one, with
+// It spells the run as `discobox run`, the only command that makes one, with
 // the prompt as -p: the composer holds one piece of text and sends it as one
 // argument, which is exactly what -p is. Trailing words would be inventing a
 // tokenization the user did not type.
@@ -1016,23 +995,28 @@ func (o *optionSet) commandFor(req RunRequest) string {
 	if p := o.session.Project; p != "" && p != o.session.DefaultProject && req.Server == "" {
 		args = append(args, "--project", p)
 	}
-	if req.Source != "" {
-		args = append(args, "-C", shellQuote(req.Source))
+	// run's own arguments, after the command name; the ones above are global
+	// and go in front of it. SOURCE leads, as `run SOURCE` reads, and is "."
+	// for the window's own directory. --no-source takes its place.
+	run := []string{"run"}
+	switch {
+	case req.NoSource:
+		run = append(run, "--no-source")
+	case req.Source != "":
+		run = append(run, shellQuote(req.Source))
+	default:
+		run = append(run, ".")
 	}
-	// new's own flags, after the command name; the ones above are global and
-	// go in front of it.
-	run := []string{"new"}
 	for _, word := range req.Prompt {
 		run = append(run, "-p", shellQuote(word))
-	}
-	if req.NoSource {
-		run = append(run, "--no-source")
 	}
 	if req.Harness != "" {
 		run = append(run, "--harness", req.Harness)
 	}
-	if req.IncludeDirty != "" {
-		run = append(run, "--include-dirty="+req.IncludeDirty)
+	// Uncommitted work is carried only when asked for, so only that answer
+	// has a flag to write; the window's question has none.
+	if req.IncludeDirty == "true" {
+		run = append(run, "--include-dirty")
 	}
 	if req.Detach {
 		run = append(run, "-d")

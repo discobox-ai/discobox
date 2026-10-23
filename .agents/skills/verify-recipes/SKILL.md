@@ -65,7 +65,7 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
 
 # Verifying what a box's program reports (OSC 7501, terminal queries)
 
-No attach needed: drive a `d new -d -H shell --no-source` box's primary with
+No attach needed: drive a `d run -d -H shell --no-source` box's primary with
 `d admin terminal input primary --discobox-id <id> "<cmd>" Enter` and read it
 with `d admin terminal screen primary --discobox-id <id>`; the shim's record is
 `d admin box get <id> -o json | jq '.runtime.agentStatus.sessions[]'` (`ls`
@@ -129,7 +129,7 @@ agent has no `runc` personality: restore what was there, never a fixed link.
 Wait for the image watcher to export the platform bundle (its log's `built
 platform as …/build/assets/discobox-platform/<hex>.tar`, and the server's
 platform moving) and the box to be pinned to it (`d admin box get <id> -o json
-| jq .config.platformBundleDigest`), then `d new -d -H shell --no-source -p
+| jq .config.platformBundleDigest`), then `d run -d -H shell --no-source -p
 x`; the agent a box runs is its platform pin's, delivered at every start. In the box (`d shell <id> -- ...`): `sudo
 iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
 ping -c1 -W2 example.com` on the default bridge, a user network, one with
@@ -178,10 +178,10 @@ and that the process started after the build (no `ps` in the image: walk
 - A harness credential's 401 (the refused-credential band, a harness secret's
   `rejectionScope`) needs a box of a harness that declares secrets, which is
   refused until the harness is configured, and configuring needs a real
-  sign-in. Bind a fake `d secret create` token with `d admin harnesses secrets
+  sign-in. Bind a fake `d secret create` token with `d admin harness secret
   bind <slug> <ENV> <secret>` and a project grant, set `configured=1` on the
   harness's row in `.tmp/discobox/discobox.db` (`sqlite3`; set it back after),
-  then `d new -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is not
+  then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is not
   swapped until its request is approved (`d secret request approve <sreq>
   --secret-id <id>`, IDs from `d secret request ls`); an unswapped sentinel
   also gets a 401, so check the audit row's secret column. Sentinels are in
@@ -193,8 +193,8 @@ and that the process started after the build (no `ps` in the image: walk
   `docker build` command from `/proc/<pid>/cmdline` and run it under a
   throwaway tag to see the error.
 - A secret's routes (ADR 26-10-02-924): `d secret create --token X --host
-  172.17.0.1 --route 172.17.0.1/PATH`, `d admin harnesses secrets bind <shell
-  harness id> ENV <secret>`, a `--scope harnessConfig` grant, then `d new -d
+  172.17.0.1 --route 172.17.0.1/PATH`, `d admin harness secret bind <shell
+  harness id> ENV <secret>`, a `--scope harnessConfig` grant, then `d run -d
   -H shell --no-source -p x`. A plain-HTTP origin on `0.0.0.0` echoing the
   `Authorization` header shows swaps; `curl --path-as-is` keeps `..` and
   `%2F` as sent. The pool's per-sentinel routes are in
@@ -210,7 +210,7 @@ and that the process started after the build (no `ps` in the image: walk
   F.tmp F'`). The reaper spares a material record
   (`…/pools/<pool>/sandboxes/<id>`) younger than 15 minutes; `touch -d` it
   older, then `docker rm -f` the box's container, to see a reap ~5s later.
-- Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
+- Clean up: `d rm <id>`, `d secret rm <name>`, stop origins by pid.
 - No dev pool up (the sandbox base image will not build), or the dev
   harness and platform bundles missing (an isolated server then fails on
   `has no harness to run`) → embed the real `proxy` package instead. Write a
@@ -275,8 +275,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
   stub `discobox-access` first on `PATH` (`list` prints a use whose
   description matches the script's regex; `run … -- cmd` execs `cmd`), a
   `discobox` link to `./build/discobox`, and `ORCH_DIR` in the scratchpad
-  holding a `workers.tsv` row for a box made with `./build/discobox new -d
-  -H shell -C <dir>` (the dev project has no default harness). `rm` only
+  holding a `workers.tsv` row for a box made with `./build/discobox run -d
+  -H shell <dir>` (the dev project has no default harness). `rm` only
   archives it; `discobox admin box purge <id>` removes it.
 
 # Verifying `discobox-access` in a dev box (request, wait, list)
@@ -287,7 +287,7 @@ Every command goes to the dev loop through `d()` from
 `discobox` reaches the outer discobox API, where a fake secret and a forever
 grant do not belong.
 
-A `d new -d -H shell --no-source -p x` box talks to the dev pool agent and
+A `d run -d -H shell --no-source -p x` box talks to the dev pool agent and
 server, but its in-image `discobox-access` can lag the checkout: `grep -c
 '<new string>' $(command -v discobox-access)` in the box. If it does, build
 `CGO_ENABLED=0 go build ./access/cmd/discobox-access` and `d cp` it to
@@ -299,7 +299,7 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   N [--grant-ttl 2w|forever]`.
 - `request`, `wait`, and `list` need no judge; only `run` does (see the lead
   section below).
-- Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret delete N`.
+- Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret rm N`.
 
 ## A request carrying a policy, and its approval forms
 
@@ -403,12 +403,12 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 - A pool route on that server, with no real pool: see the no-Docker case
   under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid).
 - To race new intent against a pool's first reconcile (supersede paths):
-  `admin pool create`, then `admin pool delete` ~3s later — `EnsurePool` of a
+  `admin pool create`, then `admin pool rm` ~3s later — `EnsurePool` of a
   Docker pool takes ~10s, so the delete lands mid-run. Watch `admin job ls -o
   json` (`.jobs[]`, by `resourceId`) for `attempts`/`error` and the log for
   `reconcile failed`. List outputs are wrapped (`.pools[]`, `.providers[]`).
 
-- The CLI's `new` against it enrolls an SSH key and adds
+- The CLI's `run` against it enrolls an SSH key and adds
   `Include ~/.local/state/discobox/cli/ssh/<project>/config` to `~/.ssh/config`;
   remove that line and directory when you clean up.
 - To lose a create mid-request (the pool agent replaced under it): start
@@ -494,7 +494,7 @@ lead; and run `discobox-access run --use <id> -- discobox …` there.
   orchestrate-issues §1 writes one): by flags it is refused for want of an
   env var and a host.
 - A lead answers only the requests of discoboxes it created (`403 … only the
-  requests of discoboxes it created`): have it `discobox new` the worker, then
+  requests of discoboxes it created`): have it `discobox run` the worker, then
   approve the worker's request under a `secret grant create --delegate` grant
   given to the lead. Approving under a delegation needs a judge: the stub
   judge below, whose image also serves as the boxes' harness when
@@ -593,7 +593,7 @@ container is recreated on it (minutes after the build); check the running
 image before driving anything.
 
 ```bash
-d new -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
+d run -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
 docker exec <pool> cat /var/lib/discobox/projects/*/pools/*/sandboxes/<sbx>/bundles.json
 d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 ```
@@ -628,7 +628,7 @@ d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 
 The pool delivers a runtime-config document at every boot (next section), but
 to drive one of these routes with a document of your own, call the in-box agent
-directly: `d new -H shell -d ...` a box (from a dirty checkout if the change
+directly: `d run -H shell -d --include-dirty <dir>` a box (from a dirty checkout if the change
 reads `sandbox.json`'s source spec), then `curl` it on
 `127.0.0.1:3003/api/projects/<project>/sandboxes/<sbx>/...` from `d shell`.
 
@@ -653,7 +653,7 @@ reads `sandbox.json`'s source spec), then `curl` it on
   container's own address: `curl http://<ip>:3003/execs` from this box (`ip`
   from `docker inspect` of `discobox-sandbox-<pool>-<sbx>`) with no token, or
   a garbage `Bearer`, must answer `401`.
-- **SSH direct-tcpip.** `d new` writes the ssh config, so `ssh -W
+- **SSH direct-tcpip.** `d run` writes the ssh config, so `ssh -W
   127.0.0.1:<port> <box-name>` forwards through the server's sshd and the
   agent's `/tcp/attach`; a closed port shows the rejection reason the client
   prints (`channel 0: open failed: connect failed: ...`).
@@ -677,7 +677,7 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
 - The applied revision the control plane sees:
   `d admin box get <id> -o json | jq .runtime.agentStatus.runtimeConfigRevision`.
 - Secrets reaching a running box: `d secret create`, then
-  `d admin harnesses secrets bind <shell-config-id> ENV <secret>`; a new box
+  `d admin harness secret bind <shell-config-id> ENV <secret>`; a new box
   gets it at create, and rebinding to a secret of another shape re-mints the
   sentinel and pushes it to running boxes.
 - The pool's idle timeout cannot be changed on the dev pool in place:
@@ -723,19 +723,19 @@ Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
 shell's command line matches the pattern. Wait on the watcher's outputs
 (`.env` image tags, the harness list) instead.
 
-# Verifying a remote-URL source's clone (`new -C <url>`)
+# Verifying a remote-URL source's clone (`run <url>`)
 
 - **A slow origin of your own.** Serve a bare clone of this repository with
   `git http-backend` behind a handler that writes 16 KiB per 40 ms (~400 KiB/s);
   disco2 then takes about a minute to clone, past `ProvisionProgressFresh`.
-  `-C http://172.17.0.1:<port>/disco2.git` makes it a remote-URL source.
+  `d run ... http://172.17.0.1:<port>/disco2.git` makes it a remote-URL source.
 - **The CLI's `ls-remote` uses the box's proxy**, which cannot reach this
   box's docker bridge: run the CLI with `NO_PROXY=172.17.0.1,$NO_PROXY` (and
   `no_proxy`), or it fails `502 ... connection refused`. The sandbox's own
   clone goes through the dev pool proxy, which dials 172.17.0.1 directly.
 - **What the pool recorded:** poll `d admin box get <id> -o json | jq -c
   '.runtime | {state, provisionProgressAt, provisionProgress}'` every 2s.
-- **What the user sees:** `new` without `-d` in tmux. The first run in a fresh
+- **What the user sees:** `run` without `-d` in tmux. The first run in a fresh
   `HOME` stops on the console's welcome screen until Enter, which hides the
   whole create; dismiss it once, then run again.
 - **A clone cut short:** stop the origin by exact name (`pgrep -x`); a
@@ -764,7 +764,7 @@ d admin pool create krunpool --provider <prov_id>
   `go tool task build:vm-guest` stages it where the provider prefers it, then
   delete and recreate the pool. (`d admin pool build-guest` builds on the
   pool's own Docker, which cannot reach a registry from inside a discobox.)
-- `d admin pool delete` of a failed libkrun pool can leave it listed, and the
+- `d admin pool rm` of a failed libkrun pool can leave it listed, and the
   provider then refuses deletion (`provider instance has pools`).
 
 # Verifying the sandbox agent with nothing to wire (a VM guest's start)
@@ -808,7 +808,7 @@ feature of your own, drop a tree in and restart:
 ```bash
 # scratch repo whose settings turn features off; -o json shows config.features
 git init $S/app && mkdir $S/app/.discobox && echo '{"features":{"brew":false}}' > $S/app/.discobox/settings.json
-d new -H shell -d -C $S/app -o json        # commit something first
+d run -H shell -d $S/app -o json           # commit something first
 # a tree: features/<name>/provision.yaml + scripts, tarred and placed by root
 d shell <box> -- sh -c 'sudo tar -xz -C /' < $S/tree.tgz
 d stop <box>; d start <box>                # a real boot: wiring in discobox-wire, the rest in the agent
@@ -932,8 +932,8 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
   `discobox-access request --statement … --define WORD=DEFINITION` (or
   `statements`/`definitions` in `--json`), from a box on an image built with
   your `discobox-access`, and approve it with `secret request approve <id>
-  --secret-id N --policy-as-asked`. Create the box with `-C
-  https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
+  --secret-id N --policy-as-asked`. Create the box from SOURCE
+  `https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
   The grant's `.policy.resolved` (`GET /projects/<p>/secret-grants`) shows
   what bound; `discobox-access wait request <id>` shows it as sentences.
 - To see what a real judge does with a captured job, wrap it as a

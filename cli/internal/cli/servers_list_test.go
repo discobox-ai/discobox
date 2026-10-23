@@ -421,6 +421,10 @@ func TestServersCommandRegistersRenamesAndRemoves(t *testing.T) {
 	if !reflect.DeepEqual(body.Servers, want) {
 		t.Fatalf("servers = %+v, want %+v", body.Servers, want)
 	}
+	// -q is what rename and rm take: the names.
+	if out, err := run("admin", "remote", "ls", "-q"); err != nil || out != "alpha\nlab\n" {
+		t.Fatalf("remote ls -q = %q, %v", out, err)
+	}
 }
 
 // Making a registered server the primary is what every command without
@@ -591,7 +595,7 @@ func TestLauncherListsEveryServerAndRoutesToIt(t *testing.T) {
 	other := httptest.NewServer(fakeServerHandler("beta", sandboxB))
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
 
-	app := &App{serverURL: primary.URL, projectID: "project-1", source: "."}
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
 	client, err := app.apiClient()
 	if err != nil {
 		t.Fatal(err)
@@ -1069,7 +1073,7 @@ func TestLauncherWithOneServerReportsItsFailure(t *testing.T) {
 // runConsole builds one.
 func launcherDataSource(t *testing.T, serverURL string) *apiDataSource {
 	t.Helper()
-	app := &App{serverURL: serverURL, projectID: "project-1", source: "."}
+	app := &App{serverURL: serverURL, projectID: "project-1"}
 	client, err := app.apiClient()
 	if err != nil {
 		t.Fatal(err)
@@ -1312,7 +1316,7 @@ func TestLauncherSettlesThePrimaryNameBeforeItListsAnything(t *testing.T) {
 	other := fakeServer(t, "beta", sandboxB)
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
 
-	app := &App{serverURL: primary.URL, projectID: "project-1", source: "."}
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
 	client, err := app.apiClient()
 	if err != nil {
 		t.Fatal(err)

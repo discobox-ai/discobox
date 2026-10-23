@@ -778,7 +778,7 @@ func execBefore(a, b Exec) bool {
 	}
 	// Two services are ordered as the repository declares them, not by when
 	// their processes happened to start: that is what the numeric filename
-	// prefix is for, it is the order `discobox admin services ls` shows, and
+	// prefix is for, it is the order `discobox admin service ls` shows, and
 	// it holds still across a restart, which a start time does not. It is also
 	// what S1 and S2 mean, so it had better not move under them.
 	if serviceExec(a) && a.ServiceOrder != b.ServiceOrder {

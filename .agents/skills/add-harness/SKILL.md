@@ -247,7 +247,7 @@ credential the user grants through `discobox-access`. Copilot's run, which
 passed, is the template:
 
 1. **prep, no credential**: in a detached tmux pane, run the user's own
-   command, `discobox admin harnesses configure <id>`, and drive it to the
+   command, `discobox admin harness configure <id>`, and drive it to the
    point where the CLI's TUI is up, ready for a sign-in. Waiting on a pane's
    text is enough; save every pane to `/dev/shm` for the report.
 2. **run, under one `discobox-access run`** with a driver script on stdin:
@@ -322,7 +322,7 @@ What this needs, learned the hard way:
   happy path gets the diagnosis refused. After two refusals, stop and ask.
 - **A failed nested pool is often a stale image tag** from a rebuild in
   flight; `discobox admin pool ls` shows it recover on its own.
-- `discobox new` against the nested server enrolls an SSH key and adds an
+- `discobox run` against the nested server enrolls an SSH key and adds an
   `Include` to the box's `~/.ssh/config`; say so in the report.
 
 `go tool task eval:judge WRAPPER=harness/<id>/prompt.sh` measures the judge

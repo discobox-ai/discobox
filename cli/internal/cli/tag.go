@@ -86,14 +86,7 @@ func (a *App) changeSandboxMeta(cmd *cobra.Command, reference string, body *apim
 	if err != nil {
 		return nil, err
 	}
-	var sandboxes []apimodel.Sandbox
-	if !allFullSandboxIDs([]string{reference}) {
-		sandboxes, err = a.listProjectSandboxes(cmd.Context(), client, projectID, sandboxFilter{})
-		if err != nil {
-			return nil, err
-		}
-	}
-	sandboxID, err := a.resolveSandboxReference(cmd.Context(), client, projectID, reference, sandboxes, listedName)
+	sandboxID, err := a.resolveListedSandbox(cmd.Context(), client, projectID, reference)
 	if err != nil {
 		return nil, err
 	}

@@ -22,8 +22,8 @@ import (
 func (a *App) newSandboxServiceCommand() *cobra.Command {
 	var sandboxID string
 	cmd := &cobra.Command{
-		Use:     "services",
-		Aliases: []string{"service"},
+		Use:     "service",
+		Aliases: []string{"services"},
 		Short:   "Manage a discobox's declared services",
 		Long: "Services are the scripts a repository declares under .discobox/services.\n" +
 			"The discobox starts them when it boots; these commands inspect and control them afterwards.\n\n" +

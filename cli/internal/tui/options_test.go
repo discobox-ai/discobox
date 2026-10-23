@@ -164,8 +164,8 @@ func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 	if req.Source != "" {
 		t.Fatalf("source = %q, want nothing to cut from", req.Source)
 	}
-	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "--no-source") || strings.Contains(cmd, "-C") {
-		t.Fatalf("command = %q, want --no-source and no -C", cmd)
+	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "discobox run --no-source") || strings.Contains(cmd, "run .") {
+		t.Fatalf("command = %q, want --no-source in SOURCE's place", cmd)
 	}
 	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, noSourceChoice) {
 		t.Fatalf("chips = %q, want the strip to say there is no source", chips)
@@ -267,61 +267,6 @@ func hasSourceValue(o *option, want string) bool {
 	return false
 }
 
-// A window opened on a repository URL cuts from that URL: the panel leads with
-// it, offers it once rather than twice, and the command it previews carries -C.
-// A shell the command is pasted into holds no -C of its own (ADR 0111 §3).
-func TestAWindowOnARepositoryURLCutsFromTheURL(t *testing.T) {
-	t.Parallel()
-	const url = "https://github.com/acme/foo"
-	ds := newFakeSource(testSandboxes()...)
-	ds.session.Remote = url
-	ds.session.OriginKey = testKey(url)
-	m := newTestModel(t, ds)
-
-	source := m.opts.opts[optSource]
-	if source.values[0] != url {
-		t.Fatalf("leading source = %q, want the URL the window was opened on", source.values[0])
-	}
-	seen := 0
-	for _, value := range source.values {
-		if value == url {
-			seen++
-		}
-	}
-	if seen != 1 {
-		t.Fatalf("values = %v, want the URL once: the listing holds it too", source.values)
-	}
-	if req := m.opts.request("fix it", m.opts.opts[optSource].selected()); req.Source != url {
-		t.Fatalf("source = %q, want the URL, since -C is the only thing that says so", req.Source)
-	}
-	if cmd := m.opts.command("fix it"); !strings.Contains(cmd, "-C "+url) {
-		t.Fatalf("command = %q, want it to carry -C", cmd)
-	}
-}
-
-// The ref the window was opened on is part of what it cuts from, and only -C
-// carries it: a window on URL@REF that emitted the bare URL would cut from the
-// default branch instead. Where the discobox is filed is ref-less all the same
-// — every ref of one repository is one place (ADR 0111 §1).
-func TestAWindowOnARepositoryURLKeepsItsRef(t *testing.T) {
-	t.Parallel()
-	const url = "https://github.com/acme/foo"
-	ds := newFakeSource(testSandboxes()...)
-	ds.session.Remote = url + "@v2"
-	ds.session.OriginKey = testKey(url)
-	m := newTestModel(t, ds)
-
-	if req := m.opts.request("fix it", m.opts.opts[optSource].selected()); req.Source != url+"@v2" {
-		t.Fatalf("source = %q, want the ref the window was opened on", req.Source)
-	}
-	if cmd := m.opts.command("fix it"); !strings.Contains(cmd, "-C "+url+"@v2") {
-		t.Fatalf("command = %q, want the ref on the command line too", cmd)
-	}
-	if m.list.folder.key != testKey(url) {
-		t.Fatalf("folder = %q, want the repository's own key, which carries no ref", m.list.folder.label)
-	}
-}
-
 // Another machine's discoboxes with no source are a folder this window can
 // list, and nothing it can cut from: the panel falls back to the window's own
 // source rather than carrying the "no source" sentinel into what it draws.
@@ -341,8 +286,8 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 	if !chosen {
 		t.Fatal("another machine's sourceless folder should be offered")
 	}
-	if got := m.opts.sourceDir(); got != m.session.source() {
-		t.Fatalf("source = %q, want the window's own (%q)", got, m.session.source())
+	if got := m.opts.sourceDir(); got != m.session.Directory {
+		t.Fatalf("source = %q, want the window's own (%q)", got, m.session.Directory)
 	}
 	if strings.ContainsRune(m.opts.sourceLabel(), 0) {
 		t.Fatalf("the panel carries the no-source sentinel: %q", m.opts.sourceLabel())

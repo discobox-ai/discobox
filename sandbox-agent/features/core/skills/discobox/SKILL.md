@@ -475,7 +475,7 @@ These are the user's commands, run on their side:
 
 ```
 discobox            open the console
-discobox new        launch a prompt in a new box
+discobox run        launch a prompt in a new box
 discobox ls         every box (--source, --on, --tag narrow it)
 discobox rm         archive boxes (alias: delete)
 discobox start      start boxes
@@ -495,9 +495,12 @@ discobox id         print this machine's peer ID and the server's
 discobox admin      pools, projects, harnesses, the server and its status
 ```
 
-Only `discobox new` makes a box: its prompt is the words after it, or `-p` for
-one argument — `discobox new 'fix the failing tests'`. Bare `discobox` takes no
-prompt and none of `new`'s flags.
+Only `discobox run` makes a box: `discobox run SOURCE [PROMPT...]`, where
+SOURCE is a directory (`.` for this one), a repository URL or OWNER/REPO, and
+the prompt is the words after it, or `-p` for one argument — `discobox run .
+'fix the failing tests'`. Only committed history goes in; `--include-dirty`
+carries uncommitted changes too. `--no-source` takes SOURCE's place for an
+empty box. Bare `discobox` takes no prompt and none of `run`'s flags.
 
 `discobox rm BOX...` archives boxes, by the NAME `ls` lists or by ID, and
 `delete` is an alias for it. A NAME two boxes share is refused rather than
@@ -519,13 +522,13 @@ a person for with `discobox-access` — the `discobox-access` skill says how —
 and run under: `discobox-access run --use <id> -- discobox …`. Without one,
 every call is refused by the pool.
 
-With it, you may create discoboxes with `discobox new`, cut from the directory
-you run it in; list and read them (`admin box ls`, `admin box get`). On any
+With it, you may create discoboxes with `discobox run`, cut from the SOURCE
+you give it — `.` for this box's own checkout; list and read them (`admin box ls`, `admin box get`). On any
 discobox in this project but its judge, you may read and type into its
 terminals and read their logs (`admin terminal screen`, `input`, `wait`,
 `logs`); start, stop, and restart it (`discobox start`, `stop`, `restart`);
 repair and upgrade it (`admin box repair`, `upgrade`); list, start, stop, and
-restart its services and read their logs (`admin services`); reach its ports
+restart its services and read their logs (`admin service`); reach its ports
 over HTTP, at `https://api.discobox.internal/projects/default/sandboxes/<id>/http/<port>/`;
 and tag and name it (`discobox tag`, `discobox rename`). Which of them a use
 reaches is what the judge reads from its words, told which discobox created

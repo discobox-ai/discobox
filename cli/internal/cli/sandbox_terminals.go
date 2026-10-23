@@ -200,8 +200,8 @@ func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
 
 func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command {
 	return &cobra.Command{
-		Use:               "delete TERMINAL_ID",
-		Aliases:           []string{"rm", "remove"},
+		Use:               "rm TERMINAL_ID",
+		Aliases:           []string{"delete", "remove"},
 		Short:             "Delete a discobox terminal",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTerminals(sandboxID),

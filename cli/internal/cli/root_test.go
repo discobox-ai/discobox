@@ -169,6 +169,16 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 			},
 			want: "job-full-id\n",
 		},
+		{
+			// What bind and unbind take: the env names, declared ones first.
+			name: "harness secret bindings",
+			write: func(cmd *cobra.Command) error {
+				return app.writeHarnessSecretBindings(cmd,
+					[]apimodel.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY"}},
+					[]apimodel.HarnessConfigSecretBinding{{EnvName: "ANTHROPIC_API_KEY", SecretId: "sec_1"}, {EnvName: "EXTRA", SecretId: "sec_2"}})
+			},
+			want: "ANTHROPIC_API_KEY\nEXTRA\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,21 +207,8 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("\n  new ")) {
-		t.Fatalf("help output = %q, want visible new command", out.String())
-	}
-	// The old name still reaches the command, for every script and habit written
-	// before it was `new` — and is not printed anywhere, which is the other half
-	// of keeping it (see newRunCommand).
-	old, _, err := cmd.Find([]string{"run"})
-	if err != nil || old.Name() != "run" {
-		t.Fatalf("find the old name: command=%v err=%v", old, err)
-	}
-	if !old.Hidden {
-		t.Fatal("the old name is listed in the command list")
-	}
-	if bytes.Contains(out.Bytes(), []byte("\n  run ")) {
-		t.Fatalf("help output = %q, want the old name unlisted", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("\n  run ")) {
+		t.Fatalf("help output = %q, want visible run command", out.String())
 	}
 	// The same for the console's earlier name.
 	if !bytes.Contains(out.Bytes(), []byte("\n  console ")) {
@@ -238,13 +235,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
 		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
-	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "audit", "server"} {
+	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harness", "hooks", "audit", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "audit", "server"} {
+	for _, child := range []string{"box", "terminal", "exec", "provider", "job", "harness", "audit", "server"} {
 		command, args, err := cmd.Find([]string{"admin", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
 			t.Fatalf("find admin child %q: command=%v args=%v err=%v", child, command, args, err)
@@ -303,8 +300,8 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 		{"secret", "grant", "ls"},
 		{"secret", "request", "ls"},
 		{"secret", "rule", "ls"},
-		{"admin", "harnesses", "ls"},
-		{"admin", "harnesses", "secrets", "ls"},
+		{"admin", "harness", "ls"},
+		{"admin", "harness", "secret", "ls"},
 	}
 
 	for _, path := range paths {
@@ -594,7 +591,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses", "set-default", harnessID})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harness", "set-default", harnessID})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute set-default: %v", err)
@@ -812,7 +809,7 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harness", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harnesses list: %v", err)
@@ -913,7 +910,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "admin", "harness", "create",
 		"--name", "Custom", "--bundle", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 		"--create-only-file", ".claude/settings.json",
@@ -921,7 +918,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harnesses create: %v", err)
+		t.Fatalf("execute harness create: %v", err)
 	}
 
 	claudeIndex := -1
@@ -966,13 +963,13 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "admin", "harness", "create",
 		"--name", "Custom", "--bundle", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 	})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harnesses create: %v", err)
+		t.Fatalf("execute harness create: %v", err)
 	}
 	if len(gotFiles) != 1 || gotFiles[0].Path != ".claude/settings.json" || gotFiles[0].Content != `{"theme":"dark"}` {
 		t.Fatalf("files sent to server = %#v", gotFiles)
@@ -1014,7 +1011,7 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(io.Discard)
 		cmd.SetErr(io.Discard)
-		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses"}, args...))
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "harness"}, args...))
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute harnesses %s: %v", args[0], err)
 		}
@@ -1997,7 +1994,7 @@ func TestBareWordsAreNotAPrompt(t *testing.T) {
 }
 
 // A `--` does not smuggle a prompt past that. It is the likeliest way to
-// mistype this, since `new --` is what new's own help teaches with the command
+// mistype this, since `run --` is what run's own help teaches with the command
 // name left out.
 //
 // The words after a `--` are the ones nothing else catches. Cobra's scan for
@@ -2036,8 +2033,8 @@ func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
 		}
 		// And it says what to type instead, since the words were a prompt —
 		// with the words themselves, as they were typed.
-		if !strings.Contains(err.Error(), "discobox new ") {
-			t.Fatalf("error = %q, want it to name discobox new", err)
+		if !strings.Contains(err.Error(), "discobox run . ") {
+			t.Fatalf("error = %q, want it to name discobox run", err)
 		}
 		if !strings.Contains(err.Error(), tc.prompt) {
 			t.Fatalf("error = %q, want it to quote %q", err, tc.prompt)
@@ -2049,8 +2046,8 @@ func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
 	}
 }
 
-// The bare command takes none of new's flags, wherever they are written: only
-// `discobox new` makes a discobox (ADR 26-09-25-027). In front of a subcommand
+// The bare command takes none of run's flags, wherever they are written: only
+// `discobox run` makes a discobox (ADR 26-09-25-027). In front of a subcommand
 // they are unknown to the root that parses them, so they fail as loudly as they
 // would anywhere else rather than being dropped on the way to that subcommand.
 func TestRunFlagsAtTheRootAreUnknown(t *testing.T) {
@@ -2062,7 +2059,7 @@ func TestRunFlagsAtTheRootAreUnknown(t *testing.T) {
 		{args: []string{"-H", "codex", "-d"}, flag: "-H"},
 		{args: []string{"--detach"}, flag: "--detach"},
 		{args: []string{"-p", "fix the failing tests", "ls"}, flag: "-p"},
-		{args: []string{"-p", "fix the failing tests", "new"}, flag: "-p"},
+		{args: []string{"-p", "fix the failing tests", "run"}, flag: "-p"},
 		{args: []string{"-H", "codex", "tools", "ssh", "mybox"}, flag: "-H"},
 		{args: []string{"--detach", "ls"}, flag: "--detach"},
 	} {
@@ -2082,8 +2079,8 @@ func TestRunFlagsAtTheRootAreUnknown(t *testing.T) {
 		}
 		// And it says where the flag went, since `discobox -p` is what the
 		// bare command used to take.
-		if hinted := withNewFlagHint(found, err); !strings.Contains(hinted.Error(), "discobox new "+tc.flag) {
-			t.Fatalf("error = %q, want it to point at discobox new %s", hinted, tc.flag)
+		if hinted := withRunFlagHint(found, err); !strings.Contains(hinted.Error(), "discobox run "+tc.flag) {
+			t.Fatalf("error = %q, want it to point at discobox run %s", hinted, tc.flag)
 		}
 		if strings.Contains(out.String(), "preparing source") {
 			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(tc.args, " "), out.String())
@@ -2091,7 +2088,7 @@ func TestRunFlagsAtTheRootAreUnknown(t *testing.T) {
 	}
 }
 
-// -p is new's prompt as one argument, however many words it holds.
+// -p is run's prompt as one argument, however many words it holds.
 func TestPromptFlagIsOneArgument(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
@@ -2116,7 +2113,7 @@ func TestPromptFlagIsOneArgument(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "new", "-d", "-p", "version bump the go modules"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", repo + "@HEAD", "-p", "version bump the go modules"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
@@ -2257,34 +2254,18 @@ func TestVersionFollowedByWordsIsAnError(t *testing.T) {
 	}
 }
 
-// The old name is kept working and never taught: no command list, and no alias
-// line on the command that replaced it. Cobra prints a command's aliases with
-// no way to keep one out, which is why `run` is a second hidden registration
-// rather than an alias of `new` (see newRunCommand).
-func TestTheOldNameIsNeverPrinted(t *testing.T) {
-	for _, name := range []string{"new", "run"} {
-		t.Run(name, func(t *testing.T) {
-			cmd := NewRootCommand()
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetArgs([]string{name, "--help"})
-			if err := cmd.Execute(); err != nil {
-				t.Fatalf("execute %s --help: %v", name, err)
-			}
-			aliases := ""
-			for line := range strings.SplitSeq(out.String(), "\n") {
-				if strings.HasPrefix(line, "  new,") || strings.HasPrefix(line, "  run,") {
-					aliases = line
-				}
-			}
-			// `discobox new --help` is the one a reader reaches, and it may not
-			// name the old spelling. `discobox run --help` is reached only by
-			// somebody who already typed it, and names itself, as any command's
-			// usage does.
-			if name == "new" && strings.Contains(aliases, "run") {
-				t.Fatalf("`discobox new --help` names the old spelling: %q", aliases)
-			}
-		})
+// run's help names every spelling it answers to: they are meant to be seen,
+// so somebody who typed new or create learns which command they reached.
+func TestRunHelpListsEverySpelling(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"new", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute new --help: %v", err)
+	}
+	if !strings.Contains(out.String(), "Aliases:\n  run, new, create, r, n\n") {
+		t.Fatalf("new --help does not list run's spellings:\n%s", out.String())
 	}
 }
 
@@ -2464,7 +2445,7 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 
 // A flag that is nobody's gets cobra's answer and nothing more: pointing it at
 // new would send somebody to a command that does not know it either. Nor does
-// one of new's flags written after another command: cobra reports the root for
+// one of run's flags written after another command: cobra reports the root for
 // that failure too, but nobody writing `discobox tools -H ...` was trying to
 // make a discobox.
 func TestUnknownFlagsThatAreNotABareRunAreNotPointedAtNew(t *testing.T) {
@@ -2484,7 +2465,7 @@ func TestUnknownFlagsThatAreNotABareRunAreNotPointedAtNew(t *testing.T) {
 		if err == nil {
 			t.Fatalf("`discobox %s` was accepted", strings.Join(args, " "))
 		}
-		if hinted := withNewFlagHint(found, err); hinted.Error() != err.Error() {
+		if hinted := withRunFlagHint(found, err); hinted.Error() != err.Error() {
 			t.Fatalf("`discobox %s`: error = %q, want cobra's own %q", strings.Join(args, " "), hinted, err)
 		}
 	}

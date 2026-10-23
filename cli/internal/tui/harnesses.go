@@ -174,7 +174,7 @@ func (l *harnessList) view(st *styles, z *zones) string {
 
 	body := make([]string, 0, l.height)
 	if len(l.all) == 0 {
-		body = append(body, st.dimText.Render(pad("  no harnesses in this project — register one with `discobox admin harnesses create`", l.width)))
+		body = append(body, st.dimText.Render(pad("  no harnesses in this project — register one with `discobox admin harness create`", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
@@ -378,7 +378,7 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 	m.harnesses.setAll(msg.harnesses)
 	m.opts.setHarnesses(msg.harnesses)
 	m.layout()
-	// `discobox new` handed its request to this window, and this is the first
+	// `discobox run` handed its request to this window, and this is the first
 	// moment the window can ask what it asks before a create. See pendingRun.
 	return m.startPendingRun()
 }

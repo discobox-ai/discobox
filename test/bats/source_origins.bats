@@ -92,13 +92,12 @@ commit_in() {
   git -C "$dir" -c user.name=Bats -c user.email=bats@example.com commit -q -m "$message" "$@"
 }
 
-# new_box makes a discobox from the repository at $1, with any further
-# arguments to `discobox new`, records it for teardown, waits for it, and
-# prints its ID.
+# new_box makes a discobox from SOURCE ($2, or . when it is not given), run
+# from the directory $1, records it for teardown, waits for it, and prints its
+# ID.
 new_box() {
-  local created id dir="$1"
-  shift
-  created="$(cd "$dir" && cli new -H shell -d --include-dirty=false -o json "$@")" ||
+  local created id dir="$1" source="${2:-.}"
+  created="$(cd "$dir" && cli run -H shell -d -o json "$source")" ||
     { echo "$created" >&2; return 1; }
   id="$(printf '%s' "$created" | jq -r .id)"
   [ -n "$id" ] && [ "$id" != null ]
@@ -196,7 +195,7 @@ pool_route() {
   # A second discobox from the same remote, at the private branch: its
   # commit is now in the cache the first one's namespace shares.
   local other
-  other="$(new_box "$DISCOBOX_BATS_LOCAL" -C "$DISCOBOX_BATS_LOCAL@private")"
+  other="$(new_box "$DISCOBOX_BATS_LOCAL" "$DISCOBOX_BATS_LOCAL@private")"
   run in_box "$other" 'git rev-parse HEAD'
   echo "$output"
   [ "${lines[0]}" = "$DISCOBOX_BATS_PRIVATE" ]
@@ -305,7 +304,7 @@ pool_route() {
   url="file://$served"
   want="$(git -C "$served" rev-parse refs/heads/main)"
   # HOME is the suite's, so this client's cache of the remote is too.
-  id="$(new_box "$DISCOBOX_BATS_WORK" -C "$url@main")"
+  id="$(new_box "$DISCOBOX_BATS_WORK" "$url@main")"
 
   run in_box "$id" 'git rev-parse HEAD origin/main discobox/main && git remote get-url origin && git branch -r | grep -c origin/private'
   echo "$output"
@@ -318,7 +317,7 @@ pool_route() {
   [ "${lines[4]}" = 1 ]
 
   # A second discobox from the same commit needs nothing fetched or pushed.
-  id="$(new_box "$DISCOBOX_BATS_WORK" -C "$url@main")"
+  id="$(new_box "$DISCOBOX_BATS_WORK" "$url@main")"
   run in_box "$id" 'git rev-parse HEAD'
   [ "${lines[0]}" = "$want" ]
 }

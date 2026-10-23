@@ -46,7 +46,7 @@ func (a *App) newTrustListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, args[0])
+		sandboxID, err := a.resolveListedSandbox(cmd.Context(), client, projectID, args[0])
 		if err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ func (a *App) newTrustListCommand() *cobra.Command {
 }
 
 func (a *App) newTrustRemoveCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm DISCOBOX TRUST_ID...", Aliases: []string{"revoke"}, Short: "Revoke a discobox's trust of a host", Args: cobra.MinimumNArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm DISCOBOX TRUST_ID...", Aliases: []string{"revoke", "delete", "remove"}, Short: "Revoke a discobox's trust of a host", Args: cobra.MinimumNArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -74,7 +74,7 @@ func (a *App) newTrustRemoveCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, args[0])
+		sandboxID, err := a.resolveListedSandbox(cmd.Context(), client, projectID, args[0])
 		if err != nil {
 			return err
 		}

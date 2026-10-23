@@ -243,7 +243,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		}
 	}
 
-	stdout, stderr, err := runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID)
+	stdout, stderr, err := runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	}
 
 	// Named, the DNS trail joins the timeline under the pool's attestation.
-	stdout, _, err = runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID, "--source", "dns")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "dns")
 	if err != nil {
 		t.Fatalf("list --source dns: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	mu.Lock()
 	asked = map[string]bool{}
 	mu.Unlock()
-	stdout, _, err = runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID, "--source", "http,creds", "-o", "json")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "http,creds", "-o", "json")
 	if err != nil {
 		t.Fatalf("list -o json: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 
 	// An answer's record is the client's account of how the value was made;
 	// the ask is the control plane's (ADR 26-09-25-122 §6).
-	stdout, _, err = runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID, "--source", "refresh", "-o", "json")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "refresh", "-o", "json")
 	if err != nil {
 		t.Fatalf("list --source refresh: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 		if round >= 5 {
 			cancel()
 		}
-	}, "list", "--discobox-id", sandboxID, "--follow")
+	}, "ls", "--discobox-id", sandboxID, "--follow")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

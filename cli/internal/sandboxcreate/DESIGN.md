@@ -42,8 +42,8 @@ sandbox create requests.
   directory takes no `@REF` or `//PATH`: its skills are read as they are, and
   one whose own name holds `@` or `//` is that directory when it is there. A directory is content whether or not it is a checkout
   (ADR 26-10-14-294 §1).
-  Both `discobox new` and `admin box create` take the flags; the frontend
-  resolves `discobox new`'s against `client.yaml` before they reach here
+  Both `discobox run` and `admin box create` take the flags; the frontend
+  resolves `discobox run`'s against `client.yaml` before they reach here
   (ADR 26-10-09-389).
   The project's skills sources arrive as `PromptOptions.ProjectSkills`
   (`ProjectSkillsRepository`), read from the server by the frontend, and are
@@ -113,15 +113,15 @@ sandbox create requests.
   `.discobox/settings.json`, the checkout beside the primary source — takes the
   first, while destinations and reference keys take the second.
 
-- Every source argument — `-C`, `-i`, `--skills`, a `.discobox/settings.json`
+- Every source argument — `run`'s SOURCE, `-i`, `--skills`, a `.discobox/settings.json`
   `sources` entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
   (`ParseSource`; ADR 26-10-15-664). A GitHub repository may be named short —
   `owner/repo` or `github.com/owner/repo` — and is
   `https://github.com/owner/repo.git` only when no such path exists locally:
   both spellings are valid relative paths, and a directory that is there always
   wins. A declared source never names a directory, so its shorthand is always
-  the repository (`sourceref.Ref.Expand`). The CLI expands `-C` once, at flag
-  validation, and the console's Source field reads a typed source the same way.
+  the repository (`sourceref.Ref.Expand`). The CLI expands SOURCE once, before
+  anything else reads it, and the console's Source field reads a typed source the same way.
   `//PATH` is where the harness starts, which only the primary source says: a
   local `DIR//PATH` is `DIR/PATH`, and a remote one sets the destination's
   working directory beneath where it is placed; `-i` and a declared source
@@ -132,12 +132,14 @@ sandbox create requests.
   than left for the harness to fail to start in.
 
 - Whether a dirty workspace is snapshotted is the caller's policy
-  (`PromptOptions.IncludeDirty`), and asking is the caller's UI
-  (`ConfirmIncludeDirty`); this package decides only when the question applies.
-  See the CLI design doc's "Uncommitted Work at Create".
-- A source directory in no repository asks the same question about the whole
-  directory (`ConfirmCopyDirectory`), answered by the same `IncludeDirty`
-  policy, and this package measures what would be copied for the frontend to
+  (`PromptOptions.IncludeDirty`), settled before it gets here: `discobox run`
+  from `--include-dirty`, the console from its own dialog. When there is
+  uncommitted work it leaves behind, it says so (`Warn`). See the CLI design
+  doc's "Uncommitted Work at Create".
+- A source directory in no repository asks its own question, whether to copy
+  the whole directory (`ConfirmCopyDirectory`, or `CopyDirectory` answered
+  ahead of time). `IncludeDirty` does not decide it: there is no commit to
+  start from instead, so copying leads. This package measures what would be copied for the frontend to
   show while it asks (`MeasureDirectory`, polled through `DirectoryWalk.Total`).
   Both frontends count the same thing the same way; only where the number is
   drawn is theirs.

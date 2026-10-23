@@ -394,25 +394,6 @@ func TestTheCardOpensOnTheLastAnswerWithOneFolderShown(t *testing.T) {
 	}
 }
 
-// -C names the source this window cuts from, so the last window's answer only
-// leads the list rather than being where the card opens.
-func TestTheCommandLineOutranksTheLastSource(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.session.LastSource = "/src/obot"
-	ds.session.SourceChosen = true
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
-
-	if got := cardSources(t, m.dialog)[0]; got != "/src/obot" {
-		t.Fatalf("first source = %q, want the last one cut from", got)
-	}
-	if got := cardSource(t, m.dialog); got != "/src/disco2 @ main" {
-		t.Fatalf("card opens on %q, want the one -C named", got)
-	}
-}
-
 // "All folders" names no place, so moving the header there goes back to the
 // last create's source rather than to the directory the window runs in.
 func TestAllFoldersGoesBackToTheLastSource(t *testing.T) {

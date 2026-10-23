@@ -29,14 +29,14 @@ const (
 	EndpointDiscoboxSandboxCreate = "discobox.sandbox.create"
 	// EndpointDiscoboxSandboxGet is the discobox API's
 	// GET /projects/{project}/sandboxes/{sandbox}: reading one discobox back,
-	// which `discobox new` polls after a create.
+	// which `discobox run` polls after a create.
 	EndpointDiscoboxSandboxGet = "discobox.sandbox.get"
 	// EndpointDiscoboxSandboxOriginRefs is git's discovery of a discobox's
 	// origin repository before a push to it:
 	// GET /projects/{project}/sandboxes/{sandbox}/git-origins/{repo}/info/refs.
 	EndpointDiscoboxSandboxOriginRefs = "discobox.sandbox.origin.refs"
 	// EndpointDiscoboxSandboxOriginPush is a push into a discobox's origin
-	// repository, which is how `discobox new` delivers a created discobox's
+	// repository, which is how `discobox run` delivers a created discobox's
 	// source: POST …/git-origins/{repo}/git-receive-pack.
 	EndpointDiscoboxSandboxOriginPush = "discobox.sandbox.origin.push"
 	// EndpointDiscoboxSandboxSourcePushed is the report that a discobox's
@@ -86,23 +86,23 @@ var guidance = map[string][]string{
 	},
 	EndpointDiscoboxSandboxCreate: {
 		"This creates one new discobox: a sandbox that runs an agent as the same user, on the \"prompt\" it is given, starting from the \"source\" and any \"otherSources\" named (\"none\" is an empty machine). One request is one discobox.",
-		"The discobox CLI's `discobox new` sends this request: its prompt (`-p`) is \"prompt\", each `--grant` is one of \"grants\", and the directory it runs in is \"source\". A purpose approved for creating discoboxes is often worded as that command, or as which discoboxes to create, and may quote or paraphrase the prompt each is given — even one that tells the new discobox what not to do. That quoted task is the new discobox's to carry out: it says which discoboxes the purpose approves creating, not what the requester is limited to doing. Weigh whether this prompt is one the purpose names — the same task, for one of the items the purpose lists — and whether its grants are within what the purpose delegates.",
+		"The discobox CLI's `discobox run` sends this request (`discobox new` and `discobox create` are the same command, spelled differently): its prompt (`-p`) is \"prompt\", each `--grant` is one of \"grants\", and the directory it runs in is \"source\". A purpose approved for creating discoboxes is often worded as that command, in any of its spellings, or as which discoboxes to create, and may quote or paraphrase the prompt each is given — even one that tells the new discobox what not to do. That quoted task is the new discobox's to carry out: it says which discoboxes the purpose approves creating, not what the requester is limited to doing. Weigh whether this prompt is one the purpose names — the same task, for one of the items the purpose lists — and whether its grants are within what the purpose delegates.",
 		"Each of \"grants\" hands the new discobox uses of one credential — \"credential\" for a well-known one, or \"secret\" and \"envVar\" for a project secret — to \"host\" when named, for \"ttlSeconds\" when named. Its \"uses\" are the sentences the new discobox's own commands and requests will be judged against, so they are what it may do with the credential: weigh whether each is within what the approved purpose delegates, as narrow as the purpose says. \"secrets\" are credentials assigned to it outright, with no use sentence to judge against, which is broader than a grant. \"env\" names plain environment variables it sets; their values are not in the metadata and may themselves be a credential, so ask for the body when a name suggests one.",
 		"\"prompt\" is only the start of what the new discobox is told, and \"promptBytes\" says how long it is; it is the discobox's task in the requester's words, not an authorization. A prompt that ends in \"…\" was cut short to fit, and says nothing about the grants. The metadata lifts what a create most often turns on, not every field (the harness config, the model, the user and the git identity are left to the body).",
 		"\"grantsTotal\" is how many grants the body holds, 0 when it holds none, and absent when its grants could not be read. Every grant is in the metadata when \"grants\" lists that many and none of their \"uses\" ends in \"…\". When \"grantsTotal\" is larger or absent, or a use was cut short, ask for the body to see the rest rather than refusing for want of it.",
-		"After the create, `discobox new` finishes making the discobox in requests of their own, each recognized as such: it reads the new discobox back until it is ready for its source, pushes the source into the discobox's origin, and reports the push done.",
+		"After the create, `discobox run` finishes making the discobox in requests of their own, each recognized as such: it reads the new discobox back until it is ready for its source, pushes the source into the discobox's origin, and reports the push done.",
 	},
 	EndpointDiscoboxSandboxGet: {
-		"This reads one discobox back, the one named in the path: its configuration and how far it is in starting. It changes nothing. `discobox new` polls it about once a second after creating a discobox, until that discobox is ready to receive its source, and `discobox admin box get` reads it too. A purpose that approves creating discoboxes approves reading back the ones it creates.",
+		"This reads one discobox back, the one named in the path: its configuration and how far it is in starting. It changes nothing. `discobox run` polls it about once a second after creating a discobox, until that discobox is ready to receive its source, and `discobox admin box get` reads it too. A purpose that approves creating discoboxes approves reading back the ones it creates.",
 	},
 	EndpointDiscoboxSandboxOriginRefs: {
-		"This is git asking what the origin repository of the discobox named in the path holds, before pushing to it. It changes nothing. It is the first half of `discobox new` delivering the source of a discobox it created. The facts say which discobox created the one named.",
+		"This is git asking what the origin repository of the discobox named in the path holds, before pushing to it. It changes nothing. It is the first half of `discobox run` delivering the source of a discobox it created. The facts say which discobox created the one named.",
 	},
 	EndpointDiscoboxSandboxOriginPush: {
-		"This pushes into the origin repository (\"git-origins\") that the discobox named in the path checks its source out from. It is how `discobox new` delivers the source of a discobox it has just created — the commit that discobox was created from — before it starts: a discobox getting its code, not a push to any upstream repository such as GitHub. A purpose that approves creating discoboxes approves delivering the source of the ones it creates, even when the prompt it quotes tells the new discobox not to push, and the facts say which discobox created the one named: a push into one it did not create puts commits where another discobox's agent will take them as its newest.",
+		"This pushes into the origin repository (\"git-origins\") that the discobox named in the path checks its source out from. It is how `discobox run` delivers the source of a discobox it has just created — the commit that discobox was created from — before it starts: a discobox getting its code, not a push to any upstream repository such as GitHub. A purpose that approves creating discoboxes approves delivering the source of the ones it creates, even when the prompt it quotes tells the new discobox not to push, and the facts say which discobox created the one named: a push into one it did not create puts commits where another discobox's agent will take them as its newest.",
 	},
 	EndpointDiscoboxSandboxSourcePushed: {
-		"This reports that the sources of the discobox named in the path have been pushed, so it can start: the last step of `discobox new` delivering the source of a discobox it created. Its body names each source and the commit pushed for it. A purpose that approves creating discoboxes approves this for the ones it creates, which the facts say.",
+		"This reports that the sources of the discobox named in the path have been pushed, so it can start: the last step of `discobox run` delivering the source of a discobox it created. Its body names each source and the commit pushed for it. A purpose that approves creating discoboxes approves this for the ones it creates, which the facts say.",
 	},
 }
 

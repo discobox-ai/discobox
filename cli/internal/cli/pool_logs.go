@@ -34,7 +34,7 @@ func (a *App) newPoolLogsCommand() *cobra.Command {
 	var tail int
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "logs [POOL_ID]",
+		Use:   "logs [POOL]",
 		Short: "Print the host log for a pool's backend",
 		Long: `Print what a pool's backend recorded about the machine hosting its runtime.
 
@@ -52,7 +52,7 @@ answers on a host whose agent never registered — which is when a host log is
 worth reading. A backend that keeps no readable record says so instead of
 printing nothing.
 
-Without POOL_ID the project's default pool is used.`,
+Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool logs
   discobox admin pool logs --follow
   discobox admin pool logs pool_01hq --tail 50`,
