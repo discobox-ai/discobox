@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -65,7 +66,10 @@ func TestRunNeedsASourceWhenThereIsNobodyToAsk(t *testing.T) {
 func TestRunSaysSourceComesFirst(t *testing.T) {
 	t.Chdir(newRunSourceTestRepo(t))
 	_, err := runWith(t, refusingServer(t), "", "-d", "fix the tests")
-	if err == nil || !strings.Contains(err.Error(), "SOURCE comes first, before the prompt: discobox run . 'fix the tests'") {
+	// Quoted the way this platform's shell reads it, which is what the reader
+	// pastes it into.
+	want := "SOURCE comes first, before the prompt: discobox run . " + shellQuote("fix the tests", runtime.GOOS == "windows")
+	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("err = %v, want the reminder that SOURCE comes first", err)
 	}
 }
