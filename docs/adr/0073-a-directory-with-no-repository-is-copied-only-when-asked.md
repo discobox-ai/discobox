@@ -2,7 +2,8 @@
 
 - **Status**: Accepted (§2, and the outcome §3 gives ahead of time, superseded by
   [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md);
-  everything else stands)
+  §§2–3 superseded again by [26-10-23-600](26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md): copying is the default answer, and
+  `--include-dirty` no longer decides it; everything else stands)
 - **Date**: 2026-08-24
 - **Supersedes**: [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) §2's
   "Nobody is asked about this"; the rest of 0045 stands unchanged.

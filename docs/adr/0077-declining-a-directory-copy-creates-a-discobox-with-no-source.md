@@ -1,6 +1,6 @@
 # 0077 — Declining a directory copy creates a discobox with no source
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 superseded by [26-10-23-600](26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md): `--include-dirty` no longer decides the copy; §1 stands)
 - **Date**: 2026-08-28
 - **Supersedes**: [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) §2
   and §3's outcome; the rest of 0073 stands unchanged.

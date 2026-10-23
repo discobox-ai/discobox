@@ -1,6 +1,6 @@
 # 26-09-25-027 — Only `new` makes a discobox; the bare command takes none of its flags
 
-- **Status**: Accepted
+- **Status**: Accepted (its spelling superseded by [26-10-23-600](26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md): read `new` as `run`; its decisions stand)
 - **Date**: 2026-09-25
 - **Supersedes**: [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)
   §3's sharing of `addRunFlags` with the root command and §4's `runRequested`;
