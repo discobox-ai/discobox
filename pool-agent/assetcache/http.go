@@ -53,7 +53,7 @@ func (c *Cache) Handler() http.Handler {
 
 func (c *Cache) serveName(w http.ResponseWriter, r *http.Request) {
 	sandboxID, name := r.Header.Get(proxy.PoolClientHeader), chi.URLParam(r, "name")
-	pins, err := sandboxPins(c.sandboxes, sandboxID)
+	pins, err := c.pins(sandboxID)
 	if err != nil {
 		c.fail(w, err)
 		return

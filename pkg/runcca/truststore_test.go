@@ -276,3 +276,50 @@ func hasHashLinkTo(t *testing.T, dir, name string) bool {
 	}
 	return false
 }
+
+// A CA untrusted is taken out of everything materializing it made — its
+// anchor, its links, its certificate in the bundle — and nothing else is: a
+// snapshot's build trusted its proxy CA, which no box made from the snapshot
+// should (ADR 26-10-16-423 §8).
+func TestUntrustAnchorUndoesMaterializingIt(t *testing.T) {
+	system := selfSignedPEM(t, "system root")
+	build := selfSignedPEM(t, "build mitm")
+	other := selfSignedPEM(t, "host mitm")
+	store := t.TempDir()
+	prebuilt := prebuiltStore(t, system)
+	buildName := AnchorFileNameFor(build)
+	anchors := anchorDir(t, map[string][]byte{buildName: build, "discobox-mitm-host.crt": other})
+	if err := MaterializeTrustStore(store, prebuilt, []string{anchors}); err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+
+	if err := UntrustAnchor(store, []string{anchors}, build); err != nil {
+		t.Fatalf("untrust: %v", err)
+	}
+	bundle := readBundle(t, store)
+	if strings.Contains(bundle, string(build)) {
+		t.Error("the bundle still trusts the untrusted CA")
+	}
+	if !strings.Contains(bundle, string(system)) || !strings.Contains(bundle, string(other)) {
+		t.Error("the bundle lost a CA it should keep")
+	}
+	if _, err := os.Stat(filepath.Join(anchors, buildName)); !os.IsNotExist(err) {
+		t.Errorf("the anchor is left: %v", err)
+	}
+	pemName := strings.TrimSuffix(buildName, ".crt") + ".pem"
+	if _, err := os.Lstat(filepath.Join(store, pemName)); !os.IsNotExist(err) {
+		t.Errorf("its .pem link is left: %v", err)
+	}
+	if hasHashLinkTo(t, store, pemName) {
+		t.Error("its subject-hash link is left")
+	}
+	if !hasHashLinkTo(t, store, "discobox-mitm-host.pem") {
+		if _, err := exec.LookPath("openssl"); err == nil {
+			t.Error("another anchor's hash link went with it")
+		}
+	}
+	// Untrusting again changes nothing.
+	if err := UntrustAnchor(store, []string{anchors}, build); err != nil {
+		t.Fatalf("untrust again: %v", err)
+	}
+}

@@ -114,7 +114,11 @@ func (r *DockerSandboxRuntime) clearCache(drainCtx context.Context, run *cacheCl
 	// Closed before the sandboxes are listed, and drained of every start already
 	// under way, so the list below is final: a sandbox a create or start was
 	// bringing up is up by the time it is read, and none can come up after.
-	reopen, err := r.starts.close(drainCtx)
+	//
+	// A snapshot build holds the gate for its whole length, so it is ended
+	// rather than waited out — what it fetched would come from the caches
+	// being cleared — once the gate is shut, so none can enter after it.
+	reopen, err := r.starts.close(drainCtx, r.cancelSnapshotBuilds)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +218,11 @@ func (r *DockerSandboxRuntime) clearCaches(ctx context.Context) error {
 	defer cancelReclaim()
 	if _, err := imagereap.Reclaim(reclaimCtx, r.client, imagereap.Options{Retention: clearImageFloor}); err != nil {
 		errs = append(errs, fmt.Errorf("remove unused images: %w", err))
+	}
+	// The reclaim keeps the newest of a repository, and every snapshot is in
+	// one, so the snapshots are cleared by name: every one no container runs.
+	if err := r.clearSnapshots(reclaimCtx); err != nil {
+		errs = append(errs, fmt.Errorf("remove unused snapshots: %w", err))
 	}
 	return errors.Join(errs...)
 }
@@ -333,11 +342,12 @@ func (g *startGate) leave() {
 	}
 }
 
-// close shuts the gate and returns once nothing is inside it, with a func that
+// close shuts the gate, runs shut — what ends early whatever would hold the
+// gate longest — and returns once nothing is inside it, with a func that
 // reopens it. If ctx ends first the gate is reopened and ctx's error returned.
 // Only one closer may hold the gate at a time; ClearCache runs one clear at a
 // time to ensure it.
-func (g *startGate) close(ctx context.Context) (func(), error) {
+func (g *startGate) close(ctx context.Context, shut func()) (func(), error) {
 	g.mu.Lock()
 	closed := make(chan struct{})
 	g.closed = closed
@@ -347,6 +357,9 @@ func (g *startGate) close(ctx context.Context) (func(), error) {
 		g.drained = drained
 	}
 	g.mu.Unlock()
+	if shut != nil {
+		shut()
+	}
 	reopen := func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()

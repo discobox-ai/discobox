@@ -409,6 +409,8 @@ type DockerSandboxRuntime struct {
 	// with comes from, and agents its extractions (see agentlayer.go).
 	agentLayers AgentLayers
 	agents      agentExtract
+	// snapshots is the snapshot builds under way and failed (snapshot.go).
+	snapshots snapshotBuilds
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -710,6 +712,10 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	if err != nil {
 		return nil, false, err
 	}
+	if delivered(bundlePins(req)) {
+		// The snapshot of its plan when there is one (ADR 26-10-16-423 §8).
+		imageName = r.deliveredImage(ctx, imageName, req)
+	}
 	if replaced != nil {
 		// Only now, with the new image on the host: obtaining it is the step a
 		// re-pin fails at, and a sandbox that cannot get its new image keeps the
@@ -817,33 +823,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		cfg.Entrypoint = []string{"/sbin/init"}
 		cfg.Cmd = []string{}
 	}
-	hostCfg := &container.HostConfig{
-		Mounts:     mounts,
-		Privileged: true,
-		// Docker's 64 MiB /dev/shm is too small for what a sandbox runs:
-		// Chromium and Electron put their shared pixel buffers there, and on
-		// the desktop's 3840x2432 display one frame is ~37 MiB, so VS Code's
-		// renderer dies on start. The size is a tmpfs cap, not a reservation.
-		ShmSize: r.sharedMemoryBytes,
-		// Docker's embedded resolver answers container names itself and
-		// forwards every other name here. On an internal network it forwards
-		// nowhere else, so without this no external name resolves. The
-		// address is the sandbox's own: its DNS stub claims it on loopback
-		// and carries each query to the pool over mTLS.
-		DNS: []netip.Addr{proxyagent.SandboxDNSAddress},
-	}
-	// No CPU/memory limit is set here: a sandbox container shares its pool
-	// container's cgroup rather than reserving a nested slice of it
-	// (ADR 0029).
-	// Attach the sandbox to the per-pool internal network only: it reaches the
-	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
-	// and the pool's DNS forwarder, but has no route off-box, so all egress is
-	// forced through the proxy.
-	netCfg := &network.NetworkingConfig{
-		EndpointsConfig: map[string]*network.EndpointSettings{
-			proxyagent.SandboxNetworkName(r.poolID): {},
-		},
-	}
+	hostCfg, netCfg := r.boxConfig(mounts)
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
@@ -893,6 +873,41 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	sb, err = r.observedSandbox(ctx, sandboxID)
 	return sb, false, err
+}
+
+// boxConfig is the host and network config of every box this runtime boots,
+// a sandbox's or a snapshot build's (ADR 26-10-16-423 §8), with mounts: the
+// one place a box's container is described, so a build is never a box of
+// another kind.
+func (r *DockerSandboxRuntime) boxConfig(mounts []mount.Mount) (*container.HostConfig, *network.NetworkingConfig) {
+	hostCfg := &container.HostConfig{
+		Mounts:     mounts,
+		Privileged: true,
+		// Docker's 64 MiB /dev/shm is too small for what a sandbox runs:
+		// Chromium and Electron put their shared pixel buffers there, and on
+		// the desktop's 3840x2432 display one frame is ~37 MiB, so VS Code's
+		// renderer dies on start. The size is a tmpfs cap, not a reservation.
+		ShmSize: r.sharedMemoryBytes,
+		// Docker's embedded resolver answers container names itself and
+		// forwards every other name here. On an internal network it forwards
+		// nowhere else, so without this no external name resolves. The
+		// address is the sandbox's own: its DNS stub claims it on loopback
+		// and carries each query to the pool over mTLS.
+		DNS: []netip.Addr{proxyagent.SandboxDNSAddress},
+	}
+	// No CPU/memory limit is set here: a sandbox container shares its pool
+	// container's cgroup rather than reserving a nested slice of it
+	// (ADR 0029).
+	// Attach the sandbox to the per-pool internal network only: it reaches the
+	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
+	// and the pool's DNS forwarder, but has no route off-box, so all egress is
+	// forced through the proxy.
+	netCfg := &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{
+			proxyagent.SandboxNetworkName(r.poolID): {},
+		},
+	}
+	return hostCfg, netCfg
 }
 
 // sandboxImage is the image a create's container is built from, and the
@@ -1953,6 +1968,13 @@ func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, log
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
 	for _, sandboxID := range orphans {
+		// A snapshot build has no sandbox container to be found by, and its
+		// material outlives an agent that restarted under it: it is the
+		// snapshot sweep's, which removes it only once its container is gone,
+		// since an identity with no egress entry is unrestricted.
+		if layout.IsSnapshotID(sandboxID) {
+			continue
+		}
 		r.reapSandboxMaterial(ctx, logger, sandboxID)
 	}
 }
@@ -2067,6 +2089,10 @@ func (r *DockerSandboxRuntime) reclaimImages(ctx context.Context, logger *slog.L
 	if err != nil {
 		logger.Warn("remove unused sandbox agents", "error", err)
 	}
+	// And whatever a snapshot build left when its pool agent stopped.
+	if err := r.sweepSnapshotBuilds(ctx); err != nil {
+		logger.Warn("remove what snapshot builds left", "error", err)
+	}
 }
 
 // SyncKnownPools reaps whole orphaned pools on this shared host daemon: any pool
@@ -2100,6 +2126,20 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 		}
 		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			logger.Warn("remove orphan pool sandbox container", "poolID", poolID, "container", ctr.ID, "error", err)
+		}
+	}
+	// And a snapshot build its pool left, which is no sandbox container.
+	builds, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.snapshotBuildFilters()})
+	if err != nil {
+		return err
+	}
+	for _, ctr := range builds.Items {
+		poolID := strings.TrimSpace(ctr.Labels[sandboxLabelPool])
+		if _, ok := known[poolID]; ok || poolID == "" {
+			continue
+		}
+		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			logger.Warn("remove orphan pool snapshot build", "poolID", poolID, "container", ctr.ID, "error", err)
 		}
 	}
 

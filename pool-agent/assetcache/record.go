@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
 // RecordFileName is, per sandbox, the bundles it is pinned to (ADR
@@ -118,11 +119,26 @@ func ReadRecord(sandboxRoot string) ([]Pin, error) {
 	return pins, nil
 }
 
+// pins is the record of the sandbox or snapshot build named sandboxID.
+func (c *Cache) pins(sandboxID string) ([]Pin, error) {
+	if layout.IsSnapshotID(sandboxID) {
+		return sandboxPins(c.snapshots, sandboxID)
+	}
+	return sandboxPins(c.sandboxes, sandboxID)
+}
+
+// allPins is every pin recorded, by any sandbox or snapshot build.
+func (c *Cache) allPins() ([]Pin, error) {
+	sandboxes, err := allPins(c.sandboxes)
+	snapshots, snapshotErr := allPins(c.snapshots)
+	return append(sandboxes, snapshots...), errors.Join(err, snapshotErr)
+}
+
 // sandboxPins is the record of the sandbox named sandboxID under sandboxes,
 // the pool's parent of every sandbox's tree. An ID that is not one path
 // segment names no sandbox.
 func sandboxPins(sandboxes, sandboxID string) ([]Pin, error) {
-	if sandboxID == "" || sandboxID == "." || sandboxID == ".." || strings.ContainsAny(sandboxID, `/\`) {
+	if sandboxes == "" || sandboxID == "" || sandboxID == "." || sandboxID == ".." || strings.ContainsAny(sandboxID, `/\`) {
 		return nil, nil
 	}
 	return ReadRecord(filepath.Join(sandboxes, sandboxID))
@@ -130,6 +146,9 @@ func sandboxPins(sandboxes, sandboxID string) ([]Pin, error) {
 
 // allPins is every pin recorded under sandboxes, by any sandbox.
 func allPins(sandboxes string) ([]Pin, error) {
+	if sandboxes == "" {
+		return nil, nil
+	}
 	entries, err := os.ReadDir(sandboxes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil

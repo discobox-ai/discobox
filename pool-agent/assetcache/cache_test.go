@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -118,6 +119,7 @@ type fixture struct {
 	cache     *Cache
 	server    *fakeServer
 	sandboxes string
+	snapshots string
 	handler   http.Handler
 }
 
@@ -128,9 +130,11 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(srv.Close)
 	dir := t.TempDir()
 	sandboxes := filepath.Join(dir, "sandboxes")
+	snapshots := filepath.Join(dir, "build", "snapshots")
 	cache := New(Config{
 		Dir:       filepath.Join(dir, "build", "assets"),
 		Sandboxes: sandboxes,
+		Snapshots: snapshots,
 		Fetch: func(ctx context.Context, path string) (io.ReadCloser, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/pools/pool_1/assets"+path, nil)
 			if err != nil {
@@ -148,12 +152,16 @@ func newFixture(t *testing.T) *fixture {
 			return resp.Body, nil
 		},
 	})
-	return &fixture{cache: cache, server: fake, sandboxes: sandboxes, handler: cache.Handler()}
+	return &fixture{cache: cache, server: fake, sandboxes: sandboxes, snapshots: snapshots, handler: cache.Handler()}
 }
 
 func (f *fixture) pin(t *testing.T, sandboxID string, pins ...Pin) {
 	t.Helper()
-	if err := WriteRecord(filepath.Join(f.sandboxes, sandboxID), pins); err != nil {
+	parent := f.sandboxes
+	if layout.IsSnapshotID(sandboxID) {
+		parent = f.snapshots
+	}
+	if err := WriteRecord(filepath.Join(parent, sandboxID), pins); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -355,5 +363,34 @@ func TestRecordRoundTripsAndRefusesBadPins(t *testing.T) {
 	}
 	if got, err := ReadRecord(root); err != nil || got != nil {
 		t.Fatalf("an emptied record = %v, %v", got, err)
+	}
+}
+
+// A snapshot build is answered from its own record, kept apart from every
+// sandbox's, and what it reaches is kept by the sweep while it builds (ADR
+// 26-10-16-423 §8). A record under the sandboxes for a build's ID answers
+// nothing.
+func TestASnapshotBuildIsAnsweredFromItsOwnRecord(t *testing.T) {
+	f := newFixture(t)
+	bundle := newBundle(t, "platform")
+	f.server.add(bundle.config, bundle.layer, bundle.manifest)
+	pin := Pin{Kind: KindPlatform, Name: "platform", Digest: digestOf(bundle.manifest)}
+	build := layout.SnapshotIDPrefix + "abc"
+	if err := WriteRecord(filepath.Join(f.sandboxes, build), []Pin{pin}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.get(build, http.MethodGet, "/blobs/"+digestOf(bundle.layer)); rec.Code != http.StatusNotFound {
+		t.Fatalf("a build answered from a sandbox's tree: %d", rec.Code)
+	}
+	f.pin(t, build, pin)
+	if rec := f.get(build, http.MethodGet, "/blobs/"+digestOf(bundle.layer)); rec.Code != http.StatusOK {
+		t.Fatalf("a build's own pin = %d", rec.Code)
+	}
+	if err := WriteRecord(filepath.Join(f.sandboxes, build), nil); err != nil {
+		t.Fatal(err)
+	}
+	f.cache.now = func() time.Time { return time.Now().Add(2 * sweepGrace) }
+	if removed, err := f.cache.Sweep(); err != nil || removed != 0 {
+		t.Fatalf("Sweep() = %d, %v; want what the build reaches kept", removed, err)
 	}
 }

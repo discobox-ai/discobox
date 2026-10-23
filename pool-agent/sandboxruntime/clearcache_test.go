@@ -46,7 +46,7 @@ func TestStartGateCloseWaitsForOperationsInside(t *testing.T) {
 	}
 	closed := make(chan func())
 	go func() {
-		reopen, err := gate.close(context.Background())
+		reopen, err := gate.close(context.Background(), nil)
 		if err != nil {
 			t.Error(err)
 		}
@@ -68,7 +68,7 @@ func TestStartGateCloseWaitsForOperationsInside(t *testing.T) {
 
 func TestStartGateHoldsArrivalsUntilReopened(t *testing.T) {
 	var gate startGate
-	reopen, err := gate.close(context.Background())
+	reopen, err := gate.close(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestStartGateHoldsArrivalsUntilReopened(t *testing.T) {
 		t.Fatal("the waiting operation was not admitted once the gate reopened")
 	}
 	// The gate is reusable: a second clear drains and reopens the same way.
-	reopen, err = gate.close(context.Background())
+	reopen, err = gate.close(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestStartGateHoldsArrivalsUntilReopened(t *testing.T) {
 
 func TestStartGateWaitHonorsContext(t *testing.T) {
 	var gate startGate
-	reopen, err := gate.close(context.Background())
+	reopen, err := gate.close(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestStartGateCloseGivesUpWhenItsContextEnds(t *testing.T) {
 	defer leave()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := gate.close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := gate.close(ctx, nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("close past its deadline = %v, want context.DeadlineExceeded", err)
 	}
 	// The gate is open again: a second operation gets in while the first is
@@ -199,4 +199,27 @@ func TestMemoryRuntimeClearCacheStopsRunningSandboxes(t *testing.T) {
 			t.Fatalf("%s is %s after a clear", id, sb.Status)
 		}
 	}
+}
+
+// What close is given to run is run with the gate already shut, so nothing
+// it ends can be replaced by an arrival, and the drain waits on what it ends:
+// a cache clear ends the snapshot builds this way.
+func TestCloseRunsShutOnceTheGateIsShut(t *testing.T) {
+	var gate startGate
+	leave, err := gate.enter(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopen, err := gate.close(context.Background(), func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		if _, err := gate.enter(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("an arrival during shut entered the gate: %v", err)
+		}
+		leave()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopen()
 }

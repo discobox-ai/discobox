@@ -42,7 +42,7 @@ func (c *Cache) StartSweeping(ctx context.Context, logger *slog.Logger) {
 // a manifest the store lacks has nothing beneath it there to keep. A record
 // that cannot be read removes nothing, since what it reaches is then unknown.
 func (c *Cache) Sweep() (int, error) {
-	pins, err := allPins(c.sandboxes)
+	pins, err := c.allPins()
 	if err != nil {
 		return 0, fmt.Errorf("sweep skipped: %w", err)
 	}

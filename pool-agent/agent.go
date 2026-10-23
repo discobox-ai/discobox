@@ -127,6 +127,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	assets := assetcache.New(assetcache.Config{
 		Dir:       filepath.Join(root.PoolBuild(bootstrap.ProjectID, bootstrap.PoolID), "assets"),
 		Sandboxes: root.PoolSandboxes(bootstrap.ProjectID, bootstrap.PoolID),
+		Snapshots: root.PoolSnapshots(bootstrap.ProjectID, bootstrap.PoolID),
 		Fetch: func(ctx context.Context, path string) (io.ReadCloser, error) {
 			return client.FetchAsset(ctx, AssetRequest{
 				ProjectID:  bootstrap.ProjectID,

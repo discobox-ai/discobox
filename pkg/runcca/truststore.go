@@ -332,3 +332,67 @@ func ensureSymlink(target, path string) error {
 	}
 	return nil
 }
+
+// UntrustAnchor takes the CA ca back out of what MaterializeTrustStore made
+// of it: its anchor in each anchor directory, its .pem and subject-hash links
+// in storeDir, and its certificate in the bundle. Everything else the store
+// holds stays as it is. A snapshot is cleaned with it of the proxy CA its
+// build trusted (ADR 26-10-16-423 §8): each box made from the snapshot
+// anchors its own at its boot.
+func UntrustAnchor(storeDir string, anchorDirs []string, ca []byte) error {
+	der, err := firstCertificateDER(ca)
+	if err != nil {
+		return err
+	}
+	name := AnchorFileNameFor(ca)
+	for _, dir := range anchorDirs {
+		if err := os.Remove(path.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove anchor %s: %w", name, err)
+		}
+	}
+	pemName := strings.TrimSuffix(name, ".crt") + ".pem"
+	entries, err := os.ReadDir(storeDir)
+	if err != nil {
+		return fmt.Errorf("read trust store %s: %w", storeDir, err)
+	}
+	for _, entry := range entries {
+		link := path.Join(storeDir, entry.Name())
+		if target, err := os.Readlink(link); err == nil && (entry.Name() == pemName || target == pemName) {
+			if err := os.Remove(link); err != nil {
+				return fmt.Errorf("remove link %s: %w", link, err)
+			}
+		}
+	}
+	bundlePath := path.Join(storeDir, TrustStoreBundle)
+	body, err := os.ReadFile(bundlePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read bundle %s: %w", bundlePath, err)
+	}
+	var kept bytes.Buffer
+	removed := false
+	for rest := body; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" && bytes.Equal(block.Bytes, der) {
+			removed = true
+			continue
+		}
+		if err := pem.Encode(&kept, block); err != nil {
+			return err
+		}
+	}
+	if !removed {
+		return nil
+	}
+	//nolint:gosec // A CA bundle is public and must be readable by every user in the container.
+	if err := os.WriteFile(bundlePath, kept.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write bundle %s: %w", bundlePath, err)
+	}
+	return nil
+}

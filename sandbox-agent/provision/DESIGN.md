@@ -40,6 +40,7 @@ runs, unless it has no features to provision.
 |---|---|---|
 | The agent, every boot | `Boot(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
 | `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
+| `discobox-sandbox-agent snapshot` | `Snapshot` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
 | `discobox-image-provision TREE...` | `Trees` → `Runner.Provision`, no options | Every step blocking, nothing off: the platform image's build, one feature per layer |
 | `discobox-sandbox-agent provision TREE...` | `Trees` → `Runner.Provision`, no options | The same: a harness image's build, its tree onto the platform's |
 
@@ -104,6 +105,20 @@ flowchart TD
 Npm install scripts use a private temporary cache and remove only that cache.
 They run during image builds and after boot, when the user's npm cache can be
 a mounted, pool-shared volume; provisioning must not clear or remove it.
+
+## Snapshots
+
+A snapshot is a box provisioned for no sandbox, and kept so a box of the same
+plan starts from it (ADR 26-10-16-423 §8). The run that takes one
+(`Options.Snapshot`) leaves out every step its feature keeps out of a
+snapshot — the step's `snapshot: false`, or the feature's, which is every
+step of it — as `Deferred`, with every step written after it and every
+feature requiring its feature, so nothing runs before what it follows. It
+records none of them, so each box made from the snapshot applies exactly
+those at its own boot, in order, and skips the rest on their records.
+Mark what must be each box's own: anything keyed to the machine, or
+provisioned fresh on purpose. `snapshot` is not part of a step's digest
+(`StepDigest`): it says when the step runs, not what it does.
 
 ## Its state
 

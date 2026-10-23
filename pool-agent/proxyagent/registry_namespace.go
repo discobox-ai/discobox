@@ -37,7 +37,13 @@ var registryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*
 // old one with nothing left able to name it. The durable tree has the lifetime
 // wanted: it survives archive and is removed by purge, which is when those
 // repositories are removed too.
+//
+// A snapshot build's is in the build's own tree, which goes with the build:
+// it publishes nothing.
 func RegistryNamespacePath(root layout.Root, projectID, poolID, sandboxID string) string {
+	if layout.IsSnapshotID(sandboxID) {
+		return filepath.Join(root.Snapshot(projectID, poolID, sandboxID), RegistryNamespaceFile)
+	}
 	return filepath.Join(root.Sandbox(projectID, poolID, sandboxID), RegistryNamespaceFile)
 }
 

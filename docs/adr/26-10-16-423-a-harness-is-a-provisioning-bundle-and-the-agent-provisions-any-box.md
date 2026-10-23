@@ -395,6 +395,20 @@ every sandbox wanting the same set. A snapshot holds no sandbox:
 phase has never run in it. The step records and the bundle store are on the
 root filesystem (§§3, 7), so a commit keeps them with what they describe.
 
+*Amended 2026-10-22, before anything shipped against it:* who takes a
+snapshot, when, and under what. The pool takes it, lazily: a create finding
+none for its plan boots the provider image and provisions from scratch, and
+the snapshot is built behind it, so the next create of the plan starts from
+it; the control plane never knows which a box started from. A build is
+anonymous — an identity of its own, no account, source, secret or
+credentials endpoint — and runs under every egress level of 26-10-01-032 but
+the sandbox's own (the project's, the pool's and the harness config's), which
+the server sends with each create, so nothing of the sandbox that asked for
+it decides what it holds. The key adds that policy, and the project and pool,
+to the provider image and the plan. A feature, or one of its steps, may say
+`snapshot: false`: it is left out of every snapshot and applied on each box
+at its boot, for what must be each machine's own or provisioned fresh.
+
 ### 9. Providers meet a contract and declare what they own
 
 The platform may assume only:

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -71,10 +72,24 @@ func gzippedAgentLayer(t *testing.T, agent string, extra ...string) []byte {
 }
 
 // placementDaemon answers a container's archive route, recording what was
-// copied into it. It answers no stat: nothing in the box is asked.
+// copied into it, and inspects of the container and its image, which is the
+// image the container names in images. It answers no stat: nothing in the
+// box is asked.
 type placementDaemon struct {
 	mu     sync.Mutex
 	copied [][]byte
+	// images is, by container, the image it runs; unnamed is "img_base".
+	images map[string]string
+	// labels is, by image, its labels, and tags its tags.
+	labels map[string]map[string]string
+	tags   map[string][]string
+}
+
+func (d *placementDaemon) image(container string) string {
+	if image, ok := d.images[container]; ok {
+		return image
+	}
+	return "img_base"
 }
 
 func (d *placementDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +107,18 @@ func (d *placementDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.copied = append(d.copied, body)
 		d.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
+	case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+		id := strings.TrimSuffix(r.URL.Path[strings.Index(r.URL.Path, "/containers/")+len("/containers/"):], "/json")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"Id": id, "Image": d.image(id)}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+		id := strings.TrimSuffix(r.URL.Path[strings.Index(r.URL.Path, "/images/")+len("/images/"):], "/json")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"Id": id, "RepoTags": d.tags[id], "Config": map[string]any{"Labels": d.labels[id]}}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -177,6 +204,36 @@ func TestPlaceAgentCopiesTheLayerOnlyWhenTheBoxLacksIt(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.agentsDir(), agentlayer.Hex(digest), agentBinaryName)); err != nil {
 		t.Fatalf("the extracted agent: %v", err)
+	}
+}
+
+// A container started from a snapshot holding the agent layer is not given
+// it again, and one from a snapshot of another layer is (ADR 26-10-16-423
+// §8).
+func TestPlaceAgentLeavesTheLayerASnapshotHolds(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	r, daemon := placementFixture(t, &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent-v1")})
+	daemon.images = map[string]string{"ctr_snap": "img_snap", "ctr_old": "img_old"}
+	daemon.tags = map[string][]string{"img_snap": {snapshotRepository + ":k1"}, "img_old": {snapshotRepository + ":k2"}}
+	daemon.labels = map[string]map[string]string{
+		"img_snap": {snapshotAgentLabel: digest},
+		"img_old":  {snapshotAgentLabel: "sha256:" + strings.Repeat("d", 64)},
+	}
+	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}); err != nil {
+		t.Fatal(err)
+	}
+	layerFile := strings.TrimPrefix(agentlayer.LayerDir(digest), "/") + "/" + agentlayer.AgentFile
+	if err := r.placeAgent(context.Background(), "sbx_1", "ctr_snap"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archiveNames(t, daemon.copied[0])[layerFile]; ok {
+		t.Fatal("placed the layer into a container whose snapshot holds it")
+	}
+	if err := r.placeAgent(context.Background(), "sbx_1", "ctr_old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archiveNames(t, daemon.copied[1])[layerFile]; !ok {
+		t.Fatal("a snapshot of another agent layer was not given this one")
 	}
 }
 
