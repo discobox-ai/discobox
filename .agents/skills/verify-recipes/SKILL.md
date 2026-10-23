@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the pool-agent bundle's `install` on a systemd Debian container and the server's release manifest export, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, the pool-agent bundle, or a skill.
 ---
 
 # Verifying the console
@@ -1048,3 +1048,39 @@ d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, n
   tmux: the second run prints the seeded previous config). Delete the stub
   harness after purging its archived `configure-*` boxes, which hold it.
 
+
+# Verifying the pool-agent bundle (`pool-agent/bundle`, `install`)
+
+No provider places it yet, so play the provider by hand on a systemd Debian
+container, against a fake control plane that logs register and status bodies.
+
+- Tree: `docker buildx build -f pool-agent/Dockerfile --target bundle --output
+  type=local,dest=$S/tree .`. Multi-arch as `release:images` publishes it:
+  the same with `--platform linux/amd64,linux/arm64 --output
+  type=oci,dest=$S/i.tar,rewrite-timestamp=true` on the default builder (this
+  box has no `discobox` buildx builder).
+- Machine: `pool-agent/bundle/testdata/machine` (`go tool task
+  test:e2e:pool-agent-bundle` builds it as
+  `discobox-pool-agent-bundle-machine:e2e`); `docker run -d --privileged
+  --cgroupns=private --tmpfs /run --tmpfs /run/lock --add-host
+  host.docker.internal:host-gateway -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY
+  -e http_proxy -e https_proxy -e no_proxy <image>`.
+- Fake control plane: any HTTP server on `0.0.0.0` answering
+  `POST /api/pools/register` with `{}` and `POST /api/pools/{id}/status` with
+  204; the bootstrap's `controlPlaneUrl` is `http://host.docker.internal:<port>`.
+- Place `docker cp` the tree to `/opt/discobox/pool-agent/trees/<hex>` and the
+  bootstrap JSON to `/etc/discobox/pool-agent/bootstrap.json` (chown root,
+  chmod 0600), then `docker exec` the tree's `discobox-pool-agent install`.
+  Its `apt-get` needs the proxy env from the machine's `/proc/1/environ`
+  (the runc wrapper's rewrite), passed as separate `-e` arguments: in zsh an
+  unquoted `$VAR` holding several flags is one argument, so script it in bash.
+- Worth driving: a 0644 bootstrap (agent refuses, install exits 1, proxy not
+  started, no record), install twice (MainPIDs unchanged), a second tree (both
+  restart, the old tree pruned), `systemctl kill -s KILL` the agent, and
+  `docker restart` (no second register).
+- The release manifest: `./build/discobox-server manifest` refuses in a dev
+  build (its `:latest` defaults); render the release link with `RELEASE_TAG=v9.9.9
+  go tool task release:binary TARGET_OS=linux TARGET_ARCH=amd64
+  REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
+  `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
+  `discobox-server` with any other argument to "try" a flag: it starts a server.
