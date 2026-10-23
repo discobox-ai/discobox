@@ -142,7 +142,7 @@ func TestCreateHarnessConfigRecordsAManifestFilesPlatform(t *testing.T) {
 	darwin := platform.NewSet(platform.Platform{OS: "darwin", Arch: "arm64"})
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
 		file: {Digest: "sha256:file", Platforms: darwin, ImageMetadata: harness.ImageMetadata{
-			ImageKind: platform.DiscoVM("vz"), Harness: &harness.Image{ID: "example", Name: "Example"},
+			ImageKind: platform.VM("vz"), Harness: &harness.Image{ID: "example", Name: "Example"},
 		}},
 	}}
 	svc := &Service{store: st, inspector: inspector, harnesses: testReferences}
@@ -150,8 +150,8 @@ func TestCreateHarnessConfigRecordsAManifestFilesPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if config.Platforms.String() != darwin.String() || config.ImageKind != platform.DiscoVM("vz") {
-		t.Fatalf("platforms = %q kind = %v, want %q and discovm/vz", config.Platforms, config.ImageKind, darwin)
+	if config.Platforms.String() != darwin.String() || config.ImageKind != platform.VM("vz") {
+		t.Fatalf("platforms = %q kind = %v, want %q and vm/vz", config.Platforms, config.ImageKind, darwin)
 	}
 	if config.Image != file || config.ImageDigest != "sha256:file" || config.Bundle != "" || config.BundleDigest != "" {
 		t.Fatalf("config = %+v, want the manifest file pinned and no bundle", config)
