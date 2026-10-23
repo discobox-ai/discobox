@@ -2651,8 +2651,11 @@ A repository can name the others it is worked on with, in the `sources` of
 resolved exactly like `--include`:
 
 - **A local checkout wins.** `foo` is looked for at the sibling of the primary
-  source — `../foo` — and used when it is a directory, with its own
-  dirty-workspace question and its own delivery. It is used whatever its
+  source — `../foo` — and used when it is a checkout, the root of its own
+  repository, with its own delivery. A plain directory of that name is not one
+  and is never copied: the declared URL is used instead. A declared name is
+  one path element (`checkDeclaredSources`), because the file is repository
+  content and the name is joined onto this machine's paths. It is used whatever its
   `origin` says: a fork checked out next door is the usual reason for a
   mismatch and is what the caller has. The disagreement is reported rather than
   resolved silently, because a directory that merely shares the name looks

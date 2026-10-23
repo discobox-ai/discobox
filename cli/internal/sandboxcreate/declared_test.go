@@ -601,3 +601,39 @@ func TestDeclaredFeaturesAreReadEvenWithoutDeclaredSources(t *testing.T) {
 		}
 	}
 }
+
+// A declared name is repository content joined onto the primary's parent, so
+// a name that is more than one plain directory — "..", "../..", "a/b", an
+// absolute path — is refused: it would reach past the checkouts beside the
+// source, to the home directory above them.
+func TestCheckDeclaredSourcesRefusesANameThatIsAPath(t *testing.T) {
+	for _, name := range []string{".", "..", "../..", "a/b", `a\b`, "/home/me"} {
+		if _, err := checkDeclaredSources(map[string]string{name: "https://github.com/acme/lib"}, "settings.json"); err == nil || !strings.Contains(err.Error(), "not a plain name") {
+			t.Errorf("declared name %q: err = %v, want it refused", name, err)
+		}
+	}
+}
+
+// What stands in for a declared repository is a checkout of one. A plain
+// directory of the same name beside the source is not used — it would be
+// copied whole — and the declared URL is, as when nothing is there.
+func TestADeclaredSourceIgnoresADirectoryThatIsNoCheckout(t *testing.T) {
+	workspace := testWorkspace(t)
+	primary := newRunSourceTestRepoIn(t, workspace, "app")
+	if err := os.MkdirAll(filepath.Join(workspace, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "lib", "notes.txt"), []byte("private\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const url = "https://github.com/acme/lib.git"
+	arg, report := resolveDeclaredSourceArg(context.Background(), primary, "lib", url)
+	if arg != url || report.Local {
+		t.Fatalf("resolved to %q (local %v), want the declared URL, not the plain directory", arg, report.Local)
+	}
+	// A checkout of its own repository there is still preferred.
+	newRunSourceTestRepoIn(t, workspace, "tools")
+	if arg, report := resolveDeclaredSourceArg(context.Background(), primary, "tools", "https://github.com/acme/tools.git"); arg != filepath.Join(workspace, "tools") || !report.Local {
+		t.Fatalf("resolved to %q (local %v), want the checkout beside the source", arg, report.Local)
+	}
+}
