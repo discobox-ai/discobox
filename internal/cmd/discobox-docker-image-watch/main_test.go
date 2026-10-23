@@ -32,8 +32,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 10 {
-		t.Fatalf("image specs = %d, want base, worker, platform, and seven harnesses' bundles", len(specs))
+	if len(specs) != 11 {
+		t.Fatalf("image specs = %d, want base, worker, the pool-agent bundle, platform, and seven harnesses' bundles", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -56,7 +56,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	}
 	// No harness is a runnable image (issue #270): a harness is its bundle
 	// alone, and the sandbox agent ships only as the platform bundle.
-	wantNames := []string{baseSpecName, "pool-agent", "platform"}
+	wantNames := []string{baseSpecName, "pool-agent", poolAgentBundleSpecName, "platform"}
 	for _, name := range []string{"codex", "claude-code", "opencode", "copilot", "omp", "pi", "shell"} {
 		wantNames = append(wantNames, "harness-"+name)
 	}
@@ -67,6 +67,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_DOCKER_POOL_IMAGE",
 		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 		"DISCOBOX_PLATFORM_BUNDLE",
+		"DISCOBOX_POOL_AGENT_BUNDLE",
 		"DISCOBOX_HARNESS_CODEX_BUNDLE",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE",
 		"DISCOBOX_HARNESS_OPENCODE_BUNDLE",
@@ -84,6 +85,36 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			(strings.HasPrefix(key, "DISCOBOX_HARNESS_") && strings.HasSuffix(key, "_IMAGE")) {
 			t.Errorf("watcher still writes the runnable-image key %s", key)
 		}
+	}
+}
+
+// The pool-agent bundle is exported as a layout from pool-agent/Dockerfile's
+// bundle stage, and is FROM scratch: the agent's build and its units are its
+// inputs, and the shared base is not (ADR 26-10-23-551 §2).
+func TestDockerImageSpecsExportThePoolAgentBundle(t *testing.T) {
+	specs, repoRoot := loadDockerImageSpecs(t)
+	bundle, ok := specNamed(specs, poolAgentBundleSpecName)
+	if !ok {
+		t.Fatal("missing the pool-agent bundle's watcher")
+	}
+	args := strings.Join(bundle.buildArgs, " ")
+	layoutDir := filepath.Join(repoRoot, "build", "assets", "discobox-pool-agent-bundle")
+	if !bundle.bundle || bundle.layoutDir != layoutDir || !strings.Contains(args, "-f pool-agent/Dockerfile --target bundle") ||
+		!strings.Contains(args, "--output type=oci,dest="+partialLayout(layoutDir)) || contains(bundle.buildArgs, "-t") {
+		t.Fatalf("pool-agent bundle watcher does not export the bundle stage into %s: %#v", layoutDir, bundle)
+	}
+	for _, want := range []string{
+		filepath.Join(repoRoot, "pool-agent", "Dockerfile"),
+		filepath.Join(repoRoot, "pool-agent", "bundle", "units", "discobox-pool-agent.service"),
+		filepath.Join(repoRoot, "pool-agent", "bundle", "units", "discobox-proxy.service"),
+		filepath.Join(repoRoot, "pool-agent", "cmd", "discobox-pool-agent", "main.go"),
+	} {
+		if !contains(bundle.files, want) {
+			t.Errorf("pool-agent bundle does not watch %s", want)
+		}
+	}
+	if base := filepath.Join(repoRoot, "server", "providers", "dockerworker", "sandbox-image", "Dockerfile"); contains(bundle.files, base) {
+		t.Errorf("pool-agent bundle watches the shared base %s, which it is not built on", base)
 	}
 }
 
@@ -227,9 +258,10 @@ func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
 	// Bundles are FROM scratch, so only the pool agent builds FROM another
 	// image: the one chain is base -> pool-agent.
 	wantParents := map[string]string{
-		baseSpecName:     "",
-		"pool-agent":     baseSpecName,
-		platformSpecName: "",
+		baseSpecName:            "",
+		"pool-agent":            baseSpecName,
+		poolAgentBundleSpecName: "",
+		platformSpecName:        "",
 	}
 	wantArgs := map[string]string{
 		"pool-agent": "BASE_IMAGE",

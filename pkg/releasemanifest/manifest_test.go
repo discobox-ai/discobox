@@ -87,7 +87,10 @@ func TestRejectIncompleteAndAmbiguousManifests(t *testing.T) {
 // withBundles names a bundle for the platform and for each harness in place
 // of the runnable images, as a release from harness bundles on does.
 func withBundles(m *Manifest) {
-	m.Bundles = Bundles{Platform: "ghcr.io/discobox-ai/discobox-platform:v0.8.0", Harnesses: map[string]string{}}
+	m.Bundles = Bundles{
+		Platform: "ghcr.io/discobox-ai/discobox-platform:v0.8.0", Harnesses: map[string]string{},
+		PoolAgent: "ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0",
+	}
 	for slug := range m.Images.Harnesses {
 		m.Bundles.Harnesses[slug] = "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v0.8.0"
 	}
@@ -150,6 +153,27 @@ func TestBundlesAreNotStaged(t *testing.T) {
 	}
 }
 
+// A release cut before the pool-agent bundle names none, and is still one a
+// server runs: it has no bundle to boot a pool machine with.
+func TestAReleaseFromBeforeThePoolAgentBundleStillParses(t *testing.T) {
+	m, err := Read("examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBundles(&m)
+	m.Bundles.PoolAgent = ""
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "poolAgent\":\"\"") {
+		t.Fatalf("an absent pool-agent bundle is written as empty: %s", data)
+	}
+	if _, err := Parse(data); err != nil {
+		t.Fatalf("refused a release with no pool-agent bundle: %v", err)
+	}
+}
+
 func TestRejectIncompleteBundles(t *testing.T) {
 	for name, mutate := range map[string]func(*Manifest){
 		"no platform":      func(m *Manifest) { m.Bundles.Platform = "" },
@@ -158,7 +182,9 @@ func TestRejectIncompleteBundles(t *testing.T) {
 		"an unnamed harness": func(m *Manifest) {
 			m.Bundles.Harnesses[""] = m.Bundles.Harnesses["shell"]
 		},
-		"a latest harness": func(m *Manifest) { m.Bundles.Harnesses["shell"] = "shell:latest" },
+		"a latest harness":    func(m *Manifest) { m.Bundles.Harnesses["shell"] = "shell:latest" },
+		"a local pool agent":  func(m *Manifest) { m.Bundles.PoolAgent = "discobox-pool-agent-bundle:local" },
+		"a latest pool agent": func(m *Manifest) { m.Bundles.PoolAgent = "discobox-pool-agent-bundle:latest" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, err := Read("examples/v0.8.0.json")

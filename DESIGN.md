@@ -391,12 +391,15 @@ so that a pool host pulling both pulls the shared surface once (ADR
 26-10-16-423 §10). No harness is an image: the platform and harness bundles
 are on no chain, each `FROM scratch`, and every sandbox container is the
 sandbox base image with them applied ([`harness/DESIGN.md`](harness/DESIGN.md),
-ADR 26-10-16-423 §§2, 7):
+ADR 26-10-16-423 §§2, 7). The pool-agent bundle, also `FROM scratch`, holds
+the same agent build as the pool-agent image, for a pool machine booted from a
+driver base (ADR 26-10-23-551 §2):
 
 ```mermaid
 flowchart TD
     base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian 13, Docker, systemd unit mask"]
     pool["pool-agent/<br/>discobox-pool-agent"]
+    poolbundle["pool-agent/<br/>discobox-pool-agent-bundle<br/>bundle, FROM scratch"]
     platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
     bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
     box["sandbox container"]
@@ -405,6 +408,7 @@ flowchart TD
     base -->|runs| box
     platform -.->|applied by the agent| box
     bundle -.->|applied by the agent| box
+    poolbundle -.-|same agent build| pool
 ```
 
 `discobox-sandbox-base` is the box a Docker sandbox is before the platform is

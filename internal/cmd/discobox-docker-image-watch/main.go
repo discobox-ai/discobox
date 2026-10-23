@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,14 @@ const baseSpecName = "sandbox-base"
 // platformSpecName is the platform bundle: the sandbox agent Dockerfile's
 // FROM scratch stage holding every platform feature (ADR 26-10-16-423 §7).
 const platformSpecName = "platform"
+
+// poolAgentBundleSpecName is the pool-agent bundle: pool-agent/Dockerfile's
+// FROM scratch stage holding the agent and its units (ADR 26-10-23-551 §2).
+const poolAgentBundleSpecName = "pool-agent-bundle"
+
+// poolAgentBundleEnvKey is the .env key the server reads the pool-agent
+// bundle from (its poolAgentBundle setting).
+const poolAgentBundleEnvKey = "DISCOBOX_POOL_AGENT_BUNDLE"
 
 // platformBundleEnvKey is the .env key the server reads the platform bundle
 // from. Keep in sync with the server's DISCOBOX_PLATFORM_BUNDLE setting.
@@ -454,6 +463,12 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	} {
 		addFile(workerRoot, rel, workerSeen)
 	}
+	// The pool-agent bundle is FROM scratch: the agent's build and the units
+	// it carries, and not the shared base.
+	poolAgentBundleSeen := maps.Clone(workerSeen)
+	if err := addTree(filepath.Join(workerRoot, "bundle", "units"), poolAgentBundleSeen); err != nil {
+		return nil, err
+	}
 	for file := range baseSeen {
 		workerSeen[file] = struct{}{}
 	}
@@ -527,6 +542,22 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			parent:     baseSpecName,
 			parentArg:  "BASE_IMAGE",
 			files:      sortedFiles(workerSeen),
+		},
+		{
+			// The bundle a VM provider places on a pool machine (ADR
+			// 26-10-23-551 §2), the image's agent by name of its stage.
+			name:        poolAgentBundleSpecName,
+			devPrefix:   "discobox-pool-agent-bundle:dev-",
+			envImageKey: poolAgentBundleEnvKey,
+			buildDir:    repoRoot,
+			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, "discobox-pool-agent-bundle"),
+				"-f", "pool-agent/Dockerfile", "--target", "bundle", "."),
+			contextDir: repoRoot,
+			dockerfile: "pool-agent/Dockerfile",
+			target:     "bundle",
+			bundle:     true,
+			layoutDir:  bundleLayoutDirOf(repoRoot, "discobox-pool-agent-bundle"),
+			files:      sortedFiles(poolAgentBundleSeen),
 		},
 		{
 			name:        platformSpecName,

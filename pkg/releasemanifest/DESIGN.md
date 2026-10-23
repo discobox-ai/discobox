@@ -4,7 +4,10 @@ A manifest names runtime images by role: pool agent, sandbox base, VM guest
 and libkrun kernel. The sandbox base is optional: a release cut before the
 Docker driver owned one names none. Beside them, `Bundles` names the platform
 bundle and each harness's bundle by slug (ADR 26-10-16-423 §2): the server
-composes every harness's manifest from them and every box applies them. No
+composes every harness's manifest from them and every box applies them.
+`Bundles.PoolAgent` is the pool-agent bundle a VM provider places on a pool
+machine (ADR 26-10-23-551 §2); a release cut before it names none, and still
+parses. No
 harness is an image (§10), so a release from bundles on names no sandbox-agent
 or harness image; `Images.SandboxAgent` and `Images.Harnesses` are what a
 release from before bundles ran its sandboxes on, kept so the CLI still reads

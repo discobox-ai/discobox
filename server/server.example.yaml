@@ -220,6 +220,12 @@
 # Environment: DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE
 #dockerSandboxBaseImage:
 
+# The pool-agent bundle a VM provider places on a pool machine it boots
+# from a driver base. Defaults to the released bundle for this build.
+# Example: poolAgentBundle: ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0
+# Environment: DISCOBOX_POOL_AGENT_BUNDLE
+#poolAgentBundle:
+
 # OCI image layout that VM guest images are fetched through, and that a
 # pool on this machine loads images from before pulling them. The CLI
 # names the one it stages a release's images into. Defaults to

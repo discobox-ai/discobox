@@ -179,8 +179,10 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
 	secretService.SetDirtier(engine)
 	// The bundles a release names are the ones the server's own registry
-	// credentials pull; a project's are pulled without them.
-	var releaseBundles []string
+	// credentials pull; a project's are pulled without them. The pool-agent
+	// bundle is one, which a VM provider places on its pool machine from the
+	// blob store (ADR 26-10-23-551 §2).
+	releaseBundles := []string{dockerworker.EffectivePoolAgentBundle(options.ServerDefaults)}
 	for _, seed := range harnessdefs.Seeds(options.Harnesses, options.ServerDefaults.Release != nil) {
 		releaseBundles = append(releaseBundles, seed.Bundle)
 	}
