@@ -483,8 +483,8 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 	// dials is generated per process and differs on every run, so printing it
 	// here as "this machine" would hand them a value to enroll that is wrong
 	// before they finish typing it (ADR 0104).
-	if cert := configured.cfg.Certificate; cert != nil {
-		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+cert.Issuer.String(),
+	if issuer := configured.issuer; issuer != nil {
+		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+issuer.String(),
 			"dialing as "+local.Short()+", a key this process generated and certified")
 	} else {
 		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+local.String())
@@ -826,8 +826,8 @@ func connectHint(hasDirect, relayReached bool) string {
 // itself. A hint that named the per-process transport key would tell somebody
 // to enroll a value that stops existing when the command does (ADR 0104).
 func enrolledIdentity(configured *IrohEndpoint, local IrohID) IrohID {
-	if cert := configured.cfg.Certificate; cert != nil {
-		return cert.Issuer
+	if issuer := configured.issuer; issuer != nil {
+		return *issuer
 	}
 	return local
 }

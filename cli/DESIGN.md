@@ -259,9 +259,13 @@ which a console that led its own session sends it by dying).
 
 A CLI process dials with a key it generates at startup and never writes down,
 and proves the identity an operator enrolled by presenting a certificate for
-that key (ADR 0104). `irohTransportIdentity` (`internal/cli/peer_identity.go`)
-makes both, and the certificate travels on its own stream the moment a
-connection is up.
+that key (ADR 0104). `irohTransportKey` (`internal/cli/peer_identity.go`)
+makes the transport key and hands it to the endpoint with the enrolled one as
+`IrohConfig.Issuer`. The endpoint signs a fresh certificate on every dial and
+sends it on its own stream the moment a connection is up. A certificate expires
+(`endpoint.PeerCertLifetime`) and the server checks that only at admission, so
+one signed at startup would refuse a long-running console's first redial after
+it lapsed.
 
 The enrolled key is what an operator sees: the file under `<state>/iroh/`, the
 value `discobox admin peer id` prints, the thing `discobox admin peer add`
