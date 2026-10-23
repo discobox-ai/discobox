@@ -56,8 +56,11 @@ The rules are `cli/DESIGN.md`'s "Command Naming", and
   where it is the word for it.
 - **Listing is `ls`**, with `list` as an alias, and every `ls` takes `-q`. The
   `-q` lines are what the group's other verbs take back: an ID, a remote's
-  name, an env name.
-- **Groups are singular**, with the plural as an alias.
+  name, an env name. `admin audit ls` has no `-q` yet: it is a timeline of
+  records rather than resources, and what its `-q` should print is #342's.
+- **Groups are singular**, with the plural as an alias. `tools` stays plural
+  for now, because it is a root command the in-box skills teach; whether it
+  moves is #342's.
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `HARNESS`
   and the like where a name works, and `X_ID` only where just an ID does.
   Resolvers that fell short were fixed, not the placeholders.
@@ -69,7 +72,9 @@ Old spellings stay working as aliases and are taught nowhere.
 
 It is one registration. 0133's hidden second one is removed, and help lists
 every spelling: each is what someone reaching for "make a discobox" types.
-Only `run` is taught, which every client back to before 0133 understands.
+Only `run` is taught. The in-box skill ships in the same bundle as the in-box
+CLI, so the two always agree. The name alone is understood by every client
+back to before 0133.
 
 The credential judge's description of a create names `run`, and says `new`
 and `create` are the same command, because purposes approved before this are
@@ -135,8 +140,9 @@ each item is decided when it is taken up.
 
 ## Consequences
 
-- Scripts that ran `discobox run 'prompt'` or `discobox -p … run` from a
-  checkout must add `.`. The error names the form that works.
+- Scripts that ran `discobox run 'prompt'` from a checkout must add `.`, and
+  ones that passed `-C DIR` must move DIR to SOURCE. Both errors name the form
+  that works.
 - A script that relied on dirty work going in must add `--include-dirty`. The
   warning names what was left behind.
 - `client.yaml`'s section is still `new:`, because it is persisted
