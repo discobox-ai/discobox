@@ -2,7 +2,9 @@
 
 - **Status**: Accepted (the Consequences entry deferring `discobox apply` is
   superseded by [0084](0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md);
-  everything else stands)
+  §3's "`--include-dirty` still answers ahead of time" superseded by
+  [26-10-23-600](26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md): the files are carried whatever the flag says; everything else
+  stands)
 - **Date**: 2026-09-01
 - **Extends**: [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) to
   the repository `git init` leaves behind; 0045 itself stands unchanged.

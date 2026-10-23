@@ -1,6 +1,6 @@
 # 26-10-20-596 — The console keeps one memory per machine, and the last source leads
 
-- **Status**: Accepted
+- **Status**: Accepted (§3's `-C` half superseded by [26-10-23-600](26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md): the console takes no source; the `--server` half stands)
 - **Date**: 2026-10-20
 - **Supersedes**: [26-09-30-188](26-09-30-188-the-consoles-filters-open-on-everything-and-are-kept-per-directory.md)
   §2 (filters kept per launch directory), §3's "a saved view outranks
