@@ -372,9 +372,6 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 		// On the tab itself, so it is seen from whichever pane has the keys.
 		p.title += " ●"
 	}
-	if asked && v.files && v.review != nil && v.review.head != issue.Pull.HeadSHA {
-		return tea.Batch(m.openReview(p), m.pullSettle(p))
-	}
 	return m.pullSettle(p)
 }
 
@@ -464,9 +461,9 @@ func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 		return m.composeKey(p, msg)
 	}
 	if v.files && v.review != nil {
-		if cmd, taken := m.reviewKey(p, msg); taken {
-			return cmd
-		}
+		// Every key but the leader is discobox-review's; quitting it is the
+		// way back to the conversation. See reviewKey.
+		return m.reviewKey(p, msg)
 	}
 	switch keyName(msg) {
 	case "up", "k":
@@ -638,10 +635,17 @@ func (m *Model) composeKey(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-// pasteIssue is a paste into an issue tab: into the comment, when one is being
-// written, and nowhere otherwise.
+// pasteIssue is a paste into an issue tab: into the files changed when they
+// are on screen, into the comment when one is being written, and nowhere
+// otherwise.
 func (m *Model) pasteIssue(p *pane, msg tea.PasteMsg) tea.Cmd {
 	v := p.issue
+	if v.files && v.review != nil {
+		if v.review.stream == nil || v.review.exited {
+			return nil
+		}
+		return m.toReview(p, msg)
+	}
 	if !v.composing || v.posting {
 		return nil
 	}
@@ -685,8 +689,14 @@ func issueHints(v *issuePane) []hint {
 	pull := v.issue != nil && v.issue.Pull != nil
 	if pull && v.files && v.review != nil {
 		// The window has its own keys, and its own bar that says them; the
-		// tab's are all elsewhere, on the conversation.
-		return []hint{keyed("f", pullFilesKey, "conversation"), keyed("r", issueReadKey, "reload"), keyed("?", "?", "the window's keys")}
+		// tab's are all elsewhere, on the conversation it quits back to.
+		switch {
+		case v.review.exited:
+			return []hint{says("any key conversation")}
+		case v.review.stream == nil:
+			return []hint{keyed("q", "q", "conversation")}
+		}
+		return []hint{keyed("q", "q", "conversation"), keyed("?", "?", "the window's keys")}
 	}
 	hints := []hint{says("↑↓ scroll")}
 	switch {
@@ -756,7 +766,7 @@ func (m *Model) issueView(v *issuePane, width, height, x, y int) []string {
 		return append(fitRows(body, height-len(foot)), foot...)
 	}
 	if v.files && v.review != nil {
-		return append(head, v.reviewView(width, room, x, y+len(head))...)
+		return append(head, v.reviewView(m, width, room, x, y+len(head))...)
 	}
 	shown := v.shown()
 	if shown.lines == nil || shown.width != width {

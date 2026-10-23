@@ -17,7 +17,6 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/termpane v0.0.0
-	github.com/discobox-ai/review v0.0.0-20261015034015-734c627938e9
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/go-faster/jx v1.2.0
 	github.com/spf13/cobra v1.10.2

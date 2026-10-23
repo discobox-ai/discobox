@@ -13,7 +13,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
-	"github.com/discobox-ai/review/source"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -1035,6 +1034,11 @@ type Exec struct {
 	// on the exec when it created it (ADR 26-08-27-302 on tool sessions); the sandbox
 	// knows nothing about tools.
 	Tool string
+
+	// FilesChanged marks a pull request's files changed, which its issue tab
+	// started and draws in place of its conversation (DataSource.PullReview).
+	// It is never a tab of its own.
+	FilesChanged bool
 
 	// Primary marks the sandbox's primary harness terminal, which is the first
 	// of the workspace's left column and the session the screen is a view
@@ -2222,9 +2226,12 @@ type PullRequest struct {
 	// commit that was read: the one a merge from here merges. BaseSHA is
 	// where the base was at the same read, which with HeadSHA is what the
 	// files changed are measured between.
-	Head, Base   string
-	HeadSHA      string
-	BaseSHA      string
+	Head, Base string
+	HeadSHA    string
+	BaseSHA    string
+	// HeadRef is the head's branch alone — Head without a fork's owner — as
+	// the repository it is in, and a discobox working on it, names it.
+	HeadRef      string
 	Commits      int
 	Additions    int
 	Deletions    int
@@ -2549,13 +2556,13 @@ type DataSource interface {
 	// is refused rather than merged unseen.
 	MergePullRequest(ctx context.Context, repository string, number int, method, sha string) error
 
-	// PullSource is a pull request's files changed as discobox-review's window
-	// reads them: the diff from where pull's head left its base to the head
-	// (PullRequest.BaseSHA, HeadSHA), the commits it was made in, and the text
-	// of any file at any of them, read from GitHub as the person at this
-	// machine, with every string made safe to draw. ctx bounds its reads, and
-	// is canceled when the window is done with it.
-	PullSource(ctx context.Context, repository string, number int, pull PullRequest) (source.Source, error)
+	// PullReview creates, attaches and starts discobox-review in the sandbox
+	// over a pull request's files changed: from pull's base to its head
+	// (PullRequest.BaseSHA, HeadSHA), read from the commits the sandbox has,
+	// under the review its git directory keeps. It is labeled as one
+	// (Exec.FilesChanged), which keeps the workspace from opening it as a tab:
+	// the issue tab that asked draws it, and ends it.
+	PullReview(ctx context.Context, sandboxID string, pull PullRequest, cols, rows int) (Exec, Terminal, error)
 
 	// ServiceLogs is the transcript of a service's current or last run, as the
 	// bytes it wrote. It is read for a service that is not running, whose pane

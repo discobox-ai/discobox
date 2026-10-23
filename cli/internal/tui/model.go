@@ -18,6 +18,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
@@ -49,6 +50,10 @@ const (
 
 // Model is the launcher window.
 type Model struct {
+	// reviewEnds counts the files changed sessions being ended in their
+	// discoboxes, which EndReviews waits for (pullreview.go).
+	reviewEnds sync.WaitGroup
+
 	// unreachable is the servers the last listing was missing, as last
 	// reported, and unreachableIsPrimary whether that report was about the
 	// primary and so went out as an error. Both are what a repeat is measured

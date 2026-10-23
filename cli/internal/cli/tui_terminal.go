@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,16 +74,17 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 	// pairs it with the services listing it polls beside it (ADR 0070 §2, §7).
 	metadata := map[string]string(exec.Metadata.Value)
 	return tui.Exec{
-		ID:          exec.ID,
-		Command:     command,
-		Harness:     exec.HarnessId.Value,
-		Primary:     exec.Primary.Value,
-		Service:     metadata[sandboxServiceIDMetadata],
-		Tool:        execToolID(metadata[execToolMetadataKey]),
-		ServiceName: metadata[sandboxServiceNameMetadata],
-		Tty:         exec.Tty,
-		Live:        live,
-		CreatedAt:   exec.CreatedAt,
+		ID:           exec.ID,
+		Command:      command,
+		Harness:      exec.HarnessId.Value,
+		Primary:      exec.Primary.Value,
+		Service:      metadata[sandboxServiceIDMetadata],
+		Tool:         execToolID(metadata[execToolMetadataKey]),
+		FilesChanged: metadata[execFilesChangedMetadataKey] != "",
+		ServiceName:  metadata[sandboxServiceNameMetadata],
+		Tty:          exec.Tty,
+		Live:         live,
+		CreatedAt:    exec.CreatedAt,
 	}
 }
 
@@ -101,6 +103,13 @@ const (
 // service keys it is this client's own: the sandbox knows nothing about tools.
 // See ADR 26-08-27-302 on tool sessions.
 const execToolMetadataKey = "tool"
+
+// execFilesChangedMetadataKey is the exec metadata key a pull request's files
+// changed carry (PullReview), and its value the head commit they were started
+// over. Like the tool key it is this client's own, and it is what keeps the
+// workspace from opening the session as a tab: the issue tab that started it
+// draws it.
+const execFilesChangedMetadataKey = "filesChanged"
 
 // legacyDiffToolID is the label a diff session carries when a launcher from
 // before the diff tool had a stable id opened it. The label is stored in the
@@ -268,6 +277,90 @@ func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, c
 	}, cols, rows, command...)
 }
 
+// PullReview creates, attaches and starts discobox-review in the sandbox over a
+// pull request's files changed: `discobox-review -base <BaseSHA> -head
+// <HeadSHA>`, run in the sandbox's default working directory — its primary
+// source, whose git directory keeps the review — as the program the diff tool
+// runs, from the image, whatever tool a repository has declared in the diff
+// tool's place. Comments written in it are signed with git's own user.name, as
+// the diff tool's are.
+//
+// The sandbox has to have the pull request's branch checked out, whose review
+// is the one shown, and its head, and is asked about both first:
+// discobox-review would show another branch's review, or exit at once, and the
+// tab could not say why. The base need
+// not be: GitHub's is its base branch's tip as it is now, which the sandbox has
+// not fetched once the branch has moved, so the base branch is named as well
+// (-fallback-base), which measures the change from the same merge base.
+//
+// The two commits are GitHub's word, and go on a command line: each has to be
+// a commit hash, so neither can be read as a flag.
+func (d *apiDataSource) PullReview(ctx context.Context, sandboxID string, pull tui.PullRequest, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	d = d.at(sandboxID)
+	if !commitHash(pull.BaseSHA) || !commitHash(pull.HeadSHA) {
+		return tui.Exec{}, nil, fmt.Errorf("the pull request has not said which commits it is between")
+	}
+	// The review shown is the one kept for the branch checked out, so that
+	// has to be the pull request's: another branch's card and approvals over
+	// this diff would be read as this one's, and written to as well.
+	branch, _, code, err := d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, "", []string{"git", "symbolic-ref", "--short", "-q", "HEAD"})
+	switch branch = strings.TrimSpace(branch); {
+	case err != nil:
+		return tui.Exec{}, nil, fmt.Errorf("reading the discobox's branch: %w", err)
+	case code != 0 || branch == "":
+		return tui.Exec{}, nil, fmt.Errorf("this discobox has no branch checked out, so it keeps no review of %s", pull.Head)
+	case terminalSafe(branch) != pull.HeadRef:
+		// Both as the screen has them: the pull request's came made safe.
+		// A fork's is its branch alone, as the discobox working on it
+		// names it.
+		return tui.Exec{}, nil, fmt.Errorf("this discobox has %s checked out, not the pull request's %s", terminalSafe(branch), pull.Head)
+	}
+	_, _, code, err = d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, "", []string{"git", "cat-file", "-e", pull.HeadSHA + "^{commit}"})
+	switch {
+	case err != nil:
+		return tui.Exec{}, nil, fmt.Errorf("looking for its head in the discobox: %w", err)
+	case code != 0:
+		return tui.Exec{}, nil, fmt.Errorf("its head %s is not in this discobox — it was pushed from somewhere else", pull.HeadSHA[:12])
+	}
+	command := []string{"discobox-review", "-by", "git-user", "-base", pull.BaseSHA, "-head", pull.HeadSHA}
+	if fallback := pullBaseFallback(pull.Base); fallback != "" {
+		command = append(command, "-fallback-base", fallback)
+	}
+	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
+		interactive: true, tty: true, env: paneTerminalEnv(),
+		metadata: map[string]string{execFilesChangedMetadataKey: pull.HeadSHA},
+	}, cols, rows, command...)
+}
+
+// pullBaseFallback is the pull request's base branch as the sandbox's clone
+// names it, or nothing when the name could be read as a flag or is not a
+// branch name at all: the base commit is then all there is to go by.
+func pullBaseFallback(branch string) string {
+	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, " ~^:?*[\\") || strings.Contains(branch, "..") {
+		return ""
+	}
+	for _, r := range branch {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	return "origin/" + branch
+}
+
+// commitHash reports whether s is a whole commit hash: SHA-1's forty hex
+// digits, or SHA-256's sixty-four.
+func commitHash(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // EndExec ends one exec session in the sandbox, killing what is running in it.
 func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) error {
 	d = d.at(sandboxID)
@@ -311,13 +404,23 @@ func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string,
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}
+	// A session created and then not handed back — the attach or the start
+	// failed, or ctx was canceled between them — is nobody's: it is deleted
+	// here, on a context of its own, since ctx may be what failed.
+	abandon := func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, exec.ID)
+	}
 	term, err := d.openFramedTerminal(ctx, sandboxID, exec.ID, cols, rows)
 	if err != nil {
+		abandon()
 		return tui.Exec{}, nil, err
 	}
 	started, err := d.app.startSandboxExec(ctx, d.projectID, sandboxID, exec.ID)
 	if err != nil {
 		_ = term.Close()
+		abandon()
 		return tui.Exec{}, nil, err
 	}
 	return tuiExec(started), term, nil

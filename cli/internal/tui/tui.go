@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -25,6 +26,9 @@ func Run(ctx context.Context, ds DataSource, options ...Option) (*Sandbox, error
 	model.clipWatch = clipwatch.Start(ctx)
 	program := tea.NewProgram(model, tea.WithContext(ctx))
 	_, err := program.Run()
+	// The files changed are sessions of the window's own, which nothing else
+	// lists: they end with it. See pullreview.go.
+	model.EndReviews(5 * time.Second)
 	// The status the window spoke for its box is the window's to take back:
 	// Bubble Tea resets what it set itself, and this is not among it. A
 	// window that dies instead is cleared by termguard.

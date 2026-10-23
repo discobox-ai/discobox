@@ -125,3 +125,18 @@
 - **A driver test waits for what it asserts.** A fake records a call from the
   command's goroutine, before the window has the answer: wait on the window's
   state, not on the fake's.
+
+## The files changed
+
+- **A files changed session ends on every way out.** The listing never shows
+  one (`Exec.FilesChanged`), so whatever lets go of its window without
+  ending it — closing a tab, replacing it, detaching, quitting the console —
+  leaves it running where nothing will find it. Ends go through
+  `reviewWindow.end`, counted in `reviewEnds`, and `Run` waits for them
+  (`EndReviews`): an end started from a goroutine on the way out is lost when
+  the process exits first — `TestQuittingTheConsoleEndsTheFilesChanged`.
+- **A files changed window with no session to send to has its own keys.**
+  While it starts, and once it ended on its own, every key would go to a
+  terminal with no stream and be dropped, the way back included; `reviewKey`
+  takes `q` and Esc then — `TestFilesChangedThatDoNotStartAreGivenUpOn`.
+

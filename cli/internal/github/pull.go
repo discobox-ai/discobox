@@ -29,8 +29,10 @@ type Pull struct {
 	MergedBy string
 	MergedAt time.Time
 	// Head and Base are the branches, as the page names them: the branch
-	// alone, or owner:branch for a head in a fork.
+	// alone, or owner:branch for a head in a fork. HeadRef is the head's
+	// branch alone, as its own repository names it.
 	Head, Base string
+	HeadRef    string
 	// HeadSHA is the commit the checks are about, and BaseSHA where the base
 	// branch was when the pull request was read: the two its diff is between.
 	HeadSHA      string
@@ -422,7 +424,7 @@ type rawBranch struct {
 func (r rawPull) pull() Pull {
 	pull := Pull{
 		Draft: r.Draft, Merged: r.Merged, MergedBy: r.MergedBy.login(),
-		Head: r.Head.Ref, Base: r.Base.Ref, HeadSHA: r.Head.SHA, BaseSHA: r.Base.SHA,
+		Head: r.Head.Ref, HeadRef: r.Head.Ref, Base: r.Base.Ref, HeadSHA: r.Head.SHA, BaseSHA: r.Base.SHA,
 		Commits: r.Commits, Additions: r.Additions, Deletions: r.Deletions, ChangedFiles: r.ChangedFiles,
 		Mergeable: r.Mergeable,
 	}
@@ -449,15 +451,6 @@ type rawReviewComment struct {
 	Body         string       `json:"body"`
 	CreatedAt    time.Time    `json:"created_at"`
 	Reactions    rawReactions `json:"reactions"`
-}
-
-type rawFile struct {
-	Filename         string `json:"filename"`
-	PreviousFilename string `json:"previous_filename"`
-	Status           string `json:"status"`
-	Additions        int    `json:"additions"`
-	Deletions        int    `json:"deletions"`
-	Patch            string `json:"patch"`
 }
 
 // rawGitUser is who a commit says wrote it: a name, not an account.

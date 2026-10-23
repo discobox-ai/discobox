@@ -23,7 +23,6 @@ import (
 	"github.com/discobox-ai/discobox/termpane"
 
 	"github.com/discobox-ai/discobox/pkg/tools"
-	"github.com/discobox-ai/review/source"
 )
 
 // The whole package renders colorless, so a frame is plain text a test can read
@@ -238,16 +237,15 @@ type fakeSource struct {
 	// $EDITOR would have written; nil leaves the file as it was.
 	toolFiles    map[string]string
 	editToolFile func(file ToolFile) string
-	// pullDiffs are the files changed of a pull request, by its head;
-	// pullSources the pull requests PullSource was asked for, as
-	// "repository#N: base...head", and pullSourceErr fails it.
+	// pullDiffs are the files changed of a pull request, by its head, which
+	// its session draws; pullReviews the sessions PullReview was asked for,
+	// as "sandbox: base...head", and pullReviewErr fails it.
 	pullDiffs     map[string]string
-	pullSources   []string
-	pullSourceErr error
-	// pullContexts are the contexts each source was opened with, which the
-	// tab cancels when it is done with the window.
-	pullContexts []context.Context
-	editToolErr  error
+	pullReviews   []string
+	pullReviewErr error
+	// pullReviewGate, when set, holds every PullReview until it is closed.
+	pullReviewGate chan struct{}
+	editToolErr    error
 	// terminalHarness is the harness the sandbox runs, which is what a
 	// terminal it creates is reported with — and what puts it in the
 	// workspace's left column.
@@ -1002,30 +1000,37 @@ func (f *fakeSource) CommentOnIssue(_ context.Context, repository string, number
 	return nil
 }
 
-// PullSource opens the files changed over the diff pullDiffs has for the
-// head, and records the head it was asked for.
-func (f *fakeSource) PullSource(ctx context.Context, repository string, number int, pull PullRequest) (source.Source, error) {
+// PullReview starts the files changed as a session, which draws the diff
+// pullDiffs has for the head, as discobox-review would over it, and records
+// what it was asked for.
+func (f *fakeSource) PullReview(_ context.Context, id string, pull PullRequest, cols, rows int) (Exec, Terminal, error) {
+	f.mu.Lock()
+	gate := f.pullReviewGate
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.pullSourceErr != nil {
-		return nil, f.pullSourceErr
+	if f.pullReviewErr != nil {
+		return Exec{}, nil, f.pullReviewErr
 	}
-	f.pullContexts = append(f.pullContexts, ctx)
-	f.pullSources = append(f.pullSources, fmt.Sprintf("%s#%d: %s...%s", repository, number, pull.BaseSHA, pull.HeadSHA))
-	return fakeReview{head: pull.Head, base: pull.Base, diff: f.pullDiffs[pull.HeadSHA]}, nil
-}
-
-// fakeReview is a pull request's files changed: a diff and nothing else.
-type fakeReview struct{ head, base, diff string }
-
-func (r fakeReview) Scan(string, int) (source.Scan, error) {
-	return source.Scan{Branch: r.head, HasHEAD: true, Base: source.Base{Ref: r.base, SHA: "base000", Commit: "base000"}, Diff: r.diff}, nil
-}
-
-func (r fakeReview) CommitDiff(string, int) (string, error) { return "", nil }
-
-func (r fakeReview) FileContent(string, string) (string, error) {
-	return "", errors.New("no files here")
+	f.pullReviews = append(f.pullReviews, fmt.Sprintf("%s: %s...%s", id, pull.BaseSHA, pull.HeadSHA))
+	f.newToolID++
+	exec := Exec{
+		ID:           fmt.Sprintf("exec_files%d", f.newToolID),
+		Command:      []string{"discobox-review"},
+		FilesChanged: true,
+		Tty:          true,
+		Live:         true,
+		CreatedAt:    time.Date(2026, 8, 7, 14, 0, f.newToolID, 0, time.UTC),
+	}
+	// The listing reports it from now on, the way the server would.
+	f.execs = append(f.execs, exec)
+	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
+	term := f.newExecTerminal(exec.ID)
+	term.send(strings.ReplaceAll(f.pullDiffs[pull.HeadSHA], "\n", "\r\n"))
+	return exec, term, nil
 }
 
 func (f *fakeSource) MergePullRequest(_ context.Context, repository string, number int, method, sha string) error {
@@ -1620,6 +1625,19 @@ func asListener(msg tea.Msg) (listenerMsg, bool) {
 				return nil
 			}
 			return paneMsg{id: msg.id, msg: got}
+		}}, true
+	case reviewMsg:
+		// The files changed' session, tagged to its window as a pane's is.
+		inner, ok := msg.msg.(listenerMsg)
+		if !ok {
+			return listenerMsg{}, false
+		}
+		return listenerMsg{run: func() tea.Msg {
+			got := inner.run()
+			if got == nil {
+				return nil
+			}
+			return reviewMsg{pane: msg.pane, window: msg.window, msg: got}
 		}}, true
 	}
 	return listenerMsg{}, false
