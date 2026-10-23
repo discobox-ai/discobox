@@ -59,6 +59,10 @@ var errIrohNotConfigured = errors.New("iroh endpoint used before ConfigureIroh")
 type IrohEndpoint struct {
 	cfg IrohConfig
 
+	// issuer is the identity of IrohConfig.Issuer, the one an operator
+	// enrolled, or nil when this endpoint dials as itself.
+	issuer *IrohID
+
 	// ctx bounds every admission check this endpoint runs, and cancel fires
 	// when it closes. IrohConfig.Authorize may wait for something the process
 	// has not built yet — the control plane's admission gate waits for its
@@ -167,8 +171,23 @@ func NewIrohEndpoint(cfg IrohConfig) (*IrohEndpoint, error) {
 	if len(cfg.SecretKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("iroh secret key is %d bytes, want %d", len(cfg.SecretKey), ed25519.PrivateKeySize)
 	}
+	var issuer *IrohID
+	if cfg.Issuer != nil {
+		if len(cfg.Issuer) != ed25519.PrivateKeySize {
+			return nil, fmt.Errorf("iroh issuer key is %d bytes, want %d", len(cfg.Issuer), ed25519.PrivateKeySize)
+		}
+		pub, ok := cfg.Issuer.Public().(ed25519.PublicKey)
+		if !ok {
+			return nil, errors.New("iroh issuer key is not ed25519")
+		}
+		id, err := IrohIDFromPublicKey(pub)
+		if err != nil {
+			return nil, err
+		}
+		issuer = &id
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &IrohEndpoint{cfg: cfg, ctx: ctx, cancel: cancel}, nil
+	return &IrohEndpoint{cfg: cfg, issuer: issuer, ctx: ctx, cancel: cancel}, nil
 }
 
 // ID is the endpoint ID peers dial to reach this endpoint.
@@ -322,14 +341,14 @@ func preferredBinds(cfg IrohConfig) [][]netip.AddrPort {
 // Dialing is choosing, and the choice is what tells the server which kind of
 // client has arrived.
 func (e *IrohEndpoint) dialALPN() string {
-	if e.cfg.Certificate != nil {
+	if e.cfg.Issuer != nil {
 		return irohCertALPN
 	}
 	return irohALPN
 }
 
 func irohALPNs(cfg IrohConfig) [][]byte {
-	if cfg.Certificate != nil {
+	if cfg.Issuer != nil {
 		return [][]byte{[]byte(irohCertALPN)}
 	}
 	if cfg.Authorize != nil {
@@ -907,14 +926,27 @@ func (e *IrohEndpoint) presentedIdentity(conn *iroh.Conn, peer IrohID) (*IrohID,
 // presentCertificate is the client half: the certificate goes out unprompted
 // the moment the connection is up, on a stream of its own.
 //
+// It is signed here, for this connection, rather than once for the process: a
+// server checks expiry only when it admits a connection, so a certificate made
+// at startup works until the first redial after it lapses and then refuses
+// every one. A fresh one per dial leaves the process unaffected by its own age.
+//
 // Nothing is waited for. The server either admits the connection or closes it
 // with a reason, and a client that waited for an acknowledgement would pay a
 // round trip to learn what its next request tells it anyway.
 func (e *IrohEndpoint) presentCertificate(ctx context.Context, conn *iroh.Conn) error {
-	if e.cfg.Certificate == nil {
+	if e.cfg.Issuer == nil {
 		return nil
 	}
-	raw, err := e.cfg.Certificate.MarshalBinary()
+	subject, err := e.ID()
+	if err != nil {
+		return err
+	}
+	cert, err := SignPeerCert(e.cfg.Issuer, subject, time.Now().Add(PeerCertLifetime))
+	if err != nil {
+		return fmt.Errorf("certify this peer's transport key: %w", err)
+	}
+	raw, err := cert.MarshalBinary()
 	if err != nil {
 		return err
 	}

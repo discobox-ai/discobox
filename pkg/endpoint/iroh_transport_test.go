@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	iroh "github.com/discobox-ai/iroh-go"
 )
 
 // The whole point of the transport is that the ordinary control-plane handler
@@ -513,20 +515,15 @@ func TestIrohAdmitsAnEphemeralEndpointBearingACertificate(t *testing.T) {
 	}
 
 	// The transport key is generated for this client alone and never enrolled.
-	ephemeral := newSecretKey(t)
-	ephemeralID, err := IrohIDFromPublicKey(ephemeral.Public().(ed25519.PublicKey))
-	if err != nil {
-		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
-	}
-	cert, err := SignPeerCert(enrolled, ephemeralID, time.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatalf("SignPeerCert() error = %v", err)
-	}
 	client := newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:   ephemeral,
-		Certificate: &cert,
-		Locate:      func(IrohID) []string { return addrs },
+		SecretKey: newSecretKey(t),
+		Issuer:    enrolled,
+		Locate:    func(IrohID) []string { return addrs },
 	})
+	ephemeralID, err := client.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
 
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {
@@ -578,11 +575,6 @@ func TestIrohRefusesACertificateIssuedForAnotherEndpoint(t *testing.T) {
 			return nil
 		},
 	})
-	addrs, err := server.DirectAddrs()
-	if err != nil {
-		t.Fatalf("DirectAddrs() error = %v", err)
-	}
-
 	// A certificate for somebody else's endpoint, correctly signed by a
 	// correctly enrolled identity. The thief holds neither private key it
 	// names, and the handshake is what gives them away.
@@ -598,12 +590,61 @@ func TestIrohRefusesACertificateIssuedForAnotherEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignPeerCert() error = %v", err)
 	}
-	thief := newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:   newSecretKey(t),
-		Certificate: &stolen,
-		Locate:      func(IrohID) []string { return addrs },
-	})
+	err = presentCertificateForTest(t, server, func(IrohID) PeerCert { return stolen })
+	if err == nil {
+		t.Fatal("a certificate issued for another endpoint was accepted")
+	}
+	if !strings.Contains(err.Error(), "arrived from") {
+		t.Fatalf("error = %v, want the refusal to say the certificate was for another endpoint", err)
+	}
+}
 
+// Expiry is checked where the certificate is admitted, over the wire, and not
+// only by the parser's caller in a unit test: an expired certificate from the
+// endpoint it names, signed by an enrolled identity, is still refused.
+func TestIrohRefusesAnExpiredCertificate(t *testing.T) {
+	enrolled := newSecretKey(t)
+	enrolledID, err := IrohIDFromPublicKey(enrolled.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	server := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey: newSecretKey(t),
+		Authorize: func(_ context.Context, id IrohID) error {
+			if id != enrolledID {
+				return fmt.Errorf("endpoint %s is not authorized on this server", id)
+			}
+			return nil
+		},
+	})
+	err = presentCertificateForTest(t, server, func(subject IrohID) PeerCert {
+		expired, err := SignPeerCert(enrolled, subject, time.Now().Add(-time.Minute))
+		if err != nil {
+			t.Fatalf("SignPeerCert() error = %v", err)
+		}
+		return expired
+	})
+	if err == nil {
+		t.Fatal("an expired certificate was accepted")
+	}
+	if !strings.Contains(err.Error(), "expired at") {
+		t.Fatalf("error = %v, want the refusal to say the certificate expired", err)
+	}
+}
+
+// presentCertificateForTest dials server on the certificate ALPN from a fresh
+// endpoint, sends cert on the first stream the way presentCertificate does,
+// and returns the error a request on the next stream reads — the server's
+// close reason when it refused. certify makes the certificate, given the
+// dialing endpoint's own ID. An endpoint given an issuer signs a good
+// certificate for itself, so one it would never send takes speaking the
+// protocol by hand.
+func presentCertificateForTest(t *testing.T, server *IrohEndpoint, certify func(self IrohID) PeerCert) error {
+	t.Helper()
+	addrs, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
@@ -612,25 +653,166 @@ func TestIrohRefusesACertificateIssuedForAnotherEndpoint(t *testing.T) {
 	httpServer := &http.Server{ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = httpServer.Serve(listener) }()
 	t.Cleanup(func() { _ = httpServer.Close() })
-
 	serverID, err := server.ID()
 	if err != nil {
 		t.Fatalf("ID() error = %v", err)
 	}
+
+	from := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+	t.Cleanup(from.close)
+	self, err := from.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	raw, err := certify(self).MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary() error = %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/ping", nil)
+	conn := dialIrohForTest(ctx, t, from, serverID, addrs, irohCertALPN)
+	certStream, err := conn.OpenConn(ctx)
 	if err != nil {
-		t.Fatalf("new request: %v", err)
+		t.Fatalf("OpenConn() error = %v", err)
 	}
-	resp, err := irohClient(t, thief, serverID).Do(req)
-	if err == nil {
-		_ = resp.Body.Close()
-		t.Fatal("a certificate issued for another endpoint was accepted")
+	if _, err := certStream.Write(raw); err != nil {
+		t.Fatalf("write the certificate: %v", err)
 	}
-	if !strings.Contains(err.Error(), "arrived from") {
-		t.Fatalf("error = %v, want the refusal to say the certificate was for another endpoint", err)
+	_ = certStream.Close()
+
+	// The refusal is a close of the whole connection, so a request on the next
+	// stream is what reads it.
+	stream, err := conn.OpenConn(ctx)
+	if err != nil {
+		return err
 	}
+	if _, err := io.WriteString(stream, "GET /ping HTTP/1.1\r\nHost: discobox\r\n\r\n"); err != nil {
+		return err
+	}
+	// One response, not to EOF: an admitted connection is kept alive, and
+	// reading it to the end would hang the test instead of failing it.
+	resp, err := http.ReadResponse(bufio.NewReader(stream), nil)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	return nil
+}
+
+// A certificate expires and a process does not, so the certificate is signed
+// for each connection rather than once, when the endpoint is made or on its
+// first dial. One made up front lapses under a long-running client, and the
+// server refuses its first redial after that with "this peer certificate
+// expired".
+func TestIrohSignsTheCertificateWhenItDials(t *testing.T) {
+	enrolled := newSecretKey(t)
+	enrolledID, err := IrohIDFromPublicKey(enrolled.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	// The server is read by hand rather than through Listen, so the test sees
+	// the certificate itself instead of only the identity it proved.
+	server := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), Authorize: admitAll})
+	serverEP, err := server.bind()
+	if err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	t.Cleanup(server.close)
+	addrs, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), Issuer: enrolled})
+	t.Cleanup(client.close)
+	clientID, err := client.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	// dial connects once and returns the certificate the server read. The
+	// handshake completes as the server accepts, so the accept is already
+	// waiting when the client dials.
+	dial := func() PeerCert {
+		t.Helper()
+		type acceptedStream struct {
+			stream net.Conn
+			err    error
+		}
+		acceptedCh := make(chan acceptedStream, 1)
+		go func() {
+			accepted, err := serverEP.Accept(ctx)
+			if err != nil {
+				acceptedCh <- acceptedStream{err: fmt.Errorf("Accept(): %w", err)}
+				return
+			}
+			stream, err := accepted.AcceptConn(ctx)
+			if err != nil {
+				err = fmt.Errorf("AcceptConn(): %w", err)
+			}
+			acceptedCh <- acceptedStream{stream: stream, err: err}
+		}()
+		conn := dialIrohForTest(ctx, t, client, serverID, addrs, irohCertALPN)
+		if err := client.presentCertificate(ctx, conn); err != nil {
+			t.Fatalf("presentCertificate() error = %v", err)
+		}
+		got := <-acceptedCh
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		raw := make([]byte, PeerCertSize)
+		if _, err := io.ReadFull(got.stream, raw); err != nil {
+			t.Fatalf("read the certificate: %v", err)
+		}
+		cert, err := ParsePeerCert(raw)
+		if err != nil {
+			t.Fatalf("ParsePeerCert() error = %v", err)
+		}
+		if cert.Issuer != enrolledID || cert.Subject != clientID {
+			t.Fatalf("certificate is %s for %s, want %s for %s", cert.Issuer.Short(), cert.Subject.Short(), enrolledID.Short(), clientID.Short())
+		}
+		return cert
+	}
+
+	// Expiry is whole seconds, so each dial comes more than one after the
+	// last: a certificate made any earlier would expire a second early.
+	time.Sleep(1100 * time.Millisecond)
+	dialed := time.Now()
+	first := dial()
+	if earliest := dialed.Add(PeerCertLifetime).Truncate(time.Second); first.Expiry.Before(earliest) {
+		t.Fatalf("certificate expires at %s, before %s: it was signed before the dial", first.Expiry, earliest)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if second := dial(); !second.Expiry.After(first.Expiry) {
+		t.Fatalf("the second dial's certificate expires at %s, no later than the first's %s: it was not signed again", second.Expiry, first.Expiry)
+	}
+}
+
+// dialIrohForTest opens a raw connection on alpn, for a test that speaks the
+// certificate protocol itself rather than through RoundTripper.
+func dialIrohForTest(ctx context.Context, t *testing.T, from *IrohEndpoint, to IrohID, addrs []string, alpn string) *iroh.Conn {
+	t.Helper()
+	ep, err := from.bind()
+	if err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	parsed, err := parseIrohAddrs(addrs)
+	if err != nil {
+		t.Fatalf("parseIrohAddrs() error = %v", err)
+	}
+	conn, err := ep.Connect(ctx, iroh.AddrOf(iroh.EndpointID(to)).WithDirectAddrs(parsed...), []byte(alpn))
+	if err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
 }
 
 // irohPing is one request, with a deadline short enough that a client that
@@ -930,11 +1112,7 @@ func TestIrohStreamsCarryTheIdentityTheirPeerProved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
 	}
-	cert, err := SignPeerCert(enrolled, ephemeralID, time.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatalf("SignPeerCert() error = %v", err)
-	}
-	certified := newIrohEndpointForTest(t, IrohConfig{SecretKey: ephemeral, Certificate: &cert, Locate: func(IrohID) []string { return addrs }})
+	certified := newIrohEndpointForTest(t, IrohConfig{SecretKey: ephemeral, Issuer: enrolled, Locate: func(IrohID) []string { return addrs }})
 	if got := irohPing(t, irohClient(t, certified, serverID)); got != enrolledID.String() {
 		t.Fatalf("certificate-bearing client's stream says %q, want the enrolled %s (not the ephemeral %s)", got, enrolledID, ephemeralID)
 	}

@@ -40,6 +40,13 @@ const (
 	// peerCertSignedSize is the prefix the signature covers: everything but
 	// the signature itself.
 	peerCertSignedSize = PeerCertSize - ed25519.SignatureSize
+
+	// PeerCertLifetime is how long a certificate is good for. A client signs
+	// one per connection, so it bounds how long a certificate captured off a
+	// process stays good, not how long the process may run. It does not bound
+	// a compromised process: that holds the enrolled key and signs whatever it
+	// likes.
+	PeerCertLifetime = 24 * time.Hour
 )
 
 // PeerCert binds an ephemeral transport key to an enrolled identity.
