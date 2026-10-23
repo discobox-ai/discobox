@@ -29,7 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It never fetches. See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's image — its pinned image, or for a delivered sandbox the base image its container runs with its platform's agent bound read-only ([Delivering the Agent](#delivering-the-agent)) — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent of its platform pin bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031) and a sandbox's read of its own egress audit (ADR 26-10-02-678), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -1153,13 +1153,16 @@ flowchart LR
 
 ## Delivering the Agent
 
-A sandbox whose create carries a platform pin is **delivered** its platform
+Every sandbox is **delivered** its platform
 ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
-§7): its container is the provider's sandbox base image
+§§7, 10): its container is the provider's sandbox base image
 (`EnvSandboxBaseImage`, which the Docker driver sets from its
 `sandboxBaseImage`), unpinned, or a snapshot of its plan built on that base
-([Snapshots](#snapshots)), and its image pin is not what it runs. A
-create with no platform pin runs its image pin as before.
+([Snapshots](#snapshots)); no harness is an image. A create with no platform
+pin is a sandbox from before bundles, pinned to the runnable image it ran: a
+container it has whose spec matches is kept, and building one is refused,
+`ErrUndelivered` (an `ErrImageUnavailable`), until the control plane pins it
+to its bundles.
 
 ```mermaid
 flowchart LR
@@ -1913,41 +1916,34 @@ network rather than as a startup error.
 
 ## Sandbox Image Identity
 
-`sandboxruntime` resolves and pulls sandbox images, so it is where a sandbox's
-image pin is enforced (ADR 0016). The create request carries `image` (what to
-pull) and `imageDigest` (the config digest it must resolve to). A sandbox
-delivered its platform runs the provider's sandbox base image instead,
-unpinned, or a snapshot of its plan built on it
-([Delivering the Agent](#delivering-the-agent)); a delivered create
-on a pool that names none is refused.
+`sandboxruntime` resolves and pulls the image every sandbox container is built
+from: the provider's sandbox base image, unpinned, or a snapshot of the
+sandbox's plan built on it ([Delivering the Agent](#delivering-the-agent)). No
+sandbox pins an image of its own (ADR 26-10-16-423 §10): what a box runs is its
+bundles, pinned by digest and applied at every start, and a create on a pool
+that names no base image is refused.
 
 The pool agent runs what the control plane tells it and invents nothing.
-`validateCreateRequest` refuses a create that names no image, and one that
-carries no resolved harness config — every sandbox has one (ADR 0025), so its
-absence is a control plane that failed to resolve it, not a sandbox asking for
-a bare shell. There is no default image: any stand-in that cannot host a
-sandbox agent would turn a malformed request into a container that never
-answers, instead of a failure naming what was wrong. Validation runs before any
-container work, so a malformed request costs nothing.
+`validateCreateRequest` refuses one that carries no resolved harness config —
+every sandbox has one (ADR 0025), so its absence is a control plane that failed
+to resolve it, not a sandbox asking for a bare shell. Validation runs before
+any container work, so a malformed request costs nothing.
 
-- `resolveSandboxImage` returns the **image ID to launch**, preferring a pinned
-  image already on the host over whatever the tag names now. Launching the
-  reference instead would let a rebuilt tag change a sandbox underneath its
-  user. If the pin is absent and the reference now resolves to something else,
-  it fails naming both digests rather than starting the wrong image.
-- `containerImageDrifted` replaces an existing container built from a different
-  image. Only a pinned request can drift: the control plane changes the digest
-  only when it has decided to upgrade, so this rule needs no policy flag.
-- `imageMatchesPin` is the single comparison behind both, so they cannot
-  disagree about what the pinned image is. An empty pin matches anything.
-- An image the pool cannot obtain is `ErrImageUnavailable`: the pin is absent
-  and its reference names another image, or the daemon refuses the pull as
-  not found before any progress. An unauthorized or forbidden pull is not:
-  that is the pool's credentials, which an upgrade would meet again. It is an answer
-  about the pin rather than a failed attempt, so it travels as a 422 typed
+- `resolveImage` obtains the base image and returns the **image ID to
+  launch**. A moved base image is followed by the next container, which a
+  moved pin's restart compares (`deliveredMoved`).
+- `containerSpecDrifted` replaces an existing container built from another
+  spec: one whose recorded fingerprint differs from the request's, or that
+  records none, which predates fingerprinting and the bundles alike.
+- An image the pool cannot obtain is `ErrImageUnavailable`: the daemon
+  refuses the base image's pull as not found before any progress, or the
+  sandbox is pinned to no platform (`ErrUndelivered`). An unauthorized or
+  forbidden pull is not: that is the pool's credentials. It is an answer
+  rather than a failed attempt, so it travels as a 422 typed
   `ErrorTypeSandboxImageUnavailable` and the control plane records it as the
-  reason the sandbox failed. A client offers the upgrade that re-pins it. Any
-  other pull failure stays an ordinary error.
+  reason the sandbox failed; for a sandbox from before bundles, a client
+  offers the upgrade that pins it. Any other pull failure stays an ordinary
+  error.
 
 A replacement preserves the power state it found (ADR 0021 §3). `CreateSandbox`
 takes the sandbox's power lock, records whether the container it is about to
@@ -1955,7 +1951,7 @@ replace was running, stops it the way a stop would, and starts the replacement
 only if that container was running or the request asked for a first-create
 start. `Start` in a create request is first-create intent, never a desired power
 state for a sandbox that already exists, so the two inputs can only add a start.
-An upgrade therefore restarts a running sandbox into its new image and never
+An upgrade therefore restarts a running sandbox into its new pins and never
 powers a stopped one on.
 
 A create is sent again when the agent it went to was replaced before answering

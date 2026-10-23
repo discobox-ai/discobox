@@ -64,8 +64,8 @@ const (
 	// PoolPhaseSyncingDevelopmentImages is the build of the development images
 	// on the pool's own Docker daemon. It appears only on a server running
 	// them, and it is the second long stretch of a cold VM start: the machine
-	// is up, and the pool, sandbox-base, and harness images are being built
-	// from the local checkout before there is a pool agent to start.
+	// is up, and the pool and sandbox-base images, and the bundles, are being
+	// built from the local checkout before there is a pool agent to start.
 	PoolPhaseSyncingDevelopmentImages PoolProvisionPhase = "syncing_development_images"
 	PoolPhasePullingPoolImage         PoolProvisionPhase = "pulling_pool_image"
 	// PoolPhaseLoadingPoolImage is pulling_pool_image's twin when the image is

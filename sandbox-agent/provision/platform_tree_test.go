@@ -1,7 +1,6 @@
 package provision
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,58 +10,59 @@ import (
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
-// The image build assembles the platform tree from sandbox-agent/features and
-// files it copies in from elsewhere, and provisions it a layer at a time.
-// Replaying its COPY lines into a directory proves, without building it, that
-// at every provisioning step the tree loads (each step names files that are
-// there, and every provision.yaml is valid) and every feature it holds finds
-// what it requires already in it.
-func TestTheImageBuildProvisionsAPlatformTreeThatLoads(t *testing.T) {
+// The platform bundle (the Dockerfile's FROM scratch `platform` stage) is
+// assembled from sandbox-agent/features and files it copies in from
+// elsewhere, under /features/ (ADR 26-10-16-423 §7). Replaying its COPY lines
+// into a directory proves, without building it, that the tree a box is
+// delivered loads (each step names files that are there, and every
+// provision.yaml is valid), that every feature it holds finds what it
+// requires in it, and that every COPY is --link, so an edit to one feature
+// moves one layer.
+func TestThePlatformBundleCarriesATreeThatLoads(t *testing.T) {
 	const repo = "../.."
 	root := t.TempDir()
-	tree := filepath.Join(root, PlatformTree)
-	file, err := os.Open(filepath.Join(repo, "sandbox-agent", "Dockerfile"))
+	data, err := os.ReadFile(filepath.Join(repo, "sandbox-agent", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
-	runs := 0
-	var loaded []provisionspec.Feature
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
+	featuresDir := "/" + provisionspec.FeaturesDir + "/"
+	stage, copies := "", 0
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
-		if strings.Contains(scanner.Text(), "discobox-image-provision "+PlatformTree) {
-			runs++
-			if loaded, err = provisionspec.Load(tree); err != nil {
-				t.Fatalf("provisioning step %d: %v", runs, err)
-			}
-			if _, err := order(loaded); err != nil {
-				t.Fatalf("provisioning step %d: %v", runs, err)
+		if fields[0] == "FROM" {
+			stage = ""
+			if n := len(fields); n >= 4 && strings.EqualFold(fields[n-2], "AS") {
+				stage = fields[n-1]
 			}
 			continue
 		}
-		if fields[0] != "COPY" {
+		if fields[0] != "COPY" || stage != "platform" {
 			continue
+		}
+		copies++
+		if fields[1] != "--link" {
+			t.Errorf("the platform bundle copies without --link: %s", line)
 		}
 		var args []string
-		stage := false
+		fromStage := false
 		for _, field := range fields[1:] {
 			if strings.HasPrefix(field, "--from=") {
-				stage = true
+				fromStage = true
 			}
 			if !strings.HasPrefix(field, "--") {
 				args = append(args, field)
 			}
 		}
 		dest := args[len(args)-1]
-		if !strings.HasPrefix(dest, PlatformTree+"/") {
+		if !strings.HasPrefix(dest, featuresDir) {
+			t.Errorf("the platform bundle copies outside %s: %s", featuresDir, line)
 			continue
 		}
 		target := filepath.Join(root, dest)
-		if stage {
+		if fromStage {
 			// A binary another stage built: what matters here is only that
 			// it is there.
 			writeTestFile(t, target, "binary")
@@ -72,11 +72,15 @@ func TestTheImageBuildProvisionsAPlatformTreeThatLoads(t *testing.T) {
 			copyTestTree(t, filepath.Join(repo, src), target)
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if copies == 0 {
+		t.Fatal("the Dockerfile has no platform stage that copies anything")
+	}
+	loaded, err := provisionspec.Load(root)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if runs == 0 {
-		t.Fatal("the Dockerfile never provisions the platform tree")
+	if _, err := order(loaded); err != nil {
+		t.Fatal(err)
 	}
 
 	var names []string
@@ -89,7 +93,7 @@ func TestTheImageBuildProvisionsAPlatformTreeThatLoads(t *testing.T) {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && !slices.Contains(names, entry.Name()) {
-			t.Errorf("sandbox-agent/features/%s is not in the tree the image provisions", entry.Name())
+			t.Errorf("sandbox-agent/features/%s is not in the platform bundle", entry.Name())
 		}
 	}
 	// Core, and every feature ADR 26-10-16-423 §4 names the platform's.
@@ -98,7 +102,7 @@ func TestTheImageBuildProvisionsAPlatformTreeThatLoads(t *testing.T) {
 		"bun", "mise", "build", "cli", "shells-editors", "direnv", "review", "discobox-cli",
 	} {
 		if !slices.Contains(names, want) {
-			t.Errorf("the platform tree has no %s feature", want)
+			t.Errorf("the platform bundle has no %s feature", want)
 		}
 	}
 }
@@ -130,74 +134,5 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// The platform bundle (the Dockerfile's FROM scratch `platform` stage) holds
-// the same trees the runnable stage copies into the platform tree, from the
-// same sources, under /features/ (ADR 26-10-16-423 §7). It copies them itself
-// rather than from the runnable stage, so building it never builds the 4GB
-// image — which leaves two lists of COPY lines, and two copies of the layer
-// label, that must not drift apart.
-func TestThePlatformBundleCarriesTheTreeTheImageProvisions(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("../..", "sandbox-agent", "Dockerfile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	copies := map[string][]string{}
-	labels := map[string]string{}
-	stage := ""
-	for line := range strings.SplitSeq(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		switch fields[0] {
-		case "FROM":
-			stage = ""
-			if n := len(fields); n >= 4 && strings.EqualFold(fields[n-2], "AS") {
-				stage = fields[n-1]
-			}
-		case "COPY":
-			copies[stage] = append(copies[stage], strings.Join(fields, " "))
-		case "LABEL":
-			if strings.HasPrefix(fields[1], "io.discobox.image.v1.10-platform=") {
-				labels[stage] = strings.Join(fields, " ")
-			}
-		}
-	}
-	// And the same layer label: the bundle's is what the server composes on,
-	// and the image's is what moves the digest a sandbox pins when it changes.
-	if labels["platform"] == "" || labels["platform"] != labels["sandbox-agent"] {
-		t.Errorf("the platform layer label differs between the bundle and the image:\nimage:  %q\nbundle: %q", labels["sandbox-agent"], labels["platform"])
-	}
-	featuresDir := "/" + provisionspec.FeaturesDir + "/"
-	var image []string
-	for _, line := range copies["sandbox-agent"] {
-		if dest := PlatformTree + featuresDir; strings.Contains(line, " "+dest) {
-			image = append(image, strings.Replace(line, " "+dest, " "+featuresDir, 1))
-		}
-	}
-	bundle := copies["platform"]
-	if len(bundle) == 0 {
-		t.Fatal("the Dockerfile has no platform stage that copies anything")
-	}
-	// Every bundle COPY is --link, so a layer carries only its own files and
-	// an edit to one feature moves one layer (ADR 26-10-16-423 §7); past
-	// that, the bundle copies what the image does.
-	for i, line := range bundle {
-		if !strings.Contains(line, " "+featuresDir) {
-			t.Errorf("the platform bundle copies outside %s: %s", featuresDir, line)
-		}
-		linked, ok := strings.CutPrefix(line, "COPY --link ")
-		if !ok {
-			t.Errorf("the platform bundle copies without --link: %s", line)
-		}
-		bundle[i] = "COPY " + linked
-	}
-	slices.Sort(image)
-	slices.Sort(bundle)
-	if !slices.Equal(image, bundle) {
-		t.Fatalf("the platform bundle's COPY lines differ from the image's:\nimage:  %q\nbundle: %q", image, bundle)
 	}
 }

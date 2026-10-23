@@ -14,9 +14,10 @@ import (
 // silently makes every image immortal. Neither shows up as a failure anywhere
 // else, since not reclaiming an image looks exactly like an image still in use.
 //
-// Only the one root is checked: every other Discobox image is built FROM the
-// sandbox base image, directly or through the sandbox agent, and inherits the label
-// through the image config — the same mechanism that carries it across a pull.
+// Only the one root is checked: the pool agent, the one other Discobox image, is
+// built FROM the sandbox base image and inherits the label through the image
+// config — the same mechanism that carries it across a pull. The platform and
+// harness bundles are FROM scratch, served as layouts rather than run.
 func TestImageRootDeclaresTheReclaimLabel(t *testing.T) {
 	_, repoRoot := loadDockerImageSpecs(t)
 	want := "LABEL " + harness.ReclaimLabel + "=" + harness.ReclaimLabelValue

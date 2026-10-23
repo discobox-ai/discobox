@@ -51,18 +51,23 @@ setup_file() {
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: both agent images are now
-  # built FROM a shared base image, and these targets are what know to build it
-  # first.
+  # Through the Taskfile rather than docker directly: the pool image is built
+  # FROM the sandbox base image, and this target is what knows to build that
+  # first. No harness is a runnable image: every sandbox container is that base
+  # image, named to the server below so boxes do not pull the remote default.
   go tool task build:pool-agent-image
-  go tool task build:sandbox-agent-image
   # A discobox cannot be created without a harness, and a harness is not
   # selectable until its configure flow has run, so this suite needs the shared
-  # stub the other end-to-end files use. Nothing here tests harnesses; it is the
-  # price of having a real sandbox to reach over SSH. The platform bundle is
-  # what the server composes the stub's bundle on.
+  # stub bundle the other end-to-end files use. Nothing here tests harnesses; it
+  # is the price of having a real sandbox to reach over SSH. The platform bundle
+  # is what the server composes the stub's bundle on, and what the sandbox agent
+  # applies first in every box.
+  #
+  # Both bundles must be servable to the pool, which fetches them through the
+  # server's asset API; that API reads OCI layouts or registries, not the
+  # daemon's :local tags.
   go tool task build:platform-bundle
-  (DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local go tool task build:harness-stub-image)
+  go tool task build:harness-stub-bundle
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -72,7 +77,7 @@ setup_file() {
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
   DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
-  DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local \
+  DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
@@ -98,7 +103,7 @@ setup_file() {
   run cli admin ssh-key add "$DISCOBOX_BATS_SSH_KEY.pub"
   [ "$status" -eq 0 ]
 
-  run cli admin harness create --bundle discobox-harness-stub:local --image discobox-harness-stub-image:local \
+  run cli admin harness create --bundle discobox-harness-stub:local \
     --slug ssh-stub --name "SSH Stub"
   [ "$status" -eq 0 ]
   run cli admin harness configure ssh-stub </dev/null

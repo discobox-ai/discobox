@@ -3,6 +3,8 @@ package sandboxes
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -19,9 +21,9 @@ import (
 // a project, and these tests store several sandboxes in one.
 var pinnedSandboxSeq atomic.Int64
 
-// pinnedSandbox stores a sandbox pinned to an image digest, with a harness
-// config to compare against.
-func pinnedSandbox(t *testing.T, st *store.Store, configID, image, digest string) *model.Sandbox {
+// pinnedSandbox stores a sandbox pinned to a harness bundle digest, with a
+// harness config to compare against.
+func pinnedSandbox(t *testing.T, st *store.Store, configID, bundle, digest string) *model.Sandbox {
 	t.Helper()
 	ensurePool(t, st)
 	sb := &model.Sandbox{
@@ -29,7 +31,7 @@ func pinnedSandbox(t *testing.T, st *store.Store, configID, image, digest string
 		CreatedByUserID: "user-1",
 		PoolID:          "pool-1",
 		Name:            fmt.Sprintf("sandbox-%d", pinnedSandboxSeq.Add(1)),
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: image, ImageDigest: digest},
+		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: bundle, BundleDigest: digest},
 	}
 	if configID != "" {
 		sb.HarnessConfigID = &configID
@@ -56,11 +58,12 @@ func ensurePool(t *testing.T, st *store.Store) {
 	}
 }
 
-func imagedConfig(t *testing.T, st *store.Store, image, digest string) *model.HarnessConfig {
+// bundledConfig stores the codex harness config, pinned to bundle@digest.
+func bundledConfig(t *testing.T, st *store.Store, bundle, digest string) *model.HarnessConfig {
 	t.Helper()
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"},
-		Image: image, ImageDigest: digest, Configured: true,
+		Bundle: bundle, BundleDigest: digest, Configured: true,
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -68,19 +71,19 @@ func imagedConfig(t *testing.T, st *store.Store, image, digest string) *model.Ha
 	return config
 }
 
-// A rebuilt image under the same tag is the case tag comparison misses, and the
+// A rebuilt bundle under the same tag is the case tag comparison misses, and the
 // one dev workflows hit constantly.
 func TestUpgradeTargetDetectsRebuildUnderTheSameTag(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	target, err := svc.currentRepin(ctx, sb)
 	if err != nil {
 		t.Fatalf("currentRepin: %v", err)
 	}
-	if !target.Available || target.Digest != "sha256:new" {
+	if !target.Available || target.Harness.Bundle.Digest != codexBundleV2 {
 		t.Fatalf("target = %+v, want available with the new digest", target)
 	}
 }
@@ -88,8 +91,8 @@ func TestUpgradeTargetDetectsRebuildUnderTheSameTag(t *testing.T) {
 func TestUpgradeTargetIsUnavailableWhenDigestsMatch(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:same")
-	sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:same")
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
+	sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	target, err := svc.currentRepin(ctx, sb)
 	if err != nil {
@@ -100,33 +103,58 @@ func TestUpgradeTargetIsUnavailableWhenDigestsMatch(t *testing.T) {
 	}
 }
 
-// An unpinned sandbox under an image-bearing harness config — created before
-// pinning existed, or while the config's digest was unknown — is the strongest
-// candidate for adopting the config's current image: its tag may no longer
-// exist anywhere, and upgrade is its only way out.
-func TestUpgradeTargetOffersConfigImageToUnpinnedSandboxes(t *testing.T) {
+// A sandbox pinned to no bundle — one from before bundles, pinned to a
+// runnable harness image no release builds any more — is the strongest
+// candidate for adopting the config's current bundle: upgrade is its only way
+// out, and it leaves that image behind.
+func TestUpgradeTargetOffersConfigBundleToUnpinnedSandboxes(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
 
-	unpinned := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:stale", "")
+	unpinned := pinnedSandbox(t, st, config.ID, "", "")
+	unpinned.Image, unpinned.ImageDigest = legacyImage, legacyImageDigest
 	target, err := svc.currentRepin(ctx, unpinned)
 	if err != nil {
 		t.Fatalf("currentRepin: %v", err)
 	}
-	if !target.Available || target.Image != "discobox-harness-codex:local" || target.Digest != "sha256:new" {
-		t.Fatalf("unpinned target = %+v, want available with the config's image and digest", target)
+	want := services.BundlePin{Reference: codexBundle, Digest: codexBundleV2}
+	if !target.Available || target.Harness.Bundle != want || target.Harness.Image != "" {
+		t.Fatalf("unpinned target = %+v, want available with the config's bundle alone", target)
+	}
+	target.apply(unpinned)
+	if unpinned.Image != "" || unpinned.ImageDigest != "" || unpinned.BundleDigest != codexBundleV2 {
+		t.Fatalf("applied image %q@%q bundle %q, want the image left behind for the bundle", unpinned.Image, unpinned.ImageDigest, unpinned.BundleDigest)
 	}
 }
 
-// A config-mode sandbox runs the configure command against a deliberately fixed
-// image, and a sandbox with no harness config has no image to move to.
+// A config whose bundle has no content digest yet — a development bundle no
+// pool has built — is nothing to move to, and an upgrade says so rather than
+// that the sandbox is current.
+func TestUpgradeTargetSkipsAnUnbuiltBundle(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	config := bundledConfig(t, st, "discobox-harness-codex:dev-0123", "discobox-harness-codex:dev-0123")
+	sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
+
+	target, err := svc.currentRepin(ctx, sb)
+	if err != nil || target.Available || !target.Empty() {
+		t.Fatalf("target = %+v, %v; want nothing to move to", target, err)
+	}
+	_, err = svc.UpgradeSandbox(ctx, "project-1", sb.ID, services.UpgradeSandboxBody{})
+	if err == nil || !strings.Contains(err.Error(), "no bundle to upgrade to") {
+		t.Fatalf("upgrade = %v, want refused for having no bundle to upgrade to", err)
+	}
+}
+
+// A config-mode sandbox runs the configure flow and is thrown away: it follows
+// nothing.
 func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
 
-	configMode := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	configMode := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 	configMode.HarnessMode = "config"
 	if target, err := svc.currentRepin(ctx, configMode); err != nil || target.Available {
 		t.Fatalf("config-mode target = %+v, %v; want unavailable", target, err)
@@ -134,11 +162,11 @@ func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 }
 
 // shellConfig seeds the reserved built-in an unconverged sandbox upgrades to.
-func shellConfig(t *testing.T, st *store.Store, image, digest string) *model.HarnessConfig {
+func shellConfig(t *testing.T, st *store.Store, bundle, digest string) *model.HarnessConfig {
 	t.Helper()
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: harnessdefs.ShellSlug, Name: "Shell",
-		BuiltIn: true, Configured: true, Image: image, ImageDigest: digest,
+		BuiltIn: true, Configured: true, Bundle: bundle, BundleDigest: digest,
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create shell config: %v", err)
@@ -152,9 +180,9 @@ func shellConfig(t *testing.T, st *store.Store, image, digest string) *model.Har
 func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
+	shell := shellConfig(t, st, shellBundle, shellBundleV2)
 
-	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
+	harnessless := pinnedSandbox(t, st, "", shellBundle, shellBundleV1)
 	target, err := svc.currentRepin(ctx, harnessless)
 	if err != nil {
 		t.Fatalf("upgrade target: %v", err)
@@ -162,13 +190,13 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	if !target.Available {
 		t.Fatalf("target = %+v, want an available upgrade to the fallback", target)
 	}
-	if target.Image != shell.Image || target.Digest != shell.ImageDigest {
-		t.Fatalf("target = %+v, want the shell config's image", target)
+	if target.Harness.Bundle != (services.BundlePin{Reference: shell.Bundle, Digest: shell.BundleDigest}) {
+		t.Fatalf("target = %+v, want the shell config's bundle", target)
 	}
 
 	// Even on the fallback's own digest: what the upgrade changes is adopting
-	// the config, not the image.
-	current := pinnedSandbox(t, st, "", shell.Image, shell.ImageDigest)
+	// the config, not the bundle.
+	current := pinnedSandbox(t, st, "", shell.Bundle, shell.BundleDigest)
 	if target, err := svc.currentRepin(ctx, current); err != nil || !target.Available {
 		t.Fatalf("target = %+v, %v; want available while still unconverged", target, err)
 	}
@@ -181,8 +209,8 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 func TestUpgradeSandboxAdoptsTheFallbackConfig(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
-	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
+	shell := shellConfig(t, st, shellBundle, shellBundleV2)
+	harnessless := pinnedSandbox(t, st, "", shellBundle, shellBundleV1)
 
 	upgraded, err := svc.UpgradeSandbox(ctx, "project-1", harnessless.ID, services.UpgradeSandboxBody{})
 	if err != nil {
@@ -191,8 +219,8 @@ func TestUpgradeSandboxAdoptsTheFallbackConfig(t *testing.T) {
 	if upgraded.HarnessConfigID == nil || *upgraded.HarnessConfigID != shell.ID {
 		t.Fatalf("harness config = %v, want the adopted shell config %s", upgraded.HarnessConfigID, shell.ID)
 	}
-	if upgraded.Image != shell.Image || upgraded.ImageDigest != shell.ImageDigest {
-		t.Fatalf("image = %s@%s, want the shell config's", upgraded.Image, upgraded.ImageDigest)
+	if upgraded.Bundle != shell.Bundle || upgraded.BundleDigest != shell.BundleDigest {
+		t.Fatalf("bundle = %s@%s, want the shell config's", upgraded.Bundle, upgraded.BundleDigest)
 	}
 	// Converged: nothing further to do.
 	if target, err := svc.currentRepin(ctx, upgraded); err != nil || target.Available {
@@ -206,34 +234,34 @@ func TestUpgradeTargetWithoutASeededFallback(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 
-	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:local", "sha256:old")
+	harnessless := pinnedSandbox(t, st, "", shellBundle, shellBundleV1)
 	if target, err := svc.currentRepin(ctx, harnessless); err != nil || target.Available {
 		t.Fatalf("target = %+v, %v; want unavailable with no fallback seeded", target, err)
 	}
 }
 
-// pinCapturingProvider records the image a create was actually asked to build
-// from, which is the only place the effective pin is observable.
+// pinCapturingProvider records the bundles a create was actually asked to
+// build with, which is the only place the effective pin is observable.
 type pinCapturingProvider struct {
 	recordingProvider
-	created []ImageRef
+	created [][]BundlePin
 }
 
 func (p *pinCapturingProvider) Create(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
-	p.created = append(p.created, opts.Image)
+	p.created = append(p.created, opts.Bundles)
 	return &sandbox.Sandbox{ID: "runtime-1"}, state, nil
 }
 
-// A sandbox runs the image it is pinned to until somebody upgrades it. No
+// A sandbox applies the bundle it is pinned to until somebody upgrades it. No
 // reconcile advances the pin, whatever state the sandbox is in — including the
 // non-live states that used to re-pin themselves on the way up (ADR 0021 §2).
-func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
+func TestReconcileNeverRepinsToTheConfigBundle(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
 
 	for _, state := range []string{model.SandboxStateReady, model.SandboxStateFailed, model.SandboxStatePending} {
-		sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:gone", "sha256:old")
+		sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 		sb.State = state
 		sb.DesiredState = model.DesiredStatePresent
 		sb.IncrementGeneration()
@@ -249,38 +277,39 @@ func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
 		if len(provider.created) != 1 {
 			t.Fatalf("state %q: creates = %d, want 1", state, len(provider.created))
 		}
-		if got := provider.created[0]; got.Digest != "sha256:old" || got.Name != "discobox-harness-codex:gone" {
-			t.Fatalf("state %q: created from %+v, want the sandbox's own pin", state, got)
+		want := []BundlePin{{Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
+		if got := provider.created[0]; !slices.Equal(got, want) {
+			t.Fatalf("state %q: created with %+v, want the sandbox's own pin %+v", state, got, want)
 		}
 		stored, err := st.GetSandbox(ctx, sb.ProjectID, sb.ID)
 		if err != nil {
 			t.Fatalf("state %q: get sandbox: %v", state, err)
 		}
-		if stored.ImageDigest != "sha256:old" || stored.Image != "discobox-harness-codex:gone" {
-			t.Fatalf("state %q: pin moved to %q/%q without an upgrade", state, stored.Image, stored.ImageDigest)
+		if stored.BundleDigest != codexBundleV1 || stored.Bundle != codexBundle {
+			t.Fatalf("state %q: pin moved to %q/%q without an upgrade", state, stored.Bundle, stored.BundleDigest)
 		}
 		// The upgrade is still offered — it is reported, not applied.
 		target, err := svc.currentRepin(ctx, stored)
 		if err != nil {
-			t.Fatalf("state %q: currentImageRepin: %v", state, err)
+			t.Fatalf("state %q: currentRepin: %v", state, err)
 		}
-		if !target.Available || target.Digest != "sha256:new" {
-			t.Fatalf("state %q: target = %+v, want the config's image still on offer", state, target)
+		if !target.Available || target.Harness.Bundle.Digest != codexBundleV2 {
+			t.Fatalf("state %q: target = %+v, want the config's bundle still on offer", state, target)
 		}
 	}
 }
 
 // Upgrading recreates the container, which costs anything written to the
-// container filesystem. Doing that for no image change is pure loss, so it is
+// container filesystem. Doing that for no bundle change is pure loss, so it is
 // refused rather than performed.
 func TestUpgradeSandboxRefusedWhenAlreadyCurrent(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:same")
-	sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:same")
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
+	sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
-	if _, err := svc.UpgradeSandbox(ctx, "project-1", sb.ID, services.UpgradeSandboxBody{}); err == nil {
-		t.Fatal("upgrade succeeded; want refusal when the sandbox is already current")
+	if _, err := svc.UpgradeSandbox(ctx, "project-1", sb.ID, services.UpgradeSandboxBody{}); err == nil || !strings.Contains(err.Error(), "already running its current bundles") {
+		t.Fatalf("upgrade = %v; want refusal when the sandbox is already current", err)
 	}
 }
 

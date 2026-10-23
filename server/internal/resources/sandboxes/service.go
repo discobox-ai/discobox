@@ -33,13 +33,11 @@ import (
 // Service owns sandbox API behavior, orchestration, provider catalog state, and
 // sandbox auth dependencies.
 type Service struct {
-	store              *store.Store
-	engine             *reconcile.Engine
-	sandboxProviders   *sandbox.ProviderManager
-	sandboxAuth        *sandboxauth.Manager
-	defaultUserID      string
-	defaultImage       string
-	defaultImageDigest string
+	store            *store.Store
+	engine           *reconcile.Engine
+	sandboxProviders *sandbox.ProviderManager
+	sandboxAuth      *sandboxauth.Manager
+	defaultUserID    string
 	// archiveRetention is the server-wide default retention for archived
 	// sandboxes; zero leaves DefaultArchiveRetention in force.
 	archiveRetention time.Duration
@@ -72,7 +70,6 @@ func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUse
 		engine:           engine,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
-		defaultImage:     sandbox.DefaultSandboxImageName,
 	}
 	return svc
 }
@@ -98,17 +95,6 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.sandboxAuth = manager
-}
-
-// SetDefaultSandboxImage records the image a sandbox with no harness config
-// runs, and the digest identifying which build that tag currently is. They are
-// set together because they are one identity: the tag says what to run, and
-// only the digest says whether a sandbox already runs it.
-func (s *Service) SetDefaultSandboxImage(image, digest string) {
-	if image = strings.TrimSpace(image); image != "" {
-		s.defaultImage = image
-	}
-	s.defaultImageDigest = strings.TrimSpace(digest)
 }
 
 // SetArchiveRetention records the server-wide default retention for archived
@@ -276,15 +262,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if mode, ok := config.HarnessMode.Get(); ok {
 		harnessMode = string(mode)
 	}
-	image := strings.TrimSpace(config.Image.Or(""))
-	imageDigest := ""
-	var bundle services.BundlePin
 	harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	// The sandbox runs on its pool's platform, which its harness's image must
-	// be published for, in config mode as much as in run mode (ADR 0145 §1).
+	// The sandbox runs on its pool's platform, which a manifest file's
+	// template must run on, in config mode as much as in run mode (ADR 0145
+	// §1).
 	sandboxPlatform, err := platformOnPool(harnessConfig, pool)
 	if err != nil {
 		return nil, err
@@ -292,7 +276,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err := validateSourceWorkingDirectory(source, sandboxPlatform); err != nil {
 		return nil, err
 	}
-	// And the pool must run the kind of image its harness's image is
+	// And the pool must run the kind of box its harness runs on
 	// (ADR 26-10-09-106 §4).
 	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
 		return nil, err
@@ -303,35 +287,24 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
 	}
-	// A run takes its harness config's image. Config mode takes the request's,
-	// which the configure flow sets to the harness config's own; running that
-	// image, it is pinned as a run is, since the configure command it runs
-	// is delivered in the harness bundle — a box pinned to the platform alone
-	// has no harness to configure.
-	if harnessImage := strings.TrimSpace(harnessConfig.Image); harnessImage != "" &&
-		(harnessMode != sandboxconfig.HarnessModeConfig || image == harnessImage) {
-		image = harnessImage
-		// Pin the identity, not just the reference. The tag is rebuilt in
-		// place by dev workflows, so it alone does not say which image this
-		// sandbox runs; the digest does, and the pool host enforces it
-		// (ADR 0016 §1).
-		imageDigest = strings.TrimSpace(harnessConfig.ImageDigest)
-		// The bundle is pinned with the image it twins (ADR 26-10-16-423 §7).
-		bundle = services.BundlePin{Reference: strings.TrimSpace(harnessConfig.Bundle), Digest: strings.TrimSpace(harnessConfig.BundleDigest)}
+	// A run and the configure flow alike are pinned to the harness config's
+	// bundle, by digest: the tag is rebuilt in place by dev workflows, so it
+	// alone does not say which bundle this sandbox applies (ADR 0016 §1), and
+	// the configure command a configure flow runs is delivered in it.
+	harnessPins, err := createHarnessPins(harnessConfig)
+	if err != nil {
+		return nil, err
 	}
 	// Every box applies the platform, whatever its harness: it is pinned
 	// here and moved only by a re-pin (ADR 26-10-16-423 §7). A platform the
 	// server names and cannot resolve fails the create rather than leave a
-	// box pinned to none.
+	// box pinned to none, and a box on a bundle needs one.
 	platformBundle, err := s.currentPlatform(ctx)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
 	}
-	if image == "" {
-		// Only reachable when the harness config declares no image, or when a
-		// config-mode request names none. Everything else took its image from
-		// the request or a harness config.
-		image, imageDigest = s.defaultImage, s.defaultImageDigest
+	if harnessPins.Bundle.Reference != "" && platformBundle.Digest == "" {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server names no platform bundle, which every discobox on a harness bundle applies")
 	}
 	sandbox := &model.Sandbox{
 		ID:                 sandboxID,
@@ -343,32 +316,33 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Name:               config.Name,
 		Description:        services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID:      &harnessConfigID,
-			HarnessMode:          harnessMode,
-			Model:                services.OptStringPtr(config.Model),
-			ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
-			ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
-			Prompt:               config.Prompt,
-			Image:                image,
-			ImageDigest:          imageDigest,
-			Bundle:               bundle.Reference,
-			BundleDigest:         bundle.Digest,
-			PlatformBundle:       platformBundle.Reference,
-			PlatformBundleDigest: platformBundle.Digest,
-			Env:                  map[string]string(config.Env.Or(nil)),
-			Source:               source,
-			SourceCodeReferences: sourceCodeReferences,
-			UserName:             user.Name,
-			UserUID:              user.UID,
-			UserGID:              user.GID,
-			UserGroupName:        user.GroupName,
-			UserAdditionalGroups: user.AdditionalGroups,
-			HomeDirectory:        user.HomeDirectory,
-			GitUserName:          git.UserName,
-			GitUserEmail:         git.UserEmail,
-			Skills:               skills,
-			SkillsSources:        skillsSources,
-			Features:             features,
+			HarnessConfigID:       &harnessConfigID,
+			HarnessMode:           harnessMode,
+			Model:                 services.OptStringPtr(config.Model),
+			ModelServiceTier:      services.OptStringPtr(config.ModelServiceTier),
+			ModelReasoningLevel:   services.OptStringPtr(config.ModelReasoningLevel),
+			Prompt:                config.Prompt,
+			Image:                 harnessPins.Image,
+			ImageDigest:           harnessPins.ImageDigest,
+			Bundle:                harnessPins.Bundle.Reference,
+			BundleDigest:          harnessPins.Bundle.Digest,
+			HarnessManifestDigest: harnessPins.ManifestDigest,
+			PlatformBundle:        platformBundle.Reference,
+			PlatformBundleDigest:  platformBundle.Digest,
+			Env:                   map[string]string(config.Env.Or(nil)),
+			Source:                source,
+			SourceCodeReferences:  sourceCodeReferences,
+			UserName:              user.Name,
+			UserUID:               user.UID,
+			UserGID:               user.GID,
+			UserGroupName:         user.GroupName,
+			UserAdditionalGroups:  user.AdditionalGroups,
+			HomeDirectory:         user.HomeDirectory,
+			GitUserName:           git.UserName,
+			GitUserEmail:          git.UserEmail,
+			Skills:                skills,
+			SkillsSources:         skillsSources,
+			Features:              features,
 		},
 		SourceRoot: sourceRoot,
 		Origin:     origin,
@@ -434,6 +408,24 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 	}
 	return s.createSandboxIntent(ctx, sandbox, append(assignments, grants.Bindings...), grants)
+}
+
+// createHarnessPins is what a sandbox created on config is pinned to: its
+// bundle, or its manifest file (services.HarnessConfigPins). A config with
+// neither was registered before bundles, and one whose bundle has no digest
+// is a development bundle no pool has built yet: no box can apply either.
+func createHarnessPins(config *model.HarnessConfig) (services.HarnessPins, error) {
+	pins, ok := services.HarnessConfigPins(config)
+	switch {
+	case ok:
+		return pins, nil
+	case pins.Bundle.Reference != "":
+		return services.HarnessPins{}, apperrors.NewStatusError(http.StatusServiceUnavailable,
+			fmt.Sprintf("harness %q's bundle %s has not been built yet: a pool's daemon builds a development bundle once the pool is ready, and the harness follows it then", config.Slug, pins.Bundle.Reference))
+	default:
+		return services.HarnessPins{}, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q was registered before bundles, and no harness runs as an image any more: register its bundle with `discobox admin harness update %s --bundle <reference>`", config.Slug, config.Slug))
+	}
 }
 
 // platformOnPool is the platform a sandbox on harness runs on when placed on
@@ -1037,19 +1029,19 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	}
 	if !repin.Available {
 		// Distinguish "nothing newer" from "nothing to move to". A config-mode
-		// sandbox, one whose harness config was deleted or declares no image,
-		// and one whose target image has no known digest all have nothing to
-		// move to, and telling their owner they are running "the current image"
-		// asserts something that is not true of them.
-		if strings.TrimSpace(repin.Digest) == "" {
+		// sandbox, one whose harness config was deleted or has no bundle, and
+		// one whose bundle has no digest yet all have nothing to move to, and
+		// telling their owner they are running "the current bundle" asserts
+		// something that is not true of them.
+		if repin.Empty() {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
-				"sandbox has no image to upgrade to")
+				"sandbox has no bundle to upgrade to")
 		}
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			"sandbox is already running its current image")
+			"sandbox is already running its current bundles")
 	}
-	// The re-pin is the whole instruction: a changed image digest changes the
-	// spec fingerprint, and the pool host rebuilds any container that does not
+	// The re-pin is the whole instruction: a changed pin changes the spec
+	// fingerprint, and the pool host rebuilds any container that does not
 	// match it (ADR 0017 §5). There is no restart counter to bump.
 	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, repin.apply)
 	if err != nil {
@@ -1111,57 +1103,102 @@ func (s *Service) UpgradePlatformSandboxes(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// PinStoppedSandboxBundles pins each stopped sandbox created before bundles
-// to its harness config's bundle, when the sandbox runs the image that config
-// pins (ADR 26-10-16-423 §7): the image the bundle twins, so the pin is no
-// upgrade, only what the sandbox already runs, named. It runs on every start.
+// undeliveredPinInterval is how often a sandbox from before bundles that has
+// stopped since the last pass is looked for (StartPinningUndelivered).
+const undeliveredPinInterval = 10 * time.Minute
+
+// StartPinningUndelivered runs PinUndeliveredSandboxes now and then every
+// undeliveredPinInterval until ctx ends: a sandbox from before bundles that was
+// running at the server's start is pinned once it stops, rather than at the
+// next start, so its next container and an export of it have bundles to be
+// built from. Once every such sandbox is pinned, each pass is one query that
+// finds none.
+func (s *Service) StartPinningUndelivered(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(undeliveredPinInterval)
+		defer ticker.Stop()
+		for {
+			if err := s.PinUndeliveredSandboxes(ctx); err != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "pin sandboxes from before bundles", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+// PinUndeliveredSandboxes moves every sandbox from before bundles onto its
+// harness config's bundle and the platform its server's release names (ADR
+// 26-10-16-423 §§7, 10): it was pinned to a runnable harness image, which no
+// release builds any more, so its pool has nothing to build its next
+// container from until it is pinned to the bundles a box applies. It runs on
+// every start, each time the platform moves, and every undeliveredPinInterval
+// (StartPinningUndelivered), and takes every such sandbox it finds settled
+// with no container running (store.ListUndeliveredSandboxes).
 //
-// It is recorded intent, as a re-pin is, so the sandbox is reconciled and its
-// pool sent the create that rebuilds its container and records the pin. Only
-// a stopped sandbox, so the rebuild is one nobody is using; a running one is
-// pinned at a start that finds it stopped, or by an upgrade or repair, and
-// reports its available upgrade until then. Unlike an upgrade it is not the
-// project's policy to refuse: nothing it runs changes. The platform is not
-// pinned here; UpgradePlatformSandboxes moves stopped sandboxes onto it.
-func (s *Service) PinStoppedSandboxBundles(ctx context.Context) error {
-	projects, err := s.store.ListProjects(ctx)
-	if err != nil {
+// Unlike an upgrade it is not the project's policy to refuse: the image the
+// sandbox ran is gone either way. A stopped or failed one is recorded intent,
+// as a re-pin is, so it is reconciled and its pool rebuilds its container
+// onto the sandbox base image; an archived one is pinned in place, for the
+// unarchive that builds one. A running one keeps the container it has until
+// it stops, or an upgrade or a repair re-pins it, and reports its available
+// upgrade until then. One whose config has no bundle with a digest to pin, or whose
+// platform cannot be resolved now, is left for a later pass.
+func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
+	candidates, err := s.store.ListUndeliveredSandboxes(ctx)
+	if err != nil || len(candidates) == 0 {
 		return err
 	}
-	for _, project := range projects {
-		candidates, err := s.store.ListStoppedSandboxes(ctx, project.ID, "")
+	// Asked once for the pass rather than of each sandbox: with no platform
+	// to pin there is nothing to do, which the next pass, or the platform's
+	// move, comes back to.
+	if platform, err := s.currentPlatform(ctx); err != nil || platform.Digest == "" {
+		slog.InfoContext(ctx, "sandboxes from before bundles wait for the platform to resolve", "count", len(candidates), "error", err)
+		return nil
+	}
+	for i := range candidates {
+		sb := &candidates[i]
+		if sb.HarnessMode == sandboxconfig.HarnessModeConfig || awaitingSourcePush(sb) {
+			continue
+		}
+		repin, err := s.currentRepin(ctx, sb)
 		if err != nil {
-			return err
+			slog.WarnContext(ctx, "skip pinning a sandbox from before bundles; cannot resolve its bundles",
+				"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
+			continue
 		}
-		for i := range candidates {
-			sb := &candidates[i]
-			if sb.BundleDigest != "" || sb.HarnessConfigID == nil || awaitingSourcePush(sb) {
-				continue
-			}
-			config, err := s.store.GetHarnessConfig(ctx, project.ID, *sb.HarnessConfigID)
-			if err != nil {
-				if errors.Is(err, store.ErrNotFound) {
-					continue
-				}
-				return err
-			}
-			bundle, digest := strings.TrimSpace(config.Bundle), strings.TrimSpace(config.BundleDigest)
-			if bundle == "" || digest == "" || strings.TrimSpace(config.ImageDigest) == "" || config.ImageDigest != sb.ImageDigest {
-				continue
-			}
-			if _, err := s.recordSandboxIntent(ctx, project.ID, sb.ID, model.DesiredStatePresent, func(sb *model.Sandbox) {
-				// Read again under the intent: a sandbox pinned since is left.
-				if sb.BundleDigest == "" && sb.ImageDigest == config.ImageDigest {
-					sb.Bundle, sb.BundleDigest = bundle, digest
-				}
-			}); err != nil {
-				slog.WarnContext(ctx, "skip pinning a stopped sandbox's bundle; cannot record intent",
-					"projectId", project.ID, "sandboxId", sb.ID, "error", err)
-				continue
-			}
-			slog.InfoContext(ctx, "pinned stopped sandbox to its harness bundle",
-				"projectId", project.ID, "sandboxId", sb.ID, "bundle", bundle, "bundleDigest", digest)
+		if repin.Harness == (services.HarnessPins{}) || repin.Platform.Digest == "" {
+			// Its harness has no bundle — registered before bundles, until
+			// one is registered for it — which every pass finds again, so it
+			// is no warning: create and repair say why to whoever asks.
+			slog.DebugContext(ctx, "a sandbox from before bundles waits for its harness to have a bundle",
+				"projectId", sb.ProjectID, "sandboxId", sb.ID)
+			continue
 		}
+		pin := func(sb *model.Sandbox) {
+			// Read again under the write: a sandbox pinned since is left.
+			if sb.PlatformBundleDigest == "" {
+				repin.Available = true
+				repin.apply(sb)
+			}
+		}
+		if sb.DesiredState == model.DesiredStateArchived {
+			_, err = s.updateSandboxMetadata(ctx, sb.ProjectID, sb.ID, pin)
+		} else {
+			_, err = s.recordSandboxIntent(ctx, sb.ProjectID, sb.ID, model.DesiredStatePresent, pin)
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "skip pinning a sandbox from before bundles; cannot record it",
+				"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
+			continue
+		}
+		slog.InfoContext(ctx, "pinned a sandbox from before bundles to its bundles",
+			"projectId", sb.ProjectID, "sandboxId", sb.ID, "previousImage", sb.Image,
+			"bundle", repin.Harness.Bundle.Reference, "bundleDigest", repin.Harness.Bundle.Digest,
+			"platformBundleDigest", repin.Platform.Digest)
 	}
 	return nil
 }
@@ -1215,8 +1252,8 @@ func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnes
 		}
 		slog.InfoContext(ctx, "upgraded stopped sandbox to its current pins",
 			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", configID,
-			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Digest,
-			"previousBundleDigest", sb.BundleDigest, "bundleDigest", repin.Bundle.Digest,
+			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Harness.ImageDigest,
+			"previousBundleDigest", sb.BundleDigest, "bundleDigest", repin.Harness.Bundle.Digest,
 			"previousPlatformBundleDigest", sb.PlatformBundleDigest, "platformBundleDigest", repin.Platform.Digest,
 			"retryingFailure", sb.ErrorMessage != nil || sb.State == model.SandboxStateFailed)
 	}
@@ -1244,8 +1281,8 @@ type sandboxRepin struct {
 	HarnessConfigID string
 
 	// Available is whether the target differs from what the sandbox runs now.
-	// When it does not, Image and Digest report the current pin, so a caller
-	// can tell "already applied" from "nothing to move to".
+	// When it does not, an empty target is "nothing to move to", and any
+	// other "already applied".
 	Available bool
 }
 
@@ -1297,15 +1334,15 @@ func (s *Service) currentRepin(ctx context.Context, sb *model.Sandbox) (sandboxR
 	}
 	target, available := services.SandboxUpgradeTarget(sb, config, platform)
 	if target.Empty() {
-		// Nothing to move to: report what it runs now, so callers can tell that
-		// apart from a re-pin that is merely already applied.
-		return sandboxRepin{SandboxPinTarget: services.SandboxPinTarget{Image: sb.Image, Digest: sb.ImageDigest}}, nil
+		// Nothing to move to, which an empty target tells callers apart from
+		// a re-pin that is merely already applied.
+		return sandboxRepin{}, nil
 	}
 	repin := sandboxRepin{SandboxPinTarget: target, Available: available}
-	// A config is adopted only with its image: a re-pin that moves the
-	// platform alone keeps the image the sandbox runs, and that image beside
-	// another config's command is a harness that does not start.
-	if available && target.Digest != "" {
+	// A config is adopted only with its bundle: a re-pin that moves the
+	// platform alone keeps the harness the sandbox applies, and that harness
+	// beside another config's command is one that does not start.
+	if available && target.Harness != (services.HarnessPins{}) {
 		repin.HarnessConfigID = adopt
 	}
 	return repin, nil

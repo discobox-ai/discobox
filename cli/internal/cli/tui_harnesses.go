@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -64,13 +65,14 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, placements poolP
 		Default: cfg.ID == defaultID,
 		BuiltIn: cfg.BuiltIn,
 		Shell:   strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
-		// What the server decides both enable and disable on: an image that
+		// What the server decides both enable and disable on: a harness that
 		// declares no configure command has neither to offer.
 		Configurable:   len(cfg.ConfigCommand.Or(nil)) > 0,
 		ConfigReminder: strings.TrimSpace(cfg.ConfigReminder.Or("")),
 		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
-		Image:          cfg.Image.Or(""),
-		Digest:         cfg.ImageDigest.Or(""),
+		Bundle:         cfg.Bundle.Or(""),
+		ManifestFile:   cfg.Image.Or(""),
+		Digest:         cmp.Or(cfg.BundleDigest.Or(""), cfg.ImageDigest.Or("")),
 		Platforms:      strings.Join(cfg.Platforms, ", "),
 		Unhosted:       !placements.run(cfg),
 		Run:            cfg.RunCommand,

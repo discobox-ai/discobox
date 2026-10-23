@@ -945,7 +945,7 @@ declares for the variable the sentinel is bound to (`reportScope`,
 `SandboxSecretResolution.ReportScope`), and the pool's proxy reports nothing
 about a request outside it. It is read from the config on every resolve, never
 kept on the assignment or the secret, so a stored login gains a scope when its
-harness image does. Nothing here filters a report: one that arrives is judged
+harness bundle does. Nothing here filters a report: one that arrives is judged
 as above.
 
 ## Sentinel shape

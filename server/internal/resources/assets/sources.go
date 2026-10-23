@@ -12,6 +12,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 )
 
@@ -28,31 +29,24 @@ type source interface {
 	resolve(ctx context.Context, ref string, release bool, blobs *imagecache.Layout) (string, error)
 }
 
-// layoutSource reads the bundles the image watcher exported as OCI image
-// layouts (devimage.Bundle), for the release's references alone: on a
-// development server, the platform bundle and the built-in harnesses' bundles
-// it is configured with. A reference a project supplied is never looked up
-// here, even one naming a development bundle.
+// layoutSource reads the development bundles' OCI image layouts
+// (devbundles): the ones the image watcher exported, and in build-mode the
+// ones a pool's daemon built and the server saved, for the release's
+// references alone: on a development server, the platform bundle and the
+// built-in harnesses' bundles it is configured with. A reference a project
+// supplied is never looked up here, even one naming a development bundle.
 //
 // A pin's content is the whole of its layout, which goes into the store at
 // once and only while the layout's index still lists the pin's digest
 // (devimage.Bundle.Check). Nothing is remembered between reads, so a blob that
 // has left the store since, pruned or found damaged, is put back from the
-// layout as long as the watcher keeps it.
+// layout as long as it is kept.
 type layoutSource struct {
-	bundles map[string]devimage.Bundle
-}
-
-func newLayoutSource(bundles []devimage.Bundle) layoutSource {
-	byRef := make(map[string]devimage.Bundle, len(bundles))
-	for _, bundle := range bundles {
-		byRef[bundle.Reference] = bundle
-	}
-	return layoutSource{bundles: byRef}
+	bundles *devbundles.Set
 }
 
 func (l layoutSource) fetch(_ context.Context, p pin, digest string, _ bool, blobs *imagecache.Layout) error {
-	bundle, ok := l.bundles[p.ref]
+	bundle, ok := l.bundles.Layout(p.ref)
 	if !p.release || !ok || bundle.Digest != p.digest {
 		return errNotHere
 	}
@@ -65,9 +59,18 @@ func (l layoutSource) fetch(_ context.Context, p pin, digest string, _ bool, blo
 	return nil
 }
 
+// resolve answers a development bundle's digest from its layout. One no pool
+// has built yet resolves to nothing, saying so rather than leaving the
+// registry to say it has never heard of it.
 func (l layoutSource) resolve(_ context.Context, ref string, release bool, blobs *imagecache.Layout) (string, error) {
-	bundle, ok := l.bundles[ref]
-	if !release || !ok {
+	if !release {
+		return "", errNotHere
+	}
+	if _, unbuilt := l.bundles.Unbuilt(ref); unbuilt {
+		return "", fmt.Errorf("development bundle %s has not been built yet: a pool's daemon builds it once the pool is ready", ref)
+	}
+	bundle, ok := l.bundles.Layout(ref)
+	if !ok {
 		return "", errNotHere
 	}
 	if err := importLayout(bundle, blobs); err != nil {

@@ -49,8 +49,6 @@ runs, unless it has no features to provision.
 | The agent, every boot | `Boot(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
 | `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
 | `discobox-sandbox-agent snapshot` | `Snapshot` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
-| `discobox-image-provision TREE...` | `Trees` → `Runner.Provision`, no options | Every step blocking, nothing off: the platform image's build, one feature per layer |
-| `discobox-sandbox-agent provision TREE...` | `Trees` → `Runner.Provision`, no options | The same: a harness image's build, its tree onto the platform's |
 
 At boot the trees are `/opt/discobox/bundles/platform` and
 `/opt/discobox/bundles/harness`, each when present (`BootPlan`); the harness
@@ -59,17 +57,14 @@ links into the content store (`bundlestore`), pointed at its pins' trees
 before the run starts, so the paths a step or a link names stay the same
 across upgrades and follow the trees. A step that lays a binary the build
 made links it from the tree rather than copying it, so a new agent is a new
-file and no step applied again. The runnable images build their trees in
-place instead, as a snapshot would; a pool runs them only for a sandbox
-delivered no platform. A box with neither tree has no features:
+file and no step applied again. A box with neither tree has no features:
 `provision.json` lists none, and its tools are its image's. Opt-outs are the
 bootstrap's `features` (`sandbox.json`), which the client read from the
 repository's `.discobox/settings.json`.
 
 Core's steps never lay the agent's own units: they boot a box before any
 feature is provisioned, so they are root `agentlayer`'s, placed by the pool
-with the agent, and laid by `discobox-sandbox-agent install` in the runnable
-image's build.
+with the agent.
 
 ## A run
 
@@ -111,7 +106,7 @@ flowchart TD
   so features merging into one file in parallel keep each other's keys.
 
 Npm install scripts use a private temporary cache and remove only that cache.
-They run during image builds and after boot, when the user's npm cache can be
+They run while a box provisions, at its boot or as a snapshot is taken, when the user's npm cache can be
 a mounted, pool-shared volume; provisioning must not clear or remove it.
 
 ## Snapshots

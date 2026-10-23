@@ -284,25 +284,6 @@ func TestApplyFetchesAgainALayerWhosePlacementWasCutShort(t *testing.T) {
 	}
 }
 
-func TestApplyReplacesTheTreeARunnableImageBuiltInPlace(t *testing.T) {
-	a := newAssets()
-	pinned, _ := a.bundle(t, "discobox-platform", false, layer(t, agentLayer))
-	s := newStore(t, a)
-	baked := s.path(provision.PlatformTree + "/features/core")
-	if err := os.MkdirAll(baked, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(baked, "discobox-sandbox-agent"), []byte("baked"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: pinned}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
-		t.Fatalf("agent = %q", got)
-	}
-}
-
 func TestApplyRemovesTheHarnessTreeWhenNoHarnessIsPinned(t *testing.T) {
 	a := newAssets()
 	platform, _ := a.bundle(t, "discobox-platform", false, layer(t, agentLayer))

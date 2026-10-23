@@ -19,8 +19,9 @@ Everything is ordered off that:
 2. The VM boots and its Docker daemon comes up.
 3. The pool-agent image reaches that daemon. A release pulls its pinned image
    from the registry; in development, build-mode (`DevelopmentImageSync`)
-   builds the base, pool-agent, sandbox-agent, and harness images on the
-   daemon's own BuildKit, from the local checkout.
+   builds the sandbox base and pool-agent images, and the platform and
+   harness bundles, on the daemon's own BuildKit, from the local checkout;
+   the server saves each bundle and serves it to pools (ADR 26-10-16-423 §13).
 4. The engine starts the pool-agent container.
 
 For the guest, the registry is load-bearing only for a machine's first fetch of

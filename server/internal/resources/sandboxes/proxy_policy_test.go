@@ -48,7 +48,7 @@ func egressFixture(t *testing.T, st *store.Store, project, pool, harnessLevel, o
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatal(err)
 	}
-	return eligibleSandbox(t, st, config.ID, "image", "sha256:x", func(sb *model.Sandbox) { sb.Egress = own })
+	return eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) { sb.Egress = own })
 }
 
 func TestEffectiveEgressMergesEveryLevel(t *testing.T) {
@@ -190,9 +190,9 @@ func TestMarkEgressChangedMarksOnlyPresentSandboxesInScope(t *testing.T) {
 	if err := st.CreatePool(ctx, &model.Pool{ID: "pool-2", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-2", ProviderInstanceID: "provider-1"}}); err != nil {
 		t.Fatal(err)
 	}
-	inPool := eligibleSandbox(t, st, "", "image", "sha256:x")
-	otherPool := eligibleSandbox(t, st, "", "image", "sha256:x", func(sb *model.Sandbox) { sb.PoolID = "pool-2" })
-	archived := eligibleSandbox(t, st, "", "image", "sha256:x", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived })
+	inPool := eligibleSandbox(t, st, "", codexBundle, codexBundleV1)
+	otherPool := eligibleSandbox(t, st, "", codexBundle, codexBundleV1, func(sb *model.Sandbox) { sb.PoolID = "pool-2" })
+	archived := eligibleSandbox(t, st, "", codexBundle, codexBundleV1, func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived })
 
 	if err := st.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		return svc.MarkProxyPolicyChangedTx(ctx, txStore, txDB, "project-1", "pool-1", "")
@@ -213,7 +213,7 @@ func TestMarkEgressChangedMarksOnlyPresentSandboxesInScope(t *testing.T) {
 func TestUpdateSandboxEgressMarksIt(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	sb := eligibleSandbox(t, st, "", "image", "sha256:x")
+	sb := eligibleSandbox(t, st, "", codexBundle, codexBundleV1)
 
 	update := func(allow ...string) services.UpdateSandboxBody {
 		return services.UpdateSandboxBody{Config: serverapi.NewOptSandboxUpdateConfig(serverapi.SandboxUpdateConfig{
@@ -261,7 +261,7 @@ func dirtySandboxIDs(t *testing.T, svc *Service) []string {
 func TestAStaleRowWriteDoesNotRevertTheEgressLevel(t *testing.T) {
 	ctx := context.Background()
 	_, st := newUpgradeEngineFixture(t)
-	sb := eligibleSandbox(t, st, "", "image", "sha256:x")
+	sb := eligibleSandbox(t, st, "", codexBundle, codexBundleV1)
 	stale, err := st.GetSandbox(ctx, "project-1", sb.ID)
 	if err != nil {
 		t.Fatal(err)

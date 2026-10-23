@@ -341,17 +341,12 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 }
 
 // point makes the tree path at, provision.PlatformTree or HarnessTree, a
-// link to the tree of digest, replaced whole. A directory there is a
-// runnable image's own tree, from before trees came from the store, and it
-// is removed for the link.
+// link to the tree of digest, replaced whole.
 func (s *Store) point(at, digest string) error {
 	link := s.path(at)
 	target := "trees/" + agentlayer.Hex(digest)
 	if current, err := os.Readlink(link); err == nil && current == target {
 		return nil
-	}
-	if err := s.removeTreeDir(at); err != nil {
-		return err
 	}
 	tmp := link + ".tmp"
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -361,18 +356,6 @@ func (s *Store) point(at, digest string) error {
 		return err
 	}
 	return os.Rename(tmp, link)
-}
-
-// removeTreeDir removes a directory at the tree path at, leaving a link.
-func (s *Store) removeTreeDir(at string) error {
-	info, err := os.Lstat(s.path(at))
-	if errors.Is(err, fs.ErrNotExist) || (err == nil && info.Mode()&fs.ModeSymlink != 0) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return os.RemoveAll(s.path(at))
 }
 
 // removeTreeLink removes whatever is at the tree path at: a box whose pins

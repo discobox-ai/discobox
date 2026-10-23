@@ -131,7 +131,7 @@ func (s *Service) Reconcile(ctx context.Context, projectID string) (reconcile.Re
 		// harness it runs, which is its image, its settings and the credential
 		// it answers with. It holds no work, so there is nothing to carry over.
 		s.logger.InfoContext(ctx, "replacing the project's judge", "projectId", projectID, "sandboxId", existing.ID,
-			"harnessConfigId", wanted.harnessConfigID, "image", wanted.imageDigest)
+			"harnessConfigId", wanted.harnessConfigID, "bundleDigest", wanted.bundleDigest, "manifestDigest", wanted.manifestDigest)
 		if err := s.sandboxes.PurgeSandbox(ctx, projectID, existing.ID); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -212,7 +212,8 @@ func (s *Service) remember(ctx context.Context, projectID, sandboxID string) err
 type judgeSpec struct {
 	poolID          string
 	harnessConfigID string
-	imageDigest     string
+	bundleDigest    string
+	manifestDigest  string
 }
 
 // wanted is the judge this project should have, or nil and why it has none. An
@@ -271,7 +272,7 @@ func (s *Service) wanted(ctx context.Context, project *model.Project, record boo
 	if config.Slug == shellSlug {
 		return nil, "the project's default harness runs no model", nil
 	}
-	return &judgeSpec{poolID: poolID, harnessConfigID: config.ID, imageDigest: config.ImageDigest}, "", nil
+	return &judgeSpec{poolID: poolID, harnessConfigID: config.ID, bundleDigest: config.BundleDigest, manifestDigest: config.ManifestDigest}, "", nil
 }
 
 // judgePool is where this project's judge runs, choosing one and recording it
@@ -360,10 +361,13 @@ func matches(existing *model.Sandbox, wanted *judgeSpec) bool {
 	if existing.HarnessConfigID == nil || *existing.HarnessConfigID != wanted.harnessConfigID {
 		return false
 	}
-	// The image the harness is pinned to is part of what the judge is: a
-	// re-pinned harness is a different judge, and the ADR says the runtime is
-	// replaced when the configuration behind it changes.
-	return existing.ImageDigest == wanted.imageDigest
+	// The bundle the harness is pinned to, and the manifest composed from it
+	// on the platform's layer, are part of what the judge is: a re-pinned
+	// harness is a different judge, and the ADR says the runtime is replaced
+	// when the configuration behind it changes. A platform-layer edit moves
+	// the manifest and no bundle. A judge from before bundles is pinned to
+	// none, and is replaced by one that is.
+	return existing.BundleDigest == wanted.bundleDigest && existing.HarnessManifestDigest == wanted.manifestDigest
 }
 
 func (s *Service) create(ctx context.Context, projectID string, wanted *judgeSpec) (*model.Sandbox, error) {

@@ -16,7 +16,7 @@ flowchart LR
     reconciler --> providers
     reconciler --> auth[internal/auth/sandbox]
     agent[pool agent] -->|"observed state"| service
-    hc[resources/harnessconfigs] -->|"image digest moved"| service
+    hc[resources/harnessconfigs] -->|"bundle digest moved"| service
 ```
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
@@ -25,18 +25,19 @@ flowchart LR
   `resolveHarnessConfigID` resolves it at create: an explicit
   `harnessConfigId`, or a `--harness` name (slug first, then display name) →
   the project default → 409. A deleted default counts as no default. A
-  sandbox's image is its harness config's pinned `Image`/`ImageDigest`, with
-  the harness `Bundle` it twins — in config mode too, whenever the caller's
-  image is the config's, since the configure command is harness-bundle
-  content. The server default image (`SetDefaultSandboxImage`) applies only
-  when no harness image does, which means config mode without a caller image,
-  or a config that declares none.
+  sandbox is pinned to its harness config's `Bundle`/`BundleDigest`, or a
+  manifest file's template to its `Image`/`ImageDigest`
+  (`createHarnessPins`, `services.HarnessConfigPins`) — in config mode too,
+  since the configure command is harness-bundle content — and to the platform
+  the release names. No harness is an image and there is no default image
+  (ADR 26-10-16-423 §10): a config registered before bundles, which has
+  neither, is refused with 409, and one whose bundle has no content digest — a
+  development bundle no pool has built yet — with 503.
 - A sandbox's platform (`os/arch`, the root `platform` package) is its pool's,
-  which its harness's image must be published for (ADR 0145 §1). A release
-  harness image is published for every architecture a release builds, so a
-  pool of any of them runs it; a development build is one architecture, and a
-  pool of another is refused with a 409 that says what the image is published
-  for (`platformOnPool`). A pool whose agent has not declared a platform yet is
+  which a manifest file's template must run on (ADR 0145 §1); a bundle names
+  none, since its steps select the platform they run on, and rules no pool
+  out. A pool of another platform than a manifest file's is refused with a 409
+  that says which the template runs on (`platformOnPool`). A pool whose agent has not declared a platform yet is
   an ordinary target, and the sandbox is created without one: it takes the
   pool's when the provider places it (`store.SchedulablePoolForSandbox`,
   `CreateOptions.Platform`), which makes the same check and fails the create's
@@ -47,9 +48,9 @@ flowchart LR
   once set. It is a column beside `PoolID`, not a `SandboxManifest` field: it is
   not a spec that can drift, and adding it to the manifest would have moved
   every sandbox's fingerprint. An upgrade never moves a sandbox onto a harness
-  config whose image is not published for its platform (`SandboxUpgradeTarget`).
-- A sandbox's pool must also run the kind of image its harness's image is
-  (`platform.ImageKind`, ADR 26-10-09-106 §4): a disco-vm harness for boxd is
+  config whose template does not run on its platform (`SandboxUpgradeTarget`).
+- A sandbox's pool must also run the kind of box its harness runs on
+  (`platform.ImageKind`, ADR 26-10-09-106 §4; OCI for a bundle): a disco-vm harness for boxd is
   refused on a Docker pool of its own platform and placed on a boxd pool. Create
   and import refuse a pool whose agent has declared another kind with a 409
   naming both (`refuseOtherImageKind`), and placement makes the same check
@@ -60,29 +61,40 @@ flowchart LR
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of
   its digest, because what the upgrade changes for it is adopting the config.
-  Taking the upgrade writes the config as well as re-pinning the image, and
+  Taking the upgrade writes the config as well as re-pinning its bundles, and
   until it does, the sandbox says so in its own listing.
 - The upgrade rule has exactly one implementation,
   `services.SandboxUpgradeTarget`. Two callers use it: the read path that
   reports an available upgrade, and `Service.currentRepin`, which resolves
   the change that `UpgradeSandbox`, `RepairSandbox`,
   `UpgradeHarnessConfigSandboxes` and `UpgradePlatformSandboxes` apply. The
-  change is all of a sandbox's pins: image, harness bundle and platform bundle
-  (ADR 26-10-16-423 §7). The read path is handed the platform last resolved
-  (`UpgradeBasis`) so it never waits on a registry; the re-pin resolves it,
-  at most a minute stale. Sharing it means a sandbox cannot
+  change is all of a sandbox's pins: harness bundle (or manifest file), the
+  harness manifest composed from it (`HarnessManifestDigest`), and platform
+  bundle (ADR 26-10-16-423 §7). The read path is handed the platform last
+  resolved (`UpgradeBasis`) so it never waits on a registry; the re-pin
+  resolves it, at most a minute stale. Sharing it means a sandbox cannot
   accept an upgrade its listing says it does not have.
-- **A delivered sandbox is not rebuilt by its platform.** A sandbox whose
-  every pin is a content digest, a platform among them, is delivered: it runs
-  the provider's sandbox base image, and its pool places the platform's agent
-  and its pins before every start (`pool-agent/DESIGN.md`, ADR 26-10-16-423
-  §7). Its fingerprint is `SandboxManifest.DeliveredFingerprint`, which leaves
-  out the image and platform pins and nothing else, so a server's moved
-  platform restarts a running sandbox into it and leaves its store and its
-  provisioning in place. Its harness bundle pin stays in: the harness's
-  manifest is what its container is built with, so a moved one rebuilds it.
-  A sandbox with a pin that is not a content digest (`sandboxBundlePins`) is
-  sent none and keeps `SandboxManifest.Fingerprint`, running its image.
+- **A sandbox pins the manifest its container is built with.** The harness's
+  env, files and volumes are its config's snapshot of the bundle's labels
+  composed on the platform's layer, and a platform-layer edit moves no bundle
+  digest, so the config's `ManifestDigest` is pinned beside the bundle as
+  `HarnessManifestDigest`. It is in both fingerprints: a moved one rebuilds
+  the container as a moved bundle does, and is an upgrade of its own
+  (`manifestDigestChanged`) when nothing else moved.
+- **A sandbox is not rebuilt by its platform.** A sandbox whose every pin is a
+  content digest, a platform among them, is delivered: it runs the provider's
+  sandbox base image, and its pool places the platform's agent and its pins
+  before every start (`pool-agent/DESIGN.md`, ADR 26-10-16-423 §7). Its
+  fingerprint is `SandboxManifest.DeliveredFingerprint`, which leaves out the
+  image and platform pins and nothing else, so a server's moved platform
+  restarts a running sandbox into it and leaves its store and its provisioning
+  in place. Its harness bundle pin and `HarnessManifestDigest` stay in: the
+  harness's manifest is what its container is built with, so a moved one
+  rebuilds it. A sandbox with a pin
+  that is not a content digest (`sandboxBundlePins`) — one from before
+  bundles, until `PinUndeliveredSandboxes` reaches it — is sent none and keeps
+  `SandboxManifest.Fingerprint`: its pool keeps the container it has while
+  that does not move, and builds it no other.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
@@ -366,7 +378,7 @@ else here, a clean converge is followed by the same start instruction an
 explicit start sends — still an instruction, never stored intent.
 
 That same intent carries the re-pin an upgrade would (ADR 0064): repair always
-rebuilds on the harness config's current image. `currentRepin` is the one
+rebuilds on the harness config's current bundle. `currentRepin` is the one
 resolver both operations write through, so they cannot pin differently, and
 `sandboxRepin.apply` is what each hands `recordSandboxIntent`. The two differ only
 in what an unavailable target means — upgrade 409s, because the re-pin is what
@@ -375,7 +387,7 @@ rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
 (ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
-`ImageDigest` or `BundleDigest` moves, and `UpgradePlatformSandboxes` is the
+`BundleDigest`, its `ManifestDigest` or a manifest file's `ImageDigest` moves, and `UpgradePlatformSandboxes` is the
 same for every project's sandboxes whenever the release's platform reference
 resolves to a new digest (`assets.Service.OnPlatformMoved`, first on every
 start). Each re-pins its present, settled sandboxes — the config's, or for
@@ -384,20 +396,25 @@ never observed at all — the eligibility query is
 `Store.ListStoppedSandboxes`, and whether each is actually
 behind is still `SandboxUpgradeTarget`'s answer, never restated in SQL.
 A failed sandbox is included (ADR 0121): the re-pin is intent, so it clears the
-latched error and the reconciler retries the create on the new image — at most
+latched error and the reconciler retries the create on the new pins — at most
 once per digest move, since only a pin that differs from the new digest is
 re-pinned. It is the plain upgrade, not a repair: no teardown, no start. A
 sandbox still owed a client push is skipped, because the retry could only park
 it at `awaiting_source` again.
 
-`PinStoppedSandboxBundles` runs on every start beside them. A stopped sandbox
-created before bundles, on the image its harness config pins, is pinned to
-that config's bundle — the image's twin, so nothing it runs changes and no
-upgrade policy applies. It is recorded intent like a re-pin, so the pool is
-sent the create that rebuilds the stopped container — onto the sandbox base
-image, once it carries a platform pin — and records the pin; a running one is
-left until it is found stopped, upgraded or repaired, since the pin would
-restart it.
+`PinUndeliveredSandboxes` runs on every start, each time the platform moves,
+and every ten minutes (`StartPinningUndelivered`), so one that was running
+at the start is pinned soon after it stops. A sandbox created before bundles is pinned to the runnable harness image
+it ran and to no platform, and no release builds that image any more (ADR
+26-10-16-423 §10), so every such sandbox settled with no container running
+(`Store.ListUndeliveredSandboxes`) is pinned to its config's bundle and the
+current platform whatever the project's upgrade policy. A stopped or failed one
+is recorded intent like a re-pin, so the pool is sent the create that rebuilds
+its container onto the sandbox base image; an archived one is pinned in place,
+for the unarchive that builds one. A running one is left: its pool keeps its
+container while its spec does not move, and it reports its upgrade until it
+stops, is upgraded or repaired. One whose config has no bundle to pin, or whose platform
+cannot be resolved yet, waits for a later pass.
 
 There is no automatic-upgrade code path, only an automatic author of the upgrade
 every sandbox already had: the same `sandboxRepin`, the same
@@ -486,8 +503,9 @@ Two consequences worth stating:
 `ErrorReason` classifies `ErrorMessage` for a client that acts on the failure
 rather than only showing it, and is set and cleared with it (`RecordFailure`,
 `ClearFailure`, `RecordIntent`). The one reason today is `image_unavailable`
-(`failureReason`): the pool cannot obtain the image the sandbox is pinned to
-(`sandbox.ErrImageUnavailable`). A retry cannot get past that and an upgrade
+(`failureReason`): the pool has nothing to build the sandbox's container from
+(`sandbox.ErrImageUnavailable`) — a sandbox base image it cannot obtain, or a
+sandbox from before bundles pinned to no platform. A retry cannot get past that and an upgrade
 can, so the API reports it beside `upgrade.available` and a client offers the
 upgrade. The reconciler still does not re-pin on its own (see above).
 
@@ -529,12 +547,13 @@ and is answered as a 400 about the archive rather than an error about the pool
   container?", so a spec field added there travels from the day it is added.
   Two of its fields are not taken as they arrive: `HarnessConfigID` is cleared
   on export and resolved by slug on import, because an ID names a row on one
-  server and nothing on another; and `Image`/`ImageDigest` are re-pinned to the
-  destination harness config's, exactly as a create takes them from there. The
-  image cannot come from the archive — `buildCreateOptions` reads
-  `RunCommand`, `Files`, `Volumes` and `Env` off the harness config row, so an
-  image from one harness and a command from another is a container that starts
-  and a harness that does not.
+  server and nothing on another; and its harness pins — `Bundle`/`BundleDigest`,
+  or `Image`/`ImageDigest` for a manifest file — and its platform are re-pinned
+  to the destination's, exactly as a create takes them from there. The pins
+  cannot come from the archive — `buildCreateOptions` reads `RunCommand`,
+  `Files`, `Volumes` and `Env` off the harness config row, so a bundle from one
+  harness and a command from another is a container that starts and a harness
+  that does not.
 - **A transfer stays on its platform** (ADR 0145 §8). The manifest records the
   sandbox's platform — its pool's, for one not placed since platforms were
   recorded. Import refuses, with 409 and before the upload, a destination
@@ -569,12 +588,12 @@ and is answered as a 400 about the archive rather than an error about the pool
   CLI offers is the caller's, not something taken on their behalf. An archived
   sandbox exports fine: it is a tree with no container, which is exactly the
   shape an export reads.
-- **Export passes the sandbox's pin** (`Image`/`ImageDigest`, as a
-  `sandbox.ImageRef`) to `Provider.ExportTree`. The tree is read by the sandbox
-  agent's export mode in the image the sandbox runs, and an archived sandbox, or
-  one whose create failed, has no container left on the pool to name it
-  (ADR 0129 §1). Not the harness config's current image: that agent did not
-  write the tree.
+- **Export passes the sandbox's pins** (`sandboxBundlePins`) to
+  `Provider.ExportTree`. The tree is read by the export mode of the agent its
+  platform pin names, and an archived sandbox, or one whose create failed, has
+  no container left on the pool to name it (ADR 0129 §1), so the pool records
+  the pins it is sent. Not the current platform: that agent did not write the
+  tree.
 - **Import restores the tree before the row exists**, and refuses before it
   restores. The row is what wakes the reconciler, so the order is: resolve pool,
   harness and every secret binding — which is everything that can say no — then
@@ -642,7 +661,7 @@ which `ListProjectGateways` reads as they stand. Both are delivered together,
 the same way (`proxy_policy.go`).
 
 A discobox's effective egress policy is the merge of four levels — its
-project's, its pool's, its harness config's (with the hosts the harness image
+project's, its pool's, its harness config's (with the hosts the harness bundle
 declares), and its own `Sandbox.Egress` — by the rule in
 [`proxy/egress`](../../../../proxy/egress): restricted when any level sets
 `denyByDefault`, and then reaching the union of the allow lists

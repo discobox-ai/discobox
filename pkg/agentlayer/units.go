@@ -2,9 +2,6 @@ package agentlayer
 
 import (
 	"embed"
-	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // unitFiles are the agent's own units: what boots a box before any feature
@@ -46,43 +43,4 @@ var Units = []Unit{
 	{Name: "discobox-snapshot.service", Path: "/etc/systemd/system/discobox-snapshot.service", target: "multi-user.target"},
 	{Name: "discobox-render-proxy-env.service", Path: "/etc/systemd/system/discobox-render-proxy-env.service", target: "sysinit.target"},
 	{Name: "journald-console.conf", Path: "/etc/systemd/journald.conf.d/discobox-console.conf"},
-}
-
-// Install lays the units and their enablement under root, as Archive does in
-// a container: what a machine's first-boot command does before it starts the
-// agent. Reloading systemd is the caller's.
-func Install(root string) error {
-	for _, unit := range Units {
-		content, err := unitFiles.ReadFile("units/" + unit.Name)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(root, unit.Path)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		tmp := target + ".tmp"
-		//nolint:gosec // G306: a unit file is read by systemd and every user, as each under /etc/systemd/system is.
-		if err := os.WriteFile(tmp, content, 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, target); err != nil {
-			return err
-		}
-		if unit.target == "" {
-			continue
-		}
-		dir := filepath.Join(root, unit.linkDir())
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		link := filepath.Join(dir, unit.Name)
-		if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if err := os.Symlink(unit.Path, link); err != nil {
-			return fmt.Errorf("enable %s: %w", unit.Name, err)
-		}
-	}
-	return nil
 }

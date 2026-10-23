@@ -1,37 +1,5 @@
 package sandbox
 
-// ImageRef pins the image a sandbox runs.
-//
-// Name is what to pull; Digest is which image that must turn out to be. The
-// pair travels to the pool host, which resolves images and enforces the pin
-// (ADR 0016 §1, §6).
-//
-// Digest is the registry digest the image was pulled under — an index digest
-// for a multi-platform image — which both Docker image stores report in
-// RepoDigests. For a locally built image, which was never pushed and has no
-// RepoDigests, it is the image ID.
-//
-// It is not a config digest. The classic image store reports one as an image
-// ID, but the containerd store — the default in current Docker — reports the
-// index digest, so a config-digest pin would be a value the daemon never
-// produces, and a sandbox on a published multi-arch image would refuse to
-// launch against an image that is sitting right there.
-//
-// An empty Digest means unpinned: sandboxes on the default image, and sandboxes
-// created before pinning existed. Those run whatever Name resolves to.
-type ImageRef struct {
-	Name   string `json:"name"`
-	Digest string `json:"digest,omitempty"`
-}
-
-// DefaultSandboxImageName is the image a sandbox with no harness config runs.
-//
-// It names a local tag because a development build has no published image to
-// reach for: `task build:images` writes exactly this. A release overwrites it
-// at link time with the sandbox agent built for that release, which is why it
-// is a var. DISCOBOX_DEFAULT_SANDBOX_IMAGE overrides either.
-var DefaultSandboxImageName = "discobox-sandbox-agent:local"
-
 // ProviderConfigField describes one provider instance configuration field.
 type ProviderConfigField struct {
 	Key                string `json:"key"`

@@ -13,7 +13,7 @@ import (
 
 type unavailableInspector struct{ err error }
 
-func (i unavailableInspector) Inspect(context.Context, string) (imageMetadata, error) {
+func (i unavailableInspector) InspectManifestFile(context.Context, string) (imageMetadata, error) {
 	return imageMetadata{}, i.err
 }
 
@@ -21,18 +21,18 @@ func (i unavailableInspector) InspectBundle(context.Context, string, func(map[st
 	return bundleInspection{}, i.err
 }
 
-// Seeding skips an image it cannot inspect, so one broken harness cannot stop a
+// Seeding skips a bundle it cannot inspect, so one broken harness cannot stop a
 // server. Skipping every one of them is a different condition: the project can
 // create no sandbox at all (ADR 0048), which is what startup refuses to serve.
 //
-// The error names each harness and why its image was unusable, because "no
-// harness" on its own describes none of the causes — an image published without
+// The error names each harness and why its bundle was unusable, because "no
+// harness" on its own describes none of the causes — a bundle published without
 // its manifest labels, a daemon that is not running, a registry out of reach —
 // and they are the only actionable part.
-func TestEnsureHarnessAvailableReportsEveryUnusableImage(t *testing.T) {
+func TestEnsureHarnessAvailableReportsEveryUnusableBundle(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	svc := &Service{store: st, inspector: unavailableInspector{
+	svc := &Service{store: st, harnesses: testReferences, inspector: unavailableInspector{
 		err: errors.New(`image label "10-platform" is empty`),
 	}}
 
@@ -45,7 +45,7 @@ func TestEnsureHarnessAvailableReportsEveryUnusableImage(t *testing.T) {
 		t.Fatalf("list configs: %v", err)
 	}
 	if len(configs) != 0 {
-		t.Fatalf("configs = %v, want none seeded from unusable images", configs)
+		t.Fatalf("configs = %v, want none seeded from unusable bundles", configs)
 	}
 
 	err = svc.EnsureHarnessAvailable(ctx, "project-1")
@@ -62,20 +62,20 @@ func TestEnsureHarnessAvailableReportsEveryUnusableImage(t *testing.T) {
 		}
 	}
 	if !strings.Contains(err.Error(), "10-platform") {
-		t.Fatalf("error = %q, want the reason each image was unusable", err)
+		t.Fatalf("error = %q, want the reason each bundle was unusable", err)
 	}
 }
 
 // Any config counts, not only a seeded built-in. A project that seeded on an
 // earlier boot, or whose only harness was registered by hand, has something to
-// run whatever this boot's images do — so a registry outage cannot stop a server
+// run whatever this boot's bundles do — so a registry outage cannot stop a server
 // that was working yesterday.
 func TestEnsureHarnessAvailableAcceptsAConfigItDidNotSeed(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "mine", Name: "Mine",
-		Image: "example.com/mine:v1", ImageDigest: "sha256:mine", Configured: true,
+		Bundle: "example.com/mine:v1", BundleDigest: "sha256:mine", Configured: true,
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
@@ -86,13 +86,13 @@ func TestEnsureHarnessAvailableAcceptsAConfigItDidNotSeed(t *testing.T) {
 	}
 }
 
-func TestReleaseManifestDoesNotSilentlyKeepOldHarnessImages(t *testing.T) {
-	failure := errors.New("release image unavailable")
+func TestReleaseManifestDoesNotSilentlyKeepOldHarnessBundles(t *testing.T) {
+	failure := errors.New("release bundle unavailable")
 	svc := &Service{store: newTestStore(t), inspector: unavailableInspector{err: failure}, requireBuiltInImages: true, harnesses: harnessdefs.References{
-		Images: map[string]string{"shell": "example.com/shell-image:v8"}, Bundles: map[string]string{"shell": "example.com/shell:v8"},
+		PlatformBundle: testPlatformBundle, Bundles: map[string]string{"shell": "example.com/shell:v8"},
 	}}
 	if err := svc.SeedBuiltIns(context.Background(), "project-1"); !errors.Is(err, failure) {
-		t.Fatalf("seeding = %v; want release image failure", err)
+		t.Fatalf("seeding = %v; want release bundle failure", err)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
 	st := newTestStore(t)
 	custom := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "other-agent", Name: "My agent",
-		Image: "example.com/mine:v1", ImageDigest: "sha256:mine",
+		Bundle: "example.com/mine:v1", BundleDigest: "sha256:mine",
 		RunCommand: []string{"mine"}, Configured: true,
 		ConfiguredFiles: []model.HarnessConfigFile{{Path: "auth.json", Content: "secret"}},
 	}
@@ -114,7 +114,7 @@ func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
 	}
 	svc := &Service{store: st, inspector: unavailableInspector{err: errors.New("must not inspect")},
 		requireBuiltInImages: true, harnesses: harnessdefs.References{
-			Images: map[string]string{custom.Slug: "example.com/release-image:v8"}, Bundles: map[string]string{custom.Slug: "example.com/release:v8"},
+			Bundles: map[string]string{custom.Slug: "example.com/release:v8"},
 		}}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err == nil || !strings.Contains(err.Error(), "other-agent conflicts with a user-created") {
 		t.Fatalf("seed = %v; want a visible slug collision", err)

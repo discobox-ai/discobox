@@ -634,12 +634,16 @@ type Harness struct {
 	// Error is why the configure flow did not finish, when it did not.
 	Error string
 
-	Image  string
-	Digest string
-	// Platforms is what the harness's image is published for, as os/arch,
-	// and Unhosted that no pool in the project can run it: none hosts one of
-	// them and runs the kind of image it is (ADR 0145 §1, ADR 26-10-09-106
-	// §4). A discobox is created only on a harness some pool can run, so the
+	// Bundle is the harness bundle every discobox on it applies, or, for a
+	// template with no image, ManifestFile is its manifest file (ADR
+	// 26-10-16-423 §2); Digest is whichever's.
+	Bundle       string
+	ManifestFile string
+	Digest       string
+	// Platforms is what a manifest file's template runs on, as os/arch, and
+	// Unhosted that no pool in the project can run the harness: none hosts
+	// one of them and runs the kind of box it runs on (ADR 0145 §1, ADR
+	// 26-10-09-106 §4). A discobox is created only on a harness some pool can run, so the
 	// `new` picker leaves an unhosted one out; this screen lists every one.
 	Platforms string
 	Unhosted  bool
@@ -747,6 +751,14 @@ func (v HarnessVerb) done(name string) string {
 
 // displayName is what the harness is called on screen: its name, the slug it is
 // run by, or failing both the id, which is the one thing it always has.
+// runs is what the harness runs as: its bundle, or its manifest file.
+func (h Harness) runs() string {
+	if h.Bundle != "" {
+		return h.Bundle
+	}
+	return h.ManifestFile
+}
+
 func (h Harness) displayName() string {
 	if name := strings.TrimSpace(h.Name); name != "" {
 		return name

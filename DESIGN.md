@@ -159,8 +159,8 @@ flowchart TD
   and the generated pool-local sandbox operations API server adapter; depends
   on root contracts and OpenAPI types.
 - Root module: the repository's own dev and build tools under `internal/cmd`,
-  including the local Docker development image watcher for the shared base,
-  pool-agent, sandbox-agent, and harness images, plus the versioned
+  including the local Docker development image watcher for the sandbox base and
+  pool-agent images and the platform and harness bundles, plus the versioned
   development-image manifest contract (`devimage`) shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
@@ -193,8 +193,8 @@ modules — or Go gives the location meaning (`internal`).
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
 | [`api/internal`](api/internal) | The generators behind the `api/model` aliases and the `sandbox.yaml` subset. |
 | [`pkg/configfile`](pkg/configfile) | The engine behind a schema-checked YAML configuration file whose Go struct is its source of truth: struct tags declare each setting, and one walk over them gives the strict decode (a key nothing defines is an error naming it), the environment overlay, the commented reference file and the JSON Schema. Shared because the server's `server.yaml` (ADR 0096) and the CLI's `client.yaml` (ADR 26-10-09-389) must be checked and documented by the same rules; a repository's `.discobox/settings.json` takes its schema from the same walk. |
-| [`pkg/devimage`](pkg/devimage) | Versioned watcher/server contract for content-addressed development Docker image sets, the bundles exported beside them as OCI image layouts, and their opt-in environment keys. |
-| [`pkg/agentlayer`](pkg/agentlayer) | How the sandbox agent reaches a box (ADR 26-10-16-423 §7): the box's content store layout (`/opt/discobox/bundles`), the platform bundle's agent layer (its last, the agent alone) and the `/opt/discobox/current` link the agent runs from, the pins a box applies, and the agent's own boot units. A pool's Docker runtime places it in a container before every start (`Archive`), the agent's `install` command lays the units where nothing places them (`Install`, the runnable image's build), and the agent fills the rest of the store itself. It also holds the snapshot plan contract (`SnapshotPlan`, ADR 26-10-16-423 §8): what a box provisioned for no sandbox is booted with, and the result its taker reads. |
+| [`pkg/devimage`](pkg/devimage) | Versioned watcher/server contract for content-addressed development Docker image sets, the bundles beside them — exported as OCI image layouts, or in build-mode described for a pool's daemon to build — and their opt-in environment keys. |
+| [`pkg/agentlayer`](pkg/agentlayer) | How the sandbox agent reaches a box (ADR 26-10-16-423 §7): the box's content store layout (`/opt/discobox/bundles`), the platform bundle's agent layer (its last, the agent alone) and the `/opt/discobox/current` link the agent runs from, the pins a box applies, and the agent's own boot units. A pool's Docker runtime places it in a container before every start (`Archive`), and the agent fills the rest of the store itself. It also holds the snapshot plan contract (`SnapshotPlan`, ADR 26-10-16-423 §8): what a box provisioned for no sandbox is booted with, and the result its taker reads. |
 | [`pkg/agentcreds`](pkg/agentcreds) | The agent credentials protocol: the portable list/request/get contract, its client, an `http.Handler` over a `Service` interface, and the stable error codes and client configuration both halves share. It knows nothing about Discobox beyond the shape of a policy and of the facts its variables resolve against, which it carries from the root `policy` package (standard library only), and that is what lets one in-sandbox CLI work against sandbox-agent and against any other implementation. See [`docs/agent-credentials-protocol.md`](docs/agent-credentials-protocol.md) and [ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md). |
 | [`pkg/policy`](pkg/policy) | What a credential grant authorizes: statements of actions on resources in scopes, the definitions of their words, and the variables they resolve from a discobox's typed facts at approval — validated, and combined from decided parts in two phases where order never matters. Shared because the agent asking, the pool relaying, the control plane storing and resolving, and whatever decides a request must read one policy the same way. See [`policy/DESIGN.md`](pkg/policy/DESIGN.md) and [ADR 26-10-20-782](docs/adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md). |
 | [`pkg/judge`](pkg/judge) | The question Discobox puts to a model before a credential is used, and the answer it will accept back: the job — a command, or a request the proxy observed — the system prompt and schema, and the strict decoding that refuses anything readable as permission nobody gave. A request is recognized — its protocol and endpoint, which bring the judge Discobox's guidance — and its body is described in one shape, with a parser's metadata, rather than sent; the judge asks to be shown it, which is why an answer may allow, refuse, or ask, and an allow may stand for a route (ADR 26-09-25-428, 26-09-26-240). Shared because the caller asking, the runtime prompting, and the control plane recording a verdict must agree on every word of it. `judge/jev` puts the same jobs to TypeSafe's Jev for a server that judges with it instead of a judge discobox (ADR 26-10-01-324). See [`judge/DESIGN.md`](pkg/judge/DESIGN.md) and [ADR 26-09-22-838](docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md). |
@@ -203,8 +203,8 @@ modules — or Go gives the location meaning (`internal`).
 | [`pkg/wire`](pkg/wire) | How the pool agent and the control plane reach each other, and how a sandbox reaches its pool's services, resolved from a URL scheme: `http`/`https` over TCP, `vsock` over AF_VSOCK, `unix` over a socket, for dialing and listening alike. Shared because the in-sandbox `proxy/bridge` dials through it as well as the pool agent and the server's VM providers (ADR 0144 §4). Kept apart from `endpoint`, whose iroh and DNS resolution describe the client hop only. |
 | [`pkg/vsock`](pkg/vsock) | The AF_VSOCK listener and dialers behind `wire`'s `vsock` scheme, and the host and any-CID constants a VM guest binds and dials with. Also used directly by the VM guest's `discobox-vsock-guest`. |
 | [`pkg/programstatus`](pkg/programstatus) | OSC 7501, the Program Status Protocol: parsing a report by the spec's grammar and limits, keeping one terminal's records by its replacement and clearing rules (`Set`), choosing the record that stands for the terminal, and encoding one to send on. Shared because the shim keeps the records of the program it runs and the console re-emits the focused box's to the terminal it runs in, and the two must read the protocol alike ([ADR 26-10-16-424](docs/adr/26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md)). |
-| [`harness`](harness) | The harness image contract (OCI-label metadata, registration) and hook registration drivers for sandbox terminals. See [`harness/DESIGN.md`](harness/DESIGN.md). |
-| [`pkg/releasemanifest`](pkg/releasemanifest/DESIGN.md) | Full release build inventory: source revision, CLI and server downloads with platform/size/digest metadata, and named runtime/harness image roles. Also consumed by development builds through `DISCOBOX_RELEASE_MANIFEST`. |
+| [`harness`](harness) | The harness bundle contract (OCI-label manifest, registration) and hook registration drivers for sandbox terminals. See [`harness/DESIGN.md`](harness/DESIGN.md). |
+| [`pkg/releasemanifest`](pkg/releasemanifest/DESIGN.md) | Full release build inventory: source revision, CLI and server downloads with platform/size/digest metadata, named runtime image roles, and the platform and harness bundles. Also consumed by development builds through `DISCOBOX_RELEASE_MANIFEST`. |
 | [`pkg/serverstage`](pkg/serverstage) | The description of a released server — its assets, where each is published, and what each one's SHA-256 is — and the staging that turns one into verified files on disk, one directory per version. In the root module because it is a release-format contract with two ends: the CLI decodes the manifest a release linked into it, and `internal/cmd/discobox-server-manifest` is what encodes one at build time. See [ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md). |
 | [`pkg/installer`](pkg/installer) | The install scripts every release uploads — `install.sh` and `install.ps1` — and the stamp that fixes each copy to one release and its binaries' SHA-256s. In the root module for the reason `serverstage` is: a release-format contract with two ends, written by `internal/cmd/discobox-installers` when a release is published and read by the scripts on a user's machine. See [`pkg/installer/DESIGN.md`](pkg/installer/DESIGN.md) and [ADR 0110](docs/adr/0110-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md). |
 | [`pkg/imagecache`](pkg/imagecache) | The image store: images kept on this machine as an OCI image layout, and the downloader that fills it, fetching only missing blobs for one platform and verifying each, and the blob reads and writes a layout of blobs no entry names is filled with. The CLI stages the images its server names into it before starting that server; the server keeps its asset store, which serves bundles to pools, as another, and each pool its pull-through cache of that store, both reading a bundle's manifests and walking what a pin reaches with this package (ADR 26-10-16-423 §13), and hands the CLI's to its providers, which fetch a VM guest through it, and the engine loads a container image from it into a pool's daemon before pulling, in an archive from which both Docker image stores keep the registry digest a sandbox is pinned to. The layout's format is this package's alone. In the root module because the CLI and the server both use it, and stdlib-only so the CLI's module graph gains no registry client. See [ADR 0113](docs/adr/0113-the-cli-stages-the-images-its-server-loads.md). |
@@ -387,37 +387,35 @@ cannot create a symlink, so `release:windows-zip` repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
 Container images form one chain from the Docker driver's sandbox base image,
-so that a pool host pulling all of them pulls the shared surface once
-(ADR 26-10-16-423 §10). The bundles are on no chain: each is `FROM scratch`,
-and a harness's runnable image, which a pool runs only for a sandbox delivered
-no platform,
-is built from the sandbox agent's with its bundle copied in ([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423
-§2):
+so that a pool host pulling both pulls the shared surface once (ADR
+26-10-16-423 §10). No harness is an image: the platform and harness bundles
+are on no chain, each `FROM scratch`, and every sandbox container is the
+sandbox base image with them applied ([`harness/DESIGN.md`](harness/DESIGN.md),
+ADR 26-10-16-423 §§2, 7):
 
 ```mermaid
 flowchart TD
     base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian 13, Docker, systemd unit mask"]
     pool["pool-agent/<br/>discobox-pool-agent"]
-    sandbox["sandbox-agent/<br/>discobox-sandbox-agent"]
-    image["harness/&lt;type&gt;/<br/>discobox-harness-*-image"]
     platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
     bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
+    box["sandbox container"]
 
     base -->|BASE_IMAGE| pool
-    base -->|BASE_IMAGE| sandbox
-    sandbox -->|SANDBOX_AGENT_IMAGE| image
-    bundle -.->|COPY --from| image
+    base -->|runs| box
+    platform -.->|applied by the agent| box
+    bundle -.->|applied by the agent| box
 ```
 
 `discobox-sandbox-base` is the box a Docker sandbox is before the platform is
-provisioned onto it, and its children must resolve one already-built
-reference for their layers to be the same blobs (see
+provisioned onto it, and its child must resolve one already-built reference
+for their layers to be the same blobs (see
 [providers](server/providers/DESIGN.md#sandbox-base-image)).
 `release:images` builds them in that order, and the development image watcher
-orders its own builds from the same parent links. After any
-partial rebuild, the watcher derives both the complete development manifest and
-every image setting in `.env` from one inspection of the full local image set;
-the two publications must never name different pool or sandbox images. Failed
+orders its own builds from the same parent link. After any partial rebuild, the
+watcher derives both the complete development manifest and every image and
+bundle setting in `.env` from one inspection of the full local set; the two
+publications must never name different pool images, base images or bundles. Failed
 build or publication work stays pending and retries without requiring another
 file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
@@ -434,9 +432,11 @@ store does it prepare `buildx:builder`, a docker-container builder, and select
 it for them. The host's own is preferred because it runs each step through the
 daemon's runtime, which in a discobox carries the proxy and its CA into the
 step (ADR 0020); a docker-container builder runs steps with its own and has no
-way out of the box. Runnable images retain the host Docker builder and its
-local parent images. macOS and Windows default to
-describing builds for the pool and do not initialize or require host Docker;
+way out of the box. The two images retain the host Docker builder and their
+local parent image. macOS and Windows default to describing builds for the
+pool and do not initialize or require host Docker; there the server builds
+the images on a pool's daemon, and the bundles too, saving each bundle as the
+layout it serves pools from (`server/internal/devbundles`).
 `DISCOBOX_DEV_DOCKER_IMAGE_BUILD` overrides the platform's mode.
 
 The pool VM guest — the kernel, initrd, and root filesystem a VM-backed pool

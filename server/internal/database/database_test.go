@@ -1817,7 +1817,11 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 
 // A harness config stored before bundles keeps everything it had, and gains a
 // bundle and bundle digest that are empty until one is registered for it.
-func TestMigrateKeepsAHarnessConfigFromBeforeBundles(t *testing.T) {
+// No harness is an image (ADR 26-10-16-423 §10): a config from before bundles
+// keeps everything its image's labels gave it but the image, and a config on a
+// bundle loses the runnable twin it recorded beside it, and the platforms read
+// from that twin. A manifest file is the one image a config keeps.
+func TestMigrateRetiresHarnessImages(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
 	if err != nil {
@@ -1831,33 +1835,48 @@ func TestMigrateKeepsAHarnessConfigFromBeforeBundles(t *testing.T) {
 	if err := db.Write.Create(&project).Error; err != nil {
 		t.Fatal(err)
 	}
-	config := model.HarnessConfig{
+	beforeBundles := model.HarnessConfig{
 		ID: "hc-1", ProjectID: project.ID, Slug: "acme", Name: "Acme", Configured: true,
 		Image: "example.com/acme:v1", ImageDigest: "sha256:acme", RunCommand: []string{"acme"},
-		Env: map[string]string{"ACME": "1"},
+		Env: map[string]string{"ACME": "1"}, Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}),
 	}
-	if err := db.Write.Create(&config).Error; err != nil {
-		t.Fatal(err)
+	onBundle := model.HarnessConfig{
+		ID: "hc-2", ProjectID: project.ID, Slug: "codex", Name: "Codex",
+		Bundle: "example.com/codex:v1", BundleDigest: "sha256:bundle",
+		Image: "example.com/codex-image:v1", ImageDigest: "sha256:twin", Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "arm64"}),
 	}
-	// The schema that row was written under: no bundle.
-	for _, column := range []string{"bundle", "bundle_digest"} {
-		if err := db.Write.Exec("ALTER TABLE harness_configs DROP COLUMN " + column).Error; err != nil {
-			t.Fatalf("drop harness_configs.%s: %v", column, err)
+	manifestFile := model.HarnessConfig{
+		ID: "hc-3", ProjectID: project.ID, Slug: "mac", Name: "Mac",
+		Image: "file:///overlays/mac.json", ImageDigest: "sha256:file", Platforms: platform.NewSet(platform.Platform{OS: "darwin", Arch: "arm64"}),
+	}
+	for _, config := range []*model.HarnessConfig{&beforeBundles, &onBundle, &manifestFile} {
+		if err := db.Write.Create(config).Error; err != nil {
+			t.Fatal(err)
 		}
 	}
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatal(err)
+	// Twice: what one start clears, the next finds cleared.
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
-	var got model.HarnessConfig
-	if err := db.Write.First(&got, "id = ?", config.ID).Error; err != nil {
-		t.Fatal(err)
+	read := func(id string) model.HarnessConfig {
+		var got model.HarnessConfig
+		if err := db.Write.First(&got, "id = ?", id).Error; err != nil {
+			t.Fatal(err)
+		}
+		return got
 	}
-	if got.Image != config.Image || got.ImageDigest != config.ImageDigest || !got.Configured ||
-		len(got.RunCommand) != 1 || got.Env["ACME"] != "1" {
-		t.Errorf("config = %+v, want everything it had kept", got)
+	if got := read(beforeBundles.ID); got.Image != "" || got.ImageDigest != "" || len(got.Platforms) != 0 ||
+		!got.Configured || len(got.RunCommand) != 1 || got.Env["ACME"] != "1" || got.Bundle != "" {
+		t.Errorf("config from before bundles = %+v, want its manifest kept and no image", got)
 	}
-	if got.Bundle != "" || got.BundleDigest != "" {
-		t.Errorf("bundle = %q@%q, want none until one is registered", got.Bundle, got.BundleDigest)
+	if got := read(onBundle.ID); got.Image != "" || got.ImageDigest != "" || len(got.Platforms) != 0 ||
+		got.Bundle != onBundle.Bundle || got.BundleDigest != onBundle.BundleDigest {
+		t.Errorf("config on a bundle = %+v, want its bundle and no twin", got)
+	}
+	if got := read(manifestFile.ID); got.Image != manifestFile.Image || got.ImageDigest != manifestFile.ImageDigest || len(got.Platforms) != 1 {
+		t.Errorf("manifest-file config = %+v, want its file kept", got)
 	}
 }
 

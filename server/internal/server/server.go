@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -232,10 +233,9 @@ func Run(ctx context.Context) error {
 		SecretSealer:                   sealer,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
-		DefaultSandboxImage:            cfg.DefaultSandboxImage,
-		DefaultSandboxImageDigest:      cfg.DefaultSandboxImageDigest,
 		DevelopmentImages:              cfg.DevelopmentImages,
 		DevelopmentBundles:             cfg.DevelopmentBundles,
+		DevelopmentBundleDir:           filepath.Join(cfg.CacheDir, "development-bundles"),
 		Harnesses:                      cfg.Harnesses,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,

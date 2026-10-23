@@ -264,10 +264,11 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	harness := &model.HarnessConfig{
-		ProjectID: projectID,
-		Slug:      "codex",
-		Name:      "Codex CLI",
-		Image:     "discobox-harness-codex:local",
+		ProjectID:   projectID,
+		Slug:        "codex",
+		Name:        "Codex CLI",
+		Image:       "file:///etc/discobox/harnesses/codex.json",
+		ImageDigest: testManifestDigest,
 		// Only configured harnesses are selectable, so a sandbox can pin this one.
 		Configured: true,
 		RunCommand: []string{
@@ -477,13 +478,16 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 // seedTestHarnessConfig gives the project the one harness these tests select by
 // name, written straight to the store.
 //
-// SeedBuiltIns cannot supply it here: it reads each harness's metadata off the
-// image's label, so it needs a Docker daemon holding images this checkout may
-// never have built, and on Windows it cannot reach a Linux image at all. What
-// these tests need from a harness config is that it exists, is configured, and
-// answers to "shell" — none of which is a statement about an image. ADR 0066 §7
-// names constructing the config directly as the end state this replaces the
-// label-only stand-in images with.
+// SeedBuiltIns cannot supply it here: it composes each harness's manifest on
+// the server's platform bundle, which these tests' server names none of, and
+// a bundle pins a sandbox only beside a platform. What these tests need from
+// a harness config is that it exists, is configured, answers to "shell", and
+// pins a sandbox to something: a manifest file, a template with no image,
+// does that without a platform. ADR 0066 §7 names constructing the config
+// directly as the end state this replaces the label-only stand-in images with.
+// testManifestDigest stands in for a manifest file's content digest.
+var testManifestDigest = "sha256:" + strings.Repeat("ab", 32)
+
 func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) {
 	t.Helper()
 	// Idempotent: on a machine that does have the images built, SeedBuiltIns got
@@ -503,8 +507,10 @@ func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.St
 		Name:       "Shell",
 		BuiltIn:    true,
 		Configured: true,
-		Image:      "discobox-harness-shell:test",
-		RunCommand: []string{"sh"},
+		Image:      "file:///etc/discobox/harnesses/shell.json",
+		// A manifest file is pinned by its digest, as a bundle is.
+		ImageDigest: testManifestDigest,
+		RunCommand:  []string{"sh"},
 	}
 	if err := appStore.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("seed harness config: %v", err)
@@ -875,7 +881,7 @@ func waitForSandboxConverged(ctx context.Context, t *testing.T, svc *service.Ser
 	}
 }
 
-func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, sandboxes.ImageRef, []byte) (io.ReadCloser, error) {
+func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []sandboxes.BundlePin, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

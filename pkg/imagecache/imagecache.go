@@ -82,8 +82,7 @@ type Platform struct {
 // PoolPlatform is the platform a pool on this machine runs: Linux, whatever
 // this machine runs, on this machine's architecture. Every provider that runs a
 // pool here — docker, libkrun, vz, wslc — puts it on a Linux kernel of the
-// host's architecture, which is the rule harness image inspection already
-// follows.
+// host's architecture, which is the rule bundle inspection already follows.
 func PoolPlatform() Platform {
 	return Platform{OS: "linux", Architecture: runtime.GOARCH}
 }

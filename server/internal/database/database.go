@@ -169,7 +169,47 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireAgentGrantsWithoutPolicy(write); err != nil {
 		return err
 	}
+	if err := retireHarnessImages(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
+}
+
+// retireHarnessImages takes the runnable images off the harness configs that
+// recorded one (ADR 26-10-16-423 §10): no harness is an image any more, and a
+// harness config's image is a manifest file's or nothing. A config on a
+// bundle keeps its bundle, which is what every box on it applies, and loses
+// the twin it recorded beside it, with the platforms read from that twin's
+// index, which a bundle's steps select instead. A config from before bundles
+// loses the image it ran as and keeps the manifest its labels gave it: it
+// runs nowhere until a bundle is registered for it, and says so.
+//
+// A sandbox's own image pin is not cleared here: the pool still keeps a
+// container a sandbox from before bundles runs, by the fingerprint that pin
+// is part of, and the sandbox leaves it when it is pinned to its bundles
+// (sandboxes.Service.PinUndeliveredSandboxes).
+//
+// It runs on every start, and once nothing is left to clear it updates
+// nothing: a manifest file's image is the one image it leaves.
+func retireHarnessImages(db *gorm.DB) error {
+	var configs []model.HarnessConfig
+	retired := db.Model(&model.HarnessConfig{}).Where("image <> ? AND image NOT LIKE ?", "", "file://%")
+	if err := retired.Select("id", "project_id", "slug", "bundle", "image", "image_digest").Find(&configs).Error; err != nil {
+		return err
+	}
+	if len(configs) == 0 {
+		return nil
+	}
+	// Each is logged with the image it ran as, which is the only record left
+	// of what its owner registered.
+	for _, config := range configs {
+		log.Printf("cleared harness config %s (%s) of project %s of the runnable image it ran as, %s@%s (bundle %q): no harness is an image any more, and one with no bundle runs nowhere until one is registered for it",
+			config.ID, config.Slug, config.ProjectID, config.Image, config.ImageDigest, config.Bundle)
+	}
+	// UpdateColumns, not Updates: a migration is not an edit, and leaves
+	// updated_at as it was.
+	return db.Model(&model.HarnessConfig{}).Where("image <> ? AND image NOT LIKE ?", "", "file://%").
+		UpdateColumns(map[string]any{"image": "", "image_digest": "", "platforms": nil}).Error
 }
 
 // retireApprovalRuleUses takes the approval rules no code can read out of the

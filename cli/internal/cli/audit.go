@@ -705,6 +705,12 @@ func judgeLines(v apimodel.CredentialVerdict) []string {
 	if harness := v.HarnessConfigId.Or(""); harness != "" {
 		lines = append(lines, "harness:  "+terminalSafe(harness))
 	}
+	if bundle := v.Bundle.Or(""); bundle != "" {
+		if digest := v.BundleDigest.Or(""); digest != "" {
+			bundle += "@" + digest
+		}
+		lines = append(lines, "bundle:   "+terminalSafe(bundle))
+	}
 	if image := v.Image.Or(""); image != "" {
 		if digest := v.ImageDigest.Or(""); digest != "" {
 			image += "@" + digest

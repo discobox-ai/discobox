@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -591,7 +592,7 @@ func TestADevelopmentBundleIsServedFromItsLayout(t *testing.T) {
 	builder := newRegistry()
 	built := builder.image(t, "development platform")
 	bundle := devimage.Bundle{Reference: devRef, Digest: built.manifest, Layout: builder.writeLayout(t, built)}
-	layouts := newLayoutSource([]devimage.Bundle{bundle})
+	layouts := layoutSource{bundles: devbundles.New([]devimage.Bundle{bundle}, t.TempDir())}
 	f.service = newService(f.service.store, Options{Dir: f.dir, PlatformBundle: devRef},
 		[]source{layouts, f.registry}, []source{layouts, f.registry})
 	ctx := asPool("pool-1")
@@ -624,7 +625,7 @@ func TestALayoutServesOnlyTheReleasesPinOfWhatItHolds(t *testing.T) {
 	built := builder.image(t, "development harness")
 	const devRef = "discobox-harness-acme:dev-0123456789ab"
 	bundle := devimage.Bundle{Reference: devRef, Digest: built.manifest, Layout: builder.writeLayout(t, built)}
-	layouts := newLayoutSource([]devimage.Bundle{bundle})
+	layouts := layoutSource{bundles: devbundles.New([]devimage.Bundle{bundle}, t.TempDir())}
 	blobs := imagecache.Open(t.TempDir())
 
 	if err := layouts.fetch(context.Background(), pin{ref: devRef, digest: built.manifest}, built.layer, false, blobs); !errors.Is(err, errNotHere) {

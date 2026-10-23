@@ -17,34 +17,34 @@ import (
 	"sync"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	imagetypes "github.com/moby/moby/api/types/image"
 	dockerclient "github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type imageMetadata struct {
-	// Digest is the runnable image's, or a manifest file's: what a sandbox
-	// pins. BundleDigest is the bundle's the manifest was read from, empty for
-	// a manifest file, which is no bundle.
+	// Digest is a manifest file's, which a sandbox on its template pins, and
+	// BundleDigest a bundle's, which a box on it applies (ADR 26-10-16-423 §2).
+	// One of the two is set: a harness is a bundle or a manifest file.
 	Digest       string
 	BundleDigest string
-	// Platforms is what the image is published for (ADR 0145 §1): every
-	// platform in a registry image's index, or the one platform a locally built
-	// image was built for. Empty when nothing says, which rules nothing out.
+	// Platforms is what a manifest file's template runs on (ADR 0145 §1): the
+	// one platform it declares. Empty for a bundle, whose steps select the
+	// platform they run on, which rules no pool out.
 	Platforms platform.Set
-	// ImageMetadata is the resolved manifest. Its ImageKind is the kind the
-	// harness's image is (ADR 26-10-09-106 §4), always set once inspected: OCI
-	// for an image, or the disco-vm kind a manifest file declares.
+	// ImageMetadata is the resolved manifest. Its ImageKind is the kind of box
+	// the harness runs on (ADR 26-10-09-106 §4), always set once inspected: OCI
+	// for a bundle, which a Docker pool's sandbox base image applies, or the
+	// disco-vm kind a manifest file declares.
 	harness.ImageMetadata
 }
 
@@ -57,19 +57,16 @@ type bundleInspection struct {
 
 // imageInspector reads what a harness config is snapshotted from.
 //
-// Inspect reads a harness's runnable image — the digest a sandbox pins and the
-// platforms it is published for, never its labels, which describe the image
-// it was built from rather than the harness — or a manifest file, whose
-// layers are the whole manifest of a template with no image. InspectBundle
-// reads a bundle, refusing one carrying a whiteout: a bundle's layers add
-// feature directories side by side, and remove nothing (ADR 26-10-16-423 §2).
-// admit judges its labels before any layer is read, so a reference that is
-// not the bundle it is meant to be — a runnable image of several GB named as
-// a harness's bundle — is refused for what its labels say, not after its
-// layers are saved and read.
+// InspectBundle reads a bundle, refusing one carrying a whiteout: a bundle's
+// layers add feature directories side by side, and remove nothing (ADR
+// 26-10-16-423 §2). admit judges its labels before any layer is read, so a
+// reference that is not the bundle it is meant to be — an image of several GB
+// named as a harness's bundle — is refused for what its labels say, not after
+// its layers are saved and read. InspectManifestFile reads a manifest file,
+// whose layers are the whole manifest of a template with no image.
 type imageInspector interface {
-	Inspect(ctx context.Context, imageRef string) (imageMetadata, error)
 	InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error)
+	InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error)
 }
 
 type defaultImageInspector struct {
@@ -113,89 +110,24 @@ func (v *verifiedBundles) add(digest string) {
 	v.digests[digest] = true
 }
 
-func (d defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
-	// A template with no image — a non-Linux one, assembled from a vendor's
-	// base and Discobox's overlay — is named by its overlay's manifest file
-	// (ADR 0145 §3), and is never a reference a daemon or a registry knows.
-	if isManifestFile(imageRef) {
-		return inspectManifestFile(imageRef, d.overlayDir)
+// InspectManifestFile reads a template with no image — a non-Linux one,
+// assembled from a vendor's base and Discobox's overlay — named by its
+// overlay's manifest file (ADR 0145 §3), which is never a reference a daemon
+// or a registry knows.
+func (d defaultImageInspector) InspectManifestFile(_ context.Context, ref string) (imageMetadata, error) {
+	if !isManifestFile(ref) {
+		return imageMetadata{}, fmt.Errorf("%q names no manifest file", ref)
 	}
-	// Prefer a locally present image. Once the daemon has inspected it, its
-	// metadata is authoritative — surface any label error instead of masking it
-	// with a doomed registry pull of the same (often :local) reference.
-	if local, found, err := inspectLocalImage(ctx, imageRef); found {
-		return local, err
-	}
-	ref, err := name.ParseReference(imageRef)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("parse harness image %q: %w", imageRef, err)
-	}
-	remoteOptions := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(registryauth.Keychain()),
-		// The platform whose labels are read when the image publishes it. Always
-		// named: go-containerregistry answers linux/amd64 when nothing says
-		// otherwise, and an image published only for arm64 then reads as one
-		// that does not exist.
-		remote.WithPlatform(v1.Platform{OS: platform.Pool().OS, Architecture: platform.Pool().Arch}),
-	}
-	// One GET, because it answers every question: the descriptor carries the
-	// digest the registry serves this tag under and, for a multi-platform
-	// image, the index that lists what it is published for.
-	//
-	// Not remote.Head, which asks for exactly the digest and nothing else:
-	// ghcr.io answers HEAD without a Content-Length header, which
-	// go-containerregistry rejects — so every harness image "was unavailable",
-	// none were seeded, and a project came up with no harnesses at all.
-	descriptor, err := remote.Get(ref, remoteOptions...)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, registryauth.Explain(ref, err))
-	}
-	image, platforms, err := publishedImage(descriptor)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("resolve harness image %q: %w", imageRef, err)
-	}
-	// The digest a daemon will report for this reference, which is the digest
-	// the registry serves the tag under — an index digest for a multi-platform
-	// image.
-	//
-	// Not the config digest. A local Docker daemon reports that as an image ID
-	// only under the classic image store; the containerd one, the default in
-	// current Docker, reports the index digest. A recorded config digest is
-	// therefore a value the daemon never produces, and every sandbox on a
-	// published multi-arch image would refuse to launch: "pinned to
-	// sha256:6a5066…, now resolves to sha256:4a5726…" — the config digest and
-	// the index digest of one unchanged image.
-	//
-	// Both store types put this value in RepoDigests, which is what the pool
-	// compares against, so one recorded digest works on either. An index digest
-	// is also what lets one pin serve a pool of each platform the index lists.
-	metadata := runnableImage(descriptor.Digest.String())
-	if platforms == nil {
-		// A single-platform image says what it is in its config.
-		config, err := image.ConfigFile()
-		if err != nil {
-			return imageMetadata{}, fmt.Errorf("read harness image config %q: %w", imageRef, err)
-		}
-		platforms = platform.NewSet(platform.Platform{OS: config.OS, Arch: config.Architecture})
-	}
-	metadata.Platforms = platforms
-	return metadata, nil
-}
-
-// runnableImage is what a harness's runnable image is inspected for: the digest
-// a sandbox pins, and its kind, OCI by its being an image. Its manifest is its
-// bundle's (resolveHarness).
-func runnableImage(digest string) imageMetadata {
-	return imageMetadata{Digest: digest, ImageMetadata: harness.ImageMetadata{ImageKind: platform.OCI}}
+	return inspectManifestFile(ref, d.overlayDir)
 }
 
 func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
 	if isManifestFile(bundleRef) {
 		return bundleInspection{}, fmt.Errorf("bundle %q names a manifest file: a bundle is an OCI image", bundleRef)
 	}
-	// A locally present bundle is authoritative once found, as an image is
-	// (Inspect).
+	// A locally present bundle is authoritative once found: its metadata is
+	// what was built here, and an error reading it is surfaced rather than
+	// masked by a doomed registry fetch of the same (often :local) reference.
 	if local, found, err := inspectLocalBundle(ctx, bundleRef, admit, d.verified); found {
 		return local, err
 	}
@@ -203,6 +135,11 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 	if err != nil {
 		return bundleInspection{}, fmt.Errorf("parse bundle %q: %w", bundleRef, err)
 	}
+	// One GET, which answers the digest and, for the platform bundle, its
+	// index. Not remote.Head: ghcr.io answers HEAD without a Content-Length
+	// header, which go-containerregistry rejects. The platform is always
+	// named: go-containerregistry answers linux/amd64 when nothing says
+	// otherwise.
 	descriptor, err := remote.Get(ref,
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(registryauth.Keychain()),
@@ -233,14 +170,14 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 // it is a bundle at all, then what admit asks of the kind it is meant to be.
 //
 // A bundle is FROM scratch, so it carries no label it did not set, and every
-// runnable image carries the ReclaimLabel discobox-sandbox-base sets: the sandbox
-// agent image, every harness twin, anything built FROM them. That is the one
-// label to tell them apart by, since the runnable images carry the manifest
-// labels too, to move their digests with it — which would admit the sandbox
-// agent image as the platform bundle, and have its layers saved and read.
+// image built FROM discobox-sandbox-base carries the ReclaimLabel it sets: the
+// base itself, the pool agent's, a snapshot, and the runnable images of a
+// release from before bundles, which carried the manifest labels too. That is
+// the one label to tell them apart by, so none of those several-GB images is
+// admitted as a bundle and has its layers saved and read.
 func admitBundle(labels map[string]string, admit func(labels map[string]string) error) error {
 	if _, runnable := labels[harness.ReclaimLabel]; runnable {
-		return fmt.Errorf("it carries %s, so it is a runnable image built FROM discobox-sandbox-base, and a bundle is built FROM scratch", harness.ReclaimLabel)
+		return fmt.Errorf("it carries %s, so it is an image built FROM discobox-sandbox-base, and a bundle is built FROM scratch", harness.ReclaimLabel)
 	}
 	return admit(labels)
 }
@@ -304,11 +241,12 @@ func refuseLayerWhiteouts(layer v1.Layer) error {
 // opaque marker included.
 const whiteoutPrefix = ".wh."
 
-// publishedImage resolves the image whose labels a harness is read from, and,
-// for a multi-platform image, every platform its index publishes. The labels
-// are read from the platform a pool on this machine hosts when the index lists
-// it, and from the first platform it lists otherwise: an image published only
-// for another architecture still declares the same harness.
+// publishedImage resolves the image a bundle's labels and layers are read
+// from, and, for a multi-platform one — the platform bundle — every platform
+// its index publishes. They are read from the platform a pool on this machine
+// hosts when the index lists it, and from the first platform it lists
+// otherwise: a bundle published only for another architecture still declares
+// the same manifest.
 //
 // platforms is nil for a single-platform image, whose config says what it is.
 func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, error) {
@@ -332,14 +270,12 @@ func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, erro
 	return image, platforms, err
 }
 
-// localImageDigest is the digest to pin a locally-inspected image to.
+// localImageDigest is the digest to pin a locally-inspected bundle to.
 //
-// A pulled image carries the registry digest in RepoDigests, and that is what
-// every daemon can be asked about later, whichever image store it uses. A
-// locally built one has none — nothing pushed it — so its image ID is all there
-// is, and it is also all the pool will have to compare against. A containerd
-// image store makes that ID the image's manifest digest; the classic store
-// makes it its config's.
+// A pulled bundle carries the registry digest in RepoDigests, which is the one
+// its registry serves it under. A locally built one has none — nothing pushed
+// it — so its image ID is all there is: a containerd image store makes that ID
+// the image's manifest digest; the classic store makes it its config's.
 func localImageDigest(inspected dockerclient.ImageInspectResult) string {
 	for _, repoDigest := range inspected.RepoDigests {
 		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && digest != "" {
@@ -373,70 +309,6 @@ func indexPlatforms(index v1.ImageIndex) (platform.Set, map[platform.Platform]v1
 		return nil, nil, fmt.Errorf("its index lists no platform")
 	}
 	return platforms, digests, nil
-}
-
-// registryPlatforms is what a pulled image is published for, asked of the
-// registry it was pulled from by the digest the daemon recorded. A daemon
-// reports a pulled image as its own platform even when the registry publishes
-// several, and recording that would refuse a pool of another architecture an
-// image that runs there. A registry that cannot be asked answers nil — no
-// platforms read, which rules nothing out — rather than the daemon's one.
-func registryPlatforms(ctx context.Context, repoDigest string) platform.Set {
-	ref, err := name.ParseReference(repoDigest)
-	if err != nil {
-		return nil
-	}
-	descriptor, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(registryauth.Keychain()))
-	if err != nil {
-		return nil
-	}
-	if descriptor.MediaType.IsIndex() {
-		index, err := descriptor.ImageIndex()
-		if err != nil {
-			return nil
-		}
-		platforms, _, err := indexPlatforms(index)
-		if err != nil {
-			return nil
-		}
-		return platforms
-	}
-	image, err := descriptor.Image()
-	if err != nil {
-		return nil
-	}
-	config, err := image.ConfigFile()
-	if err != nil {
-		return nil
-	}
-	return platform.NewSet(platform.Platform{OS: config.OS, Arch: config.Architecture})
-}
-
-// inspectLocalImage inspects imageRef via the local Docker daemon. found is true
-// only when the daemon returned an image, so the caller falls back to the
-// registry only when the image is genuinely unavailable locally.
-func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, bool, error) {
-	client, err := dockerclient.New(dockerclient.FromEnv)
-	if err != nil {
-		return imageMetadata{}, false, err
-	}
-	defer client.Close()
-	// The manifest list, which a daemon on the containerd image store reports
-	// from API 1.48 on, is what says which platforms the image is published
-	// for. A daemon that cannot report it is asked again without it.
-	inspected, err := client.ImageInspect(ctx, imageRef, dockerclient.ImageInspectWithManifests(true))
-	if err != nil {
-		inspected, err = client.ImageInspect(ctx, imageRef)
-	}
-	if err != nil {
-		return imageMetadata{}, false, err
-	}
-	metadata := runnableImage(localImageDigest(inspected))
-	metadata.Platforms = localPlatforms(inspected.InspectResponse)
-	if metadata.Platforms == nil {
-		metadata.Platforms = localPlatformsWithoutManifests(ctx, inspected.InspectResponse)
-	}
-	return metadata, true, nil
 }
 
 // inspectLocalBundle inspects bundleRef via the local Docker daemon, which
@@ -509,52 +381,11 @@ func saveLocalImage(ctx context.Context, client *dockerclient.Client, ref string
 	return image, cleanup, nil
 }
 
-// localPlatforms is what a local image is published for, from the manifest
-// list its daemon reports: every image manifest in its index, whether or not
-// this daemon holds that platform's content. A pulled multi-platform image
-// lists them all; an image built here lists the one platform it was built for,
-// which is what a development build makes, and which runs only on a pool of
-// that platform. Attestation manifests are not platforms. nil when the daemon
-// reported no manifest list.
-func localPlatforms(inspected imagetypes.InspectResponse) platform.Set {
-	listed := make([]platform.Platform, 0, len(inspected.Manifests))
-	for _, manifest := range inspected.Manifests {
-		if manifest.Kind != imagetypes.ManifestKindImage || manifest.ImageData == nil {
-			continue
-		}
-		listed = append(listed, platform.Platform{OS: manifest.ImageData.Platform.OS, Arch: manifest.ImageData.Platform.Architecture})
-	}
-	if len(listed) == 0 {
-		return nil
-	}
-	return platform.NewSet(listed...)
-}
-
-// localPlatformsWithoutManifests answers for a daemon that reports no manifest
-// list — the classic image store, or one older than API 1.48. On the classic
-// store an image with a registry digest was pulled, and the registry says what
-// it is published for; one without was built here, and is the one platform it
-// was built for. The daemon's own platform is never taken for an image with a
-// registry digest: it reports a pulled multi-platform image as the one
-// platform it holds. A containerd-store daemon older than API 1.48 gives a
-// local build a registry digest too; its registry has never heard of it, and
-// the set is left unread — which rules nothing out, so such a build on a pool
-// of another platform fails on that pool rather than at placement.
-func localPlatformsWithoutManifests(ctx context.Context, inspected imagetypes.InspectResponse) platform.Set {
-	if len(inspected.RepoDigests) > 0 {
-		return registryPlatforms(ctx, inspected.RepoDigests[0])
-	}
-	return platform.NewSet(platform.Platform{OS: inspected.Os, Arch: inspected.Architecture})
-}
-
-// manifestFileScheme prefixes a harness reference that names a manifest file
-// rather than an image: file:// and an absolute path on this server's host,
-// inside its overlay directory.
-const manifestFileScheme = "file://"
-
-// isManifestFile reports whether ref names a manifest file.
+// isManifestFile reports whether ref names a manifest file rather than an
+// image: services.ManifestFileScheme and an absolute path on this server's
+// host, inside its overlay directory.
 func isManifestFile(ref string) bool {
-	return strings.HasPrefix(strings.TrimSpace(ref), manifestFileScheme)
+	return strings.HasPrefix(strings.TrimSpace(ref), services.ManifestFileScheme)
 }
 
 // inspectManifestFile reads a manifest file named by a file:// reference: the
@@ -685,8 +516,9 @@ func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
 //
 // A bundle is a Linux sandbox's, and names neither a platform nor an image
 // kind: its steps select on the platform they run on, and the kind is the
-// provider's (ADR 26-10-16-423 §2). The kind is OCI here, the one the
-// runnable image a pool runs it as is.
+// provider's (ADR 26-10-16-423 §2). The kind is OCI here, the kind of box a
+// Docker pool runs it on: its sandbox base image, which the agent applies it
+// to.
 func composeBundleMetadata(platformBundle, harnessBundle bundleInspection) (harness.ImageMetadata, error) {
 	metadata, err := harness.ComposeBundleLabels(platformBundle.Labels, harnessBundle.Labels)
 	if err != nil {
@@ -799,25 +631,20 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 	return nil
 }
 
-// devImageInspector answers for the development image manifest's entries
-// before falling back to a daemon or registry lookup.
+// devImageInspector answers a development bundle before falling back to a
+// daemon or registry lookup, neither of which holds one.
 //
-// In build-mode the host has no Docker daemon and the dev images have never
-// been pushed, so neither fallback can see them: each exists only as a build
-// description until some pool's daemon builds it. The manifest carries a
-// bundle's manifest verbatim, as the build argument its label is set from, so
-// seeding reads it from there: a harness bundle's own label from its
+// In copy-mode the watcher exports each bundle as an OCI image layout, and in
+// build-mode a pool's daemon builds it and the server saves its layout
+// (devbundles): either is read from there (inspectLayoutBundle). Until a pool
+// has built it, a build-mode bundle exists only as its build description,
+// which carries its manifest verbatim as the build argument its label is set
+// from, so seeding reads it from there: a harness bundle's own label from its
 // HARNESS_METADATA, and the platform bundle's PlatformLayer from its
 // IMAGE_LAYER_METADATA. A bundle inherits no layer from anything (ADR
 // 26-10-16-423 §2), so nothing is walked.
-//
-// In copy-mode the watcher exports each bundle as an OCI image layout, which
-// no daemon or registry holds either: layouts answers a bundle from there
-// (inspectLayoutBundle).
 type devImageInspector struct {
-	bundles  map[string]map[string]string
-	layouts  map[string]devimage.Bundle
-	images   map[string]bool
+	bundles  *devbundles.Set
 	fallback imageInspector
 	verified *verifiedBundles
 }
@@ -830,60 +657,46 @@ const (
 	harnessBundleTarget  = "bundle"
 )
 
-// newDevImageInspector wraps fallback with the build-mode manifest entries in
-// images and the exported bundles. It returns fallback unchanged when there
-// are neither, so production keeps the original behavior exactly.
-func newDevImageInspector(images []devimage.Image, bundles []devimage.Bundle, fallback imageInspector, verified *verifiedBundles) imageInspector {
-	inspector := devImageInspector{
-		bundles: map[string]map[string]string{}, layouts: map[string]devimage.Bundle{}, images: map[string]bool{},
-		fallback: fallback, verified: verified,
-	}
-	for _, bundle := range bundles {
-		inspector.layouts[bundle.Reference] = bundle
-	}
-	for _, image := range images {
-		if image.Build == nil {
-			continue
-		}
-		reference := strings.TrimSpace(image.Reference)
-		switch strings.TrimSpace(image.Build.Target) {
-		case platformBundleTarget:
-			inspector.bundles[reference] = map[string]string{
-				harness.ImageLayerLabelPrefix + harness.PlatformLayer: strings.TrimSpace(image.Build.Args[harness.LayerMetadataBuildArg]),
-			}
-		case harnessBundleTarget:
-			inspector.bundles[reference] = map[string]string{
-				harness.ImageLabel: strings.TrimSpace(image.Build.Args[harness.MetadataBuildArg]),
-			}
-		default:
-			inspector.images[reference] = true
-		}
-	}
-	if len(inspector.bundles) == 0 && len(inspector.layouts) == 0 && len(inspector.images) == 0 {
+// newDevImageInspector wraps fallback with the development bundles. It
+// returns fallback unchanged when there are none, so production keeps the
+// original behavior exactly.
+func newDevImageInspector(bundles *devbundles.Set, fallback imageInspector, verified *verifiedBundles) imageInspector {
+	if bundles == nil {
 		return fallback
 	}
-	return inspector
+	return devImageInspector{bundles: bundles, fallback: fallback, verified: verified}
 }
 
-// Inspect answers a build-mode reference with itself as its digest: it is
-// content-addressed over that image's inputs, so it is its own freshness key,
-// and there is no digest until it is built. Nor is there a platform: the pool
-// that runs it builds it for its own, so the set is left empty and rules no
-// pool out. InspectBundle answers a bundle's the same way.
-func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
-	if !d.images[strings.TrimSpace(imageRef)] {
-		return d.fallback.Inspect(ctx, imageRef)
-	}
-	return runnableImage(imageRef), nil
+func (d devImageInspector) InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error) {
+	return d.fallback.InspectManifestFile(ctx, ref)
 }
 
+// InspectBundle answers a bundle no pool has built yet with its reference as
+// its digest: the reference is content-addressed over the build's inputs, so
+// it is its own freshness key, and there is no digest until it is built. A
+// box is never pinned to one (resources/sandboxes), and the built bundle's
+// digest replaces it once its layout is saved and seeding runs again.
 func (d devImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
-	if bundle, ok := d.layouts[strings.TrimSpace(bundleRef)]; ok {
+	bundleRef = strings.TrimSpace(bundleRef)
+	if bundle, ok := d.bundles.Layout(bundleRef); ok {
 		return inspectLayoutBundle(bundle, admit, d.verified)
 	}
-	labels, ok := d.bundles[strings.TrimSpace(bundleRef)]
+	bundle, ok := d.bundles.Unbuilt(bundleRef)
 	if !ok {
 		return d.fallback.InspectBundle(ctx, bundleRef, admit)
+	}
+	var labels map[string]string
+	switch strings.TrimSpace(bundle.Build.Target) {
+	case platformBundleTarget:
+		labels = map[string]string{
+			harness.ImageLayerLabelPrefix + harness.PlatformLayer: strings.TrimSpace(bundle.Build.Args[harness.LayerMetadataBuildArg]),
+		}
+	case harnessBundleTarget:
+		labels = map[string]string{
+			harness.ImageLabel: strings.TrimSpace(bundle.Build.Args[harness.MetadataBuildArg]),
+		}
+	default:
+		return bundleInspection{}, fmt.Errorf("bundle %q builds the target %q, which is no bundle stage", bundleRef, bundle.Build.Target)
 	}
 	if err := admitBundle(labels, admit); err != nil {
 		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundleRef, err)

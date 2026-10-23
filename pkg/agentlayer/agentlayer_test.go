@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -171,26 +169,5 @@ func TestAgentLayerIsTheAgentAlone(t *testing.T) {
 		if err := AgentLayer(bytes.NewReader(layer)); !errors.Is(err, ErrNotAgentLayer) {
 			t.Errorf("%s: %v, want ErrNotAgentLayer", name, err)
 		}
-	}
-}
-
-// Install lays what Archive places, for a machine.
-func TestInstallLaysTheUnitsAndTheirEnablement(t *testing.T) {
-	root := t.TempDir()
-	if err := Install(root); err != nil {
-		t.Fatal(err)
-	}
-	if err := Install(root); err != nil {
-		t.Fatalf("a second install: %v", err)
-	}
-	for _, unit := range Units {
-		if _, err := os.Stat(filepath.Join(root, unit.Path)); err != nil {
-			t.Errorf("%s: %v", unit.Name, err)
-		}
-	}
-	target, err := os.Readlink(filepath.Join(root, "etc/systemd/system/sysinit.target.requires/discobox-wire.service"))
-	// Windows hands a link back in its own separators.
-	if err != nil || filepath.ToSlash(target) != "/etc/systemd/system/discobox-wire.service" {
-		t.Fatalf("wire link = %q, %v", target, err)
 	}
 }

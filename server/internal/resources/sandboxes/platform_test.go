@@ -1,6 +1,7 @@
 package sandboxes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,27 +11,42 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// A sandbox runs on its pool's platform, which its harness's image must be
-// published for (ADR 0145 §1). Create refuses a pool of a platform the image is
-// not published for — what a single-platform development build meets on a
-// cross-architecture pool — with a 409 that says what the image is published
-// for and what the pool hosts. A pool that has not declared one yet is still a
-// target, and the sandbox has no platform until it is placed. A multi-platform
-// image runs on a pool of any platform it publishes.
+// asManifestFile turns config into a template with no image: its manifest a
+// file, which says the platforms and the kind of box it runs on, where a
+// bundle, applied onto a pool's own sandbox base image, says neither.
+func asManifestFile(t *testing.T, st *store.Store, config *model.HarnessConfig, platforms ...platform.Platform) {
+	t.Helper()
+	config.Bundle, config.BundleDigest = "", ""
+	config.Image, config.ImageDigest = "file:///etc/discobox/harnesses/"+config.Slug+".json", legacyImageDigest
+	config.Platforms = platform.NewSet(platforms...)
+	if err := st.UpdateHarnessConfig(context.Background(), config); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A sandbox runs on its pool's platform, which a template with no image must
+// run on (ADR 0145 §1). Create refuses a pool of a platform the manifest file
+// does not declare with a 409 that says what it runs on and what the pool
+// hosts. A pool that has not declared one yet is still a target, and the
+// sandbox has no platform until it is placed. A template of several platforms
+// runs on a pool of any of them, and a harness bundle on a pool of any.
 func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
-	configuredHarness(t, st, "codex", "Codex")
+	configuredHarness(t, st, "bundled", "Bundled")
+	asManifestFile(t, st, configuredHarness(t, st, "codex", "Codex"), platform.Pool())
 	var created *model.Sandbox
-	create := func(name string) error {
+	createOn := func(harness, name string) error {
 		var err error
 		created, err = svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
-			HarnessName: serverapi.NewOptString("codex"),
+			HarnessName: serverapi.NewOptString(harness),
 			Config:      serverapi.SandboxCreateConfig{Name: name},
 		})
 		return err
 	}
+	create := func(name string) error { return createOn("codex", name) }
 
 	if err := create("undeclared"); err != nil {
 		t.Fatalf("create on a pool that has not declared a platform: %v", err)
@@ -49,10 +65,14 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 		t.Fatalf("err = %v, want a 409", err)
 	}
 	if !strings.Contains(err.Error(), riscv.String()) || !strings.Contains(err.Error(), platform.Pool().String()+" only") {
-		t.Fatalf("err = %v, want it to say what the image is published for and what the pool hosts", err)
+		t.Fatalf("err = %v, want it to say what the template runs on and what the pool hosts", err)
+	}
+	// A bundle declares no platform: the pool's base image is its own.
+	if err := createOn("bundled", "bundled-cross-arch"); err != nil {
+		t.Fatalf("create of a harness bundle on a pool of another platform: %v", err)
 	}
 
-	// The release image is published for both, so the same pool runs it.
+	// A template of both platforms runs on the same pool.
 	harness, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +111,7 @@ func TestCreateRefusesAPoolOfAnotherPlatform(t *testing.T) {
 func TestCreateRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	machine := configuredHarness(t, st, "machine", "Machine")
+	asManifestFile(t, st, machine)
 	machine.ImageKind = platform.DiscoVM("boxd")
 	if err := st.UpdateHarnessConfig(ctx, machine); err != nil {
 		t.Fatal(err)

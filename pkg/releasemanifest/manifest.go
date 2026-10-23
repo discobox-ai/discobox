@@ -31,24 +31,26 @@ type Manifest struct {
 }
 
 // Images names each image by its runtime role. The staging list is derived
-// from these roles, never maintained separately from the harness references.
+// from these roles, never maintained separately from them.
 type Images struct {
 	PoolAgent string `json:"poolAgent"`
-	// SandboxBase is the Docker driver's sandbox base image, which the sandbox
-	// images are built FROM (ADR 26-10-16-423 §10). A release cut before it
-	// names none.
-	SandboxBase  string            `json:"sandboxBase,omitempty"`
-	SandboxAgent string            `json:"sandboxAgent"`
-	VM           string            `json:"vm"`
-	Kernel       string            `json:"kernel"`
-	Harnesses    map[string]string `json:"harnesses"`
+	// SandboxBase is the Docker driver's sandbox base image, every sandbox
+	// container's (ADR 26-10-16-423 §10). A release cut before it names none.
+	SandboxBase string `json:"sandboxBase,omitempty"`
+	VM          string `json:"vm"`
+	Kernel      string `json:"kernel"`
+	// SandboxAgent and Harnesses are the runnable sandbox-agent and harness
+	// images a release from before bundles ran its sandboxes on, the last of
+	// them shipping both. A release from bundles on names neither: no harness
+	// is an image (ADR 26-10-16-423 §10). They stay so the CLI still reads,
+	// and stages the images of, an older server's manifest.
+	SandboxAgent string            `json:"sandboxAgent,omitempty"`
+	Harnesses    map[string]string `json:"harnesses,omitempty"`
 }
 
 // Bundles names each bundle a release publishes (ADR 26-10-16-423 §§2, 7): the
-// platform bundle the server composes under every harness's manifest, and each
-// built-in harness's bundle by slug, the one its manifest is read from. Each
-// harness in Images.Harnesses is the runnable image built from its bundle,
-// which a pool runs until the agent applies bundles itself.
+// platform bundle the server composes under every harness's manifest and
+// delivers to every box, and each built-in harness's bundle by slug.
 //
 // A release from before bundles names none, and is still a valid manifest:
 // the CLI reads the manifests of older servers. A server reading its own
@@ -86,18 +88,22 @@ func (m Manifest) Validate() error {
 	if strings.TrimSpace(m.Version) == "" {
 		return fmt.Errorf("release manifest has no version")
 	}
-	for role, ref := range map[string]string{"poolAgent": m.Images.PoolAgent, "sandboxAgent": m.Images.SandboxAgent, "vm": m.Images.VM, "kernel": m.Images.Kernel} {
+	for role, ref := range map[string]string{"poolAgent": m.Images.PoolAgent, "vm": m.Images.VM, "kernel": m.Images.Kernel} {
 		if err := validateImage(ref); err != nil {
 			return fmt.Errorf("release manifest %s: %w", role, err)
 		}
 	}
-	if m.Images.SandboxBase != "" {
-		if err := validateImage(m.Images.SandboxBase); err != nil {
-			return fmt.Errorf("release manifest sandboxBase: %w", err)
+	for role, ref := range map[string]string{"sandboxBase": m.Images.SandboxBase, "sandboxAgent": m.Images.SandboxAgent} {
+		if ref == "" {
+			continue
+		}
+		if err := validateImage(ref); err != nil {
+			return fmt.Errorf("release manifest %s: %w", role, err)
 		}
 	}
-	if len(m.Images.Harnesses) == 0 {
-		return fmt.Errorf("release manifest has no harness images")
+	// A release runs its harnesses as bundles, or, before bundles, as images.
+	if !m.HasBundles() && len(m.Images.Harnesses) == 0 {
+		return fmt.Errorf("release manifest names no harness bundles")
 	}
 	for slug, ref := range m.Images.Harnesses {
 		if strings.TrimSpace(slug) == "" {
@@ -138,12 +144,12 @@ func (m Manifest) validateBundles() error {
 	if err := validateImage(m.Bundles.Platform); err != nil {
 		return fmt.Errorf("release manifest platform bundle: %w", err)
 	}
-	if len(m.Bundles.Harnesses) != len(m.Images.Harnesses) {
-		return fmt.Errorf("release manifest names %d harness bundles for %d harness images", len(m.Bundles.Harnesses), len(m.Images.Harnesses))
+	if len(m.Bundles.Harnesses) == 0 {
+		return fmt.Errorf("release manifest names no harness bundles")
 	}
 	for slug, ref := range m.Bundles.Harnesses {
-		if _, ok := m.Images.Harnesses[slug]; !ok {
-			return fmt.Errorf("release manifest harness bundle %s has no harness image", slug)
+		if strings.TrimSpace(slug) == "" {
+			return fmt.Errorf("release manifest has an unnamed harness bundle")
 		}
 		if err := validateImage(ref); err != nil {
 			return fmt.Errorf("release manifest harness bundle %s: %w", slug, err)
@@ -167,9 +173,9 @@ func validateImage(value string) error {
 // Linux also stages libkrun's boot artifacts; Windows supplies its own guest.
 //
 // The bundles are not staged. What is staged is loaded into pool daemons,
-// which run the harness images and never a bundle, and is staged for the
-// pool's platform, where a harness bundle is one manifest for any; the server
-// reads a bundle from its own daemon or its registry.
+// which never hold a bundle; the server reads a bundle from its registry and
+// serves it to pools by blob (ADR 26-10-16-423 §13). An older release's
+// sandbox-agent and harness images are staged, since its server runs them.
 func (i Images) References(hostOS, hostArch string) []string {
 	var refs []string
 	switch hostOS {
@@ -185,7 +191,9 @@ func (i Images) References(hostOS, hostArch string) []string {
 	if i.SandboxBase != "" {
 		refs = append(refs, i.SandboxBase)
 	}
-	refs = append(refs, i.SandboxAgent)
+	if i.SandboxAgent != "" {
+		refs = append(refs, i.SandboxAgent)
+	}
 	refs = append(refs, bySlug(i.Harnesses)...)
 	seen := map[string]bool{}
 	out := make([]string, 0, len(refs))

@@ -373,9 +373,6 @@ func TestPoolSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 
 	created, err := client.PoolCreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sandbox-1",
-		Config: workerapimodel.SandboxConfig{
-			Image: workerclient.NewOptString("alpine"),
-		},
 	}, workerclient.PoolCreateSandboxParams{ProjectId: "project-1", PoolId: "pool-1"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -427,9 +424,6 @@ func TestPoolSandboxGitOriginRouteServesTheOriginRepository(t *testing.T) {
 	runtime := poolagent.NewMemorySandboxRuntime()
 	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sandbox-1",
-		Config: workerapimodel.SandboxConfig{
-			Image: workerclient.NewOptString("alpine"),
-		},
 	}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}

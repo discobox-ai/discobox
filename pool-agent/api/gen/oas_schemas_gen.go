@@ -5139,10 +5139,6 @@ type SandboxConfig struct {
 	// The repository's features by name, as the client read them from its settings.json; the sandbox
 	// provisions every one but those turned off (ADR 26-10-16-423 §4).
 	Features OptSandboxConfigFeatures `json:"features"`
-	Image    OptString                `json:"image"`
-	// Config digest the image must resolve to. The runtime runs this image and replaces a container
-	// built from any other, so a moved tag never silently changes a running sandbox.
-	ImageDigest OptString `json:"imageDigest"`
 	// Whether creating the container should also bring it up. True for a sandbox being
 	// created for the first time, because asking for a sandbox means asking for one that
 	// runs. False for a rebuild after the container was lost: recovery restores what
@@ -5150,7 +5146,7 @@ type SandboxConfig struct {
 	Start OptBool `json:"start"`
 	// Digest of the whole sandbox spec this container must be built from.
 	// The runtime records it as a container label and rebuilds any container whose label
-	// no longer matches, so image upgrades and every other spec change are one mechanism
+	// no longer matches, so bundle upgrades and every other spec change are one mechanism
 	// rather than a growing list of per-field comparisons.
 	SpecFingerprint      OptString                            `json:"specFingerprint"`
 	Name                 OptString                            `json:"name"`
@@ -5213,16 +5209,6 @@ func (s *SandboxConfig) GetSkillsSources() []SandboxSkillsSource {
 // GetFeatures returns the value of Features.
 func (s *SandboxConfig) GetFeatures() OptSandboxConfigFeatures {
 	return s.Features
-}
-
-// GetImage returns the value of Image.
-func (s *SandboxConfig) GetImage() OptString {
-	return s.Image
-}
-
-// GetImageDigest returns the value of ImageDigest.
-func (s *SandboxConfig) GetImageDigest() OptString {
-	return s.ImageDigest
 }
 
 // GetStart returns the value of Start.
@@ -5313,16 +5299,6 @@ func (s *SandboxConfig) SetSkillsSources(val []SandboxSkillsSource) {
 // SetFeatures sets the value of Features.
 func (s *SandboxConfig) SetFeatures(val OptSandboxConfigFeatures) {
 	s.Features = val
-}
-
-// SetImage sets the value of Image.
-func (s *SandboxConfig) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetImageDigest sets the value of ImageDigest.
-func (s *SandboxConfig) SetImageDigest(val OptString) {
-	s.ImageDigest = val
 }
 
 // SetStart sets the value of Start.
@@ -5595,18 +5571,12 @@ func (s *SandboxSkillsSource) SetSource(val string) {
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
 	Env              OptSandboxUpdateConfigEnv `json:"env"`
-	Image            OptString                 `json:"image"`
 	WorkingDirectory OptString                 `json:"workingDirectory"`
 }
 
 // GetEnv returns the value of Env.
 func (s *SandboxUpdateConfig) GetEnv() OptSandboxUpdateConfigEnv {
 	return s.Env
-}
-
-// GetImage returns the value of Image.
-func (s *SandboxUpdateConfig) GetImage() OptString {
-	return s.Image
 }
 
 // GetWorkingDirectory returns the value of WorkingDirectory.
@@ -5617,11 +5587,6 @@ func (s *SandboxUpdateConfig) GetWorkingDirectory() OptString {
 // SetEnv sets the value of Env.
 func (s *SandboxUpdateConfig) SetEnv(val OptSandboxUpdateConfigEnv) {
 	s.Env = val
-}
-
-// SetImage sets the value of Image.
-func (s *SandboxUpdateConfig) SetImage(val OptString) {
-	s.Image = val
 }
 
 // SetWorkingDirectory sets the value of WorkingDirectory.

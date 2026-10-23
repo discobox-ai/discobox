@@ -168,7 +168,7 @@ func (l *buildLog) String() string {
 }
 
 // orderBuilds sorts images so that an image whose build arguments reference
-// another image in the set is built after it. Harness images are built
+// another image in the set is built after it. The pool agent's image is built
 // FROM the sandbox base image this way, passed as a build argument.
 func orderBuilds(images []devimage.Image) ([]devimage.Image, error) {
 	remaining := make([]devimage.Image, len(images))

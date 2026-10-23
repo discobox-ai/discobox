@@ -72,7 +72,7 @@ func TestDevelopmentImageBuildE2E(t *testing.T) {
 			Context:    repoRoot,
 			Platform:   "linux/amd64",
 		},
-	}})
+	}}, nil)
 	if err != nil {
 		t.Fatalf("NewDevelopmentImageSynchronizer: %v", err)
 	}

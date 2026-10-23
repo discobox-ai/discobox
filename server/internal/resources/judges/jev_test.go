@@ -155,7 +155,7 @@ func TestJevJudgesARequestAndItsVerdictNamesTheModel(t *testing.T) {
 	if sent := fake.sent(); string(v.JevInput) != string(sent) || strings.Contains(string(v.JevInput), "ts-key") {
 		t.Fatalf("JevInput = %s, want exactly what Jev was sent, %s, and none of its key", v.JevInput, sent)
 	}
-	if v.JudgeSandboxID != "" || v.Image != "" || v.HarnessConfigID != "" || v.Role != "" {
+	if v.JudgeSandboxID != "" || v.Bundle != "" || v.HarnessConfigID != "" || v.Role != "" {
 		t.Fatalf("verdict = %+v, want no judge discobox named", v)
 	}
 	if !v.Allow || v.GrantID != "grant-1" || !strings.Contains(v.Prompt, "open a pull request in org/repo") {

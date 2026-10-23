@@ -164,6 +164,32 @@ func (s *Store) ListStoppedSandboxes(ctx context.Context, projectID, harnessConf
 	return sandboxes, err
 }
 
+// ListUndeliveredSandboxes lists every settled sandbox no container runs that
+// is pinned to no platform bundle: one from before bundles, pinned to the
+// runnable harness image it ran (ADR 26-10-16-423 §10). The stopped and failed
+// ones ListStoppedSandboxes lists, of every project, and the archived ones,
+// which a later unarchive builds a container for. A running one is not listed:
+// its container stays until something rebuilds it, which pins it then.
+func (s *Store) ListUndeliveredSandboxes(ctx context.Context) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var sandboxes []model.Sandbox
+	err = read.
+		Where("platform_bundle_digest = ?", "").
+		Where("generation = observed_generation").
+		Omit("skills").
+		Where("(desired_state = ? AND ((state = ? AND runtime_state = ?) OR (state = ? AND runtime_state IN ?))) OR (desired_state = ? AND state = ?)",
+			model.DesiredStatePresent,
+			model.SandboxStateReady, model.SandboxRuntimeStateStopped,
+			model.SandboxStateFailed, []string{model.SandboxRuntimeStateStopped, ""},
+			model.DesiredStateArchived, model.SandboxStateArchived).
+		Order("id ASC").
+		Find(&sandboxes).Error
+	return sandboxes, err
+}
+
 // SandboxListOption narrows or widens what a listing answers with.
 type SandboxListOption func(*sandboxListOptions)
 

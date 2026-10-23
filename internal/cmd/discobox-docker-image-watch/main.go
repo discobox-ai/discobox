@@ -32,13 +32,10 @@ var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder fo
 // for the server to serve from (ADR 26-10-16-423 §13).
 const bundleLayoutDir = "build/assets"
 
-// baseSpecName is the Docker driver's sandbox base image, which both agent
-// images build FROM via the BASE_IMAGE build arg.
+// baseSpecName is the Docker driver's sandbox base image, every sandbox
+// container's, which the pool agent's image builds FROM via the BASE_IMAGE
+// build arg.
 const baseSpecName = "sandbox-base"
-
-// sandboxAgentSpecName is the spec whose built image every harness's runnable
-// twin layers on top of via the SANDBOX_AGENT_IMAGE build arg.
-const sandboxAgentSpecName = "sandbox-agent"
 
 // platformSpecName is the platform bundle: the sandbox agent Dockerfile's
 // FROM scratch stage holding every platform feature (ADR 26-10-16-423 §7).
@@ -65,25 +62,24 @@ type imageSpec struct {
 	// contextDir, dockerfile and target describe the same build as buildArgs,
 	// but declaratively, for build-mode: the server builds these on the
 	// destination Docker daemon, so there is no docker CLI invocation to derive
-	// them from. target is the stage, for a Dockerfile with more than one
-	// artifact: the sandbox agent's image and the platform bundle, a harness's
-	// bundle and its runnable twin.
+	// them from. target is the stage, for a Dockerfile whose artifact is not
+	// its last stage's or is named: the platform bundle, a harness's bundle.
 	contextDir string
 	dockerfile string
 	target     string
 	// parent names the spec whose built image this one builds FROM, and
 	// parentArg the build argument that carries it. The parent's build-arg value
 	// is rewritten to the parent's hashed dev tag so a child pins the exact base
-	// it was built on rather than the mutable :local tag. The chain is
-	// base -> pool-agent/sandbox-agent -> harness twin.
+	// it was built on rather than the mutable :local tag. The one chain is
+	// base -> pool-agent; the bundles are FROM scratch, on no chain.
 	parent    string
 	parentArg string
 	// bundle marks a FROM scratch bundle (ADR 26-10-16-423 §2): never run, so
 	// copy-mode exports it into layoutDir, as an OCI image layout tar named by
 	// its digest, rather than into any Docker daemon, and records it among the
 	// manifest's bundles, which the server serves and reads its labels from.
-	// Build-mode describes it like any other image, since there the server
-	// reconstructs its labels from the manifest's build arguments.
+	// Build-mode records its build among the bundles instead: a pool's daemon
+	// builds it and the server saves its layout (server/internal/devbundles).
 	bundle    bool
 	layoutDir string
 }
@@ -324,9 +320,9 @@ func missingFrom(specs []imageSpec, present func(imageSpec) bool) []imageSpec {
 	}
 	// A rebuilt image is a new base, so everything layered on it has to be
 	// rebuilt too — otherwise the manifest would publish an image built on a
-	// base that no longer exists. Swept to a fixed point rather than once,
-	// because the chain is three deep: a missing base takes both agents with it,
-	// and the sandbox agent takes every harness.
+	// base that no longer exists: a missing base takes the pool agent with it.
+	// Swept to a fixed point rather than once, so a deeper chain needs nothing
+	// more here.
 	for {
 		grew := false
 		for _, spec := range specs {
@@ -502,17 +498,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	}
 	addFile(repoRoot, filepath.Join("harness", "prompt-answer.sh"), sandboxSeen)
 	// The platform bundle is FROM scratch, so the shared base is not among
-	// its inputs; the runnable image and everything on it are built FROM it.
-	platformSeen := copyFiles(sandboxSeen)
-	for file := range baseSeen {
-		sandboxSeen[file] = struct{}{}
-	}
-	commonSandboxSeen := copyFiles(sandboxSeen)
-	for _, harnessImage := range harnessImages {
-		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
-			delete(commonSandboxSeen, filepath.Join(repoRoot, "harness", harnessImage.dir, name))
-		}
-	}
+	// its inputs.
+	platformSeen := sandboxSeen
 	specs := []imageSpec{
 		{
 			name:        baseSpecName,
@@ -540,31 +527,6 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			parent:     baseSpecName,
 			parentArg:  "BASE_IMAGE",
 			files:      sortedFiles(workerSeen),
-		},
-		{
-			name:         sandboxAgentSpecName,
-			baseImage:    "discobox-sandbox-agent:local",
-			devPrefix:    "discobox-sandbox-agent:dev-",
-			envImageKey:  "DISCOBOX_DEFAULT_SANDBOX_IMAGE",
-			envDigestKey: "DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
-			buildDir:     repoRoot,
-			// The runnable stage by name: the Dockerfile's default target is
-			// the platform bundle, which has a spec of its own below.
-			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile", "--target", "sandbox-agent",
-				"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
-				"--build-arg", harness.LayerMetadataBuildArg + "=",
-				"-t", "discobox-sandbox-agent:local", "."},
-			contextDir: repoRoot,
-			dockerfile: "sandbox-agent/Dockerfile",
-			target:     "sandbox-agent",
-			parent:     baseSpecName,
-			parentArg:  "BASE_IMAGE",
-			// The platform's layer, labeled on the runnable image too so
-			// that the digest a sandbox pins moves with every edit to it;
-			// nothing reads it off this image.
-			metadataFile: filepath.Join(repoRoot, "sandbox-agent", "image.json"),
-			metadataArg:  harness.LayerMetadataBuildArg,
-			files:        sortedFiles(commonSandboxSeen),
 		},
 		{
 			name:        platformSpecName,
@@ -602,7 +564,6 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			return nil, fmt.Errorf("harness %s: %w", harnessImage.name, err)
 		}
 		bundleRef := "discobox-harness-" + harnessImage.name
-		imageRef := bundleRef + "-image"
 		// The bundle: FROM scratch, so the harness directory is all it is
 		// built from.
 		specs = append(specs, imageSpec{
@@ -623,34 +584,6 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			bundle:     true,
 			layoutDir:  bundleLayoutDirOf(repoRoot, bundleRef),
 			files:      sortedFiles(bundleSeen),
-		})
-		// The runnable twin a pool runs until the agent applies bundles
-		// itself: the bundle's features provisioned onto the sandbox agent
-		// image. It takes the metadata argument too: it labels it, so the
-		// digest a sandbox pins moves with every manifest edit, and it builds
-		// the bundle stage it copies the features from.
-		seen := copyFiles(commonSandboxSeen)
-		for file := range bundleSeen {
-			seen[file] = struct{}{}
-		}
-		specs = append(specs, imageSpec{
-			name: "harness-" + harnessImage.name + "-image", baseImage: imageRef + ":local",
-			devPrefix: imageRef + ":dev-", buildDir: repoRoot,
-			// Mirror the worker/sandbox flow: write the hashed dev tag to .env so the
-			// server restarts and resolves the new harness image.
-			envImageKey: harnessImageEnvKey(harnessImage.name),
-			buildArgs: []string{"build", "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "image",
-				"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local",
-				"--build-arg", harness.MetadataBuildArg + "=",
-				"-t", imageRef + ":local", harnessDir},
-			metadataFile: metadataFile,
-			metadataArg:  harness.MetadataBuildArg,
-			parent:       sandboxAgentSpecName,
-			parentArg:    "SANDBOX_AGENT_IMAGE",
-			contextDir:   filepath.Join(repoRoot, harnessDir),
-			dockerfile:   "Dockerfile",
-			target:       "image",
-			files:        sortedFiles(seen),
 		})
 	}
 	return specs, nil
@@ -690,14 +623,9 @@ func bundleBuildArgs(builder, layoutDir string, args ...string) []string {
 		"--output", "type=oci,dest="+partialLayout(layoutDir)), args...)
 }
 
-// harnessImageEnvKey and harnessBundleEnvKey return the .env keys the server
-// reads to override a harness definition's runnable image and its bundle. The
-// image name equals the definition's slug. Keep in sync with the server-side
-// harnessdefs mapping (DISCOBOX_HARNESS_<SLUG>_IMAGE and _BUNDLE).
-func harnessImageEnvKey(harnessName string) string {
-	return "DISCOBOX_HARNESS_" + harnessEnvSlug(harnessName) + "_IMAGE"
-}
-
+// harnessBundleEnvKey returns the .env key the server reads to override a
+// harness definition's bundle. The name equals the definition's slug. Keep in
+// sync with the server-side harnessdefs mapping (DISCOBOX_HARNESS_<SLUG>_BUNDLE).
 func harnessBundleEnvKey(harnessName string) string {
 	return "DISCOBOX_HARNESS_" + harnessEnvSlug(harnessName) + "_BUNDLE"
 }
@@ -722,14 +650,6 @@ func harnessMetadata(path string) (string, error) {
 		return "", fmt.Errorf("read harness metadata from %s: %w", path, err)
 	}
 	return compact.String(), nil
-}
-
-func copyFiles(in map[string]struct{}) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
-	for file := range in {
-		out[file] = struct{}{}
-	}
-	return out
 }
 
 // goModuleFiles lists every Go source file the named packages are built from.

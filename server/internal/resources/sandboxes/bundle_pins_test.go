@@ -20,6 +20,13 @@ const (
 	codexBundle   = "ghcr.io/discobox-ai/discobox-harness-codex:v1"
 	codexBundleV1 = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 	codexBundleV2 = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+	shellBundle   = "ghcr.io/discobox-ai/discobox-harness-shell:v1"
+	shellBundleV1 = "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+	shellBundleV2 = "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+	// legacyImage is the runnable harness image a sandbox from before
+	// bundles was pinned to, which no release builds any more.
+	legacyImage       = "discobox-harness-codex:old"
+	legacyImageDigest = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
 )
 
 // fakePlatform is the release's platform as the asset service resolves it.
@@ -33,17 +40,13 @@ func (f *fakePlatform) CurrentPlatform(context.Context) (services.BundlePin, err
 }
 func (f *fakePlatform) LatestPlatform() services.BundlePin { return f.pin }
 
-// A create pins the harness config's bundle beside its image and the platform
+// A create pins the harness config's bundle and the platform
 // the release resolves to (ADR 26-10-16-423 §7), and the pins reach the pool
 // as what the box may fetch, each by kind. A platform the server names and
 // cannot resolve fails the create rather than leave the box pinned to none.
 func TestCreatePinsTheBundles(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
-	config := configuredHarness(t, st, "codex", "Codex")
-	config.Bundle, config.BundleDigest = codexBundle, codexBundleV1
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
-		t.Fatal(err)
-	}
+	configuredHarness(t, st, "codex", "Codex")
 	platform := &fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}}
 	svc.SetPlatformBundles(platform)
 	create := func(name string) (*model.Sandbox, error) {
@@ -63,6 +66,9 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	if sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 || sb.PlatformBundle != platformRef || sb.PlatformBundleDigest != platformOld {
 		t.Fatalf("pins = %q@%q, %q@%q", sb.Bundle, sb.BundleDigest, sb.PlatformBundle, sb.PlatformBundleDigest)
 	}
+	if sb.Image != "" || sb.ImageDigest != "" {
+		t.Fatalf("image = %q@%q, want none: no harness is an image", sb.Image, sb.ImageDigest)
+	}
 	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
 	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
 		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
@@ -81,50 +87,92 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadGateway {
 		t.Fatalf("err = %v, want a 502", err)
 	}
+
+	// A server that names no platform has nothing a box on a bundle could
+	// apply its harness onto.
+	platform.pin, platform.err = services.BundlePin{}, nil
+	_, err = create("no-platform")
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want a 503", err)
+	}
+}
+
+// A create refuses a harness config it cannot pin a box to: one registered
+// before bundles, which names only the runnable image it was registered with
+// (409, the config needs its bundle registered), and one whose bundle has no
+// content digest, a development bundle no pool has built yet (503, it will).
+func TestCreateRefusesAHarnessItCannotPin(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	config := configuredHarness(t, st, "codex", "Codex")
+	for _, tc := range []struct {
+		name   string
+		mutate func(*model.HarnessConfig)
+		status int
+		says   string
+	}{
+		{
+			name: "registered before bundles",
+			// The upgrade retired the runnable image it named
+			// (database.retireHarnessImages), leaving neither.
+			mutate: func(c *model.HarnessConfig) { c.Bundle, c.BundleDigest = "", "" },
+			status: http.StatusConflict, says: "registered before bundles",
+		},
+		{
+			name: "an unbuilt development bundle",
+			mutate: func(c *model.HarnessConfig) {
+				c.Bundle, c.BundleDigest = "discobox-harness-codex:dev-0123", "discobox-harness-codex:dev-0123"
+			},
+			status: http.StatusServiceUnavailable, says: "has not been built yet",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.mutate(config)
+			if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+				t.Fatal(err)
+			}
+			_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+				HarnessName: serverapi.NewOptString("codex"),
+				Config:      serverapi.SandboxCreateConfig{Name: "refused"},
+			})
+			var status interface{ StatusCode() int }
+			if !errors.As(err, &status) || status.StatusCode() != tc.status || !strings.Contains(err.Error(), tc.says) {
+				t.Fatalf("err = %v, want a %d saying %q", err, tc.status, tc.says)
+			}
+			if listed, err := st.ListSandboxes(ctx, "project-1", "", nil); err != nil || len(listed) != 0 {
+				t.Fatalf("listed %d sandboxes (%v), want the refused create to leave none", len(listed), err)
+			}
+		})
+	}
 }
 
 // A configure box runs the harness's configure command, which the harness
-// bundle delivers: running its harness config's image, it is pinned to that
-// image and bundle as a run is, not to the platform alone. One naming another
-// image has no bundle that is that image's twin, and is pinned to none.
+// bundle delivers: it is pinned to its harness config's bundle and the
+// platform exactly as a run is, not to the platform alone.
 func TestConfigModeCreatePinsTheHarnessBundle(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	config := configuredHarness(t, st, "codex", "Codex")
 	config.Configured = false
-	config.Bundle, config.BundleDigest = codexBundle, codexBundleV1
 	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
 		t.Fatal(err)
 	}
 	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}})
-	create := func(name, image string) *model.Sandbox {
-		t.Helper()
-		body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: name}}
-		body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
-		body.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
-		body.Config.SetImage(serverapi.NewOptString(image))
-		created, err := svc.CreateSandbox(ctx, "project-1", body)
-		if err != nil {
-			t.Fatalf("create %s: %v", name, err)
-		}
-		sb, err := st.GetSandbox(ctx, "project-1", created.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return sb
+	body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "configure"}}
+	body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
+	body.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
+	created, err := svc.CreateSandbox(ctx, "project-1", body)
+	if err != nil {
+		t.Fatalf("create configure box: %v", err)
 	}
-
-	sb := create("configure", config.Image)
-	if sb.Image != config.Image || sb.ImageDigest != config.ImageDigest || sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 {
-		t.Fatalf("configure box pins = %q@%q, %q@%q, want the harness config's", sb.Image, sb.ImageDigest, sb.Bundle, sb.BundleDigest)
+	sb, err := st.GetSandbox(ctx, "project-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Image != "" || sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 {
+		t.Fatalf("configure box pins = %q, %q@%q, want the harness config's bundle alone", sb.Image, sb.Bundle, sb.BundleDigest)
 	}
 	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
 	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
 		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
-	}
-
-	other := create("other-image", "ghcr.io/example/other:v1")
-	if other.Image != "ghcr.io/example/other:v1" || other.ImageDigest != "" || other.Bundle != "" || other.BundleDigest != "" {
-		t.Fatalf("other-image box pins = %q@%q, %q@%q, want the request's image and no harness pins", other.Image, other.ImageDigest, other.Bundle, other.BundleDigest)
 	}
 }
 
@@ -143,12 +191,12 @@ func TestOnlyContentDigestsAreSentToThePool(t *testing.T) {
 func TestThePlatformMovingCarriesStoppedSandboxes(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:image")
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
 	onOld := func(sb *model.Sandbox) {
 		sb.PlatformBundle, sb.PlatformBundleDigest = platformRef, platformOld
 	}
-	stopped := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image", onOld)
-	running := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image", onOld, func(sb *model.Sandbox) {
+	stopped := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, onOld)
+	running := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, onOld, func(sb *model.Sandbox) {
 		sb.RuntimeState = model.SandboxRuntimeStateRunning
 	})
 	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
@@ -180,18 +228,15 @@ func TestThePlatformMovingCarriesStoppedSandboxes(t *testing.T) {
 	}
 }
 
-// A harness config's bundle moving is a re-pin of its own, though its image did
-// not move: a stopped sandbox takes it.
-func TestABundleMovingCarriesStoppedSandboxes(t *testing.T) {
+// A sandbox from before bundles, pinned to the runnable harness image it ran,
+// is carried off it by its harness config's bundle moving: the re-pin writes
+// the bundle and leaves the image behind, which nothing builds any more.
+func TestABundleMovingCarriesAStoppedSandboxOffItsImage(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:image")
-	config.Bundle, config.BundleDigest = codexBundle, codexBundleV2
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
-		t.Fatal(err)
-	}
-	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image", func(sb *model.Sandbox) {
-		sb.Bundle, sb.BundleDigest = codexBundle, codexBundleV1
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := eligibleSandbox(t, st, config.ID, "", "", func(sb *model.Sandbox) {
+		sb.Image, sb.ImageDigest = legacyImage, legacyImageDigest
 	})
 	if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
 		t.Fatal(err)
@@ -200,64 +245,102 @@ func TestABundleMovingCarriesStoppedSandboxes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.BundleDigest != codexBundleV2 || stored.ImageDigest != "sha256:image" {
-		t.Fatalf("pins = %q / %q, want the config's bundle beside the same image", stored.ImageDigest, stored.BundleDigest)
+	if stored.Bundle != codexBundle || stored.BundleDigest != codexBundleV2 || stored.Image != "" || stored.ImageDigest != "" {
+		t.Fatalf("pins = %q@%q, image %q@%q, want the config's bundle and no image",
+			stored.Bundle, stored.BundleDigest, stored.Image, stored.ImageDigest)
 	}
 }
 
-// A stopped sandbox from before bundles is pinned to its harness config's
-// bundle when it runs the image that bundle twins, as recorded intent, so its
-// pool is sent the create that records the pin. A running one, one on another
-// image, and one already pinned are left alone.
-func TestStoppedSandboxesFromBeforeBundlesArePinned(t *testing.T) {
+// Every settled sandbox no container runs that is pinned to no platform — one
+// from before bundles — is pinned to its harness config's bundle and the
+// release's platform, under a manual upgrade policy too: the image it ran is
+// gone either way (ADR 26-10-16-423 §10). A stopped one is recorded intent, so
+// its pool rebuilds it; an archived one is pinned in place, for the unarchive
+// that builds one. A running one, one whose config has no bundle to pin, and
+// one already delivered its platform are left alone.
+func TestUndeliveredSandboxesArePinned(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:image")
-	config.Bundle, config.BundleDigest = codexBundle, codexBundleV1
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+	project, err := st.GetProject(ctx, "project-1")
+	if err != nil {
 		t.Fatal(err)
 	}
-	stopped := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image")
-	running := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image", func(sb *model.Sandbox) {
+	project.SandboxUpgradePolicy = model.SandboxUpgradePolicyManual
+	if err := st.UpsertProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
+	legacy := func(sb *model.Sandbox) { sb.Image, sb.ImageDigest = legacyImage, legacyImageDigest }
+	stopped := eligibleSandbox(t, st, config.ID, "", "", legacy)
+	running := eligibleSandbox(t, st, config.ID, "", "", legacy, func(sb *model.Sandbox) {
 		sb.RuntimeState = model.SandboxRuntimeStateRunning
 	})
-	behind := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:older")
-	pinned := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:image", func(sb *model.Sandbox) {
-		sb.Bundle, sb.BundleDigest = codexBundle, codexBundleV2
+	archived := eligibleSandbox(t, st, config.ID, "", "", legacy, func(sb *model.Sandbox) {
+		sb.DesiredState, sb.State = model.DesiredStateArchived, model.SandboxStateArchived
 	})
+	delivered := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) {
+		sb.PlatformBundle, sb.PlatformBundleDigest = platformRef, platformOld
+	})
+	// Registered before bundles: the upgrade retired the runnable image it
+	// named (database.retireHarnessImages), and no bundle is registered yet.
+	unregistered := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "legacy", Name: "Legacy", RunCommand: []string{"legacy"}, Configured: true,
+	}
+	if err := st.CreateHarnessConfig(ctx, unregistered); err != nil {
+		t.Fatal(err)
+	}
+	noBundle := eligibleSandbox(t, st, unregistered.ID, "", "", legacy)
+	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
 
-	if err := svc.PinStoppedSandboxBundles(ctx); err != nil {
+	if err := svc.PinUndeliveredSandboxes(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
+		name           string
 		sb             *model.Sandbox
-		digest         string
+		bundle         string
+		platform       string
+		image          string
 		wantGeneration bool
 	}{
-		{stopped, codexBundleV1, true},
-		{running, "", false},
-		{behind, "", false},
-		{pinned, codexBundleV2, false},
+		{"stopped", stopped, codexBundleV1, platformNew, "", true},
+		{"archived", archived, codexBundleV1, platformNew, "", false},
+		{"running", running, "", "", legacyImageDigest, false},
+		{"delivered", delivered, codexBundleV1, platformOld, "", false},
+		{"on a config with no bundle", noBundle, "", "", legacyImageDigest, false},
 	} {
 		stored, err := st.GetSandbox(ctx, "project-1", tc.sb.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.BundleDigest != tc.digest || (stored.Generation > tc.sb.Generation) != tc.wantGeneration {
-			t.Fatalf("%s: bundle %q at generation %d (was %d), want %q and a bump %v",
-				tc.sb.Name, stored.BundleDigest, stored.Generation, tc.sb.Generation, tc.digest, tc.wantGeneration)
+		if stored.BundleDigest != tc.bundle || stored.PlatformBundleDigest != tc.platform || stored.ImageDigest != tc.image ||
+			(stored.Generation > tc.sb.Generation) != tc.wantGeneration {
+			t.Fatalf("%s: bundle %q platform %q image %q at generation %d (was %d), want %q, %q, %q and a bump %v",
+				tc.name, stored.BundleDigest, stored.PlatformBundleDigest, stored.ImageDigest, stored.Generation, tc.sb.Generation,
+				tc.bundle, tc.platform, tc.image, tc.wantGeneration)
 		}
+	}
+
+	// Nothing is pinned while the platform cannot be resolved: a box on a
+	// bundle with no platform has nothing to apply it onto.
+	again := eligibleSandbox(t, st, config.ID, "", "", legacy)
+	svc.SetPlatformBundles(&fakePlatform{err: errors.New("registry unreachable")})
+	if err := svc.PinUndeliveredSandboxes(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if stored, err := st.GetSandbox(ctx, "project-1", again.ID); err != nil || stored.BundleDigest != "" || stored.Generation != again.Generation {
+		t.Fatalf("pinned %+v (%v) with no platform resolved, want it left for a later pass", stored, err)
 	}
 }
 
 // A sandbox with no harness config that moves onto the platform alone, its
-// fallback offering no image, keeps its image and adopts no config: the old
-// image beside the fallback's command is a harness that does not start.
+// fallback offering no bundle, keeps its bundle and adopts no config: the old
+// bundle beside the fallback's command is a harness that does not start.
 func TestAPlatformOnlyRepinAdoptsNoConfig(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	shellConfig(t, st, "discobox-sandbox-agent:dev", "")
-	sb := eligibleSandbox(t, st, "", "discobox-sandbox-agent:old", "sha256:old", func(sb *model.Sandbox) {
+	shellConfig(t, st, shellBundle, "")
+	sb := eligibleSandbox(t, st, "", shellBundle, shellBundleV1, func(sb *model.Sandbox) {
 		sb.PlatformBundle, sb.PlatformBundleDigest = platformRef, platformOld
 	})
 	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
@@ -269,9 +352,9 @@ func TestAPlatformOnlyRepinAdoptsNoConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.PlatformBundleDigest != platformNew || stored.ImageDigest != "sha256:old" || stored.HarnessConfigID != nil {
-		t.Fatalf("platform %q image %q config %v, want the platform moved, the image kept and no config adopted",
-			stored.PlatformBundleDigest, stored.ImageDigest, stored.HarnessConfigID)
+	if stored.PlatformBundleDigest != platformNew || stored.BundleDigest != shellBundleV1 || stored.HarnessConfigID != nil {
+		t.Fatalf("platform %q bundle %q config %v, want the platform moved, the bundle kept and no config adopted",
+			stored.PlatformBundleDigest, stored.BundleDigest, stored.HarnessConfigID)
 	}
 }
 

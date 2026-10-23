@@ -235,9 +235,10 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 	addCol(files, 9)
 
 	addCol(st.dimText.Render(pad(harnessAge(h, l.now()), 8)), 9)
-	// The image is what the harness actually runs, and the longest thing on the
-	// row, so it goes last: it is the first column a narrow terminal gives up.
-	addCol(st.dimText.Render(truncate(h.Image, 34)), 34)
+	// The bundle is what the harness actually runs, and the longest thing on
+	// the row, so it goes last: it is the first column a narrow terminal gives
+	// up.
+	addCol(st.dimText.Render(truncate(h.runs(), 34)), 34)
 
 	marker := "  "
 	if atCursor {
@@ -770,8 +771,11 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	if h.Error != "" {
 		fmt.Fprintln(&b, label("Error"), st.statusER.Render(h.Error))
 	}
-	if h.Image != "" {
-		fmt.Fprintln(&b, label("Image"), h.Image)
+	if h.Bundle != "" {
+		fmt.Fprintln(&b, label("Bundle"), h.Bundle)
+	}
+	if h.ManifestFile != "" {
+		fmt.Fprintln(&b, label("Manifest"), h.ManifestFile)
 	}
 	if h.Digest != "" {
 		fmt.Fprintln(&b, label("Digest"), h.Digest)

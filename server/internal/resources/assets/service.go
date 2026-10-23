@@ -16,10 +16,10 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -35,9 +35,9 @@ type Options struct {
 	// platform's and the built-in harnesses'. Only these are pulled with the
 	// server's registry credentials.
 	ReleaseBundles []string
-	// Development are the bundles the image watcher exported as OCI image
+	// Development are the development bundles, read from their OCI image
 	// layouts, which a development server's release references name.
-	Development []devimage.Bundle
+	Development *devbundles.Set
 }
 
 // Service answers a pool's asset reads.
@@ -66,7 +66,7 @@ const fetchTimeout = 10 * time.Minute
 // New returns a Service storing blobs in opts.Dir, filled from the watcher's
 // layouts and registries.
 func New(store *store.Store, opts Options) *Service {
-	layouts := newLayoutSource(opts.Development)
+	layouts := layoutSource{bundles: opts.Development}
 	registry := registrySource{}
 	// The layouts first, as harness registration reads a bundle: what they
 	// hold is what was built here.

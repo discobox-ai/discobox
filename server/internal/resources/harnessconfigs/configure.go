@@ -173,15 +173,15 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	if strings.TrimSpace(config.Image) == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to configure")
+	if strings.TrimSpace(config.Bundle) == "" && strings.TrimSpace(config.Image) == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config %s was registered before bundles: register its bundle to configure it", config.Slug))
 	}
 	// Stated in terms of the missing command rather than the slug: the reserved
 	// `shell` built-in is a login shell with no credentials to collect (ADR
-	// 0043 §3), and so is any other image that declares no configure command.
+	// 0043 §3), and so is any other harness that declares no configure command.
 	if len(config.ConfigCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q has nothing to configure: its image declares no configure command", config.Slug))
+			fmt.Sprintf("harness %q has nothing to configure: it declares no configure command", config.Slug))
 	}
 	if previous := strings.TrimSpace(config.ConfigureSandboxID); previous != "" {
 		if err := s.sandboxes.DeleteSandbox(ctx, projectID, previous); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -198,7 +198,6 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	input.Config.Name = sandboxName
 	input.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
 	input.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
-	input.Config.SetImage(serverapi.NewOptString(config.Image))
 	// Run the configure command as a real, non-root account. A run sandbox
 	// mirrors the caller's own user; this one has no caller to mirror, so the
 	// flow names the account and boot creates it. Configuring as root would
@@ -760,7 +759,7 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 	// configure command to run again.
 	if len(config.ConfigCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q has nothing to configure, so there is nothing to turn off: its image declares no configure command", config.Slug))
+			fmt.Sprintf("harness %q has nothing to configure, so there is nothing to turn off: it declares no configure command", config.Slug))
 	}
 	// The project default must always point at a configured harness, so the
 	// default cannot be turned off in place: the client unsets or switches the

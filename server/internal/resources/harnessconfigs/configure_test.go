@@ -22,27 +22,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// stubInspector answers what byImage holds: an image's digest, platforms and
-// kind, and, for a bundle named by the same reference, the manifest the entry
-// holds as that bundle's own label, digested as the entry is. A test registers
-// a harness with one reference for both. The platform bundle is
-// stubPlatformLayer unless byImage names it.
+// stubInspector answers what byImage holds, by reference: for a bundle, the
+// manifest the entry holds as that bundle's own label, digested as the entry
+// is; for a manifest file, the entry whole — its digest, platforms and kind.
+// The platform bundle is stubPlatformLayer unless byImage names it.
 type stubInspector struct {
 	byImage map[string]imageMetadata
-	calls   []string
+	// platformEnv is env the platform bundle's layer declares.
+	platformEnv map[string]string
 }
 
-func (s *stubInspector) Inspect(_ context.Context, image string) (imageMetadata, error) {
-	s.calls = append(s.calls, image)
-	inspected := s.byImage[image]
-	return imageMetadata{Digest: inspected.Digest, Platforms: inspected.Platforms, ImageMetadata: harness.ImageMetadata{ImageKind: platform.OCI}}, nil
+func (s *stubInspector) InspectManifestFile(_ context.Context, ref string) (imageMetadata, error) {
+	inspected, ok := s.byImage[ref]
+	if !ok {
+		return imageMetadata{}, errors.New("no such manifest file")
+	}
+	return inspected, nil
 }
 
 func (s *stubInspector) InspectBundle(_ context.Context, bundle string, admit func(map[string]string) error) (bundleInspection, error) {
 	inspected, ok := s.byImage[bundle]
 	read := stubBundle(inspected.Digest, inspected.ImageMetadata)
 	if !ok && bundle == testPlatformBundle {
-		read = stubPlatformBundle()
+		read = stubPlatformBundle(s.platformEnv)
 	}
 	if err := admit(read.Labels); err != nil {
 		return bundleInspection{}, err
@@ -72,17 +74,21 @@ const testPlatformBundle = "discobox-platform:test"
 // testReferences names the platform bundle and no built-in override.
 var testReferences = harnessdefs.References{PlatformBundle: testPlatformBundle}
 
-// sameReferences names each built-in's bundle by the reference its image is
-// named by, which stubInspector answers both for, on testPlatformBundle.
-func sameReferences(refs map[string]string) harnessdefs.References {
-	return harnessdefs.References{PlatformBundle: testPlatformBundle, Bundles: refs, Images: refs}
+// bundleReferences names each built-in's bundle, which stubInspector answers
+// for, on testPlatformBundle.
+func bundleReferences(refs map[string]string) harnessdefs.References {
+	return harnessdefs.References{PlatformBundle: testPlatformBundle, Bundles: refs}
 }
 
 // stubPlatformBundle is a platform bundle whose layer provides the platform
 // API version and nothing else.
-func stubPlatformBundle() bundleInspection {
+func stubPlatformBundle(env map[string]string) bundleInspection {
+	layer, err := json.Marshal(map[string]any{"apiVersion": "discobox.dev/image/v1", "platformAPIVersion": harness.PlatformAPIVersion, "env": env})
+	if err != nil {
+		panic(err)
+	}
 	return bundleInspection{Digest: "sha256:platform", Labels: map[string]string{
-		harness.ImageLayerLabelPrefix + harness.PlatformLayer: `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"` + harness.PlatformAPIVersion + `"}`,
+		harness.ImageLayerLabelPrefix + harness.PlatformLayer: string(layer),
 	}}
 }
 
@@ -355,16 +361,19 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	}
 }
 
-// Built-ins track their image: a dev rebuild changes the tag, and seeding
-// clobbers it and re-snapshots the label without disturbing Configured.
-func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
+// Built-ins track their bundle: a dev rebuild changes the tag, and seeding
+// clobbers it and re-snapshots the label without disturbing Configured. The
+// runnable image a built-in was recorded with before bundles goes with it: no
+// harness is an image (ADR 26-10-16-423 §2).
+func TestSeedBuiltInsClobbersBundleAndKeepsConfigured(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	const newImage = "discobox-harness-codex:dev-new"
+	const newBundle = "discobox-harness-codex:dev-new"
 	existing := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Image: "discobox-harness-codex:dev-old", ImageDigest: "sha256:old",
+		Bundle: "discobox-harness-codex:dev-old", BundleDigest: "sha256:old",
+		Image: "discobox-harness-codex-image:dev-old", ImageDigest: "sha256:old-image",
 		RunCommand: []string{"old"}, Configured: true,
 		ConfiguredFiles: []model.HarnessConfigFile{{Path: "auth.json", Content: "secret"}},
 	}
@@ -373,12 +382,12 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	}
 
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		newImage: {Digest: "sha256:new", ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{
+		newBundle: {Digest: "sha256:new", ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{
 			ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--new"},
 			Config: &harness.ImageMode{Command: []string{"configure"}, Reminder: "Log in, then exit."},
 		}}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": newImage})}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": newBundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -387,16 +396,19 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.Image != newImage || got.ImageDigest != "sha256:new" {
-		t.Fatalf("image = %q digest = %q, want clobbered to the new image", got.Image, got.ImageDigest)
+	if got.Bundle != newBundle || got.BundleDigest != "sha256:new" {
+		t.Fatalf("bundle = %q digest = %q, want clobbered to the new bundle", got.Bundle, got.BundleDigest)
+	}
+	if got.Image != "" || got.ImageDigest != "" {
+		t.Fatalf("image = %q digest = %q, want the runnable image cleared", got.Image, got.ImageDigest)
 	}
 	if len(got.RunCommand) != 2 || got.RunCommand[1] != "--new" {
 		t.Fatalf("runCommand = %v, want re-snapshotted from the new label", got.RunCommand)
 	}
 	if got.ConfigReminder != "Log in, then exit." {
-		t.Fatalf("config reminder = %q, want re-snapshotted image guidance", got.ConfigReminder)
+		t.Fatalf("config reminder = %q, want re-snapshotted bundle guidance", got.ConfigReminder)
 	}
-	// Re-imaging must not silently unconfigure a working harness.
+	// Rebuilding must not silently unconfigure a working harness.
 	if !got.Configured || len(got.ConfiguredFiles) != 1 {
 		t.Fatalf("configured=%t files=%v, want configure output preserved", got.Configured, got.ConfiguredFiles)
 	}
@@ -404,17 +416,17 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 
 // A stable tag is rebuilt in place, so seeding re-inspects on every pass and
 // compares digests. Skipping the inspect when the reference matched — the
-// previous behavior — left ImageDigest pinned to a build that no longer existed
-// under that tag, which would report every sandbox as current forever
+// previous behavior — left BundleDigest pinned to a build that no longer
+// existed under that tag, which would report every sandbox as current forever
 // (ADR 0016 §7).
-func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
+func TestSeedBuiltInsRefreshesDigestForUnchangedBundleReference(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	const image = "discobox-harness-codex:dev-current"
+	const bundle = "discobox-harness-codex:dev-current"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Image: image, ImageDigest: "sha256:old", RunCommand: []string{"codex"},
+		Bundle: bundle, BundleDigest: "sha256:old", RunCommand: []string{"codex"},
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
@@ -422,8 +434,8 @@ func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 	rebuilt := imageMetadata{Digest: "sha256:rebuilt", ImageMetadata: harness.ImageMetadata{
 		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--rebuilt"}},
 	}}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{image: rebuilt}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: rebuilt}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -432,39 +444,36 @@ func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.ImageDigest != "sha256:rebuilt" {
-		t.Fatalf("imageDigest = %q, want the rebuilt digest under the same tag", got.ImageDigest)
+	if got.BundleDigest != "sha256:rebuilt" {
+		t.Fatalf("bundleDigest = %q, want the rebuilt digest under the same tag", got.BundleDigest)
 	}
 	if len(got.RunCommand) != 2 || got.RunCommand[1] != "--rebuilt" {
 		t.Fatalf("runCommand = %v, want re-snapshotted from the rebuilt label", got.RunCommand)
 	}
 }
 
-// Seeding still writes nothing when neither the references nor the digests
-// moved.
+// Seeding writes nothing when neither the references, the digests nor the
+// manifest composed from them moved.
 func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	const image = "discobox-harness-codex:dev-current"
-	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Bundle: image, BundleDigest: "sha256:same",
-		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
-	}); err != nil {
-		t.Fatalf("create config: %v", err)
+	const bundle = "discobox-harness-codex:dev-current"
+	unchanged := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
+		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex"}},
+	}}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: unchanged}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("first seed: %v", err)
 	}
 	before, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-
-	unchanged := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
-		ImageKind: platform.OCI,
-		Harness:   &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--clobbered"}},
-	}}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{image: unchanged}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
+	if before.ManifestDigest == "" {
+		t.Fatal("the seed recorded no manifest digest")
+	}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -473,8 +482,81 @@ func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if !got.UpdatedAt.Equal(before.UpdatedAt) || len(got.RunCommand) != 1 {
-		t.Fatalf("config rewritten (runCommand = %v); an unchanged digest must not write", got.RunCommand)
+	if !got.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatal("config rewritten; an unchanged bundle and manifest must not write")
+	}
+}
+
+// A platform-layer edit moves no harness bundle's digest, and still reaches
+// every harness composed on it: the manifest composed from the two moves, so
+// the built-in is re-snapshotted and its stopped sandboxes re-pinned.
+func TestSeedBuiltInsFollowsAMovedPlatformLayer(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	const bundle = "discobox-harness-codex:dev-current"
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
+		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex"}},
+	}}}}
+	recorder := &stubSandboxRuntime{}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle}), sandboxes: recorder}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	before, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	// The platform's layer gains an env var; the harness bundle is the same.
+	inspector.platformEnv = map[string]string{"PLATFORM_EDIT": "1"}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.BundleDigest != before.BundleDigest || got.ManifestDigest == before.ManifestDigest || got.Env["PLATFORM_EDIT"] != "1" {
+		t.Fatalf("config = bundle %s manifest %s env %v; want the same bundle, a new manifest, and the platform's env", got.BundleDigest, got.ManifestDigest, got.Env)
+	}
+	if len(recorder.upgraded) != 1 || recorder.upgraded[0] != got.ID {
+		t.Fatalf("upgraded = %v, want the config's stopped sandboxes re-pinned once", recorder.upgraded)
+	}
+}
+
+// A built-in recorded beside the runnable image it ran as before bundles is
+// rewritten as the bundle it is now, even when its bundle's digest has not
+// moved: the image would otherwise stay recorded on it for good.
+func TestSeedBuiltInsClearsARunnableImageLeftFromBeforeBundles(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	const bundle = "discobox-harness-codex:dev-current"
+	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
+		Bundle: bundle, BundleDigest: "sha256:same", ImageKind: platform.OCI,
+		Image: "discobox-harness-codex-image:dev-current", ImageDigest: "sha256:image", RunCommand: []string{"codex"},
+	}); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
+		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex"}},
+	}}}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Image != "" || got.ImageDigest != "" {
+		t.Fatalf("image = %q digest = %q, want the runnable image cleared", got.Image, got.ImageDigest)
+	}
+	if got.Bundle != bundle || got.BundleDigest != "sha256:same" {
+		t.Fatalf("bundle = %q digest = %q, want the bundle kept", got.Bundle, got.BundleDigest)
 	}
 }
 
@@ -632,7 +714,7 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 
 // `shell` is seeded from the registry like any other harness — same inspect,
 // same snapshot — and what it declares is what it gets. The `docker` group is
-// why that matters: the image ships the Docker CLI, which checks group
+// why that matters: the sandbox ships the Docker CLI, which checks group
 // membership, so without it Docker works as the sandbox user under a coding
 // harness and not under a plain shell.
 //
@@ -643,15 +725,15 @@ func TestSeedBuiltInsSeedsShellLikeAnyOtherHarness(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	const image = "discobox-harness-shell:local"
+	const bundle = "discobox-harness-shell:local"
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		image: {Digest: "sha256:shell", ImageMetadata: harness.ImageMetadata{
+		bundle: {Digest: "sha256:shell", ImageMetadata: harness.ImageMetadata{
 			APIVersion:       harness.ImageAPIVersion,
 			AdditionalGroups: []string{"docker"},
 			Harness:          &harness.Image{ID: "shell", Name: "Shell"},
 		}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"shell": image})}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"shell": bundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -663,8 +745,8 @@ func TestSeedBuiltInsSeedsShellLikeAnyOtherHarness(t *testing.T) {
 	if !slices.Equal(got.AdditionalGroups, []string{"docker"}) {
 		t.Fatalf("additionalGroups = %v, want [docker] so a non-root shell can use Docker", got.AdditionalGroups)
 	}
-	if got.Image != image || got.ImageDigest != "sha256:shell" {
-		t.Fatalf("image = %q digest = %q, want the inspected identity", got.Image, got.ImageDigest)
+	if got.Bundle != bundle || got.BundleDigest != "sha256:shell" || got.Image != "" {
+		t.Fatalf("bundle = %q digest = %q image = %q, want the inspected bundle and no image", got.Bundle, got.BundleDigest, got.Image)
 	}
 	if len(got.RunCommand) != 0 {
 		t.Fatalf("runCommand = %v, want none so the sandbox resolves the login shell", got.RunCommand)
@@ -681,16 +763,16 @@ func TestSeedBuiltInsLeavesHarnessesWithSecretsUnconfigured(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	const image = "discobox-harness-codex:local"
+	const bundle = "discobox-harness-codex:local"
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		image: {Digest: "sha256:codex", ImageMetadata: harness.ImageMetadata{
+		bundle: {Digest: "sha256:codex", ImageMetadata: harness.ImageMetadata{
 			Harness: &harness.Image{
 				ID: "codex", Name: "Codex", RunCommand: []string{"codex"},
 				Secrets: []harness.Secret{{Name: "OPENAI_API_KEY", Required: true}},
 			},
 		}},
 	}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -828,7 +910,7 @@ func TestConfigureSandboxRunsAsNonRootUser(t *testing.T) {
 
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "claude", Name: "Claude",
-		Image:         "discobox-harness-claude-code:local",
+		Bundle: "discobox-harness-claude-code:local", BundleDigest: "sha256:claude",
 		ConfigCommand: []string{"/usr/local/libexec/discobox/configure-claude-code"},
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -858,6 +940,33 @@ func TestConfigureSandboxRunsAsNonRootUser(t *testing.T) {
 	// create it under (ADR 0025 §4).
 	if name, _ := user.Name.Get(); name != harness.ConfigureUserName {
 		t.Fatalf("configure sandbox user name = %q, want %q", name, harness.ConfigureUserName)
+	}
+}
+
+// A harness registered before bundles has nothing a configure sandbox can be
+// pinned to — no bundle and no manifest file — so configure refuses it, naming
+// what to do, before any sandbox is created.
+func TestConfigureRefusesAHarnessRegisteredBeforeBundles(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "legacy", Name: "Legacy",
+		ConfigCommand: []string{"configure"},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
+	}
+
+	runtime := &stubSandboxRuntime{}
+	svc := &Service{store: st, inspector: &stubInspector{}, sandboxes: runtime, dirtier: stubDirtier{}}
+	_, err := svc.ConfigureHarnessConfig(ctx, "project-1", config.ID)
+	var statusErr interface{ StatusCode() int }
+	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "register its bundle") {
+		t.Fatalf("err = %v, want a 400 naming what to do", err)
+	}
+	if runtime.created.Config.Name != "" {
+		t.Fatalf("created a configure sandbox %q for a harness with nothing to pin it to", runtime.created.Config.Name)
 	}
 }
 

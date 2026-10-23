@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/discobox-ai/discobox/pkg/devimage"
@@ -20,7 +22,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
-	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -78,17 +79,15 @@ type AppOptions struct {
 	DispatcherPollInterval time.Duration
 
 	SandboxReconcileJobConcurrency int
-	DefaultSandboxImage            string
-	// DefaultSandboxImageDigest identifies which build DefaultSandboxImage's
-	// tag currently is, so a sandbox running the default image can tell whether
-	// it is already on it. See config.Config.
-	DefaultSandboxImageDigest string
 
 	// DevelopmentImages is the watcher-built image set synchronized to every
-	// Docker daemon used by a pool provider, and DevelopmentBundles the bundles
-	// it exported as OCI image layouts, which no daemon holds.
-	DevelopmentImages  []devimage.Image
-	DevelopmentBundles []devimage.Bundle
+	// Docker daemon used by a pool provider, and DevelopmentBundles its
+	// bundles, which no daemon holds: exported as OCI image layouts, or in
+	// build-mode built by a pool's daemon and saved as layouts under
+	// DevelopmentBundleDir.
+	DevelopmentImages    []devimage.Image
+	DevelopmentBundles   []devimage.Bundle
+	DevelopmentBundleDir string
 
 	// ControlPlaneStreams receives control-plane connections opened by pool
 	// guests whose transport cannot be dialed inward. The caller owns it because
@@ -144,7 +143,6 @@ func DefaultAppOptions() AppOptions {
 	return AppOptions{
 		DispatcherPollInterval:         time.Second,
 		SandboxReconcileJobConcurrency: 4,
-		DefaultSandboxImage:            sandbox.DefaultSandboxImageName,
 	}
 }
 
@@ -198,7 +196,8 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, services.Services{}, nil, nil, err
 	}
-	developmentImageSync, err := dockerworker.NewDevelopmentImageSynchronizer(opts.DevelopmentImages)
+	developmentBundles := devbundles.New(opts.DevelopmentBundles, opts.DevelopmentBundleDir)
+	developmentImageSync, err := dockerworker.NewDevelopmentImageSynchronizer(opts.DevelopmentImages, developmentBundles)
 	if err != nil {
 		return nil, services.Services{}, nil, nil, fmt.Errorf("configure development image synchronization: %w", err)
 	}
@@ -218,8 +217,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	appServices := service.New(appStore, reconcileEngine, service.Options{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
-		DevelopmentImages:              opts.DevelopmentImages,
-		DevelopmentBundles:             opts.DevelopmentBundles,
+		DevelopmentBundles:             developmentBundles,
 		Harnesses:                      opts.Harnesses,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
@@ -234,7 +232,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		OverlayDir:                     opts.OverlayDir,
 		AssetDir:                       opts.AssetDir,
 	})
-	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}

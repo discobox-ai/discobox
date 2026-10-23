@@ -164,11 +164,6 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		}
 	}
 
-	images, err := r.imageSet(ctx, pool.ProjectID)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
 	// The engine calls this only for a new/replaced agent, before it removes
 	// the old runtime or preloads images. Persist the gate first so stale ready
 	// heartbeats from the old agent cannot admit work during a replacement.
@@ -182,8 +177,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// fresh bootstrap token. Only a pool that never registered can be in this
 	// state, and repair (not delete) preserves the user-owned pool row.
 	if r.registrationExpired(pool) {
-		err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, "pool agent did not register before timeout", images, begin)
-	} else if err = runtimeProvider.ReconcilePool(ctx, r.pools, project, provider, pool, images, begin); err != nil {
+		err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, "pool agent did not register before timeout", begin)
+	} else if err = runtimeProvider.ReconcilePool(ctx, r.pools, project, provider, pool, begin); err != nil {
 		// A host that is still coming up is not a failed reconcile. Repairing
 		// one removes and recreates the container whose healthcheck has not
 		// passed yet, which restarts that healthcheck — and a pool container
@@ -201,7 +196,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		if errors.Is(err, reconcile.ErrSuperseded) {
 			return reconcile.Result{}, err
 		}
-		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, images, begin); repairErr != nil {
+		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, begin); repairErr != nil {
 			err = repairErr
 		} else {
 			err = nil
@@ -377,7 +372,7 @@ func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, messa
 // repairAssignedPool repairs a pool whose reconcile failed while sandboxes
 // are assigned: the runtime is stateful, so it is replaced in place rather
 // than latched to failure.
-func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider sandbox.PoolRuntime, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, cause error, images []string, begin func(context.Context) error) error {
+func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider sandbox.PoolRuntime, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, cause error, begin func(context.Context) error) error {
 	assigned, err := r.store.CountSandboxesForPool(ctx, pool.ProjectID, pool.ID)
 	if err != nil {
 		return err
@@ -386,7 +381,7 @@ func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider
 		return cause
 	}
 	reason := cause.Error()
-	if err := runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, reason, images, begin); err != nil {
+	if err := runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, reason, begin); err != nil {
 		return fmt.Errorf("%s; repair pool: %w", reason, err)
 	}
 	return nil

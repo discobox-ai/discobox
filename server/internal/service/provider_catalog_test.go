@@ -57,7 +57,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		HarnessName: serverapi.NewOptString(imagelessHarnessConfig(ctx, t, st, projectID)),
+		HarnessName: serverapi.NewOptString(manifestFileHarnessConfig(ctx, t, st, projectID)),
 		PoolId:      serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name: "sandbox-1",
@@ -172,7 +172,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
-	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
+	harnessSlug := manifestFileHarnessConfig(ctx, t, st, projectID)
 	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
 	instance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{Type: "recording", Name: "recording"})
 	if err != nil {
@@ -201,81 +201,6 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	}
 	if view.PoolId.Or("") != poolID {
 		t.Fatal("response lost the pool assignment")
-	}
-}
-
-func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
-	ctx := context.Background()
-	svc, _, st, projectID := newSandboxTestService(t, nil)
-	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
-	provider := &recordingSandboxProvider{}
-	svc.RegisterSandboxProvider("recording", provider)
-	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
-		Type: "recording",
-		Name: "recording",
-	})
-	if err != nil {
-		t.Fatalf("create recording provider instance: %v", err)
-	}
-	executor := svc.NewSandboxReconciler()
-
-	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
-	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		HarnessName: serverapi.NewOptString(harnessSlug),
-		PoolId:      serverapi.NewOptString(poolID),
-		Config:      serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
-	})
-	if err != nil {
-		t.Fatalf("create sandbox: %v", err)
-	}
-	if sb.Image != "discobox-sandbox-agent:default" {
-		t.Fatalf("sandbox image = %q, want default image", sb.Image)
-	}
-	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
-		t.Fatalf("reconcile start: %v", err)
-	}
-	if provider.createOptions.Image.Name != "discobox-sandbox-agent:default" {
-		t.Fatalf("provider image = %q, want default image", provider.createOptions.Image.Name)
-	}
-}
-
-func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
-	ctx := context.Background()
-	svc, _, st, projectID := newSandboxTestService(t, nil)
-	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
-	provider := &recordingSandboxProvider{}
-	svc.RegisterSandboxProvider("recording", provider)
-	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
-		Type: "recording",
-		Name: "recording",
-	})
-	if err != nil {
-		t.Fatalf("create recording provider instance: %v", err)
-	}
-	executor := svc.NewSandboxReconciler()
-
-	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
-	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		HarnessName: serverapi.NewOptString(harnessSlug),
-		PoolId:      serverapi.NewOptString(poolID),
-		Config: serverapi.SandboxCreateConfig{
-			Name:  "sandbox-explicit-image",
-			Image: serverapi.NewOptString("custom:sandbox"),
-		},
-	})
-	if err != nil {
-		t.Fatalf("create sandbox: %v", err)
-	}
-	if sb.Image != "custom:sandbox" {
-		t.Fatalf("sandbox image = %q, want explicit image", sb.Image)
-	}
-	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
-		t.Fatalf("reconcile start: %v", err)
-	}
-	if provider.createOptions.Image.Name != "custom:sandbox" {
-		t.Fatalf("provider image = %q, want explicit image", provider.createOptions.Image.Name)
 	}
 }
 
@@ -755,23 +680,24 @@ func mustParseURL(t *testing.T, value string) url.URL {
 	return *parsed
 }
 
-// imagelessHarnessConfig replaces whatever SeedBuiltIns managed to create with
-// one configured harness that carries no image of its own, and returns its slug.
+// manifestFileHarnessConfig replaces whatever SeedBuiltIns managed to create
+// with one configured harness whose manifest is a file, a template with no
+// image, and returns its slug.
 //
-// Seeding inspects real images, so which built-ins exist depends on what this
-// machine's Docker daemon happens to hold — and a seeded config supplies the
-// sandbox's image, which is exactly what the tests around it are measuring.
-// A harness with no image is how the default sandbox image is reached, since a
-// sandbox must resolve a harness config (ADR 0048) and create refuses one with
-// none.
-func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
+// Seeding inspects real bundles, so which built-ins exist depends on what this
+// machine happens to hold. A manifest file pins a sandbox without a platform
+// bundle, which these tests' server names none of, and a sandbox must resolve
+// a harness config (ADR 0048) that pins it to something.
+func manifestFileHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
 	t.Helper()
 	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	config := &model.HarnessConfig{
 		ProjectID: projectID, Slug: "imageless", Name: "Imageless", Configured: true,
+		Image:       "file:///etc/discobox/harnesses/imageless.json",
+		ImageDigest: testManifestDigest,
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
-		t.Fatalf("create imageless harness config: %v", err)
+		t.Fatalf("create manifest-file harness config: %v", err)
 	}
 	return config.Slug
 }
@@ -790,7 +716,7 @@ func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Stor
 	}
 }
 
-func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, sandboxes.ImageRef, []byte) (io.ReadCloser, error) {
+func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []sandboxes.BundlePin, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

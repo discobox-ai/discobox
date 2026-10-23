@@ -341,7 +341,7 @@ HTTP/2 (below), where `TE` may only be `trailers` (RFC 9113 §8.2.2) and any
 other connection-specific header is malformed: a strict origin ends the whole
 connection with `GOAWAY PROTOCOL_ERROR`. libwww-perl sends
 `TE: deflate,gzip;q=0.3` on every request, so `extrepo` — and the
-sandbox-agent image's `extrepo enable mise` — failed behind the proxy until
+`mise` feature's `extrepo enable mise` — failed behind the proxy until
 these were dropped. `TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream`
 pins it.
 

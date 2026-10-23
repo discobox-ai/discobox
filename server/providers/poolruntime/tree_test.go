@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -43,7 +45,7 @@ func TestExportTreeFallsBackToTheNamedPoolWhenThereIsNoRuntimeState(t *testing.T
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
 
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", sandbox.ImageRef{}, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", nil, nil)
 	if err != nil {
 		t.Fatalf("export with no runtime state: %v", err)
 	}
@@ -61,7 +63,7 @@ func TestExportTreeWithoutAPoolStillReportsNotFound(t *testing.T) {
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
 
 	if _, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", sandbox.ImageRef{}, nil); err == nil {
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", nil, nil); err == nil {
 		t.Fatal("an export with neither runtime state nor a pool was accepted")
 	}
 }
@@ -100,32 +102,31 @@ func TestPoolAgentTransportErrorDropsTheAgentsAddress(t *testing.T) {
 	}
 }
 
-// imageRecordingRuntime notes the image the pool agent was asked to read a
+// pinRecordingRuntime notes the bundles the pool agent was asked to read a
 // tree with.
-type imageRecordingRuntime struct {
+type pinRecordingRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
-	got *sandboxruntime.TreeImage
+	got *[]assetcache.Pin
 }
 
-func (r imageRecordingRuntime) ExportTree(ctx context.Context, sandboxID string, image sandboxruntime.TreeImage) (io.ReadCloser, error) {
-	*r.got = image
-	return r.MemorySandboxRuntime.ExportTree(ctx, sandboxID, image)
+func (r pinRecordingRuntime) ExportTree(ctx context.Context, sandboxID string, pins []assetcache.Pin) (io.ReadCloser, error) {
+	*r.got = pins
+	return r.MemorySandboxRuntime.ExportTree(ctx, sandboxID, pins)
 }
 
-// The pin crosses the hop to the pool agent intact: its sandbox agent reads the
-// tree, so the image it runs is the one the export needs (ADR 0129 §1). The
-// query names here are mirrored rather than imported, and this is what holds
-// the two ends together.
-func TestExportTreeSendsThePinToThePool(t *testing.T) {
+// The pins cross the hop to the pool agent intact: the agent of the platform
+// one reads the tree (ADR 0129 §1). The query names here are mirrored rather
+// than imported, and this is what holds the two ends together.
+func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 	memory := sandboxruntime.NewMemorySandboxRuntime()
 	if err := memory.ImportTree(context.Background(), "sandbox-1", strings.NewReader("")); err != nil {
 		t.Fatal(err)
 	}
-	var got sandboxruntime.TreeImage
+	var got []assetcache.Pin
 	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, "project-1", "pool-1", poolagentserver.ScopeSandboxRead)
 	router, err := poolagentserver.NewRouter(poolagentserver.Config{
 		Identity:              poolagentserver.Identity{ProjectID: "project-1", PoolID: "pool-1"},
-		Runtime:               imageRecordingRuntime{MemorySandboxRuntime: memory, got: &got},
+		Runtime:               pinRecordingRuntime{MemorySandboxRuntime: memory, got: &got},
 		ControlPlanePublicKey: controlPlaneKey,
 	})
 	if err != nil {
@@ -136,14 +137,22 @@ func TestExportTreeSendsThePinToThePool(t *testing.T) {
 	runtimeProvider := &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: poolToken, runtime: memory}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true})
 
-	pin := sandbox.ImageRef{Name: "registry.example/harness:v1", Digest: "sha256:abc"}
+	platformDigest, harnessDigest := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
+	pins := []sandbox.BundlePin{
+		{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platformDigest},
+		{Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: harnessDigest},
+	}
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", pin, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", pins, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stream.Close()
-	if got.Name != pin.Name || got.Digest != pin.Digest {
-		t.Fatalf("pool agent read with %+v, want %+v", got, pin)
+	want := []assetcache.Pin{
+		{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: platformDigest},
+		{Kind: assetcache.KindHarness, Name: "discobox-harness-codex", Digest: harnessDigest},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("pool agent read with %+v, want %+v", got, want)
 	}
 }

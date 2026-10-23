@@ -62,7 +62,7 @@ sandbox create requests.
   uid/gid 1000, home left to the sandbox. Translating a SID and a `C:\Users`
   home yields nothing usable, and sending nothing means the image's own user
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
-  §5) — root on most harness images. A stated identity is not a guess about the
+  §5) — root on the sandbox base image. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
 - Every identity sent carries both ids, because sandbox create refuses an account
   named without its uid and an id outside root and 1000–60000

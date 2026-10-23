@@ -137,22 +137,3 @@ func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, featur
 // booted reports whether systemd is running this box: a box's boot, never
 // an image's build.
 func booted() bool { return dirExists("/run/systemd/system") }
-
-// Trees provisions every feature of the bundle trees onto this box,
-// recording each step under records, with every step blocking and none
-// turned off: what an image build provisions. A snapshot provisions with
-// Snapshot instead, which turns off what its plan does. self is the sandbox agent's executable when the agent is what runs
-// it (Runner.Self), and empty otherwise. A box's boot provisions with Boot
-// instead.
-func Trees(ctx context.Context, logger *slog.Logger, records, self string, trees ...string) error {
-	features, err := provisionspec.Load(trees...)
-	if err != nil {
-		return err
-	}
-	runner := &Runner{Root: "/", Records: Records{Dir: records}, Self: self, Logger: logger}
-	if runner.Platform, err = DetectPlatform("/"); err != nil {
-		return err
-	}
-	_, err = runner.Provision(ctx, features, Options{})
-	return err
-}

@@ -239,12 +239,12 @@ lose.
 Naming one is another matter — the CLI's ID resolution includes judges, so a
 judge can be got, shelled into, stopped and taken away like any other discobox.
 Taking it away is not permanent: the convergence makes another, which is how a
-judge is rebuilt after its harness image changes. The one thing it will not do
+judge is rebuilt after its harness bundle changes. The one thing it will not do
 is run its harness, which the sandbox agent refuses in judge mode (see
 [`sandbox-agent/DESIGN.md`](../../../sandbox-agent/DESIGN.md)): launching it
 would run the project's agent, with the judge's own credential, in the discobox
 whose purpose is to have no work in it.
-Everything else — pool and harness resolution, the image pin, the harness
+Everything else — pool and harness resolution, the bundle pins, the harness
 credential's sentinel — is the ordinary create, which is the point of a judge
 being a discobox at all.
 

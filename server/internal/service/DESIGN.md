@@ -36,8 +36,10 @@ not embedded: `Judges` is `Service.Judges()`, the project's judge (ADR
 26-09-22-838), and `Assets` is `Service.Assets()`, the asset API (ADR
 26-10-16-423 §13).
 
-Options carries the resolved harness image map from configuration to harness
-seeding, including any release manifest selection.
+Options carries the resolved harness bundle references from configuration to
+harness seeding, including any release manifest selection, and the development
+bundles, whose build-mode saves re-seed the built-ins and resolve the platform
+again.
 
 The root service should:
 
@@ -47,8 +49,7 @@ The root service should:
 3. Register resource reconcilers with the injected `reconcile.Engine`.
 4. Start the engine, then run startup reconciliation.
 5. Fan process-wide settings out to the resource types that need them
-   (`SetDefaultSandboxImage`, `SetSandboxAuthManager`,
-   `SetWorkerAgentAuthManager`).
+   (`SetSandboxAuthManager`, `SetWorkerAgentAuthManager`).
 
 Keep these responsibilities out of `internal/service`:
 

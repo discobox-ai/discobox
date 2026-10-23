@@ -1,23 +1,26 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2164 # bats runs tests and hooks under set -e, so a failed cd already fails.
 #
-# End-to-end coverage of sandbox image upgrades (ADR 0016).
+# End-to-end coverage of sandbox upgrades (ADR 0016).
 #
 # What is unique to this file is the whole point of the feature, and it cannot be
-# reached by a unit test: a harness image REBUILT UNDER THE SAME TAG must be
+# reached by a unit test: a harness bundle REBUILT UNDER THE SAME TAG must be
 # noticed, offered as an upgrade, and applied by replacing the sandbox's
 # container while the sandbox keeps its identity and its pool-host state.
 #
 # This is the failure that motivated the ADR. A sandbox was created from a
-# harness image, the image moved on, and nothing in the system could say so —
-# the skew only surfaced four layers down as a 500 from a terminal attach.
+# harness, the harness moved on, and nothing in the system could say so — the
+# skew only surfaced four layers down as a 500 from a terminal attach.
 #
-# The stub is built twice under one tag, so only the config digest distinguishes
-# the two builds. Comparing image references would pass this file while missing
-# every real rebuild, which is exactly the bug being tested for.
+# The stub bundle is built twice under one tag, so only its digest
+# distinguishes the two builds. Comparing references would pass this file while
+# missing every real rebuild, which is exactly the bug being tested for.
 #
-# The pool binds the host Docker socket so locally built images are visible
-# without a registry.
+# No harness is a runnable image: every sandbox container is the Docker
+# driver's sandbox base image (discobox-sandbox-base:local, built here and
+# named to the server so boxes do not pull the remote default), with the
+# platform and harness bundles applied by the sandbox agent. So an upgrade is
+# observed as a new container, not a new image.
 
 setup_file() {
   REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -58,16 +61,18 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: both agent images are
-  # built FROM a shared base image, and these targets are what know to build it
-  # first. The sandbox agent image is what the stub's runnable image is built
-  # FROM when no `task dev` loop has named a dev build in .env, so a clean
-  # checkout needs it built here; the platform bundle is what the server
-  # composes every harness bundle on.
+  # Through the Taskfile rather than docker directly: the pool image is built
+  # FROM the sandbox base image, and this target is what knows to build that
+  # first; the base is also every sandbox container's image. The platform
+  # bundle is what the server composes every harness bundle on, and what the
+  # agent applies first in every box.
+  #
+  # The bundles must be servable to the pool, which fetches them through the
+  # server's asset API; that API reads OCI layouts or registries, not the
+  # daemon's :local tags.
   go tool task build:pool-agent-image
-  go tool task build:sandbox-agent-image
   go tool task build:platform-bundle
-  go tool task build:harness-stub-image
+  go tool task build:harness-stub-bundle
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -77,6 +82,7 @@ PY
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
   DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
+  DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
@@ -144,7 +150,6 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 }
 
 export UPGRADE_STUB_BUNDLE="discobox-harness-upgrade-stub:local"
-export UPGRADE_STUB_IMAGE="discobox-harness-upgrade-stub-image:local"
 
 cli() {
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
@@ -220,7 +225,7 @@ PY
 # project default is where the configure sandbox lands. That makes the seeded
 # default pool the one that has to be healthy, so this file uses it rather than
 # creating a second provider. Its provider already binds the host Docker socket
-# (so locally built harness images are visible) and reads PORT for its
+# (so the locally built sandbox base image is visible) and reads PORT for its
 # control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at the locally built
 # pool-agent instead of an unpublished ghcr tag.
 ensure_pool() {
@@ -243,7 +248,7 @@ ensure_pool() {
 
 # configure_stub runs one full configure of a harness. A harness is only
 # selectable for a sandbox once its configure flow has succeeded, so this is a
-# precondition for having a harness-backed (and therefore image-pinned) sandbox
+# precondition for having a harness-backed (and therefore bundle-pinned) sandbox
 # at all, not something this file is testing.
 configure_stub() {
   local harness="$1" raw status
@@ -254,36 +259,33 @@ configure_stub() {
   return "$status"
 }
 
-# build_upgrade_stub builds the stub harness under this file's own tags, with a
-# marker baked into both halves so a second call produces different content
-# under the SAME references: an env in the manifest label each half carries,
-# the bundle's and the runnable image's own copy of it, whose digest is the one
-# a sandbox pins. Both are derived from the shared stub, which setup_file
-# builds, rather than rebuilt from its Dockerfile. Dedicated tags keep this
-# file from clobbering discobox-harness-stub:local and
-# discobox-harness-stub-image:local, which other suites share.
+# build_upgrade_stub builds the stub's bundle under this file's own tag, with a
+# marker baked into its manifest label so a second call produces different
+# content under the SAME reference: an env in the label, which moves the
+# bundle's digest, the one a sandbox pins. It is derived from the shared stub
+# bundle, which setup_file builds, rather than rebuilt from its Dockerfile. A
+# dedicated tag keeps this file from clobbering discobox-harness-stub:local,
+# which other suites share.
 build_upgrade_stub() {
-  local marker="$1" metadata pair log="${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}"
+  local marker="$1" metadata log="${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}"
   metadata="$(jq -c --arg marker "$marker" '.env.STUB_BUILD_MARKER = $marker' "$REPO_ROOT/test/harness-stub/image.json")"
-  for pair in "discobox-harness-stub:local $UPGRADE_STUB_BUNDLE" "discobox-harness-stub-image:local $UPGRADE_STUB_IMAGE"; do
-    docker build --build-arg BASE="${pair% *}" --build-arg HARNESS_METADATA="$metadata" -t "${pair#* }" - >>"$log" 2>&1 <<'DOCKERFILE' || return
-ARG BASE
-FROM ${BASE}
+  docker build --build-arg HARNESS_METADATA="$metadata" -t "$UPGRADE_STUB_BUNDLE" - >>"$log" 2>&1 <<'DOCKERFILE'
+FROM discobox-harness-stub:local
 ARG HARNESS_METADATA
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
 DOCKERFILE
-  done
 }
 
-# sandbox_container_image prints the image ID a sandbox's container was actually
-# built from. This is the ground truth the whole feature is about: the control
-# plane can claim whatever it likes, but the container either runs the pinned
-# image or it does not.
-sandbox_container_image() {
+# sandbox_container_id prints the full ID of a sandbox's container. Every
+# container is the same sandbox base image, so the image says nothing about an
+# upgrade; a new container does. This is the ground truth the whole feature is
+# about: the control plane can claim whatever it likes, but the container is
+# either replaced or it is not.
+sandbox_container_id() {
   local sandbox_id="$1" container
   container="$(docker ps -aq --filter "label=discobox.sandbox_id=$sandbox_id" | head -1)"
   [ -n "$container" ] || return 1
-  docker inspect "$container" --format '{{.Image}}'
+  docker inspect "$container" --format '{{.Id}}'
 }
 
 sandbox_field() {
@@ -323,18 +325,18 @@ wait_for_sandbox_running() {
   return 1
 }
 
-@test "a harness image rebuilt under the same tag is offered and applied as an upgrade" {
-  local pool_id harness_id sandbox_id before_image after_image before_digest after_digest before_mounts after_mounts
+@test "a harness bundle rebuilt under the same tag is offered and applied as an upgrade" {
+  local pool_id harness_id sandbox_id before_container after_container before_digest after_digest before_mounts after_mounts
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
   build_upgrade_stub v1
 
-  run cli admin harness create --bundle "$UPGRADE_STUB_BUNDLE" --image "$UPGRADE_STUB_IMAGE" --slug upgrade-stub --name "Upgrade Stub"
+  run cli admin harness create --bundle "$UPGRADE_STUB_BUNDLE" --slug upgrade-stub --name "Upgrade Stub"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
-  before_digest="$(printf '%s' "$output" | json_get imageDigest)"
+  before_digest="$(printf '%s' "$output" | json_get bundleDigest)"
   [ -n "$before_digest" ]
 
   run configure_stub upgrade-stub
@@ -346,30 +348,30 @@ wait_for_sandbox_running() {
   [ -n "$sandbox_id" ]
 
   # The sandbox pins the digest it was built from, and reports nothing to do.
-  [ "$(sandbox_field "$sandbox_id" config.imageDigest)" = "$before_digest" ]
+  [ "$(sandbox_field "$sandbox_id" config.bundleDigest)" = "$before_digest" ]
   [ "$(sandbox_field "$sandbox_id" runtime.upgrade.available)" != "True" ]
 
-  before_image="$(sandbox_container_image "$sandbox_id")"
-  [ -n "$before_image" ]
+  before_container="$(sandbox_container_id "$sandbox_id")"
+  [ -n "$before_container" ]
   before_mounts="$(docker inspect "$(docker ps -aq --filter "label=discobox.sandbox_id=$sandbox_id" | head -1)" \
     --format '{{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}')"
 
   # Rebuild the SAME tag. Nothing about the reference changes; only the content.
   build_upgrade_stub v2
-  run cli admin harness refresh-image upgrade-stub
+  run cli admin harness refresh upgrade-stub
   [ "$status" -eq 0 ]
-  after_digest="$(printf '%s' "$output" | json_get imageDigest)"
+  after_digest="$(printf '%s' "$output" | json_get bundleDigest)"
   [ -n "$after_digest" ]
   [ "$after_digest" != "$before_digest" ]
 
   # The sandbox now reports the upgrade. A tag comparison would report nothing.
   [ "$(sandbox_field "$sandbox_id" runtime.upgrade.available)" = "True" ]
-  [ "$(sandbox_field "$sandbox_id" runtime.upgrade.reason)" = "imageDigestChanged" ]
-  [ "$(sandbox_field "$sandbox_id" runtime.upgrade.targetImageDigest)" = "$after_digest" ]
+  [ "$(sandbox_field "$sandbox_id" runtime.upgrade.reason)" = "bundleDigestChanged" ]
+  [ "$(sandbox_field "$sandbox_id" runtime.upgrade.targetBundleDigest)" = "$after_digest" ]
 
-  # ... but has not moved on its own. A running sandbox never changes image
+  # ... but has not moved on its own. A running sandbox never changes bundle
   # without being asked.
-  [ "$(sandbox_container_image "$sandbox_id")" = "$before_image" ]
+  [ "$(sandbox_container_id "$sandbox_id")" = "$before_container" ]
 
   run cli admin box upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
@@ -378,17 +380,18 @@ wait_for_sandbox_running() {
   # it does, the old container still reads as running, so waiting for running
   # alone returns before anything has been replaced.
   for _ in {1..90}; do
-    after_image="$(sandbox_container_image "$sandbox_id" || true)"
-    [ -n "$after_image" ] && [ "$after_image" != "$before_image" ] && break
+    after_container="$(sandbox_container_id "$sandbox_id" || true)"
+    [ -n "$after_container" ] && [ "$after_container" != "$before_container" ] && break
     sleep 1
   done
   wait_for_sandbox_running "$sandbox_id"
 
-  # Same sandbox, new container, new image, re-pinned.
-  after_image="$(sandbox_container_image "$sandbox_id")"
-  [ -n "$after_image" ]
-  [ "$after_image" != "$before_image" ]
-  [ "$(sandbox_field "$sandbox_id" config.imageDigest)" = "$after_digest" ]
+  # Same sandbox, a new container (container ID changed), re-pinned to the new
+  # bundle.
+  after_container="$(sandbox_container_id "$sandbox_id")"
+  [ -n "$after_container" ]
+  [ "$after_container" != "$before_container" ]
+  [ "$(sandbox_field "$sandbox_id" config.bundleDigest)" = "$after_digest" ]
   [ "$(sandbox_field "$sandbox_id" runtime.upgrade.available)" != "True" ]
 
   # The state the sandbox actually keeps — its pool-host binds — crosses the
@@ -404,15 +407,15 @@ wait_for_sandbox_running() {
 }
 
 # Upgrading is not a way to start a sandbox (ADR 0021 §3). A stopped sandbox gets
-# the new image and stays stopped; a running one comes back up on it. Only the
+# the new bundle and stays stopped; a running one comes back up on it. Only the
 # pool agent can know which case it is in, so this is the assertion that the
 # control plane never decides power state.
 #
 # The project is held to manual upgrades: under the default automatic policy
-# (ADR 0082) the image refresh alone moves a stopped sandbox, and the explicit
+# (ADR 0082) the harness refresh alone moves a stopped sandbox, and the explicit
 # upgrade this test drives is then refused as having nothing to do.
 @test "an upgrade preserves the power state of the sandbox it replaces" {
-  local pool_id harness_id sandbox_id before_image after_image after_digest
+  local pool_id harness_id sandbox_id before_container after_container after_digest
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
@@ -421,7 +424,7 @@ wait_for_sandbox_running() {
 
   build_upgrade_stub power-v1
 
-  run cli admin harness create --bundle "$UPGRADE_STUB_BUNDLE" --image "$UPGRADE_STUB_IMAGE" --slug power-stub --name "Power Stub"
+  run cli admin harness create --bundle "$UPGRADE_STUB_BUNDLE" --slug power-stub --name "Power Stub"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
@@ -433,37 +436,37 @@ wait_for_sandbox_running() {
   [ "$status" -eq 0 ]
   sandbox_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$sandbox_id" ]
-  before_image="$(sandbox_container_image "$sandbox_id")"
-  [ -n "$before_image" ]
+  before_container="$(sandbox_container_id "$sandbox_id")"
+  [ -n "$before_container" ]
 
   run cli admin box stop "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_state "$sandbox_id" stopped
 
   build_upgrade_stub power-v2
-  run cli admin harness refresh-image power-stub
+  run cli admin harness refresh power-stub
   [ "$status" -eq 0 ]
-  after_digest="$(printf '%s' "$output" | json_get imageDigest)"
+  after_digest="$(printf '%s' "$output" | json_get bundleDigest)"
   [ -n "$after_digest" ]
 
   run cli admin box upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
 
-  # The container is rebuilt on the new image without being started: an upgrade
-  # delivers an image, never a power-on.
+  # The container is rebuilt on the new bundle without being started: an
+  # upgrade delivers a bundle, never a power-on.
   for _ in {1..90}; do
-    after_image="$(sandbox_container_image "$sandbox_id" || true)"
-    [ -n "$after_image" ] && [ "$after_image" != "$before_image" ] && break
+    after_container="$(sandbox_container_id "$sandbox_id" || true)"
+    [ -n "$after_container" ] && [ "$after_container" != "$before_container" ] && break
     sleep 1
   done
-  [ -n "$after_image" ]
-  [ "$after_image" != "$before_image" ]
-  [ "$(sandbox_field "$sandbox_id" config.imageDigest)" = "$after_digest" ]
+  [ -n "$after_container" ]
+  [ "$after_container" != "$before_container" ]
+  [ "$(sandbox_field "$sandbox_id" config.bundleDigest)" = "$after_digest" ]
   wait_for_sandbox_state "$sandbox_id" stopped
 
   # And a start after the upgrade is an ordinary start of the rebuilt container.
   run cli admin box start "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_running "$sandbox_id"
-  [ "$(sandbox_container_image "$sandbox_id")" = "$after_image" ]
+  [ "$(sandbox_container_id "$sandbox_id")" = "$after_container" ]
 }

@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/judge/jev"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/assets"
@@ -73,14 +73,11 @@ type Options struct {
 	Harnesses                      harnessdefs.References
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
-	// DevelopmentImages is the watcher-built image set. Harness seeding reads
-	// build-mode metadata from it, since those images exist only as build
-	// descriptions until a pool's daemon builds them.
-	DevelopmentImages []devimage.Image
-	// DevelopmentBundles are the bundles the watcher exported as OCI image
-	// layouts: harness seeding reads their labels, and the asset API serves
-	// them, from those layouts (ADR 26-10-16-423 §13).
-	DevelopmentBundles []devimage.Bundle
+	// DevelopmentBundles are the development bundles: the ones the watcher
+	// exported as OCI image layouts, and in build-mode the ones a pool's
+	// daemon builds. Harness seeding reads their labels, and the asset API
+	// serves them, from their layouts (ADR 26-10-16-423 §13).
+	DevelopmentBundles *devbundles.Set
 	// ControlPlaneStreams carries guest-initiated control-plane connections for
 	// backends that cannot be dialed inward.
 	ControlPlaneStreams *carrierhub.Hub
@@ -147,7 +144,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	sandboxService.SetServerPeerID(options.ServerPeerID)
 	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil, options.OverlayDir)
-	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages, options.DevelopmentBundles)
+	harnessConfigService.SetDevelopmentBundles(options.DevelopmentBundles)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.
 	harnessConfigService.SetSandboxRuntime(sandboxService)
@@ -193,6 +190,22 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		ReleaseBundles: releaseBundles,
 		Development:    options.DevelopmentBundles,
 	})
+	// A development bundle a pool's daemon built is a new digest for what it
+	// names: the built-in harnesses are seeded again onto it, and the platform
+	// resolved again (ADR 26-10-16-423 §13).
+	options.DevelopmentBundles.OnBuilt(func() {
+		ctx := context.Background()
+		projects, err := store.ListProjects(ctx)
+		if err != nil {
+			slog.WarnContext(ctx, "development bundle built but the harnesses were not seeded onto it", "error", err)
+		}
+		for _, project := range projects {
+			if err := harnessConfigService.SeedBuiltIns(ctx, project.ID); err != nil {
+				slog.WarnContext(ctx, "development bundle built but a project's harnesses were not seeded onto it", "projectId", project.ID, "error", err)
+			}
+		}
+		assetService.ResolvePlatform(ctx)
+	})
 	// Every sandbox is pinned to the platform the release names, and a
 	// stopped one follows it when the reference resolves somewhere new (ADR
 	// 26-10-16-423 §7).
@@ -200,6 +213,10 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	assetService.OnPlatformMoved(func(ctx context.Context) {
 		if err := sandboxService.UpgradePlatformSandboxes(ctx); err != nil {
 			slog.WarnContext(ctx, "platform bundle moved but stopped sandboxes were not upgraded", "error", err)
+		}
+		// A sandbox from before bundles waits on a platform to be pinned to.
+		if err := sandboxService.PinUndeliveredSandboxes(ctx); err != nil {
+			slog.WarnContext(ctx, "pin sandboxes from before bundles", "error", err)
 		}
 	})
 	// The server configuration file's gateways (ADR 26-10-17-271), which
@@ -238,15 +255,6 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
 }
 
-func (s *Service) SetDefaultSandboxImage(image, digest string) {
-	s.Service.SetDefaultSandboxImage(image, digest)
-	// The preloader needs the same answer. The package default is the
-	// effective image only when nothing overrode it, so reading that instead
-	// would have a server told to run a different sandbox image prestage the
-	// one it is not going to use.
-	s.poolControlPlane.SetDefaultSandboxImage(image)
-}
-
 func (s *Service) SetWorkerAgentAuthManager(manager *poolagentauth.Manager) {
 	s.poolControlPlane.SetAgentAuthManager(manager)
 }
@@ -273,11 +281,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
 	s.assets.StartPruning(ctx)
 	go s.assets.ResolvePlatform(ctx)
-	go func() {
-		if err := s.PinStoppedSandboxBundles(ctx); err != nil {
-			slog.WarnContext(ctx, "pin stopped sandboxes' bundles", "error", err)
-		}
-	}()
+	s.StartPinningUndelivered(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()

@@ -753,12 +753,6 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
 	config := &out.Config
-	if opts.Image.Name != "" {
-		config.Image = poolclient.NewOptString(opts.Image.Name)
-	}
-	if opts.Image.Digest != "" {
-		config.ImageDigest = poolclient.NewOptString(opts.Image.Digest)
-	}
 	if opts.SpecFingerprint != "" {
 		config.SpecFingerprint = poolclient.NewOptString(opts.SpecFingerprint)
 	}

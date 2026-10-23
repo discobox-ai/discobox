@@ -3,7 +3,7 @@
 // There is no user-facing "definition" concept: a harness config is the single
 // harness thing. This package only supplies what the server needs to seed the
 // built-in harness configs, and the env-override mapping dev builds use to
-// point those configs at freshly tagged bundles and images.
+// point those configs at freshly built bundles.
 package harnessdefs
 
 import (
@@ -24,21 +24,18 @@ type Seed struct {
 	// Slug is the stable selector (e.g. codex) and the built-in's identity.
 	Slug string
 	Name string
-	// Bundle is the harness bundle its manifest is read from, and Image the
-	// runnable image a pool runs, each already resolved against any override.
+	// Bundle is the harness bundle its manifest is read from and every box on
+	// it applies, already resolved against any override.
 	Bundle string
-	Image  string
 }
 
 // References is what the built-in harnesses resolve against: the platform
 // bundle every harness's manifest is composed on (ADR 26-10-16-423 §2), and
-// per built-in slug, the bundle and runnable image replacing its own. Dev
-// builds set them from the environment (ReferencesFromEnv), a release from its
-// manifest.
+// per built-in slug, the bundle replacing its own. Dev builds set them from
+// the environment (OverridesFromEnv), a release from its manifest.
 type References struct {
 	PlatformBundle string
 	Bundles        map[string]string
-	Images         map[string]string
 }
 
 // ShellSlug is the slug of the `shell` built-in. It is an ordinary registry
@@ -50,13 +47,12 @@ type References struct {
 // nothing else can claim that role.
 const ShellSlug = harness.ShellSlug
 
-// Seeds returns the built-in harness configs to seed, with each bundle and
-// image replaced by refs' entry for its slug when present. Dev builds inject
-// freshly tagged ones this way (see BundleEnvVar and ImageEnvVar); empty
-// references yield the baked-in ones. With exact set, only the slugs refs
-// names images for are seeded, including harnesses absent from this binary's
-// registry: a release's manifest names every harness it ships, and their
-// metadata comes from their bundles.
+// Seeds returns the built-in harness configs to seed, with each bundle
+// replaced by refs' entry for its slug when present. Dev builds inject freshly
+// built ones this way (see BundleEnvVar); empty references yield the baked-in
+// ones. With exact set, only the slugs refs names bundles for are seeded,
+// including harnesses absent from this binary's registry: a release's manifest
+// names every harness it ships, and their metadata comes from their bundles.
 func Seeds(refs References, exact bool) []Seed {
 	definitions := registry.Definitions()
 	if exact {
@@ -64,8 +60,8 @@ func Seeds(refs References, exact bool) []Seed {
 		for _, definition := range definitions {
 			names[definition.ID] = definition.Name
 		}
-		slugs := make([]string, 0, len(refs.Images))
-		for slug := range refs.Images {
+		slugs := make([]string, 0, len(refs.Bundles))
+		for slug := range refs.Bundles {
 			slugs = append(slugs, slug)
 		}
 		sort.Strings(slugs)
@@ -75,32 +71,24 @@ func Seeds(refs References, exact bool) []Seed {
 			if name == "" {
 				name = slug
 			}
-			out = append(out, Seed{Slug: slug, Name: name, Bundle: refs.Bundles[slug], Image: refs.Images[slug]})
+			out = append(out, Seed{Slug: slug, Name: name, Bundle: refs.Bundles[slug]})
 		}
 		return out
 	}
 	out := make([]Seed, 0, len(definitions))
 	for _, definition := range definitions {
-		bundle, image := definition.Bundle, definition.Image
+		bundle := definition.Bundle
 		if override := strings.TrimSpace(refs.Bundles[definition.ID]); override != "" {
 			bundle = override
 		}
-		if override := strings.TrimSpace(refs.Images[definition.ID]); override != "" {
-			image = override
-		}
-		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Bundle: bundle, Image: image})
+		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Bundle: bundle})
 	}
 	return out
 }
 
-// ImageEnvVar returns the environment variable that overrides a built-in
-// harness's runnable image, and BundleEnvVar the one that overrides its
-// bundle. The dev image watcher writes the same keys; keep the mappings in
-// sync.
-func ImageEnvVar(slug string) string {
-	return "DISCOBOX_HARNESS_" + envSlug(slug) + "_IMAGE"
-}
-
+// BundleEnvVar returns the environment variable that overrides a built-in
+// harness's bundle. The dev image watcher writes the same keys; keep the
+// mappings in sync.
 func BundleEnvVar(slug string) string {
 	return "DISCOBOX_HARNESS_" + envSlug(slug) + "_BUNDLE"
 }
@@ -109,19 +97,16 @@ func envSlug(slug string) string {
 	return strings.ToUpper(strings.ReplaceAll(slug, "-", "_"))
 }
 
-// OverridesFromEnv reads per-harness bundle and image overrides from the
-// environment via getenv, keyed by built-in slug.
-func OverridesFromEnv(getenv func(string) string) (bundles, images map[string]string) {
-	bundles, images = map[string]string{}, map[string]string{}
+// OverridesFromEnv reads per-harness bundle overrides from the environment
+// via getenv, keyed by built-in slug.
+func OverridesFromEnv(getenv func(string) string) map[string]string {
+	bundles := map[string]string{}
 	for _, definition := range registry.Definitions() {
 		if value := strings.TrimSpace(getenv(BundleEnvVar(definition.ID))); value != "" {
 			bundles[definition.ID] = value
 		}
-		if value := strings.TrimSpace(getenv(ImageEnvVar(definition.ID))); value != "" {
-			images[definition.ID] = value
-		}
 	}
-	return bundles, images
+	return bundles
 }
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

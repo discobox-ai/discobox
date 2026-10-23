@@ -68,7 +68,6 @@ func TestPoolProviderCreateIsSentAgainWhenThePoolAgentLeavesMidRequest(t *testin
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
-		Image:  sandbox.ImageRef{Name: "discobox/sandbox:latest"},
 	})
 	if err != nil {
 		t.Fatalf("create across a pool agent that left mid-request: %v", err)

@@ -14,6 +14,11 @@ Global review expectations:
   rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
   `../../sandboxconfig/DESIGN.md`, and rewrote the GitHub labels
   `platform/windows` and `platform/macos` because they looked like paths.
+- Retiring a concept: grep every `DESIGN.md`, `REVIEW.md`, `AGENTS.md` and
+  skill under `.agents/skills` for it, not only the docs on the change's path.
+  A doc off that path goes on describing what no longer exists, and an agent
+  follows it: retiring harness images left `AGENTS.md`, the pools design and
+  several verify recipes naming targets and images that were gone.
 - Preserve desired-state reconciliation semantics for orchestrated resources.
 - Persist accepted intent and resource changes in the same transaction as the
   reconcile dirty mark that drives them (`MarkDirtyTx`); there is no separate

@@ -34,8 +34,8 @@ update loop, and rendering path, but it is not part of the default run because
 it is not on the `discobox new` or direct attach path.
 
 The harness under `image/` is test-only, built as every harness is: a bundle
-(`discobox-terminal-latency:local`) whose label is its manifest, and the
-runnable twin a pool runs (`discobox-terminal-latency-image:local`). Its
+(`discobox-terminal-latency:local`) whose label is its manifest, which a box on
+it applies. Its
 primary process, `probe.py`, enters raw mode and turns `DBXPING:00000001` into
 `DBXPONG:00000001`, so every input has an unambiguous matching output; it also
 generates the spinner or screen load.

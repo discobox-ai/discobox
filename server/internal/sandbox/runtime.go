@@ -99,10 +99,10 @@ type Provider interface {
 	// they read, so a failure part way through arrives as a read error rather
 	// than as this call's.
 	//
-	// image is the sandbox's pin. The tree's `data` and `sources` are read by
-	// the sandbox agent's export mode, from the sandbox's own image, and an
-	// archived sandbox has no container left to name it (ADR 0129 §1).
-	ExportTree(ctx context.Context, ref SandboxRef, poolID string, image ImageRef, state []byte) (io.ReadCloser, error)
+	// bundles are the sandbox's pins. The tree's `data` and `sources` are read
+	// by the sandbox agent's export mode, the agent of its platform pin, and
+	// an archived sandbox has no container left to name it (ADR 0129 §1).
+	ExportTree(ctx context.Context, ref SandboxRef, poolID string, bundles []BundlePin, state []byte) (io.ReadCloser, error)
 	// ImportTree restores a durable tree onto a pool for a sandbox that has no
 	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
 	// rather than read from runtime state for exactly that reason: there is no
@@ -177,13 +177,12 @@ type StateEvent struct {
 
 // CreateOptions configures sandbox creation.
 type CreateOptions struct {
-	Image ImageRef
 	// SpecFingerprint is the digest of the sandbox's manifest — without the
-	// image and platform pins for a sandbox delivered its platform
+	// platform pin for a sandbox delivered its platform
 	// (SandboxManifest.DeliveredFingerprint). The
 	// runtime records it on the container it builds and rebuilds any container
 	// whose recorded fingerprint no longer matches, which is how every spec
-	// change — image, resources, sources, whatever is added later — converges
+	// change — bundles, resources, sources, whatever is added later — converges
 	// through one mechanism (ADR 0017 §5).
 	SpecFingerprint string
 	// Start asks the runtime to bring the container up as part of creating it.
@@ -469,8 +468,8 @@ type HTTPAuditExchangeDetail struct {
 // begin records startup before a runtime is replaced or created; providers
 // must call it before preloading images or launching a new agent.
 type PoolRuntime interface {
-	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error
-	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, images []string, begin func(context.Context) error) error
+	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, begin func(context.Context) error) error
+	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	// ClearCache stops every running sandbox on the pool and empties the pool's
 	// caches, returning the sandboxes it stopped. The pool agent does the work

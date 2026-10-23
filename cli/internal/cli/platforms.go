@@ -50,11 +50,11 @@ func placementsOf(pools []apimodel.Pool) poolPlacements {
 // before image kinds, whose harnesses were all OCI images.
 const ociImageKind = "oci"
 
-// run reports whether a pool can run the harness: one hosts a platform its
-// image is published for and runs the kind of image it is. A harness with no
-// platforms has not been inspected since they were recorded, or comes from a
-// server that records none, and rules out no pool's platform — but there has
-// to be a pool for it to run on. A harness whose kind is sent empty has none
+// run reports whether a pool can run the harness: one hosts a platform a
+// manifest file's template runs on and runs the kind of box the harness runs
+// on. A harness with no platforms — a bundle, whose steps select the platform
+// they run on, or one from a server that records none — rules out no pool's
+// platform, but there has to be a pool for it to run on. A harness whose kind is sent empty has none
 // declared — a manifest-file harness from before kinds — and runs on no pool.
 func (p poolPlacements) run(harness apimodel.HarnessConfig) bool {
 	kind := harness.ImageKind.Or(ociImageKind)
