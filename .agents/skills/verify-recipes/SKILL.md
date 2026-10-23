@@ -816,8 +816,19 @@ docker run -d --name vfail --privileged --cgroupns=private -t \
 docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -20
 ```
 
+- A *working* wiring needs no pool either: give the same container a bootstrap
+  with a `user` (`name`, `uid`, `gid`, `homeDirectory`) and top-level
+  `volumes`, plus `-v $S/data:/.discobox/data -v $S/cache:/.discobox/cache`.
+  `docker exec` then shows `findmnt --mountpoint <path>` (one per call) and
+  the layout records in `/.discobox/data/.layouts`; `docker stop`/`start` is
+  the next boot. Edit `$S/data` with `sudo` (root-owned) between boots. For
+  `main`'s behavior on the same tree, build its agent from `git archive HEAD`
+  and bind it over `/usr/local/bin/discobox-sandbox-agent:ro`.
 - A box's export is `d admin box export <box> -o <file>` (stop it first); the
-  export container overrides the entrypoint.
+  export container overrides the entrypoint. Without a pool: the same image
+  with `--entrypoint /usr/local/bin/discobox-sandbox-agent ... export data`,
+  config and data mounted read-only, and `DISCOBOX_USER_{NAME,UID,GID,HOME}`
+  set; stdout is the tar.
 
 # Verifying what the judge is asked (judge jobs, facts)
 
