@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -90,5 +91,53 @@ func TestConnectingEndsTheProvisioningNarration(t *testing.T) {
 	}
 	if m.stopNarrating != nil {
 		t.Fatal("the provisioning watch outlived the wait it was narrating")
+	}
+}
+
+// A create's warning is not a step of the wait: the next step would replace
+// it on the busy line before anyone read it. It is kept as a status of its own
+// that outlasts the steps after it and the time a message is held, and goes
+// with the next key, as an answer to "did you see this".
+func TestAWarningOutlastsTheStepsAfterIt(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	m.setSubmitting(true)
+	feed, _ := m.narrate()
+
+	m.narrated(narrationMsg{source: feed, warning: true, text: "/src/app: 2 uncommitted changes left out (--include-dirty carries them); the discobox starts from the last commit"})
+	m.narrated(narrationMsg{source: feed, text: "pushing source"})
+	send(t, m, statusExpiredMsg{generation: m.statusGen})
+
+	if got := m.statusMessage(200); !strings.Contains(got, "2 uncommitted changes left out") {
+		t.Fatalf("status = %q, want the warning still up", got)
+	}
+	if m.busy != "pushing source…" {
+		t.Fatalf("busy = %q, want the steps to carry on beside the warning", m.busy)
+	}
+	// The create it is about finishing is no answer to it: it stays.
+	send(t, m, createdMsg{sandbox: Sandbox{ID: "sbx_1"}, req: RunRequest{Detach: true}})
+	if got := m.statusMessage(200); !strings.Contains(got, "left out") {
+		t.Fatalf("status = %q, want the warning to outlast the create finishing", got)
+	}
+	send(t, m, keyPress("down"))
+	if strings.Contains(m.statusMessage(200), "left out") {
+		t.Fatal("the warning outlived the next key")
+	}
+	if m.statusW {
+		t.Fatal("the key took the warning's text and left it marked a warning")
+	}
+}
+
+// Any other message still replaces a standing warning: some are said only
+// once — a registered server going quiet — and holding them back for the
+// warning would lose them for good.
+func TestAMessageOtherThanTheCreatesReplacesAWarning(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	m.setSubmitting(true)
+	feed, _ := m.narrate()
+	m.narrated(narrationMsg{source: feed, warning: true, text: "/src/app: 1 uncommitted change left out"})
+
+	send(t, m, statusMsg{text: "beta is not answering"})
+	if got := m.statusMessage(200); !strings.Contains(got, "beta is not answering") || m.statusW {
+		t.Fatalf("status = %q (warning %v), want the new message in its place", got, m.statusW)
 	}
 }

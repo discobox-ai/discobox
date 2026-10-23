@@ -26,15 +26,27 @@ import (
 // reporting on.
 type narration struct {
 	gen int
-	ch  chan string
+	ch  chan narrationLine
 }
 
-// report delivers one line, dropping it when the window is not keeping up. The
+// narrationLine is one line of a feed: a step of the work, or a warning about
+// it, which is not a step and is not drawn as one (narrated).
+type narrationLine struct {
+	text    string
+	warning bool
+}
+
+// report delivers one step, dropping it when the window is not keeping up. The
 // send never blocks: a status line must not be able to stall the work it
 // describes.
-func (n narration) report(text string) {
+func (n narration) report(text string) { n.send(narrationLine{text: text}) }
+
+// warn delivers a warning about the work, on the same terms.
+func (n narration) warn(text string) { n.send(narrationLine{text: text, warning: true}) }
+
+func (n narration) send(line narrationLine) {
 	select {
-	case n.ch <- text:
+	case n.ch <- line:
 	default:
 	}
 }
@@ -46,8 +58,9 @@ func (n narration) close() { close(n.ch) }
 
 // narrationMsg is one line from a narrated operation.
 type narrationMsg struct {
-	source narration
-	text   string
+	source  narration
+	text    string
+	warning bool
 }
 
 // narrationCapacity is how many reports may be in flight. Two would do — the
@@ -63,7 +76,7 @@ const narrationCapacity = 8
 // the busy line, so a report from an earlier one is stale by definition.
 func (m *Model) narrate() (narration, tea.Cmd) {
 	m.endNarration()
-	feed := narration{gen: m.busyGen, ch: make(chan string, narrationCapacity)}
+	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, narrationCapacity)}
 	return feed, m.nextNarration(feed)
 }
 
@@ -71,22 +84,39 @@ func (m *Model) narrate() (narration, tea.Cmd) {
 // follows an operation from its first step to its last.
 func (m *Model) nextNarration(feed narration) tea.Cmd {
 	return listen(func() tea.Msg {
-		text, ok := <-feed.ch
+		line, ok := <-feed.ch
 		if !ok {
 			// The operation finished and closed its feed. Nothing to report and
 			// nothing to re-arm, which is also what stops this goroutine.
 			return nil
 		}
-		return narrationMsg{source: feed, text: text}
+		return narrationMsg{source: feed, text: line.text, warning: line.warning}
 	})
 }
 
 // narrated reports one line, and asks for the next.
 func (m *Model) narrated(msg narrationMsg) tea.Cmd {
+	// A warning is not a step of the wait, and the next step would replace it
+	// on the busy line before anyone read it: uncommitted changes left out of
+	// the discobox, a repository settings file the create could not read all
+	// of. It is kept as a status of its own instead, which stays until the next
+	// key or click rather than going with time.
+	//
+	// And it is kept whichever operation now owns the busy line. The
+	// generation says whose step the line shows; a warning is about the
+	// discobox, not the line, and a create's is usually read after the attach
+	// that follows it has taken the line over.
+	if msg.warning {
+		m.status, m.statusE, m.statusW = msg.text, false, true
+		m.statusGen++
+		return m.nextNarration(msg.source)
+	}
 	if msg.source.gen != m.busyGen {
-		// From an operation the window has moved on from. Dropping it is the
-		// point of the generation: the line belongs to whatever is running now.
-		return nil
+		// A step from an operation the window has moved on from. Dropping it
+		// is the point of the generation: the line belongs to whatever is
+		// running now. The feed is still read, for a warning behind it, until
+		// the operation closes it.
+		return m.nextNarration(msg.source)
 	}
 	m.waiting(msg.text)
 	return m.nextNarration(msg.source)

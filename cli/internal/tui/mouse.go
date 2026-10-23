@@ -129,7 +129,7 @@ func (m *Model) windowMouse(msg tea.MouseMsg) tea.Cmd {
 // cells it landed on.
 func (m *Model) leftPress(ev tea.MouseClickMsg) tea.Cmd {
 	// Whatever was reported was about the last thing pressed, key or button.
-	m.status, m.statusE = "", false
+	m.status, m.statusE, m.statusW = "", false, false
 	m.statusGen++
 
 	where, _ := m.zones.at(ev.X, ev.Y)

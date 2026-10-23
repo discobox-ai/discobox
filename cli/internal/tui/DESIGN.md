@@ -3390,6 +3390,19 @@ the pool agent's, read off the discobox record by `DataSource.WatchProvisioning`
 while the attach waits. Both arrive as lines; the window's only job is to put
 the newest one where the busy line goes.
 
+- A warning is not a step, and the next step would replace it before anyone
+  read it. So it is a line of its own on the feed: `DataSource.Run` takes a
+  `warn` callback beside `report`, and the feed marks the line
+  (`narrationLine.warning`), never its text. It becomes a status of its own
+  (`statusW`) rather than the busy line. It does not go with `statusHolds`,
+  the create finishing leaves it standing (`created` holds back its "created
+  …"), and it goes with the next key or click, as any message does. Any other
+  message replaces it, because some are said only once. Uncommitted changes
+  `run` left out are reported this way, as are a repository settings file's
+  warnings. A warning is kept whichever operation owns the busy line when it
+  lands: a create's is usually read after the attach that follows has taken
+  the line over, and the generation that drops a stale step would drop it too.
+  So a superseded feed is still read until its operation closes it.
 - One operation owns the line. Opening a feed ends the one before it, and each
   feed carries the generation it was opened at, so a report still in flight when
   an operation ends is dropped rather than landing on what replaced it.

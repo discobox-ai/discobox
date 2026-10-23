@@ -2332,12 +2332,17 @@ type DataSource interface {
 	// work, so nothing else can say which one is underway — and the window puts
 	// them where it says what it is busy with.
 	//
+	// warn is told what the create left out or found wrong that the person
+	// should hear about and that is no step of the work: uncommitted changes it
+	// did not carry in, a repository settings file it could not read all of.
+	// The window keeps it on screen past the steps that follow it.
+	//
 	// accepted is called once, the moment the server has taken the create and
 	// before the source is delivered: from then on the discobox exists whatever
 	// the rest of the run does, so the prompt it was given can no longer be
 	// lost and the window lets go of it. A create the server refused never
 	// calls it.
-	Run(ctx context.Context, req RunRequest, report func(string), accepted func()) (Sandbox, error)
+	Run(ctx context.Context, req RunRequest, report, warn func(string), accepted func()) (Sandbox, error)
 
 	// WatchProvisioning reports what a sandbox that is not usable yet is being
 	// made to do, until ctx ends. It blocks, and is meant to run beside a wait
@@ -2356,7 +2361,7 @@ type DataSource interface {
 	DeliverSource(ctx context.Context, sandboxID string, report func(string)) error
 
 	// Workspace reports what a create would carry in from the source directory,
-	// so the window can settle --include-dirty=auto before it creates anything.
+	// so the window can ask the questions still open before it creates anything.
 	Workspace(ctx context.Context, source string) (SourceWorkspace, error)
 
 	// ResolveSource checks a source named by hand — a directory, a repository

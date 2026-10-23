@@ -1135,12 +1135,12 @@ func gitRoot(ctx context.Context, dir string) (string, bool) {
 // Run creates the sandbox Enter asked for and delivers its source, which is
 // exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
-func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
+func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func()) (tui.Sandbox, error) {
 	if d.servers == nil {
 		if req.Server != "" {
 			return tui.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
 		}
-		return d.create(ctx, req, report, accepted)
+		return d.create(ctx, req, report, warn, accepted)
 	}
 	// Empty is the primary, which is `--server` unset (ADR 0116 §5).
 	target := d.servers[0]
@@ -1164,7 +1164,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	box, err := source.create(ctx, req, report, accepted)
+	box, err := source.create(ctx, req, report, warn, accepted)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
@@ -1176,7 +1176,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 }
 
 // create is Run on this data source's own server.
-func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
+func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func()) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
 		Source:   strings.TrimSpace(req.Source),
 		NoSource: req.NoSource,
@@ -1202,7 +1202,11 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		opts.ReportDeclaredSource = func(source sandboxcreate.DeclaredSource) {
 			report(declaredSourceLine(source))
 		}
-		opts.Warn = func(warning string) { report(warningLine(warning)) }
+	}
+	// A warning is its own line, which the window keeps on screen: escaped,
+	// since a repository's files can be what it is about (cli/REVIEW.md).
+	if warn != nil {
+		opts.Warn = func(warning string) { warn(terminalSafe(warning)) }
 	}
 	// An unset source is where the window is running, and with no source that
 	// is still where the create came from.
