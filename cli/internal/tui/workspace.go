@@ -331,7 +331,9 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 			// Services come from their own listing, not this one: a service
 			// that is not running has no exec here at all, and it is exactly
 			// the one whose absence has to be visible. See workspaceServices.
-			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" || serviceExec(exec) {
+			// A pull request's files changed are drawn by the issue tab
+			// that started them (pullreview.go), never as a tab here.
+			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" || serviceExec(exec) || exec.FilesChanged {
 				continue
 			}
 			if m.paneByExec(exec.ID) != nil {

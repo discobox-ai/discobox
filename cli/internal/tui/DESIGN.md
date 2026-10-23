@@ -999,24 +999,35 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   them (`ChecksPartial`) says so, so a row of passes is not read as the whole. In the timeline a push is its commits, a review is its verdict,
   its summary, and each thread it started on the diff under the lines it is
   about, replies with it.
-- **Files changed is discobox-review's window, embedded** (`pullreview.go`,
-  `github.com/discobox-ai/review/ui`), behind `f` and back: the same diff,
-  folds, split view, syntax and file reader as a discobox's diff tool, over a
-  `source.Source` the data source reads from GitHub (`DataSource.PullSource`).
-  It is measured between the two commits the tab last read (`BaseSHA`,
-  `HeadSHA`), three dots, as GitHub's own page is. The source keeps no review
-  and has no working tree, so the window offers no comment, approval,
-  checkout or editor. Its keys are its own but the leader, `f` and `r`
-  (`Reserved`); its commands come back tagged to the window that sent them
-  (`reviewMsg`), so a replaced window's are dropped; the pointer is read
-  against where it is drawn (`SetOrigin`). It is opened once per head: a push
-  read on the tab's clock leaves the files being read where they are, under
-  the notice, and `r` — or `f` from the conversation — opens the new head's.
-  Its gestures are held as a terminal pane's are (`mouseCapture`), and a press
-  in it clears every other selection. Two things are the window's own until
-  the module offers a way in: a copy goes out as OSC 52 written straight to the
-  terminal, not through `copyText` (no OS clipboard, no "copied" note), and a
-  press elsewhere cannot clear a selection made in it.
+- **Files changed is discobox-review, run in the discobox** (`pullreview.go`,
+  `DataSource.PullReview`, [ADR 26-10-23-614](../../../docs/adr/26-10-23-614-a-pull-requests-files-changed-are-discobox-review-run-in-its-discobox.md)),
+  behind `f`: `discobox-review -base <BaseSHA> -head <HeadSHA>`, the image's
+  binary, in the box's primary source, measured between the two commits the
+  tab last read. It reads the commits the discobox has and keeps its review in
+  the discobox's git directory, so it is the review the agent left there — the
+  card, every reviewer's approvals and comments — with everything the diff
+  tool does but checking out and editing. Before it starts, the box has to have
+  the pull request's branch checked out — the review shown is that branch's —
+  and its head, or the tab says which is missing. A base the box has not
+  fetched — GitHub's is the base branch's tip now — is measured around from
+  the base branch (`-fallback-base origin/<base>`), which gives the same merge
+  base. It is drawn in the tab under its head from a terminal of its own
+  (`reviewWindow`), not a tab: the session is labeled (`Exec.FilesChanged`)
+  and the workspace's listing never opens one. Every key but the leader is
+  the window's, `f`, `r` and `c` among them, so quitting it (`q`) is the way
+  back to the conversation, where it was read to; while it is starting,
+  nothing is sent and `q` or Esc goes back, and a start that has not come in
+  two minutes is given up on. A session that ends before anything was typed
+  at it ended on its own, and its last screen stays up until a key. Each `f`
+  starts a session over the head the tab last read, so a push read on the
+  tab's clock never moves the one on screen. The session ends with the
+  window, the tab, the workspace and the console, which waits for those ends
+  on its way out (`EndReviews`); one a crash leaves behind runs on unlisted.
+  What its session sends comes back tagged to the window (`reviewMsg`), so a
+  replaced window's is dropped and a session started for one is ended. The
+  pointer is read against where its grid was drawn; its gestures are held as
+  a terminal pane's are (`mouseCapture`), and a press in it clears every
+  other selection.
 - **Whether it can merge is the first thing under the title** (`mergeBanner`),
   in GitHub's own terms (`mergeable_state`): a band across the tab when it is ready —
   open, not a draft, and clean, which is no conflicts, checks passed and every
@@ -1078,10 +1089,7 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   every five minutes; a change says how to log in.
 - **What GitHub says is display data.** The issue arrives in this package's own
   types (`Issue`), every string already escaped by the data source: a title or
-  a comment carrying an escape sequence is shown, not obeyed. So does the
-  files changed' source: discobox-review's window draws the C0 and C1 controls
-  as pictures of them, but not the other invisible characters a terminal acts
-  on, a bidirectional override among them. What a page is
+  a comment carrying an escape sequence is shown, not obeyed. What a page is
   written with is not escaped with it, in what is written to be read — a
   title, a body, a commit's message: the invisible hints at where a line may
   break are dropped, and the joiners in an emoji sequence kept. A name, a path,
@@ -3453,7 +3461,7 @@ the newest one where the busy line goes.
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `issue.go` | the issue tab: a GitHub issue or pull request as a pane of the shells column, its keys, the comment field, closing and reopening, and how the page is laid out as lines |
 | `pull.go` | what a pull request's page adds to the issue tab: the badge and branches, the merge bar and merging, reviewers, checks, and pushes and reviews with their threads |
-| `pullreview.go` | a pull request's files changed: discobox-review's window embedded over `DataSource.PullSource`, one per head, its messages and pointer routed to it and its keys but the tab's own |
+| `pullreview.go` | a pull request's files changed: discobox-review run in the discobox between the pull request's two commits (`DataSource.PullReview`), a session each `f`, drawn in the tab with its keys but the leader, ended with the window, the tab, the workspace and the console (`EndReviews`) |
 | `audit.go` | the audit screen: the followed timeline over the workspace, its search, and a record's card |
 | `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |

@@ -453,21 +453,6 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, into 
 	return resp.Header.Get("Link"), nil
 }
 
-// text reads one answer whole, in a media type of GitHub's that is not JSON:
-// a diff, or a file's raw bytes.
-func (c *Client) text(ctx context.Context, path, accept string) (string, error) {
-	resp, err := c.send(ctx, http.MethodGet, path, accept, nil)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	out, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("reading GitHub's answer: %w", err)
-	}
-	return string(out), nil
-}
-
 // send sends one request and hands back an answer GitHub accepted, for the
 // caller to read and close; a refusal is an error, its body already read.
 func (c *Client) send(ctx context.Context, method, path, accept string, body []byte) (*http.Response, error) {

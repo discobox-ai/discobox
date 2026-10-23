@@ -1252,24 +1252,9 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		return m.windowMouse(msg)
 	}
 	if p.issue != nil && p.issue.files && p.issue.review != nil {
-		// The files changed are a window with a pointer of its own, which
-		// reads where it is drawn (reviewView sets the origin). Its gestures
-		// are held as a terminal's are, so a drag let go outside the tab still
-		// reaches it, and a selection it starts is the only one on screen.
-		switch ev := msg.(type) {
-		case tea.MouseClickMsg:
-			if ev.Button == tea.MouseLeft {
-				m.mouseCapture = p.id
-				m.focusPane(p)
-				m.chromeSel.Clear()
-				m.clearPaneSelections(p)
-			}
-		case tea.MouseReleaseMsg:
-			if ev.Button == tea.MouseLeft {
-				m.mouseCapture = 0
-			}
-		}
-		return m.toReview(p, msg)
+		// The files changed are a terminal of their own, drawn below the
+		// tab's head: see reviewMouse.
+		return m.reviewMouse(p, msg)
 	}
 	if p.issue != nil {
 		// No grid of its own to select over or send presses to: a press focuses
@@ -2372,8 +2357,15 @@ func (m *Model) columnControls(edge lipgloss.Style, p *pane, shells bool, left, 
 // it, offset by where that pane's grid was drawn.
 func (m *Model) paneCursor() *tea.Cursor {
 	p := m.focusedPane()
-	if p == nil || m.audit != nil || p.issue != nil {
-		// An issue draws its field's cursor itself.
+	if p == nil || m.audit != nil {
+		return nil
+	}
+	if p.issue != nil {
+		// An issue draws its field's cursor itself; its files changed are a
+		// terminal, which says where its own goes.
+		if p.issue.files {
+			return p.issue.reviewCursor()
+		}
 		return nil
 	}
 	x, y := m.paneOrigin(p)

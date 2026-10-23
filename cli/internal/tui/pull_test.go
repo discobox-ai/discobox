@@ -176,10 +176,34 @@ func TestTheLeaderSaysWhenThereIsNoPullRequest(t *testing.T) {
 	}
 }
 
-// f turns the tab to the files changed and back, each page keeping its place.
-// The files changed are discobox-review's window over the pull request
-// between the two commits the tab read. It is a reader: nothing in it
-// comments, approves or checks out, and the tab's way back is its own key.
+// filesSession is the session the tab's files changed are drawn from.
+func filesSession(t *testing.T, ds *fakeSource, v *issuePane) *fakeTerminal {
+	t.Helper()
+	if v.review == nil || v.review.execID == "" {
+		t.Fatal("the files changed have no session")
+	}
+	term := ds.execTerm(v.review.execID)
+	if term == nil {
+		t.Fatalf("no terminal serves %s", v.review.execID)
+	}
+	return term
+}
+
+// quitFiles quits the window, as q in discobox-review does: the key reaches
+// the session, which ends.
+func quitFiles(t *testing.T, d *driver, ds *fakeSource, v *issuePane) {
+	t.Helper()
+	term := filesSession(t, ds, v)
+	d.key("q")
+	term.typed("q")
+	_ = term.Close()
+	d.wait("the conversation", func() bool { return !v.files })
+}
+
+// f turns the tab to the files changed: discobox-review, run in the discobox
+// between the two commits the tab read, under the review the discobox keeps.
+// Every key is the window's but the leader, and quitting it is the way back to
+// the conversation, where it was read to.
 func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
@@ -190,84 +214,161 @@ func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 
 	d.key("f")
 	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	// The window opens with its files folded, and Space unfolds the one
-	// under its cursor, as in any discobox's diff.
-	d.key(" ")
-	frame := plainFrame(m)
-	for _, want := range []string{"reaper/reaper.go", "reaper/reaper_test.go", "all()", "stopped()"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("the files changed do not show %q:\n%s", want, frame)
-		}
-	}
-	if want := []string{"https://github.com/acme/foo#9: 0001112223334...abc1234567890"}; !slices.Equal(ds.pullSources, want) {
-		t.Errorf("the files changed were read as %q, want %q", ds.pullSources, want)
+	if want := []string{m.paneBox.ID + ": 0001112223334...abc1234567890"}; !slices.Equal(ds.pullReviews, want) {
+		t.Errorf("the files changed were started as %q, want %q", ds.pullReviews, want)
 	}
 	hints := hintLine(m.hints())
-	if !strings.Contains(hints, "f conversation") || strings.Contains(hints, "close PR") || strings.Contains(hints, "comment") {
+	if !strings.Contains(hints, "q conversation") || strings.Contains(hints, "close PR") || strings.Contains(hints, "comment") {
 		t.Errorf("the keys line is %q, want the way back and none of the conversation's", hints)
 	}
 	if got := v.pageURL(); got != "https://github.com/acme/foo/pull/9/files" {
 		t.Errorf("o would open %q, want the files changed", got)
 	}
 
-	// The window's keys are the window's: c is a comment in discobox-review,
-	// and over a pull request there is nowhere to put one.
+	// c is a comment in discobox-review, and f its own: neither is the tab's.
+	term := filesSession(t, ds, v)
 	d.key("c")
-	if v.composing {
-		t.Errorf("c on the files changed opened the tab's comment field")
+	d.key("f")
+	if got := term.typed("cf"); !strings.Contains(got, "cf") || v.composing || !v.files {
+		t.Errorf("c and f on the files changed: session got %q, composing %v, files %v; want both in the session", got, v.composing, v.files)
 	}
 
-	d.key("f")
-	if v.files || v.conversation.offset != read {
-		t.Errorf("f again: files %v, the conversation at %d; want it back where it was read to, %d", v.files, v.conversation.offset, read)
+	// The window quitting is the way back, and its session is ended with it.
+	execID := v.review.execID
+	_ = term.Close()
+	d.wait("the conversation", func() bool { return !v.files })
+	if v.review != nil || v.conversation.offset != read || issueTabOf(m) == nil {
+		t.Errorf("the window quit: window %v, the conversation at %d; want it back where it was read to, %d", v.review != nil, v.conversation.offset, read)
 	}
-	// Back again is the same window, not another read of GitHub.
+	d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
+}
+
+// A session that ends before anything was typed at it ended on its own — an
+// error, an image too old for its flags — and its last screen stays up to be
+// read, until any key takes the tab back.
+func TestFilesChangedThatEndOnTheirOwnStayToBeRead(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	ds.pullDiffs["abc1234567890"] = "flag provided but not defined: -head"
+	d, m := openPullPane(t, ds)
+	v := issueTabOf(m).issue
 	d.key("f")
-	if !v.files || len(ds.pullSources) != 1 {
-		t.Errorf("f a second time: files %v, %d sources opened; want the window that was open", v.files, len(ds.pullSources))
+	d.wait("the session's screen", func() bool { return strings.Contains(plainFrame(m), "flag provided but not defined") })
+	_ = filesSession(t, ds, v).Close()
+	d.wait("the session to end", func() bool { return v.review != nil && v.review.exited })
+	if !v.files || !strings.Contains(plainFrame(m), "flag provided but not defined") {
+		t.Errorf("the session ended on its own and took its screen with it:\n%s", plainFrame(m))
 	}
-	// q is the window's close, which is the way back too.
-	d.key("q")
-	if v.files || issueTabOf(m) == nil {
-		t.Errorf("q in the window: files %v, tab open %v; want the conversation", v.files, issueTabOf(m) != nil)
+	if hints := hintLine(m.hints()); !strings.Contains(hints, "any key conversation") {
+		t.Errorf("the keys line is %q, want the way back", hints)
+	}
+	d.key("x")
+	if v.files || v.review != nil {
+		t.Errorf("a key on the ended session: files %v, window %v; want the conversation", v.files, v.review != nil)
 	}
 }
 
-// A pull request whose files changed cannot be opened says why, and the tab
+// A session that does not start in time is given up on, and the tab says so;
+// the keys that go back to the conversation work while it is starting.
+func TestFilesChangedThatDoNotStartAreGivenUpOn(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	d, m := openPullPane(t, ds)
+	p := issueTabOf(m)
+	v := p.issue
+	d.key("f")
+	w := v.review
+	// The start's own answer is held back: as far as the tab knows, it is
+	// still starting.
+	w.stream = nil
+	d.dispatch(reviewMsg{pane: p.id, window: w, msg: reviewStartTimedOutMsg{}})
+	if v.files || v.review != nil {
+		t.Errorf("a start that timed out left the tab on files %v", v.files)
+	}
+	d.wait("the time-out said", func() bool { return strings.Contains(plainFrame(m), "did not start in the discobox") })
+
+	d.key("f")
+	v.review.stream = nil
+	d.key("esc")
+	if v.files || v.review != nil {
+		t.Errorf("esc while starting: files %v, window %v; want the conversation", v.files, v.review != nil)
+	}
+}
+
+// A session that starts after its window was given up on is ended as it
+// lands: nothing is left to draw it, and nothing would list it.
+func TestFilesChangedStartedTooLateAreEnded(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	gate := make(chan struct{})
+	ds.pullReviewGate = gate
+	d, m := openPullPane(t, ds)
+	v := issueTabOf(m).issue
+	d.key("f")
+	d.key("q")
+	if v.files || v.review != nil {
+		t.Fatalf("q while starting: files %v", v.files)
+	}
+	close(gate)
+	d.wait("the late session ended", func() bool { return slices.Contains(ds.endedExecs(), "exec_files1") })
+}
+
+// The console's own way out ends the files changed it was showing, and waits
+// for that to reach the discobox: nothing would ever list them again.
+func TestQuittingTheConsoleEndsTheFilesChanged(t *testing.T) {
+	t.Parallel()
+	ds := pullSource()
+	d, m := openPullPane(t, ds)
+	v := issueTabOf(m).issue
+	d.key("f")
+	d.wait("the files changed", func() bool { return v.review != nil && v.review.execID != "" })
+	execID := v.review.execID
+	m.EndReviews(5 * time.Second)
+	if !slices.Contains(ds.endedExecs(), execID) {
+		t.Errorf("quitting left %s running, ended %q", execID, ds.endedExecs())
+	}
+}
+
+// A pull request whose files changed cannot be started says why, and the tab
 // stays on the conversation.
 func TestFilesChangedThatCannotBeOpenedSayWhy(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
-	ds.pullSourceErr = errors.New("acme/foo is not a GitHub repository")
+	ds.pullReviewErr = errors.New("the discobox is asleep")
 	d, m := openPullPane(t, ds)
 	v := issueTabOf(m).issue
 	d.key("f")
-	if v.files || v.review != nil {
-		t.Errorf("a source that failed left the tab on files %v, window %v", v.files, v.review != nil)
+	d.wait("the failure", func() bool { return !v.files })
+	if v.review != nil {
+		t.Errorf("a session that failed left the tab a window")
 	}
-	if frame := plainFrame(m); !strings.Contains(frame, "cannot show the files changed: acme/foo is not") {
+	if frame := plainFrame(m); !strings.Contains(frame, "cannot show the files changed: the discobox is asleep") {
 		t.Errorf("the failure is not said:\n%s", frame)
 	}
 }
 
-// A pull request's diff is a stranger's text, and the files changed draw it
-// as it came from GitHub: the window, not the source, is what keeps an escape
-// sequence in it from reaching the terminal.
-func TestTheFilesChangedDrawAStrangersEscapesAsText(t *testing.T) {
+// The files changed are the tab's, never a tab of their own: the workspace's
+// listing reports the session, and nothing opens it beside the tab.
+func TestTheFilesChangedAreNotATab(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
-	evil := "\x1b]8;;https://evil.example\x07click\x1b]8;;\x07 \x1b]52;c;cm0=\x07 \x1b[2J"
-	ds.pullDiffs["abc1234567890"] = "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -1 +1 @@\n-old\n+new " + evil + "\n"
 	d, m := openPullPane(t, ds)
 	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "f.go") })
-	d.key(" ")
-	d.wait("the diff", func() bool { return strings.Contains(plainFrame(m), "new") })
-	raw := rawFrame(m)
-	for _, sequence := range []string{"\x1b]8;;https://evil", "\x1b]52", "\x1b[2J"} {
-		if strings.Contains(raw, sequence) {
-			t.Errorf("the diff's %q reached the terminal:\n%s", sequence, plainFrame(m))
+	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	tabs := m.shells.len()
+	d.dispatch(workspaceTickMsg{gen: m.wsGen})
+	d.settle()
+	if m.shells.len() != tabs {
+		t.Errorf("the listing opened the files changed as a tab: %d tabs, want %d", m.shells.len(), tabs)
+	}
+	attaches := 0
+	for _, open := range ds.execOpened() {
+		if strings.Contains(open, "exec_files") {
+			attaches++
 		}
+	}
+	if attaches != 1 {
+		t.Errorf("the files changed were attached %d times, want only by the tab", attaches)
 	}
 }
 
@@ -717,8 +818,9 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 	if v.review != opened || !strings.Contains(plainFrame(m), "reaper/reaper_test.go") {
 		t.Errorf("the push moved the files changed under the person reading them:\n%s", plainFrame(m))
 	}
-	// The merge is asked from the conversation.
-	d.key("f")
+	// The merge is asked from the conversation, which quitting the window
+	// goes back to.
+	quitFiles(t, d, ds, v)
 	d.key(pullMergeKey)
 	frame := plainFrame(m)
 	if m.dialog == nil || !strings.Contains(m.dialog.body, "at fff999900011 — commits were pushed since abc123456789 was read here: the head is now fff999900011") {
@@ -750,51 +852,55 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 		t.Errorf("a read that was asked for left the notice up (pushed %q):\n%s", v.pushed, plainFrame(m))
 	}
 
-	// r is the tab's on the files changed too, and what it reads is what the
-	// person has now seen: the window opens over the new head.
+	// f opens the files changed over the head the person has now seen.
 	d.key("f")
-	if v.review == opened {
+	d.wait("the new head's files", func() bool { return v.review != nil && v.review.execID != "" })
+	if v.review == opened || v.review.head != "eee8888000222" {
 		t.Errorf("f after a read of a new head opened the old head's files")
 	}
+	again2 := v.review
+	quitFiles(t, d, ds, v)
+
+	// A push read while the files changed are open leaves them on the head
+	// they were opened over; the next f after r is the new head's.
 	ds.mu.Lock()
 	ds.issues["https://github.com/acme/foo#9"] = pushed
 	ds.mu.Unlock()
 	d.key("r")
-	d.wait("the new head's files", func() bool { return v.review != nil && v.review.head == "fff9999000111" })
+	d.wait("the read", func() bool { return v.issue.Pull.HeadSHA == "fff9999000111" && !v.loading })
+	d.key("f")
 	d.wait("the new head's files drawn", func() bool { return strings.Contains(plainFrame(m), "a/first.go") })
-	if v.pushed != "" || !v.files {
-		t.Errorf("r on the files changed: files %v, pushed %q", v.files, v.pushed)
+	if v.review == again2 || v.review.head != "fff9999000111" || v.pushed != "" {
+		t.Errorf("f after r: head %q, pushed %q; want the new head's window", v.review.head, v.pushed)
 	}
 	// The new head is still ready to merge, and the tab still says so.
 	if !strings.HasSuffix(p.title, " ●") {
-		t.Errorf("r on the files changed left the tab titled %q, want it marked ready", p.title)
+		t.Errorf("the tab is titled %q, want it marked ready", p.title)
 	}
-	// The window over the old head was replaced, and its reads end with it.
-	ds.mu.Lock()
-	replaced := ds.pullContexts[len(ds.pullContexts)-2]
-	ds.mu.Unlock()
-	if replaced.Err() == nil {
-		t.Errorf("the old head's window was replaced and its reads go on")
+	want := []string{
+		m.paneBox.ID + ": 0001112223334...abc1234567890",
+		m.paneBox.ID + ": 0001112223334...eee8888000222",
+		m.paneBox.ID + ": 0001112223334...fff9999000111",
+	}
+	if !slices.Equal(ds.pullReviews, want) {
+		t.Errorf("sessions started: %q, want one a head, %q", ds.pullReviews, want)
 	}
 }
 
-// Whatever takes the tab away ends the window's reads with it: closing the
+// Whatever takes the tab away ends the window's session with it: closing the
 // tab, and leaving the workspace the tab is in.
 func TestTheFilesChangedEndWithTheirTab(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
 	d, m := openPullPane(t, ds)
+	v := issueTabOf(m).issue
 	d.key("f")
 	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+	execID := v.review.execID
 	d.key(m.leader())
 	d.key("d")
 	d.wait("the workspace to close", func() bool { return !m.inPanes() })
-	ds.mu.Lock()
-	opened := slices.Clone(ds.pullContexts)
-	ds.mu.Unlock()
-	if len(opened) != 1 || opened[0].Err() == nil {
-		t.Errorf("leaving the workspace left the files changed reading GitHub (%d opened)", len(opened))
-	}
+	d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
 }
 
 // A drag in the files changed is the window's to the end: it is held as a
