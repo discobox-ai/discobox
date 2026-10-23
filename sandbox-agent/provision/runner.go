@@ -36,6 +36,10 @@ const (
 	// NotInstalled means the step installs the feature's own copy, and the
 	// feature adopted the box's instead.
 	NotInstalled Result = "not-installed"
+	// Deferred means a snapshot is being taken and the step is left out of
+	// it (snapshot: false): it is not recorded, so the box's own boot
+	// applies it.
+	Deferred Result = "deferred"
 )
 
 // Outcome is one step's result.
@@ -101,6 +105,11 @@ type Options struct {
 	// reached, in parallel. Unset, every step blocks, as an image build or a
 	// snapshot provisions (§8).
 	Background bool
+	// Snapshot is a run taking a snapshot (§8): the steps a feature leaves
+	// out of one (provisionspec.Spec.InSnapshot) are Deferred, with every
+	// step after them and every feature requiring theirs, so nothing runs
+	// before what it was written to follow.
+	Snapshot bool
 }
 
 // featurePlan is what a run does with one feature.
@@ -120,6 +129,12 @@ type featurePlan struct {
 	firstAsync int
 	adopted    bool
 	version    string
+	// deferredFrom is, in a run taking a snapshot (Options.Snapshot), the
+	// index of the feature's first step left out of it: it and every step
+	// after it are Deferred, so what the box applies at its boot still runs
+	// in the order written. It is 0 for a feature left out whole, or that
+	// requires one with a step left out, and the step count when nothing is.
+	deferredFrom int
 	// changed is whether this run applied any of its steps.
 	changed bool
 	// failed is why the feature failed.
@@ -379,6 +394,10 @@ func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int,
 			outcomes = append(outcomes, Outcome{Feature: feature.Name, Step: step.Name, Result: NotInstalled})
 			continue
 		}
+		if i >= plan.deferredFrom {
+			outcomes = append(outcomes, Outcome{Feature: feature.Name, Step: step.Name, Result: Deferred})
+			continue
+		}
 		out, err := r.output(plan)
 		if err != nil {
 			plan.failed = fmt.Errorf("feature %q: %w", feature.Name, err)
@@ -504,7 +523,7 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 	byPlan := map[string]*featurePlan{}
 	var refused []error
 	for _, feature := range ordered {
-		plan := &featurePlan{feature: feature, done: make(chan struct{})}
+		plan := &featurePlan{feature: feature, deferredFrom: len(feature.Spec.Steps), done: make(chan struct{})}
 		plans = append(plans, plan)
 		byPlan[feature.Name] = plan
 		_, required := requiredBy[feature.Name]
@@ -513,6 +532,18 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 		plan.firstAsync = len(feature.Spec.Steps)
 		if i := slices.IndexFunc(feature.Spec.Steps, func(step provisionspec.Step) bool { return step.Async }); i >= 0 {
 			plan.firstAsync = i
+		}
+		if opts.Snapshot {
+			if i := slices.IndexFunc(feature.Spec.Steps, func(step provisionspec.Step) bool { return !feature.Spec.InSnapshot(step) }); i >= 0 {
+				plan.deferredFrom = i
+			}
+			// In requires order, what it requires is planned already.
+			if slices.ContainsFunc(feature.Spec.Requires, func(name string) bool {
+				required := byPlan[name]
+				return required.deferredFrom < len(required.feature.Spec.Steps)
+			}) {
+				plan.deferredFrom = 0
+			}
 		}
 		if feature.Spec.Adopt != nil && !r.installedHere(feature) {
 			version, err := r.usable(ctx, feature)

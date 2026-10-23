@@ -767,3 +767,82 @@ steps:
 		t.Errorf("tools run:\n%s\nwant %s", strings.Join(b.tools, "\n"), want)
 	}
 }
+
+// A snapshot leaves out what a feature keeps out of one — a step, or a whole
+// feature, marked snapshot: false — with every step written after it and
+// every feature requiring its feature, and records none of it, so the boot of
+// a box made from the snapshot applies exactly that, in the order written,
+// and skips the rest (ADR 26-10-16-423 §8).
+func TestASnapshotLeavesOutWhatAFeatureKeepsOutOfIt(t *testing.T) {
+	b := newBox(t)
+	b.feature("node", map[string]string{
+		provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+steps:
+  - name: shared
+    file: {path: /etc/shared, source: a.txt}
+  - name: per-box
+    snapshot: false
+    file: {path: /etc/per-box, source: a.txt}
+  - name: after
+    file: {path: /etc/after, source: a.txt}
+`,
+		"a.txt": "a",
+	})
+	b.feature("live", map[string]string{
+		provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+snapshot: false
+steps:
+  - name: one
+    file: {path: /etc/live, source: a.txt}
+`,
+		"a.txt": "a",
+	})
+	b.feature("uses-node", map[string]string{
+		provisionspec.FileName: `apiVersion: discobox.ai/provision/v1
+requires: [node]
+steps:
+  - name: one
+    file: {path: /etc/uses-node, source: a.txt}
+`,
+		"a.txt": "a",
+	})
+	b.opts = Options{Snapshot: true}
+	got := results(b.mustApply())
+	want := map[string]Result{"node/shared": Applied, "node/per-box": Deferred, "node/after": Deferred, "live/one": Deferred, "uses-node/one": Deferred}
+	for step, result := range want {
+		if got[step] != result {
+			t.Errorf("taking a snapshot: %s %s, want %s", step, got[step], result)
+		}
+	}
+	for _, path := range []string{"etc/per-box", "etc/after", "etc/live", "etc/uses-node"} {
+		if _, err := os.Stat(filepath.Join(b.root, path)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("a snapshot laid %s, which is left out of one", path)
+		}
+	}
+
+	b.opts = Options{Background: true}
+	got = results(b.mustApply())
+	for step := range want {
+		if result := got[step]; result != Applied && step != "node/shared" || step == "node/shared" && result != Skipped {
+			t.Errorf("booting a box made from it: %s %s", step, result)
+		}
+	}
+}
+
+// Whether a step is kept out of a snapshot says when it runs, not what it
+// does: marking it changes no digest, so no box applies it again for that.
+func TestSnapshotIsNotPartOfAStepsDigest(t *testing.T) {
+	feature := provisionspec.Feature{Name: "node", Dir: t.TempDir()}
+	off := false
+	plain := provisionspec.Step{Name: "a", Env: &provisionspec.EnvStep{Vars: map[string]string{"A": "1"}}}
+	marked := plain
+	marked.Snapshot = &off
+	a, err := StepDigest(feature, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := StepDigest(feature, marked)
+	if err != nil || a != b {
+		t.Fatalf("digests %s and %s (%v), want the same", a, b, err)
+	}
+}

@@ -102,10 +102,40 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features m
 	return err
 }
 
+// Snapshot provisions this box from its bundle trees as a snapshot is taken
+// (ADR 26-10-16-423 §8): the features turned off as a sandbox's bootstrap
+// turns them off, every step blocking, and the steps a feature keeps out of a
+// snapshot left for the boot of each box made from it (Options.Snapshot). It
+// reports to tracker, and returns once nothing is left to provision.
+func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features map[string]sandboxconfig.Feature) error {
+	loaded, opts, err := BootPlan("/", features)
+	if err != nil {
+		tracker.Fail(err)
+		return err
+	}
+	opts.Background, opts.Snapshot = false, true
+	runner := &Runner{
+		Root:    "/",
+		Records: Records{Dir: RecordsDir},
+		LogDir:  LogDir,
+		Tracker: tracker,
+		Logger:  logger,
+	}
+	if self, err := os.Executable(); err == nil {
+		runner.Self = self
+	}
+	if runner.Platform, err = DetectPlatform("/"); err != nil {
+		tracker.Fail(err)
+		return err
+	}
+	_, err = runner.Provision(ctx, loaded, opts)
+	return err
+}
+
 // Trees provisions every feature of the bundle trees onto this box,
 // recording each step under records, with every step blocking and none
-// turned off: what an image build or a snapshot provisions (ADR 26-10-16-423
-// §8). self is the sandbox agent's executable when the agent is what runs
+// turned off: what an image build provisions. A snapshot provisions with
+// Snapshot instead, which turns off what its plan does. self is the sandbox agent's executable when the agent is what runs
 // it (Runner.Self), and empty otherwise. A box's boot provisions with Boot
 // instead.
 func Trees(ctx context.Context, logger *slog.Logger, records, self string, trees ...string) error {
