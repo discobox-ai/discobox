@@ -499,3 +499,20 @@ func TestAnsweringARunsCreateCardGoesBackToTheWaitScreen(t *testing.T) {
 		t.Fatalf("dialog = %v, want the wait screen while the working tree is checked", m.dialog)
 	}
 }
+
+// The warning a create reports — uncommitted changes `discobox run` left out —
+// is still on screen when the window has become the workspace on the discobox
+// it made: that is the screen the person is looking at by then.
+func TestARunWindowsWarningIsOnTheWorkspace(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.runWarnings = []string{"/src/disco2: 2 uncommitted changes left out (--include-dirty carries them); the discobox starts from the last commit"}
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	// A long message is cut from its middle to fit the row, so its two ends
+	// are what is certain to be on screen: what it is about, and what came of
+	// it.
+	d.wait("the workspace showing the warning", func() bool {
+		frame := plainFrame(m)
+		return m.primary() != nil && m.dialog == nil && strings.Contains(frame, "! /src/disco2:") && strings.Contains(frame, "from the last commit")
+	})
+}

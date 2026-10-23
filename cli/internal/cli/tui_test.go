@@ -185,7 +185,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		Harness: "codex",
 		Source:  repo + "@HEAD",
 		Prompt:  []string{"fix the failing tests"},
-	}, func(step string) { steps = append(steps, step) }, func() { steps = append(steps, accepted) })
+	}, func(step string) { steps = append(steps, step) }, nil, func() { steps = append(steps, accepted) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

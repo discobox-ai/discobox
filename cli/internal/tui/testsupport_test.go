@@ -184,6 +184,7 @@ type fakeSource struct {
 	// provisioning watch reports; watched records which discoboxes the window
 	// asked about.
 	runSteps       []string
+	runWarnings    []string
 	provisionLines []string
 	watched        []string
 
@@ -511,7 +512,7 @@ func (f *fakeSource) runRequests() []RunRequest {
 	return append([]RunRequest(nil), f.runs...)
 }
 
-func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string), accepted func()) (Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(string), accepted func()) (Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
 	gate := f.runGate
@@ -524,6 +525,9 @@ func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string),
 	f.mu.Lock()
 	for _, step := range f.runSteps {
 		report(step)
+	}
+	for _, warning := range f.runWarnings {
+		warn(warning)
 	}
 	if err := f.runErr; err != nil {
 		f.mu.Unlock()

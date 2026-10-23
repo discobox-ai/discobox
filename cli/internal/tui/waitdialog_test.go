@@ -15,7 +15,7 @@ func TestWaitingDialogFollowsTheNarration(t *testing.T) {
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
 
-	feed := narration{gen: m.busyGen, ch: make(chan string, 1)}
+	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, 1)}
 	m.narrated(narrationMsg{source: feed, text: "pulling the discobox image"})
 
 	if m.dialog == nil {

@@ -377,6 +377,9 @@ type Model struct {
 	opened  bool
 	status  string
 	statusE bool
+	// statusW marks status as a warning a create reported: it does not expire
+	// with time, as a message does, and goes when the next key or click does.
+	statusW bool
 	quit    bool
 
 	// busy is what the window is waiting on — creating a sandbox, running a
@@ -472,8 +475,9 @@ func WithAttach(sandbox Sandbox) Option {
 }
 
 // WithRun opens the window on one run: `discobox run` builds its request from
-// its flags and hands it over rather than creating the discobox itself, so the
-// question about uncommitted work is the window's own dialog, the wait is the
+// its flags and hands it over rather than creating the discobox itself, so a
+// question it left open — the source, or copying a directory in no repository;
+// uncommitted work it has already answered — is the window's own dialog, the wait is the
 // window's own screen, and what it lands on is the workspace. The window is
 // that run, so it closes when the workspace it opened is left.
 //
@@ -1146,7 +1150,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// after the Enter that started it, with the pull's progress gone and
 		// nothing else on screen saying why, and a reason that has gone by
 		// the time anyone looks up is no report.
-		m.status, m.statusE = msg.text, msg.err
+		m.status, m.statusE, m.statusW = msg.text, msg.err, false
 		m.statusGen++
 		if msg.err {
 			return nil
@@ -1157,8 +1161,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		})
 
 	case statusExpiredMsg:
-		if msg.generation == m.statusGen && !m.statusE {
-			m.status, m.statusE = "", false
+		if msg.generation == m.statusGen && !m.statusE && !m.statusW {
+			m.status, m.statusE, m.statusW = "", false, false
 		}
 		return nil
 
@@ -1624,7 +1628,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// prompt is being written is exactly the one that would otherwise be
 	// wiped by the first letter of it, unread.
 	if !m.statusE || !m.typingIntoPrompt(msg) {
-		m.status, m.statusE = "", false
+		m.status, m.statusE, m.statusW = "", false, false
 		m.statusGen++
 	}
 
@@ -1821,12 +1825,12 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 	defer os.Remove(msg.path)
 
 	if msg.err != nil {
-		m.status, m.statusE = fmt.Sprintf("editor exited: %v", msg.err), true
+		m.status, m.statusE, m.statusW = fmt.Sprintf("editor exited: %v", msg.err), true, false
 		return
 	}
 	edited, err := os.ReadFile(msg.path)
 	if err != nil {
-		m.status, m.statusE = fmt.Sprintf("cannot read the prompt back: %v", err), true
+		m.status, m.statusE, m.statusW = fmt.Sprintf("cannot read the prompt back: %v", err), true, false
 		return
 	}
 	// The editor's whole round trip is one Ctrl-_: an editor left empty is how
@@ -1836,7 +1840,7 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 	m.prompt.SetValue(strings.TrimRight(string(edited), "\n"))
 	m.promptEnd()
 	m.layout()
-	m.status, m.statusE = "", false
+	m.status, m.statusE, m.statusW = "", false, false
 }
 
 // updatePrompt handles the default mode. Every key is text, except the ones
@@ -3161,7 +3165,7 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		defer close(accepted)
 		// Run calls accepted on this goroutine, so the flag needs no lock.
 		var taken bool
-		sandbox, err := m.ds.Run(m.ctx, req, feed.report, func() {
+		sandbox, err := m.ds.Run(m.ctx, req, feed.report, feed.warn, func() {
 			taken = true
 			select {
 			case accepted <- struct{}{}:
@@ -3225,6 +3229,13 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 		return m.report(true, "cannot create the discobox: %v", msg.err)
 	}
 	if msg.req.Detach {
+		// A warning the create reported is about this discobox, and stands
+		// until a key or a click answers it: "created" on top of it would take
+		// it down the moment the create it is about finished. Every other
+		// message still replaces it, since some are said only once.
+		if m.statusW && m.status != "" {
+			return m.refresh()
+		}
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
 	}
 	if m.oneRun {
@@ -3912,6 +3923,8 @@ func (m *Model) statusMessage(room int) string {
 	switch {
 	case m.statusE:
 		return m.st.statusER.Render(truncateMiddle("✗ "+m.status, room))
+	case m.statusW && m.status != "":
+		return m.st.statusWA.Render(truncateMiddle("! "+m.status, room))
 	case m.status != "":
 		return m.st.statusOK.Render(truncateMiddle(m.status, room))
 	case m.busy != "":
