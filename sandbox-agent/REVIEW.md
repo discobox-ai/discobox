@@ -363,6 +363,21 @@ user waits on every single start.
 - **A mount test of this uses a bind from the same filesystem**, never a
   tmpfs: a tmpfs has its own device, which is the case that was never the
   problem.
+- **A data volume's layout is decided once and recorded, never re-judged.**
+  `wireVolume` takes bind or overlay from `decideLayout`, which keeps the
+  layout in `/.discobox/data/.layouts`; `useOverlay`'s look at the target is
+  only for a volume with no record. Choosing from the target on every boot is
+  what made a re-pinned box's home show up as `~/upper` and `~/work`. Never
+  convert a volume between layouts by moving files: an upper is a diff over
+  the image, not a tree. Never put the record in or beside a volume directory
+  — a bind's directory is the target, and a nested volume's is inside its
+  parent's. Write it the way `provision/records.go` writes a record (temp
+  file synced, renamed, directory synced): boot refuses a record it cannot
+  read rather than guess, so an empty one left by a crash fails every boot.
+- **A test of guest-path code hands it slash paths**
+  (`filepath.ToSlash(t.TempDir())`, joined with `path`). `boot` splits
+  paths with `path`, which finds no directory in a `filepath.Join` result on
+  the Windows CI runner, so a test built on `filepath` fails only there.
 - **An overlay's upperdir adopts the target's identity before
   `applyOwnership`, never after.** overlayfs presents the upperdir's owner and
   mode as the merged root's, so `wireVolume` runs `adoptDirIdentity` (setgid

@@ -109,20 +109,40 @@ func exportExclusions() (func(string) bool, error) {
 // overlay's upper and work directories live, relocated from the data mount to
 // the data subtree. A declared path nested beneath one is covered by the skip
 // of its parent, since the walk never descends into a skipped directory.
+//
+// The layout record (layoutRecordPath) of each of those volumes, nested ones
+// included, stays behind too: it lives under .layouts rather than in the
+// directory, and restored without its volume it would still pin the layout of
+// a volume that now starts empty.
 func exportExcludedNames(volumes []harness.ResolvedVolume, uid int) map[string]struct{} {
 	excluded := map[string]struct{}{}
+	archiveName := func(dataPath string) string {
+		return path.Join(sandboxtree.Data, strings.TrimPrefix(dataPath, dataMountPath))
+	}
+	var roots []string
 	for _, v := range volumes {
 		if !v.ExcludeFromExport || v.Kind != harness.VolumeData {
 			continue
 		}
-		relative := strings.TrimPrefix(volumeDir(v, uid), dataMountPath)
-		name := path.Join(sandboxtree.Data, relative)
+		name := archiveName(volumeDir(v, uid))
 		if name == sandboxtree.Data {
 			// Only a declaration of "/" names the data root itself, and
 			// honoring it would export no home at all.
 			continue
 		}
 		excluded[name] = struct{}{}
+		roots = append(roots, path.Clean(v.Path))
+	}
+	for _, v := range volumes {
+		if v.Kind != harness.VolumeData {
+			continue
+		}
+		for _, root := range roots {
+			if p := path.Clean(v.Path); p == root || strings.HasPrefix(p, root+"/") {
+				excluded[archiveName(layoutRecordPath(v))] = struct{}{}
+				break
+			}
+		}
 	}
 	return excluded
 }

@@ -36,6 +36,9 @@ func TestExportExcludedNamesAreTheBackingDirectories(t *testing.T) {
 		"data/var/lib/docker",
 		"data/home/linuxbrew/.linuxbrew",
 		"data/home/ada/.local/share/containers",
+		"data/.layouts/%2Fvar%2Flib%2Fdocker",
+		"data/.layouts/%2Fhome%2Flinuxbrew%2F.linuxbrew",
+		"data/.layouts/%2Fhome%2Fada%2F.local%2Fshare%2Fcontainers",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("excluded = %v, want exactly %v", got, want)
@@ -44,6 +47,22 @@ func TestExportExcludedNamesAreTheBackingDirectories(t *testing.T) {
 		if _, ok := got[name]; !ok {
 			t.Errorf("%s was not excluded; got %v", name, got)
 		}
+	}
+}
+
+// A volume nested in an excluded one is skipped with its parent's directory,
+// but its layout record lives elsewhere and has to be named on its own.
+func TestExportExcludedNamesIncludeANestedVolumesLayoutRecord(t *testing.T) {
+	got := exportExcludedNames([]harness.ResolvedVolume{
+		{Path: "/var/lib/docker", Kind: harness.VolumeData, ExcludeFromExport: true},
+		{Path: "/var/lib/docker/volumes", Kind: harness.VolumeData},
+		{Path: "/var/lib/dockerish", Kind: harness.VolumeData},
+	}, 0)
+	if _, ok := got["data/.layouts/%2Fvar%2Flib%2Fdocker%2Fvolumes"]; !ok {
+		t.Errorf("nested volume's layout record was exported; excluded = %v", got)
+	}
+	if _, ok := got["data/.layouts/%2Fvar%2Flib%2Fdockerish"]; ok {
+		t.Errorf("a sibling sharing the prefix lost its layout record; excluded = %v", got)
 	}
 }
 

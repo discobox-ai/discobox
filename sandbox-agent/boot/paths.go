@@ -97,13 +97,14 @@ func volumeDir(v harness.ResolvedVolume, uid int) string {
 }
 
 // overlayDirs returns the upperdir and workdir used when a declared path is
-// wired as an overlay (its target already ships content in the image).
+// wired as an overlay (decideLayout).
 func overlayDirs(volDir string) (upper, work string) {
 	return path.Join(volDir, "upper"), path.Join(volDir, "work")
 }
 
 // useOverlay reports whether a declared path should be wired as an overlay
-// rather than a plain bind. Overlay preserves image-shipped content as the
+// rather than a plain bind, for a volume wired for the first time: once chosen,
+// a data volume's layout is recorded and kept (decideLayout). Overlay preserves image-shipped content as the
 // lower layer while persisting writes to the volume, but is only safe for
 // per-sandbox data volumes: a cache volume is shared across concurrently
 // running sandboxes, and overlayfs upper/work dirs cannot be shared (ADR 0007).
