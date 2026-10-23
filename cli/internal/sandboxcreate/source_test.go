@@ -357,26 +357,15 @@ func TestResolveRunSourceStartsInItsPath(t *testing.T) {
 	}
 }
 
-func TestIncludeDirtySetNormalizesAndRejects(t *testing.T) {
-	for value, want := range map[string]IncludeDirty{
-		"":      IncludeDirtyAuto,
-		"AUTO":  IncludeDirtyAuto,
-		"true":  IncludeDirtyAlways,
-		" yes ": IncludeDirtyAlways,
-		"false": IncludeDirtyNever,
-		"n":     IncludeDirtyNever,
-	} {
-		var mode IncludeDirty
-		if err := mode.Set(value); err != nil {
-			t.Fatalf("Set(%q): %v", value, err)
-		}
-		if mode != want {
-			t.Fatalf("Set(%q) = %q, want %q", value, mode, want)
-		}
+// The create takes only the three answers a frontend settles on; anything else
+// is a frontend's bug, refused rather than read as one of them.
+func TestPromptOptionsRefuseAnUnknownIncludeDirty(t *testing.T) {
+	if _, err := ParsePromptOptions(PromptOptions{Source: ".", IncludeDirty: "maybe"}, nil); err == nil {
+		t.Fatal("an IncludeDirty that is none of auto, true or false was accepted")
 	}
-	var mode IncludeDirty
-	if err := mode.Set("maybe"); err == nil {
-		t.Fatal("Set(\"maybe\"): want error, got none")
+	opts, err := ParsePromptOptions(PromptOptions{Source: "."}, nil)
+	if err != nil || opts.IncludeDirty != IncludeDirtyAuto {
+		t.Fatalf("empty IncludeDirty = %q, %v, want auto", opts.IncludeDirty, err)
 	}
 }
 

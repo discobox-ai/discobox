@@ -760,8 +760,8 @@ func resolveTree(ctx context.Context, repoRoot, rev string) (string, error) {
 // blockedLocalChanges says why the local working tree is not what the discobox
 // was created from. There are two ways to get here and they are different
 // things to have done: the user changed a working tree the discobox was given,
-// or the user told it not to carry that working tree in the first place
-// (--include-dirty=false, or a repository that gained files after the create).
+// or the user did not carry that working tree in in the first place (no
+// --include-dirty, or a repository that gained files after the create).
 // Telling the second one their repository "has changed" accuses them of
 // something they did not do.
 //

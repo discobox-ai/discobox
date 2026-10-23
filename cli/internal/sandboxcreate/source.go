@@ -47,9 +47,10 @@ const (
 	runEmptyBaseMessage      = "discobox run empty base\n"
 )
 
-// IncludeDirty decides whether uncommitted local work is carried into the
-// sandbox as a workspace snapshot. It implements pflag.Value so frontends can
-// bind it directly to a --include-dirty flag.
+// IncludeDirty decides whether uncommitted local work on top of a checked-out
+// commit is carried into the sandbox as a workspace snapshot. A frontend
+// settles it before the create: `discobox run` from its --include-dirty bool,
+// the console from its create card's row or its own dialog.
 type IncludeDirty string
 
 const (
@@ -62,26 +63,6 @@ const (
 	// uncommitted work behind.
 	IncludeDirtyNever IncludeDirty = "false"
 )
-
-func (m *IncludeDirty) String() string { return string(*m) }
-
-func (m *IncludeDirty) Type() string { return "true|false|auto" }
-
-func (m *IncludeDirty) Set(value string) error {
-	switch IncludeDirty(strings.ToLower(strings.TrimSpace(value))) {
-	case "":
-		*m = IncludeDirtyAuto
-	case IncludeDirtyAuto:
-		*m = IncludeDirtyAuto
-	case IncludeDirtyAlways, "yes", "y", "1":
-		*m = IncludeDirtyAlways
-	case IncludeDirtyNever, "no", "n", "0":
-		*m = IncludeDirtyNever
-	default:
-		return fmt.Errorf("invalid value %q: want true, false, or auto", value)
-	}
-	return nil
-}
 
 // DirectoryCopy describes a source directory that is in no Git repository, so a
 // frontend can ask whether to copy it into the sandbox. Everything in such a

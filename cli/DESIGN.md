@@ -89,9 +89,12 @@ transport helpers where OpenAPI does not model the stream.
   `n` are its aliases.** It is one registration (`newRunCommand`), and help
   lists every spelling: each is what somebody reaching for "make a discobox"
   types, and none is going away. Only `run` is taught — help, examples, hints,
-  the console's preview, the skills and the commit messages a create writes —
-  so an in-box skill reads the same on every client, including ones from when
-  the command was called `new`. `client.yaml`'s section is still `new:`,
+  the console's preview, the skills and the commit messages a create writes.
+  The in-box skill and the in-box `discobox` it teaches ship in the same
+  platform bundle, so a box's skill always matches its CLI. A client from
+  before `run SOURCE` reads the skill's `discobox run . '...'` as a prompt
+  starting with `.`; only the command's name carries back that far.
+  `client.yaml`'s section is still `new:`,
   because it is persisted configuration. See [ADR 26-10-23-600](../docs/adr/26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md), which reverses
   [ADR 0133](../docs/adr/0133-the-command-that-makes-a-discobox-is-new.md)'s `new`.
 - **Only `run` makes a discobox.** The root registers none of its flags, so
@@ -1958,7 +1961,8 @@ level or layering on the attach transports above.
   running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
   the shared picker (`internal/cli/picker.go`) for the "which key" choice
   when there is more than one candidate — the same picker `discobox shell`'s
-  sandbox selection and `new --include-dirty`'s prompt use. This step is
+  sandbox selection, `run`'s source picker and its directory-copy question use.
+  This step is
   enrollment convenience only: listing an agent's public keys proves nothing
   about possession of the private half, and the actual authorization is the
   authenticated `CreateSSHKey` API call that follows, never agent presence
