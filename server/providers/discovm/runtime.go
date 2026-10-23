@@ -36,11 +36,12 @@ type poolHost interface {
 // newPoolHost places a pool's agent where the driver's machines are (ADR
 // 26-10-09-106 §1). A remote driver's machines belong to a service (boxd's
 // API, a Docker daemon), not to the process that booted them, so the pool
-// agent runs in a Linux machine of its own there. A local hypervisor's machines run on this host, so the pool agent
-// runs beside the server as a host process.
-func newPoolHost(e *engine.Engine) poolHost {
+// agent runs in a Linux machine of its own there, booted from the driver's
+// base (ADR 26-10-23-551 §1). A local hypervisor's machines run on this host,
+// so the pool agent runs beside the server as a host process.
+func newPoolHost(e *engine.Engine, base string) poolHost {
 	if e.Driver.Capabilities().Remote {
-		return newPoolMachine(e)
+		return newPoolMachine(e, base)
 	}
 	return &hostAgent{root: e.Root}
 }
@@ -50,18 +51,25 @@ func newPoolHost(e *engine.Engine) poolHost {
 type Runtime struct {
 	engine *engine.Engine
 	host   poolHost
-	// agent is the disco-vm binary images are built with (Config.Agent).
-	agent string
 }
 
 var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
-func newRuntime(cfg Config) (*Runtime, error) {
-	e, err := openEngine(stateRoot(strings.TrimSpace(cfg.Driver)), cfg.Driver)
+// newRuntime opens the engine for the provider instance providerID.
+func newRuntime(cfg Config, providerID string) (*Runtime, error) {
+	driver, err := newDriver(cfg.Driver)
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{engine: e, host: newPoolHost(e), agent: strings.TrimSpace(cfg.Agent)}, nil
+	project, err := engineProject(driver, providerID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := openEngine(stateRoot(driver.Name()), driver, project)
+	if err != nil {
+		return nil, err
+	}
+	return &Runtime{engine: e, host: newPoolHost(e, strings.TrimSpace(cfg.Base))}, nil
 }
 
 // newDriver constructs the named disco-vm driver. The name is disco-vm's, and
@@ -79,34 +87,61 @@ func newDriver(name string) (machine.Driver, error) {
 	return driver, nil
 }
 
-// openEngine opens the state root for a driver, with its shims started as this
-// binary's hidden subcommand rather than as a disco-vm binary nobody ships.
-func openEngine(root, name string) (*engine.Engine, error) {
-	driver, err := newDriver(name)
-	if err != nil {
-		return nil, err
+// localProject is the disco-vm project (disco-vm ADR 0004) of everything a
+// local driver's provider instances make in its state root. It is one for all
+// of them, as the root is, because the engine counts the driver's
+// running-guest cap (vz's two macOS guests) within a project, and that cap is
+// the host's (stateRoot). It is not disco-vm's default project, which is the
+// disco-vm CLI's, so what a person makes with the CLI is never discobox's.
+const localProject = "discobox"
+
+// engineProject is the disco-vm project a provider instance's engine opens.
+//
+// A remote driver's machines outlive any store that records them and are
+// named for their project, which is how one store tells its own from the
+// account's other contents, another server's included (disco-vm ADR 0004). So
+// a remote driver's project is the provider instance's own (ADR 26-10-23-551
+// §1), spelled from its ID within disco-vm's project rule: prov_x becomes
+// prov-x. A local driver's is localProject.
+func engineProject(driver machine.Driver, providerID string) (string, error) {
+	if !driver.Capabilities().Remote {
+		return localProject, nil
 	}
-	e, err := engine.Open(root, driver)
+	project := strings.ReplaceAll(strings.ToLower(providerID), "_", "-")
+	if err := machine.ValidateProject(project); err != nil {
+		return "", fmt.Errorf("%s provider %q has no disco-vm project: %w", ProviderType, providerID, err)
+	}
+	return project, nil
+}
+
+// openEngine opens one project of the state root for a driver, with its shims
+// started as this binary's hidden subcommand rather than as a disco-vm binary
+// nobody ships. The engine keeps its metadata in its own database in the
+// root, not in the server's: a root is shared by every server of the user on
+// the host, and a database serves one root.
+func openEngine(root string, driver machine.Driver, project string) (*engine.Engine, error) {
+	e, err := engine.Open(root, driver, nil, project)
 	if err != nil {
 		return nil, fmt.Errorf("open %s state %s: %w", ProviderType, root, err)
 	}
 	exe, err := os.Executable()
 	if err != nil {
+		_ = e.Close()
 		return nil, err
 	}
-	e.ShimCommand = shimCommand(exe, e.Root, driver.Name())
+	e.ShimCommand = shimCommand(exe, e.Root, driver.Name(), project)
 	return e, nil
 }
 
-// Close releases nothing: the engine holds no process-wide resource, and a
-// running machine is its shim's, or its remote service's, not this value's.
-func (r *Runtime) Close() error { return nil }
+// Close releases the engine's database. A running machine is its shim's, or
+// its remote service's, not this value's, and outlives it.
+func (r *Runtime) Close() error { return r.engine.Close() }
 
 // EnsurePool brings up the pool's host.
 //
-// It mints no bootstrap. A bootstrap is handed to a pool agent as it starts, and
-// nothing starts one yet: a host pool agent is staged in #64, and the pool
-// machine's image installs one in #123.
+// It mints no bootstrap, because nothing here starts a pool agent: a pool
+// machine is a driver base with nothing placed on it, and a local driver's
+// host agent is not staged.
 func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ []string, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
@@ -164,4 +199,19 @@ func requirePool(pool *model.Pool) error {
 		return errors.New("pool is required")
 	}
 	return nil
+}
+
+// BuildGuestImage builds nothing, on any driver. A remote driver's pool machine
+// and its sandboxes boot from a driver base that the agent is placed on (ADR
+// 26-10-23-551 §1, ADR 26-10-16-423 §7), so it has no image to build. A local
+// driver's sandbox image (the macOS image) has no build spec in a checkout.
+func (r *Runtime) BuildGuestImage(_ context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, _ sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	if err := requirePool(pool); err != nil {
+		return nil, err
+	}
+	driver := r.engine.Driver.Name()
+	if r.engine.Driver.Capabilities().Remote {
+		return nil, fmt.Errorf("a %s pool on the %s driver boots its machines from the driver's base, with the agent placed on it, so it has no image to build: %w", ProviderType, driver, sandbox.ErrGuestImageBuildUnsupported)
+	}
+	return nil, fmt.Errorf("no VM image is defined for the %s driver to build: %w", driver, sandbox.ErrGuestImageBuildUnsupported)
 }

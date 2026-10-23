@@ -38,17 +38,17 @@ type Config struct {
 	// There is no state directory to configure. Every provider instance of a
 	// driver on a host shares that driver's disco-vm state root (stateRoot),
 	// because the limits the engine enforces — vz's two running macOS guests —
-	// are the host's, and the engine counts them over the instances in its
-	// root (ADR 26-10-09-106 §4). A root per provider instance would give each
-	// its own two.
+	// are the host's (ADR 26-10-09-106 §4).
 	Driver string `json:"driver,omitempty"`
-	// Agent is the path, on the server's machine, of the disco-vm binary
-	// built for the driver's guests (their OS and CPU). disco-vm bakes it
-	// into every image it installs, as the guest's agent and, on the docker
-	// driver, its init. It is an option handed to disco-vm, required only to
-	// build images: left to disco-vm's default it would be the running
-	// binary, which is this server.
-	Agent string `json:"agent,omitempty"`
+	// Base is the ID of the driver's base a remote driver's pool machine
+	// boots from (machine.Driver.Bases): a pool machine is a driver base the
+	// pool agent is placed on, never an image of discobox's (ADR 26-10-23-551
+	// §1). It is an ID, never a name, because a name can be given to another
+	// base after an operator chose it (a boxd snapshot's). Empty is the first
+	// base the driver lists: on boxd its default image when the account has
+	// one, and otherwise its oldest snapshot. A local driver's pool agent runs
+	// on this host, and boots no base.
+	Base string `json:"base,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -70,7 +70,7 @@ func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.Provide
 		if err != nil {
 			return nil, err
 		}
-		runtime, err := newRuntime(cfg)
+		runtime, err := newRuntime(cfg, instance.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -87,8 +87,8 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			// Immutable: a pool's host was made through the driver, and only
 			// that driver can reach it to remove it.
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: for example vz on macOS, docker on a Docker daemon, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
-			{Key: "agent", Label: "Guest Agent", Type: "string", Description: "Path on the server's machine of the VM guest agent binary (github.com/discobox-ai/vm) built for the guests' OS and CPU. Images are built with it as the guest agent, so building one needs it.", Advanced: true},
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: vz on macOS, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
+			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the ID of the driver's base a pool's machine boots from. Empty is the first base the driver lists: boxd's default image, or its oldest snapshot when the account has no default image, so name one there.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }
@@ -98,10 +98,8 @@ func Definition() sandbox.ProviderDefinition {
 // under the platform's data directory, as vz's pool disks are: on macOS that is
 // ~/Library/Application Support.
 //
-// A root per driver, because a root is one tag namespace and the twins name
-// their parents by tag (`from: image: discobox/sandbox-agent`): two drivers
-// sharing one would each move the other's tags. The limits the engine enforces
-// are a driver's, so they still count every machine that driver runs here.
+// A root per driver, because the limits the engine enforces are a driver's,
+// and a root is one tag namespace that two drivers' images would share.
 func stateRoot(driver string) string {
 	if home := strings.TrimSpace(xdg.DataHome); home != "" {
 		return filepath.Join(home, "discobox", ProviderType, driver)

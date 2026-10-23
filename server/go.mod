@@ -10,7 +10,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/vm v0.0.0-20261009234924-5e0d8fa02e6f
+	github.com/discobox-ai/vm v0.0.0-20261017004643-f4aaa468e7cc
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/distribution/reference v0.6.0
 	github.com/ebitengine/purego v0.10.2
@@ -32,6 +32,7 @@ require (
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
+	google.golang.org/grpc v1.84.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.31.2
 )
@@ -395,7 +396,6 @@ require (
 	google.golang.org/genproto v0.0.0-20260724162435-b2f20204f0df // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260904194346-d0f1323225a4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

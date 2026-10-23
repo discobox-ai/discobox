@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,7 +17,11 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/discobox-ai/vm/pkg/engine"
+	"github.com/discobox-ai/vm/pkg/machine"
 	"github.com/discobox-ai/vm/pkg/machine/boxd"
+	"github.com/discobox-ai/vm/pkg/machine/fake"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -32,15 +37,11 @@ func isolateStateRoot(t *testing.T) {
 	t.Cleanup(xdg.Reload)
 }
 
-// fakeConfig is a provider on disco-vm's fake driver. Its guest agent is this
-// test binary, which TestMain lets play one.
+// fakeConfig is a provider on disco-vm's fake driver, whose guest agent is
+// this test binary, which TestMain lets play one.
 func fakeConfig(t *testing.T) Config {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return Config{Driver: "fake", Agent: exe}
+	return Config{Driver: "fake"}
 }
 
 func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
@@ -52,47 +53,48 @@ func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: ProviderType, Config: config}
 }
 
+// fakeBases is the fake driver's base catalog in these tests: what a pool
+// machine boots from, as one on boxd boots its default image.
+var fakeBases = []machine.Base{
+	{Name: "fake-default", ID: "fake-default-id", GuestOS: machine.OS(runtime.GOOS)},
+	{Name: "fake-other", ID: "fake-other-id", GuestOS: machine.OS(runtime.GOOS)},
+}
+
+// withFakeBases gives the fake driver the bases it lists, which it reads when
+// it is constructed.
+func withFakeBases(t *testing.T, bases []machine.Base) {
+	t.Helper()
+	data, err := json.Marshal(bases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(fake.BasesEnv, string(data))
+}
+
+// openRuntime is newRuntime, closed when the test ends: its engine holds a
+// database in the state root, which a test's directory must be free of before
+// it is removed.
+func openRuntime(t *testing.T, cfg Config) *Runtime {
+	t.Helper()
+	r, err := newRuntime(cfg, "prov_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	return r
+}
+
 // newFakeRuntime is a runtime on the fake driver that hosts its pools in
-// machines, as a remote driver's are, and whose pool image is built from a
-// checkout holding the fake driver's spec, through BuildGuestImage.
-func newFakeRuntime(t *testing.T) *Runtime {
+// machines booted from a base, as a remote driver's are.
+func newFakeRuntime(t *testing.T, base string) *Runtime {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake guest's console and log are POSIX shell commands")
 	}
-	ctx := context.Background()
 	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.host = fakePoolMachine(r.engine)
-	checkout := t.TempDir()
-	spec := filepath.Join(checkout, filepath.FromSlash(fakeImage))
-	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(spec, []byte("from:\n  install: {os: "+runtime.GOOS+", media: latest}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	build, err := r.BuildGuestImage(ctx, nil, &model.Pool{ID: "pool-1"}, sandbox.GuestImageBuildOptions{SourceDir: checkout})
-	if err != nil {
-		t.Fatalf("BuildGuestImage() error = %v", err)
-	}
-	out, err := io.ReadAll(build)
-	_ = build.Close()
-	if err != nil {
-		t.Fatalf("build failed: %v\n%s", err, out)
-	}
-	if build.Adoption == "" {
-		t.Fatal("a discovm build said nothing of how a pool adopts it; a restart does not")
-	}
-	if build.Destination != r.engine.Images.Root {
-		t.Fatalf("Destination = %q, want the engine's image store %q", build.Destination, r.engine.Images.Root)
-	}
-	if _, err := r.engine.Images.Resolve(poolImage); err != nil {
-		t.Fatalf("the build tagged no %s image: %v", poolImage, err)
-	}
+	withFakeBases(t, fakeBases)
+	r := openRuntime(t, fakeConfig(t))
+	r.host = fakePoolMachine(r.engine, base)
 	return r
 }
 
@@ -104,7 +106,7 @@ func newFakeRuntime(t *testing.T) *Runtime {
 // runs no agent yet. Logs, console and removal go through the pool provider the
 // server's factory wraps a runtime in (poolruntime.New), around this one.
 func TestFakePoolMachineLifecycle(t *testing.T) {
-	r := newFakeRuntime(t)
+	r := newFakeRuntime(t, "")
 	ctx := context.Background()
 	instance := fakeInstance(t)
 	provider := poolruntime.New(r, Definition(), nil)
@@ -122,6 +124,9 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	}
 	if state := r.engine.State(ctx, inst); state != engine.Running {
 		t.Fatalf("pool machine is %s, want running", state)
+	}
+	if inst.Base == nil || inst.Base.ID != fakeBases[0].ID || inst.Layer != "" {
+		t.Fatalf("pool machine runs from base %+v, layer %q, want the driver's first base and no image", inst.Base, inst.Layer)
 	}
 	if begun != 1 || pool.State != model.PoolStateRegistering || pool.Ready || pool.Schedulable {
 		t.Fatalf("after create: begun=%d state=%q ready=%v schedulable=%v, want 1 registering false false", begun, pool.State, pool.Ready, pool.Schedulable)
@@ -182,7 +187,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 
 // Repair restarts the pool's machine in place, on the same disk.
 func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
-	r := newFakeRuntime(t)
+	r := newFakeRuntime(t, "")
 	ctx := context.Background()
 	pool := &model.Pool{ID: "pool-2", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
@@ -209,15 +214,76 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 	}
 }
 
+// A pool machine boots the base the provider names by its ID, rather than the
+// driver's first. A name is not taken for an ID, since a name can be given to
+// another base; a driver with no base to offer creates nothing, saying what
+// to configure.
+func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
+	byName := newFakeRuntime(t, fakeBases[1].Name)
+	err := byName.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-13"}, nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no base with ID") {
+		t.Fatalf("EnsurePool() with a base named, not identified = %v, want a refusal", err)
+	}
+	if _, err := byName.engine.Get(poolMachineName("pool-13")); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("a machine was made from a base named, not identified: %v", err)
+	}
+
+	r := newFakeRuntime(t, fakeBases[1].ID)
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-10", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil, nil); err != nil {
+		t.Fatalf("EnsurePool() error = %v", err)
+	}
+	inst, err := r.engine.Get(poolMachineName(pool.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inst.Base == nil || inst.Base.ID != fakeBases[1].ID {
+		t.Fatalf("pool machine runs from base %+v, want %s", inst.Base, fakeBases[1].Name)
+	}
+
+	isolateStateRoot(t)
+	withFakeBases(t, nil)
+	bare := openRuntime(t, fakeConfig(t))
+	bare.host = fakePoolMachine(bare.engine, "")
+	err = bare.EnsurePool(ctx, nil, nil, &model.Pool{ID: "pool-11"}, nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no base") || !strings.Contains(err.Error(), "provider's base") {
+		t.Fatalf("EnsurePool() on a driver with no base = %v, want a refusal naming the provider's base", err)
+	}
+	if _, err := bare.engine.Get(poolMachineName("pool-11")); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("a machine was made with no base: %v", err)
+	}
+}
+
+// No driver builds an image: a remote driver's pool machine and sandboxes
+// boot from the driver's base, and a local driver has no image defined. Each
+// says which, before reading anything.
+func TestBuildGuestImageIsUnsupported(t *testing.T) {
+	isolateStateRoot(t)
+	r := openRuntime(t, Config{Driver: "boxd"})
+	if !r.engine.Driver.Capabilities().Remote {
+		t.Fatal("boxd is not a remote driver")
+	}
+	for _, opts := range []sandbox.GuestImageBuildOptions{{}, {SourceDir: t.TempDir(), RestartHost: true}} {
+		_, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-12"}, opts)
+		if !errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || !strings.Contains(err.Error(), "driver's base") {
+			t.Fatalf("BuildGuestImage(%+v) on boxd = %v, want ErrGuestImageBuildUnsupported naming the base", opts, err)
+		}
+	}
+	local := openRuntime(t, fakeConfig(t))
+	_, err := local.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-12"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()})
+	if !errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || !strings.Contains(err.Error(), "no VM image is defined for the fake driver") {
+		t.Fatalf("BuildGuestImage() on a local driver = %v, want ErrGuestImageBuildUnsupported", err)
+	}
+}
+
 // The console and the log are read from inside the machine, so a pool with no
 // machine says so rather than hanging.
 func TestFakePoolWithoutAMachineHasNoConsoleOrLog(t *testing.T) {
 	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.host = fakePoolMachine(r.engine)
+	r := openRuntime(t, fakeConfig(t))
+	r.host = fakePoolMachine(r.engine, "")
 	pool := &model.Pool{ID: "pool-3"}
 	if _, err := r.OpenConsole(context.Background(), nil, pool, sandbox.ConsoleOptions{}); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("OpenConsole() error = %v, want not found", err)
@@ -265,52 +331,6 @@ func TestHostAgentRefusesAConsoleAndReadsTheAgentLog(t *testing.T) {
 	}
 }
 
-// disco-vm's default guest agent is the running binary, which in a server is
-// the server. A provider that names none builds nothing, and says what to set.
-func TestBuildGuestImageNeedsAGuestAgent(t *testing.T) {
-	isolateStateRoot(t)
-	r, err := newRuntime(Config{Driver: "fake"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-9"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()})
-	if err == nil || errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || !strings.Contains(err.Error(), "set its agent") {
-		t.Fatalf("BuildGuestImage() with no agent = %v, want a refusal that says to set it, not that there is no image", err)
-	}
-	r.agent = filepath.Join(t.TempDir(), "missing")
-	if _, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-9"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "is not a file") {
-		t.Fatalf("BuildGuestImage() with a missing agent = %v, want it named", err)
-	}
-}
-
-// Which images a driver has is the checkout's to say: one with no specs for it
-// has nothing to build.
-func TestBuildGuestImageWithNoImagesIsUnsupported(t *testing.T) {
-	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-5"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir()})
-	if !errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
-		t.Fatalf("BuildGuestImage() error = %v, want ErrGuestImageBuildUnsupported", err)
-	}
-}
-
-// A machine is cloned from its image, so a build cannot restart a pool onto
-// the new one, and says so as its own refusal rather than as "no image".
-func TestBuildGuestImageRefusesToRestartTheHost(t *testing.T) {
-	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-6"}, sandbox.GuestImageBuildOptions{SourceDir: t.TempDir(), RestartHost: true})
-	if !errors.Is(err, sandbox.ErrGuestImageRestartUnsupported) || errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
-		t.Fatalf("BuildGuestImage(RestartHost) error = %v, want ErrGuestImageRestartUnsupported alone", err)
-	}
-}
-
 func TestValidateNamesTheDriversInThisBuild(t *testing.T) {
 	for _, tc := range []struct{ config, want string }{
 		{`{}`, "driver is required"},
@@ -342,143 +362,72 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := openRuntime(t, fakeConfig(t))
 	exe, _ := os.Executable()
-	if want := shimCommand(exe, r.engine.Root, "fake"); strings.Join(r.engine.ShimCommand, " ") != strings.Join(want, " ") {
+	if want := shimCommand(exe, r.engine.Root, "fake", localProject); strings.Join(r.engine.ShimCommand, " ") != strings.Join(want, " ") {
 		t.Fatalf("ShimCommand = %q, want %q", r.engine.ShimCommand, want)
-	}
-}
-
-// A driver builds the twins it has a spec for, parents first, each from its
-// own context, so a twin FROM another finds it by the tag the chain gives it.
-func TestBuildGuestImageBuildsTheTwinChain(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the fake guest's build steps are POSIX shell commands")
-	}
-	isolateStateRoot(t)
-	r, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkout := t.TempDir()
-	write := func(rel, body string) {
-		t.Helper()
-		path := filepath.Join(checkout, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("base-image/fake.yaml", "from:\n  install: {os: "+runtime.GOOS+", media: latest}\n")
-	write("sandbox-agent/fake.yaml", "from:\n  image: discobox/base\n")
-	// A twin another driver has is not this driver's to build.
-	write("harness/codex-cli/boxd.yaml", "from:\n  image: nothing/here\n")
-
-	build, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-8"}, sandbox.GuestImageBuildOptions{SourceDir: checkout})
-	if err != nil {
-		t.Fatalf("BuildGuestImage() error = %v", err)
-	}
-	out, err := io.ReadAll(build)
-	_ = build.Close()
-	if err != nil {
-		t.Fatalf("build failed: %v\n%s", err, out)
-	}
-	for _, tag := range []string{"discobox/base", "discobox/sandbox-agent"} {
-		if _, err := r.engine.Images.Resolve(tag); err != nil {
-			t.Errorf("the chain built no %s: %v", tag, err)
-		}
-	}
-	if _, err := r.engine.Images.Resolve("discobox/codex"); err == nil {
-		t.Error("built another driver's twin")
-	}
-}
-
-// One chain at a time per engine root: a second waits, says so, and gives up
-// when its caller does.
-func TestLockChainSerializesBuildsPerRoot(t *testing.T) {
-	root := t.TempDir()
-	release, err := lockChain(context.Background(), root, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var said strings.Builder
-	waiting, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if _, err := lockChain(waiting, root, &said); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("a second chain on a busy root = %v, want it to wait until its context ends", err)
-	}
-	if !strings.Contains(said.String(), "waiting for another image build") {
-		t.Fatalf("the waiting chain said %q", said.String())
-	}
-	other, err := lockChain(context.Background(), t.TempDir(), io.Discard)
-	if err != nil {
-		t.Fatalf("another root was held by this one: %v", err)
-	}
-	other()
-	release()
-	again, err := lockChain(context.Background(), root, io.Discard)
-	if err != nil {
-		t.Fatalf("the root was not released: %v", err)
-	}
-	again()
-}
-
-// The server's chain is the one `build:boxd-images` builds: the same specs,
-// contexts and tags, so a twin that builds by hand builds here too.
-func TestTwinsMatchTheTaskfile(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Taskfile.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pattern := regexp.MustCompile(`--driver boxd build -t (\S+) -f (\S+) (\S+)'`)
-	var fromTaskfile []string
-	for _, m := range pattern.FindAllStringSubmatch(string(data), -1) {
-		fromTaskfile = append(fromTaskfile, m[1]+" "+m[2]+" "+m[3])
-	}
-	if len(fromTaskfile) == 0 {
-		t.Fatal("found no build:boxd-images commands in Taskfile.yml")
-	}
-	repo, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	have, err := driverTwins(repo, "boxd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fromTwins []string
-	for _, tw := range have {
-		fromTwins = append(fromTwins, tw.Tag+" "+tw.Spec("boxd")+" "+tw.Context)
-	}
-	if strings.Join(fromTwins, "\n") != strings.Join(fromTaskfile, "\n") {
-		t.Fatalf("twins builds\n%s\nbut build:boxd-images builds\n%s", strings.Join(fromTwins, "\n"), strings.Join(fromTaskfile, "\n"))
 	}
 }
 
 // Where a pool's agent runs follows from what the driver reports, not from its
 // name: a remote driver's pool is a machine, a local one's is a host agent.
 func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
-	remote, err := engine.Open(t.TempDir(), boxd.New())
+	remote, err := engine.Open(t.TempDir(), boxd.New(), nil, "prov-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host, ok := newPoolHost(remote).(*poolMachine); !ok {
-		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote))
+	defer remote.Close()
+	if host, ok := newPoolHost(remote, "").(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, ""))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}
 	isolateStateRoot(t)
-	local, err := newRuntime(fakeConfig(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	local := openRuntime(t, fakeConfig(t))
 	if _, ok := local.host.(*hostAgent); !ok {
 		t.Fatalf("a local driver's pool host is %T, want a host agent", local.host)
+	}
+}
+
+// A remote driver's engine is the provider instance's own disco-vm project,
+// spelled from its ID, so two servers or two providers on one account do not
+// take each other's machines for their own. A local driver's is one for every
+// provider, so the host's running-guest cap is counted over all of them.
+func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
+	project, err := engineProject(boxd.New(), "prov_0123456789abcdef")
+	if err != nil || project != "prov-0123456789abcdef" {
+		t.Fatalf("engineProject(boxd, prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
+	}
+	if _, err := engineProject(boxd.New(), "Not A Project!"); err == nil {
+		t.Fatal("engineProject accepted an ID outside disco-vm's project rule")
+	}
+	isolateStateRoot(t)
+	remote := openRuntime(t, Config{Driver: "boxd"})
+	if remote.engine.Project != "prov-test" {
+		t.Fatalf("boxd engine project = %q, want the provider's", remote.engine.Project)
+	}
+	local := openRuntime(t, fakeConfig(t))
+	if project, _ := engineProject(local.engine.Driver, "prov_other"); project != localProject || local.engine.Project != localProject {
+		t.Fatalf("a local driver's project = %q (engine %q), want %q for every provider", project, local.engine.Project, localProject)
+	}
+}
+
+// Only a service that cannot be reached is waited on; a credential the driver
+// is missing or refused is an error the pool shows.
+func TestUnreachableIsATransportFailureOnly(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{&net.OpError{Op: "dial", Err: errors.New("connection refused")}, true},
+		{fmt.Errorf("boxd: %w", context.DeadlineExceeded), true},
+		{fmt.Errorf("boxd: api: %w", grpcstatus.Error(codes.Unavailable, "no route")), true},
+		{fmt.Errorf("boxd: api: %w", grpcstatus.Error(codes.Unauthenticated, "bad key")), false},
+		{errors.New("boxd: no credentials: set BOXD_API_KEY"), false},
+	} {
+		if got := unreachable(tc.err); got != tc.want {
+			t.Errorf("unreachable(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }
 
