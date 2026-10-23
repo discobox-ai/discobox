@@ -77,7 +77,11 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 	if err != nil {
 		return err
 	}
-	if useOverlay(v.Kind, nonEmpty) {
+	layout, err := decideLayout(v.Kind, dir, layoutRecordPath(v), nonEmpty)
+	if err != nil {
+		return err
+	}
+	if layout == layoutOverlay {
 		upper, work := overlayDirs(dir)
 		for _, d := range []string{upper, work} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
