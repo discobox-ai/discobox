@@ -182,6 +182,14 @@ func checkDeclaredSources(declared map[string]string, path string) (map[string]s
 		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("%s: a declared source has no name", path)
 		}
+		// The name is joined onto the primary's parent to find the checkout
+		// beside it (declaredSourceCheckout), and it is repository content: a
+		// name of ".." or "../.." would reach a directory above the parent,
+		// typically the home directory, and bring it into the discobox. So it
+		// is one path element and nothing else.
+		if name == "." || name == ".." || strings.ContainsAny(name, `/\`) || filepath.IsAbs(name) || filepath.VolumeName(name) != "" {
+			return nil, fmt.Errorf("%s: declared source %q is not a plain name: it names the checkout beside the source, one directory, so it holds no path", path, name)
+		}
 		if strings.TrimSpace(url) == "" {
 			return nil, fmt.Errorf("%s: declared source %q has no Git URL", path, name)
 		}
@@ -268,6 +276,14 @@ func resolveDeclaredSourceArg(ctx context.Context, primaryRoot, name, url string
 	if err != nil || !info.IsDir() {
 		return url, report
 	}
+	// The declaration names a repository, so what stands in for it here is a
+	// checkout of one: the directory has to be its own repository's root. A
+	// plain directory of that name would be copied whole, which is not what
+	// a repository's file gets to ask for of this machine, and a directory
+	// inside some other repository is not a checkout of this one either.
+	if root, err := gitutil.Root(ctx, checkout); err != nil || !sameDirectory(root, checkout) {
+		return url, report
+	}
 	report.Local = true
 	if origin := gitOriginURL(ctx, checkout); origin != "" && !sameGitRemote(origin, url) {
 		report.Origin = origin
@@ -335,4 +351,12 @@ func isAllDigits(value string) bool {
 		}
 	}
 	return true
+}
+
+// sameDirectory reports whether a and b name one directory, through any
+// symlink either path takes on the way.
+func sameDirectory(a, b string) bool {
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && filepath.Clean(ra) == filepath.Clean(rb)
 }
