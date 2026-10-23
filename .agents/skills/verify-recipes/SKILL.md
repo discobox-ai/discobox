@@ -126,10 +126,11 @@ agent has no `runc` personality: restore what was there, never a fixed link.
 
 # Verifying the sandbox's DNS stub (`sandbox-agent/dnsstub`, nested DNS)
 
-Wait for the image watcher to rebuild both `discobox-sandbox-agent:local` and
-`discobox-harness-shell-image:local` (`docker run --rm --entrypoint sh <img> -c
-'grep -c "<new string>" /usr/local/bin/discobox-sandbox-agent'`), then `d new
--d -H shell --no-source -p x`. In the box (`d shell <id> -- ...`): `sudo
+Wait for the image watcher to export the platform bundle (its log's `built
+platform as …/build/assets/discobox-platform/<hex>.tar`, and the server's
+platform moving) and the box to be pinned to it (`d admin box get <id> -o json
+| jq .config.platformBundleDigest`), then `d new -d -H shell --no-source -p
+x`; the agent a box runs is its platform pin's, delivered at every start. In the box (`d shell <id> -- ...`): `sudo
 iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
 ping -c1 -W2 example.com` on the default bridge, a user network, one with
 `-o com.docker.network.bridge.name=X`, and `--network host` shows nested
@@ -186,7 +187,7 @@ and that the process started after the build (no `ps` in the image: walk
   also gets a 401, so check the audit row's secret column. Sentinels are in
   the box's `/run/discobox/secrets/secrets.json` (root). What was recorded:
   `curl 127.0.0.1:8080/projects/<project>/secret-rejections`.
-- A harness image's manifest reaches the server only when the image watcher
+- A harness bundle's manifest reaches the server only when the image watcher
   has rebuilt it (`.tmp/discobox-dev-images.json` names a new tag). If it never
   does, a build in the chain is failing and retried every 15s: read the
   `docker build` command from `/proc/<pid>/cmdline` and run it under a
@@ -210,9 +211,9 @@ and that the process started after the build (no `ps` in the image: walk
   (`…/pools/<pool>/sandboxes/<id>`) younger than 15 minutes; `touch -d` it
   older, then `docker rm -f` the box's container, to see a reap ~5s later.
 - Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
-- No dev pool up (the sandbox-agent image will not build), or the
-  harness/sandbox-agent `:local` images missing (an isolated server then fails
-  on `has no harness to run`) → embed the real `proxy` package instead. Write a
+- No dev pool up (the sandbox base image will not build), or the dev
+  harness and platform bundles missing (an isolated server then fails on
+  `has no harness to run`) → embed the real `proxy` package instead. Write a
   scratchpad module (`replace` the repo and goproxy's fork as the root `go.mod`
   does, copy `go.sum`, `GOWORK=off`) whose `main` calls
   `proxy.PrepareCertificates` and `proxy.NewServer` on `proxy.DefaultConfig()`,
@@ -307,14 +308,17 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   any protocol field newer than the release — a request's `policy` arrives as
   `null`. Use the isolated server below with
   `DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local` and
-  `DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local`.
-- With no `shell` harness image, `go tool task build:harness-stub-image`,
-  then `admin harness create --image discobox-harness-stub:local` and
-  `admin harness configure stub`; `new -d -H stub`. Configuring it stores a
+  `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local`.
+- With no `shell` harness bundle, `go tool task build:harness-stub-bundle`,
+  then `admin harness create --bundle discobox-harness-stub:local` and
+  `admin harness configure stub`; `new -d -H stub`. A bundle only the host's
+  daemon holds is not one the asset API can serve a pool (it reads the dev
+  manifest's layouts, or a registry), so point the server at a dev manifest
+  whose `bundles` list the stub's exported layout. Configuring it stores a
   `stub-token` secret: delete it with the harness.
 - File one from inside the box with `discobox-access request --statement …`
-  (the box's `discobox-access` is the sandbox-agent image's, so
-  `discobox-sandbox-agent:local` carries a change to it). A sentence that
+  (the box's `discobox-access` is the platform bundle's, so a rebuilt
+  platform bundle carries a change to it, at the box's next start). A sentence that
   does not parse, or a policy that does not validate, never leaves the box;
   to send the server one anyway, post the agentcreds `RequestBody` with
   `curl --data @/tmp/req.json $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests`
@@ -368,17 +372,26 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   any harness through as a pre-platform pool. Add
   `DISCOBOX_DOCKER_POOL_IMAGE=<the dev loop's image>` (`docker ps` shows the
   `discobox-pool-agent:dev-*` its pool runs) to the env above.
-  For every dev image at once — sandbox, pool, and harnesses, the in-box
-  `discobox` CLI included — make `DISCOBOX_ENV_FILE` a copy of the
-  `DISCOBOX_DEFAULT_SANDBOX_*`, `DISCOBOX_DOCKER_POOL_*` and
-  `DISCOBOX_HARNESS_*` lines of the checkout's `.env`.
+  For every dev image and bundle at once — sandbox base, pool, platform and
+  harnesses, the in-box `discobox` CLI included — make `DISCOBOX_ENV_FILE` a
+  copy of the `DISCOBOX_DOCKER_*`, `DISCOBOX_PLATFORM_BUNDLE`,
+  `DISCOBOX_HARNESS_*` and `DISCOBOX_DEV_DOCKER_IMAGE_*` lines of the
+  checkout's `.env`.
 
-- It exits at start (`project … has no harness to run`) until at least one
-  `discobox-harness-*:local` image exists; on a fresh box wait for the image
-  watcher to build one. It also exits that way, every harness failing on
+- It exits at start (`project … has no harness to run`) until it can read at
+  least one harness bundle: a layout the image watcher exported, which it
+  finds through the dev loop's `DISCOBOX_HARNESS_*`, `DISCOBOX_PLATFORM_BUNDLE`
+  and `DISCOBOX_DEV_DOCKER_IMAGE_*` lines in its `DISCOBOX_ENV_FILE` (above).
+  A `:local` bundle only the daemon holds seeds, but no pool can be served
+  it; on a fresh box wait for the watcher's first export. It also exits that way, every harness failing on
   `platform bundle: inspect bundle "discobox-platform:local"`, when the image
   watcher process predates the tree it watches (a `go run` does not rebuild
-  itself) and so has never built the platform bundle. Without restarting the
+  itself) and so has never built the platform bundle. The dev loop's own server
+  exits the same way then (`wnb-run-failed.txt`). Restarting the watcher
+  half alone fixes both: kill the `discobox-dev-lock docker-image-watch`
+  process group and run its Taskfile command (`dev:docker-image-watch`) in
+  the background from the repo root; it rebuilds, writes `.env`, and the
+  server restarts onto it. Without restarting the
   user's loop: start from a copy of its database instead
   (`sqlite3 .tmp/discobox/discobox.db ".backup $S/data/discobox.db"`, then
   `DATABASE_DSN=sqlite3://$S/data/discobox.db`), whose harnesses are already
@@ -403,16 +416,16 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `runtime.provisionProgress.phase` every 0.1s, and `docker restart -t 0` (or
   `stop`, then `start` later) *your* pool's `discobox-vm-pool_<id>` on
   `preparing_volumes` or `waiting_for_agent`. A fixed delay misses: a create
-  takes a second or two once the harness image is on the pool. The server logs
+  takes a second or two once the sandbox base image is on the pool. The server logs
   `pool agent went away during a sandbox create` to stderr, so to
   `$S/server.log` as started above. Sandbox containers
   are siblings on the host's Docker, so one already booted survives the restart.
 
 ## Against a release's published images and bundles
 
-The dev loop's bundles carry no content digest, so its boxes run their whole
-harness image and never take the bundle path (`sandboxBundlePins`). To drive
-that path, build the checkout's server with the release's pins — the `-X` flags
+The dev loop's boxes apply the bundles its watcher exported. To drive a
+release's published bundles instead, build the checkout's server with the
+release's pins — the `-X` flags
 of `SERVER_LDFLAGS` in `Taskfile.yml`, `REGISTRY=ghcr.io/discobox-ai`,
 `PIN_TAG=<a published tag>` — and start it as above, adding `HTTPS_PROXY`,
 `HTTP_PROXY` and `NO_PROXY` from your own env to the `env -i`: the server
@@ -492,7 +505,7 @@ lead; and run `discobox-access run --use <id> -- discobox …` there.
 # Verifying the iroh transport (`pkg/endpoint`: admission, peer certificates)
 
 The isolated server above exits with `project … has no harness to run` when
-no harness image is in the box's Docker (no dev loop has built them) and ghcr
+no harness bundle is built (no dev loop has exported them) and ghcr
 is unreachable. The transport does not need it: a probe `main` placed inside
 the tree (`<copy>/probe/main.go`, so it builds in the root module) drives
 `endpoint.NewIrohEndpoint` as a server (`Listen` + an `http.Server`,
@@ -534,17 +547,43 @@ docker exec discobox-vm-$P find /var/lib/discobox/identity -name agent.key   # .
   records its `:dev-*` reference, digest and layout (`jq -r '.bundles[] |
   "\(.reference) \(.layout)"'`). That digest is what the harness config pins
   (`d admin harness list -o json | jq '..|.bundleDigest?'`); a layout's blobs
-  are `tar -tf <layout> | grep blobs/`. The daemon holds only `-image` twins
-  among the harness repositories: `docker image ls --format '{{.Repository}}'
-  | grep -E '^discobox-(platform|harness-[a-z-]+)$' | grep -v -- '-image$'`
-  prints nothing but bundles a watcher from before layouts left behind, which
+  are `tar -tf <layout> | grep blobs/`. The daemon holds no bundle and no
+  harness image: `docker image ls --format '{{.Repository}}' | grep -E
+  '^discobox-(platform|harness-[a-z-]+|sandbox-agent)'` prints nothing but
+  what a watcher from before layouts, or before bundles, left behind, which
   nothing reclaims (`docker image rm` them).
 - A bundle edit (a harness's `launch.sh`) shows in the watcher's log as
   `built harness-<name> as …/build/assets/discobox-harness-<name>/<hex>.tar`,
-  then in the server's as `updated built-in harness config image` with the new
-  `bundleDigest`; `ls build/assets/<name>` keeps the published layout and the
-  one before it. The harness's runnable twin still reaches a box through the
-  daemon sync until the agent applies bundles itself.
+  then in the server's as `updated built-in harness config bundle` with the
+  new `bundleDigest`; `ls build/assets/<name>` keeps the published layout and
+  the one before it. A box applies it at its next start once it is re-pinned.
+
+# Verifying build-mode bundles (a host with no Docker: macOS, Windows)
+
+On an isolated server (above), hand it a dev manifest whose `images` are the
+dev loop's built ones (copy-mode, by ID) and whose `bundles` are build
+descriptions, so its pool's daemon builds them and the server saves them:
+
+```bash
+PM=$(jq -c . sandbox-agent/image.json); HM=$(jq -c . harness/shell/image.json)
+jq --arg pm "$PM" --arg hm "$HM" --arg root "$PWD" '{version:1, images:.images, bundles:[
+ {reference:"discobox-platform:verify-bm1", build:{dockerfile:"sandbox-agent/Dockerfile", context:$root, target:"platform", args:{IMAGE_LAYER_METADATA:$pm}}},
+ {reference:"discobox-harness-shell:verify-bm1", build:{dockerfile:"Dockerfile", context:($root+"/harness/shell"), target:"bundle", args:{HARNESS_METADATA:$hm}}}]}' \
+  .tmp/discobox-dev-images.json > $S/bm.json
+# server env: DISCOBOX_DEV_DOCKER_IMAGE_SYNC=true DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST=$S/bm.json
+# DISCOBOX_DOCKER_POOL_IMAGE / _SANDBOX_BASE_IMAGE from .env,
+# DISCOBOX_PLATFORM_BUNDLE=discobox-platform:verify-bm1
+# DISCOBOX_HARNESS_SHELL_BUNDLE=discobox-harness-shell:verify-bm1 DISCOBOX_JUDGE_COMMANDS=false
+```
+
+- Before the pool builds them, `shell`'s `bundleDigest` is its reference and
+  `new -H shell` answers 503 "has not been built yet". The server log then
+  shows `building development Docker image` / `saved a development bundle`
+  (the platform ~12s on a warm cache) and `updated built-in harness config
+  bundle` with the real digest; the layouts are in
+  `<cache>/development-bundles/`, and the daemon keeps no `verify-bm1` image.
+- A restart builds nothing: the saved layouts are read back by reference.
+- The other built-ins fail to seed (`:local`, no registry): expected.
 
 # Verifying `assets.discobox.internal` (the pool's bundle cache)
 
@@ -730,13 +769,16 @@ d admin pool create krunpool --provider <prov_id>
 
 # Verifying the sandbox agent with nothing to wire (a VM guest's start)
 
-No disco-vm driver runs here; the sandbox image booted with no config volume
-is the same start a VM guest makes: `discobox-wire.service` is skipped and the
-agent provisions from its own start.
+No disco-vm driver runs here; a box's image booted with no config volume is
+the same start a VM guest makes: `discobox-wire.service` is skipped and the
+agent provisions from its own start. The sandbox base image has no agent or
+units of its own — its pool places both before each start — so boot a stopped
+dev box's container committed (`docker commit <its container> vwire:test`,
+as for the wiring recipe below), which carries what its pool placed.
 
 ```bash
 docker run -d --name vmlike --privileged --cgroupns=private --tmpfs /run \
-  --tmpfs /run/lock discobox-sandbox-agent:local
+  --tmpfs /run/lock vwire:test
 # a real bootstrap: any dev box's, with another sandboxId
 d shell <box> -- sudo cat /etc/discobox/sandbox.json | jq '.sandboxId="sbx_vmlike"' > $S/s.json
 docker exec -i vmlike sh -c 'cat > /etc/discobox/.s.tmp && mv /etc/discobox/.s.tmp /etc/discobox/sandbox.json' < $S/s.json
@@ -746,7 +788,7 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
 - Place the file by a rename, as a backend must; a `cat >` straight to the
   path can be read half-written.
 - Without systemd at all (launchd/SCM stand-in): `--entrypoint
-  /usr/local/bin/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
+  /opt/discobox/current/features/core/discobox-sandbox-agent ... --config /etc/discobox/sandbox.json`;
   it logs `waiting for a file to appear` and exits 0 on SIGTERM.
 - `docker restart` is the guest's reboot; `systemctl kill -s KILL` the crash.
 
@@ -801,16 +843,19 @@ d shell <box> -- cat /run/discobox/provision.json
 
 # Verifying a feature's Ubuntu path
 
-The images are Debian, so a feature's `ubuntu:` packages and its
-`when: {distro: [ubuntu]}` steps only run on an Ubuntu base:
+The sandbox base image is Debian, so a feature's `ubuntu:` packages and its
+`when: {distro: [ubuntu]}` steps only run in a box of an Ubuntu base:
 
 ```bash
-go tool task build:ubuntu-platform > $S/ubuntu.log 2>&1
-grep -E 'provision feature=<f> ' $S/ubuntu.log      # result=applied per step
-docker run --rm --entrypoint sh discobox-sandbox-agent:ubuntu -c '<what the steps left>'
+go tool task build:ubuntu-sandbox-base > $S/ubuntu.log 2>&1
+# start the isolated server above with
+# DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:ubuntu, then
+e new -d --no-source -H shell -p x
+e admin exec --discobox-id <id> create -- discobox-provision wait <f>
+d shell <id> -- sudo cat /var/log/discobox/provision/<f>.log   # result=applied per step
 ```
 
-Remove `discobox-sandbox-agent:ubuntu` and `discobox-sandbox-base:ubuntu`
+Remove `discobox-sandbox-base:ubuntu`, and the isolated server's pool,
 afterwards.
 
 # Verifying a container's boot (`discobox-wire.service`)
@@ -820,7 +865,10 @@ ActiveState`, `sudo journalctl -b -u discobox-wire` (`wired sandbox volumes
 count=N`), and `findmnt` for the declared paths. `d stop`/`d start` is a new
 boot that re-wires; a normal stop exits the container 130.
 
-A failed wiring, without a pool: give the image a config volume whose
+A failed wiring, without a pool: the sandbox base image carries no agent or
+`discobox-wire.service` — its pool places both before each start — so take an
+image that does, a stopped dev box's container committed
+(`docker commit <its container> vwire:test`). Give it a config volume whose
 bootstrap the wiring rejects, and the container exits 1 with the error in the
 tail of `docker logs`.
 
@@ -828,7 +876,7 @@ tail of `docker logs`.
 mkdir -p $S/vfail-config   # not $S/config: the isolated-server recipe uses that
 echo '{"sandboxId":"sbx_vfail","user":{"uid":1000,"gid":2000,"groupName":"docker","name":"dev"}}' > $S/vfail-config/sandbox.json
 docker run -d --name vfail --privileged --cgroupns=private -t \
-  -v $S/vfail-config:/.discobox/config <the dev sandbox image>
+  -v $S/vfail-config:/.discobox/config vwire:test
 docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -20
 ```
 
@@ -839,10 +887,10 @@ docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -2
   the layout records in `/.discobox/data/.layouts`; `docker stop`/`start` is
   the next boot. Edit `$S/data` with `sudo` (root-owned) between boots. For
   `main`'s behavior on the same tree, build its agent from `git archive HEAD`
-  and bind it over `/usr/local/bin/discobox-sandbox-agent:ro`.
+  and bind it over `/opt/discobox/current/features/core/discobox-sandbox-agent:ro`.
 - A box's export is `d admin box export <box> -o <file>` (stop it first); the
   export container overrides the entrypoint. Without a pool: the same image
-  with `--entrypoint /usr/local/bin/discobox-sandbox-agent ... export data`,
+  with `--entrypoint /opt/discobox/current/features/core/discobox-sandbox-agent ... export data`,
   config and data mounted read-only, and `DISCOBOX_USER_{NAME,UID,GID,HOME}`
   set; stdout is the tar.
 
@@ -854,13 +902,13 @@ and allows, and make it the project's default, which brings up a judge.
 
 ```bash
 # Bundle discobox-harness-judgestub:local: FROM discobox-harness-stub:local (task
-# build:harness-stub-image), LABEL io.discobox.image.v1 from
+# build:harness-stub-bundle), LABEL io.discobox.image.v1 from
 # test/harness-stub/image.json with a new harness.id.
-# Image discobox-harness-judgestub-image:local: FROM discobox-harness-stub-image:local;
-# COPY a /usr/local/bin/discobox-prompt that appends its --prompt to
-# /var/tmp/judge-prompts.jsonl and prints {"allow": true, "reason": "stub"}.
+# Its feature also installs a /usr/local/bin/discobox-prompt that appends its
+# --prompt to /var/tmp/judge-prompts.jsonl and prints {"allow": true, "reason": "stub"};
+# export it as a layout the isolated server's dev manifest lists.
 e() { ./build/discobox --server http://127.0.0.1:18471 "$@"; }   # the isolated server, never the dev loop's
-e admin harness create --bundle discobox-harness-judgestub:local --image discobox-harness-judgestub-image:local
+e admin harness create --bundle discobox-harness-judgestub:local
 e admin harness configure judgestub && e admin harness set-default judgestub
 docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 ```
@@ -943,10 +991,10 @@ wake_at, wake_epoch from sandboxes where id='<sbx>'"` every 10s.
 # Verifying the files API (`sandbox-agent/files`, `.../files/*`)
 
 Drive it through the dev loop's server with curl, as the default user
-(ScopeAll), on a box made after the image watcher has rebuilt the
-sandbox-agent and harness images (`.env`'s `DISCOBOX_DEFAULT_SANDBOX_IMAGE`
-and `DISCOBOX_HARNESS_SHELL_IMAGE` tags exist in `docker images`; a box
-created while the tag is still being built fails with `No such image`).
+(ScopeAll), on a box made after the image watcher has exported the platform
+and harness bundles (`.env`'s `DISCOBOX_PLATFORM_BUNDLE` and
+`DISCOBOX_HARNESS_SHELL_BUNDLE` name layouts under `build/assets/`), so the
+box is pinned to an agent carrying the change.
 
 ```bash
 B=http://127.0.0.1:8080/api/projects/default/sandboxes/<sbx_id>/files
@@ -962,9 +1010,9 @@ d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, n
 - The CLI's callers: a user tool script (`$XDG_CONFIG_HOME/discobox/tools/<n>.sh`,
   `tools <n> --discobox-id <id>`), a tool's `files:` (a `.yaml` tool with the
   default under `tools/<id>/`), a pasted image (console recipe above), and
-  harness configure (`go tool task build:harness-stub-image`, `admin harness
-  create --bundle discobox-harness-stub:local --image
-  discobox-harness-stub-image:local`, `admin harness configure stub` twice in
+  harness configure (`go tool task build:harness-stub-bundle`, `admin harness
+  create --bundle discobox-harness-stub:local`, served as above, `admin
+  harness configure stub` twice in
   tmux: the second run prints the seeded previous config). Delete the stub
   harness after purging its archived `configure-*` boxes, which hold it.
 

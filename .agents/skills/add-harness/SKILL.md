@@ -142,10 +142,10 @@ Write these down before writing scripts; most become ADR sections.
 | --- | --- |
 | `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>` (`0755`), `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`), `prompt.sh` → `/usr/local/bin/discobox-prompt` (`0755`) |
 | `install-cli.sh` | executable; `npm install -g` the CLI, then `rm -rf /root/.npm` |
-| `Dockerfile` | Two stages and a default, as every harness's: `FROM scratch AS bundle` labels `io.discobox.image.v1` from `HARNESS_METADATA` through `${HARNESS_METADATA:?...}` and `COPY`s every file `provision.yaml` names, and it, into `/features/<id>/`; `FROM ${SANDBOX_AGENT_IMAGE} AS image` copies `--from=bundle /features/` into `/opt/discobox/bundles/harness/features/` and runs `discobox-sandbox-agent provision /opt/discobox/bundles/platform /opt/discobox/bundles/harness`; a last `FROM bundle` makes the bundle the default target (`harness/feature_test.go` checks the copy is whole) |
+| `Dockerfile` | The bundle alone, as every harness's: one `FROM scratch AS bundle` stage that labels `io.discobox.image.v1` from `HARNESS_METADATA` through `${HARNESS_METADATA:?...}` and `COPY`s every file `provision.yaml` names, and it, into `/features/<id>/` (`harness/feature_test.go` checks the copy is whole). No harness is an image: a box applies the bundle |
 | `image.json` | `apiVersion`, `platformAPIVersion` (`discobox.ai/platform/v1`, which registration requires), `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,config.{command,reminder,ports}}`. No `runCommand` — the convention is the command. Every localhost callback port a sign-in uses goes in `config.ports` — its number when fixed, `{"ephemeral": true}` when it changes each run — with an `unavailable` message naming the fallback (device code, an API key) |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
-| `driver.go` | `ID()` and `Definition()` naming `Bundle: harness.ImageRef("discobox-harness-<id>")` and `Image: harness.ImageRef("discobox-harness-<id>-image")` |
+| `driver.go` | `ID()` and `Definition()` naming `Bundle: harness.BundleRef("discobox-harness-<id>")` |
 | `launch.sh` | join prompt words into one prompt, passed so the CLI cannot read it as flags or files (omp: after `--`); `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
 | `prompt.sh` | the `discobox-prompt` contract (copy a sibling's arg parsing); map roles; `--no-tools` = verified tools-off + an isolated home and an empty cwd that is its own repository root (an empty `.git`, where that is what stops the CLI's context walk; otherwise its own switch, pi's `--no-context-files`); stdin from `/dev/null`; credentials for the isolated home rebuilt from an allowlist of fields, never copied from a file the agent can write; capture, don't pipe; schema'd answers through `discobox-prompt-answer` |
 | `configure.sh` | see below |
@@ -195,11 +195,11 @@ Every place the last harness touched (find them: `git grep -il <last-id> -- ':!h
   name Claude Code has not chosen; an event that fires on a retried error is
   not `StopFailure`).
 - `internal/cmd/discobox-docker-image-watch/main.go` `harnessImages`, and its
-  test's counts, names, env keys, parents and metadata args.
-- `Taskfile.yml`: `build:harness-images`, the `build:harness-image` and
-  `release:harness-image` descriptions, the Dockerfile COPY-path check list,
+  test's counts, names, env keys and metadata args.
+- `Taskfile.yml`: `build:harness-bundles`, the `build:harness-bundle` and
+  `release:harness-bundle` descriptions, the Dockerfile COPY-path check list,
   and `release:images`.
-- `.env.example` (`DISCOBOX_HARNESS_<ID>_BUNDLE` and `DISCOBOX_HARNESS_<ID>_IMAGE`).
+- `.env.example` (`DISCOBOX_HARNESS_<ID>_BUNDLE`).
 - `cli/internal/cli/audit_list.go` `hookPayload`/`hookSummary` if the CLI's
   tool-hook payload has a new shape, with a case in `audit_test.go`.
 - Docs: `harness/DESIGN.md` (driver list, managed layers, updater list, judge
@@ -236,7 +236,7 @@ In `harness/<id>/`, mirroring the siblings:
   CLI's ordering too (omp moves a replaced login to the end).
 
 Then: `go test ./harness/... ./internal/cmd/discobox-docker-image-watch/`,
-the CLI audit test, `go tool task build:harness-image HARNESS=<id>`,
+the CLI audit test, `go tool task build:harness-bundle HARNESS=<id>`,
 `go tool task ci:check`, and `go tool task check-hooks`.
 
 ## 6. Prove it end to end
@@ -265,16 +265,13 @@ What this needs, learned the hard way:
 
 - **The running image watcher predates a new harness.** Its list is compiled
   in, so it builds nothing for one it has never heard of, and the server
-  falls back to the definition's `discobox-harness-<id>:local` bundle and
-  `discobox-harness-<id>-image:local` twin. Build both with `go tool task
-  build:harness-image HARNESS=<id> SANDBOX_AGENT_IMAGE=<the dev
-  sandbox-agent tag from .tmp/discobox-dev-images.json>`: the `:local` base
-  can be far older. Then tag each by content (`discobox-harness-<id>:dev-<12
-  hex of its image id>`, and `discobox-harness-<id>-image:dev-...`) and set
-  `DISCOBOX_HARNESS_<ID>_BUNDLE` and `DISCOBOX_HARNESS_<ID>_IMAGE` in `.env`
-  to them: the dev
-  server seeds only what `.env` names, and re-reads a manifest only when the
-  reference changes — a rebuilt `:local` keeps the label it first read.
+  falls back to the definition's `discobox-harness-<id>:local` bundle —
+  which, held only by the host's daemon, the asset API cannot serve a pool,
+  so a box on it fails to fetch it. Restart `task dev` once the watcher's
+  list names the harness: it exports the bundle as an OCI layout under
+  `build/assets/` and sets `DISCOBOX_HARNESS_<ID>_BUNDLE` in `.env` to its
+  content-addressed tag, and the dev server seeds what `.env` names and
+  re-reads a manifest only when the reference changes.
 - **The box's own Claude login can stand in for a real one** — as far as
   the request. When the user says so, the sentinel in
   `~/.claude/.credentials.json` works one level down
