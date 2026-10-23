@@ -49,6 +49,16 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-agent ./cmd/discobox-pool-agent \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-runc ./cmd/discobox-pool-runc
 
+# The pool-agent bundle (ADR 26-10-23-551 §2): the agent, which is also the
+# pool proxy, and the units its `install` lays on a pool machine booted from a
+# driver base. The same binary the image below copies, and nothing a machine
+# pool cannot use: no BuildKit, registry, mediator, discobox-pool-runc or
+# Docker configuration. Built by name (`--target bundle`); the image stays the
+# default target.
+FROM scratch AS bundle
+COPY --link --from=build --chmod=0755 /out/discobox-pool-agent /features/pool-agent/discobox-pool-agent
+COPY --link pool-agent/bundle/units /features/pool-agent/units
+
 # Debian, Docker, and the trimmed systemd unit set come from the Docker
 # driver's sandbox base image, so this image and the sandboxes are the same
 # blobs on a pool host that pulls both. See

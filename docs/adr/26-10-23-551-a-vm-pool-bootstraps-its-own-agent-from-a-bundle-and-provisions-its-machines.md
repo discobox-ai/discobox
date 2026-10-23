@@ -91,12 +91,18 @@ makes a sandbox's (§3):
      not a key fixed at open: the disco-vm issue), so a renewed key is a new
      file and nothing more.
 3. **Run one command**: the bundle's `install`. It is idempotent and does, in
-   order: point the bundle's stable link at the tree just placed; lay the
-   pool agent's and the pool proxy's units, with the proxy's ordered after the
-   agent has written its environment, CA and control key (106 §1's ordering,
-   which stands); install the one package the agent needs that the platform
-   contract (423 §9) does not promise, `git`, where it is absent (Debian
-   family only, as 423 §3); reload systemd; and enable and restart the agent.
+   order: install the one package the agent needs that the platform contract
+   (423 §9) does not promise, `git`, where it is absent (Debian family only,
+   as 423 §3), first, so that a failure there moves nothing; point the
+   bundle's stable link at the tree just placed; lay the pool agent's and the
+   pool proxy's units, with the proxy's ordered after the agent has written
+   its environment, CA and control key (106 §1's ordering, which stands); and,
+   unless a record it writes after each successful restart says both units
+   already run this tree with these units, reload systemd, and enable and
+   restart the agent and the proxy; and, once they run the tree, remove every
+   other tree the provider placed beside it, which nothing runs from any
+   more. Run again with nothing moved, it changes nothing; an install cut
+   short before its restart took is finished by the next.
    The agent serves its API where disco-vm says the instance's service
    listens (`guest.ServiceFile`, written at every start; disco-vm ADR 0005),
    not at a port of its own choosing, so the machine's one URL reaches it.
