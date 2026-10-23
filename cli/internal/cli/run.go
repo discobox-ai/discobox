@@ -102,8 +102,9 @@ argument. Use -- when the words need to be separated from command flags
 explicitly. This is the only command that makes a discobox: the bare "discobox"
 takes no prompt and none of these flags.
 
-By default run opens the console's window and makes the discobox there: the
-question about uncommitted work is asked on it, the wait is drawn on it, and
+By default run opens the console's window and makes the discobox there: a
+question still open — where to cut from, whether to copy a directory in no
+repository — is asked on it, the wait is drawn on it, and
 what it lands on is the discobox itself — its default terminal (the configured
 harness, or a shell when it has none), the shells and services running beside
 it, and its forwarded ports. It is the same screen, in the same window, that
@@ -348,7 +349,8 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	}
 	// The window is where a run goes unless something says otherwise,
 	// and it is given the request rather than the discobox: the create
-	// happens inside it, so the question about uncommitted work is the
+	// happens inside it, so a question still open — the source, or copying a
+	// directory in no repository — is the
 	// window's own dialog and the wait is its own screen rather than a
 	// list with a busy line under it. The flags are parsed above
 	// either way — a flag that contradicts itself is this command's
@@ -582,10 +584,12 @@ func projectSources(ctx context.Context, client *apiclientgen.Client, projectID 
 
 // confirmCopyDirectory asks whether a source directory that is in no Git
 // repository is copied into the sandbox. Everything in such a directory is
-// uncommitted work, so the question is the whole directory — which is why it is
-// asked at all, and why not copying leads: `discobox run` in a home directory
-// should not carry the home directory. Declining creates the discobox with
-// nothing checked out in it, the way --no-source does (ADR 0077 §1).
+// uncommitted work, so the question is the whole directory, and the size is
+// why it is asked at all: a home directory run in by accident. Copying leads,
+// because there is no commit to start from instead and the content is what
+// naming the directory asks for (ADR 26-10-23-600 §4). Declining creates the
+// discobox with nothing checked out in it, the way --no-source does (ADR 0077
+// §1).
 //
 // The size is counted behind the question rather than before it, so the prompt
 // comes up immediately and fills its number in as the walk finds it.

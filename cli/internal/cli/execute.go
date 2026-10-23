@@ -15,7 +15,26 @@ func Execute(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	return withRunFlagHint(cmd, withUnreachableServerHint(cmd, err))
+	return withRemovedCloneHint(cmd, withRunFlagHint(cmd, withUnreachableServerHint(cmd, err)))
+}
+
+// withRemovedCloneHint answers -C and --clone, which named the source every
+// command acted on until it became run's first argument (ADR 26-10-23-600 §3).
+// They are in scripts, habits and every ADR before that one, and pflag's own
+// answer says only that the flag is unknown. Wherever it was written, the
+// hint is the same: the source moved to SOURCE.
+func withRemovedCloneHint(cmd *cobra.Command, err error) error {
+	var unknown *pflag.NotExistError
+	if cmd == nil || !errors.As(err, &unknown) {
+		return err
+	}
+	name := unknown.GetSpecifiedName()
+	long := name == "clone"
+	short := name == "C" && unknown.GetSpecifiedShortnames() != ""
+	if !long && !short {
+		return err
+	}
+	return fmt.Errorf("%w\n-C and --clone are gone: the source is run's first argument, %s run DIR [PROMPT...]", err, cmd.Root().Name())
 }
 
 // withRunFlagHint points a flag of run's that was written without run at the

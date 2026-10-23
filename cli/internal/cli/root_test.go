@@ -2515,3 +2515,37 @@ func TestSecretGrantCreateTakesHostsEitherWay(t *testing.T) {
 		}
 	}
 }
+
+// -C and --clone named the source until it became run's first argument
+// (ADR 26-10-23-600 §3). Written anywhere, they fail with the form that
+// replaced them rather than with pflag's bare "unknown flag".
+func TestTheRemovedCloneFlagSaysWhereTheSourceWent(t *testing.T) {
+	for _, args := range [][]string{
+		{"-C", "../api", "run", "x"},
+		{"--clone", "../api", "ls"},
+		{"run", "-C", "../api", "x"},
+		{"run", "--clone=../api", "x"},
+	} {
+		cmd := NewRootCommand()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		found, err := cmd.ExecuteC()
+		if err == nil {
+			t.Fatalf("`discobox %s` was accepted", strings.Join(args, " "))
+		}
+		if hinted := withRemovedCloneHint(found, err); !strings.Contains(hinted.Error(), "the source is run's first argument, discobox run DIR [PROMPT...]") {
+			t.Fatalf("`discobox %s`: error = %q, want it to say where the source went", strings.Join(args, " "), hinted)
+		}
+	}
+	// Any other unknown flag is left as it is.
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"ls", "--nope"})
+	found, err := cmd.ExecuteC()
+	if hinted := withRemovedCloneHint(found, err); err == nil || hinted.Error() != err.Error() {
+		t.Fatalf("an unrelated unknown flag was hinted at: %v", hinted)
+	}
+}

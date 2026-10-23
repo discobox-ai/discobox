@@ -49,7 +49,7 @@ func TestSSHConfigReusesAnAlreadyEnrolledUserKey(t *testing.T) {
 	}
 
 	if len(fake.enrolled) != 0 {
-		t.Fatalf("enrolled %d run keys when one was already available: %v", len(fake.enrolled), fake.enrolled)
+		t.Fatalf("enrolled %d new keys when one was already available: %v", len(fake.enrolled), fake.enrolled)
 	}
 	if !strings.Contains(out.String(), "IdentityFile "+keyPath+"\n") {
 		t.Fatalf("config does not point at the already-enrolled key %s:\n%s", keyPath, out.String())

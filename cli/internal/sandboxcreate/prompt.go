@@ -113,8 +113,10 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 	if opts.IncludeDirty == "" {
 		opts.IncludeDirty = IncludeDirtyAuto
 	}
-	if err := opts.IncludeDirty.Set(string(opts.IncludeDirty)); err != nil {
-		return PromptOptions{}, fmt.Errorf("--include-dirty: %w", err)
+	switch opts.IncludeDirty {
+	case IncludeDirtyAuto, IncludeDirtyAlways, IncludeDirtyNever:
+	default:
+		return PromptOptions{}, fmt.Errorf("include dirty: invalid value %q: want true, false, or auto", opts.IncludeDirty)
 	}
 	return opts, nil
 }

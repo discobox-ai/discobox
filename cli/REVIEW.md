@@ -75,8 +75,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   what an argument looks like.** `run`'s first argument is SOURCE unless
   `--no-source` is given; a SOURCE that does not resolve is an error naming
   the form that works, not a guess that it was a prompt. Only zero arguments
-  open a picker. (`shell` and `tools ssh` still guess; that is C14 in
-  `docs/cli-ux-cleanup.md`.)
+  open a picker. `shell` and `tools ssh` still guess; a change that touches
+  their argument handling should not copy them.
 - **`-q` prints what the group's other verbs take back,** not necessarily an
   ID: a remote's name, a harness secret's env name, a skills entry the way
   `skills rm` takes it.
@@ -95,8 +95,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   Leave what records history: ADRs, the recorded judge-eval cases
   (`test/judge-evals`), and audit argv in tests. Leave persisted
   configuration keys (`client.yaml`'s `new:`) too. Tests drive the canonical
-  name, but a blind replace of a quoted word also hits dialog actions and
-  fixtures, so read the diff.
+  name. A blind replace of a word hits more than the command, so read every
+  replaced line:
+  - quoted words, such as dialog actions and fixtures;
+  - format strings, as `%d new keys` became `%d run keys` in a test's failure
+    message.
 
 ## Handing the sandbox's paths to host tools
 
