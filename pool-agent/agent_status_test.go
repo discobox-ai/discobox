@@ -78,7 +78,7 @@ func TestStatusReporterKeepsReporting(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestStatusReporterFailsBootOnFirstReportError(t *testing.T) {
 	client.setErr(errors.New("control plane rejected status"))
 	bootstrap, registration, logger := testReporterArgs()
 
-	err := startStatusReporter(t.Context(), logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond)
+	err := startStatusReporter(t.Context(), logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond)
 	if err == nil {
 		t.Fatal("start status reporter succeeded, want the boot report's error")
 	}
@@ -122,7 +122,7 @@ func TestStatusReporterRetriesAfterFailedReport(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 	bootstrap, registration, logger := testReporterArgs()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 	client.waitForCalls(t, 2)
@@ -153,5 +153,36 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := client.count(); got != settled {
 		t.Fatalf("recorded %d reports after cancel, want the count to stop at %d", got, settled)
+	}
+}
+
+// A machine pool has no runtime to schedule onto yet (ADR 26-10-23-551 §3):
+// it reports itself ready, so its control plane sees it registered and alive,
+// but not schedulable, with the runtime condition saying why.
+func TestStatusReporterReportsAMachinePoolUnschedulable(t *testing.T) {
+	client := newRecordingStatusClient()
+	bootstrap, registration, logger := testReporterArgs()
+	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
+		t.Fatalf("start status reporter: %v", err)
+	}
+	client.waitForCalls(t, 1)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	call := client.calls[0]
+	if !call.Ready || call.Schedulable {
+		t.Fatalf("report = ready %t schedulable %t, want a ready pool that schedules nothing", call.Ready, call.Schedulable)
+	}
+	conditions, ok := call.Conditions.(map[string]any)
+	if !ok {
+		t.Fatalf("conditions = %#v, want a map", call.Conditions)
+	}
+	runtime, ok := conditions["runtime"].(map[string]any)
+	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "unavailable" {
+		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, unavailable", conditions["runtime"])
 	}
 }

@@ -59,35 +59,149 @@ func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
 	}
 }
 
-func TestFromEnvDefaultsControlPlaneURL(t *testing.T) {
+func TestLoadDefaultsControlPlaneURL(t *testing.T) {
 	t.Setenv(poolagent.EnvControlPlaneURL, "")
 
-	bootstrap := poolagent.FromEnv()
+	bootstrap, err := poolagent.Load()
+	if err != nil {
+		t.Fatalf("load bootstrap: %v", err)
+	}
 
 	if bootstrap.ControlPlaneURL != controlplane.DefaultURL("localhost", controlplane.DefaultPort) {
 		t.Fatalf("control plane URL = %q, want default localhost URL", bootstrap.ControlPlaneURL)
 	}
 }
 
-func TestFromEnvReadsHostMountPrefix(t *testing.T) {
+func TestLoadReadsHostMountPrefix(t *testing.T) {
 	t.Setenv(poolagent.EnvHostMountPrefix, "/host")
 
-	bootstrap := poolagent.FromEnv()
+	bootstrap, err := poolagent.Load()
+	if err != nil {
+		t.Fatalf("load bootstrap: %v", err)
+	}
 
 	if bootstrap.HostMountPrefix != "/host" {
 		t.Fatalf("host mount prefix = %q, want /host", bootstrap.HostMountPrefix)
 	}
 }
 
-func TestFromEnvReadsTransportURLs(t *testing.T) {
+func TestLoadReadsTransportURLs(t *testing.T) {
 	t.Setenv(poolagent.EnvControlPlaneURL, "vsock://2:3001")
 	t.Setenv(poolagent.EnvAgentListenURL, "vsock://:3002")
 
-	bootstrap := poolagent.FromEnv()
+	bootstrap, err := poolagent.Load()
+	if err != nil {
+		t.Fatalf("load bootstrap: %v", err)
+	}
 
 	if bootstrap.ControlPlaneURL != "vsock://2:3001" || bootstrap.AgentListenURL != "vsock://:3002" {
 		t.Fatalf("transport URLs = control:%q agent:%q, want vsock://2:3001 and vsock://:3002",
 			bootstrap.ControlPlaneURL, bootstrap.AgentListenURL)
+	}
+}
+
+// A pool machine's provider places the bootstrap as a file the bundle's unit
+// names (ADR 26-10-23-551 §1); the environment still sets any field over it.
+func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bootstrap.json")
+	writeBootstrapFile(t, path, 0o600, poolagent.Bootstrap{
+		ControlPlaneURL: "https://control.example",
+		ProjectID:       "project-1",
+		PoolID:          "pool-1",
+		Token:           "token-1",
+		Runtime:         poolagent.RuntimeMachine,
+		Driver:          "boxd",
+	})
+	t.Setenv(poolagent.EnvBootstrapFile, path)
+	t.Setenv(poolagent.EnvControlPlaneURL, "")
+	t.Setenv(poolagent.EnvAgentListenURL, "http://0.0.0.0:3002")
+
+	bootstrap, err := poolagent.Load()
+	if err != nil {
+		t.Fatalf("load bootstrap: %v", err)
+	}
+	if bootstrap.ControlPlaneURL != "https://control.example" || bootstrap.PoolID != "pool-1" || bootstrap.Token != "token-1" {
+		t.Fatalf("bootstrap = %+v, want the file's control plane, pool and token", bootstrap)
+	}
+	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "boxd" {
+		t.Fatalf("runtime = %q driver = %q, want the file's machine runtime on boxd", bootstrap.Runtime, bootstrap.Driver)
+	}
+	if bootstrap.AgentListenURL != "http://0.0.0.0:3002" {
+		t.Fatalf("agent listen URL = %q, want the environment's", bootstrap.AgentListenURL)
+	}
+	if err := bootstrap.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// The file holds the bootstrap token, so one another user may read is
+// refused rather than trusted.
+func TestLoadRefusesABootstrapFileOthersCanRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bootstrap.json")
+	writeBootstrapFile(t, path, 0o644, poolagent.Bootstrap{PoolID: "pool-1", Token: "token-1"})
+	t.Setenv(poolagent.EnvBootstrapFile, path)
+
+	if _, err := poolagent.Load(); err == nil || !strings.Contains(err.Error(), "0644") {
+		t.Fatalf("load = %v, want the file's mode refused", err)
+	}
+}
+
+func TestLoadRefusesAnUnknownBootstrapField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bootstrap.json")
+	if err := os.WriteFile(path, []byte(`{"poolId":"pool-1","runtimee":"machine"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(poolagent.EnvBootstrapFile, path)
+
+	if _, err := poolagent.Load(); err == nil || !strings.Contains(err.Error(), "runtimee") {
+		t.Fatalf("load = %v, want the misspelled field refused", err)
+	}
+}
+
+func TestBootstrapValidatesItsRuntime(t *testing.T) {
+	base := poolagent.Bootstrap{ControlPlaneURL: "http://control.example", PoolID: "pool-1", Token: "token-1"}
+	for _, tc := range []struct {
+		name    string
+		runtime poolagent.Runtime
+		driver  string
+		wantErr string
+	}{
+		{name: "none is docker", runtime: ""},
+		{name: "docker", runtime: poolagent.RuntimeDocker},
+		{name: "docker with a driver", runtime: poolagent.RuntimeDocker, driver: "boxd", wantErr: "driver"},
+		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd"},
+		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, wantErr: "needs a driver"},
+		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bootstrap := base
+			bootstrap.Runtime, bootstrap.Driver = tc.runtime, tc.driver
+			err := bootstrap.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("validate = %v, want an error naming %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func writeBootstrapFile(t *testing.T, path string, mode os.FileMode, bootstrap poolagent.Bootstrap) {
+	t.Helper()
+	data, err := json.Marshal(bootstrap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, mode); err != nil {
+		t.Fatal(err)
+	}
+	// WriteFile's mode is masked by the umask; the test is about the mode.
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
 	}
 }
 

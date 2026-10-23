@@ -25,6 +25,8 @@ func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 		poolagent.EnvAgentListenURL:  bootstrap.AgentListenURL,
 		poolagent.EnvHostMountPrefix: bootstrap.HostMountPrefix,
 		poolagent.EnvHostStateRoot:   bootstrap.HostStateRoot,
+		poolagent.EnvRuntime:         string(bootstrap.Runtime),
+		poolagent.EnvDriver:          bootstrap.Driver,
 	}
 	for key, value := range env {
 		if strings.TrimSpace(value) == "" {

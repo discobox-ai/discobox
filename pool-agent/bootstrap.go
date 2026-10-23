@@ -37,6 +37,30 @@ const (
 	// sets it when it must place state elsewhere, as wslc does to reach the only
 	// disk it persists.
 	EnvHostStateRoot = "DISCOBOX_POOL_HOST_STATE_ROOT"
+	// EnvRuntime and EnvDriver name the pool's sandbox runtime and, for the
+	// machine runtime, the disco-vm driver its sandboxes' machines run on
+	// (ADR 26-10-23-551 §3).
+	EnvRuntime = "DISCOBOX_POOL_RUNTIME"
+	EnvDriver  = "DISCOBOX_POOL_DRIVER"
+	// EnvBootstrapFile names a file holding the bootstrap as JSON, which a
+	// pool machine's provider places beside the pool-agent bundle rather than
+	// rendering it into an environment (ADR 26-10-23-551 §1). It is root's
+	// alone: it holds the bootstrap token.
+	EnvBootstrapFile = "DISCOBOX_POOL_BOOTSTRAP_FILE"
+)
+
+// Runtime is the kind of sandbox runtime a pool agent composes.
+type Runtime string
+
+const (
+	// RuntimeDocker is sandboxes as containers on the Docker daemon beside the
+	// agent: the pool-agent image's runtime, and a bootstrap's that names
+	// none.
+	RuntimeDocker Runtime = "docker"
+	// RuntimeMachine is sandboxes as disco-vm machines on the pool's own
+	// engine (ADR 26-10-23-551 §3): the runtime of a pool machine booted from
+	// the pool-agent bundle, which names its driver.
+	RuntimeMachine Runtime = "machine"
 )
 
 // Bootstrap is the VM boot contract used by the control plane and pool agent.
@@ -60,6 +84,20 @@ type Bootstrap struct {
 	// Empty means no relocation. Only paths handed to the daemon are translated;
 	// everything the agent reads and writes stays in container terms.
 	HostStateRoot string `json:"hostStateRoot,omitempty"`
+	// Runtime is the pool's sandbox runtime; empty is RuntimeDocker.
+	Runtime Runtime `json:"runtime,omitempty"`
+	// Driver is the disco-vm driver a RuntimeMachine pool's sandboxes run on,
+	// such as boxd. Only that runtime has one.
+	Driver string `json:"driver,omitempty"`
+}
+
+// EffectiveRuntime is the runtime the bootstrap names, RuntimeDocker when it
+// names none.
+func (b Bootstrap) EffectiveRuntime() Runtime {
+	if b.Runtime == "" {
+		return RuntimeDocker
+	}
+	return b.Runtime
 }
 
 // MintBootstrap produces the registration credentials for a pool runtime.
@@ -91,6 +129,18 @@ func (b Bootstrap) Validate() error {
 		if _, err := wire.Parse(listen); err != nil {
 			return fmt.Errorf("agent listen URL: %w", err)
 		}
+	}
+	switch b.EffectiveRuntime() {
+	case RuntimeDocker:
+		if b.Driver != "" {
+			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
+		}
+	case RuntimeMachine:
+		if strings.TrimSpace(b.Driver) == "" {
+			return fmt.Errorf("the %s runtime needs a driver", RuntimeMachine)
+		}
+	default:
+		return fmt.Errorf("unknown pool runtime %q", b.Runtime)
 	}
 	return nil
 }
@@ -434,25 +484,78 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 	}, nil
 }
 
-// FromEnv builds Bootstrap from environment variables.
-func FromEnv() Bootstrap {
-	return Bootstrap{
-		ControlPlaneURL: controlPlaneURLFromEnv(),
-		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
-		PoolID:          strings.TrimSpace(os.Getenv(EnvPoolID)),
-		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
-		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
-		AgentListenURL:  strings.TrimSpace(os.Getenv(EnvAgentListenURL)),
-		HostMountPrefix: strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
-		HostStateRoot:   strings.TrimSpace(os.Getenv(EnvHostStateRoot)),
+// Load reads this agent's bootstrap: the file EnvBootstrapFile names, when
+// the environment names one, with each field the environment sets taking the
+// environment's value. A pool container's provider renders it into the
+// environment alone (dockerworker.BootEnv); a pool machine's places the file
+// and the bundle's unit names it (ADR 26-10-23-551 §1). A control plane URL
+// neither gives is the local default.
+func Load() (Bootstrap, error) {
+	var bootstrap Bootstrap
+	if path := strings.TrimSpace(os.Getenv(EnvBootstrapFile)); path != "" {
+		file, err := readBootstrapFile(path)
+		if err != nil {
+			return Bootstrap{}, err
+		}
+		bootstrap = file
 	}
+	for _, field := range []struct {
+		env   string
+		value *string
+	}{
+		{EnvControlPlaneURL, &bootstrap.ControlPlaneURL},
+		{EnvProjectID, &bootstrap.ProjectID},
+		{EnvPoolID, &bootstrap.PoolID},
+		{EnvBootstrapToken, &bootstrap.Token},
+		{EnvControlPlaneKey, &bootstrap.ControlPlaneKey},
+		{EnvAgentListenURL, &bootstrap.AgentListenURL},
+		{EnvHostMountPrefix, &bootstrap.HostMountPrefix},
+		{EnvHostStateRoot, &bootstrap.HostStateRoot},
+		{EnvDriver, &bootstrap.Driver},
+	} {
+		if value := strings.TrimSpace(os.Getenv(field.env)); value != "" {
+			*field.value = value
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv(EnvRuntime)); value != "" {
+		bootstrap.Runtime = Runtime(value)
+	}
+	if strings.TrimSpace(bootstrap.ControlPlaneURL) == "" {
+		bootstrap.ControlPlaneURL = controlplane.DefaultURL("localhost", controlplane.DefaultPort)
+	}
+	return bootstrap, nil
 }
 
-func controlPlaneURLFromEnv() string {
-	if value := strings.TrimSpace(os.Getenv(EnvControlPlaneURL)); value != "" {
-		return value
+// readBootstrapFile reads the bootstrap file at path, refusing one another
+// user owns or may read or write: it holds the pool's bootstrap token, and a
+// file another user could rewrite would choose the control plane this agent
+// registers with.
+func readBootstrapFile(path string) (Bootstrap, error) {
+	file, err := os.Open(path) //nolint:gosec // G304: the path is the bootstrap file the agent's unit names.
+	if err != nil {
+		return Bootstrap{}, fmt.Errorf("read pool bootstrap: %w", err)
 	}
-	return controlplane.DefaultURL("localhost", controlplane.DefaultPort)
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return Bootstrap{}, fmt.Errorf("read pool bootstrap: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return Bootstrap{}, fmt.Errorf("pool bootstrap %s is not a regular file", path)
+	}
+	if err := checkBootstrapOwner(path, info); err != nil {
+		return Bootstrap{}, err
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return Bootstrap{}, fmt.Errorf("pool bootstrap %s has mode %04o; it holds the bootstrap token, so it must be its owner's alone (0600)", path, perm)
+	}
+	var bootstrap Bootstrap
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&bootstrap); err != nil {
+		return Bootstrap{}, fmt.Errorf("decode pool bootstrap %s: %w", path, err)
+	}
+	return bootstrap, nil
 }
 
 // GenerateKeySource creates a fresh Ed25519 keypair.
